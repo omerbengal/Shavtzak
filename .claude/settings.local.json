@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(flutter run:*)",
+      "Bash(flutter clean:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter --version:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(flutter build:*)",
+      "mcp__browsermcp__browser_navigate",
+      "Bash(lsof:*)",
+      "mcp__browsermcp__browser_snapshot",
+      "mcp__browsermcp__browser_screenshot",
+      "mcp__browsermcp__browser_click",
+      "mcp__browsermcp__browser_wait",
+      "mcp__browsermcp__browser_get_console_logs",
+      "mcp__browsermcp__browser_press_key",
+      "mcp__browsermcp__browser_go_back",
+      "Bash(pkill:*)",
+      "mcp__playwright__playwright_navigate",
+      "mcp__playwright__playwright_screenshot",
+      "mcp__playwright__playwright_get_visible_text",
+      "mcp__playwright__playwright_get_visible_html",
+      "mcp__playwright__playwright_click",
+      "mcp__playwright__playwright_evaluate",
+      "Bash(nc:*)",
+      "Bash(cat:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

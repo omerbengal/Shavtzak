@@ -1,0 +1,95 @@
+import 'package:equatable/equatable.dart';
+import '../../../domain/entities/team_member.dart';
+
+/// Events for Team BLoC
+abstract class TeamEvent extends Equatable {
+  const TeamEvent();
+
+  @override
+  List<Object?> get props => [];
+}
+
+/// Load all team members
+class LoadTeamMembers extends TeamEvent {
+  const LoadTeamMembers();
+}
+
+/// Load active team members only
+class LoadActiveTeamMembers extends TeamEvent {
+  const LoadActiveTeamMembers();
+}
+
+/// Search team members by name
+class SearchTeamMembers extends TeamEvent {
+  final String query;
+
+  const SearchTeamMembers(this.query);
+
+  @override
+  List<Object?> get props => [query];
+}
+
+/// Load a specific team member by ID
+class LoadTeamMemberById extends TeamEvent {
+  final String id;
+
+  const LoadTeamMemberById(this.id);
+
+  @override
+  List<Object?> get props => [id];
+}
+
+/// Create a new team member
+class CreateTeamMember extends TeamEvent {
+  final TeamMember member;
+
+  const CreateTeamMember(this.member);
+
+  @override
+  List<Object?> get props => [member];
+}
+
+/// Update an existing team member
+class UpdateTeamMember extends TeamEvent {
+  final TeamMember member;
+
+  const UpdateTeamMember(this.member);
+
+  @override
+  List<Object?> get props => [member];
+}
+
+/// Delete a team member
+class DeleteTeamMember extends TeamEvent {
+  final String id;
+
+  const DeleteTeamMember(this.id);
+
+  @override
+  List<Object?> get props => [id];
+}
+
+/// Deactivate a team member (soft delete)
+class DeactivateTeamMember extends TeamEvent {
+  final String id;
+
+  const DeactivateTeamMember(this.id);
+
+  @override
+  List<Object?> get props => [id];
+}
+
+/// Reactivate a team member
+class ReactivateTeamMember extends TeamEvent {
+  final String id;
+
+  const ReactivateTeamMember(this.id);
+
+  @override
+  List<Object?> get props => [id];
+}
+
+/// Refresh team members (reload from database)
+class RefreshTeamMembers extends TeamEvent {
+  const RefreshTeamMembers();
+}

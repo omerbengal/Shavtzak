@@ -1,0 +1,163 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/constants/role_types.dart';
+import '../../domain/entities/event.dart';
+
+/// Data model for Event with JSON serialization
+class EventModel {
+  final String id;
+  final String name;
+  final DateTime startDate;
+  final DateTime endDate;
+  final String startTime;
+  final String endTime;
+  final String assemblyTime;
+  final String location;
+  final bool requiresArmed;
+  final String notes;
+  final Map<String, int> roleRequirements; // Stored as string keys in Firestore
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  const EventModel({
+    required this.id,
+    required this.name,
+    required this.startDate,
+    required this.endDate,
+    required this.startTime,
+    required this.endTime,
+    required this.assemblyTime,
+    required this.location,
+    required this.requiresArmed,
+    required this.notes,
+    required this.roleRequirements,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  /// Convert from domain entity
+  factory EventModel.fromEntity(Event entity) {
+    return EventModel(
+      id: entity.id,
+      name: entity.name,
+      startDate: entity.startDate,
+      endDate: entity.endDate,
+      startTime: entity.startTime,
+      endTime: entity.endTime,
+      assemblyTime: entity.assemblyTime,
+      location: entity.location,
+      requiresArmed: entity.requiresArmed,
+      notes: entity.notes,
+      roleRequirements: Map.fromEntries(
+        entity.roleRequirements.entries.map(
+          (e) => MapEntry(e.key.key, e.value),
+        ),
+      ),
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    );
+  }
+
+  /// Convert to domain entity
+  Event toEntity() {
+    return Event(
+      id: id,
+      name: name,
+      startDate: startDate,
+      endDate: endDate,
+      startTime: startTime,
+      endTime: endTime,
+      assemblyTime: assemblyTime,
+      location: location,
+      requiresArmed: requiresArmed,
+      notes: notes,
+      roleRequirements: Map.fromEntries(
+        roleRequirements.entries.map(
+          (e) => MapEntry(
+            RoleType.values.firstWhere((r) => r.key == e.key),
+            e.value,
+          ),
+        ),
+      ),
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+    );
+  }
+
+  /// Convert from Firestore document
+  factory EventModel.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+
+    return EventModel(
+      id: doc.id,
+      name: data['name'] as String,
+      startDate: (data['startDate'] as Timestamp).toDate(),
+      endDate: (data['endDate'] as Timestamp).toDate(),
+      startTime: data['startTime'] as String,
+      endTime: data['endTime'] as String,
+      assemblyTime: data['assemblyTime'] as String,
+      location: data['location'] as String? ?? '',
+      requiresArmed: data['requiresArmed'] as bool? ?? false,
+      notes: data['notes'] as String? ?? '',
+      roleRequirements: Map<String, int>.from(data['roleRequirements'] as Map? ?? {}),
+      createdAt: (data['createdAt'] as Timestamp).toDate(),
+      updatedAt: (data['updatedAt'] as Timestamp).toDate(),
+    );
+  }
+
+  /// Convert to Firestore document
+  Map<String, dynamic> toFirestore() {
+    return {
+      'id': id,
+      'name': name,
+      'startDate': Timestamp.fromDate(startDate),
+      'endDate': Timestamp.fromDate(endDate),
+      'startTime': startTime,
+      'endTime': endTime,
+      'assemblyTime': assemblyTime,
+      'location': location,
+      'requiresArmed': requiresArmed,
+      'notes': notes,
+      'roleRequirements': roleRequirements,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': Timestamp.fromDate(updatedAt),
+    };
+  }
+
+  /// Convert from JSON
+  factory EventModel.fromJson(Map<String, dynamic> json) {
+    return EventModel(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      startDate: DateTime.parse(json['startDate'] as String),
+      endDate: DateTime.parse(json['endDate'] as String),
+      startTime: json['startTime'] as String,
+      endTime: json['endTime'] as String,
+      assemblyTime: json['assemblyTime'] as String,
+      location: json['location'] as String? ?? '',
+      requiresArmed: json['requiresArmed'] as bool? ?? false,
+      notes: json['notes'] as String? ?? '',
+      roleRequirements: Map<String, int>.from(json['roleRequirements'] as Map? ?? {}),
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+
+  /// Convert to JSON
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'startDate': startDate.toIso8601String(),
+      'endDate': endDate.toIso8601String(),
+      'startTime': startTime,
+      'endTime': endTime,
+      'assemblyTime': assemblyTime,
+      'location': location,
+      'requiresArmed': requiresArmed,
+      'notes': notes,
+      'roleRequirements': roleRequirements,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+    };
+  }
+}
