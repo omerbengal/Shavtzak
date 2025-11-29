@@ -13,7 +13,7 @@ class EventModel {
   final String assemblyTime;
   final String location;
   final bool requiresArmed;
-  final String notes;
+  final String comments;
   final Map<String, int> roleRequirements; // Stored as string keys in Firestore
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -28,7 +28,7 @@ class EventModel {
     required this.assemblyTime,
     required this.location,
     required this.requiresArmed,
-    required this.notes,
+    this.comments = '',
     required this.roleRequirements,
     required this.createdAt,
     required this.updatedAt,
@@ -46,7 +46,7 @@ class EventModel {
       assemblyTime: entity.assemblyTime,
       location: entity.location,
       requiresArmed: entity.requiresArmed,
-      notes: entity.notes,
+      comments: entity.comments,
       roleRequirements: Map.fromEntries(
         entity.roleRequirements.entries.map(
           (e) => MapEntry(e.key.key, e.value),
@@ -69,7 +69,7 @@ class EventModel {
       assemblyTime: assemblyTime,
       location: location,
       requiresArmed: requiresArmed,
-      notes: notes,
+      comments: comments,
       roleRequirements: Map.fromEntries(
         roleRequirements.entries.map(
           (e) => MapEntry(
@@ -97,7 +97,7 @@ class EventModel {
       assemblyTime: data['assemblyTime'] as String,
       location: data['location'] as String? ?? '',
       requiresArmed: data['requiresArmed'] as bool? ?? false,
-      notes: data['notes'] as String? ?? '',
+      comments: data['comments'] as String? ?? data['notes'] as String? ?? '',
       roleRequirements: Map<String, int>.from(data['roleRequirements'] as Map? ?? {}),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
@@ -116,7 +116,7 @@ class EventModel {
       'assemblyTime': assemblyTime,
       'location': location,
       'requiresArmed': requiresArmed,
-      'notes': notes,
+      'comments': comments,
       'roleRequirements': roleRequirements,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
@@ -135,7 +135,7 @@ class EventModel {
       assemblyTime: json['assemblyTime'] as String,
       location: json['location'] as String? ?? '',
       requiresArmed: json['requiresArmed'] as bool? ?? false,
-      notes: json['notes'] as String? ?? '',
+      comments: json['comments'] as String? ?? json['notes'] as String? ?? '',
       roleRequirements: Map<String, int>.from(json['roleRequirements'] as Map? ?? {}),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -154,7 +154,7 @@ class EventModel {
       'assemblyTime': assemblyTime,
       'location': location,
       'requiresArmed': requiresArmed,
-      'notes': notes,
+      'comments': comments,
       'roleRequirements': roleRequirements,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),

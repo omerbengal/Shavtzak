@@ -80,7 +80,7 @@ class MyApp extends StatelessWidget {
       child: MultiBlocProvider(
         providers: [
           BlocProvider(
-            create: (context) => TeamBloc(teamRepository),
+            create: (context) => TeamBloc(teamRepository, assignmentRepository),
           ),
           BlocProvider(
             create: (context) => EventBloc(eventRepository),

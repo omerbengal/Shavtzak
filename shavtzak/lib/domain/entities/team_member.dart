@@ -52,6 +52,7 @@ class TeamMember extends Equatable {
   final bool isActive;
   final List<DateConstraint> constraints; // When unavailable
   final Map<RoleType, bool> roleCapabilities; // Which roles can they perform
+  final String comments; // Comments about the team member
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -61,6 +62,7 @@ class TeamMember extends Equatable {
     required this.isActive,
     required this.constraints,
     required this.roleCapabilities,
+    this.comments = '',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -102,6 +104,7 @@ class TeamMember extends Equatable {
     bool? isActive,
     List<DateConstraint>? constraints,
     Map<RoleType, bool>? roleCapabilities,
+    String? comments,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -111,6 +114,7 @@ class TeamMember extends Equatable {
       isActive: isActive ?? this.isActive,
       constraints: constraints ?? this.constraints,
       roleCapabilities: roleCapabilities ?? this.roleCapabilities,
+      comments: comments ?? this.comments,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -123,6 +127,7 @@ class TeamMember extends Equatable {
         isActive,
         constraints,
         roleCapabilities,
+        comments,
         createdAt,
         updatedAt,
       ];

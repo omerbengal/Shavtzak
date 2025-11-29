@@ -375,8 +375,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
         const SizedBox(width: 8),
 
-        // "ניקוי" button - only show if slot is filled
-        if (slot.isFilled)
+        // "ניקוי" button - only show if slot is filled AND currentMember is valid
+        if (slot.isFilled && currentMember != null)
           SizedBox(
             width: 60,
             child: ElevatedButton(

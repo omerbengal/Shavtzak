@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../data/repositories/team_repository.dart';
+import '../../../data/repositories/assignment_repository.dart';
 import '../../../domain/entities/team_member.dart';
 import 'team_event.dart';
 import 'team_state.dart';
@@ -7,8 +8,9 @@ import 'team_state.dart';
 /// BLoC for managing team members
 class TeamBloc extends Bloc<TeamEvent, TeamState> {
   final TeamRepository _repository;
+  final AssignmentRepository _assignmentRepository;
 
-  TeamBloc(this._repository) : super(const TeamInitial()) {
+  TeamBloc(this._repository, this._assignmentRepository) : super(const TeamInitial()) {
     // Register event handlers - using emit.forEach for real-time updates
     on<LoadTeamMembers>(_onLoadTeamMembers);
     on<LoadActiveTeamMembers>(_onLoadActiveTeamMembers);
@@ -134,7 +136,38 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     emit(const TeamMemberOperating('updating'));
 
     try {
+      // Get the old member data to check for removed capabilities
+      final oldMember = await _repository.getTeamMemberById(event.member.id);
+
+      // Update the team member
       await _repository.updateTeamMember(event.member);
+
+      // Check if any role capabilities were removed
+      if (oldMember != null) {
+        final removedRoles = <String>[];
+
+        // Find roles that were removed (were true, now false or missing)
+        for (final entry in oldMember.roleCapabilities.entries) {
+          final oldValue = entry.value;
+          final newValue = event.member.roleCapabilities[entry.key] ?? false;
+
+          if (oldValue && !newValue) {
+            removedRoles.add(entry.key.name);
+          }
+        }
+
+        // Delete assignments for removed roles
+        if (removedRoles.isNotEmpty) {
+          final assignments = await _assignmentRepository.getAssignmentsByPerson(event.member.id);
+
+          for (final assignment in assignments) {
+            if (removedRoles.contains(assignment.roleType.name)) {
+              await _assignmentRepository.deleteAssignment(assignment.id);
+            }
+          }
+        }
+      }
+
       emit(const TeamMemberOperationSuccess('פרטי חבר/ת הצוות עודכנו בהצלחה'));
       // Restart real-time listener
       add(const LoadTeamMembers());

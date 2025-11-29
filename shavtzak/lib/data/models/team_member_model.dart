@@ -9,6 +9,7 @@ class TeamMemberModel {
   final bool isActive;
   final List<DateConstraintModel> constraints;
   final Map<String, bool> roleCapabilities; // Stored as string keys in Firestore
+  final String comments;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -18,6 +19,7 @@ class TeamMemberModel {
     required this.isActive,
     required this.constraints,
     required this.roleCapabilities,
+    this.comments = '',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -36,6 +38,7 @@ class TeamMemberModel {
           (e) => MapEntry(e.key.key, e.value),
         ),
       ),
+      comments: entity.comments,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     );
@@ -53,6 +56,7 @@ class TeamMemberModel {
           (e) => MapEntry(RoleType.values.firstWhere((r) => r.key == e.key), e.value),
         ),
       ),
+      comments: comments,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );
@@ -71,6 +75,7 @@ class TeamMemberModel {
               .toList() ??
           [],
       roleCapabilities: Map<String, bool>.from(data['roleCapabilities'] as Map? ?? {}),
+      comments: data['comments'] as String? ?? '',
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
     );
@@ -84,6 +89,7 @@ class TeamMemberModel {
       'isActive': isActive,
       'constraints': constraints.map((c) => c.toJson()).toList(),
       'roleCapabilities': roleCapabilities,
+      'comments': comments,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
@@ -100,6 +106,7 @@ class TeamMemberModel {
               .toList() ??
           [],
       roleCapabilities: Map<String, bool>.from(json['roleCapabilities'] as Map? ?? {}),
+      comments: json['comments'] as String? ?? '',
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
@@ -113,6 +120,7 @@ class TeamMemberModel {
       'isActive': isActive,
       'constraints': constraints.map((c) => c.toJson()).toList(),
       'roleCapabilities': roleCapabilities,
+      'comments': comments,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };

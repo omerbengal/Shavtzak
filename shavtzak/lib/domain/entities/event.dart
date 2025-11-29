@@ -12,7 +12,7 @@ class Event extends Equatable {
   final String assemblyTime; // Format: "HH:mm"
   final String location;
   final bool requiresArmed;
-  final String notes;
+  final String comments; // Comments about the event
   final Map<RoleType, int> roleRequirements; // How many people needed per role
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -27,7 +27,7 @@ class Event extends Equatable {
     required this.assemblyTime,
     required this.location,
     required this.requiresArmed,
-    required this.notes,
+    this.comments = '',
     required this.roleRequirements,
     required this.createdAt,
     required this.updatedAt,
@@ -107,7 +107,7 @@ class Event extends Equatable {
     String? assemblyTime,
     String? location,
     bool? requiresArmed,
-    String? notes,
+    String? comments,
     Map<RoleType, int>? roleRequirements,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -122,7 +122,7 @@ class Event extends Equatable {
       assemblyTime: assemblyTime ?? this.assemblyTime,
       location: location ?? this.location,
       requiresArmed: requiresArmed ?? this.requiresArmed,
-      notes: notes ?? this.notes,
+      comments: comments ?? this.comments,
       roleRequirements: roleRequirements ?? this.roleRequirements,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -140,7 +140,7 @@ class Event extends Equatable {
         assemblyTime,
         location,
         requiresArmed,
-        notes,
+        comments,
         roleRequirements,
         createdAt,
         updatedAt,
