@@ -9,6 +9,7 @@ import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import 'models/assignment_slot.dart';
+import '../../widgets/navigation_menu.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -35,6 +36,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
+          leading: const NavigationMenu(),
           title: const Text('שיבוצים'),
           actions: [
             // Toggle for filled/unfilled

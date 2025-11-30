@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
+import '../../widgets/navigation_menu.dart';
 
 class TeamListScreen extends StatefulWidget {
   const TeamListScreen({super.key});
@@ -48,6 +49,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
+          leading: const NavigationMenu(),
           title: _showSearch
               ? TextField(
                   controller: _searchController,

@@ -7,6 +7,7 @@ import '../../../domain/entities/event.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
+import '../../widgets/navigation_menu.dart';
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -45,6 +46,7 @@ class _EventListScreenState extends State<EventListScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
+          leading: const NavigationMenu(),
           title: _showSearch
               ? TextField(
                   controller: _searchController,
