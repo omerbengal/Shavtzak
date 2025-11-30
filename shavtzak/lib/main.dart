@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'firebase_options.dart';
 
 // Data layer
@@ -15,15 +16,18 @@ import 'core/utils/device_id.dart';
 import 'presentation/bloc/team/team_bloc.dart';
 import 'presentation/bloc/event/event_bloc.dart';
 import 'presentation/bloc/assignment/assignment_bloc.dart';
-import 'presentation/screens/team/team_list_screen.dart';
-import 'presentation/screens/event/event_list_screen.dart';
-import 'presentation/screens/assignment/assignment_list_screen.dart';
+
+// Router
+import 'core/router/app_router.dart';
 
 // Theme
 import 'core/theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Use path-based URLs instead of hash-based URLs
+  usePathUrlStrategy();
 
   // Initialize Firebase
   await Firebase.initializeApp(
@@ -93,134 +97,11 @@ class MyApp extends StatelessWidget {
             ),
           ),
         ],
-        child: MaterialApp(
+        child: MaterialApp.router(
           title: 'שבצק - ניהול צוות',
           theme: AppTheme.lightTheme,
           debugShowCheckedModeBanner: false,
-          home: const HomeScreen(),
-        ),
-      ),
-    );
-  }
-}
-
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('שבצק - ניהול צוות ואירועים'),
-          centerTitle: true,
-        ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text(
-                  'ברוכים הבאים לשבצק',
-                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'מערכת ניהול צוות ושיבוצים לאירועים',
-                  style: TextStyle(fontSize: 18, color: Colors.grey),
-                ),
-                const SizedBox(height: 48),
-                SizedBox(
-                  width: 300,
-                  height: 120,
-                  child: Card(
-                    elevation: 4,
-                    child: InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const TeamListScreen(),
-                          ),
-                        );
-                      },
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.people, size: 48, color: Colors.blue),
-                          SizedBox(height: 8),
-                          Text(
-                            'צוות',
-                            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: 300,
-                  height: 120,
-                  child: Card(
-                    elevation: 4,
-                    child: InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const EventListScreen(),
-                          ),
-                        );
-                      },
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.event, size: 48, color: Colors.green),
-                          SizedBox(height: 8),
-                          Text(
-                            'אירועים',
-                            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: 300,
-                  height: 120,
-                  child: Card(
-                    elevation: 4,
-                    child: InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const AssignmentListScreen(),
-                          ),
-                        );
-                      },
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.assignment, size: 48, color: Colors.purple),
-                          SizedBox(height: 8),
-                          Text(
-                            'שיבוצים',
-                            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          routerConfig: AppRouter.router,
         ),
       ),
     );

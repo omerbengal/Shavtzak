@@ -155,36 +155,60 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   Widget _buildEventCard(Event event) {
+    // Check if start and end dates are the same
+    final isSameDate = event.startDate.year == event.endDate.year &&
+        event.startDate.month == event.endDate.month &&
+        event.startDate.day == event.endDate.day;
+
     return Card(
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Colors.blue,
-          child: Text(event.name.isNotEmpty ? event.name[0] : '?', style: const TextStyle(color: Colors.white)),
-        ),
-        title: Text(event.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text(_formatDate(event.startDate), style: const TextStyle(fontSize: 12)),
-            Text(event.location, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            if (event.comments.isNotEmpty)
-              Text(
-                event.comments,
-                style: const TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-          ],
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete, color: Colors.red),
-          onPressed: () {
-            _showDeleteConfirmation(event);
-          },
-          tooltip: 'מחק',
-        ),
+      child: InkWell(
         onTap: () => _showEventFormModal(event),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header row with avatar and name
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: Colors.blue,
+                    child: Text(event.name.isNotEmpty ? event.name[0] : '?', style: const TextStyle(color: Colors.white)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(event.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // All fields in a single Wrap for horizontal flow
+              Wrap(
+                spacing: 16,
+                runSpacing: 4,
+                children: [
+                  // Date field(s) - smart logic
+                  if (isSameDate)
+                    _buildFieldItem('תאריך', _formatDate(event.startDate))
+                  else ...[
+                    _buildFieldItem('תאריך התחלה', _formatDate(event.startDate)),
+                    _buildFieldItem('תאריך סיום', _formatDate(event.endDate)),
+                  ],
+                  _buildFieldItem('מיקום', event.location),
+                  // Time fields
+                  _buildFieldItem('שעת התייצבות', event.assemblyTime.isEmpty ? '-' : event.assemblyTime),
+                  _buildFieldItem('שעת התחלה', event.startTime.isEmpty ? '-' : event.startTime),
+                  _buildFieldItem('שעת סיום', event.endTime.isEmpty ? '-' : event.endTime),
+                ],
+              ),
+              // Comments (if not empty)
+              if (event.comments.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                _buildFieldItem('הערות', event.comments),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -230,6 +254,27 @@ class _EventListScreenState extends State<EventListScreen> {
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  Widget _buildFieldItem(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 12, color: Colors.black87),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildEmptyState(String message) {
@@ -413,18 +458,27 @@ class _EventFormModalState extends State<_EventFormModal> {
         }
       },
       child: DraggableScrollableSheet(
-        initialChildSize: 0.7,
+        initialChildSize: 0.85,
         minChildSize: 0.5,
         maxChildSize: 0.95,
         expand: false,
         builder: (context, scrollController) {
           return Directionality(
             textDirection: TextDirection.rtl,
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final maxWidth = constraints.maxWidth;
+                final horizontalPadding = maxWidth > 1000
+                  ? (maxWidth - 1000) / 2
+                  : 0.0;
+
+                return Padding(
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
               child: Column(
                 children: [
                   // Modal Header
@@ -446,6 +500,39 @@ class _EventFormModalState extends State<_EventFormModal> {
                             ),
                           ),
                         ),
+                        if (_isEditMode)
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                builder: (dialogContext) => Directionality(
+                                  textDirection: TextDirection.rtl,
+                                  child: AlertDialog(
+                                    title: const Text('מחיקת אירוע'),
+                                    content: Text(
+                                      'האם אתה בטוח שברצונך למחוק את ${widget.event!.name}?\nפעולה זו תמחק גם את כל השיבוצים.',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        child: const Text('ביטול'),
+                                        onPressed: () => Navigator.pop(dialogContext),
+                                      ),
+                                      TextButton(
+                                        child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                                        onPressed: () {
+                                          context.read<EventBloc>().add(DeleteEvent(widget.event!.id));
+                                          Navigator.pop(dialogContext); // Close dialog
+                                          Navigator.pop(context); // Close modal
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                            tooltip: 'מחק',
+                          ),
                         IconButton(
                           icon: const Icon(Icons.close),
                           onPressed: _handleClose,
@@ -671,6 +758,7 @@ class _EventFormModalState extends State<_EventFormModal> {
                                   prefixIcon: Icon(Icons.comment),
                                   border: OutlineInputBorder(),
                                 ),
+                                minLines: 1,
                                 maxLines: 3,
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
@@ -711,6 +799,9 @@ class _EventFormModalState extends State<_EventFormModal> {
                   ),
                 ],
               ),
+                  ),
+                );
+              },
             ),
           );
         },

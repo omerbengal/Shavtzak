@@ -198,13 +198,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     DeactivateTeamMember event,
     Emitter<TeamState> emit,
   ) async {
-    emit(const TeamMemberOperating('deactivating'));
-
     try {
+      // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.deactivateTeamMember(event.id);
-      emit(const TeamMemberOperationSuccess('חבר/ת הצוות הוסר/ה מרשימת הפעילים'));
-      // Restart real-time listener
-      add(const LoadTeamMembers());
+      // The real-time listener will automatically update the UI
+      // Optionally show a success snackbar without emitting a state that rebuilds the list
     } catch (e) {
       emit(TeamError('שגיאה בהסרת חבר/ת הצוות: $e'));
     }
@@ -215,13 +213,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     ReactivateTeamMember event,
     Emitter<TeamState> emit,
   ) async {
-    emit(const TeamMemberOperating('reactivating'));
-
     try {
+      // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.reactivateTeamMember(event.id);
-      emit(const TeamMemberOperationSuccess('חבר/ת הצוות הופעל/ה מחדש'));
-      // Restart real-time listener
-      add(const LoadTeamMembers());
+      // The real-time listener will automatically update the UI
+      // Optionally show a success snackbar without emitting a state that rebuilds the list
     } catch (e) {
       emit(TeamError('שגיאה בהפעלת חבר/ת הצוות: $e'));
     }

@@ -49,6 +49,9 @@ dependencies:
   device_info_plus: ^9.1.0
   shared_preferences: ^2.2.2
 
+  # Navigation
+  go_router: ^14.6.2
+
   # Data Import
   excel: ^4.0.0
 

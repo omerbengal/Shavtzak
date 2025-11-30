@@ -74,24 +74,30 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 });
               },
             ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('הצג פעילים בלבד'),
-                Switch(
-                  value: _showActiveOnly,
-                  onChanged: (value) {
-                    setState(() {
-                      _showActiveOnly = value;
-                    });
-                    if (value) {
-                      context.read<TeamBloc>().add(const LoadActiveTeamMembers());
-                    } else {
-                      context.read<TeamBloc>().add(const LoadTeamMembers());
-                    }
-                  },
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: OutlinedButton(
+                onPressed: () {
+                  setState(() {
+                    _showActiveOnly = !_showActiveOnly;
+                  });
+                  if (_showActiveOnly) {
+                    context.read<TeamBloc>().add(const LoadActiveTeamMembers());
+                  } else {
+                    context.read<TeamBloc>().add(const LoadTeamMembers());
+                  }
+                },
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: _showActiveOnly ? Colors.green : Colors.white,
+                  foregroundColor: _showActiveOnly ? Colors.white : Colors.black,
+                  side: BorderSide(
+                    color: _showActiveOnly ? Colors.green : Colors.grey,
+                    width: 1.5,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 ),
-              ],
+                child: const Text('הצג פעילים בלבד'),
+              ),
             ),
           ],
         ),
@@ -210,74 +216,79 @@ class _TeamListScreenState extends State<TeamListScreen> {
         member.roleCapabilities.values.where((v) => v == true).length;
 
     return Card(
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: member.isActive ? Colors.green : Colors.grey,
-          child: Text(
-            member.name.isNotEmpty ? member.name[0] : '?',
-            style: const TextStyle(color: Colors.white),
-          ),
-        ),
-        title: Text(
-          member.name,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: member.isActive ? Colors.black : Colors.grey,
-          ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text(
-              '$activeRoles תפקידים',
-              style: const TextStyle(fontSize: 12),
-            ),
-            if (member.constraints.isNotEmpty)
-              Text(
-                '${member.constraints.length} מגבלות',
-                style: const TextStyle(fontSize: 12, color: Colors.orange),
-              ),
-            if (member.comments.isNotEmpty)
-              Text(
-                member.comments,
-                style: const TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Activate/Deactivate button
-            IconButton(
-              icon: Icon(
-                member.isActive ? Icons.check_circle : Icons.cancel,
-                color: member.isActive ? Colors.green : Colors.grey,
-              ),
-              onPressed: () {
-                if (member.isActive) {
-                  context.read<TeamBloc>().add(DeactivateTeamMember(member.id));
-                } else {
-                  context.read<TeamBloc>().add(ReactivateTeamMember(member.id));
-                }
-              },
-              tooltip: member.isActive ? 'השבת' : 'הפעל',
-            ),
-            // Delete button
-            IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () {
-                _showDeleteConfirmation(member);
-              },
-              tooltip: 'מחק',
-            ),
-          ],
-        ),
+      child: InkWell(
         onTap: () {
           _showTeamMemberFormModal(member);
         },
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header row with avatar, name, and activate/deactivate button
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: member.isActive ? Colors.green : Colors.grey,
+                    child: Text(
+                      member.name.isNotEmpty ? member.name[0] : '?',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      member.name,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        color: member.isActive ? Colors.black : Colors.grey,
+                      ),
+                    ),
+                  ),
+                  // Activate/Deactivate button
+                  IconButton(
+                    icon: Icon(
+                      member.isActive ? Icons.check_circle : Icons.cancel,
+                      color: member.isActive ? Colors.green : Colors.grey,
+                    ),
+                    onPressed: () {
+                      if (member.isActive) {
+                        context.read<TeamBloc>().add(DeactivateTeamMember(member.id));
+                      } else {
+                        context.read<TeamBloc>().add(ReactivateTeamMember(member.id));
+                      }
+                    },
+                    tooltip: member.isActive ? 'השבת' : 'הפעל',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Info row
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$activeRoles תפקידים',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  if (member.constraints.isNotEmpty)
+                    Text(
+                      '${member.constraints.length} מגבלות',
+                      style: const TextStyle(fontSize: 12, color: Colors.orange),
+                    ),
+                  if (member.comments.isNotEmpty)
+                    Text(
+                      member.comments,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -518,18 +529,27 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         }
       },
       child: DraggableScrollableSheet(
-        initialChildSize: 0.7,
+        initialChildSize: 0.85,
         minChildSize: 0.5,
         maxChildSize: 0.95,
         expand: false,
         builder: (context, scrollController) {
           return Directionality(
             textDirection: TextDirection.rtl,
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final maxWidth = constraints.maxWidth;
+                final horizontalPadding = maxWidth > 1000
+                  ? (maxWidth - 1000) / 2
+                  : 0.0;
+
+                return Padding(
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
               child: Column(
                 children: [
                   // Modal Header
@@ -551,6 +571,39 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                             ),
                           ),
                         ),
+                        if (_isEditMode)
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                builder: (dialogContext) => Directionality(
+                                  textDirection: TextDirection.rtl,
+                                  child: AlertDialog(
+                                    title: const Text('מחיקת חבר צוות'),
+                                    content: Text(
+                                      'האם אתה בטוח שברצונך למחוק את ${widget.member!.name}?\nפעולה זו תמחק גם את כל השיבוצים שלו.',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        child: const Text('ביטול'),
+                                        onPressed: () => Navigator.pop(dialogContext),
+                                      ),
+                                      TextButton(
+                                        child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                                        onPressed: () {
+                                          context.read<TeamBloc>().add(DeleteTeamMember(widget.member!.id));
+                                          Navigator.pop(dialogContext); // Close dialog
+                                          Navigator.pop(context); // Close modal
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                            tooltip: 'מחק',
+                          ),
                         IconButton(
                           icon: const Icon(Icons.close),
                           onPressed: _handleClose,
@@ -605,6 +658,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                   prefixIcon: Icon(Icons.comment),
                                   border: OutlineInputBorder(),
                                 ),
+                                minLines: 1,
                                 maxLines: 3,
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
@@ -759,6 +813,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                   ),
                 ],
               ),
+                  ),
+                );
+              },
             ),
           );
         },

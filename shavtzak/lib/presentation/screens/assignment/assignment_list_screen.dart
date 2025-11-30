@@ -40,17 +40,20 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             // Toggle for filled/unfilled
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  const Text('הצג רק לא משובצים'),
-                  const SizedBox(width: 8),
-                  Switch(
-                    value: _showOnlyUnfilled,
-                    onChanged: (value) {
-                      setState(() => _showOnlyUnfilled = value);
-                    },
+              child: OutlinedButton(
+                onPressed: () {
+                  setState(() => _showOnlyUnfilled = !_showOnlyUnfilled);
+                },
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: _showOnlyUnfilled ? Colors.green : Colors.white,
+                  foregroundColor: _showOnlyUnfilled ? Colors.white : Colors.black,
+                  side: BorderSide(
+                    color: _showOnlyUnfilled ? Colors.green : Colors.grey,
+                    width: 1.5,
                   ),
-                ],
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+                child: const Text('הצג רק לא משובצים'),
               ),
             ),
           ],
