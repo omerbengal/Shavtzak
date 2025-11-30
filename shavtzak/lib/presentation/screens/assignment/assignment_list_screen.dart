@@ -63,27 +63,33 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         body: BlocConsumer<AssignmentBloc, AssignmentState>(
           listener: (context, state) {
             if (state is AssignmentError) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                    content: Text(state.message),
-                    backgroundColor: Colors.red),
-              );
+              ScaffoldMessenger.of(context)
+                ..clearSnackBars()
+                ..showSnackBar(
+                  SnackBar(
+                      content: Text(state.message),
+                      backgroundColor: Colors.red),
+                );
             } else if (state is AssignmentOperationSuccess) {
               // BLoC will automatically reload slots without showing loading
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                    content: Text(state.message),
-                    backgroundColor: Colors.green),
-              );
+              ScaffoldMessenger.of(context)
+                ..clearSnackBars()
+                ..showSnackBar(
+                  SnackBar(
+                      content: Text(state.message),
+                      backgroundColor: Colors.green),
+                );
             } else if (state is AssignmentConflictWarning) {
               // Show conflict warning to user
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('שיבוץ לא בוצע: ${state.conflicts.join(", ")}'),
-                  backgroundColor: Colors.orange,
-                  duration: const Duration(seconds: 5),
-                ),
-              );
+              ScaffoldMessenger.of(context)
+                ..clearSnackBars()
+                ..showSnackBar(
+                  SnackBar(
+                    content: Text('שיבוץ לא בוצע: ${state.conflicts.join(", ")}'),
+                    backgroundColor: Colors.orange,
+                    duration: const Duration(seconds: 5),
+                  ),
+                );
             }
           },
           builder: (context, state) {
@@ -143,7 +149,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return _buildEmptyState();
     }
 
-    return Column(
+    return RefreshIndicator(
+      onRefresh: () async {
+        context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+        await Future.delayed(const Duration(milliseconds: 500));
+      },
+      child: Column(
       children: [
         // Statistics bar
         Container(
@@ -171,14 +182,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               Expanded(
                   flex: 3,
                   child: Text('אירוע',
+                      textAlign: TextAlign.center,
                       style: TextStyle(fontWeight: FontWeight.bold))),
               Expanded(
                   flex: 2,
                   child: Text('תפקיד',
+                      textAlign: TextAlign.center,
                       style: TextStyle(fontWeight: FontWeight.bold))),
               Expanded(
                   flex: 3,
                   child: Text('שיבוץ',
+                      textAlign: TextAlign.center,
                       style: TextStyle(fontWeight: FontWeight.bold))),
             ],
           ),
@@ -194,6 +208,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ),
         ),
       ],
+      ),
     );
   }
 
@@ -210,15 +225,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           Expanded(
             flex: 3,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
                   slot.event.name,
                   style: const TextStyle(fontWeight: FontWeight.w600),
+                  textAlign: TextAlign.center,
                 ),
                 Text(
                   _formatDate(slot.event.startDate),
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -229,7 +246,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             flex: 2,
             child: Row(
               children: [
-                Expanded(child: Text(slot.roleType.hebrewName)),
+                Expanded(
+                  child: Text(
+                    slot.roleType.hebrewName,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
                 if (slot.hasDoubleAssignment)
                   Tooltip(
                     message: 'משובץ גם ל: ${slot.otherRoles.join(", ")}',
@@ -246,14 +268,19 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           // Assignment cell with dropdown and buttons
           Expanded(
             flex: 4,
-            child: _buildAssignmentCell(slot),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return _buildAssignmentCell(slot, constraints.maxWidth);
+              },
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildAssignmentCell(AssignmentSlot slot) {
+  Widget _buildAssignmentCell(AssignmentSlot slot, double availableWidth) {
+    final isMobile = availableWidth < 300; // Detect mobile/narrow screens
     // Find current assigned member in either list
     final currentMember = slot.availableMembers.firstWhereOrNull(
           (m) => m.id == slot.currentAssignment?.teamMemberId,
@@ -383,18 +410,27 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         // "ניקוי" button - only show if slot is filled AND currentMember is valid
         if (slot.isFilled && currentMember != null)
           SizedBox(
-            width: 60,
-            child: ElevatedButton(
-              onPressed: () => _handleClearAssignment(slot),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.shade100,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              ),
-              child: const Text(
-                'ניקוי',
-                style: TextStyle(fontSize: 12, color: Colors.red),
-              ),
-            ),
+            width: isMobile ? 40 : 60,
+            child: isMobile
+                ? IconButton(
+                    onPressed: () => _handleClearAssignment(slot),
+                    icon: const Icon(Icons.clear, size: 20),
+                    color: Colors.red,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    tooltip: 'ניקוי',
+                  )
+                : ElevatedButton(
+                    onPressed: () => _handleClearAssignment(slot),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade100,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    ),
+                    child: const Text(
+                      'ניקוי',
+                      style: TextStyle(fontSize: 12, color: Colors.red),
+                    ),
+                  ),
           ),
 
         // Removed: "שובצו כבר" button - now integrated in dropdown
@@ -404,6 +440,33 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   void _handleClearAssignment(AssignmentSlot slot) {
     if (slot.currentAssignment != null) {
+      // Optimistic update: clear the assignment in local state immediately
+      if (_lastSlotsState != null) {
+        final updatedSlots = _lastSlotsState!.slots.map((s) {
+          if (s.event.id == slot.event.id &&
+              s.roleType == slot.roleType &&
+              s.slotIndex == slot.slotIndex) {
+            // This is the slot being cleared
+            return AssignmentSlot(
+              event: s.event,
+              roleType: s.roleType,
+              slotIndex: s.slotIndex,
+              currentAssignment: null, // Clear the assignment
+              availableMembers: s.availableMembers,
+              alreadyAssignedMembers: s.alreadyAssignedMembers,
+              hasDoubleAssignment: false,
+              otherRoles: const [],
+            );
+          }
+          return s;
+        }).toList();
+
+        setState(() {
+          _lastSlotsState = AssignmentSlotsLoaded(updatedSlots);
+        });
+      }
+
+      // Then proceed with actual database deletion
       context.read<AssignmentBloc>().add(
             DeleteAssignment(slot.currentAssignment!.id),
           );
@@ -510,7 +573,66 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   Future<void> _handleAssignmentChange(
       AssignmentSlot slot, TeamMember selectedMember) async {
-    // Proceed with assignment directly (no confirmation needed here)
+    // Optimistic update: update local state immediately
+    if (_lastSlotsState != null) {
+      final updatedSlots = _lastSlotsState!.slots.map((s) {
+        if (s.event.id == slot.event.id &&
+            s.roleType == slot.roleType &&
+            s.slotIndex == slot.slotIndex) {
+          // This is the slot being updated
+          if (slot.currentAssignment != null) {
+            // Update existing assignment
+            final updatedAssignment = slot.currentAssignment!.copyWith(
+              teamMemberId: selectedMember.id,
+              teamMember: selectedMember,
+              updatedAt: DateTime.now(),
+            );
+            return AssignmentSlot(
+              event: s.event,
+              roleType: s.roleType,
+              slotIndex: s.slotIndex,
+              currentAssignment: updatedAssignment,
+              availableMembers: s.availableMembers,
+              alreadyAssignedMembers: s.alreadyAssignedMembers,
+              hasDoubleAssignment: s.hasDoubleAssignment,
+              otherRoles: s.otherRoles,
+            );
+          } else {
+            // Create new assignment
+            final newAssignment = Assignment(
+              id: const Uuid().v4(),
+              eventId: slot.event.id,
+              teamMemberId: selectedMember.id,
+              roleType: slot.roleType,
+              slotIndex: slot.slotIndex,
+              status: AssignmentStatus.confirmed,
+              notes: '',
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+              event: slot.event,
+              teamMember: selectedMember,
+            );
+            return AssignmentSlot(
+              event: s.event,
+              roleType: s.roleType,
+              slotIndex: s.slotIndex,
+              currentAssignment: newAssignment,
+              availableMembers: s.availableMembers,
+              alreadyAssignedMembers: s.alreadyAssignedMembers,
+              hasDoubleAssignment: s.hasDoubleAssignment,
+              otherRoles: s.otherRoles,
+            );
+          }
+        }
+        return s;
+      }).toList();
+
+      setState(() {
+        _lastSlotsState = AssignmentSlotsLoaded(updatedSlots);
+      });
+    }
+
+    // Then proceed with actual database update
     if (slot.currentAssignment != null) {
       // Update existing
       final updated = slot.currentAssignment!.copyWith(
@@ -525,7 +647,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         eventId: slot.event.id,
         teamMemberId: selectedMember.id,
         roleType: slot.roleType,
-        slotIndex: slot.slotIndex, // Explicitly store which slot this is for
+        slotIndex: slot.slotIndex,
         status: AssignmentStatus.confirmed,
         notes: '',
         createdAt: DateTime.now(),

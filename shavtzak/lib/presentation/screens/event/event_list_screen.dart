@@ -8,6 +8,7 @@ import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
 import '../../widgets/navigation_menu.dart';
+import '../../widgets/date_picker_dialog.dart';
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -78,13 +79,17 @@ class _EventListScreenState extends State<EventListScreen> {
         body: BlocConsumer<EventBloc, EventState>(
           listener: (context, state) {
             if (state is EventError) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(state.message), backgroundColor: Colors.red),
-              );
+              ScaffoldMessenger.of(context)
+                ..clearSnackBars()
+                ..showSnackBar(
+                  SnackBar(content: Text(state.message), backgroundColor: Colors.red),
+                );
             } else if (state is EventOperationSuccess) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(state.message), backgroundColor: Colors.green),
-              );
+              ScaffoldMessenger.of(context)
+                ..clearSnackBars()
+                ..showSnackBar(
+                  SnackBar(content: Text(state.message), backgroundColor: Colors.green),
+                );
             }
           },
           builder: (context, state) {
@@ -196,7 +201,7 @@ class _EventListScreenState extends State<EventListScreen> {
                     _buildFieldItem('תאריך התחלה', _formatDate(event.startDate)),
                     _buildFieldItem('תאריך סיום', _formatDate(event.endDate)),
                   ],
-                  _buildFieldItem('מיקום', event.location),
+                  _buildFieldItem('מיקום', event.location.isEmpty ? '-' : event.location),
                   // Time fields
                   _buildFieldItem('שעת התייצבות', event.assemblyTime.isEmpty ? '-' : event.assemblyTime),
                   _buildFieldItem('שעת התחלה', event.startTime.isEmpty ? '-' : event.startTime),
@@ -353,6 +358,9 @@ class _EventFormModalState extends State<_EventFormModal> {
   bool _requiresArmed = false;
   Map<RoleType, int> _roleRequirements = {};
   bool _isDirty = false;
+  bool _validateName = false; // Enable name validation after blur or submit
+  String? _dateError; // Track date validation error
+  final _nameFocusNode = FocusNode(); // For name field blur detection
 
   bool get _isEditMode => widget.event != null;
 
@@ -378,6 +386,15 @@ class _EventFormModalState extends State<_EventFormModal> {
     _nameController.addListener(() => _isDirty = true);
     _locationController.addListener(() => _isDirty = true);
     _commentsController.addListener(() => _isDirty = true);
+
+    // Enable validation when name field loses focus
+    _nameFocusNode.addListener(() {
+      if (!_nameFocusNode.hasFocus && _nameController.text.isNotEmpty) {
+        setState(() {
+          _validateName = true;
+        });
+      }
+    });
   }
 
   @override
@@ -388,17 +405,22 @@ class _EventFormModalState extends State<_EventFormModal> {
     _startTimeController.dispose();
     _endTimeController.dispose();
     _assemblyTimeController.dispose();
+    _nameFocusNode.dispose();
     super.dispose();
   }
 
   void _saveEvent() {
+    // Enable validation for all fields after first submit attempt
+    setState(() {
+      _validateName = true;
+      // Validate date field
+      _dateError = _startDate == null ? 'יש לבחור תאריך התחלה' : null;
+    });
+
     if (!_formKey.currentState!.validate()) {
       return;
     }
     if (_startDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('יש לבחור תאריך התחלה'), backgroundColor: Colors.orange),
-      );
       return;
     }
 
@@ -462,10 +484,6 @@ class _EventFormModalState extends State<_EventFormModal> {
       listener: (context, state) {
         if (state is EventOperationSuccess) {
           widget.onSuccess();
-        } else if (state is EventError) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(state.message), backgroundColor: Colors.red),
-          );
         }
       },
       child: DraggableScrollableSheet(
@@ -490,7 +508,7 @@ class _EventFormModalState extends State<_EventFormModal> {
                       color: Colors.white,
                       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                     ),
-              child: Column(
+                    child: Column(
                 children: [
                   // Modal Header
                   Container(
@@ -562,7 +580,6 @@ class _EventFormModalState extends State<_EventFormModal> {
 
                         return Form(
                           key: _formKey,
-                          autovalidateMode: AutovalidateMode.onUserInteraction,
                           child: ListView(
                             controller: scrollController,
                             padding: EdgeInsets.only(
@@ -576,12 +593,16 @@ class _EventFormModalState extends State<_EventFormModal> {
                               // Name field
                               TextFormField(
                                 controller: _nameController,
+                                focusNode: _nameFocusNode,
                                 decoration: const InputDecoration(
                                   labelText: 'שם האירוע',
                                   hintText: 'לדוגמה: חתונת כהן',
                                   prefixIcon: Icon(Icons.event),
                                   border: OutlineInputBorder(),
                                 ),
+                                autovalidateMode: _validateName
+                                    ? AutovalidateMode.onUserInteraction
+                                    : AutovalidateMode.disabled,
                                 validator: Validators.validateName,
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
@@ -592,69 +613,135 @@ class _EventFormModalState extends State<_EventFormModal> {
                               TextFormField(
                                 controller: _locationController,
                                 decoration: const InputDecoration(
-                                  labelText: 'מיקום',
+                                  labelText: 'מיקום (אופציונלי)',
                                   hintText: 'לדוגמה: אולמי ורסאי',
                                   prefixIcon: Icon(Icons.location_on),
                                   border: OutlineInputBorder(),
                                 ),
-                                validator: (v) => v == null || v.trim().isEmpty ? 'שדה חובה' : null,
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               const SizedBox(height: 16),
 
-                              // Start Date
-                              ListTile(
-                                leading: const Icon(Icons.calendar_today),
-                                title: Text(_startDate == null
-                                    ? 'תאריך התחלה'
-                                    : 'תאריך התחלה: ${_formatDate(_startDate!)}'),
-                                trailing: const Icon(Icons.arrow_drop_down),
-                                onTap: () async {
-                                  final date = await showDatePicker(
-                                    context: context,
-                                    initialDate: _startDate ?? DateTime.now(),
-                                    firstDate: DateTime(2020),
-                                    lastDate: DateTime(2030),
-                                  );
-                                  if (date != null) {
-                                    setState(() {
-                                      _startDate = date;
-                                      _isDirty = true;
-                                    });
-                                  }
-                                },
-                              ),
+                              // Date Selection (Dual Calendar)
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: () async {
+                                      final result = await showDialog<Map<String, DateTime?>>(
+                                        context: context,
+                                        builder: (context) => DualCalendarDatePicker(
+                                          isSingleDate: false,
+                                          initialStartDate: _startDate,
+                                          initialEndDate: _endDate,
+                                          title: 'בחר תאריכי אירוע',
+                                        ),
+                                      );
 
-                              // End Date
-                              ListTile(
-                                leading: const Icon(Icons.calendar_today),
-                                title: Text(_endDate == null
-                                    ? 'תאריך סיום (אופציונלי)'
-                                    : 'תאריך סיום: ${_formatDate(_endDate!)}'),
-                                trailing: _endDate != null
-                                    ? IconButton(
-                                        icon: const Icon(Icons.clear),
-                                        onPressed: () => setState(() {
-                                          _endDate = null;
-                                          _isDirty = true;
-                                        }),
-                                      )
-                                    : const Icon(Icons.arrow_drop_down),
-                                onTap: () async {
-                                  final date = await showDatePicker(
-                                    context: context,
-                                    initialDate: _endDate ?? _startDate ?? DateTime.now(),
-                                    firstDate: _startDate ?? DateTime(2020),
-                                    lastDate: DateTime(2030),
-                                  );
-                                  if (date != null) {
-                                    setState(() {
-                                      _endDate = date;
-                                      _isDirty = true;
-                                    });
-                                  }
-                                },
+                                      if (result != null) {
+                                        final selectedStartDate = result['startDate'];
+                                        final selectedEndDate = result['endDate'];
+
+                                        // Check if only start date was selected
+                                        if (selectedStartDate != null && selectedEndDate == null) {
+                                          // Show confirmation dialog for single-day event
+                                          final confirmed = await showDialog<bool>(
+                                            context: context,
+                                            builder: (dialogContext) => Directionality(
+                                              textDirection: TextDirection.rtl,
+                                              child: AlertDialog(
+                                                title: const Text('אישור אירוע ליום בודד'),
+                                                content: Text(
+                                                  'האם זה אירוע ליום בודד (${_formatDate(selectedStartDate!)})?',
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    child: const Text('ביטול'),
+                                                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                                                  ),
+                                                  ElevatedButton(
+                                                    child: const Text('כן, אירוע ליום בודד'),
+                                                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+
+                                          if (confirmed == true) {
+                                            setState(() {
+                                              _startDate = selectedStartDate;
+                                              _endDate = null; // Single day event
+                                              _dateError = null;
+                                              _isDirty = true;
+                                            });
+                                          }
+                                        } else if (selectedStartDate != null && selectedEndDate != null) {
+                                          // Check if start and end dates are the same
+                                          final isSameDate = selectedStartDate.year == selectedEndDate.year &&
+                                              selectedStartDate.month == selectedEndDate.month &&
+                                              selectedStartDate.day == selectedEndDate.day;
+
+                                          setState(() {
+                                            _startDate = selectedStartDate;
+                                            // Automatically convert to single day if same date selected
+                                            _endDate = isSameDate ? null : selectedEndDate;
+                                            _dateError = null;
+                                            _isDirty = true;
+                                          });
+                                        }
+                                      }
+                                    },
+                                    icon: const Icon(Icons.calendar_month),
+                                    label: Text(
+                                      _startDate == null
+                                          ? 'בחר תאריכי אירוע'
+                                          : _endDate == null
+                                              ? 'מ-${_formatDate(_startDate!)}'
+                                              : '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}',
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.all(16),
+                                      alignment: Alignment.centerRight,
+                                      side: BorderSide(
+                                        color: _dateError != null ? Colors.red.shade700 : Colors.grey,
+                                        width: _dateError != null ? 2 : 1,
+                                      ),
+                                      backgroundColor: _dateError != null ? Colors.red.shade50 : null,
+                                    ),
+                                  ),
+                                  if (_dateError != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 16, top: 4, bottom: 8),
+                                      child: Text(
+                                        _dateError!,
+                                        style: TextStyle(
+                                          color: Colors.red.shade700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  if (_startDate != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: TextButton.icon(
+                                          onPressed: () => setState(() {
+                                            _startDate = null;
+                                            _endDate = null;
+                                            _isDirty = true;
+                                          }),
+                                          icon: const Icon(Icons.clear, size: 16),
+                                          label: const Text('נקה'),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: Colors.red,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
 
                               const SizedBox(height: 16),
@@ -771,6 +858,7 @@ class _EventFormModalState extends State<_EventFormModal> {
                                 ),
                                 minLines: 1,
                                 maxLines: 3,
+                                scrollPadding: const EdgeInsets.only(bottom: 200),
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
@@ -808,8 +896,8 @@ class _EventFormModalState extends State<_EventFormModal> {
                       ],
                     ),
                   ),
-                ],
-              ),
+                      ],
+                    ),
                   ),
                 );
               },

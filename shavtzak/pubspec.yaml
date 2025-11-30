@@ -55,6 +55,9 @@ dependencies:
   # Data Import
   excel: ^4.0.0
 
+  # Date Picker
+  calendar_date_picker2: ^1.1.7
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

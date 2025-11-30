@@ -25,7 +25,7 @@ class Event extends Equatable {
     required this.startTime,
     required this.endTime,
     required this.assemblyTime,
-    required this.location,
+    this.location = '',
     required this.requiresArmed,
     this.comments = '',
     required this.roleRequirements,

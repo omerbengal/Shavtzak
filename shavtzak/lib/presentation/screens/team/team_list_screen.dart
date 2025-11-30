@@ -9,6 +9,7 @@ import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
 import '../../widgets/navigation_menu.dart';
+import '../../widgets/date_picker_dialog.dart';
 
 class TeamListScreen extends StatefulWidget {
   const TeamListScreen({super.key});
@@ -106,19 +107,23 @@ class _TeamListScreenState extends State<TeamListScreen> {
         body: BlocConsumer<TeamBloc, TeamState>(
           listener: (context, state) {
             if (state is TeamError) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(state.message),
-                  backgroundColor: Colors.red,
-                ),
-              );
+              ScaffoldMessenger.of(context)
+                ..clearSnackBars()
+                ..showSnackBar(
+                  SnackBar(
+                    content: Text(state.message),
+                    backgroundColor: Colors.red,
+                  ),
+                );
             } else if (state is TeamMemberOperationSuccess) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(state.message),
-                  backgroundColor: Colors.green,
-                ),
-              );
+              ScaffoldMessenger.of(context)
+                ..clearSnackBars()
+                ..showSnackBar(
+                  SnackBar(
+                    content: Text(state.message),
+                    backgroundColor: Colors.green,
+                  ),
+                );
             }
           },
           builder: (context, state) {
@@ -426,6 +431,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   Map<RoleType, bool> _roleCapabilities = {};
   List<DateConstraint> _constraints = [];
   bool _isDirty = false;
+  String? _roleError; // Track role validation error
 
   bool get _isEditMode => widget.member != null;
 
@@ -466,12 +472,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
     // Validate at least one role is selected
     if (!_roleCapabilities.values.any((selected) => selected)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('יש לבחור לפחות תפקיד אחד'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      setState(() {
+        _roleError = 'יש לבחור לפחות תפקיד אחד';
+      });
       return;
     }
 
@@ -530,13 +533,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       listener: (context, state) {
         if (state is TeamMemberOperationSuccess) {
           widget.onSuccess();
-        } else if (state is TeamError) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(state.message),
-              backgroundColor: Colors.red,
-            ),
-          );
         }
       },
       child: DraggableScrollableSheet(
@@ -561,7 +557,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                       color: Colors.white,
                       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                     ),
-              child: Column(
+                    child: Column(
                 children: [
                   // Modal Header
                   Container(
@@ -671,6 +667,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                 ),
                                 minLines: 1,
                                 maxLines: 3,
+                                scrollPadding: const EdgeInsets.only(bottom: 200),
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
@@ -712,6 +709,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         for (final role in RoleType.values) {
                                           _roleCapabilities[role] = true;
                                         }
+                                        _roleError = null; // Clear error
                                         _isDirty = true;
                                       });
                                     },
@@ -733,20 +731,45 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
                               const SizedBox(height: 8),
 
+                              // Role validation error
+                              if (_roleError != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 16, bottom: 8),
+                                  child: Text(
+                                    _roleError!,
+                                    style: TextStyle(
+                                      color: Colors.red.shade700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+
                               // Role checkboxes
-                              ...RoleType.values.map((role) {
-                                return CheckboxListTile(
-                                  title: Text(role.hebrewName),
-                                  value: _roleCapabilities[role] ?? false,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _roleCapabilities[role] = value ?? false;
-                                      _isDirty = true;
-                                    });
-                                  },
-                                  controlAffinity: ListTileControlAffinity.leading,
-                                );
-                              }),
+                              Container(
+                                decoration: _roleError != null
+                                    ? BoxDecoration(
+                                        border: Border.all(color: Colors.red.shade700),
+                                        borderRadius: BorderRadius.circular(4),
+                                        color: Colors.red.shade50,
+                                      )
+                                    : null,
+                                child: Column(
+                                  children: RoleType.values.map((role) {
+                                    return CheckboxListTile(
+                                      title: Text(role.hebrewName),
+                                      value: _roleCapabilities[role] ?? false,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _roleCapabilities[role] = value ?? false;
+                                          _roleError = null; // Clear error when user interacts
+                                          _isDirty = true;
+                                        });
+                                      },
+                                      controlAffinity: ListTileControlAffinity.leading,
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
 
                               const Divider(height: 32),
 
@@ -822,8 +845,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                       ],
                     ),
                   ),
-                ],
-              ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -903,7 +926,6 @@ class _ConstraintDialog extends StatefulWidget {
 class _ConstraintDialogState extends State<_ConstraintDialog> {
   DateTime? _startDate;
   DateTime? _endDate;
-  bool _isSingleDay = true;
 
   @override
   void initState() {
@@ -911,8 +933,73 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
     if (widget.constraint != null) {
       _startDate = widget.constraint!.startDate;
       _endDate = widget.constraint!.endDate;
-      _isSingleDay = _endDate == null;
     }
+  }
+
+  Future<void> _pickDates() async {
+    final result = await showDialog<Map<String, DateTime?>>(
+      context: context,
+      builder: (context) => DualCalendarDatePicker(
+        isSingleDate: false,
+        initialStartDate: _startDate,
+        initialEndDate: _endDate,
+        title: 'בחר תאריכי מגבלה',
+      ),
+    );
+
+    if (result != null) {
+      final selectedStartDate = result['startDate'];
+      final selectedEndDate = result['endDate'];
+
+      // Check if only start date was selected
+      if (selectedStartDate != null && selectedEndDate == null) {
+        // Show confirmation dialog for single-day constraint
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: const Text('אישור מגבלה ליום בודד'),
+              content: Text(
+                'האם זו מגבלה ליום בודד (${_formatDate(selectedStartDate!)})?',
+              ),
+              actions: [
+                TextButton(
+                  child: const Text('ביטול'),
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                ),
+                ElevatedButton(
+                  child: const Text('כן, מגבלה ליום בודד'),
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                ),
+              ],
+            ),
+          ),
+        );
+
+        if (confirmed == true) {
+          setState(() {
+            _startDate = selectedStartDate;
+            _endDate = null; // Single day constraint
+          });
+        }
+      } else if (selectedStartDate != null && selectedEndDate != null) {
+        // Check if start and end dates are the same
+        final isSameDate = selectedStartDate.year == selectedEndDate.year &&
+            selectedStartDate.month == selectedEndDate.month &&
+            selectedStartDate.day == selectedEndDate.day;
+
+        setState(() {
+          _startDate = selectedStartDate;
+          // Automatically convert to single day if same date selected
+          _endDate = isSameDate ? null : selectedEndDate;
+        });
+      }
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
   @override
@@ -923,66 +1010,39 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
         title: Text(widget.constraint == null ? 'הוספת מגבלה' : 'עריכת מגבלה'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Single day or range toggle
-            SwitchListTile(
-              title: const Text('יום בודד'),
-              value: _isSingleDay,
-              onChanged: (value) {
-                setState(() {
-                  _isSingleDay = value;
-                  if (value) {
+            // Date selection button
+            OutlinedButton.icon(
+              onPressed: _pickDates,
+              icon: const Icon(Icons.calendar_month),
+              label: Text(
+                _startDate == null
+                    ? 'בחר תאריכים'
+                    : _endDate != null
+                        ? '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}'
+                        : _formatDate(_startDate!),
+              ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.all(16),
+                alignment: Alignment.centerRight,
+              ),
+            ),
+
+            if (_startDate != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: TextButton.icon(
+                  onPressed: () => setState(() {
+                    _startDate = null;
                     _endDate = null;
-                  }
-                });
-              },
-            ),
-
-            const SizedBox(height: 16),
-
-            // Start date picker
-            ListTile(
-              leading: const Icon(Icons.calendar_today),
-              title: Text(_startDate == null
-                  ? (_isSingleDay ? 'בחר תאריך' : 'בחר תאריך התחלה')
-                  : (_isSingleDay
-                      ? 'תאריך: ${_formatDate(_startDate!)}'
-                      : 'תאריך התחלה: ${_formatDate(_startDate!)}')),
-              onTap: () async {
-                final date = await showDatePicker(
-                  context: context,
-                  initialDate: _startDate ?? DateTime.now(),
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime(2030),
-                );
-                if (date != null) {
-                  setState(() {
-                    _startDate = date;
-                  });
-                }
-              },
-            ),
-
-            // End date picker (if not single day)
-            if (!_isSingleDay)
-              ListTile(
-                leading: const Icon(Icons.calendar_today),
-                title: Text(_endDate == null
-                    ? 'בחר תאריך סיום'
-                    : 'תאריך סיום: ${_formatDate(_endDate!)}'),
-                onTap: () async {
-                  final date = await showDatePicker(
-                    context: context,
-                    initialDate: _endDate ?? _startDate ?? DateTime.now(),
-                    firstDate: _startDate ?? DateTime(2020),
-                    lastDate: DateTime(2030),
-                  );
-                  if (date != null) {
-                    setState(() {
-                      _endDate = date;
-                    });
-                  }
-                },
+                  }),
+                  icon: const Icon(Icons.clear, size: 16),
+                  label: const Text('נקה'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.red,
+                  ),
+                ),
               ),
           ],
         ),
@@ -995,20 +1055,11 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
             onPressed: _startDate == null
                 ? null
                 : () {
-                    if (!_isSingleDay && _endDate == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('יש לבחור תאריך סיום'),
-                        ),
-                      );
-                      return;
-                    }
-
                     Navigator.pop(
                       context,
                       DateConstraint(
                         startDate: _startDate!,
-                        endDate: _isSingleDay ? null : _endDate,
+                        endDate: _endDate,
                       ),
                     );
                   },
@@ -1017,9 +1068,5 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
         ],
       ),
     );
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 }

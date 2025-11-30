@@ -38,6 +38,9 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
   TeamMember? _selectedTeamMember;
   RoleType? _selectedRole;
   AssignmentStatus _status = AssignmentStatus.pending;
+  String? _eventError;
+  String? _memberError;
+  String? _roleError;
 
   bool get _isEditMode => widget.assignment != null;
 
@@ -73,24 +76,13 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
       return;
     }
 
-    if (_selectedEvent == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('יש לבחור אירוע'), backgroundColor: Colors.orange),
-      );
-      return;
-    }
+    setState(() {
+      _eventError = _selectedEvent == null ? 'יש לבחור אירוע' : null;
+      _memberError = _selectedTeamMember == null ? 'יש לבחור חבר צוות' : null;
+      _roleError = _selectedRole == null ? 'יש לבחור תפקיד' : null;
+    });
 
-    if (_selectedTeamMember == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('יש לבחור חבר צוות'), backgroundColor: Colors.orange),
-      );
-      return;
-    }
-
-    if (_selectedRole == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('יש לבחור תפקיד'), backgroundColor: Colors.orange),
-      );
+    if (_selectedEvent == null || _selectedTeamMember == null || _selectedRole == null) {
       return;
     }
 
@@ -128,10 +120,6 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
       listener: (context, state) {
         if (state is AssignmentOperationSuccess) {
           Navigator.pop(context);
-        } else if (state is AssignmentError) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(state.message), backgroundColor: Colors.red),
-          );
         }
       },
       child: Directionality(
@@ -181,7 +169,10 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
                               );
                             }).toList(),
                             onChanged: (event) {
-                              setState(() => _selectedEvent = event);
+                              setState(() {
+                                _selectedEvent = event;
+                                _eventError = null;
+                              });
                             },
                             validator: (v) => v == null ? 'יש לבחור אירוע' : null,
                           );
@@ -216,7 +207,10 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
                               );
                             }).toList(),
                             onChanged: (member) {
-                              setState(() => _selectedTeamMember = member);
+                              setState(() {
+                                _selectedTeamMember = member;
+                                _memberError = null;
+                              });
                             },
                             validator: (v) => v == null ? 'יש לבחור חבר צוות' : null,
                           );
@@ -246,7 +240,10 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
                         );
                       }).toList(),
                       onChanged: (role) {
-                        setState(() => _selectedRole = role);
+                        setState(() {
+                          _selectedRole = role;
+                          _roleError = null;
+                        });
                       },
                       validator: (v) => v == null ? 'יש לבחור תפקיד' : null,
                     ),

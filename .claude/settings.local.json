@@ -25,9 +25,11 @@
       "mcp__playwright__playwright_click",
       "mcp__playwright__playwright_evaluate",
       "Bash(nc:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "spinnerTipsEnabled": false
 }

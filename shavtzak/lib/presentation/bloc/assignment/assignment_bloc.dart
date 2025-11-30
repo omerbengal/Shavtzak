@@ -439,10 +439,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final slots = <AssignmentSlot>[];
 
       for (final event in events) {
-        // For each role requirement in the event
-        for (final roleEntry in event.roleRequirements.entries) {
-          final role = roleEntry.key;
-          final requiredCount = roleEntry.value;
+        // For each role requirement in the event (in enum order)
+        for (final role in RoleType.values) {
+          final requiredCount = event.roleRequirements[role] ?? 0;
+          if (requiredCount == 0) continue; // Skip roles with 0 requirement
 
           // Get assignments for this event+role
           final roleAssignments = assignments
@@ -542,7 +542,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final nameCompare = a.event.name.compareTo(b.event.name);
         if (nameCompare != 0) return nameCompare;
 
-        return a.roleType.hebrewName.compareTo(b.roleType.hebrewName);
+        // Sort by enum order (not alphabetically)
+        return a.roleType.index.compareTo(b.roleType.index);
       });
 
       emit(AssignmentSlotsLoaded(slotsWithDoubleAssignmentDetection));
@@ -568,10 +569,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final slots = <AssignmentSlot>[];
 
       for (final event in events) {
-        // For each role requirement in the event
-        for (final roleEntry in event.roleRequirements.entries) {
-          final role = roleEntry.key;
-          final requiredCount = roleEntry.value;
+        // For each role requirement in the event (in enum order)
+        for (final role in RoleType.values) {
+          final requiredCount = event.roleRequirements[role] ?? 0;
+          if (requiredCount == 0) continue; // Skip roles with 0 requirement
 
           // Get assignments for this event+role
           final roleAssignments = assignments
@@ -671,7 +672,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final nameCompare = a.event.name.compareTo(b.event.name);
         if (nameCompare != 0) return nameCompare;
 
-        return a.roleType.hebrewName.compareTo(b.roleType.hebrewName);
+        // Sort by enum order (not alphabetically)
+        return a.roleType.index.compareTo(b.roleType.index);
       });
 
       emit(AssignmentSlotsLoaded(slotsWithDoubleAssignmentDetection));
