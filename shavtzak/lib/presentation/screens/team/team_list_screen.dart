@@ -656,23 +656,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
                               const SizedBox(height: 16),
 
-                              // Comments field
-                              TextFormField(
-                                controller: _commentsController,
-                                decoration: const InputDecoration(
-                                  labelText: 'הערות',
-                                  hintText: 'הערות על חבר הצוות',
-                                  prefixIcon: Icon(Icons.comment),
-                                  border: OutlineInputBorder(),
-                                ),
-                                minLines: 1,
-                                maxLines: 3,
-                                scrollPadding: const EdgeInsets.only(bottom: 200),
-                                onChanged: (_) => setState(() => _isDirty = true),
-                              ),
-
-                              const SizedBox(height: 16),
-
                               // Active status switch
                               SwitchListTile(
                                 title: const Text('חבר צוות פעיל'),
@@ -810,6 +793,25 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                   final constraint = entry.value;
                                   return _buildConstraintCard(constraint, index);
                                 }),
+
+                              const Divider(height: 32),
+
+                              // Comments field
+                              TextFormField(
+                                controller: _commentsController,
+                                decoration: const InputDecoration(
+                                  labelText: 'הערות',
+                                  hintText: 'הערות על חבר הצוות',
+                                  prefixIcon: Icon(Icons.comment),
+                                  border: OutlineInputBorder(),
+                                ),
+                                minLines: 1,
+                                maxLines: 3,
+                                scrollPadding: EdgeInsets.only(
+                                  bottom: MediaQuery.of(context).viewInsets.bottom > 0 ? 400 : 100,
+                                ),
+                                onChanged: (_) => setState(() => _isDirty = true),
+                              ),
 
                               const SizedBox(height: 16),
                             ],
