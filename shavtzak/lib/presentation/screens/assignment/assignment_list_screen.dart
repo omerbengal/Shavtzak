@@ -201,6 +201,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         // Grid rows
         Expanded(
           child: ListView.builder(
+            padding: const EdgeInsets.only(bottom: 16),
             itemCount: slots.length,
             itemBuilder: (context, index) {
               return _buildSlotRow(slots[index]);
@@ -255,10 +256,39 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 if (slot.hasDoubleAssignment)
                   Tooltip(
                     message: 'משובץ גם ל: ${slot.otherRoles.join(", ")}',
-                    child: const Icon(
-                      Icons.warning,
-                      color: Colors.orange,
-                      size: 20,
+                    child: InkWell(
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (dialogContext) => Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: AlertDialog(
+                              title: Row(
+                                children: const [
+                                  Icon(Icons.warning, color: Colors.orange),
+                                  SizedBox(width: 8),
+                                  Text('שיבוץ כפול'),
+                                ],
+                              ),
+                              content: Text(
+                                'משובץ גם לתפקידים: ${slot.otherRoles.join(", ")}',
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(dialogContext).pop(),
+                                  child: const Text('סגור'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                      child: const Icon(
+                        Icons.warning,
+                        color: Colors.orange,
+                        size: 20,
+                      ),
                     ),
                   ),
               ],

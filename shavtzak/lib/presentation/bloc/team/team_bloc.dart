@@ -116,13 +116,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     CreateTeamMember event,
     Emitter<TeamState> emit,
   ) async {
-    emit(const TeamMemberOperating('creating'));
-
     try {
+      // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.createTeamMember(event.member);
+      // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות נוסף/ה בהצלחה'));
-      // Restart real-time listener
-      add(const LoadTeamMembers());
     } catch (e) {
       emit(TeamError('שגיאה בהוספת חבר/ת צוות: $e'));
     }
@@ -133,9 +131,8 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     UpdateTeamMember event,
     Emitter<TeamState> emit,
   ) async {
-    emit(const TeamMemberOperating('updating'));
-
     try {
+      // Don't emit TeamMemberOperating to avoid UI rebuild
       // Get the old member data to check for removed capabilities
       final oldMember = await _repository.getTeamMemberById(event.member.id);
 
@@ -168,9 +165,8 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         }
       }
 
+      // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('פרטי חבר/ת הצוות עודכנו בהצלחה'));
-      // Restart real-time listener
-      add(const LoadTeamMembers());
     } catch (e) {
       emit(TeamError('שגיאה בעדכון פרטי חבר/ת הצוות: $e'));
     }
@@ -181,13 +177,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     DeleteTeamMember event,
     Emitter<TeamState> emit,
   ) async {
-    emit(const TeamMemberOperating('deleting'));
-
     try {
+      // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.deleteTeamMember(event.id);
+      // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות נמחק/ה בהצלחה'));
-      // Restart real-time listener
-      add(const LoadTeamMembers());
     } catch (e) {
       emit(TeamError('שגיאה במחיקת חבר/ת הצוות: $e'));
     }

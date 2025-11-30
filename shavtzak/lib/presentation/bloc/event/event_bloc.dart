@@ -112,13 +112,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     CreateEvent event,
     Emitter<EventState> emit,
   ) async {
-    emit(const EventOperating('creating'));
-
     try {
+      // Don't emit EventOperating to avoid UI rebuild
       await _repository.createEvent(event.event);
+      // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('האירוע נוסף בהצלחה'));
-      // Restart real-time listener
-      add(const LoadEvents());
     } catch (e) {
       emit(EventError('שגיאה בהוספת אירוע: $e'));
     }
@@ -129,13 +127,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     UpdateEvent event,
     Emitter<EventState> emit,
   ) async {
-    emit(const EventOperating('updating'));
-
     try {
+      // Don't emit EventOperating to avoid UI rebuild
       await _repository.updateEvent(event.event);
+      // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('פרטי האירוע עודכנו בהצלחה'));
-      // Restart real-time listener
-      add(const LoadEvents());
     } catch (e) {
       emit(EventError('שגיאה בעדכון פרטי האירוע: $e'));
     }
@@ -146,13 +142,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     DeleteEvent event,
     Emitter<EventState> emit,
   ) async {
-    emit(const EventOperating('deleting'));
-
     try {
+      // Don't emit EventOperating to avoid UI rebuild
       await _repository.deleteEvent(event.id);
+      // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('האירוע נמחק בהצלחה'));
-      // Restart real-time listener
-      add(const LoadEvents());
     } catch (e) {
       emit(EventError('שגיאה במחיקת האירוע: $e'));
     }

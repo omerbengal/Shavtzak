@@ -37,9 +37,10 @@ class EventsLoaded extends EventState {
         activeCount = 0;
 
   EventsLoaded.withCounts(
-    this.events, {
+    List<Event> events, {
     this.searchQuery,
-  })  : totalCount = events.length,
+  })  : events = (events..sort((a, b) => a.startDate.compareTo(b.startDate))),
+        totalCount = events.length,
         upcomingCount = events.where((e) => e.isUpcoming).length,
         pastCount = events.where((e) => e.isPast).length,
         activeCount = events.where((e) => e.isActive).length;

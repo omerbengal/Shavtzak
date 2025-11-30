@@ -20,6 +20,7 @@ class EventListScreen extends StatefulWidget {
 class _EventListScreenState extends State<EventListScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
+  EventsLoaded? _lastLoadedState;
 
   @override
   void initState() {
@@ -93,14 +94,20 @@ class _EventListScreenState extends State<EventListScreen> {
             }
           },
           builder: (context, state) {
-            if (state is EventLoading || state is EventOperating) {
+            // Always show last known state if available, unless explicitly loading
+            if (state is EventLoading && _lastLoadedState == null) {
               return const Center(child: CircularProgressIndicator());
             }
             if (state is EventsEmpty) {
               return _buildEmptyState(state.message);
             }
             if (state is EventsLoaded) {
+              _lastLoadedState = state;
               return _buildEventList(state);
+            }
+            // For any other state (Success, Error), keep showing last state if available
+            if (_lastLoadedState != null) {
+              return _buildEventList(_lastLoadedState!);
             }
             if (state is EventError) {
               return _buildErrorState(state.message);
@@ -140,6 +147,7 @@ class _EventListScreenState extends State<EventListScreen> {
           ),
           Expanded(
             child: ListView.builder(
+              padding: const EdgeInsets.only(bottom: 16),
               itemCount: state.events.length,
               itemBuilder: (context, index) {
                 return _buildEventCard(state.events[index]);
@@ -446,6 +454,9 @@ class _EventFormModalState extends State<_EventFormModal> {
     } else {
       context.read<EventBloc>().add(CreateEvent(event));
     }
+
+    // Close modal after save operation
+    widget.onSuccess();
   }
 
   void _handleClose() {
@@ -480,13 +491,7 @@ class _EventFormModalState extends State<_EventFormModal> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<EventBloc, EventState>(
-      listener: (context, state) {
-        if (state is EventOperationSuccess) {
-          widget.onSuccess();
-        }
-      },
-      child: DraggableScrollableSheet(
+    return DraggableScrollableSheet(
         initialChildSize: 0.85,
         minChildSize: 0.5,
         maxChildSize: 0.95,
@@ -552,7 +557,7 @@ class _EventFormModalState extends State<_EventFormModal> {
                                         onPressed: () {
                                           context.read<EventBloc>().add(DeleteEvent(widget.event!.id));
                                           Navigator.of(dialogContext).pop(); // Close dialog
-                                          // Modal will be closed by BlocListener onSuccess callback
+                                          widget.onSuccess(); // Close modal
                                         },
                                       ),
                                     ],
@@ -574,10 +579,6 @@ class _EventFormModalState extends State<_EventFormModal> {
                   Expanded(
                     child: BlocBuilder<EventBloc, EventState>(
                       builder: (context, state) {
-                        if (state is EventOperating) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
-
                         return Form(
                           key: _formKey,
                           child: ListView(
@@ -905,8 +906,7 @@ class _EventFormModalState extends State<_EventFormModal> {
             ),
           );
         },
-      ),
-    );
+      );
   }
 
   String _formatDate(DateTime date) {

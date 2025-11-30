@@ -22,6 +22,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
   bool _showActiveOnly = false;
+  TeamLoaded? _lastLoadedState;
 
   @override
   void initState() {
@@ -127,7 +128,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
             }
           },
           builder: (context, state) {
-            if (state is TeamLoading || state is TeamMemberOperating) {
+            // Always show last known state if available, unless explicitly loading
+            if (state is TeamLoading && _lastLoadedState == null) {
               return const Center(
                 child: CircularProgressIndicator(),
               );
@@ -138,7 +140,13 @@ class _TeamListScreenState extends State<TeamListScreen> {
             }
 
             if (state is TeamLoaded) {
+              _lastLoadedState = state;
               return _buildTeamList(state);
+            }
+
+            // For any other state (Success, Error), keep showing last state if available
+            if (_lastLoadedState != null) {
+              return _buildTeamList(_lastLoadedState!);
             }
 
             if (state is TeamError) {
@@ -182,6 +190,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
           // Team list
           Expanded(
             child: ListView.builder(
+              padding: const EdgeInsets.only(bottom: 16),
               itemCount: state.members.length,
               itemBuilder: (context, index) {
                 final member = state.members[index];
@@ -495,6 +504,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     } else {
       context.read<TeamBloc>().add(CreateTeamMember(member));
     }
+
+    // Close modal after save operation
+    widget.onSuccess();
   }
 
   void _handleClose() {
@@ -529,13 +541,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<TeamBloc, TeamState>(
-      listener: (context, state) {
-        if (state is TeamMemberOperationSuccess) {
-          widget.onSuccess();
-        }
-      },
-      child: DraggableScrollableSheet(
+    return DraggableScrollableSheet(
         initialChildSize: 0.85,
         minChildSize: 0.5,
         maxChildSize: 0.95,
@@ -601,7 +607,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         onPressed: () {
                                           context.read<TeamBloc>().add(DeleteTeamMember(widget.member!.id));
                                           Navigator.of(dialogContext).pop(); // Close dialog
-                                          // Modal will be closed by BlocListener onSuccess callback
+                                          widget.onSuccess(); // Close modal
                                         },
                                       ),
                                     ],
@@ -623,10 +629,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                   Expanded(
                     child: BlocBuilder<TeamBloc, TeamState>(
                       builder: (context, state) {
-                        if (state is TeamMemberOperating) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
-
                         return Form(
                           key: _formKey,
                           autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -854,8 +856,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
             ),
           );
         },
-      ),
-    );
+      );
   }
 
   Widget _buildConstraintCard(DateConstraint constraint, int index) {
