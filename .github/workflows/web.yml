@@ -19,22 +19,25 @@ jobs:
           channel: 'stable'
       
       - name: Install dependencies
+        working-directory: shavtzak
         run: flutter pub get
-      
+
       - name: Build for web
+        working-directory: shavtzak
         run: flutter build web --release
-      
+
       - name: Fix base href for GitHub Pages
+        working-directory: shavtzak
         run: |
           # Comment out base href line if it exists uncommented
           sed -i 's|<base href="/">|<!-- <base href="/"> -->|g' build/web/index.html
           # Verify the change
           echo "Checking base href in index.html:"
           grep -n "base href" build/web/index.html || echo "No base href found"
-      
+
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4
         if: github.ref == 'refs/heads/main'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build/web
+          publish_dir: ./shavtzak/build/web
