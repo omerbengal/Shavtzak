@@ -121,6 +121,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       await _repository.createTeamMember(event.member);
       // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות נוסף/ה בהצלחה'));
+
+      // Restart real-time listener to continue receiving updates
+      add(const LoadTeamMembers());
     } catch (e) {
       emit(TeamError('שגיאה בהוספת חבר/ת צוות: $e'));
     }
@@ -167,6 +170,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
 
       // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('פרטי חבר/ת הצוות עודכנו בהצלחה'));
+
+      // Restart real-time listener to continue receiving updates
+      add(const LoadTeamMembers());
     } catch (e) {
       emit(TeamError('שגיאה בעדכון פרטי חבר/ת הצוות: $e'));
     }
@@ -182,6 +188,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       await _repository.deleteTeamMember(event.id);
       // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות נמחק/ה בהצלחה'));
+
+      // Restart real-time listener to continue receiving updates
+      add(const LoadTeamMembers());
     } catch (e) {
       emit(TeamError('שגיאה במחיקת חבר/ת הצוות: $e'));
     }
@@ -195,8 +204,10 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.deactivateTeamMember(event.id);
-      // The real-time listener will automatically update the UI
-      // Optionally show a success snackbar without emitting a state that rebuilds the list
+      emit(const TeamMemberOperationSuccess('חבר/ת הצוות הוסר/ה בהצלחה'));
+
+      // Restart real-time listener to continue receiving updates
+      add(const LoadTeamMembers());
     } catch (e) {
       emit(TeamError('שגיאה בהסרת חבר/ת הצוות: $e'));
     }
@@ -210,8 +221,10 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.reactivateTeamMember(event.id);
-      // The real-time listener will automatically update the UI
-      // Optionally show a success snackbar without emitting a state that rebuilds the list
+      emit(const TeamMemberOperationSuccess('חבר/ת הצוות הופעל/ה בהצלחה'));
+
+      // Restart real-time listener to continue receiving updates
+      add(const LoadTeamMembers());
     } catch (e) {
       emit(TeamError('שגיאה בהפעלת חבר/ת הצוות: $e'));
     }
