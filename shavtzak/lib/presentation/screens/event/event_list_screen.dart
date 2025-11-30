@@ -582,10 +582,10 @@ class _EventFormModalState extends State<_EventFormModal> {
                           key: _formKey,
                           child: ListView(
                             controller: scrollController,
-                            padding: EdgeInsets.only(
+                            padding: const EdgeInsets.only(
                               left: 16,
                               right: 16,
-                              bottom: MediaQuery.of(context).viewInsets.bottom + 80,
+                              bottom: 16,
                             ),
                             children: [
                               const SizedBox(height: 16),
@@ -862,7 +862,8 @@ class _EventFormModalState extends State<_EventFormModal> {
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
-                              const SizedBox(height: 16),
+                              // Dynamic bottom spacing for keyboard
+                              SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 80),
                             ],
                           ),
                         );

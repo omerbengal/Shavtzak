@@ -632,10 +632,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                           autovalidateMode: AutovalidateMode.onUserInteraction,
                           child: ListView(
                             controller: scrollController,
-                            padding: EdgeInsets.only(
+                            padding: const EdgeInsets.only(
                               left: 16,
                               right: 16,
-                              bottom: MediaQuery.of(context).viewInsets.bottom + 80,
+                              bottom: 16,
                             ),
                             children: [
                               const SizedBox(height: 16),
@@ -811,7 +811,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
-                              const SizedBox(height: 16),
+                              // Dynamic bottom spacing for keyboard
+                              SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 80),
                             ],
                           ),
                         );
