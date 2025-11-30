@@ -27,7 +27,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Use path-based URLs instead of hash-based URLs
-  usePathUrlStrategy();
+  // usePathUrlStrategy();
 
   // Initialize Firebase
   await Firebase.initializeApp(
