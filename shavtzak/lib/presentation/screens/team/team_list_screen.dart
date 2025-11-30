@@ -807,9 +807,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                 ),
                                 minLines: 1,
                                 maxLines: 3,
-                                scrollPadding: EdgeInsets.only(
-                                  bottom: MediaQuery.of(context).viewInsets.bottom > 0 ? 400 : 100,
-                                ),
+                                scrollPadding: const EdgeInsets.only(bottom: 300),
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
