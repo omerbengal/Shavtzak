@@ -222,7 +222,12 @@ class _EventListScreenState extends State<EventListScreen> {
       isDismissible: false,
       enableDrag: false,
       backgroundColor: Colors.transparent,
-      builder: (context) => _EventFormModal(event: event),
+      builder: (modalContext) => _EventFormModal(
+        event: event,
+        onSuccess: () {
+          Navigator.of(modalContext).pop();
+        },
+      ),
     );
   }
 
@@ -323,8 +328,12 @@ class _EventListScreenState extends State<EventListScreen> {
 // Event Form Modal Widget
 class _EventFormModal extends StatefulWidget {
   final Event? event; // null for create, non-null for edit
+  final VoidCallback onSuccess;
 
-  const _EventFormModal({this.event});
+  const _EventFormModal({
+    this.event,
+    required this.onSuccess,
+  });
 
   @override
   State<_EventFormModal> createState() => _EventFormModalState();
@@ -421,7 +430,7 @@ class _EventFormModalState extends State<_EventFormModal> {
     if (_isDirty) {
       showDialog(
         context: context,
-        builder: (context) => Directionality(
+        builder: (dialogContext) => Directionality(
           textDirection: TextDirection.rtl,
           child: AlertDialog(
             title: const Text('שינויים לא נשמרו'),
@@ -429,13 +438,13 @@ class _EventFormModalState extends State<_EventFormModal> {
             actions: [
               TextButton(
                 child: const Text('ביטול'),
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.of(dialogContext).pop(),
               ),
               TextButton(
                 child: const Text('צא'),
                 onPressed: () {
-                  Navigator.pop(context); // Close dialog
-                  Navigator.pop(context); // Close modal
+                  Navigator.of(dialogContext).pop(); // Close dialog
+                  widget.onSuccess(); // Close modal
                 },
               ),
             ],
@@ -443,7 +452,7 @@ class _EventFormModalState extends State<_EventFormModal> {
         ),
       );
     } else {
-      Navigator.pop(context);
+      widget.onSuccess();
     }
   }
 
@@ -452,7 +461,7 @@ class _EventFormModalState extends State<_EventFormModal> {
     return BlocListener<EventBloc, EventState>(
       listener: (context, state) {
         if (state is EventOperationSuccess) {
-          Navigator.pop(context);
+          widget.onSuccess();
         } else if (state is EventError) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(state.message), backgroundColor: Colors.red),
@@ -518,14 +527,14 @@ class _EventFormModalState extends State<_EventFormModal> {
                                     actions: [
                                       TextButton(
                                         child: const Text('ביטול'),
-                                        onPressed: () => Navigator.pop(dialogContext),
+                                        onPressed: () => Navigator.of(dialogContext).pop(),
                                       ),
                                       TextButton(
                                         child: const Text('מחק', style: TextStyle(color: Colors.red)),
                                         onPressed: () {
                                           context.read<EventBloc>().add(DeleteEvent(widget.event!.id));
-                                          Navigator.pop(dialogContext); // Close dialog
-                                          Navigator.pop(context); // Close modal
+                                          Navigator.of(dialogContext).pop(); // Close dialog
+                                          // Modal will be closed by BlocListener onSuccess callback
                                         },
                                       ),
                                     ],

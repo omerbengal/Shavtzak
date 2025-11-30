@@ -302,7 +302,12 @@ class _TeamListScreenState extends State<TeamListScreen> {
       isDismissible: false,
       enableDrag: false,
       backgroundColor: Colors.transparent,
-      builder: (context) => _TeamMemberFormModal(member: member),
+      builder: (modalContext) => _TeamMemberFormModal(
+        member: member,
+        onSuccess: () {
+          Navigator.of(modalContext).pop();
+        },
+      ),
     );
   }
 
@@ -401,8 +406,12 @@ class _TeamListScreenState extends State<TeamListScreen> {
 // Team Member Form Modal Widget
 class _TeamMemberFormModal extends StatefulWidget {
   final TeamMember? member; // null for create, non-null for edit
+  final VoidCallback onSuccess;
 
-  const _TeamMemberFormModal({this.member});
+  const _TeamMemberFormModal({
+    this.member,
+    required this.onSuccess,
+  });
 
   @override
   State<_TeamMemberFormModal> createState() => _TeamMemberFormModalState();
@@ -489,7 +498,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     if (_isDirty) {
       showDialog(
         context: context,
-        builder: (context) => Directionality(
+        builder: (dialogContext) => Directionality(
           textDirection: TextDirection.rtl,
           child: AlertDialog(
             title: const Text('שינויים לא נשמרו'),
@@ -497,13 +506,13 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
             actions: [
               TextButton(
                 child: const Text('ביטול'),
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.of(dialogContext).pop(),
               ),
               TextButton(
                 child: const Text('צא'),
                 onPressed: () {
-                  Navigator.pop(context); // Close dialog
-                  Navigator.pop(context); // Close modal
+                  Navigator.of(dialogContext).pop(); // Close dialog
+                  widget.onSuccess(); // Close modal
                 },
               ),
             ],
@@ -511,7 +520,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         ),
       );
     } else {
-      Navigator.pop(context);
+      widget.onSuccess();
     }
   }
 
@@ -520,7 +529,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     return BlocListener<TeamBloc, TeamState>(
       listener: (context, state) {
         if (state is TeamMemberOperationSuccess) {
-          Navigator.pop(context);
+          widget.onSuccess();
         } else if (state is TeamError) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -589,14 +598,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                     actions: [
                                       TextButton(
                                         child: const Text('ביטול'),
-                                        onPressed: () => Navigator.pop(dialogContext),
+                                        onPressed: () => Navigator.of(dialogContext).pop(),
                                       ),
                                       TextButton(
                                         child: const Text('מחק', style: TextStyle(color: Colors.red)),
                                         onPressed: () {
                                           context.read<TeamBloc>().add(DeleteTeamMember(widget.member!.id));
-                                          Navigator.pop(dialogContext); // Close dialog
-                                          Navigator.pop(context); // Close modal
+                                          Navigator.of(dialogContext).pop(); // Close dialog
+                                          // Modal will be closed by BlocListener onSuccess callback
                                         },
                                       ),
                                     ],
