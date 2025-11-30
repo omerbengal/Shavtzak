@@ -1,0 +1,40 @@
+name: Deploy website
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      
+      - name: Install dependencies
+        run: flutter pub get
+      
+      - name: Build for web
+        run: flutter build web --release
+      
+      - name: Fix base href for GitHub Pages
+        run: |
+          # Comment out base href line if it exists uncommented
+          sed -i 's|<base href="/">|<!-- <base href="/"> -->|g' build/web/index.html
+          # Verify the change
+          echo "Checking base href in index.html:"
+          grep -n "base href" build/web/index.html || echo "No base href found"
+      
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v4
+        if: github.ref == 'refs/heads/main'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/web
