@@ -4,11 +4,14 @@ import '../../../core/constants/role_types.dart';
 import '../../../core/utils/validators.dart';
 import 'package:uuid/uuid.dart';
 import '../../../domain/entities/event.dart';
+import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
 import '../../widgets/navigation_menu.dart';
 import '../../widgets/date_picker_dialog.dart';
+import 'quota_reduction_analyzer.dart';
+import 'widgets/quota_reduction_dialog.dart';
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -417,7 +420,7 @@ class _EventFormModalState extends State<_EventFormModal> {
     super.dispose();
   }
 
-  void _saveEvent() {
+  Future<void> _saveEvent() async {
     // Enable validation for all fields after first submit attempt
     setState(() {
       _validateName = true;
@@ -430,6 +433,123 @@ class _EventFormModalState extends State<_EventFormModal> {
     }
     if (_startDate == null) {
       return;
+    }
+
+    // NEW: Quota reduction analysis (edit mode only)
+    if (_isEditMode) {
+      try {
+        final conflicts = await QuotaReductionAnalyzer.analyzeQuotaReductions(
+          originalEvent: widget.event!,
+          newRoleRequirements: _roleRequirements,
+          assignmentRepo: context.read<AssignmentRepository>(),
+        );
+
+        // If there are assignments that need to be removed, show dialog
+        if (conflicts.isNotEmpty) {
+          if (!mounted) return;
+          final selectedIds = await QuotaReductionDialog.show(
+            context,
+            conflicts,
+          );
+
+          if (selectedIds == null) {
+            // User cancelled - revert quotas to original values
+            setState(() {
+              _roleRequirements = Map.from(widget.event!.roleRequirements);
+            });
+            return;
+          }
+
+          // Delete selected assignments
+          if (selectedIds.isNotEmpty && mounted) {
+            final assignmentRepo = context.read<AssignmentRepository>();
+            await assignmentRepo.deleteAssignmentsBatch(selectedIds);
+
+            // Reorder remaining assignments to fill slots sequentially
+            // This ensures slots 0, 1, 2, ... are filled without gaps
+            for (final conflict in conflicts) {
+              // Get all remaining assignments for this role
+              final allAssignments = await assignmentRepo.getAssignmentsByEvent(
+                widget.event!.id,
+              );
+              final remainingAssignments = allAssignments
+                  .where((a) =>
+                      a.roleType == conflict.roleType &&
+                      !selectedIds.contains(a.id))
+                  .toList();
+
+              // Sort by current slotIndex to maintain relative order
+              remainingAssignments.sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+
+              // Reassign sequential slot indices starting from 0
+              for (int i = 0; i < remainingAssignments.length; i++) {
+                if (remainingAssignments[i].slotIndex != i) {
+                  // Update this assignment with new slotIndex
+                  final updated = remainingAssignments[i].copyWith(
+                    slotIndex: i,
+                    updatedAt: DateTime.now(),
+                  );
+                  await assignmentRepo.updateAssignmentUnchecked(updated);
+                }
+              }
+            }
+            // Note: No need to manually reload - assignment screen uses real-time streams
+          }
+        }
+
+        // IMPORTANT: Always reorder assignments after quota reduction,
+        // even if there were no conflicts requiring deletion.
+        // This handles cases where assignments are beyond the new quota range
+        // (e.g., Person at slot 5 when quota reduced to 4)
+        if (mounted) {
+          final assignmentRepo = context.read<AssignmentRepository>();
+          final allAssignments = await assignmentRepo.getAssignmentsByEvent(
+            widget.event!.id,
+          );
+
+          // Check each role where quota was reduced
+          for (final roleType in RoleType.values) {
+            final oldQuota = widget.event!.roleRequirements[roleType] ?? 0;
+            final newQuota = _roleRequirements[roleType] ?? 0;
+
+            // Only process roles where quota was reduced
+            if (newQuota >= oldQuota) continue;
+
+            // Get all assignments for this role
+            final roleAssignments = allAssignments
+                .where((a) => a.roleType == roleType)
+                .toList();
+
+            // Sort by current slotIndex to maintain relative order
+            roleAssignments.sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+
+            // Reassign sequential slot indices starting from 0
+            // This moves any assignments beyond the quota range into the valid range
+            for (int i = 0; i < roleAssignments.length; i++) {
+              if (roleAssignments[i].slotIndex != i) {
+                final updated = roleAssignments[i].copyWith(
+                  slotIndex: i,
+                  updatedAt: DateTime.now(),
+                );
+                await assignmentRepo.updateAssignmentUnchecked(updated);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Show error and don't proceed with save
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              SnackBar(
+                content: Text('שגיאה בניתוח שיבוצים: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+        }
+        return;
+      }
     }
 
     final now = DateTime.now();
@@ -449,6 +569,7 @@ class _EventFormModalState extends State<_EventFormModal> {
       updatedAt: now,
     );
 
+    if (!mounted) return;
     if (_isEditMode) {
       context.read<EventBloc>().add(UpdateEvent(event));
     } else {

@@ -185,12 +185,12 @@ Feature 1: Fix text from 'סה"כ משרות' to 'סה"כ תפקידים' in tea
   ☒ Feature 3: Add validation to event form to make location field required (non-empty)
   ☒ Feature 4: Update assignments screen to display event time (startTime-endTime) next to event date
   ☒ Feature 4: Update assignments screen to display event location in assignment rows
-  ☐ Feature 5: Add optional 'note' String field to DateConstraint entity
-  ☐ Feature 5: Update date constraint UI to show text field for adding/editing notes
-  ☐ Feature 6: Implement logic to identify empty vs assigned role slots when reducing quotas
-  ☐ Feature 6: Create popup dialog that lists assigned people and asks user to select which to remove when quota reduction
+  ☒ Feature 5: Add optional 'note' String field to DateConstraint entity
+  ☒ Feature 5: Update date constraint UI to show text field for adding/editing notes
+  ☒ Feature 6: Implement logic to identify empty vs assigned role slots when reducing quotas
+  ☒ Feature 6: Create popup dialog that lists assigned people and asks user to select which to remove when quota reduction
     requires it
-  ☐ Feature 6: Update event edit modal role quota logic to delete empty slots first, then show popup if needed
+  ☒ Feature 6: Update event edit modal role quota logic to delete empty slots first, then show popup if needed
   ☐ Feature 7: Create helper method to calculate event assignment status (none/partial/complete/no-quotas)
   ☐ Feature 7: Update events screen to apply row background colors based on assignment status (red=none, orange=partial,
     green=complete)

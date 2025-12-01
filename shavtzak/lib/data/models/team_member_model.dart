@@ -139,16 +139,19 @@ class TeamMemberModel {
 class DateConstraintModel {
   final DateTime startDate;
   final DateTime? endDate;
+  final String? note;
 
   const DateConstraintModel({
     required this.startDate,
     this.endDate,
+    this.note,
   });
 
   factory DateConstraintModel.fromEntity(DateConstraint entity) {
     return DateConstraintModel(
       startDate: entity.startDate,
       endDate: entity.endDate,
+      note: entity.note,
     );
   }
 
@@ -156,6 +159,7 @@ class DateConstraintModel {
     return DateConstraint(
       startDate: startDate,
       endDate: endDate,
+      note: note,
     );
   }
 
@@ -169,6 +173,7 @@ class DateConstraintModel {
           : json['endDate'] is Timestamp
               ? (json['endDate'] as Timestamp).toDate()
               : DateTime.parse(json['endDate'] as String),
+      note: json['note'] as String?,
     );
   }
 
@@ -176,6 +181,7 @@ class DateConstraintModel {
     return {
       'startDate': startDate.toIso8601String(),
       'endDate': endDate?.toIso8601String(),
+      'note': note,
     };
   }
 }

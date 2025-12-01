@@ -883,6 +883,12 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
               ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
               : _formatDate(constraint.startDate),
         ),
+        subtitle: constraint.note != null && constraint.note!.isNotEmpty
+            ? Text(
+                constraint.note!,
+                style: const TextStyle(fontStyle: FontStyle.italic),
+              )
+            : null,
         trailing: IconButton(
           icon: const Icon(Icons.delete, color: Colors.red),
           onPressed: () {
@@ -943,6 +949,7 @@ class _ConstraintDialog extends StatefulWidget {
 class _ConstraintDialogState extends State<_ConstraintDialog> {
   DateTime? _startDate;
   DateTime? _endDate;
+  final TextEditingController _noteController = TextEditingController();
 
   @override
   void initState() {
@@ -950,7 +957,14 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
     if (widget.constraint != null) {
       _startDate = widget.constraint!.startDate;
       _endDate = widget.constraint!.endDate;
+      _noteController.text = widget.constraint!.note ?? '';
     }
+  }
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
   }
 
   Future<void> _pickDates() async {
@@ -1025,10 +1039,12 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
       textDirection: TextDirection.rtl,
       child: AlertDialog(
         title: Text(widget.constraint == null ? 'הוספת מגבלה' : 'עריכת מגבלה'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
             // Date selection button
             OutlinedButton.icon(
               onPressed: _pickDates,
@@ -1061,7 +1077,25 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
                   ),
                 ),
               ),
-          ],
+
+            // Note text field
+            const SizedBox(height: 16),
+            TextField(
+              controller: _noteController,
+              decoration: const InputDecoration(
+                labelText: 'הערה',
+                hintText: 'הוסף הערה למגבלה',
+                prefixIcon: Icon(Icons.note),
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+              maxLines: 3,
+              minLines: 1,
+              textDirection: TextDirection.rtl,
+              textAlignVertical: TextAlignVertical.center,
+            ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1072,11 +1106,13 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
             onPressed: _startDate == null
                 ? null
                 : () {
+                    final noteText = _noteController.text.trim();
                     Navigator.pop(
                       context,
                       DateConstraint(
                         startDate: _startDate!,
                         endDate: _endDate,
+                        note: noteText.isEmpty ? null : noteText,
                       ),
                     );
                   },

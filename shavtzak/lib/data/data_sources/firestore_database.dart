@@ -493,6 +493,21 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<void> deleteAssignmentsBatch(List<String> assignmentIds) async {
+    try {
+      if (assignmentIds.isEmpty) return;
+
+      final batch = _firestore.batch();
+      for (final id in assignmentIds) {
+        batch.delete(_firestore.collection(_assignmentsCollection).doc(id));
+      }
+      await batch.commit();
+    } catch (e) {
+      throw DatabaseException('Failed to delete assignments batch: $e');
+    }
+  }
+
+  @override
   Future<void> insertAssignmentsBatch(List<Assignment> assignments) async {
     try {
       final batch = _firestore.batch();

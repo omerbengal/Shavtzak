@@ -84,6 +84,9 @@ abstract class DatabaseInterface {
   /// Delete all assignments for a team member
   Future<void> deleteAssignmentsByPerson(String teamMemberId);
 
+  /// Delete multiple assignments by their IDs in a single batch operation
+  Future<void> deleteAssignmentsBatch(List<String> assignmentIds);
+
   // ========== Admin Devices ==========
 
   /// Get admin device by device ID

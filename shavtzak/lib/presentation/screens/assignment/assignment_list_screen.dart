@@ -348,25 +348,23 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     // Build items list using String values (member IDs)
     final items = <DropdownMenuItem<String>>[];
 
-    // Add placeholder for empty selection with RTL and centered text
-    items.add(DropdownMenuItem<String>(
-      value: '__empty__',
-      child: Directionality(
-        textDirection: TextDirection.rtl,
-        child: Center(
-          child: Text('בחר...'),
-        ),
-      ),
-    ));
-
     // Add all available members with RTL and centered text
     items.addAll(slot.availableMembers.map((member) {
+      final isCurrentlyAssigned = member.id == currentMember?.id;
       return DropdownMenuItem<String>(
         value: member.id,
         child: Directionality(
           textDirection: TextDirection.rtl,
           child: Center(
-            child: Text(member.name),
+            child: Text(
+              member.name,
+              style: isCurrentlyAssigned
+                  ? const TextStyle(
+                      color: Colors.green,
+                      fontWeight: FontWeight.bold,
+                    )
+                  : null,
+            ),
           ),
         ),
       );
@@ -375,12 +373,18 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     // If current member is from alreadyAssigned list, add them too so they can be displayed
     if (currentMember != null &&
         !slot.availableMembers.any((m) => m.id == currentMember.id)) {
-      items.insert(1, DropdownMenuItem<String>(
+      items.insert(0, DropdownMenuItem<String>(
         value: currentMember.id,
         child: Directionality(
           textDirection: TextDirection.rtl,
           child: Center(
-            child: Text(currentMember.name),
+            child: Text(
+              currentMember.name,
+              style: const TextStyle(
+                color: Colors.green,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ),
       ));
@@ -429,8 +433,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           flex: 2,
           child: DropdownButtonFormField<String>(
             key: ValueKey('${_getSlotKey(slot)}_${_dropdownResetCounters[_getSlotKey(slot)] ?? 0}'),
-            value: currentMember?.id ?? '__empty__',
-            style: const TextStyle(fontSize: 12, color: Colors.black),
+            value: currentMember?.id,
+            hint: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Center(child: Text('בחר...')),
+            ),
+            style: const TextStyle(fontSize: 12, color: Colors.black, fontWeight: FontWeight.normal),
             decoration: InputDecoration(
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -442,11 +450,41 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             ),
             icon: const Icon(Icons.arrow_drop_down, size: 20),
             items: items,
+            selectedItemBuilder: (context) {
+              // Build plain text items for closed dropdown display (no green/bold styling)
+              final selectedItems = <Widget>[];
+
+              // Available members (plain style)
+              for (var member in slot.availableMembers) {
+                selectedItems.add(Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Center(child: Text(member.name)),
+                ));
+              }
+
+              // Current member from already assigned (if exists)
+              if (currentMember != null &&
+                  !slot.availableMembers.any((m) => m.id == currentMember.id)) {
+                selectedItems.insert(0, Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Center(child: Text(currentMember.name)),
+                ));
+              }
+
+              // Divider and "show already assigned" option
+              selectedItems.add(const SizedBox.shrink()); // For divider
+              selectedItems.add(Directionality(
+                textDirection: TextDirection.rtl,
+                child: Center(child: Text('שובצו כבר...')),
+              ));
+
+              return selectedItems;
+            },
             onChanged: hasOptions ? (selectedValue) {
               if (selectedValue == '__show_already_assigned__') {
                 // Show dialog for already-assigned members
                 _showAlreadyAssignedDialog(slot);
-              } else if (selectedValue != '__empty__' && selectedValue != '__divider__') {
+              } else if (selectedValue != null && selectedValue != '__divider__') {
                 // Find the selected member by ID
                 final member = slot.availableMembers.firstWhereOrNull(
                       (m) => m.id == selectedValue,
@@ -551,7 +589,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             children: [
               const Icon(Icons.warning, color: Colors.orange),
               const SizedBox(width: 8),
-              Text('אנשים שכבר שובצו לאירוע "${slot.event.name}"'),
+              Expanded(
+                child: Text(
+                  'אנשים שכבר שובצו לאירוע "${slot.event.name}"',
+                  maxLines: 3,
+                ),
+              ),
             ],
           ),
           content: SizedBox(
@@ -587,26 +630,37 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
-                  ...filteredMembers.map((member) {
-                    // Find what OTHER roles this person has in this event (excluding current role)
-                    final memberRoles = _allSlots
-                        .where((s) =>
-                            s.event.id == slot.event.id &&
-                            s.isFilled &&
-                            s.currentAssignment!.teamMemberId == member.id &&
-                            s.roleType != slot.roleType)  // Exclude current role
-                        .map((s) => s.roleType.hebrewName)
-                        .toList();
+                  // Make the list scrollable with constrained height
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.5, // Max 50% of screen height
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: filteredMembers.length,
+                      itemBuilder: (context, index) {
+                        final member = filteredMembers[index];
+                        // Find what OTHER roles this person has in this event (excluding current role)
+                        final memberRoles = _allSlots
+                            .where((s) =>
+                                s.event.id == slot.event.id &&
+                                s.isFilled &&
+                                s.currentAssignment!.teamMemberId == member.id &&
+                                s.roleType != slot.roleType)  // Exclude current role
+                            .map((s) => s.roleType.hebrewName)
+                            .toList();
 
-                    return ListTile(
-                      title: Text(member.name),
-                      subtitle: Text('תפקידים: ${memberRoles.join(", ")}'),
-                      trailing: ElevatedButton(
-                        onPressed: () => Navigator.of(context).pop(member),
-                        child: const Text('שבץ בכל זאת'),
-                      ),
-                    );
-                  }),
+                        return ListTile(
+                          title: Text(member.name),
+                          subtitle: Text('תפקידים: ${memberRoles.join(", ")}'),
+                          trailing: ElevatedButton(
+                            onPressed: () => Navigator.of(context).pop(member),
+                            child: const Text('שבץ בכל זאת'),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ],
               ],
             ),

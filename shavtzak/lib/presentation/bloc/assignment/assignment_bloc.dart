@@ -418,7 +418,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     }
   }
 
-  /// Load assignment slots for grid view
+  /// Load assignment slots for grid view with real-time updates
   Future<void> _onLoadAssignmentSlots(
     LoadAssignmentSlots event,
     Emitter<AssignmentState> emit,
@@ -426,17 +426,38 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentLoading());
 
     try {
-      // 1. Load all events
-      final events = await _eventRepository.getAllEvents();
+      // Transform the assignments stream to build complete slot state
+      // Whenever assignments change, fetch latest events/members and rebuild slots
+      final slotsStream = _repository.watchAssignments().asyncMap((assignments) async {
+        return await _buildSlotsFromAssignments(assignments);
+      });
 
-      // 2. Load all active team members
-      final allMembers = await _teamRepository.getActiveTeamMembers();
+      // Listen to the transformed stream for real-time updates
+      await emit.forEach<AssignmentSlotsLoaded>(
+        slotsStream,
+        onData: (slotsState) => slotsState,
+        onError: (error, stackTrace) {
+          return AssignmentError('שגיאה בטעינת שיבוצים: $error');
+        },
+      );
+    } catch (e) {
+      emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
+    }
+  }
 
-      // 3. Load all assignments
-      final assignments = await _repository.getAllAssignments();
+  /// Build complete slots state from assignments
+  /// Fetches latest events and team members, then builds slot grid
+  Future<AssignmentSlotsLoaded> _buildSlotsFromAssignments(
+    List<Assignment> assignments,
+  ) async {
+    // 1. Load all events
+    final events = await _eventRepository.getAllEvents();
 
-      // 4. Build slots
-      final slots = <AssignmentSlot>[];
+    // 2. Load all active team members
+    final allMembers = await _teamRepository.getActiveTeamMembers();
+
+    // 3. Build slots
+    final slots = <AssignmentSlot>[];
 
       for (final event in events) {
         // For each role requirement in the event (in enum order)
@@ -534,22 +555,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         }
       }
 
-      // 6. Sort slots by event date, then event name, then role
-      slotsWithDoubleAssignmentDetection.sort((a, b) {
-        final dateCompare = a.event.startDate.compareTo(b.event.startDate);
-        if (dateCompare != 0) return dateCompare;
+    // 4. Sort slots by event date, then event name, then role
+    slotsWithDoubleAssignmentDetection.sort((a, b) {
+      final dateCompare = a.event.startDate.compareTo(b.event.startDate);
+      if (dateCompare != 0) return dateCompare;
 
-        final nameCompare = a.event.name.compareTo(b.event.name);
-        if (nameCompare != 0) return nameCompare;
+      final nameCompare = a.event.name.compareTo(b.event.name);
+      if (nameCompare != 0) return nameCompare;
 
-        // Sort by enum order (not alphabetically)
-        return a.roleType.index.compareTo(b.roleType.index);
-      });
+      // Sort by enum order (not alphabetically)
+      return a.roleType.index.compareTo(b.roleType.index);
+    });
 
-      emit(AssignmentSlotsLoaded(slotsWithDoubleAssignmentDetection));
-    } catch (e) {
-      emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
-    }
+    return AssignmentSlotsLoaded(slotsWithDoubleAssignmentDetection);
   }
 
   /// Reload slots silently without emitting loading state

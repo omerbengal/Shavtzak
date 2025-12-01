@@ -103,9 +103,19 @@ class AssignmentRepository {
     await _database.updateAssignment(assignment);
   }
 
+  /// Update assignment without conflict checking (for internal operations like slot reassignment)
+  Future<void> updateAssignmentUnchecked(Assignment assignment) async {
+    await _database.updateAssignment(assignment);
+  }
+
   /// Delete an assignment
   Future<void> deleteAssignment(String id) async {
     await _database.deleteAssignment(id);
+  }
+
+  /// Delete multiple assignments in a single batch operation
+  Future<void> deleteAssignmentsBatch(List<String> assignmentIds) async {
+    await _database.deleteAssignmentsBatch(assignmentIds);
   }
 
   /// Check for conflicts in an assignment

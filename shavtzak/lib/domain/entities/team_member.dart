@@ -5,10 +5,12 @@ import '../../core/constants/role_types.dart';
 class DateConstraint extends Equatable {
   final DateTime startDate;
   final DateTime? endDate; // null means single day constraint
+  final String? note; // optional note for the constraint
 
   const DateConstraint({
     required this.startDate,
     this.endDate,
+    this.note,
   });
 
   /// Check if a given date falls within this constraint
@@ -34,7 +36,7 @@ class DateConstraint extends Equatable {
   }
 
   @override
-  List<Object?> get props => [startDate, endDate];
+  List<Object?> get props => [startDate, endDate, note];
 
   @override
   String toString() {
@@ -42,6 +44,19 @@ class DateConstraint extends Equatable {
       return '${startDate.day}/${startDate.month}/${startDate.year}';
     }
     return '${startDate.day}/${startDate.month}/${startDate.year} - ${endDate!.day}/${endDate!.month}/${endDate!.year}';
+  }
+
+  /// Copy with method for immutability
+  DateConstraint copyWith({
+    DateTime? startDate,
+    DateTime? endDate,
+    String? note,
+  }) {
+    return DateConstraint(
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      note: note ?? this.note,
+    );
   }
 }
 
