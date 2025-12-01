@@ -5,7 +5,6 @@ import '../../../core/utils/validators.dart';
 import '../../../core/utils/event_assignment_status.dart';
 import 'package:uuid/uuid.dart';
 import '../../../domain/entities/event.dart';
-import '../../../domain/entities/assignment.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
@@ -26,7 +25,6 @@ class _EventListScreenState extends State<EventListScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
   EventsLoaded? _lastLoadedState;
-  Map<String, List<Assignment>> _eventAssignmentsMap = {};
 
   @override
   void initState() {
@@ -132,9 +130,6 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   Widget _buildEventList(EventsLoaded state) {
-    // Load assignments for all events
-    _loadAssignmentsForEvents(state.events);
-
     return RefreshIndicator(
       onRefresh: () async {
         context.read<EventBloc>().add(const RefreshEvents());
@@ -159,7 +154,7 @@ class _EventListScreenState extends State<EventListScreen> {
               padding: const EdgeInsets.only(bottom: 16),
               itemCount: state.events.length,
               itemBuilder: (context, index) {
-                return _buildEventCard(state.events[index]);
+                return _buildEventCard(state.events[index], state.assignmentCounts);
               },
             ),
           ),
@@ -168,31 +163,22 @@ class _EventListScreenState extends State<EventListScreen> {
     );
   }
 
-  /// Load assignments for all events
-  Future<void> _loadAssignmentsForEvents(List<Event> events) async {
-    final assignmentRepo = context.read<AssignmentRepository>();
-
-    for (final event in events) {
-      // Only load if not already cached
-      if (!_eventAssignmentsMap.containsKey(event.id)) {
-        try {
-          final assignments = await assignmentRepo.getAssignmentsByEvent(event.id);
-          if (mounted) {
-            setState(() {
-              _eventAssignmentsMap[event.id] = assignments;
-            });
-          }
-        } catch (e) {
-          // Silently fail - event will show no color
-        }
-      }
-    }
-  }
-
   /// Get background color for event card based on assignment status
-  Color? _getEventCardColor(Event event) {
-    final assignments = _eventAssignmentsMap[event.id] ?? [];
-    final status = EventAssignmentStatusHelper.calculateStatus(event, assignments);
+  Color? _getEventCardColor(Event event, Map<String, int> assignmentCounts) {
+    final assignmentCount = assignmentCounts[event.id] ?? 0;
+    final totalRequired = event.totalPeopleRequired;
+
+    // Determine status based on counts
+    final EventAssignmentStatus status;
+    if (totalRequired == 0) {
+      status = EventAssignmentStatus.noQuotas;
+    } else if (assignmentCount == 0) {
+      status = EventAssignmentStatus.none;
+    } else if (assignmentCount < totalRequired) {
+      status = EventAssignmentStatus.partial;
+    } else {
+      status = EventAssignmentStatus.complete;
+    }
 
     switch (status) {
       case EventAssignmentStatus.none:
@@ -216,13 +202,13 @@ class _EventListScreenState extends State<EventListScreen> {
     );
   }
 
-  Widget _buildEventCard(Event event) {
+  Widget _buildEventCard(Event event, Map<String, int> assignmentCounts) {
     // Check if start and end dates are the same
     final isSameDate = event.startDate.year == event.endDate.year &&
         event.startDate.month == event.endDate.month &&
         event.startDate.day == event.endDate.day;
 
-    final cardColor = _getEventCardColor(event);
+    final cardColor = _getEventCardColor(event, assignmentCounts);
 
     return Card(
       color: cardColor,

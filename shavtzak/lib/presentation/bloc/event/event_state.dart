@@ -27,10 +27,12 @@ class EventsLoaded extends EventState {
   final int upcomingCount;
   final int pastCount;
   final int activeCount;
+  final Map<String, int> assignmentCounts; // Event ID -> count of assignments
 
   const EventsLoaded(
     this.events, {
     this.searchQuery,
+    this.assignmentCounts = const {},
   })  : totalCount = events.length,
         upcomingCount = 0,
         pastCount = 0,
@@ -39,6 +41,7 @@ class EventsLoaded extends EventState {
   EventsLoaded.withCounts(
     List<Event> events, {
     this.searchQuery,
+    this.assignmentCounts = const {},
   })  : events = (events..sort((a, b) => a.startDate.compareTo(b.startDate))),
         totalCount = events.length,
         upcomingCount = events.where((e) => e.isUpcoming).length,
@@ -53,6 +56,7 @@ class EventsLoaded extends EventState {
         upcomingCount,
         pastCount,
         activeCount,
+        assignmentCounts,
       ];
 }
 

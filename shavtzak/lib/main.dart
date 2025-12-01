@@ -103,7 +103,7 @@ class MyApp extends StatelessWidget {
             create: (context) => TeamBloc(teamRepository, assignmentRepository),
           ),
           BlocProvider(
-            create: (context) => EventBloc(eventRepository),
+            create: (context) => EventBloc(eventRepository, assignmentRepository),
           ),
           BlocProvider(
             create: (context) => AssignmentBloc(
