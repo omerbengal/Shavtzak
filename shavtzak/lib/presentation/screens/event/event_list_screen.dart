@@ -614,11 +614,17 @@ class _EventFormModalState extends State<_EventFormModal> {
                               TextFormField(
                                 controller: _locationController,
                                 decoration: const InputDecoration(
-                                  labelText: 'מיקום (אופציונלי)',
+                                  labelText: 'מיקום',
                                   hintText: 'לדוגמה: אולמי ורסאי',
                                   prefixIcon: Icon(Icons.location_on),
                                   border: OutlineInputBorder(),
                                 ),
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'נא למלא מיקום';
+                                  }
+                                  return null;
+                                },
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 

@@ -7,6 +7,7 @@ class TeamMemberModel {
   final String id;
   final String name;
   final bool isActive;
+  final bool isPermanent;
   final List<DateConstraintModel> constraints;
   final Map<String, bool> roleCapabilities; // Stored as string keys in Firestore
   final String comments;
@@ -17,6 +18,7 @@ class TeamMemberModel {
     required this.id,
     required this.name,
     required this.isActive,
+    this.isPermanent = false,
     required this.constraints,
     required this.roleCapabilities,
     this.comments = '',
@@ -30,6 +32,7 @@ class TeamMemberModel {
       id: entity.id,
       name: entity.name,
       isActive: entity.isActive,
+      isPermanent: entity.isPermanent,
       constraints: entity.constraints
           .map((c) => DateConstraintModel.fromEntity(c))
           .toList(),
@@ -50,6 +53,7 @@ class TeamMemberModel {
       id: id,
       name: name,
       isActive: isActive,
+      isPermanent: isPermanent,
       constraints: constraints.map((c) => c.toEntity()).toList(),
       roleCapabilities: Map.fromEntries(
         roleCapabilities.entries.map(
@@ -70,6 +74,7 @@ class TeamMemberModel {
       id: doc.id,
       name: data['name'] as String,
       isActive: data['isActive'] as bool? ?? true,
+      isPermanent: data['isPermanent'] as bool? ?? false,
       constraints: (data['constraints'] as List<dynamic>?)
               ?.map((c) => DateConstraintModel.fromJson(c as Map<String, dynamic>))
               .toList() ??
@@ -87,6 +92,7 @@ class TeamMemberModel {
       'id': id,
       'name': name,
       'isActive': isActive,
+      'isPermanent': isPermanent,
       'constraints': constraints.map((c) => c.toJson()).toList(),
       'roleCapabilities': roleCapabilities,
       'comments': comments,
@@ -101,6 +107,7 @@ class TeamMemberModel {
       id: json['id'] as String,
       name: json['name'] as String,
       isActive: json['isActive'] as bool? ?? true,
+      isPermanent: json['isPermanent'] as bool? ?? false,
       constraints: (json['constraints'] as List<dynamic>?)
               ?.map((c) => DateConstraintModel.fromJson(c as Map<String, dynamic>))
               .toList() ??
@@ -118,6 +125,7 @@ class TeamMemberModel {
       'id': id,
       'name': name,
       'isActive': isActive,
+      'isPermanent': isPermanent,
       'constraints': constraints.map((c) => c.toJson()).toList(),
       'roleCapabilities': roleCapabilities,
       'comments': comments,

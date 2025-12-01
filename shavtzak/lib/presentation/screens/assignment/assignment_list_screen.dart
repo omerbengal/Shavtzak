@@ -164,7 +164,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _buildStatItem(
-                  'סה"כ משרות', state.totalSlots.toString(), Colors.blue),
+                  'סה"כ תפקידים', state.totalSlots.toString(), Colors.blue),
               _buildStatItem(
                   'משובץ', state.filledSlots.toString(), Colors.green),
               _buildStatItem(
@@ -230,14 +230,37 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               children: [
                 Text(
                   slot.event.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
+                // Line 1: Dates (single date if same, or date range)
                 Text(
-                  _formatDate(slot.event.startDate),
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  _isSameDay(slot.event.startDate, slot.event.endDate)
+                      ? _formatDate(slot.event.startDate)
+                      : '${_formatDate(slot.event.startDate)} - ${_formatDate(slot.event.endDate)}',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                   textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+                // Line 2: Times (show if at least one time is filled)
+                if (slot.event.startTime.isNotEmpty || slot.event.endTime.isNotEmpty)
+                  Text(
+                    '${slot.event.startTime.isNotEmpty ? slot.event.startTime : "?"} - ${slot.event.endTime.isNotEmpty ? slot.event.endTime : "?"}',
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                // Line 3: Location (only if not empty)
+                if (slot.event.location.isNotEmpty)
+                  Text(
+                    slot.event.location,
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
               ],
             ),
           ),
@@ -251,6 +274,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   child: Text(
                     slot.roleType.hebrewName,
                     textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 if (slot.hasDoubleAssignment)
@@ -404,15 +430,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           child: DropdownButtonFormField<String>(
             key: ValueKey('${_getSlotKey(slot)}_${_dropdownResetCounters[_getSlotKey(slot)] ?? 0}'),
             value: currentMember?.id ?? '__empty__',
+            style: const TextStyle(fontSize: 12, color: Colors.black),
             decoration: InputDecoration(
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               border: const OutlineInputBorder(),
               filled: true,
               fillColor: hasOptions
                   ? (slot.isFilled ? Colors.green.shade50 : Colors.white)
                   : Colors.grey.shade200, // Gray out when no options
             ),
+            icon: const Icon(Icons.arrow_drop_down, size: 20),
             items: items,
             onChanged: hasOptions ? (selectedValue) {
               if (selectedValue == '__show_already_assigned__') {
@@ -702,7 +730,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   }
 
   String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
+  }
+
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 
   Widget _buildErrorState(String message) {
@@ -736,8 +770,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           const SizedBox(height: 16),
           Text(
             _showOnlyUnfilled
-                ? 'כל המשרות משובצות!'
-                : 'אין משרות להצגה',
+                ? 'כל התפקידים משובצים!'
+                : 'אין תפקידים להצגה',
             style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
           ),
         ],

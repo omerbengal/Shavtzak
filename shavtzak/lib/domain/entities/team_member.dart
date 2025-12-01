@@ -50,6 +50,7 @@ class TeamMember extends Equatable {
   final String id;
   final String name;
   final bool isActive;
+  final bool isPermanent; // Whether this is a permanent team member
   final List<DateConstraint> constraints; // When unavailable
   final Map<RoleType, bool> roleCapabilities; // Which roles can they perform
   final String comments; // Comments about the team member
@@ -60,6 +61,7 @@ class TeamMember extends Equatable {
     required this.id,
     required this.name,
     required this.isActive,
+    this.isPermanent = false,
     required this.constraints,
     required this.roleCapabilities,
     this.comments = '',
@@ -102,6 +104,7 @@ class TeamMember extends Equatable {
     String? id,
     String? name,
     bool? isActive,
+    bool? isPermanent,
     List<DateConstraint>? constraints,
     Map<RoleType, bool>? roleCapabilities,
     String? comments,
@@ -112,6 +115,7 @@ class TeamMember extends Equatable {
       id: id ?? this.id,
       name: name ?? this.name,
       isActive: isActive ?? this.isActive,
+      isPermanent: isPermanent ?? this.isPermanent,
       constraints: constraints ?? this.constraints,
       roleCapabilities: roleCapabilities ?? this.roleCapabilities,
       comments: comments ?? this.comments,
@@ -125,6 +129,7 @@ class TeamMember extends Equatable {
         id,
         name,
         isActive,
+        isPermanent,
         constraints,
         roleCapabilities,
         comments,

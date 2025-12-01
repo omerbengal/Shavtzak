@@ -103,22 +103,35 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
 
   @override
   Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+
+    // Use tighter constraints on very small screens to prevent overflow
+    final dialogWidth = isMobile
+        ? (screenWidth < 360 ? screenWidth * 0.95 : screenWidth * 0.9)
+        : 700.0;
+
+    final horizontalPadding = isMobile
+        ? (screenWidth < 360 ? 8.0 : 12.0)
+        : 24.0;
 
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Dialog(
         child: Container(
-          width: isMobile ? MediaQuery.of(context).size.width * 0.9 : 700,
-          padding: const EdgeInsets.all(24),
+          width: dialogWidth,
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: isMobile ? 16 : 24,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               // Title
               Text(
                 widget.title,
-                style: const TextStyle(
-                  fontSize: 20,
+                style: TextStyle(
+                  fontSize: isMobile ? 18 : 20,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -137,16 +150,21 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                     children: [
                       Icon(Icons.calendar_today, size: 16, color: Colors.blue.shade700),
                       const SizedBox(width: 8),
-                      Text(
-                        widget.isSingleDate
-                            ? _formatDate(_selectedDates.first!)
-                            : _selectedDates.length > 1 && _selectedDates[1] != null
-                                ? '${_formatDate(_selectedDates.first!)} - ${_formatDate(_selectedDates[1]!)}'
-                                : 'מ-${_formatDate(_selectedDates.first!)} (בחר תאריך סיום)',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.blue.shade700,
+                      Flexible(
+                        child: Text(
+                          widget.isSingleDate
+                              ? _formatDate(_selectedDates.first!)
+                              : _selectedDates.length > 1 && _selectedDates[1] != null
+                                  ? '${_formatDate(_selectedDates.first!)} - ${_formatDate(_selectedDates[1]!)}'
+                                  : 'מ-${_formatDate(_selectedDates.first!)} (בחר תאריך סיום)',
+                          style: TextStyle(
+                            fontSize: isMobile ? 14 : 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue.shade700,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     ],
@@ -169,48 +187,64 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                   ),
                 ),
 
-              // Calendar(s)
+              // Calendar(s) with constrained width
               Flexible(
                 child: SingleChildScrollView(
-                  child: CalendarDatePicker2(
-                    config: CalendarDatePicker2Config(
-                      calendarType: widget.isSingleDate
-                          ? CalendarDatePicker2Type.single
-                          : CalendarDatePicker2Type.range,
-                      selectedDayHighlightColor: Colors.blue,
-                      weekdayLabels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-                      weekdayLabelTextStyle: const TextStyle(
-                        color: Colors.black87,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      firstDayOfWeek: 0,
-                      controlsHeight: 50,
-                      controlsTextStyle: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      dayTextStyle: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.normal,
-                      ),
-                      disabledDayTextStyle: const TextStyle(
-                        color: Colors.grey,
-                      ),
-                      selectableDayPredicate: (day) => true,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: dialogWidth - (horizontalPadding * 2),
                     ),
-                    value: _selectedDates,
-                    onValueChanged: (dates) {
-                      setState(() {
-                        _selectedDates = dates;
-                        _errorMessage = null; // Clear error on selection
-                      });
-                    },
+                    child: CalendarDatePicker2(
+                      config: CalendarDatePicker2Config(
+                        calendarType: widget.isSingleDate
+                            ? CalendarDatePicker2Type.single
+                            : CalendarDatePicker2Type.range,
+                        selectedDayHighlightColor: Colors.blue,
+                        weekdayLabels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+                        weekdayLabelTextStyle: TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.bold,
+                          fontSize: isMobile ? 10 : 14,
+                        ),
+                        firstDayOfWeek: 0,
+                        controlsHeight: isMobile ? 40 : 50,
+                        controlsTextStyle: TextStyle(
+                          color: Colors.black,
+                          fontSize: isMobile ? 10 : 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        dayTextStyle: TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.normal,
+                          fontSize: isMobile ? 11 : 14,
+                        ),
+                        disabledDayTextStyle: TextStyle(
+                          color: Colors.grey,
+                          fontSize: isMobile ? 11 : 14,
+                        ),
+                        selectableDayPredicate: (day) => true,
+                        lastMonthIcon: Icon(
+                          Icons.chevron_left,
+                          size: isMobile ? 18 : 24,
+                        ),
+                        nextMonthIcon: Icon(
+                          Icons.chevron_right,
+                          size: isMobile ? 18 : 24,
+                        ),
+                      ),
+                      value: _selectedDates,
+                      onValueChanged: (dates) {
+                        setState(() {
+                          _selectedDates = dates;
+                          _errorMessage = null; // Clear error on selection
+                        });
+                      },
+                    ),
                   ),
                 ),
               ),
 
-              const SizedBox(height: 24),
+              SizedBox(height: isMobile ? 16 : 24),
 
               // Action buttons
               Row(

@@ -437,6 +437,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   final _commentsController = TextEditingController();
 
   bool _isActive = true;
+  bool _isPermanent = false;
   Map<RoleType, bool> _roleCapabilities = {};
   List<DateConstraint> _constraints = [];
   bool _isDirty = false;
@@ -458,6 +459,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       _nameController.text = widget.member!.name;
       _commentsController.text = widget.member!.comments;
       _isActive = widget.member!.isActive;
+      _isPermanent = widget.member!.isPermanent;
       _roleCapabilities = Map.from(widget.member!.roleCapabilities);
       _constraints = List.from(widget.member!.constraints);
     }
@@ -492,6 +494,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       id: _isEditMode ? widget.member!.id : const Uuid().v4(),
       name: _nameController.text.trim(),
       isActive: _isActive,
+      isPermanent: _isPermanent,
       constraints: _constraints,
       roleCapabilities: _roleCapabilities,
       comments: _commentsController.text.trim(),
@@ -670,6 +673,18 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                 onChanged: (value) {
                                   setState(() {
                                     _isActive = value;
+                                    _isDirty = true;
+                                  });
+                                },
+                              ),
+
+                              // Permanent status switch
+                              SwitchListTile(
+                                title: const Text('חבר צוות קבוע'),
+                                value: _isPermanent,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _isPermanent = value;
                                     _isDirty = true;
                                   });
                                 },

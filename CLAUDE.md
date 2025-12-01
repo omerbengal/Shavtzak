@@ -176,6 +176,37 @@ The app uses device-based admin authentication:
 - **Null Safety**: Full Dart null-safety enabled
 - **Testing**: Test infrastructure exists (`bloc_test`, `mockito`, `fake_cloud_firestore`) but no tests implemented yet
 
-## Browser MCP Integration
+## Features to be implemented:
 
-Use the Browser MCP tools available in this environment to test the Flutter web build interactively.
+Feature 1: Fix text from 'סה"כ משרות' to 'סה"כ תפקידים' in team members screen
+  ☒ Feature 2: Add 'isPermanent' boolean field to TeamMember entity with copyWith support
+  ☒ Feature 2: Update TeamMemberModel to serialize/deserialize 'isPermanent' field to/from Firestore
+  ☒ Feature 2: Add toggle switch in team member create/edit UI for permanent status
+  ☒ Feature 3: Add validation to event form to make location field required (non-empty)
+  ☒ Feature 4: Update assignments screen to display event time (startTime-endTime) next to event date
+  ☒ Feature 4: Update assignments screen to display event location in assignment rows
+  ☐ Feature 5: Add optional 'note' String field to DateConstraint entity
+  ☐ Feature 5: Update date constraint UI to show text field for adding/editing notes
+  ☐ Feature 6: Implement logic to identify empty vs assigned role slots when reducing quotas
+  ☐ Feature 6: Create popup dialog that lists assigned people and asks user to select which to remove when quota reduction
+    requires it
+  ☐ Feature 6: Update event edit modal role quota logic to delete empty slots first, then show popup if needed
+  ☐ Feature 7: Create helper method to calculate event assignment status (none/partial/complete/no-quotas)
+  ☐ Feature 7: Update events screen to apply row background colors based on assignment status (red=none, orange=partial,
+    green=complete)
+  ☐ Feature 8: Add Dismissible widget to assignment rows in assignments screen for swipe-to-delete
+  ☐ Feature 8: Implement delete logic that removes both quota and assignment when swiping assignment row
+  ☐ Feature 9: Add GestureDetector/InkWell to event name text in assignment rows to open event edit modal
+  ☐ Feature 10: Add GestureDetector/InkWell to role name text in assignment rows to open event edit modal
+  ☐ Feature 10: Implement focus/scroll logic to highlight selected role when opening modal via role click
+  ☐ Feature 11: Create multi-step manual assignment flow UI (step 1: select event)
+  ☐ Feature 11: Add step 2: select team member with constraint validation and warning popup
+  ☐ Feature 11: Add step 3: select role from member's capabilities and auto-create quota + assignment
+  ☐ Feature 12: Create event duplication BLoC event that copies event with new date/time
+  ☐ Feature 12: Implement logic to duplicate all assignments and detect date constraint conflicts
+  ☐ Feature 12: Update UI to show duplicated event edit modal with assignments highlighted in bright red if conflicts exist
+  ☐ Feature 13: Design user authentication system with unique user codes (entity, model, repository)
+  ☐ Feature 13: Create user-specific routing with /user/{code} URL pattern
+  ☐ Feature 13: Link TeamMembers to User accounts for personalized views
+  ☐ Feature 14: Create user-facing constraint management screen accessible via user URL
+  ☐ Feature 14: Remove constraint management from admin team members screen (admin view only)
