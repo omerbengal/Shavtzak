@@ -71,14 +71,25 @@ class AssignmentSlotsLoaded extends AssignmentState {
   final int totalSlots;
   final int filledSlots;
   final int unfilledSlots;
+  final Set<String> selectedEventIds; // Event IDs to filter by (empty = no filter)
 
-  AssignmentSlotsLoaded(this.slots)
-      : totalSlots = slots.length,
+  AssignmentSlotsLoaded(
+    this.slots, {
+    this.selectedEventIds = const {},
+  })  : totalSlots = slots.length,
         filledSlots = slots.where((s) => s.isFilled).length,
         unfilledSlots = slots.where((s) => !s.isFilled).length;
 
   @override
-  List<Object?> get props => [slots, totalSlots, filledSlots, unfilledSlots];
+  List<Object?> get props => [slots, totalSlots, filledSlots, unfilledSlots, selectedEventIds];
+
+  /// Create a copy with new filter
+  AssignmentSlotsLoaded copyWith({Set<String>? selectedEventIds}) {
+    return AssignmentSlotsLoaded(
+      slots,
+      selectedEventIds: selectedEventIds ?? this.selectedEventIds,
+    );
+  }
 }
 
 /// Single assignment detail loaded

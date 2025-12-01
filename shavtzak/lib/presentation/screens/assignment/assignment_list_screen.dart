@@ -5,11 +5,13 @@ import 'package:collection/collection.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../../domain/entities/event.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/navigation_menu.dart';
+import 'assignment_filter_modal.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -140,10 +142,18 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     // Store all slots for checking
     _allSlots = state.slots;
 
-    // Filter slots based on toggle
+    // Apply event filter first
+    var filteredSlots = state.slots;
+    if (state.selectedEventIds.isNotEmpty) {
+      filteredSlots = filteredSlots
+          .where((s) => state.selectedEventIds.contains(s.event.id))
+          .toList();
+    }
+
+    // Then apply unfilled filter
     final slots = _showOnlyUnfilled
-        ? state.slots.where((s) => !s.isFilled).toList()
-        : state.slots;
+        ? filteredSlots.where((s) => !s.isFilled).toList()
+        : filteredSlots;
 
     if (slots.isEmpty) {
       return _buildEmptyState();
@@ -177,8 +187,19 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           color: Colors.grey.shade200,
-          child: const Row(
+          child: Row(
             children: [
+              // Filter icon (right side in RTL)
+              IconButton(
+                icon: Icon(
+                  Icons.filter_list,
+                  color: state.selectedEventIds.isEmpty
+                      ? Colors.grey.shade700
+                      : Colors.blue,
+                ),
+                onPressed: () => _showFilterModal(context, state),
+                tooltip: 'סינון',
+              ),
               Expanded(
                   flex: 3,
                   child: Text('אירוע',
@@ -831,5 +852,38 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _showFilterModal(
+      BuildContext context, AssignmentSlotsLoaded state) async {
+    // Get unique events from slots that have at least one role with capacity > 0
+    final eventsMap = <String, Event>{};
+    for (final slot in state.slots) {
+      if (!eventsMap.containsKey(slot.event.id)) {
+        eventsMap[slot.event.id] = slot.event;
+      }
+    }
+    final availableEvents = eventsMap.values.toList()
+      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+
+    final result = await showDialog<Set<String>>(
+      context: context,
+      builder: (context) => AssignmentFilterModal(
+        availableEvents: availableEvents,
+        selectedEventIds: state.selectedEventIds,
+      ),
+    );
+
+    if (result != null) {
+      if (!mounted) return;
+
+      if (result.isEmpty) {
+        // Clear filter
+        context.read<AssignmentBloc>().add(const ClearEventFilter());
+      } else {
+        // Apply filter
+        context.read<AssignmentBloc>().add(ApplyEventFilter(result));
+      }
+    }
   }
 }

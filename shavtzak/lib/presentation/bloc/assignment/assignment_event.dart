@@ -141,3 +141,18 @@ class RefreshAssignments extends AssignmentEvent {
 class LoadAssignmentSlots extends AssignmentEvent {
   const LoadAssignmentSlots();
 }
+
+/// Apply event filter to assignment slots
+class ApplyEventFilter extends AssignmentEvent {
+  final Set<String> eventIds;
+
+  const ApplyEventFilter(this.eventIds);
+
+  @override
+  List<Object?> get props => [eventIds];
+}
+
+/// Clear event filter
+class ClearEventFilter extends AssignmentEvent {
+  const ClearEventFilter();
+}

@@ -37,6 +37,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<LoadEventAssignmentStats>(_onLoadEventAssignmentStats);
     on<RefreshAssignments>(_onRefreshAssignments);
     on<LoadAssignmentSlots>(_onLoadAssignmentSlots);
+    on<ApplyEventFilter>(_onApplyEventFilter);
+    on<ClearEventFilter>(_onClearEventFilter);
   }
 
   /// Load all assignments with real-time updates
@@ -699,6 +701,28 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Don't silently fail - emit the slots loaded state even if there's an error
       // This ensures the UI doesn't disappear
       emit(AssignmentError('שגיאה ברענון שיבוצים: $e'));
+    }
+  }
+
+  /// Apply event filter to current slots
+  Future<void> _onApplyEventFilter(
+    ApplyEventFilter event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    if (state is AssignmentSlotsLoaded) {
+      final currentState = state as AssignmentSlotsLoaded;
+      emit(currentState.copyWith(selectedEventIds: event.eventIds));
+    }
+  }
+
+  /// Clear event filter
+  Future<void> _onClearEventFilter(
+    ClearEventFilter event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    if (state is AssignmentSlotsLoaded) {
+      final currentState = state as AssignmentSlotsLoaded;
+      emit(currentState.copyWith(selectedEventIds: {}));
     }
   }
 }
