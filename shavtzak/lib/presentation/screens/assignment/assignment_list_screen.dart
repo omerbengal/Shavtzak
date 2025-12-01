@@ -6,9 +6,12 @@ import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/event.dart';
+import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
+import '../../bloc/event/event_bloc.dart';
+import '../../bloc/event/event_event.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/navigation_menu.dart';
 import 'assignment_filter_modal.dart';
@@ -25,6 +28,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   AssignmentSlotsLoaded? _lastSlotsState;
   // Track when dropdowns need to be reset (forces new widget instance)
   final Map<String, int> _dropdownResetCounters = {};
+  // Track assignment IDs that are pending deletion to prevent race conditions
+  final Set<String> _pendingDeletions = {};
+  // Track assignment IDs that are pending creation (not yet in DB)
+  final Set<String> _pendingCreates = {};
+  // Track pending creates that should be deleted immediately after creation completes
+  final Set<String> _pendingCreatesToDelete = {};
 
   @override
   void initState() {
@@ -73,6 +82,23 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       backgroundColor: Colors.red),
                 );
             } else if (state is AssignmentOperationSuccess) {
+              // Check if any completed creates need immediate deletion
+              if (_pendingCreatesToDelete.isNotEmpty) {
+                // Delete all assignments that were cleared during their creation
+                for (final id in _pendingCreatesToDelete) {
+                  context.read<AssignmentBloc>().add(DeleteAssignment(id));
+                }
+                setState(() {
+                  _pendingCreatesToDelete.clear();
+                });
+              }
+
+              // Clear pending creates when operation succeeds
+              // (operation could be create, update, or delete - clear all tracking)
+              setState(() {
+                _pendingCreates.clear();
+              });
+
               // BLoC will automatically reload slots without showing loading
               ScaffoldMessenger.of(context)
                 ..clearSnackBars()
@@ -101,8 +127,30 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             }
 
             if (state is AssignmentSlotsLoaded) {
-              _lastSlotsState = state; // Store the last successful state
-              return _buildSlotGrid(state);
+              // Filter out slots with assignments pending deletion to prevent race conditions
+              final filteredSlots = state.slots.map((slot) {
+                // If this slot has an assignment that's pending deletion, clear it
+                if (slot.currentAssignment != null &&
+                    _pendingDeletions.contains(slot.currentAssignment!.id)) {
+                  return AssignmentSlot(
+                    event: slot.event,
+                    roleType: slot.roleType,
+                    slotIndex: slot.slotIndex,
+                    currentAssignment: null, // Clear the assignment
+                    availableMembers: slot.availableMembers,
+                    alreadyAssignedMembers: slot.alreadyAssignedMembers,
+                    hasDoubleAssignment: false,
+                    otherRoles: const [],
+                  );
+                }
+                return slot;
+              }).toList();
+
+              _lastSlotsState = AssignmentSlotsLoaded(
+                filteredSlots,
+                selectedEventIds: state.selectedEventIds,
+              ); // Store the filtered state
+              return _buildSlotGrid(_lastSlotsState!);
             }
 
             // For any other state (Operating, Success, Error), keep showing last state if available
@@ -240,7 +288,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   }
 
   Widget _buildSlotRow(AssignmentSlot slot) {
-    return Container(
+    final rowContent = Container(
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
         color: slot.isFilled ? null : Colors.orange.shade50,
@@ -359,6 +407,132 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         ],
       ),
     );
+
+    // Make all slots dismissible (both filled and unfilled)
+    return Dismissible(
+      key: Key('slot_${slot.event.id}_${slot.roleType.name}_${slot.slotIndex}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerLeft, // RTL: left side is the visible side
+        padding: const EdgeInsets.only(left: 20),
+        color: Colors.red,
+        child: const Icon(Icons.delete, color: Colors.white, size: 32),
+      ),
+      confirmDismiss: (direction) async {
+        // Show confirmation dialog
+        final isSlotFilled = slot.isFilled;
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: const Text('מחיקת משרה'),
+              content: Text(
+                isSlotFilled
+                    ? 'האם אתה בטוח שברצונך למחוק משרה זו?\nפעולה זו תמחק את השיבוץ ותקטין את מספר המשרות הנדרשות לתפקיד זה.'
+                    : 'האם אתה בטוח שברצונך למחוק משרה פנויה זו?\nפעולה זו תקטין את מספר המשרות הנדרשות לתפקיד זה.',
+              ),
+              actions: [
+                TextButton(
+                  child: const Text('ביטול'),
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                ),
+                TextButton(
+                  child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                ),
+              ],
+            ),
+          ),
+        );
+
+        // If user confirmed, handle the dismissal
+        if (confirmed == true) {
+          await _handleSlotDismiss(slot);
+        }
+
+        // Always return false to prevent automatic dismissal
+        // (we handle removal by reloading the data)
+        return false;
+      },
+      child: rowContent,
+    );
+  }
+
+  /// Handle dismissing a slot - removes role slot from event (reduces capacity)
+  /// If the slot is filled, also deletes the assignment
+  Future<void> _handleSlotDismiss(AssignmentSlot slot) async {
+    try {
+      final assignmentRepo = context.read<AssignmentRepository>();
+      final eventBloc = context.read<EventBloc>();
+
+      // Step 1: Delete the assignment if it exists (filled slot)
+      if (slot.currentAssignment != null) {
+        await assignmentRepo.deleteAssignment(slot.currentAssignment!.id);
+      }
+
+      // Step 2: Get all remaining assignments for this event and role
+      final allAssignments = await assignmentRepo.getAssignmentsByEvent(slot.event.id);
+      final roleAssignments = allAssignments
+          .where((a) => a.roleType == slot.roleType)
+          .toList()
+        ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+
+      // Step 3: Reorder remaining assignments to fill gaps
+      for (int i = 0; i < roleAssignments.length; i++) {
+        if (roleAssignments[i].slotIndex != i) {
+          final updated = roleAssignments[i].copyWith(
+            slotIndex: i,
+            updatedAt: DateTime.now(),
+          );
+          await assignmentRepo.updateAssignmentUnchecked(updated);
+        }
+      }
+
+      // Step 4: Reduce the event's quota for this role by 1
+      final updatedRoleRequirements = Map<RoleType, int>.from(slot.event.roleRequirements);
+      final currentQuota = updatedRoleRequirements[slot.roleType] ?? 0;
+      if (currentQuota > 0) {
+        updatedRoleRequirements[slot.roleType] = currentQuota - 1;
+      }
+
+      final updatedEvent = slot.event.copyWith(
+        roleRequirements: updatedRoleRequirements,
+        updatedAt: DateTime.now(),
+      );
+
+      // Step 5: Update the event
+      eventBloc.add(UpdateEvent(updatedEvent));
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('המשרה נמחקה בהצלחה'),
+              backgroundColor: Colors.green,
+            ),
+          );
+      }
+
+      // Step 6: Reload assignment slots to reflect changes
+      if (mounted) {
+        context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+      }
+    } catch (e) {
+      // Show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('שגיאה במחיקת המשרה: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+      }
+    }
   }
 
   Widget _buildAssignmentCell(AssignmentSlot slot, double availableWidth) {
@@ -564,6 +738,19 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     if (slot.currentAssignment != null) {
       final clearedMemberId = slot.currentAssignment!.teamMemberId;
       final clearedMember = slot.currentAssignment!.teamMember;
+      final assignmentId = slot.currentAssignment!.id;
+
+      // Add to pending deletions to prevent race conditions
+      _pendingDeletions.add(assignmentId);
+
+      // Remove from pending deletions after 5 seconds (cleanup timeout)
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted) {
+          setState(() {
+            _pendingDeletions.remove(assignmentId);
+          });
+        }
+      });
 
       // Optimistic update: clear the assignment in local state immediately
       if (_lastSlotsState != null) {
@@ -625,9 +812,18 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       }
 
       // Then proceed with actual database deletion
-      context.read<AssignmentBloc>().add(
-            DeleteAssignment(slot.currentAssignment!.id),
-          );
+      // BUT: if this assignment is pending creation (not yet in DB), schedule deletion for after creation
+      if (_pendingCreates.contains(assignmentId)) {
+        // Assignment is still being created - mark it for deletion after creation completes
+        _pendingCreatesToDelete.add(assignmentId);
+        // Don't dispatch DeleteAssignment yet - the assignment doesn't exist in DB yet
+        // It will be deleted immediately after the create completes (see listener)
+      } else {
+        // Assignment exists in DB - dispatch delete immediately
+        context.read<AssignmentBloc>().add(
+              DeleteAssignment(slot.currentAssignment!.id),
+            );
+      }
     }
   }
 
@@ -753,56 +949,49 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return;
     }
 
-    // Optimistic update: update local state immediately
+    // Prepare the assignment for DB operation (create it once with a single UUID)
+    final Assignment assignmentForDB;
+    if (slot.currentAssignment != null) {
+      // Update existing
+      assignmentForDB = slot.currentAssignment!.copyWith(
+        teamMemberId: selectedMember.id,
+        teamMember: selectedMember,
+        updatedAt: DateTime.now(),
+      );
+    } else {
+      // Create new - generate UUID ONCE here
+      assignmentForDB = Assignment(
+        id: const Uuid().v4(),
+        eventId: slot.event.id,
+        teamMemberId: selectedMember.id,
+        roleType: slot.roleType,
+        slotIndex: slot.slotIndex,
+        status: AssignmentStatus.confirmed,
+        notes: '',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        event: slot.event,
+        teamMember: selectedMember,
+      );
+    }
+
+    // Optimistic update: update local state immediately using the SAME assignment
     if (_lastSlotsState != null) {
       final updatedSlots = _lastSlotsState!.slots.map((s) {
         if (s.event.id == slot.event.id &&
             s.roleType == slot.roleType &&
             s.slotIndex == slot.slotIndex) {
-          // This is the slot being updated
-          if (slot.currentAssignment != null) {
-            // Update existing assignment
-            final updatedAssignment = slot.currentAssignment!.copyWith(
-              teamMemberId: selectedMember.id,
-              teamMember: selectedMember,
-              updatedAt: DateTime.now(),
-            );
-            return AssignmentSlot(
-              event: s.event,
-              roleType: s.roleType,
-              slotIndex: s.slotIndex,
-              currentAssignment: updatedAssignment,
-              availableMembers: s.availableMembers,
-              alreadyAssignedMembers: s.alreadyAssignedMembers,
-              hasDoubleAssignment: s.hasDoubleAssignment,
-              otherRoles: s.otherRoles,
-            );
-          } else {
-            // Create new assignment
-            final newAssignment = Assignment(
-              id: const Uuid().v4(),
-              eventId: slot.event.id,
-              teamMemberId: selectedMember.id,
-              roleType: slot.roleType,
-              slotIndex: slot.slotIndex,
-              status: AssignmentStatus.confirmed,
-              notes: '',
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-              event: slot.event,
-              teamMember: selectedMember,
-            );
-            return AssignmentSlot(
-              event: s.event,
-              roleType: s.roleType,
-              slotIndex: s.slotIndex,
-              currentAssignment: newAssignment,
-              availableMembers: s.availableMembers,
-              alreadyAssignedMembers: s.alreadyAssignedMembers,
-              hasDoubleAssignment: s.hasDoubleAssignment,
-              otherRoles: s.otherRoles,
-            );
-          }
+          // This is the slot being updated - use the assignmentForDB
+          return AssignmentSlot(
+            event: s.event,
+            roleType: s.roleType,
+            slotIndex: s.slotIndex,
+            currentAssignment: assignmentForDB,
+            availableMembers: s.availableMembers,
+            alreadyAssignedMembers: s.alreadyAssignedMembers,
+            hasDoubleAssignment: s.hasDoubleAssignment,
+            otherRoles: s.otherRoles,
+          );
         } else if (s.event.id == slot.event.id) {
           // For ALL other slots in the same event, update their available/alreadyAssigned lists
           // Remove selectedMember from availableMembers
@@ -834,30 +1023,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       });
     }
 
-    // Then proceed with actual database update
+    // Then proceed with actual database update using the SAME assignment
     if (slot.currentAssignment != null) {
-      // Update existing
-      final updated = slot.currentAssignment!.copyWith(
-        teamMemberId: selectedMember.id,
-        updatedAt: DateTime.now(),
-      );
-      context.read<AssignmentBloc>().add(UpdateAssignment(updated));
+      context.read<AssignmentBloc>().add(UpdateAssignment(assignmentForDB));
     } else {
-      // Create new
-      final assignment = Assignment(
-        id: const Uuid().v4(),
-        eventId: slot.event.id,
-        teamMemberId: selectedMember.id,
-        roleType: slot.roleType,
-        slotIndex: slot.slotIndex,
-        status: AssignmentStatus.confirmed,
-        notes: '',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        event: slot.event,
-        teamMember: selectedMember,
-      );
-      context.read<AssignmentBloc>().add(CreateAssignment(assignment));
+      // Track this as a pending create
+      _pendingCreates.add(assignmentForDB.id);
+      context.read<AssignmentBloc>().add(CreateAssignment(assignmentForDB));
     }
   }
 

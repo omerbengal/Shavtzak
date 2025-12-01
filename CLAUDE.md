@@ -188,17 +188,15 @@ Feature 1: Fix text from 'סה"כ משרות' to 'סה"כ תפקידים' in tea
   ☒ Feature 5: Add optional 'note' String field to DateConstraint entity
   ☒ Feature 5: Update date constraint UI to show text field for adding/editing notes
   ☒ Feature 6: Implement logic to identify empty vs assigned role slots when reducing quotas
-  ☒ Feature 6: Create popup dialog that lists assigned people and asks user to select which to remove when quota reduction
-    requires it
+  ☒ Feature 6: Create popup dialog that lists assigned people and asks user to select which to remove when quota reduction requires it
   ☒ Feature 6: Update event edit modal role quota logic to delete empty slots first, then show popup if needed
   ☐ Feature 7: Create helper method to calculate event assignment status (none/partial/complete/no-quotas)
-  ☐ Feature 7: Update events screen to apply row background colors based on assignment status (red=none, orange=partial,
-    green=complete)
+  ☐ Feature 7: Update events screen to apply row background colors based on assignment status (light red=none, light orange=partial, light green=complete)
   ☐ Feature 8: Add Dismissible widget to assignment rows in assignments screen for swipe-to-delete
   ☐ Feature 8: Implement delete logic that removes both quota and assignment when swiping assignment row
-  ☐ Feature 9: Add GestureDetector/InkWell to event name text in assignment rows to open event edit modal
-  ☐ Feature 10: Add GestureDetector/InkWell to role name text in assignment rows to open event edit modal
-  ☐ Feature 10: Implement focus/scroll logic to highlight selected role when opening modal via role click
+  ☐ Feature 9: Add GestureDetector/InkWell to event name text in assignment rows to open event edit modal in assignment page
+  ☐ Feature 10: Add GestureDetector/InkWell to role name text in assignment rows to open event edit modal in assignment page
+  ☐ Feature 10: Implement focus/scroll logic to highlight selected role when opening modal via role click in assignment page
   ☐ Feature 11: Create multi-step manual assignment flow UI (step 1: select event)
   ☐ Feature 11: Add step 2: select team member with constraint validation and warning popup
   ☐ Feature 11: Add step 3: select role from member's capabilities and auto-create quota + assignment

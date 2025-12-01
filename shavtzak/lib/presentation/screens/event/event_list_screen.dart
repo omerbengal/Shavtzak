@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/utils/validators.dart';
+import '../../../core/utils/event_assignment_status.dart';
 import 'package:uuid/uuid.dart';
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/assignment.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
@@ -24,6 +26,7 @@ class _EventListScreenState extends State<EventListScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
   EventsLoaded? _lastLoadedState;
+  Map<String, List<Assignment>> _eventAssignmentsMap = {};
 
   @override
   void initState() {
@@ -129,6 +132,9 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   Widget _buildEventList(EventsLoaded state) {
+    // Load assignments for all events
+    _loadAssignmentsForEvents(state.events);
+
     return RefreshIndicator(
       onRefresh: () async {
         context.read<EventBloc>().add(const RefreshEvents());
@@ -162,6 +168,44 @@ class _EventListScreenState extends State<EventListScreen> {
     );
   }
 
+  /// Load assignments for all events
+  Future<void> _loadAssignmentsForEvents(List<Event> events) async {
+    final assignmentRepo = context.read<AssignmentRepository>();
+
+    for (final event in events) {
+      // Only load if not already cached
+      if (!_eventAssignmentsMap.containsKey(event.id)) {
+        try {
+          final assignments = await assignmentRepo.getAssignmentsByEvent(event.id);
+          if (mounted) {
+            setState(() {
+              _eventAssignmentsMap[event.id] = assignments;
+            });
+          }
+        } catch (e) {
+          // Silently fail - event will show no color
+        }
+      }
+    }
+  }
+
+  /// Get background color for event card based on assignment status
+  Color? _getEventCardColor(Event event) {
+    final assignments = _eventAssignmentsMap[event.id] ?? [];
+    final status = EventAssignmentStatusHelper.calculateStatus(event, assignments);
+
+    switch (status) {
+      case EventAssignmentStatus.none:
+        return Colors.red.shade50;
+      case EventAssignmentStatus.partial:
+        return Colors.orange.shade50;
+      case EventAssignmentStatus.complete:
+        return Colors.green.shade50;
+      case EventAssignmentStatus.noQuotas:
+        return null; // Default color
+    }
+  }
+
   Widget _buildStatItem(String label, String value) {
     return Column(
       children: [
@@ -178,7 +222,10 @@ class _EventListScreenState extends State<EventListScreen> {
         event.startDate.month == event.endDate.month &&
         event.startDate.day == event.endDate.day;
 
+    final cardColor = _getEventCardColor(event);
+
     return Card(
+      color: cardColor,
       child: InkWell(
         onTap: () => _showEventFormModal(event),
         child: Padding(
