@@ -1,7 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_web_plugins/url_strategy.dart';
 import 'firebase_options.dart';
 
 // Data layer
@@ -25,6 +25,9 @@ import 'core/theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Preload Rubik font to prevent FOUT (Flash of Unstyled Text)
+  await _preloadFont();
 
   // Use path-based URLs instead of hash-based URLs
   // usePathUrlStrategy();
@@ -56,6 +59,19 @@ void main() async {
     assignmentRepository: assignmentRepository,
     authRepository: authRepository,
   ));
+}
+
+/// Preload custom Rubik font to prevent FOUT
+Future<void> _preloadFont() async {
+  try {
+    // Preload the font by loading it into memory
+    await rootBundle.load('assets/fonts/Rubik-VariableFont_wght.ttf');
+    // Give the font a moment to register with the Flutter engine
+    await Future.delayed(const Duration(milliseconds: 100));
+  } catch (e) {
+    // Font loading failed, app will fall back to default system font
+    debugPrint('Failed to preload Rubik font: $e');
+  }
 }
 
 class MyApp extends StatelessWidget {

@@ -159,6 +159,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return _buildEmptyState();
     }
 
+    // Calculate statistics based on filtered slots
+    final totalSlots = slots.length;
+    final filledSlots = slots.where((s) => s.isFilled).length;
+    final unfilledSlots = slots.where((s) => !s.isFilled).length;
+
     return RefreshIndicator(
       onRefresh: () async {
         context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
@@ -174,11 +179,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _buildStatItem(
-                  'סה"כ תפקידים', state.totalSlots.toString(), Colors.blue),
+                  'סה"כ תפקידים', totalSlots.toString(), Colors.blue),
               _buildStatItem(
-                  'משובץ', state.filledSlots.toString(), Colors.green),
+                  'משובץ', filledSlots.toString(), Colors.green),
               _buildStatItem(
-                  'פנוי', state.unfilledSlots.toString(), Colors.orange),
+                  'פנוי', unfilledSlots.toString(), Colors.orange),
             ],
           ),
         ),
@@ -557,6 +562,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   void _handleClearAssignment(AssignmentSlot slot) {
     if (slot.currentAssignment != null) {
+      final clearedMemberId = slot.currentAssignment!.teamMemberId;
+      final clearedMember = slot.currentAssignment!.teamMember;
+
       // Optimistic update: clear the assignment in local state immediately
       if (_lastSlotsState != null) {
         final updatedSlots = _lastSlotsState!.slots.map((s) {
@@ -574,6 +582,39 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               hasDoubleAssignment: false,
               otherRoles: const [],
             );
+          } else if (s.event.id == slot.event.id) {
+            // For ALL other slots in the same event, check if member is still assigned elsewhere
+            // If not, move them back to availableMembers
+            final stillAssignedElsewhere = _lastSlotsState!.slots.any((otherSlot) =>
+                otherSlot.event.id == slot.event.id &&
+                otherSlot.isFilled &&
+                otherSlot.currentAssignment!.teamMemberId == clearedMemberId &&
+                !(otherSlot.event.id == slot.event.id &&
+                  otherSlot.roleType == slot.roleType &&
+                  otherSlot.slotIndex == slot.slotIndex)); // Exclude the slot being cleared
+
+            if (!stillAssignedElsewhere && clearedMember != null) {
+              // Member is no longer assigned to this event - add back to available
+              final updatedAvailable = s.availableMembers.any((m) => m.id == clearedMemberId)
+                  ? s.availableMembers
+                  : [...s.availableMembers, clearedMember];
+
+              // Remove from alreadyAssigned
+              final updatedAlreadyAssigned = s.alreadyAssignedMembers
+                  .where((m) => m.id != clearedMemberId)
+                  .toList();
+
+              return AssignmentSlot(
+                event: s.event,
+                roleType: s.roleType,
+                slotIndex: s.slotIndex,
+                currentAssignment: s.currentAssignment,
+                availableMembers: updatedAvailable,
+                alreadyAssignedMembers: updatedAlreadyAssigned,
+                hasDoubleAssignment: s.hasDoubleAssignment,
+                otherRoles: s.otherRoles,
+              );
+            }
           }
           return s;
         }).toList();
@@ -706,6 +747,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   Future<void> _handleAssignmentChange(
       AssignmentSlot slot, TeamMember selectedMember) async {
+    // Check if the selected member is already assigned to this slot
+    if (slot.currentAssignment?.teamMemberId == selectedMember.id) {
+      // Already assigned - do nothing, no DB write, no Snackbar
+      return;
+    }
+
     // Optimistic update: update local state immediately
     if (_lastSlotsState != null) {
       final updatedSlots = _lastSlotsState!.slots.map((s) {
@@ -756,6 +803,28 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               otherRoles: s.otherRoles,
             );
           }
+        } else if (s.event.id == slot.event.id) {
+          // For ALL other slots in the same event, update their available/alreadyAssigned lists
+          // Remove selectedMember from availableMembers
+          final updatedAvailable = s.availableMembers
+              .where((m) => m.id != selectedMember.id)
+              .toList();
+
+          // Add selectedMember to alreadyAssignedMembers if not already there
+          final updatedAlreadyAssigned = s.alreadyAssignedMembers.any((m) => m.id == selectedMember.id)
+              ? s.alreadyAssignedMembers
+              : [...s.alreadyAssignedMembers, selectedMember];
+
+          return AssignmentSlot(
+            event: s.event,
+            roleType: s.roleType,
+            slotIndex: s.slotIndex,
+            currentAssignment: s.currentAssignment,
+            availableMembers: updatedAvailable,
+            alreadyAssignedMembers: updatedAlreadyAssigned,
+            hasDoubleAssignment: s.hasDoubleAssignment,
+            otherRoles: s.otherRoles,
+          );
         }
         return s;
       }).toList();
