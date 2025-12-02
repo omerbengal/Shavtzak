@@ -682,27 +682,30 @@ class _EventFormModalState extends State<EventFormModal> {
                               const SizedBox(height: 8),
                               ...RoleType.values.map((role) {
                                 final isHighlighted = _highlightedRole == role;
-                                return AnimatedOpacity(
-                                  opacity: isHighlighted ? _highlightOpacity : 1.0,
+                                return AnimatedContainer(
+                                  key: _roleKeys[role],
                                   duration: const Duration(milliseconds: 500),
-                                  child: Container(
-                                    key: _roleKeys[role],
-                                    decoration: BoxDecoration(
-                                      color: isHighlighted ? Colors.blue.shade100 : null,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: isHighlighted
-                                          ? Border.all(color: Colors.blue.shade700, width: 2)
-                                          : null,
-                                    ),
-                                    child: ListTile(
-                                      title: Text(
-                                        role.hebrewName,
-                                        style: TextStyle(
-                                          fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
-                                          color: isHighlighted ? Colors.blue.shade900 : null,
-                                        ),
+                                  decoration: BoxDecoration(
+                                    color: isHighlighted
+                                        ? Colors.blue.shade100.withOpacity(_highlightOpacity)
+                                        : null,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: isHighlighted
+                                        ? Border.all(
+                                            color: Colors.blue.shade700.withOpacity(_highlightOpacity),
+                                            width: 2,
+                                          )
+                                        : null,
+                                  ),
+                                  child: ListTile(
+                                    title: Text(
+                                      role.hebrewName,
+                                      style: TextStyle(
+                                        fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                                        color: isHighlighted ? Colors.blue.shade900 : null,
                                       ),
-                                      trailing: Row(
+                                    ),
+                                    trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         IconButton(
@@ -735,7 +738,6 @@ class _EventFormModalState extends State<EventFormModal> {
                                         ),
                                       ],
                                     ),
-                                  ),
                                   ),
                                 );
                               }),
