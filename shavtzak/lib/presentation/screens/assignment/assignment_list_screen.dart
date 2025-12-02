@@ -419,8 +419,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         extentRatio: 0.25,
         dismissible: DismissiblePane(
           confirmDismiss: () => _confirmSlotDeletion(slot),
-          closeOnCancel: true,
-          dismissThreshold: 0.9,
+          closeOnCancel: true, // close the action if the dialog is cancelled
+          dismissThreshold: 0.9, // require nearly full swipe to trigger delete
           onDismissed: () async {
             await _handleSlotDismiss(slot);
           },
@@ -548,6 +548,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               backgroundColor: Colors.red,
             ),
           );
+
+        // Reload assignments to restore the dismissed row when deletion fails
+        context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
       }
     }
   }
