@@ -15,6 +15,7 @@ import '../../bloc/event/event_event.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/navigation_menu.dart';
 import 'assignment_filter_modal.dart';
+import '../event/widgets/event_form_modal.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -302,10 +303,18 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  slot.event.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                  textAlign: TextAlign.center,
+                GestureDetector(
+                  onTap: () => _showEventFormModal(slot.event),
+                  child: Text(
+                    slot.event.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: Colors.blue,
+                      decoration: TextDecoration.underline,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
                 // Line 1: Dates (single date if same, or date range)
                 Text(
@@ -1129,5 +1138,22 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         context.read<AssignmentBloc>().add(ApplyEventFilter(result));
       }
     }
+  }
+
+  /// Show event form modal for editing an event
+  void _showEventFormModal(Event event) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (modalContext) => EventFormModal(
+        event: event,
+        onSuccess: () {
+          Navigator.of(modalContext).pop();
+        },
+      ),
+    );
   }
 }

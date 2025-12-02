@@ -3,13 +3,17 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../../domain/entities/assignment.dart';
 import '../../../core/utils/validators.dart';
 import 'package:uuid/uuid.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
+import '../../bloc/assignment/assignment_bloc.dart';
+import '../../bloc/assignment/assignment_event.dart';
 import '../../widgets/navigation_menu.dart';
 import '../../widgets/date_picker_dialog.dart';
+import '../../../data/repositories/assignment_repository.dart';
 
 class TeamListScreen extends StatefulWidget {
   const TeamListScreen({super.key});
@@ -476,7 +480,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     super.dispose();
   }
 
-  void _saveMember() {
+  Future<void> _saveMember() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -502,6 +506,30 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       updatedAt: now,
     );
 
+    // Check for conflicting assignments if editing and constraints changed
+    if (_isEditMode && _constraintsChanged()) {
+      final conflictingAssignments = await _getConflictingAssignments(member);
+
+      if (conflictingAssignments.isNotEmpty) {
+        // Show warning dialog
+        final confirmed = await _showConflictWarningDialog(conflictingAssignments);
+
+        if (confirmed != true) {
+          // User cancelled, don't save
+          return;
+        }
+
+        // User confirmed, delete conflicting assignments
+        final assignmentBloc = context.read<AssignmentBloc>();
+        for (final assignment in conflictingAssignments) {
+          assignmentBloc.add(DeleteAssignment(assignment.id));
+        }
+
+        // Wait a moment for deletions to process
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+    }
+
     if (_isEditMode) {
       context.read<TeamBloc>().add(UpdateTeamMember(member));
     } else {
@@ -510,6 +538,131 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
     // Close modal after save operation
     widget.onSuccess();
+  }
+
+  /// Check if constraints have changed since loading
+  bool _constraintsChanged() {
+    if (!_isEditMode) return false;
+
+    final originalConstraints = widget.member!.constraints;
+
+    // Check if length changed
+    if (originalConstraints.length != _constraints.length) {
+      return true;
+    }
+
+    // Check if any constraint is different
+    for (int i = 0; i < originalConstraints.length; i++) {
+      if (originalConstraints[i] != _constraints[i]) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /// Get assignments that conflict with the new constraints
+  Future<List<Assignment>> _getConflictingAssignments(TeamMember member) async {
+    try {
+      final assignmentRepository = RepositoryProvider.of<AssignmentRepository>(context);
+      final allAssignments = await assignmentRepository.getAssignmentsByPerson(member.id);
+
+      final conflicting = <Assignment>[];
+
+      for (final assignment in allAssignments) {
+        if (assignment.event == null) continue;
+
+        // Check if any constraint conflicts with the assignment's event date
+        for (final constraint in member.constraints) {
+          if (constraint.conflictsWith(assignment.event!.startDate)) {
+            conflicting.add(assignment);
+            break; // No need to check other constraints for this assignment
+          }
+        }
+      }
+
+      return conflicting;
+    } catch (e) {
+      debugPrint('Error getting conflicting assignments: $e');
+      return [];
+    }
+  }
+
+  /// Show warning dialog about conflicting assignments
+  Future<bool?> _showConflictWarningDialog(List<Assignment> conflictingAssignments) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('אזהרה - שיבוצים קיימים'),
+          content: SizedBox(
+            width: 500,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'נמצאו שיבוצים קיימים שמתנגשים עם המגבלות החדשות:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: conflictingAssignments.map((assignment) {
+                        final eventName = assignment.event?.name ?? 'אירוע לא ידוע';
+                        final eventDate = assignment.event?.startDate;
+                        final dateStr = eventDate != null
+                            ? '${eventDate.day}/${eventDate.month}/${eventDate.year}'
+                            : '';
+                        final roleName = assignment.roleType.hebrewName;
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.warning, color: Colors.orange, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '$eventName ($dateStr) - $roleName',
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'האם ברצונך למחוק את השיבוצים הללו ולשמור את המגבלות?',
+                  style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('ביטול'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('מחק שיבוצים ושמור'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _handleClose() {
