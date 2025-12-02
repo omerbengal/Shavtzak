@@ -58,6 +58,9 @@ dependencies:
   # Date Picker
   calendar_date_picker2: ^1.1.7
 
+  # Swipe actions
+  flutter_slidable: ^3.1.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
