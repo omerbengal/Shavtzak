@@ -15,6 +15,7 @@ import '../../bloc/event/event_event.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/navigation_menu.dart';
 import 'assignment_filter_modal.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -408,55 +409,68 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       ),
     );
 
-    // Make all slots dismissible (both filled and unfilled)
-    return Dismissible(
+    return Slidable(
       key: Key('slot_${slot.event.id}_${slot.roleType.name}_${slot.slotIndex}'),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerLeft, // RTL: left side is the visible side
-        padding: const EdgeInsets.only(left: 20),
-        color: Colors.red,
-        child: const Icon(Icons.delete, color: Colors.white, size: 32),
-      ),
-      confirmDismiss: (direction) async {
-        // Show confirmation dialog
-        final isSlotFilled = slot.isFilled;
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => Directionality(
-            textDirection: TextDirection.rtl,
-            child: AlertDialog(
-              title: const Text('מחיקת משרה'),
-              content: Text(
-                isSlotFilled
-                    ? 'האם אתה בטוח שברצונך למחוק משרה זו?\nפעולה זו תמחק את השיבוץ ותקטין את מספר המשרות הנדרשות לתפקיד זה.'
-                    : 'האם אתה בטוח שברצונך למחוק משרה פנויה זו?\nפעולה זו תקטין את מספר המשרות הנדרשות לתפקיד זה.',
-              ),
-              actions: [
-                TextButton(
-                  child: const Text('ביטול'),
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                ),
-                TextButton(
-                  child: const Text('מחק', style: TextStyle(color: Colors.red)),
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                ),
-              ],
-            ),
+      endActionPane: ActionPane(
+        // Keep the action visible as the row continues to slide so the
+        // trash icon/background don't disappear on a full swipe.
+        motion: const BehindMotion(),
+        extentRatio: 0.25,
+        dismissible: DismissiblePane(
+          confirmDismiss: () => _confirmSlotDeletion(slot),
+          onDismissed: () async {
+            await _handleSlotDismiss(slot);
+          },
+        ),
+        children: [
+          SlidableAction(
+            onPressed: (actionContext) async {
+              final confirmed = await _confirmSlotDeletion(slot);
+              if (!confirmed) {
+                Slidable.of(actionContext)?.close();
+                return;
+              }
+              await _handleSlotDismiss(slot);
+            },
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            icon: Icons.delete,
+            label: 'מחק',
           ),
-        );
-
-        // If user confirmed, handle the dismissal
-        if (confirmed == true) {
-          await _handleSlotDismiss(slot);
-        }
-
-        // Always return false to prevent automatic dismissal
-        // (we handle removal by reloading the data)
-        return false;
-      },
+        ],
+      ),
       child: rowContent,
     );
+  }
+
+  Future<bool> _confirmSlotDeletion(AssignmentSlot slot) async {
+    final isSlotFilled = slot.isFilled;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('מחיקת משרה'),
+          content: Text(
+            isSlotFilled
+                ? 'האם אתה בטוח שברצונך למחוק משרה זו?\nפעולה זו תמחק את השיבוץ ותקטין את מספר המשרות הנדרשות לתפקיד זה.'
+                : 'האם אתה בטוח שברצונך למחוק משרה פנויה זו?\nפעולה זו תקטין את מספר המשרות הנדרשות לתפקיד זה.',
+          ),
+          actions: [
+            TextButton(
+              child: const Text('ביטול'),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+            ),
+            TextButton(
+              child: const Text('מחק', style: TextStyle(color: Colors.red)),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return confirmed ?? false;
   }
 
   /// Handle dismissing a slot - removes role slot from event (reduces capacity)
