@@ -413,7 +413,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     return Slidable(
       key: Key('slot_${slot.event.id}_${slot.roleType.name}_${slot.slotIndex}'),
       endActionPane: ActionPane(
-        motion: const ScrollMotion(),
+        // Keep the action visible as the row continues to slide so the
+        // trash icon/background don't disappear on a full swipe.
+        motion: const BehindMotion(),
         extentRatio: 0.25,
         dismissible: DismissiblePane(
           confirmDismiss: () => _confirmSlotDeletion(slot),
