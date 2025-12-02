@@ -17,11 +17,13 @@ import 'quota_reduction_dialog.dart';
 class EventFormModal extends StatefulWidget {
   final Event? event; // null for create, non-null for edit
   final VoidCallback onSuccess;
+  final RoleType? selectedRole; // Optional role to highlight/scroll to
 
   const EventFormModal({
     super.key,
     this.event,
     required this.onSuccess,
+    this.selectedRole,
   });
 
   @override
@@ -46,13 +48,22 @@ class _EventFormModalState extends State<EventFormModal> {
   String? _dateError; // Track date validation error
   final _nameFocusNode = FocusNode(); // For name field blur detection
 
+  // For highlighting selected role
+  ScrollController? _scrollController; // Will be set from DraggableScrollableSheet
+  final _sheetController = DraggableScrollableController(); // Controller to expand sheet
+  final Map<RoleType, GlobalKey> _roleKeys = {};
+  RoleType? _highlightedRole;
+  double _highlightOpacity = 1.0; // For fade animation
+
   bool get _isEditMode => widget.event != null;
 
   @override
   void initState() {
     super.initState();
+    // Initialize role requirements and keys
     for (final role in RoleType.values) {
       _roleRequirements[role] = 0;
+      _roleKeys[role] = GlobalKey();
     }
     if (_isEditMode) {
       _nameController.text = widget.event!.name;
@@ -79,6 +90,14 @@ class _EventFormModalState extends State<EventFormModal> {
         });
       }
     });
+
+    // If a role was selected, scroll to it and highlight after build
+    if (widget.selectedRole != null) {
+      _highlightedRole = widget.selectedRole;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToRole(widget.selectedRole!);
+      });
+    }
   }
 
   @override
@@ -90,7 +109,69 @@ class _EventFormModalState extends State<EventFormModal> {
     _endTimeController.dispose();
     _assemblyTimeController.dispose();
     _nameFocusNode.dispose();
+    _sheetController.dispose();
     super.dispose();
+  }
+
+  /// Scroll to a specific role and highlight it
+  void _scrollToRole(RoleType role) {
+    // Wait for layout to complete
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // STEP 1: First, expand the sheet to maximum size
+      _sheetController.animateTo(
+        0.95, // maxChildSize
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+
+      // STEP 2: Wait for sheet expansion, then scroll using manual position calculation
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (_scrollController == null) return;
+
+        try {
+          // Calculate position based on role index (doesn't require widget to be rendered)
+          final roleIndex = RoleType.values.indexOf(role);
+          const headerOffset = 600.0; // Offset to roles section start (tuned)
+          const listTileHeight = 72.0; // Standard Material ListTile height
+          const viewportBuffer = 100.0; // Buffer to keep role away from top edge
+
+          // Calculate target with buffer to position role nicely in viewport
+          final targetPosition = headerOffset + (roleIndex * listTileHeight) - viewportBuffer;
+
+          // Clamp to valid scroll range (but allow 0 for first items)
+          final maxScroll = _scrollController!.position.maxScrollExtent;
+          final clampedPosition = targetPosition.clamp(0.0, maxScroll);
+
+          // Single smooth scroll to calculated position
+          _scrollController!.animateTo(
+            clampedPosition,
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.easeInOut,
+          );
+        } catch (e) {
+          print('Scroll error: $e');
+        }
+      });
+    });
+
+    // Fade out highlight over 2 seconds
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        setState(() {
+          _highlightOpacity = 0.0;
+        });
+
+        // Remove highlight completely after fade animation
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            setState(() {
+              _highlightedRole = null;
+              _highlightOpacity = 1.0; // Reset for next use
+            });
+          }
+        });
+      }
+    });
   }
 
   Future<void> _saveEvent() async {
@@ -286,11 +367,15 @@ class _EventFormModalState extends State<EventFormModal> {
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
+        controller: _sheetController,
         initialChildSize: 0.85,
         minChildSize: 0.5,
         maxChildSize: 0.95,
         expand: false,
         builder: (context, scrollController) {
+          // Capture the scroll controller from DraggableScrollableSheet
+          _scrollController = scrollController;
+
           return Directionality(
             textDirection: TextDirection.rtl,
             child: LayoutBuilder(
@@ -376,7 +461,7 @@ class _EventFormModalState extends State<EventFormModal> {
                         return Form(
                           key: _formKey,
                           child: ListView(
-                            controller: scrollController,
+                            controller: _scrollController,
                             padding: const EdgeInsets.only(
                               left: 16,
                               right: 16,
@@ -608,40 +693,61 @@ class _EventFormModalState extends State<EventFormModal> {
                               ),
                               const SizedBox(height: 8),
                               ...RoleType.values.map((role) {
-                                return ListTile(
-                                  title: Text(role.hebrewName),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.remove_circle_outline),
-                                        onPressed: () {
-                                          if (_roleRequirements[role]! > 0) {
-                                            setState(() {
-                                              _roleRequirements[role] = _roleRequirements[role]! - 1;
-                                              _isDirty = true;
-                                            });
-                                          }
-                                        },
-                                      ),
-                                      SizedBox(
-                                        width: 40,
-                                        child: Text(
-                                          _roleRequirements[role].toString(),
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                final isHighlighted = _highlightedRole == role;
+                                return AnimatedOpacity(
+                                  opacity: isHighlighted ? _highlightOpacity : 1.0,
+                                  duration: const Duration(milliseconds: 500),
+                                  child: Container(
+                                    key: _roleKeys[role],
+                                    decoration: BoxDecoration(
+                                      color: isHighlighted ? Colors.blue.shade100 : null,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: isHighlighted
+                                          ? Border.all(color: Colors.blue.shade700, width: 2)
+                                          : null,
+                                    ),
+                                    child: ListTile(
+                                      title: Text(
+                                        role.hebrewName,
+                                        style: TextStyle(
+                                          fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                                          color: isHighlighted ? Colors.blue.shade900 : null,
                                         ),
                                       ),
-                                      IconButton(
-                                        icon: const Icon(Icons.add_circle_outline),
-                                        onPressed: () {
-                                          setState(() {
-                                            _roleRequirements[role] = _roleRequirements[role]! + 1;
-                                            _isDirty = true;
-                                          });
-                                        },
-                                      ),
-                                    ],
+                                      trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.remove_circle_outline),
+                                          onPressed: () {
+                                            if (_roleRequirements[role]! > 0) {
+                                              setState(() {
+                                                _roleRequirements[role] = _roleRequirements[role]! - 1;
+                                                _isDirty = true;
+                                              });
+                                            }
+                                          },
+                                        ),
+                                        SizedBox(
+                                          width: 40,
+                                          child: Text(
+                                            _roleRequirements[role].toString(),
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.add_circle_outline),
+                                          onPressed: () {
+                                            setState(() {
+                                              _roleRequirements[role] = _roleRequirements[role]! + 1;
+                                              _isDirty = true;
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                   ),
                                 );
                               }),
@@ -663,8 +769,9 @@ class _EventFormModalState extends State<EventFormModal> {
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
-                              // Dynamic bottom spacing for keyboard
-                              SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 80),
+                              // Dynamic bottom spacing for keyboard + MASSIVE padding for scroll
+                              // Ensures even the last role (רב) can scroll to top of viewport
+                              SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 2000),
                             ],
                           ),
                         );

@@ -354,12 +354,18 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    slot.roleType.hebrewName,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 12),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  child: GestureDetector(
+                    onTap: () => _showEventFormModal(slot.event, selectedRole: slot.roleType),
+                    child: Text(
+                      slot.roleType.hebrewName,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        decoration: TextDecoration.underline,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
                 if (slot.hasDoubleAssignment)
@@ -1141,7 +1147,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   }
 
   /// Show event form modal for editing an event
-  void _showEventFormModal(Event event) {
+  void _showEventFormModal(Event event, {RoleType? selectedRole}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1150,6 +1156,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       backgroundColor: Colors.transparent,
       builder: (modalContext) => EventFormModal(
         event: event,
+        selectedRole: selectedRole,
         onSuccess: () {
           Navigator.of(modalContext).pop();
         },
