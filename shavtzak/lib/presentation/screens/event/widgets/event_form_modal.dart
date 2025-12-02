@@ -115,42 +115,28 @@ class _EventFormModalState extends State<EventFormModal> {
 
   /// Scroll to a specific role and highlight it
   void _scrollToRole(RoleType role) {
+    final key = _roleKeys[role];
+
     // Wait for layout to complete
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // STEP 1: First, expand the sheet to maximum size
+      // First, expand the sheet to maximum size
       _sheetController.animateTo(
         0.95, // maxChildSize
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
 
-      // STEP 2: Wait for sheet expansion, then scroll using manual position calculation
+      // Wait for sheet to expand, then scroll to role
       Future.delayed(const Duration(milliseconds: 400), () {
-        if (_scrollController == null) return;
+        if (key?.currentContext == null) return;
 
-        try {
-          // Calculate position based on role index (doesn't require widget to be rendered)
-          final roleIndex = RoleType.values.indexOf(role);
-          const headerOffset = 600.0; // Offset to roles section start (tuned)
-          const listTileHeight = 72.0; // Standard Material ListTile height
-          const viewportBuffer = 100.0; // Buffer to keep role away from top edge
-
-          // Calculate target with buffer to position role nicely in viewport
-          final targetPosition = headerOffset + (roleIndex * listTileHeight) - viewportBuffer;
-
-          // Clamp to valid scroll range (but allow 0 for first items)
-          final maxScroll = _scrollController!.position.maxScrollExtent;
-          final clampedPosition = targetPosition.clamp(0.0, maxScroll);
-
-          // Single smooth scroll to calculated position
-          _scrollController!.animateTo(
-            clampedPosition,
-            duration: const Duration(milliseconds: 600),
-            curve: Curves.easeInOut,
-          );
-        } catch (e) {
-          print('Scroll error: $e');
-        }
+        // Now this works because SingleChildScrollView renders all content!
+        Scrollable.ensureVisible(
+          key!.currentContext!,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeInOut,
+          alignment: 0.2, // Position role at 20% from top of viewport
+        );
       });
     });
 
@@ -460,14 +446,16 @@ class _EventFormModalState extends State<EventFormModal> {
                       builder: (context, state) {
                         return Form(
                           key: _formKey,
-                          child: ListView(
+                          child: SingleChildScrollView(
                             controller: _scrollController,
                             padding: const EdgeInsets.only(
                               left: 16,
                               right: 16,
                               bottom: 16,
                             ),
-                            children: [
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
                               const SizedBox(height: 16),
 
                               // Name field
@@ -769,11 +757,11 @@ class _EventFormModalState extends State<EventFormModal> {
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
-                              // Dynamic bottom spacing for keyboard + MASSIVE padding for scroll
-                              // Ensures even the last role (רב) can scroll to top of viewport
-                              SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 2000),
+                              // Dynamic bottom spacing for keyboard
+                              SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
                             ],
                           ),
+                            ),
                         );
                       },
                     ),
