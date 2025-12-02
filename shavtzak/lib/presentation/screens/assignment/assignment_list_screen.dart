@@ -16,6 +16,7 @@ import '../../bloc/event/event_event.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/navigation_menu.dart';
 import 'assignment_filter_modal.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -412,8 +413,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     return Slidable(
       key: Key('slot_${slot.event.id}_${slot.roleType.name}_${slot.slotIndex}'),
       endActionPane: ActionPane(
-        motion: const DrawerMotion(),
-        extentRatio: 0.2,
+        motion: const ScrollMotion(),
+        extentRatio: 0.25,
         dismissible: DismissiblePane(
           confirmDismiss: () => _confirmSlotDeletion(slot),
           onDismissed: () async {
@@ -422,11 +423,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         ),
         children: [
           SlidableAction(
-            onPressed: (_) async {
+            onPressed: (actionContext) async {
               final confirmed = await _confirmSlotDeletion(slot);
-              if (confirmed) {
-                await _handleSlotDismiss(slot);
+              if (!confirmed) {
+                Slidable.of(actionContext)?.close();
+                return;
               }
+              await _handleSlotDismiss(slot);
             },
             backgroundColor: Colors.red,
             foregroundColor: Colors.white,
