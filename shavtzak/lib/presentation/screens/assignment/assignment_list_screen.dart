@@ -418,6 +418,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         color: Colors.red,
         child: const Icon(Icons.delete, color: Colors.white, size: 32),
       ),
+      dismissThresholds: const {
+        DismissDirection.endToStart: 0.5,
+      },
       confirmDismiss: (direction) async {
         // Show confirmation dialog
         final isSlotFilled = slot.isFilled;
