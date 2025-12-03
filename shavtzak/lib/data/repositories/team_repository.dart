@@ -66,10 +66,12 @@ class TeamRepository {
 
     final updated = TeamMember(
       id: member.id,
+      uniqueKey: member.uniqueKey,
       name: member.name,
       isActive: false,
       constraints: member.constraints,
       roleCapabilities: member.roleCapabilities,
+      isAdmin: member.isAdmin,
       createdAt: member.createdAt,
       updatedAt: DateTime.now(),
     );
@@ -86,10 +88,12 @@ class TeamRepository {
 
     final updated = TeamMember(
       id: member.id,
+      uniqueKey: member.uniqueKey,
       name: member.name,
       isActive: true,
       constraints: member.constraints,
       roleCapabilities: member.roleCapabilities,
+      isAdmin: member.isAdmin,
       createdAt: member.createdAt,
       updatedAt: DateTime.now(),
     );

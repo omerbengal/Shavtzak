@@ -10,12 +10,15 @@ import 'data/repositories/team_repository.dart';
 import 'data/repositories/event_repository.dart';
 import 'data/repositories/assignment_repository.dart';
 import 'data/repositories/auth_repository.dart';
+import 'data/repositories/user_selection_repository.dart';
 import 'core/utils/device_id.dart';
+import 'core/services/user_cache_service.dart';
 
 // Presentation layer
 import 'presentation/bloc/team/team_bloc.dart';
 import 'presentation/bloc/event/event_bloc.dart';
 import 'presentation/bloc/assignment/assignment_bloc.dart';
+import 'presentation/bloc/user_selection/user_selection_bloc.dart';
 
 // Router
 import 'core/router/app_router.dart';
@@ -52,12 +55,17 @@ Future<void> _initialize() async {
 
     // Initialize services
     final deviceIdService = DeviceIdService();
+    final userCacheService = UserCacheService();
 
     // Initialize repositories
     final teamRepository = TeamRepository(database);
     final eventRepository = EventRepository(database);
     final assignmentRepository = AssignmentRepository(database);
     final authRepository = AuthRepository(database, deviceIdService);
+    final userSelectionRepository = UserSelectionRepository(
+      database: database,
+      userCacheService: userCacheService,
+    );
 
     // Register device
     await authRepository.registerDevice();
@@ -68,6 +76,7 @@ Future<void> _initialize() async {
       eventRepository: eventRepository,
       assignmentRepository: assignmentRepository,
       authRepository: authRepository,
+      userSelectionRepository: userSelectionRepository,
     ));
   } catch (e) {
     debugPrint('Initialization error: $e');
@@ -94,6 +103,7 @@ class MyApp extends StatelessWidget {
   final EventRepository eventRepository;
   final AssignmentRepository assignmentRepository;
   final AuthRepository authRepository;
+  final UserSelectionRepository userSelectionRepository;
 
   const MyApp({
     super.key,
@@ -101,6 +111,7 @@ class MyApp extends StatelessWidget {
     required this.eventRepository,
     required this.assignmentRepository,
     required this.authRepository,
+    required this.userSelectionRepository,
   });
 
   @override
@@ -111,6 +122,7 @@ class MyApp extends StatelessWidget {
         RepositoryProvider.value(value: eventRepository),
         RepositoryProvider.value(value: assignmentRepository),
         RepositoryProvider.value(value: authRepository),
+        RepositoryProvider.value(value: userSelectionRepository),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -127,12 +139,24 @@ class MyApp extends StatelessWidget {
               teamRepository,
             ),
           ),
+          BlocProvider(
+            create: (context) => UserSelectionBloc(userSelectionRepository, teamRepository),
+          ),
         ],
-        child: MaterialApp.router(
-          title: 'שבצק - ניהול צוות',
-          theme: AppTheme.lightTheme,
-          debugShowCheckedModeBanner: false,
-          routerConfig: AppRouter.router,
+        child: Builder(
+          builder: (context) {
+            final userSelectionBloc = context.read<UserSelectionBloc>();
+            final userSelectionRepository = context.read<UserSelectionRepository>();
+            return MaterialApp.router(
+              title: 'שבצק - ניהול צוות',
+              theme: AppTheme.lightTheme,
+              debugShowCheckedModeBanner: false,
+              routerConfig: AppRouter.router(
+                userSelectionBloc: userSelectionBloc,
+                userSelectionRepository: userSelectionRepository,
+              ),
+            );
+          },
         ),
       ),
     );

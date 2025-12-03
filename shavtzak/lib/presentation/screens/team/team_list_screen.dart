@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/foundation.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/team_member.dart';
@@ -35,6 +36,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('👥 TEAM SCREEN: initState() called');
     // Always load ALL team members - filtering happens in UI
     context.read<TeamBloc>().add(const LoadTeamMembers());
   }
@@ -500,6 +502,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     final now = DateTime.now();
     final member = TeamMember(
       id: _isEditMode ? widget.member!.id : const Uuid().v4(),
+      uniqueKey: _isEditMode ? widget.member!.uniqueKey : const Uuid().v4(),
       name: _nameController.text.trim(),
       isActive: _isActive,
       isPermanent: _isPermanent,
@@ -508,6 +511,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       comments: _commentsController.text.trim(),
       createdAt: _isEditMode ? widget.member!.createdAt : now,
       updatedAt: now,
+      isAdmin: _isEditMode ? widget.member!.isAdmin : false,
     );
 
     // Check for conflicting assignments if editing and constraints changed

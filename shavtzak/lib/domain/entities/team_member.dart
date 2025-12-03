@@ -72,6 +72,10 @@ class TeamMember extends Equatable {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  // Feature 13: User authentication fields
+  final String uniqueKey; // UUID for user identification (not shown in UI)
+  final bool isAdmin;     // Admin status (defaults to false for non-admin)
+
   const TeamMember({
     required this.id,
     required this.name,
@@ -82,6 +86,8 @@ class TeamMember extends Equatable {
     this.comments = '',
     required this.createdAt,
     required this.updatedAt,
+    required this.uniqueKey,
+    this.isAdmin = false,
   });
 
   /// Check if team member is available on a given date
@@ -125,6 +131,8 @@ class TeamMember extends Equatable {
     String? comments,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? uniqueKey,
+    bool? isAdmin,
   }) {
     return TeamMember(
       id: id ?? this.id,
@@ -136,6 +144,8 @@ class TeamMember extends Equatable {
       comments: comments ?? this.comments,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      uniqueKey: uniqueKey ?? this.uniqueKey,
+      isAdmin: isAdmin ?? this.isAdmin,
     );
   }
 
@@ -150,8 +160,10 @@ class TeamMember extends Equatable {
         comments,
         createdAt,
         updatedAt,
+        uniqueKey,
+        isAdmin,
       ];
 
   @override
-  String toString() => 'TeamMember($id, $name, active: $isActive)';
+  String toString() => 'TeamMember($id, $name, active: $isActive, admin: $isAdmin)';
 }

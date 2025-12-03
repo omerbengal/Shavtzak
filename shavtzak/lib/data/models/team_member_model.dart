@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:uuid/uuid.dart';
 import '../../core/constants/role_types.dart';
 import '../../domain/entities/team_member.dart';
 
@@ -14,6 +15,10 @@ class TeamMemberModel {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  // Feature 13: User authentication fields
+  final String uniqueKey; // UUID for user identification (not shown in UI)
+  final bool isAdmin;     // Admin status (defaults to false for non-admin)
+
   const TeamMemberModel({
     required this.id,
     required this.name,
@@ -24,7 +29,14 @@ class TeamMemberModel {
     this.comments = '',
     required this.createdAt,
     required this.updatedAt,
+    required this.uniqueKey,
+    this.isAdmin = false,
   });
+
+  /// Generate a UUID for team members
+  static String _generateUUID() {
+    return const Uuid().v4();
+  }
 
   /// Convert from domain entity
   factory TeamMemberModel.fromEntity(TeamMember entity) {
@@ -44,6 +56,8 @@ class TeamMemberModel {
       comments: entity.comments,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
+      uniqueKey: entity.uniqueKey,
+      isAdmin: entity.isAdmin,
     );
   }
 
@@ -63,6 +77,8 @@ class TeamMemberModel {
       comments: comments,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      uniqueKey: uniqueKey,
+      isAdmin: isAdmin,
     );
   }
 
@@ -70,7 +86,14 @@ class TeamMemberModel {
   factory TeamMemberModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
-    return TeamMemberModel(
+    // Handle migration - generate UUID for existing members missing uniqueKey
+    final existingUniqueKey = data['uniqueKey'] as String?;
+    final generatedUniqueKey = existingUniqueKey ?? _generateUUID();
+
+    // Handle migration - default to false for existing members missing isAdmin
+    final isAdmin = data['isAdmin'] as bool? ?? false;
+
+    final model = TeamMemberModel(
       id: doc.id,
       name: data['name'] as String,
       isActive: data['isActive'] as bool? ?? true,
@@ -83,7 +106,29 @@ class TeamMemberModel {
       comments: data['comments'] as String? ?? '',
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
+      uniqueKey: generatedUniqueKey,
+      isAdmin: isAdmin,
     );
+
+    // If migration was needed (UUID was generated), update the document
+    if (existingUniqueKey == null) {
+      _updateDocumentWithMigrationFields(doc.reference, model);
+    }
+
+    return model;
+  }
+
+  /// Update document with migration fields (async operation)
+  static void _updateDocumentWithMigrationFields(DocumentReference ref, TeamMemberModel model) {
+    // Update asynchronously without blocking the read operation
+    ref.update({
+      'uniqueKey': model.uniqueKey,
+      'isAdmin': model.isAdmin,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    }).catchError((error) {
+      // Log error but don't fail the read operation
+      print('Warning: Failed to migrate team member ${model.id}: $error');
+    });
   }
 
   /// Convert to Firestore document
@@ -98,11 +143,20 @@ class TeamMemberModel {
       'comments': comments,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
+      'uniqueKey': uniqueKey,
+      'isAdmin': isAdmin,
     };
   }
 
   /// Convert from JSON
   factory TeamMemberModel.fromJson(Map<String, dynamic> json) {
+    // Handle migration - generate UUID for existing members missing uniqueKey
+    final existingUniqueKey = json['uniqueKey'] as String?;
+    final generatedUniqueKey = existingUniqueKey ?? _generateUUID();
+
+    // Handle migration - default to false for existing members missing isAdmin
+    final isAdmin = json['isAdmin'] as bool? ?? false;
+
     return TeamMemberModel(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -116,6 +170,8 @@ class TeamMemberModel {
       comments: json['comments'] as String? ?? '',
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      uniqueKey: generatedUniqueKey,
+      isAdmin: isAdmin,
     );
   }
 
@@ -131,6 +187,8 @@ class TeamMemberModel {
       'comments': comments,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
+      'uniqueKey': uniqueKey,
+      'isAdmin': isAdmin,
     };
   }
 }

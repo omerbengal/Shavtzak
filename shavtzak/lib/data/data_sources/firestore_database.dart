@@ -79,6 +79,23 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<TeamMember?> getTeamMemberByUniqueKey(String uniqueKey) async {
+    try {
+      final snapshot = await _firestore
+          .collection(_teamMembersCollection)
+          .where('uniqueKey', isEqualTo: uniqueKey)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) return null;
+
+      return TeamMemberModel.fromFirestore(snapshot.docs.first).toEntity();
+    } catch (e) {
+      throw DatabaseException('Failed to get team member by unique key: $e');
+    }
+  }
+
+  @override
   Future<void> insertTeamMember(TeamMember member) async {
     try {
       final model = TeamMemberModel.fromEntity(member);

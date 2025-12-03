@@ -15,6 +15,9 @@ abstract class DatabaseInterface {
   /// Get a team member by ID
   Future<TeamMember?> getTeamMemberById(String id);
 
+  /// Get a team member by unique key (Feature 13: User authentication)
+  Future<TeamMember?> getTeamMemberByUniqueKey(String uniqueKey);
+
   /// Insert a new team member
   Future<void> insertTeamMember(TeamMember member);
 
