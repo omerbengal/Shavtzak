@@ -516,21 +516,25 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
       if (conflictingAssignments.isNotEmpty) {
         // Show warning dialog
-        final confirmed = await _showConflictWarningDialog(conflictingAssignments);
+        final action = await _showConflictWarningDialog(conflictingAssignments);
 
-        if (confirmed != true) {
+        if (action == null) {
           // User cancelled, don't save
           return;
         }
 
-        // User confirmed, delete conflicting assignments
-        final assignmentBloc = context.read<AssignmentBloc>();
-        for (final assignment in conflictingAssignments) {
-          assignmentBloc.add(DeleteAssignment(assignment.id));
-        }
+        if (action == true) {
+          // User chose "שמור ומחק שיבוצים" (Save + Delete assignments)
+          final assignmentBloc = context.read<AssignmentBloc>();
+          for (final assignment in conflictingAssignments) {
+            assignmentBloc.add(DeleteAssignment(assignment.id));
+          }
 
-        // Wait a moment for deletions to process
-        await Future.delayed(const Duration(milliseconds: 300));
+          // Wait a moment for deletions to process
+          await Future.delayed(const Duration(milliseconds: 300));
+        }
+        // If action == false, user chose "שמור והשאר שיבוצים" (Save + Keep assignments)
+        // So we proceed with saving without deleting assignments
       }
     }
 
@@ -650,24 +654,32 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'האם ברצונך למחוק את השיבוצים הללו ולשמור את המגבלות?',
-                  style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                  'בחר את הפעולה הרצויה:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
               ],
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
+              onPressed: () => Navigator.of(dialogContext).pop(null),
               child: const Text('ביטול'),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
               style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('שמור ומחק שיבוצים'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('מחק שיבוצים ושמור'),
+              child: const Text('שמור והשאר שיבוצים'),
             ),
           ],
         ),
@@ -1284,7 +1296,7 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
                       ),
                     );
                   },
-            child: const Text(AppStrings.save),
+            child: Text(widget.constraint == null ? 'הוספה' : 'שמור'),
           ),
         ],
       ),

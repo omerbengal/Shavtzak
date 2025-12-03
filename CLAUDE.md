@@ -197,11 +197,11 @@ Feature 1: Fix text from 'סה"כ משרות' to 'סה"כ תפקידים' in tea
   ☒ Feature 9: Add GestureDetector/InkWell to event name text in assignment rows to open event edit modal in assignment page
   ☒ Feature 10: Add GestureDetector/InkWell to role name text in assignment rows to open event edit modal in assignment page
   ☒ Feature 10: Implement focus/scroll logic to highlight selected role when opening modal via role click in assignment page
-  ☐ Feature 11: Create multi-step manual assignment flow UI. This will start from the assignments page with a "+" button. (step 1: select event)
-  ☐ Feature 11: Add step 1: select event (only "future events" [end date >= today]).
-  ☐ Feature 11: Add step 2: select team member with constraint validation and warning popup.
-  ☐ Feature 11: Add step 3: select role from member's capabilities.
-  ☐ Feature 11: after save: auto-create quota + assignment.
+  ☒ Feature 11: Create multi-step manual assignment flow UI. This will start from the assignments page with a "+" button. (step 1: select event)
+  ☒ Feature 11: Add step 1: select event (only "future events" [end date >= today]).
+  ☒ Feature 11: Add step 2: select team member with constraint validation and warning popup.
+  ☒ Feature 11: Add step 3: select role from member's capabilities.
+  ☒ Feature 11: after save: auto-create quota + assignment.
   ☐ Feature 12: Create event duplication BLoC event that copies event with new date/time
   ☐ Feature 12: Implement logic to duplicate all assignments and detect date constraint conflicts
   ☐ Feature 12: Update UI to show duplicated event edit modal with assignments highlighted in bright red if conflicts exist
