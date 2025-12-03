@@ -96,7 +96,6 @@ Real-time updates use `emit.forEach` with Firestore streams for live data synchr
 - `teamMembers` - Team member records
 - `events` - Event records
 - `assignments` - Assignment records (junction table with foreign keys)
-- `adminDevices` - Device registration for admin access
 
 **Key Pattern - Relation Population**:
 Assignments store only `eventId` and `teamMemberId` (foreign keys), but the repository populates full `Event` and `TeamMember` objects via `_populateAssignmentRelations()` for UI display. This prevents denormalization issues.
@@ -160,12 +159,15 @@ The V1 system used Excel/Google Sheets. The codebase includes:
 - Use Timestamps for date storage in Firestore
 - Real-time streams auto-cleanup when BLoC is disposed
 
-## Device Registration
+## User Authentication System
 
-The app uses device-based admin authentication:
-- On startup, `DeviceIdService` generates/retrieves a unique device ID
-- `AuthRepository.registerDevice()` registers device in `adminDevices` collection
-- This allows admin access without traditional user accounts
+The app uses user-based authentication via the "מי את/ה?" (Who are you?) screen:
+- Each `TeamMember` has a unique key stored in the database and an `isAdmin` field
+- `UserSelectionRepository` manages user selection and caching
+- Users select themselves from the team member list, and their selection is cached locally
+- Routing decisions are based on the selected user's `isAdmin` status:
+  - Admin users: Access full admin interface (`/admin/*`)
+  - Regular users: Access user interface with bottom navigation (`/user/*`)
 
 ## Important Notes
 

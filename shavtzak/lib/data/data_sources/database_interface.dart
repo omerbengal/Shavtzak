@@ -1,4 +1,3 @@
-import '../../domain/entities/admin_device.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
@@ -90,23 +89,7 @@ abstract class DatabaseInterface {
   /// Delete multiple assignments by their IDs in a single batch operation
   Future<void> deleteAssignmentsBatch(List<String> assignmentIds);
 
-  // ========== Admin Devices ==========
-
-  /// Get admin device by device ID
-  Future<AdminDevice?> getAdminDevice(String deviceId);
-
-  /// Insert a new admin device
-  Future<void> insertAdminDevice(AdminDevice device);
-
-  /// Update admin device (e.g., update lastSeen)
-  Future<void> updateAdminDevice(AdminDevice device);
-
-  /// Delete an admin device
-  Future<void> deleteAdminDevice(String id);
-
-  /// Get all admin devices
-  Future<List<AdminDevice>> getAllAdminDevices();
-
+  
   // ========== Batch Operations ==========
 
   /// Insert multiple team members at once (for data import)

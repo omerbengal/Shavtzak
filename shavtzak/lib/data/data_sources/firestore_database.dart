@@ -1,9 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../domain/entities/admin_device.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
-import '../models/admin_device_model.dart';
 import '../models/assignment_model.dart';
 import '../models/event_model.dart';
 import '../models/team_member_model.dart';
@@ -17,7 +15,6 @@ class FirestoreDatabase implements DatabaseInterface {
   static const String _teamMembersCollection = 'teamMembers';
   static const String _eventsCollection = 'events';
   static const String _assignmentsCollection = 'assignments';
-  static const String _adminDevicesCollection = 'adminDevices';
 
   FirestoreDatabase({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
@@ -546,74 +543,7 @@ class FirestoreDatabase implements DatabaseInterface {
     }
   }
 
-  // ========== Admin Devices ==========
-
-  @override
-  Future<AdminDevice?> getAdminDevice(String deviceId) async {
-    try {
-      final snapshot = await _firestore
-          .collection(_adminDevicesCollection)
-          .where('deviceId', isEqualTo: deviceId)
-          .limit(1)
-          .get();
-
-      if (snapshot.docs.isEmpty) return null;
-
-      return AdminDeviceModel.fromFirestore(snapshot.docs.first).toEntity();
-    } catch (e) {
-      throw DatabaseException('Failed to get admin device: $e');
-    }
-  }
-
-  @override
-  Future<void> insertAdminDevice(AdminDevice device) async {
-    try {
-      final model = AdminDeviceModel.fromEntity(device);
-      await _firestore
-          .collection(_adminDevicesCollection)
-          .doc(device.id)
-          .set(model.toFirestore());
-    } catch (e) {
-      throw DatabaseException('Failed to insert admin device: $e');
-    }
-  }
-
-  @override
-  Future<void> updateAdminDevice(AdminDevice device) async {
-    try {
-      final model = AdminDeviceModel.fromEntity(device);
-      await _firestore
-          .collection(_adminDevicesCollection)
-          .doc(device.id)
-          .update(model.toFirestore());
-    } catch (e) {
-      throw DatabaseException('Failed to update admin device: $e');
-    }
-  }
-
-  @override
-  Future<void> deleteAdminDevice(String id) async {
-    try {
-      await _firestore.collection(_adminDevicesCollection).doc(id).delete();
-    } catch (e) {
-      throw DatabaseException('Failed to delete admin device: $e');
-    }
-  }
-
-  @override
-  Future<List<AdminDevice>> getAllAdminDevices() async {
-    try {
-      final snapshot =
-          await _firestore.collection(_adminDevicesCollection).get();
-
-      return snapshot.docs
-          .map((doc) => AdminDeviceModel.fromFirestore(doc).toEntity())
-          .toList();
-    } catch (e) {
-      throw DatabaseException('Failed to get all admin devices: $e');
-    }
-  }
-
+  
   // ========== Utility ==========
 
   @override
@@ -645,15 +575,6 @@ class FirestoreDatabase implements DatabaseInterface {
         assignmentsBatch.delete(doc.reference);
       }
       await assignmentsBatch.commit();
-
-      // Delete all admin devices
-      final adminDevicesSnapshot =
-          await _firestore.collection(_adminDevicesCollection).get();
-      final adminDevicesBatch = _firestore.batch();
-      for (final doc in adminDevicesSnapshot.docs) {
-        adminDevicesBatch.delete(doc.reference);
-      }
-      await adminDevicesBatch.commit();
     } catch (e) {
       throw DatabaseException('Failed to clear all data: $e');
     }

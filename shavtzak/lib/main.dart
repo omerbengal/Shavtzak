@@ -9,9 +9,7 @@ import 'data/data_sources/firestore_database.dart';
 import 'data/repositories/team_repository.dart';
 import 'data/repositories/event_repository.dart';
 import 'data/repositories/assignment_repository.dart';
-import 'data/repositories/auth_repository.dart';
 import 'data/repositories/user_selection_repository.dart';
-import 'core/utils/device_id.dart';
 import 'core/services/user_cache_service.dart';
 
 // Presentation layer
@@ -54,28 +52,22 @@ Future<void> _initialize() async {
     await database.initialize();
 
     // Initialize services
-    final deviceIdService = DeviceIdService();
     final userCacheService = UserCacheService();
 
     // Initialize repositories
     final teamRepository = TeamRepository(database);
     final eventRepository = EventRepository(database);
     final assignmentRepository = AssignmentRepository(database);
-    final authRepository = AuthRepository(database, deviceIdService);
     final userSelectionRepository = UserSelectionRepository(
       database: database,
       userCacheService: userCacheService,
     );
-
-    // Register device
-    await authRepository.registerDevice();
 
     // Replace loading app with main app
     runApp(MyApp(
       teamRepository: teamRepository,
       eventRepository: eventRepository,
       assignmentRepository: assignmentRepository,
-      authRepository: authRepository,
       userSelectionRepository: userSelectionRepository,
     ));
   } catch (e) {
@@ -102,7 +94,6 @@ class MyApp extends StatelessWidget {
   final TeamRepository teamRepository;
   final EventRepository eventRepository;
   final AssignmentRepository assignmentRepository;
-  final AuthRepository authRepository;
   final UserSelectionRepository userSelectionRepository;
 
   const MyApp({
@@ -110,7 +101,6 @@ class MyApp extends StatelessWidget {
     required this.teamRepository,
     required this.eventRepository,
     required this.assignmentRepository,
-    required this.authRepository,
     required this.userSelectionRepository,
   });
 
@@ -121,7 +111,6 @@ class MyApp extends StatelessWidget {
         RepositoryProvider.value(value: teamRepository),
         RepositoryProvider.value(value: eventRepository),
         RepositoryProvider.value(value: assignmentRepository),
-        RepositoryProvider.value(value: authRepository),
         RepositoryProvider.value(value: userSelectionRepository),
       ],
       child: MultiBlocProvider(
