@@ -1160,6 +1160,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       builder: (modalContext) => EventFormModal(
         event: event,
         selectedRole: selectedRole,
+        filterIndex: 1, // Default to future for assignments screen
         onSuccess: () {
           Navigator.of(modalContext).pop();
           // Reload assignment slots to reflect changes

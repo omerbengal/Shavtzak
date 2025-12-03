@@ -5,6 +5,7 @@ import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../core/utils/validators.dart';
+import '../../../core/utils/filter_persistence.dart';
 import 'package:uuid/uuid.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
@@ -13,7 +14,11 @@ import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../widgets/navigation_menu.dart';
 import '../../widgets/date_picker_dialog.dart';
+import '../../widgets/interactive_filter_bar.dart';
 import '../../../data/repositories/assignment_repository.dart';
+
+// Filter enum for team members (0=all, 1=active, 2=inactive)
+enum TeamFilter { all, active, inactive }
 
 class TeamListScreen extends StatefulWidget {
   const TeamListScreen({super.key});
@@ -25,13 +30,12 @@ class TeamListScreen extends StatefulWidget {
 class _TeamListScreenState extends State<TeamListScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
-  bool _showActiveOnly = false;
   TeamLoaded? _lastLoadedState;
 
   @override
   void initState() {
     super.initState();
-    // Load team members on init
+    // Always load ALL team members - filtering happens in UI
     context.read<TeamBloc>().add(const LoadTeamMembers());
   }
 
@@ -47,6 +51,13 @@ class _TeamListScreenState extends State<TeamListScreen> {
     } else {
       context.read<TeamBloc>().add(SearchTeamMembers(query));
     }
+  }
+
+  /// Handle filter change
+  void _onFilterChanged(int newIndex) {
+    setState(() {
+      FilterPersistence.teamFilterIndex = newIndex;
+    });
   }
 
   @override
@@ -81,31 +92,6 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   }
                 });
               },
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: OutlinedButton(
-                onPressed: () {
-                  setState(() {
-                    _showActiveOnly = !_showActiveOnly;
-                  });
-                  if (_showActiveOnly) {
-                    context.read<TeamBloc>().add(const LoadActiveTeamMembers());
-                  } else {
-                    context.read<TeamBloc>().add(const LoadTeamMembers());
-                  }
-                },
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: _showActiveOnly ? Colors.green : Colors.white,
-                  foregroundColor: _showActiveOnly ? Colors.white : Colors.black,
-                  side: BorderSide(
-                    color: _showActiveOnly ? Colors.green : Colors.grey,
-                    width: 1.5,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
-                child: const Text('הצג פעילים בלבד'),
-              ),
             ),
           ],
         ),
@@ -171,6 +157,9 @@ class _TeamListScreenState extends State<TeamListScreen> {
   }
 
   Widget _buildTeamList(TeamLoaded state) {
+    // Filter members based on selected filter
+    final filteredMembers = _filterMembers(state.members, FilterPersistence.teamFilterIndex);
+
     return RefreshIndicator(
       onRefresh: () async {
         context.read<TeamBloc>().add(const RefreshTeamMembers());
@@ -178,26 +167,23 @@ class _TeamListScreenState extends State<TeamListScreen> {
       },
       child: Column(
         children: [
-          // Statistics header
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.blue.shade50,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem('סך הכל', state.totalCount.toString()),
-                _buildStatItem('פעילים', state.activeCount.toString()),
-                _buildStatItem('לא פעילים', state.inactiveCount.toString()),
-              ],
-            ),
+          // Interactive filter bar
+          InteractiveFilterBar(
+            options: [
+              FilterOption(label: 'סה״כ', count: state.totalCount.toString()),
+              FilterOption(label: 'פעילים', count: state.activeCount.toString()),
+              FilterOption(label: 'לא פעילים', count: state.inactiveCount.toString()),
+            ],
+            selectedIndex: FilterPersistence.teamFilterIndex,
+            onFilterChanged: _onFilterChanged,
           ),
           // Team list
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 16),
-              itemCount: state.members.length,
+              itemCount: filteredMembers.length,
               itemBuilder: (context, index) {
-                final member = state.members[index];
+                final member = filteredMembers[index];
                 return _buildTeamMemberCard(member);
               },
             ),
@@ -207,27 +193,18 @@ class _TeamListScreenState extends State<TeamListScreen> {
     );
   }
 
-  Widget _buildStatItem(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.blue,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 14,
-            color: Colors.grey,
-          ),
-        ),
-      ],
-    );
+  /// Filter members based on selected filter index
+  List<TeamMember> _filterMembers(List<TeamMember> members, int filterIndex) {
+    switch (filterIndex) {
+      case 0: // All
+        return members;
+      case 1: // Active
+        return members.where((m) => m.isActive).toList();
+      case 2: // Inactive
+        return members.where((m) => !m.isActive).toList();
+      default:
+        return members;
+    }
   }
 
   Widget _buildTeamMemberCard(TeamMember member) {
@@ -279,13 +256,9 @@ class _TeamListScreenState extends State<TeamListScreen> {
                       } else {
                         bloc.add(ReactivateTeamMember(member.id));
                       }
-                      // Reload with the appropriate filter after operation completes
+                      // Reload all members after operation completes
                       Future.delayed(const Duration(milliseconds: 100), () {
-                        if (_showActiveOnly) {
-                          bloc.add(const LoadActiveTeamMembers());
-                        } else {
-                          bloc.add(const LoadTeamMembers());
-                        }
+                        bloc.add(const LoadTeamMembers());
                       });
                     },
                     tooltip: member.isActive ? 'השבת' : 'הפעל',
@@ -331,7 +304,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
       backgroundColor: Colors.transparent,
       builder: (modalContext) => _TeamMemberFormModal(
         member: member,
-        showActiveOnly: _showActiveOnly,
+        filterIndex: FilterPersistence.teamFilterIndex,
         onSuccess: () {
           Navigator.of(modalContext).pop();
         },
@@ -370,19 +343,16 @@ class _TeamListScreenState extends State<TeamListScreen> {
   Widget _buildEmptyState(TeamEmpty state) {
     return Column(
       children: [
-        // Show statistics header if this is a filtered empty state
+        // Show interactive filter bar if this is a filtered empty state
         if (state.isFiltered)
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.blue.shade50,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem('סך הכל', '0'),
-                _buildStatItem('פעילים', '0'),
-                _buildStatItem('לא פעילים', '0'),
-              ],
-            ),
+          InteractiveFilterBar(
+            options: const [
+              FilterOption(label: 'סה״כ', count: '0'),
+              FilterOption(label: 'פעילים', count: '0'),
+              FilterOption(label: 'לא פעילים', count: '0'),
+            ],
+            selectedIndex: FilterPersistence.teamFilterIndex,
+            onFilterChanged: _onFilterChanged,
           ),
         Expanded(
           child: Center(
@@ -456,12 +426,12 @@ class _TeamListScreenState extends State<TeamListScreen> {
 // Team Member Form Modal Widget
 class _TeamMemberFormModal extends StatefulWidget {
   final TeamMember? member; // null for create, non-null for edit
-  final bool showActiveOnly;
+  final int filterIndex;
   final VoidCallback onSuccess;
 
   const _TeamMemberFormModal({
     this.member,
-    required this.showActiveOnly,
+    required this.filterIndex,
     required this.onSuccess,
   });
 
@@ -571,13 +541,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       bloc.add(CreateTeamMember(member));
     }
 
-    // Reload with the appropriate filter after operation completes
+    // Reload all team members after operation completes (filtering happens in UI)
     Future.delayed(const Duration(milliseconds: 100), () {
-      if (widget.showActiveOnly) {
-        bloc.add(const LoadActiveTeamMembers());
-      } else {
-        bloc.add(const LoadTeamMembers());
-      }
+      bloc.add(const LoadTeamMembers());
     });
 
     // Close modal after save operation
@@ -807,13 +773,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         onPressed: () {
                                           final bloc = context.read<TeamBloc>();
                                           bloc.add(DeleteTeamMember(widget.member!.id));
-                                          // Reload with the appropriate filter after operation completes
+                                          // Reload all team members after operation completes (filtering happens in UI)
                                           Future.delayed(const Duration(milliseconds: 100), () {
-                                            if (widget.showActiveOnly) {
-                                              bloc.add(const LoadActiveTeamMembers());
-                                            } else {
-                                              bloc.add(const LoadTeamMembers());
-                                            }
+                                            bloc.add(const LoadTeamMembers());
                                           });
                                           Navigator.of(dialogContext).pop(); // Close dialog
                                           widget.onSuccess(); // Close modal

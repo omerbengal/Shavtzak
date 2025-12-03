@@ -218,40 +218,13 @@ Feature 1: Fix text from 'סה"כ משרות' to 'סה"כ תפקידים' in tea
 
 ## Bugs to fix:
 
-❗ When in the web app, in a certain page (let’s say team members), and then I hot restart in the terminal (press r) - I get this excepction:
 
+❗ When in one of the three pages (team members, events, assignments), and I perform a hot reload (when the flutter command is running in the terminal), I get this error:
 ══╡ EXCEPTION CAUGHT BY FLUTTER FRAMEWORK ╞═════════════════════════════════════════════════════════
 The following message was thrown:
 Could not navigate to initial route.
-The requested route name was: "/team-members"
+The requested route name was: "/events"
 There was no corresponding route in the app, and therefore the initial route specified will be
 ignored and "/" will be used instead.
 ════════════════════════════════════════════════════════════════════════════════════════════════════
-
-❗ When in the assignments screen -> press on an event name to bring up the event edit modal -> decrease one role capacity -> save ->> the row in the assignments screen does not disappear (even though I reduced).
-
-Only when moving to another screen and then back to the assignments screen - I see the change (the row disappeared).
-
-❗ De-activating a team member makes his name disappear in the assignments screen if he is assigned (but does not delete the assignment).
-The assignment should not be deleted (this is ok and not being deleted currently), but the team member name should persist.
-The assignment stays.
-
-The only thing de-activating a team member indicates is that he can’t be assigned ALL TIME HE IS DEACTIVATED. This should not affect the already assigned decisions.
-
-❗ Change to the team members and events screens filtering:
-
-Currently - there is the filter button (on the top left corner), and there is the summary bar with the numbers.
-
-Desired change - remove the filter button, and make the summary bar interactive.
-
-This means, that the filter will happen when the numbers on the summary bar will be pressed.
-There will be a colored circle, highlighting the “current selected filter”, that will be around the number (and the text!) that is chosen (=chosen filter).
-First default chosen in the team members screen will be the “סה”כ” (which are all).
-
-In the events screen, first let’s change the texts to: “סה”כ” / “עתידיים” / “עברו”.
-(Where עתידיים as for now are end date >= today, and עברו are end date < today).
-Then, the default will be עתידיים.
-
-The movement of the circle, when another filter (=number and/or text) is being pressed, needs to be nicely animated.
-
-In addition, one more change - the state of the filtering should be saved even when moving to another page and then back (currently - it gets reset to the default each time visiting the page from another page).
+I already fixed this by upgrading how the gorouter works, but it seems the issue has returned...

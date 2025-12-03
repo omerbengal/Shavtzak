@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/utils/event_assignment_status.dart';
+import '../../../core/utils/filter_persistence.dart';
 import '../../../domain/entities/event.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
 import '../../widgets/navigation_menu.dart';
+import '../../widgets/interactive_filter_bar.dart';
 import 'widgets/event_form_modal.dart';
+
+// Filter enum for events (0=all, 1=future, 2=past)
+enum EventFilter { all, future, past }
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -18,14 +23,13 @@ class EventListScreen extends StatefulWidget {
 class _EventListScreenState extends State<EventListScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
-  bool _showFutureOnly = true;
   EventsLoaded? _lastLoadedState;
 
   @override
   void initState() {
     super.initState();
-    // Load future events only by default
-    context.read<EventBloc>().add(const LoadUpcomingEvents());
+    // Always load ALL events - filtering happens in UI
+    context.read<EventBloc>().add(const LoadEvents());
   }
 
   @override
@@ -36,14 +40,17 @@ class _EventListScreenState extends State<EventListScreen> {
 
   void _onSearchChanged(String query) {
     if (query.isEmpty) {
-      if (_showFutureOnly) {
-        context.read<EventBloc>().add(const LoadUpcomingEvents());
-      } else {
-        context.read<EventBloc>().add(const LoadEvents());
-      }
+      context.read<EventBloc>().add(const LoadEvents());
     } else {
       context.read<EventBloc>().add(SearchEvents(query));
     }
+  }
+
+  /// Handle filter change
+  void _onFilterChanged(int newIndex) {
+    setState(() {
+      FilterPersistence.eventFilterIndex = newIndex;
+    });
   }
 
   @override
@@ -74,39 +81,10 @@ class _EventListScreenState extends State<EventListScreen> {
                   _showSearch = !_showSearch;
                   if (!_showSearch) {
                     _searchController.clear();
-                    if (_showFutureOnly) {
-                      context.read<EventBloc>().add(const LoadUpcomingEvents());
-                    } else {
-                      context.read<EventBloc>().add(const LoadEvents());
-                    }
+                    context.read<EventBloc>().add(const LoadEvents());
                   }
                 });
               },
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: OutlinedButton(
-                onPressed: () {
-                  setState(() {
-                    _showFutureOnly = !_showFutureOnly;
-                  });
-                  if (_showFutureOnly) {
-                    context.read<EventBloc>().add(const LoadUpcomingEvents());
-                  } else {
-                    context.read<EventBloc>().add(const LoadEvents());
-                  }
-                },
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: _showFutureOnly ? Colors.green : Colors.white,
-                  foregroundColor: _showFutureOnly ? Colors.white : Colors.black,
-                  side: BorderSide(
-                    color: _showFutureOnly ? Colors.green : Colors.grey,
-                    width: 1.5,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
-                child: const Text('הצג אירועים עתידיים בלבד'),
-              ),
             ),
           ],
         ),
@@ -159,6 +137,15 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   Widget _buildEventList(EventsLoaded state) {
+    // Calculate past events count
+    final today = DateTime.now();
+    final pastCount = state.events.where((event) {
+      return event.endDate.isBefore(DateTime(today.year, today.month, today.day));
+    }).length;
+
+    // Filter events based on selected filter
+    final filteredEvents = _filterEvents(state.events, FilterPersistence.eventFilterIndex);
+
     return RefreshIndicator(
       onRefresh: () async {
         context.read<EventBloc>().add(const RefreshEvents());
@@ -166,30 +153,50 @@ class _EventListScreenState extends State<EventListScreen> {
       },
       child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.blue.shade50,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem('סך הכל', state.totalCount.toString()),
-                _buildStatItem('קרובים', state.upcomingCount.toString()),
-                _buildStatItem('פעילים', state.activeCount.toString()),
-              ],
-            ),
+          // Interactive filter bar
+          InteractiveFilterBar(
+            options: [
+              FilterOption(label: 'סה״כ', count: state.totalCount.toString()),
+              FilterOption(label: 'עתידיים', count: state.upcomingCount.toString()),
+              FilterOption(label: 'עברו', count: pastCount.toString()),
+            ],
+            selectedIndex: FilterPersistence.eventFilterIndex,
+            onFilterChanged: _onFilterChanged,
           ),
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 16),
-              itemCount: state.events.length,
+              itemCount: filteredEvents.length,
               itemBuilder: (context, index) {
-                return _buildEventCard(state.events[index], state.assignmentCounts);
+                return _buildEventCard(filteredEvents[index], state.assignmentCounts);
               },
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// Filter events based on selected filter index
+  List<Event> _filterEvents(List<Event> events, int filterIndex) {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+
+    switch (filterIndex) {
+      case 0: // All
+        return events;
+      case 1: // Future (עתידיים) - endDate >= today
+        return events.where((event) {
+          return event.endDate.isAfter(todayDate) ||
+                 event.endDate.isAtSameMomentAs(todayDate);
+        }).toList();
+      case 2: // Past (עברו) - endDate < today
+        return events.where((event) {
+          return event.endDate.isBefore(todayDate);
+        }).toList();
+      default:
+        return events;
+    }
   }
 
   /// Get background color for event card based on assignment status
@@ -219,16 +226,6 @@ class _EventListScreenState extends State<EventListScreen> {
       case EventAssignmentStatus.noQuotas:
         return null; // Default color
     }
-  }
-
-  Widget _buildStatItem(String label, String value) {
-    return Column(
-      children: [
-        Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blue)),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 14, color: Colors.grey)),
-      ],
-    );
   }
 
   Widget _buildEventCard(Event event, Map<String, int> assignmentCounts) {
@@ -302,7 +299,7 @@ class _EventListScreenState extends State<EventListScreen> {
       backgroundColor: Colors.transparent,
       builder: (modalContext) => EventFormModal(
         event: event,
-        showFutureOnly: _showFutureOnly,
+        filterIndex: FilterPersistence.eventFilterIndex,
         onSuccess: () {
           Navigator.of(modalContext).pop();
         },
@@ -366,19 +363,16 @@ class _EventListScreenState extends State<EventListScreen> {
   Widget _buildEmptyState(EventsEmpty state) {
     return Column(
       children: [
-        // Show statistics header if this is a filtered empty state
+        // Show interactive filter bar if this is a filtered empty state
         if (state.isFiltered)
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.blue.shade50,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem('סך הכל', '0'),
-                _buildStatItem('קרובים', '0'),
-                _buildStatItem('פעילים', '0'),
-              ],
-            ),
+          InteractiveFilterBar(
+            options: const [
+              FilterOption(label: 'סה״כ', count: '0'),
+              FilterOption(label: 'עתידיים', count: '0'),
+              FilterOption(label: 'עברו', count: '0'),
+            ],
+            selectedIndex: FilterPersistence.eventFilterIndex,
+            onFilterChanged: _onFilterChanged,
           ),
         Expanded(
           child: Center(
