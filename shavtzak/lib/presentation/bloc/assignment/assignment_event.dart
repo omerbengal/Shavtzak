@@ -166,3 +166,15 @@ class ApplyEventFilter extends AssignmentEvent {
 class ClearEventFilter extends AssignmentEvent {
   const ClearEventFilter();
 }
+
+/// Internal event to rebuild slots (triggered by real-time streams)
+/// Note: Should only be used internally by AssignmentBloc
+class RebuildAssignmentSlots extends AssignmentEvent {
+  final Set<String>? preservedFilter;
+
+  const RebuildAssignmentSlots({this.preservedFilter});
+
+  @override
+  List<Object?> get props => [preservedFilter];
+}
+

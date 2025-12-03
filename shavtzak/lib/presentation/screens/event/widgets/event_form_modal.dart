@@ -287,6 +287,7 @@ class _EventFormModalState extends State<EventFormModal> {
               SnackBar(
                 content: Text('שגיאה בניתוח שיבוצים: $e'),
                 backgroundColor: Colors.red,
+                duration: const Duration(seconds: 1),
               ),
             );
         }

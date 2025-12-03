@@ -18,6 +18,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   final EventRepository _eventRepository;
   final TeamRepository _teamRepository;
 
+  // Stream subscriptions for manual control
+  StreamSubscription? _assignmentSubscription;
+  StreamSubscription? _teamMemberSubscription;
+  StreamSubscription? _eventSubscription;
+
+  // Keep the current event filter independent of state
+  Set<String> _currentEventFilter = <String>{};
+
   AssignmentBloc(
     this._repository,
     this._eventRepository,
@@ -42,6 +50,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<LoadAssignmentSlots>(_onLoadAssignmentSlots);
     on<ApplyEventFilter>(_onApplyEventFilter);
     on<ClearEventFilter>(_onClearEventFilter);
+    on<RebuildAssignmentSlots>(_onRebuildAssignmentSlots);
   }
 
   /// Load all assignments with real-time updates
@@ -197,22 +206,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       if (conflicts.isNotEmpty) {
         // Emit conflict warning but don't fail
         emit(AssignmentConflictWarning(conflicts, event.assignment));
-
-        // Reload slots to ensure UI shows current state
-        if (previousState is AssignmentSlotsLoaded) {
-          await _reloadSlotsAfterOperation(emit);
-        }
-
+        // Note: Real-time stream will automatically update UI, no manual reload needed
         return;
       }
 
       await _repository.createAssignment(event.assignment);
       emit(const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
 
-      // Check if we're in slots view and reload silently
-      if (previousState is AssignmentSlotsLoaded) {
-        await _reloadSlotsAfterOperation(emit);
-      } else if (previousState is AssignmentsLoaded) {
+      // Check if we need to reload based on view type
+      // For slots view: Real-time stream handles updates automatically
+      // For list view: Need to restart the listener
+      if (previousState is AssignmentsLoaded) {
         // Restart real-time listener based on current filter
         final currentState = previousState;
         if (currentState.filterType == 'event' && currentState.filterId != null) {
@@ -250,22 +254,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       if (conflicts.isNotEmpty) {
         emit(AssignmentConflictWarning(conflicts, event.assignment));
-
-        // Reload slots to ensure UI shows current state
-        if (previousState is AssignmentSlotsLoaded) {
-          await _reloadSlotsAfterOperation(emit);
-        }
-
+        // Note: Real-time stream will automatically update UI, no manual reload needed
         return;
       }
 
       await _repository.updateAssignment(event.assignment);
       emit(const AssignmentOperationSuccess('השיבוץ עודכן בהצלחה'));
 
-      // Check if we're in slots view and reload silently
-      if (previousState is AssignmentSlotsLoaded) {
-        await _reloadSlotsAfterOperation(emit);
-      } else if (previousState is AssignmentsLoaded) {
+      // Check if we need to reload based on view type
+      // For slots view: Real-time stream handles updates automatically
+      // For list view: Need to restart the listener
+      if (previousState is AssignmentsLoaded) {
         // Restart real-time listener based on current filter
         final currentState = previousState;
         if (currentState.filterType == 'event' && currentState.filterId != null) {
@@ -302,10 +301,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _repository.deleteAssignment(event.id);
       emit(const AssignmentOperationSuccess('השיבוץ נמחק בהצלחה'));
 
-      // Check if we're in slots view and reload silently
-      if (previousState is AssignmentSlotsLoaded) {
-        await _reloadSlotsAfterOperation(emit);
-      } else if (previousState is AssignmentsLoaded) {
+      // Check if we need to reload based on view type
+      // For slots view: Real-time stream handles updates automatically
+      // For list view: Need to restart the listener
+      if (previousState is AssignmentsLoaded) {
         // Restart real-time listener based on current filter
         final currentState = previousState;
         if (currentState.filterType == 'event' && currentState.filterId != null) {
@@ -429,78 +428,59 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     LoadAssignmentSlots event,
     Emitter<AssignmentState> emit,
   ) async {
+    // Preserve the current filter from state BEFORE emitting loading
+    final currentFilter = state is AssignmentSlotsLoaded
+        ? (state as AssignmentSlotsLoaded).selectedEventIds
+        : _currentEventFilter; // use remembered value as fallback
+
+    // Keep the internal filter in sync
+    _currentEventFilter = currentFilter;
+
     emit(const AssignmentLoading());
 
     try {
-      // Watch assignments, team members, and events
-      final assignmentsStream = _repository.watchAssignments();
-      final teamMembersStream = _teamRepository.watchTeamMembers();
-      final eventsStream = _eventRepository.watchEvents();
+      // Cancel any existing subscriptions
+      await _assignmentSubscription?.cancel();
+      await _teamMemberSubscription?.cancel();
+      await _eventSubscription?.cancel();
 
-      // Create a combined stream that rebuilds slots when any source changes
-      // Map team member changes to trigger assignment fetch
-      final teamMemberTriggerStream = teamMembersStream.asyncMap((_) async {
-        // When team members change, fetch current assignments and rebuild
-        final assignments = await _repository.getAllAssignments();
-        return await _buildSlotsFromAssignments(assignments);
-      });
-
-      // Map assignment changes to rebuild slots
-      final assignmentTriggerStream = assignmentsStream.asyncMap((assignments) async {
-        return await _buildSlotsFromAssignments(assignments);
-      });
-
-      // Map event changes to trigger assignment fetch
-      final eventTriggerStream = eventsStream.asyncMap((_) async {
-        // When events change, fetch current assignments and rebuild
-        final assignments = await _repository.getAllAssignments();
-        return await _buildSlotsFromAssignments(assignments);
-      });
-
-      // Use a stream controller to merge all three streams manually
-      final controller = StreamController<AssignmentSlotsLoaded>();
-
-      final assignmentSub = assignmentTriggerStream.listen(
-        (slots) => controller.add(slots),
-        onError: (e) => controller.addError(e),
+      // Subscribe to all three streams manually - dispatch internal event when they fire
+      _assignmentSubscription = _repository.watchAssignments().listen(
+        (_) => add(const RebuildAssignmentSlots()),
+        onError: (e) => add(const RebuildAssignmentSlots()),
       );
 
-      final teamMemberSub = teamMemberTriggerStream.listen(
-        (slots) => controller.add(slots),
-        onError: (e) => controller.addError(e),
+      _teamMemberSubscription = _teamRepository.watchTeamMembers().listen(
+        (_) => add(const RebuildAssignmentSlots()),
+        onError: (e) => add(const RebuildAssignmentSlots()),
       );
 
-      final eventSub = eventTriggerStream.listen(
-        (slots) => controller.add(slots),
-        onError: (e) => controller.addError(e),
+      _eventSubscription = _eventRepository.watchEvents().listen(
+        (_) => add(const RebuildAssignmentSlots()),
+        onError: (e) => add(const RebuildAssignmentSlots()),
       );
 
-      try {
-        // Listen to the combined stream for real-time updates
-        await emit.forEach<AssignmentSlotsLoaded>(
-          controller.stream,
-          onData: (slotsState) => slotsState,
-          onError: (error, stackTrace) {
-            return AssignmentError('שגיאה בטעינת שיבוצים: $error');
-          },
-        );
-      } finally {
-        // Clean up subscriptions and controller
-        await assignmentSub.cancel();
-        await teamMemberSub.cancel();
-        await eventSub.cancel();
-        await controller.close();
-      }
+      // Initial load - pass the preserved filter
+      add(RebuildAssignmentSlots(preservedFilter: currentFilter));
     } catch (e) {
       emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
     }
   }
 
+  @override
+  Future<void> close() async {
+    await _assignmentSubscription?.cancel();
+    await _teamMemberSubscription?.cancel();
+    await _eventSubscription?.cancel();
+    return super.close();
+  }
+
   /// Build complete slots state from assignments
   /// Fetches latest events and team members, then builds slot grid
   Future<AssignmentSlotsLoaded> _buildSlotsFromAssignments(
-    List<Assignment> assignments,
-  ) async {
+    List<Assignment> assignments, {
+    Set<String>? selectedEventIds,
+  }) async {
     // 1. Load all events
     final events = await _eventRepository.getAllEvents();
 
@@ -618,139 +598,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       return a.roleType.index.compareTo(b.roleType.index);
     });
 
-    return AssignmentSlotsLoaded(slotsWithDoubleAssignmentDetection);
-  }
-
-  /// Reload slots silently without emitting loading state
-  /// Used after CRUD operations to update the UI without flickering
-  Future<void> _reloadSlotsAfterOperation(Emitter<AssignmentState> emit) async {
-    try {
-      // 1. Load all events
-      final events = await _eventRepository.getAllEvents();
-
-      // 2. Load all active team members
-      final allMembers = await _teamRepository.getActiveTeamMembers();
-
-      // 3. Load all assignments
-      final assignments = await _repository.getAllAssignments();
-
-      // 4. Build slots
-      final slots = <AssignmentSlot>[];
-
-      for (final event in events) {
-        // For each role requirement in the event (in enum order)
-        for (final role in RoleType.values) {
-          final requiredCount = event.roleRequirements[role] ?? 0;
-          if (requiredCount == 0) continue; // Skip roles with 0 requirement
-
-          // Get assignments for this event+role
-          final roleAssignments = assignments
-              .where((a) => a.eventId == event.id && a.roleType == role)
-              .toList();
-
-          // Create slots (one per required count)
-          for (int i = 0; i < requiredCount; i++) {
-            // Find if this slot is filled (match by slotIndex, not array position)
-            final assignment = roleAssignments
-                .cast<Assignment?>()
-                .firstWhere((a) => a?.slotIndex == i, orElse: () => null);
-
-            // Get all assignments for this event to check who's already assigned
-            final eventAssignments = assignments
-                .where((a) => a.eventId == event.id)
-                .toList();
-            final assignedMemberIds = eventAssignments
-                .map((a) => a.teamMemberId)
-                .toSet();
-
-            // Separate members into available (not assigned to this event)
-            // and already assigned (assigned to this event)
-            // Use Maps to prevent duplicates
-            final availableMembersMap = <String, TeamMember>{};
-            final alreadyAssignedMembersMap = <String, TeamMember>{};
-
-            for (final member in allMembers) {
-              // Check capability
-              if (!member.canPerformRole(role)) continue;
-
-              // Check availability
-              if (!member.isAvailableOn(event.startDate)) continue;
-
-              // Separate based on whether already assigned to this event
-              if (assignedMemberIds.contains(member.id)) {
-                alreadyAssignedMembersMap[member.id] = member;
-              } else {
-                availableMembersMap[member.id] = member;
-              }
-            }
-
-            final availableMembers = availableMembersMap.values.toList();
-            final alreadyAssignedMembers = alreadyAssignedMembersMap.values.toList();
-
-            slots.add(AssignmentSlot(
-              event: event,
-              roleType: role,
-              slotIndex: i,
-              currentAssignment: assignment,
-              availableMembers: availableMembers,
-              alreadyAssignedMembers: alreadyAssignedMembers,
-            ));
-          }
-        }
-      }
-
-      // 5. Detect double assignments
-      final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
-      for (final slot in slots) {
-        if (slot.isFilled) {
-          // Check if this person has other assignments in the same event
-          final otherAssignments = slots.where((s) =>
-              s.event.id == slot.event.id &&
-              s.isFilled &&
-              s.currentAssignment!.teamMemberId ==
-                  slot.currentAssignment!.teamMemberId &&
-              s.roleType != slot.roleType).toList();
-
-          if (otherAssignments.isNotEmpty) {
-            // This person has multiple roles in this event
-            final otherRoleNames =
-                otherAssignments.map((s) => s.roleType.hebrewName).toList();
-            slotsWithDoubleAssignmentDetection.add(AssignmentSlot(
-              event: slot.event,
-              roleType: slot.roleType,
-              slotIndex: slot.slotIndex,
-              currentAssignment: slot.currentAssignment,
-              availableMembers: slot.availableMembers,
-              alreadyAssignedMembers: slot.alreadyAssignedMembers,
-              hasDoubleAssignment: true,
-              otherRoles: otherRoleNames,
-            ));
-          } else {
-            slotsWithDoubleAssignmentDetection.add(slot);
-          }
-        } else {
-          slotsWithDoubleAssignmentDetection.add(slot);
-        }
-      }
-
-      // 6. Sort slots by event date, then event name, then role
-      slotsWithDoubleAssignmentDetection.sort((a, b) {
-        final dateCompare = a.event.startDate.compareTo(b.event.startDate);
-        if (dateCompare != 0) return dateCompare;
-
-        final nameCompare = a.event.name.compareTo(b.event.name);
-        if (nameCompare != 0) return nameCompare;
-
-        // Sort by enum order (not alphabetically)
-        return a.roleType.index.compareTo(b.roleType.index);
-      });
-
-      emit(AssignmentSlotsLoaded(slotsWithDoubleAssignmentDetection));
-    } catch (e) {
-      // Don't silently fail - emit the slots loaded state even if there's an error
-      // This ensures the UI doesn't disappear
-      emit(AssignmentError('שגיאה ברענון שיבוצים: $e'));
-    }
+    return AssignmentSlotsLoaded(
+      slotsWithDoubleAssignmentDetection,
+      selectedEventIds: selectedEventIds ?? {},
+    );
   }
 
   /// Apply event filter to current slots
@@ -758,10 +609,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     ApplyEventFilter event,
     Emitter<AssignmentState> emit,
   ) async {
-    if (state is AssignmentSlotsLoaded) {
-      final currentState = state as AssignmentSlotsLoaded;
-      emit(currentState.copyWith(selectedEventIds: event.eventIds));
-    }
+    // Remember the filter
+    _currentEventFilter = event.eventIds;
+
+    // Trigger immediate rebuild with new filter
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
   /// Clear event filter
@@ -769,9 +621,43 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     ClearEventFilter event,
     Emitter<AssignmentState> emit,
   ) async {
-    if (state is AssignmentSlotsLoaded) {
-      final currentState = state as AssignmentSlotsLoaded;
-      emit(currentState.copyWith(selectedEventIds: {}));
+    // Clear in-memory filter
+    _currentEventFilter = <String>{};
+
+    // Trigger immediate rebuild with cleared filter
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  // Flag to track if we're currently rebuilding to avoid duplicate emissions
+  bool _isRebuilding = false;
+
+  /// Internal handler to rebuild slots (triggered by streams or filter changes)
+  Future<void> _onRebuildAssignmentSlots(
+    RebuildAssignmentSlots event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    if (_isRebuilding) return; // Skip if already rebuilding
+    _isRebuilding = true;
+
+    try {
+      // Determine which filter to use:
+      // 1. If the event provides a filter (explicit change), use it
+      // 2. Otherwise, use the last known filter stored in _currentEventFilter
+      final filterToUse = event.preservedFilter ?? _currentEventFilter;
+
+      // Keep the internal field in sync
+      _currentEventFilter = filterToUse;
+
+      final assignments = await _repository.getAllAssignments();
+      final updatedSlots = await _buildSlotsFromAssignments(
+        assignments,
+        selectedEventIds: filterToUse,
+      );
+      emit(updatedSlots);
+    } catch (e) {
+      emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
+    } finally {
+      _isRebuilding = false;
     }
   }
 
@@ -790,10 +676,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _repository.createAssignmentWithBypass(event.assignment);
       emit(const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
 
-      // Check if we're in slots view and reload silently
-      if (previousState is AssignmentSlotsLoaded) {
-        await _reloadSlotsAfterOperation(emit);
-      } else if (previousState is AssignmentsLoaded) {
+      // Check if we need to reload based on view type
+      // For slots view: Real-time stream handles updates automatically
+      // For list view: Need to restart the listener
+      if (previousState is AssignmentsLoaded) {
         // Restart real-time listener based on current filter
         final currentState = previousState;
         if (currentState.filterType == 'event' && currentState.filterId != null) {
@@ -803,15 +689,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         } else {
           add(const LoadAssignments());
         }
-      } else {
+      } else if (previousState is! AssignmentSlotsLoaded) {
+        // Only reload if not in slots view (real-time stream handles slots view)
         add(const LoadAssignments());
       }
     } catch (e) {
       if (e is AssignmentConflictException) {
         emit(AssignmentConflictWarning(e.conflicts, event.assignment));
-        if (previousState is AssignmentSlotsLoaded) {
-          await _reloadSlotsAfterOperation(emit);
-        }
+        // Note: Real-time stream will automatically update UI, no manual reload needed
       } else {
         emit(AssignmentError('שגיאה ביצירת שיבוץ: $e'));
       }

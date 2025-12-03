@@ -10,4 +10,8 @@ class FilterPersistence {
   /// Selected filter index for Events screen
   /// 0 = All (סה״כ), 1 = Future (עתידיים), 2 = Past (עברו)
   static int eventFilterIndex = 1; // Default to future (עתידיים)
+
+  /// Selected filter index for Assignments screen
+  /// 0 = All (סה״כ), 1 = Filled (משובצים), 2 = Unfilled (לא משובצים)
+  static int assignmentFilterIndex = 0; // Default to all
 }

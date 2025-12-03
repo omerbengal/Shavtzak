@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
+import '../../../domain/entities/team_member.dart';
+import '../../../data/repositories/user_selection_repository.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
@@ -15,24 +16,62 @@ class WhoamiScreen extends StatefulWidget {
 
 class _WhoamiScreenState extends State<WhoamiScreen> {
   final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
+
+  List<TeamMember> _allTeamMembers = [];
+  List<TeamMember> _filteredTeamMembers = [];
+  bool _isLoading = false;
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    debugPrint('🏠 WHOAMI SCREEN: initState() called');
     // Trigger initial check and load team members
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint('🏠 WHOAMI SCREEN: Adding CheckCachedUser event');
       context.read<UserSelectionBloc>().add(const CheckCachedUser());
+      _loadAllTeamMembers();
     });
+
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged() {
+    final query = _searchController.text.toLowerCase().trim();
+    setState(() {
+      _searchQuery = query;
+      if (query.isEmpty) {
+        _filteredTeamMembers = List.from(_allTeamMembers);
+      } else {
+        _filteredTeamMembers = _allTeamMembers.where((member) =>
+          member.name.toLowerCase().contains(query)
+        ).toList();
+      }
+    });
+  }
+
+  Future<void> _loadAllTeamMembers() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final userSelectionRepo = context.read<UserSelectionRepository>();
+      final teamMembers = await userSelectionRepo.getAllTeamMembers();
+      setState(() {
+        _allTeamMembers = teamMembers;
+        _filteredTeamMembers = List.from(teamMembers);
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -40,176 +79,172 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
+        appBar: AppBar(
+          title: const Text('בחירת משתמש'),
+          centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'ניקוי מטמון',
+              onPressed: () => _showClearCacheDialog(context),
+            ),
+          ],
+        ),
         body: SafeArea(
-          child: BlocConsumer<UserSelectionBloc, UserSelectionState>(
+          child: BlocListener<UserSelectionBloc, UserSelectionState>(
             listener: (context, state) {
               if (state is UserAuthenticated) {
                 // Navigate will be handled by router redirect logic
               }
             },
-            builder: (context, state) {
-              if (state is UserSelectionLoading) {
-                return const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('בודק את הזהות שלך...'),
-                    ],
-                  ),
-                );
-              }
-
-              if (state is UserSelectionError) {
-                return _buildErrorState(state.message);
-              }
-
-              if (state is UserSignedOut) {
-                return _buildWhoamiContent();
-              }
-
-              if (state is TeamMembersLoaded) {
-                return _buildTeamMembersList(state);
-              }
-
-              if (state is UserSelectionRequired ||
-                  state is UserSelectionValidationError) {
-                return _buildWhoamiContent();
-              }
-
-              // Default case - show whoami content
-              return _buildWhoamiContent();
-            },
+            child: _buildSingleScreenLayout(),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildErrorState(String message) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.red,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'אירעה שגיאה',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () {
-                context.read<UserSelectionBloc>().add(const CheckCachedUser());
-              },
-              child: const Text('נסה שוב'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWhoamiContent() {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 40),
-
-          // Title
-          Text(
-            'מי את/ה?',
-            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-            textAlign: TextAlign.center,
+  Future<void> _showClearCacheDialog(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ניקוי מטמון'),
+        content: const Text('האם את/ה בטוח/ה שברצונך לנקות את המטמון ולהתחיל מחדש?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('ביטול'),
           ),
-
-          const SizedBox(height: 16),
-
-          // Subtitle
-          Text(
-            'בחר/י את עצמך מרשימת חברי הצוות',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.grey[600],
-            ),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: 32),
-
-          // Search field
-          TextField(
-            controller: _searchController,
-            focusNode: _searchFocusNode,
-            decoration: const InputDecoration(
-              hintText: 'חפש/י את השם שלך...',
-              prefixIcon: Icon(Icons.search),
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (query) {
-              context.read<UserSelectionBloc>().add(SearchTeamMembers(query));
-            },
-          ),
-
-          const SizedBox(height: 24),
-
-          // Load all team members button
-          ElevatedButton.icon(
-            onPressed: () {
-              context.read<UserSelectionBloc>().add(const LoadAllTeamMembers());
-              _searchFocusNode.unfocus();
-            },
-            icon: const Icon(Icons.list),
-            label: const Text('הצג את כל חברי הצוות'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('נקה מטמון'),
           ),
         ],
       ),
     );
+
+    if (confirmed == true && context.mounted) {
+      context.read<UserSelectionBloc>().add(const SignOut());
+      // Since we're already on whoami, we don't need to navigate
+      // The router redirect logic will handle clearing any cached state
+    }
   }
 
-  Widget _buildTeamMembersList(TeamMembersLoaded state) {
-    final teamMembers = state.filteredMembers;
+  Widget _buildSingleScreenLayout() {
+    return Column(
+      children: [
+        // Header with title and search
+        Container(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 40),
 
-    if (teamMembers.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(24.0),
+              // Title
+              Text(
+                'מי את/ה?',
+                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 16),
+
+              // Subtitle
+              Text(
+                'חפש/י את עצמך ברשימת חברי הצוות',
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 32),
+
+              // Search field
+              TextField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  hintText: 'חפש/י את השם שלך...',
+                  prefixIcon: Icon(Icons.search),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Team members list
+        Expanded(
+          child: _buildTeamMembersListWidget(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTeamMembersListWidget() {
+    if (_isLoading) {
+      return const Center(
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Back to search
-            IconButton(
-              onPressed: () {
-                _searchController.clear();
-                context.read<UserSelectionBloc>().add(const SearchTeamMembers(''));
-              },
-              icon: const Icon(Icons.arrow_back),
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('טוען רשימת חברי צוות...'),
+          ],
+        ),
+      );
+    }
+
+    if (_allTeamMembers.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.people_outline,
+              size: 64,
+              color: Colors.grey[400],
             ),
-
-            const SizedBox(height: 20),
-
+            const SizedBox(height: 16),
             Text(
-              state.searchQuery != null && state.searchQuery!.isNotEmpty
-                  ? 'לא נמצאו חברי צוות עם השם "${state.searchQuery}"'
-                  : 'אין חברי צוות במערכת',
-              style: Theme.of(context).textTheme.bodyLarge,
+              'אין חברי צוות במערכת',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_filteredTeamMembers.isEmpty && _searchQuery.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.search_off,
+              size: 64,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'לא נמצאו חברי צוות עם השם "$_searchQuery"',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'נסה/י לשנות את מונח החיפוש',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey[500],
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -219,45 +254,15 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
 
     return Column(
       children: [
-        // Search bar and back
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Row(
-            children: [
-              IconButton(
-                onPressed: () {
-                  _searchController.clear();
-                  context.read<UserSelectionBloc>().add(const SearchTeamMembers(''));
-                },
-                icon: const Icon(Icons.arrow_back),
-              ),
-
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  focusNode: _searchFocusNode,
-                  decoration: const InputDecoration(
-                    hintText: 'חפש/י את השם שלך...',
-                    prefixIcon: Icon(Icons.search),
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (query) {
-                    context.read<UserSelectionBloc>().add(SearchTeamMembers(query));
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Results count
-        if (state.searchQuery != null && state.searchQuery!.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+        // Results count (only show when searching)
+        if (_searchQuery.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
             child: Align(
               alignment: Alignment.centerRight,
               child: Text(
-                'נמצאו ${teamMembers.length} תוצאות',
+                'נמצאו ${_filteredTeamMembers.length} תוצאות',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Colors.grey[600],
                 ),
@@ -268,14 +273,13 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
         // Team members list
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.all(16.0),
-            itemCount: teamMembers.length,
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            itemCount: _filteredTeamMembers.length,
             itemBuilder: (context, index) {
-              final teamMember = teamMembers[index];
+              final teamMember = _filteredTeamMembers[index];
               return _TeamMemberCard(
                 teamMember: teamMember,
                 onTap: () {
-                  debugPrint('🏠 WHOAMI SCREEN: User tapped on ${teamMember.name}, isAdmin=${teamMember.isAdmin}');
                   context.read<UserSelectionBloc>().add(SelectUser(teamMember.uniqueKey));
                 },
               );
@@ -288,7 +292,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
 }
 
 class _TeamMemberCard extends StatelessWidget {
-  final teamMember;
+  final TeamMember teamMember;
   final VoidCallback onTap;
 
   const _TeamMemberCard({

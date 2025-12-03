@@ -205,12 +205,12 @@ Feature 1: Fix text from 'סה"כ משרות' to 'סה"כ תפקידים' in tea
   ☐ Feature 12: Create event duplication BLoC event that copies event with new date/time
   ☐ Feature 12: Implement logic to duplicate all assignments and detect date constraint conflicts
   ☐ Feature 12: Update UI to show duplicated event edit modal with assignments highlighted in bright red if conflicts exist
-  ☐ Feature 13: Create a new home page (a new sub-url "/whoami"): A title of "מי את/ה?", Then a search box for filtering the list, and a list of all team members (activated and also deactivated).
-  ☐ Feature 13: create a unique key for each team member. This should sit in the DB. No need for it to be shown in the web app.
-  ☐ Feature 13: When the user presses on him/herself in the "whoami" screen, save the unique key in the cache (you need to think about the fact that this web app is being opened in several ways: desktop browser, mobile device browser, mobile device PWA).
-  ☐ Feature 13: add a "isAdmin" field for each user.
-  ☐ Feature 13: Make the "whoami" screen be the first screen to pop up if there is no user selected in the cache. If there exists a user selected - proceed to the appropriate screen (will be elaborated later - for now use placeholders).
-  ☐ Feature 13: Separate the admin and user-specific views: When an admin is being logged in, the current pages in the app should be displayed. If a non-admin user is being logged in - a new page view with bottom navigation bar should appear (for now 2 empty pages with "hello world in them"). This separation should also be 2 different sub-urls of the app (for example, for the admin it will be "/admin" [and then "/admin/team-members", "/admin/events", "/admin/assignments"], and for the users it will be "/user").
+  ☒ Feature 13: Create a new home page (a new sub-url "/whoami"): A title of "מי את/ה?", Then a search box for filtering the list, and a list of all team members (activated and also deactivated).
+  ☒ Feature 13: create a unique key for each team member. This should sit in the DB. No need for it to be shown in the web app.
+  ☒ Feature 13: When the user presses on him/herself in the "whoami" screen, save the unique key in the cache (you need to think about the fact that this web app is being opened in several ways: desktop browser, mobile device browser, mobile device PWA).
+  ☒ Feature 13: add a "isAdmin" field for each user.
+  ☒ Feature 13: Make the "whoami" screen be the first screen to pop up if there is no user selected in the cache. If there exists a user selected - proceed to the appropriate screen (will be elaborated later - for now use placeholders).
+  ☒ Feature 13: Separate the admin and user-specific views: When an admin is being logged in, the current pages in the app should be displayed. If a non-admin user is being logged in - a new page view with bottom navigation bar should appear (for now 2 empty pages with "hello world in them"). This separation should also be 2 different sub-urls of the app (for example, for the admin it will be "/admin" [and then "/admin/team-members", "/admin/events", "/admin/assignments"], and for the users it will be "/user").
   ☐ Feature 14: Create user-facing constraint management screen accessible via user URL
   ☐ Feature 14: Change constraint management in admin team members screen: When the user add a constraints request, it should appear in the constraints section in this team member's modal in the admin view - and the admin needs to accept or reject the request.
   ☐ Feature 14: each team member that has an open constraints request - his card in the team members list (in the admin view) should contain any yellow exclamation mark (indicating that there is a matter to be viewed).

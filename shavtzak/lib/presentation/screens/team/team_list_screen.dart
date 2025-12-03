@@ -36,7 +36,6 @@ class _TeamListScreenState extends State<TeamListScreen> {
   @override
   void initState() {
     super.initState();
-    debugPrint('👥 TEAM SCREEN: initState() called');
     // Always load ALL team members - filtering happens in UI
     context.read<TeamBloc>().add(const LoadTeamMembers());
   }
@@ -68,7 +67,6 @@ class _TeamListScreenState extends State<TeamListScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          leading: const NavigationMenu(),
           title: _showSearch
               ? TextField(
                   controller: _searchController,
@@ -83,6 +81,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 )
               : const Text(AppStrings.team),
           actions: [
+            const NavigationMenu(),
             IconButton(
               icon: Icon(_showSearch ? Icons.close : Icons.search),
               onPressed: () {
@@ -106,6 +105,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   SnackBar(
                     content: Text(state.message),
                     backgroundColor: Colors.red,
+                    duration: const Duration(seconds: 1),
                   ),
                 );
             } else if (state is TeamMemberOperationSuccess) {
@@ -115,6 +115,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   SnackBar(
                     content: Text(state.message),
                     backgroundColor: Colors.green,
+                    duration: const Duration(seconds: 1),
                   ),
                 );
             }
@@ -601,7 +602,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
       return conflicting;
     } catch (e) {
-      debugPrint('Error getting conflicting assignments: $e');
       return [];
     }
   }

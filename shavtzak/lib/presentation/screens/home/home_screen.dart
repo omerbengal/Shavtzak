@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter/foundation.dart';
+import '../../widgets/navigation_menu.dart';
 
 /// Home screen with navigation cards to main sections
 class HomeScreen extends StatelessWidget {
@@ -8,13 +8,15 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('🏠 HOME SCREEN: build() called');
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('שבצק - ניהול צוות ואירועים'),
           centerTitle: true,
+          actions: const [
+            NavigationMenu(),
+          ],
         ),
         body: Center(
           child: Padding(
@@ -39,7 +41,6 @@ class HomeScreen extends StatelessWidget {
                     elevation: 4,
                     child: InkWell(
                       onTap: () {
-                        debugPrint('🏠 HOME SCREEN: Team card tapped, navigating to /admin/team-members');
                         context.go('/admin/team-members');
                       },
                       child: const Column(
@@ -64,7 +65,6 @@ class HomeScreen extends StatelessWidget {
                     elevation: 4,
                     child: InkWell(
                       onTap: () {
-                        debugPrint('🏠 HOME SCREEN: Events card tapped, navigating to /admin/events');
                         context.go('/admin/events');
                       },
                       child: const Column(
@@ -89,7 +89,6 @@ class HomeScreen extends StatelessWidget {
                     elevation: 4,
                     child: InkWell(
                       onTap: () {
-                        debugPrint('🏠 HOME SCREEN: Assignments card tapped, navigating to /admin/assignments');
                         context.go('/admin/assignments');
                       },
                       child: const Column(

@@ -7,6 +7,7 @@ import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/event.dart';
 import '../../../data/repositories/assignment_repository.dart';
+import '../../../core/utils/filter_persistence.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
@@ -15,6 +16,7 @@ import '../../bloc/event/event_event.dart';
 import '../../bloc/team/team_bloc.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/navigation_menu.dart';
+import '../../widgets/interactive_filter_bar.dart';
 import 'assignment_filter_modal.dart';
 import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
@@ -27,7 +29,6 @@ class AssignmentListScreen extends StatefulWidget {
 }
 
 class _AssignmentListScreenState extends State<AssignmentListScreen> {
-  bool _showOnlyUnfilled = false;
   AssignmentSlotsLoaded? _lastSlotsState;
   // Track when dropdowns need to be reset (forces new widget instance)
   final Map<String, int> _dropdownResetCounters = {};
@@ -44,34 +45,36 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
   }
 
+  /// Handle filter change
+  void _onFilterChanged(int newIndex) {
+    setState(() {
+      FilterPersistence.assignmentFilterIndex = newIndex;
+    });
+  }
+
+  /// Filter assignments based on selected filter index
+  List<AssignmentSlot> _filterAssignments(List<AssignmentSlot> slots, int filterIndex) {
+    switch (filterIndex) {
+      case 0: // All
+        return slots;
+      case 1: // Filled (משובצים)
+        return slots.where((s) => s.isFilled).toList();
+      case 2: // Unfilled (לא משובצים)
+        return slots.where((s) => !s.isFilled).toList();
+      default:
+        return slots;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          leading: const NavigationMenu(),
           title: const Text('שיבוצים'),
-          actions: [
-            // Toggle for filled/unfilled
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: OutlinedButton(
-                onPressed: () {
-                  setState(() => _showOnlyUnfilled = !_showOnlyUnfilled);
-                },
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: _showOnlyUnfilled ? Colors.green : Colors.white,
-                  foregroundColor: _showOnlyUnfilled ? Colors.white : Colors.black,
-                  side: BorderSide(
-                    color: _showOnlyUnfilled ? Colors.green : Colors.grey,
-                    width: 1.5,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
-                child: const Text('הצג רק לא משובצים'),
-              ),
-            ),
+          actions: const [
+            NavigationMenu(),
           ],
         ),
         floatingActionButton: FloatingActionButton(
@@ -124,7 +127,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   SnackBar(
                     content: Text('שיבוץ לא בוצע: ${state.conflicts.join(", ")}'),
                     backgroundColor: Colors.orange,
-                    duration: const Duration(seconds: 5),
+                    duration: const Duration(seconds: 2),
                   ),
                 );
             }
@@ -136,6 +139,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             }
 
             if (state is AssignmentSlotsLoaded) {
+
               // Filter out slots with assignments pending deletion to prevent race conditions
               final filteredSlots = state.slots.map((slot) {
                 // If this slot has an assignment that's pending deletion, clear it
@@ -159,7 +163,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 filteredSlots,
                 selectedEventIds: state.selectedEventIds,
               ); // Store the filtered state
-              return _buildSlotGrid(_lastSlotsState!);
+                            return _buildSlotGrid(_lastSlotsState!);
             }
 
             // For any other state (Operating, Success, Error), keep showing last state if available
@@ -172,7 +176,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               return _buildErrorState(state.message);
             }
 
-            return _buildEmptyState();
+            return _buildEmptyState(0, 0, 0);
           },
         ),
       ),
@@ -207,19 +211,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           .toList();
     }
 
-    // Then apply unfilled filter
-    final slots = _showOnlyUnfilled
-        ? filteredSlots.where((s) => !s.isFilled).toList()
-        : filteredSlots;
+    // Calculate statistics based on all slots (before assignment filter)
+    final totalSlots = filteredSlots.length;
+    final filledSlots = filteredSlots.where((s) => s.isFilled).length;
+    final unfilledSlots = filteredSlots.where((s) => !s.isFilled).length;
+
+    // Apply assignment filter
+    final slots = _filterAssignments(filteredSlots, FilterPersistence.assignmentFilterIndex);
 
     if (slots.isEmpty) {
-      return _buildEmptyState();
+      return _buildEmptyState(totalSlots, filledSlots, unfilledSlots);
     }
-
-    // Calculate statistics based on filtered slots
-    final totalSlots = slots.length;
-    final filledSlots = slots.where((s) => s.isFilled).length;
-    final unfilledSlots = slots.where((s) => !s.isFilled).length;
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -228,21 +230,15 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       },
       child: Column(
       children: [
-        // Statistics bar
-        Container(
-          padding: const EdgeInsets.all(16),
-          color: Colors.blue.shade50,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildStatItem(
-                  'סה"כ תפקידים', totalSlots.toString(), Colors.blue),
-              _buildStatItem(
-                  'משובץ', filledSlots.toString(), Colors.green),
-              _buildStatItem(
-                  'פנוי', unfilledSlots.toString(), Colors.orange),
-            ],
-          ),
+        // Interactive filter bar
+        InteractiveFilterBar(
+          options: [
+            FilterOption(label: 'סה״כ', count: totalSlots.toString()),
+            FilterOption(label: 'משובצים', count: filledSlots.toString()),
+            FilterOption(label: 'לא משובצים', count: unfilledSlots.toString()),
+          ],
+          selectedIndex: FilterPersistence.assignmentFilterIndex,
+          onFilterChanged: _onFilterChanged,
         ),
 
         // Header row
@@ -538,14 +534,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             const SnackBar(
               content: Text('המשרה נמחקה בהצלחה'),
               backgroundColor: Colors.green,
+              duration: Duration(seconds: 1),
             ),
           );
       }
 
-      // Step 6: Reload assignment slots to reflect changes
-      if (mounted) {
-        context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
-      }
+      // Real-time streams will automatically reload assignment slots to reflect changes
     } catch (e) {
       // Show error message
       if (mounted) {
@@ -555,6 +549,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             SnackBar(
               content: Text('שגיאה במחיקת המשרה: $e'),
               backgroundColor: Colors.red,
+              duration: const Duration(seconds: 1),
             ),
           );
       }
@@ -773,7 +768,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       _pendingDeletions.add(assignmentId);
 
       // Remove from pending deletions after 5 seconds (cleanup timeout)
-      Future.delayed(const Duration(seconds: 5), () {
+      Future.delayed(const Duration(seconds: 2), () {
         if (mounted) {
           setState(() {
             _pendingDeletions.remove(assignmentId);
@@ -836,7 +831,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         }).toList();
 
         setState(() {
-          _lastSlotsState = AssignmentSlotsLoaded(updatedSlots);
+          _lastSlotsState = AssignmentSlotsLoaded(
+            updatedSlots,
+            selectedEventIds: _lastSlotsState!.selectedEventIds, // Preserve the filter!
+          );
         });
       }
 
@@ -1048,7 +1046,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       }).toList();
 
       setState(() {
-        _lastSlotsState = AssignmentSlotsLoaded(updatedSlots);
+        _lastSlotsState = AssignmentSlotsLoaded(
+          updatedSlots,
+          selectedEventIds: _lastSlotsState!.selectedEventIds, // Preserve the filter!
+        );
       });
     }
 
@@ -1062,18 +1063,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     }
   }
 
-  Widget _buildStatItem(String label, String value, Color color) {
-    return Column(
-      children: [
-        Text(value,
-            style: TextStyle(
-                fontSize: 20, fontWeight: FontWeight.bold, color: color)),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-      ],
-    );
-  }
-
+  
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
   }
@@ -1105,22 +1095,40 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.assignment_outlined,
-              size: 80, color: Colors.grey.shade400),
-          const SizedBox(height: 16),
-          Text(
-            _showOnlyUnfilled
-                ? 'כל התפקידים משובצים!'
-                : 'אין תפקידים להצגה',
-            style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+  Widget _buildEmptyState(int totalSlots, int filledSlots, int unfilledSlots) {
+    return Column(
+      children: [
+        // Interactive filter bar
+        InteractiveFilterBar(
+          options: [
+            FilterOption(label: 'סה״כ', count: totalSlots.toString()),
+            FilterOption(label: 'משובצים', count: filledSlots.toString()),
+            FilterOption(label: 'לא משובצים', count: unfilledSlots.toString()),
+          ],
+          selectedIndex: FilterPersistence.assignmentFilterIndex,
+          onFilterChanged: _onFilterChanged,
+        ),
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.assignment_outlined,
+                    size: 80, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                Text(
+                  FilterPersistence.assignmentFilterIndex == 1
+                      ? 'אין תפקידים משובצים'
+                      : FilterPersistence.assignmentFilterIndex == 2
+                          ? 'אין תפקידים פנויים'
+                          : 'אין תפקידים להצגה',
+                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1171,10 +1179,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         filterIndex: 1, // Default to future for assignments screen
         onSuccess: () {
           Navigator.of(modalContext).pop();
-          // Reload assignment slots to reflect changes
-          if (context.mounted) {
-            context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
-          }
+          // Real-time streams will automatically reload assignment slots to reflect changes
         },
       ),
     );
@@ -1265,15 +1270,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             SnackBar(
               content: Text('שיבוץ חדש נוצר בהצלחה: ${teamMember.name} → ${roleType.hebrewName} באירוע "${event.name}"'),
               backgroundColor: Colors.green,
-              duration: const Duration(seconds: 3),
+              duration: const Duration(seconds: 1),
             ),
           );
       }
 
-      // Step 6: Reload assignment slots to reflect changes
-      if (mounted) {
-        context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
-      }
+      // Real-time streams will automatically reload assignment slots to reflect changes
     } catch (e) {
       // Show error message
       if (mounted) {

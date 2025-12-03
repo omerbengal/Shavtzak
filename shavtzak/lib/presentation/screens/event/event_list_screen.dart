@@ -59,7 +59,6 @@ class _EventListScreenState extends State<EventListScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          leading: const NavigationMenu(),
           title: _showSearch
               ? TextField(
                   controller: _searchController,
@@ -74,6 +73,7 @@ class _EventListScreenState extends State<EventListScreen> {
                 )
               : const Text('אירועים'),
           actions: [
+            const NavigationMenu(),
             IconButton(
               icon: Icon(_showSearch ? Icons.close : Icons.search),
               onPressed: () {
@@ -94,13 +94,21 @@ class _EventListScreenState extends State<EventListScreen> {
               ScaffoldMessenger.of(context)
                 ..clearSnackBars()
                 ..showSnackBar(
-                  SnackBar(content: Text(state.message), backgroundColor: Colors.red),
+                  SnackBar(
+                    content: Text(state.message),
+                    backgroundColor: Colors.red,
+                    duration: const Duration(seconds: 1),
+                  ),
                 );
             } else if (state is EventOperationSuccess) {
               ScaffoldMessenger.of(context)
                 ..clearSnackBars()
                 ..showSnackBar(
-                  SnackBar(content: Text(state.message), backgroundColor: Colors.green),
+                  SnackBar(
+                    content: Text(state.message),
+                    backgroundColor: Colors.green,
+                    duration: const Duration(seconds: 1),
+                  ),
                 );
             }
           },

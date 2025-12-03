@@ -26,29 +26,27 @@ class AppRouter {
     _userSelectionRepository = userSelectionRepository;
     _instance ??= _createRouter(userSelectionRepository);
 
-    // Listen to BLoC state changes and trigger navigation when authenticated
+    // Listen to BLoC state changes and trigger navigation when authenticated or signed out
     _userSelectionBloc?.stream.listen((state) {
-      debugPrint('📱 BLOC STATE: ${state.runtimeType}');
-      if (state is UserAuthenticated) {
-        debugPrint('📱 BLOC STATE: User authenticated, isAdmin=${state.isAdmin}');
-      }
-
-      if (state is UserAuthenticated && _instance != null) {
-        // Trigger a navigation check when user becomes authenticated
+      if (_instance != null) {
+        // Trigger a navigation check after state changes
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          // Get current route and trigger navigation if user is still on whoami
           final currentRoute = _instance!.routeInformationProvider.value.uri.path;
-          debugPrint('📱 BLOC NAVIGATION: User authenticated, current route: "$currentRoute"');
-          if (currentRoute.startsWith('/whoami')) {
-            if (state.isAdmin) {
-              debugPrint('📱 BLOC NAVIGATION: Admin navigating to /admin');
-              _instance?.go('/admin');
-            } else {
-              debugPrint('📱 BLOC NAVIGATION: Non-admin navigating to /user/assignments');
-              _instance?.go('/user/assignments');
+
+          if (state is UserAuthenticated) {
+            // User became authenticated, navigate to appropriate home
+            if (currentRoute.startsWith('/whoami')) {
+              if (state.isAdmin) {
+                _instance?.go('/admin');
+              } else {
+                _instance?.go('/user/assignments');
+              }
             }
-          } else {
-            debugPrint('📱 BLOC NAVIGATION: User authenticated but not on whoami, no navigation needed');
+          } else if (state is UserSignedOut) {
+            // User signed out, always go to whoami
+            if (!currentRoute.startsWith('/whoami')) {
+              _instance?.go('/whoami');
+            }
           }
         });
       }
@@ -71,7 +69,7 @@ class AppRouter {
           }
         }
       } catch (e) {
-        debugPrint('🔄 ROUTER: Error checking cached user: $e');
+        // Error checking cached user, default to whoami
       }
       // No valid cached user, start with whoami
       return '/whoami';
@@ -84,68 +82,58 @@ class AppRouter {
       // Redirect based on authentication state
       redirect: (context, state) {
         final currentRoute = state.uri.path;
-        final fullUri = state.uri.toString();
-        debugPrint('🔄 ROUTER REDIRECT: Checking route "$currentRoute", full URI: "$fullUri"');
 
         // Handle empty path (root URL without hash)
         if (currentRoute.isEmpty || currentRoute == '/') {
-          debugPrint('🔄 ROUTER REDIRECT: Empty path detected, treating as whoami');
           return '/whoami';
         }
 
         if (_userSelectionBloc == null || _userSelectionRepository == null) {
-          debugPrint('🔄 ROUTER REDIRECT: No UserSelectionBloc or repository, redirecting to /whoami');
           return '/whoami'; // Default to whoami if no BLoC provided
         }
 
         final currentState = _userSelectionBloc!.state;
 
-        debugPrint('🔄 ROUTER REDIRECT: User state: ${currentState.runtimeType}');
-
         // If user is not authenticated yet, check cache first before showing whoami
         if (currentState is! UserAuthenticated) {
-          debugPrint('🔄 ROUTER REDIRECT: User not authenticated, checking cache...');
           // Check cache asynchronously, but for now allow whoami to load
           // The BLoC will handle cache check and navigation
         }
 
         // Handle authentication redirects
-        if (currentState is UserAuthenticated) {
-          debugPrint('🔄 ROUTER REDIRECT: User authenticated, isAdmin=${currentState.isAdmin}');
+        if (currentState is UserSignedOut) {
+          // User signed out, always redirect to whoami
+          if (!currentRoute.startsWith('/whoami')) {
+            return '/whoami';
+          }
+        } else if (currentState is UserAuthenticated) {
           // User is authenticated, redirect based on admin status
           if (currentState.isAdmin) {
             // Admin user - only redirect from whoami to admin routes
             if (currentRoute.startsWith('/whoami')) {
-              debugPrint('🔄 ROUTER REDIRECT: Admin on whoami -> redirecting to /admin');
               return '/admin'; // Redirect to admin home
             }
             // If admin tries to access user routes, redirect to admin
             if (currentRoute.startsWith('/user/')) {
-              debugPrint('🔄 ROUTER REDIRECT: Admin accessing user routes -> redirecting to /admin');
               return '/admin'; // Redirect to admin home
             }
           } else {
             // Non-admin user - only redirect from whoami to user routes
             if (currentRoute.startsWith('/whoami')) {
-              debugPrint('🔄 ROUTER REDIRECT: Non-admin on whoami -> redirecting to /user/assignments');
               return '/user/assignments'; // Redirect to user assignments
             }
             // If non-admin tries to access admin routes, redirect to user
             if (currentRoute.startsWith('/admin/')) {
-              debugPrint('🔄 ROUTER REDIRECT: Non-admin accessing admin routes -> redirecting to /user/assignments');
               return '/user/assignments'; // Redirect to user assignments
             }
           }
         } else {
-          debugPrint('🔄 ROUTER REDIRECT: User not authenticated');
           // User not authenticated, redirect to whoami unless already there
           if (!currentRoute.startsWith('/whoami')) {
-            debugPrint('🔄 ROUTER REDIRECT: Not authenticated and not on whoami -> redirecting to /whoami');
             return '/whoami';
           }
         }
 
-        debugPrint('🔄 ROUTER REDIRECT: No redirect needed for route "$currentRoute"');
         return null; // No redirect needed
       },
 
