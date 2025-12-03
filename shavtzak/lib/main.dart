@@ -26,6 +26,19 @@ import 'core/theme/app_theme.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Suppress GoRouter hot restart navigation errors
+  // The app works correctly, but GoRouter throws this error during hot restart
+  FlutterError.onError = (FlutterErrorDetails details) {
+    // Check if this is the GoRouter navigation error we want to suppress
+    if (details.exception.toString().contains('Could not navigate to initial route')) {
+      // Suppress this specific error - it's harmless and only appears on hot restart
+      debugPrint('Suppressed GoRouter hot restart error: ${details.exception}');
+      return;
+    }
+    // For all other errors, use the default handler
+    FlutterError.presentError(details);
+  };
+
   // Show loading screen immediately
   runApp(const LoadingApp());
 

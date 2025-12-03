@@ -195,16 +195,63 @@ Feature 1: Fix text from 'סה"כ משרות' to 'סה"כ תפקידים' in tea
   ☒ Feature 8: Add Dismissible widget to assignment rows in assignments screen for swipe-to-delete
   ☒ Feature 8: Implement delete logic that removes both quota and assignment when swiping assignment row
   ☒ Feature 9: Add GestureDetector/InkWell to event name text in assignment rows to open event edit modal in assignment page
-  ☐ Feature 10: Add GestureDetector/InkWell to role name text in assignment rows to open event edit modal in assignment page
-  ☐ Feature 10: Implement focus/scroll logic to highlight selected role when opening modal via role click in assignment page
-  ☐ Feature 11: Create multi-step manual assignment flow UI (step 1: select event)
-  ☐ Feature 11: Add step 2: select team member with constraint validation and warning popup
-  ☐ Feature 11: Add step 3: select role from member's capabilities and auto-create quota + assignment
+  ☒ Feature 10: Add GestureDetector/InkWell to role name text in assignment rows to open event edit modal in assignment page
+  ☒ Feature 10: Implement focus/scroll logic to highlight selected role when opening modal via role click in assignment page
+  ☐ Feature 11: Create multi-step manual assignment flow UI. This will start from the assignments page with a "+" button. (step 1: select event)
+  ☐ Feature 11: Add step 1: select event (only "future events" [end date >= today]).
+  ☐ Feature 11: Add step 2: select team member with constraint validation and warning popup.
+  ☐ Feature 11: Add step 3: select role from member's capabilities.
+  ☐ Feature 11: after save: auto-create quota + assignment.
   ☐ Feature 12: Create event duplication BLoC event that copies event with new date/time
   ☐ Feature 12: Implement logic to duplicate all assignments and detect date constraint conflicts
   ☐ Feature 12: Update UI to show duplicated event edit modal with assignments highlighted in bright red if conflicts exist
-  ☐ Feature 13: Design user authentication system with unique user codes (entity, model, repository)
-  ☐ Feature 13: Create user-specific routing with /user/{code} URL pattern
-  ☐ Feature 13: Link TeamMembers to User accounts for personalized views
+  ☐ Feature 13: Create a new home page (a new sub-url "/whoami"): A title of "מי את/ה?", Then a search box for filtering the list, and a list of all team members (activated and also deactivated).
+  ☐ Feature 13: create a unique key for each team member. This should sit in the DB. No need for it to be shown in the web app.
+  ☐ Feature 13: When the user presses on him/herself in the "whoami" screen, save the unique key in the cache (you need to think about the fact that this web app is being opened in several ways: desktop browser, mobile device browser, mobile device PWA).
+  ☐ Feature 13: add a "isAdmin" field for each user.
+  ☐ Feature 13: Make the "whoami" screen be the first screen to pop up if there is no user selected in the cache. If there exists a user selected - proceed to the appropriate screen (will be elaborated later - for now use placeholders).
+  ☐ Feature 13: Separate the admin and user-specific views: When an admin is being logged in, the current pages in the app should be displayed. If a non-admin user is being logged in - a new page view with bottom navigation bar should appear (for now 2 empty pages with "hello world in them"). This separation should also be 2 different sub-urls of the app (for example, for the admin it will be "/admin" [and then "/admin/team-members", "/admin/events", "/admin/assignments"], and for the users it will be "/user").
   ☐ Feature 14: Create user-facing constraint management screen accessible via user URL
-  ☐ Feature 14: Remove constraint management from admin team members screen (admin view only)
+  ☐ Feature 14: Change constraint management in admin team members screen: When the user add a constraints request, it should appear in the constraints section in this team member's modal in the admin view - and the admin needs to accept or reject the request.
+  ☐ Feature 14: each team member that has an open constraints request - his card in the team members list (in the admin view) should contain any yellow exclamation mark (indicating that there is a matter to be viewed).
+
+
+## Bugs to fix:
+
+❗ When in the web app, in a certain page (let’s say team members), and then I hot restart in the terminal (press r) - I get this excepction:
+
+══╡ EXCEPTION CAUGHT BY FLUTTER FRAMEWORK ╞═════════════════════════════════════════════════════════
+The following message was thrown:
+Could not navigate to initial route.
+The requested route name was: "/team-members"
+There was no corresponding route in the app, and therefore the initial route specified will be
+ignored and "/" will be used instead.
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+❗ When in the assignments screen -> press on an event name to bring up the event edit modal -> decrease one role capacity -> save ->> the row in the assignments screen does not disappear (even though I reduced).
+
+Only when moving to another screen and then back to the assignments screen - I see the change (the row disappeared).
+
+❗ De-activating a team member makes his name disappear in the assignments screen if he is assigned (but does not delete the assignment).
+The assignment should not be deleted (this is ok and not being deleted currently), but the team member name should persist.
+The assignment stays.
+
+The only thing de-activating a team member indicates is that he can’t be assigned ALL TIME HE IS DEACTIVATED. This should not affect the already assigned decisions.
+
+❗ Change to the team members and events screens filtering:
+
+Currently - there is the filter button (on the top left corner), and there is the summary bar with the numbers.
+
+Desired change - remove the filter button, and make the summary bar interactive.
+
+This means, that the filter will happen when the numbers on the summary bar will be pressed.
+There will be a colored circle, highlighting the “current selected filter”, that will be around the number (and the text!) that is chosen (=chosen filter).
+First default chosen in the team members screen will be the “סה”כ” (which are all).
+
+In the events screen, first let’s change the texts to: “סה”כ” / “עתידיים” / “עברו”.
+(Where עתידיים as for now are end date >= today, and עברו are end date < today).
+Then, the default will be עתידיים.
+
+The movement of the circle, when another filter (=number and/or text) is being pressed, needs to be nicely animated.
+
+In addition, one more change - the state of the filtering should be saved even when moving to another page and then back (currently - it gets reset to the default each time visiting the page from another page).

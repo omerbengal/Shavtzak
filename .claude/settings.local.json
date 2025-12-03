@@ -26,7 +26,8 @@
       "mcp__playwright__playwright_evaluate",
       "Bash(nc:*)",
       "Bash(cat:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "mcp__sequential-thinking__sequentialthinking"
     ],
     "deny": [],
     "ask": []

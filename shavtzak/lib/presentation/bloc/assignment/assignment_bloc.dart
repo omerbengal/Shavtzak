@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../data/repositories/assignment_repository.dart';
@@ -421,6 +423,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   }
 
   /// Load assignment slots for grid view with real-time updates
+  /// Rebuilds slots whenever assignments OR team members change
   Future<void> _onLoadAssignmentSlots(
     LoadAssignmentSlots event,
     Emitter<AssignmentState> emit,
@@ -428,20 +431,55 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentLoading());
 
     try {
-      // Transform the assignments stream to build complete slot state
-      // Whenever assignments change, fetch latest events/members and rebuild slots
-      final slotsStream = _repository.watchAssignments().asyncMap((assignments) async {
+      // Watch both assignments and team members
+      final assignmentsStream = _repository.watchAssignments();
+      final teamMembersStream = _teamRepository.watchTeamMembers();
+
+      // Create a combined stream that rebuilds slots when either source changes
+      // Map team member changes to trigger assignment fetch
+      final teamMemberTriggerStream = teamMembersStream.asyncMap((_) async {
+        // When team members change, fetch current assignments and rebuild
+        final assignments = await _repository.getAllAssignments();
         return await _buildSlotsFromAssignments(assignments);
       });
 
-      // Listen to the transformed stream for real-time updates
-      await emit.forEach<AssignmentSlotsLoaded>(
-        slotsStream,
-        onData: (slotsState) => slotsState,
-        onError: (error, stackTrace) {
-          return AssignmentError('שגיאה בטעינת שיבוצים: $error');
-        },
+      // Map assignment changes to rebuild slots
+      final assignmentTriggerStream = assignmentsStream.asyncMap((assignments) async {
+        return await _buildSlotsFromAssignments(assignments);
+      });
+
+      // Merge both streams - emit whenever either emits
+      // Start with assignments stream, then switch to team members when they emit
+      Stream<AssignmentSlotsLoaded> combinedStream = assignmentTriggerStream;
+
+      // Use a stream controller to merge both streams manually
+      final controller = StreamController<AssignmentSlotsLoaded>();
+
+      final assignmentSub = assignmentTriggerStream.listen(
+        (slots) => controller.add(slots),
+        onError: (e) => controller.addError(e),
       );
+
+      final teamMemberSub = teamMemberTriggerStream.listen(
+        (slots) => controller.add(slots),
+        onError: (e) => controller.addError(e),
+      );
+
+      try {
+        // Listen to the combined stream for real-time updates
+        await emit.forEach<AssignmentSlotsLoaded>(
+          controller.stream,
+          onData: (slotsState) => slotsState,
+          onError: (error, stackTrace) {
+            return AssignmentError('שגיאה בטעינת שיבוצים: $error');
+          },
+        );
+      } finally {
+        // Clean up subscriptions and controller
+        await assignmentSub.cancel();
+        await teamMemberSub.cancel();
+        await controller.close();
+      }
     } catch (e) {
       emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
     }

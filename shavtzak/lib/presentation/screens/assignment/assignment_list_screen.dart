@@ -555,8 +555,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   Widget _buildAssignmentCell(AssignmentSlot slot, double availableWidth) {
     final isMobile = availableWidth < 300; // Detect mobile/narrow screens
-    // Find current assigned member in either list
-    final currentMember = slot.availableMembers.firstWhereOrNull(
+    // Get current assigned member:
+    // - First try from assignment object itself (handles deactivated members)
+    // - Then try from available/alreadyAssigned lists (handles active members)
+    final currentMember = slot.currentAssignment?.teamMember ??
+        slot.availableMembers.firstWhereOrNull(
           (m) => m.id == slot.currentAssignment?.teamMemberId,
         ) ??
         slot.alreadyAssignedMembers.firstWhereOrNull(
@@ -1159,6 +1162,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         selectedRole: selectedRole,
         onSuccess: () {
           Navigator.of(modalContext).pop();
+          // Reload assignment slots to reflect changes
+          if (context.mounted) {
+            context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+          }
         },
       ),
     );
