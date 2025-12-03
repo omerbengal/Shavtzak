@@ -111,7 +111,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     await assignmentsSubscription.cancel();
   }
 
-  /// Load upcoming events only
+  /// Load upcoming events only (future events with real-time updates)
   Future<void> _onLoadUpcomingEvents(
     LoadUpcomingEvents event,
     Emitter<EventState> emit,
@@ -119,13 +119,37 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     emit(const EventLoading());
 
     try {
-      final events = await _repository.getUpcomingEvents();
+      final now = DateTime.now();
+      // Start of today (midnight)
+      final today = DateTime(now.year, now.month, now.day);
 
-      if (events.isEmpty) {
-        emit(const EventsEmpty('אין אירועים קרובים'));
-      } else {
-        emit(EventsLoaded.withCounts(events));
-      }
+      // Use emit.forEach to subscribe to combined stream of events + assignments
+      await emit.forEach<_EventsWithAssignments>(
+        _combineEventsAndAssignments(),
+        onData: (data) {
+          // Filter for future events (end date >= today)
+          final futureEvents = data.events.where((event) {
+            return event.endDate.isAfter(today) ||
+                   (event.endDate.year == today.year &&
+                    event.endDate.month == today.month &&
+                    event.endDate.day == today.day);
+          }).toList();
+
+          if (futureEvents.isEmpty) {
+            // Check if database is truly empty or just filtered empty
+            final isFiltered = data.events.isNotEmpty;
+            return EventsEmpty('אין אירועים עתידיים', isFiltered: isFiltered);
+          } else {
+            return EventsLoaded.withCounts(
+              futureEvents,
+              assignmentCounts: data.assignmentCounts,
+            );
+          }
+        },
+        onError: (error, stackTrace) {
+          return EventError('שגיאה בטעינת אירועים: $error');
+        },
+      );
     } catch (e) {
       emit(EventError('שגיאה בטעינת אירועים: $e'));
     }
@@ -182,8 +206,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('האירוע נוסף בהצלחה'));
 
-      // Restart real-time listener to continue receiving updates
-      add(const LoadEvents());
+      // Don't restart listener here - the modal will handle it with the correct filter
     } catch (e) {
       emit(EventError('שגיאה בהוספת אירוע: $e'));
     }
@@ -200,8 +223,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('פרטי האירוע עודכנו בהצלחה'));
 
-      // Restart real-time listener to continue receiving updates
-      add(const LoadEvents());
+      // Don't restart listener here - the modal will handle it with the correct filter
     } catch (e) {
       emit(EventError('שגיאה בעדכון פרטי האירוע: $e'));
     }
@@ -218,8 +240,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('האירוע נמחק בהצלחה'));
 
-      // Restart real-time listener to continue receiving updates
-      add(const LoadEvents());
+      // Don't restart listener here - the modal will handle it with the correct filter
     } catch (e) {
       emit(EventError('שגיאה במחיקת האירוע: $e'));
     }

@@ -89,9 +89,10 @@ class TeamError extends TeamState {
 /// Empty state (no team members)
 class TeamEmpty extends TeamState {
   final String message;
+  final bool isFiltered; // true if empty due to filter, false if database is empty
 
-  const TeamEmpty(this.message);
+  const TeamEmpty(this.message, {this.isFiltered = false});
 
   @override
-  List<Object?> get props => [message];
+  List<Object?> get props => [message, isFiltered];
 }

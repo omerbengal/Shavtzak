@@ -18,12 +18,14 @@ class EventListScreen extends StatefulWidget {
 class _EventListScreenState extends State<EventListScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
+  bool _showFutureOnly = true;
   EventsLoaded? _lastLoadedState;
 
   @override
   void initState() {
     super.initState();
-    context.read<EventBloc>().add(const LoadEvents());
+    // Load future events only by default
+    context.read<EventBloc>().add(const LoadUpcomingEvents());
   }
 
   @override
@@ -34,7 +36,11 @@ class _EventListScreenState extends State<EventListScreen> {
 
   void _onSearchChanged(String query) {
     if (query.isEmpty) {
-      context.read<EventBloc>().add(const LoadEvents());
+      if (_showFutureOnly) {
+        context.read<EventBloc>().add(const LoadUpcomingEvents());
+      } else {
+        context.read<EventBloc>().add(const LoadEvents());
+      }
     } else {
       context.read<EventBloc>().add(SearchEvents(query));
     }
@@ -68,10 +74,39 @@ class _EventListScreenState extends State<EventListScreen> {
                   _showSearch = !_showSearch;
                   if (!_showSearch) {
                     _searchController.clear();
-                    context.read<EventBloc>().add(const LoadEvents());
+                    if (_showFutureOnly) {
+                      context.read<EventBloc>().add(const LoadUpcomingEvents());
+                    } else {
+                      context.read<EventBloc>().add(const LoadEvents());
+                    }
                   }
                 });
               },
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: OutlinedButton(
+                onPressed: () {
+                  setState(() {
+                    _showFutureOnly = !_showFutureOnly;
+                  });
+                  if (_showFutureOnly) {
+                    context.read<EventBloc>().add(const LoadUpcomingEvents());
+                  } else {
+                    context.read<EventBloc>().add(const LoadEvents());
+                  }
+                },
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: _showFutureOnly ? Colors.green : Colors.white,
+                  foregroundColor: _showFutureOnly ? Colors.white : Colors.black,
+                  side: BorderSide(
+                    color: _showFutureOnly ? Colors.green : Colors.grey,
+                    width: 1.5,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+                child: const Text('הצג אירועים עתידיים בלבד'),
+              ),
             ),
           ],
         ),
@@ -97,7 +132,7 @@ class _EventListScreenState extends State<EventListScreen> {
               return const Center(child: CircularProgressIndicator());
             }
             if (state is EventsEmpty) {
-              return _buildEmptyState(state.message);
+              return _buildEmptyState(state);
             }
             if (state is EventsLoaded) {
               _lastLoadedState = state;
@@ -110,7 +145,7 @@ class _EventListScreenState extends State<EventListScreen> {
             if (state is EventError) {
               return _buildErrorState(state.message);
             }
-            return _buildEmptyState('טוען...');
+            return _buildEmptyState(const EventsEmpty('טוען...'));
           },
         ),
         floatingActionButton: FloatingActionButton(
@@ -267,6 +302,7 @@ class _EventListScreenState extends State<EventListScreen> {
       backgroundColor: Colors.transparent,
       builder: (modalContext) => EventFormModal(
         event: event,
+        showFutureOnly: _showFutureOnly,
         onSuccess: () {
           Navigator.of(modalContext).pop();
         },
@@ -327,24 +363,46 @@ class _EventListScreenState extends State<EventListScreen> {
     );
   }
 
-  Widget _buildEmptyState(String message) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.event_outlined, size: 80, color: Colors.grey.shade400),
-          const SizedBox(height: 16),
-          Text(message, style: TextStyle(fontSize: 18, color: Colors.grey.shade600)),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
-              _showEventFormModal(null);
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('הוסף אירוע ראשון'),
+  Widget _buildEmptyState(EventsEmpty state) {
+    return Column(
+      children: [
+        // Show statistics header if this is a filtered empty state
+        if (state.isFiltered)
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Colors.blue.shade50,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildStatItem('סך הכל', '0'),
+                _buildStatItem('קרובים', '0'),
+                _buildStatItem('פעילים', '0'),
+              ],
+            ),
           ),
-        ],
-      ),
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.event_outlined, size: 80, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                Text(state.message, style: TextStyle(fontSize: 18, color: Colors.grey.shade600)),
+                const SizedBox(height: 24),
+                // Only show "add first" button if database is truly empty (not filtered)
+                if (!state.isFiltered)
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      _showEventFormModal(null);
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('הוסף אירוע ראשון'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

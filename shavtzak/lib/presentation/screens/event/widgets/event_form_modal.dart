@@ -18,12 +18,14 @@ class EventFormModal extends StatefulWidget {
   final Event? event; // null for create, non-null for edit
   final VoidCallback onSuccess;
   final RoleType? selectedRole; // Optional role to highlight/scroll to
+  final bool showFutureOnly; // Whether to reload with future filter after operations
 
   const EventFormModal({
     super.key,
     this.event,
     required this.onSuccess,
     this.selectedRole,
+    this.showFutureOnly = false,
   });
 
   @override
@@ -310,11 +312,21 @@ class _EventFormModalState extends State<EventFormModal> {
     );
 
     if (!mounted) return;
+    final bloc = context.read<EventBloc>();
     if (_isEditMode) {
-      context.read<EventBloc>().add(UpdateEvent(event));
+      bloc.add(UpdateEvent(event));
     } else {
-      context.read<EventBloc>().add(CreateEvent(event));
+      bloc.add(CreateEvent(event));
     }
+
+    // Reload with the appropriate filter after operation completes
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (widget.showFutureOnly) {
+        bloc.add(const LoadUpcomingEvents());
+      } else {
+        bloc.add(const LoadEvents());
+      }
+    });
 
     // Close modal after save operation
     widget.onSuccess();
@@ -420,7 +432,16 @@ class _EventFormModalState extends State<EventFormModal> {
                                       TextButton(
                                         child: const Text('מחק', style: TextStyle(color: Colors.red)),
                                         onPressed: () {
-                                          context.read<EventBloc>().add(DeleteEvent(widget.event!.id));
+                                          final bloc = context.read<EventBloc>();
+                                          bloc.add(DeleteEvent(widget.event!.id));
+                                          // Reload with the appropriate filter after operation completes
+                                          Future.delayed(const Duration(milliseconds: 100), () {
+                                            if (widget.showFutureOnly) {
+                                              bloc.add(const LoadUpcomingEvents());
+                                            } else {
+                                              bloc.add(const LoadEvents());
+                                            }
+                                          });
                                           Navigator.of(dialogContext).pop(); // Close dialog
                                           widget.onSuccess(); // Close modal
                                         },

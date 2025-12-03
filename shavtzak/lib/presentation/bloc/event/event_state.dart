@@ -73,11 +73,12 @@ class EventDetailLoaded extends EventState {
 /// No events found
 class EventsEmpty extends EventState {
   final String message;
+  final bool isFiltered; // true if empty due to filter, false if database is empty
 
-  const EventsEmpty(this.message);
+  const EventsEmpty(this.message, {this.isFiltered = false});
 
   @override
-  List<Object?> get props => [message];
+  List<Object?> get props => [message, isFiltered];
 }
 
 /// Event operation in progress (create/update/delete)

@@ -51,7 +51,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     }
   }
 
-  /// Load active team members only
+  /// Load active team members only (with real-time updates)
   Future<void> _onLoadActiveTeamMembers(
     LoadActiveTeamMembers event,
     Emitter<TeamState> emit,
@@ -59,13 +59,25 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     emit(const TeamLoading());
 
     try {
-      final members = await _repository.getActiveTeamMembers();
+      // Use emit.forEach to subscribe to real-time stream
+      await emit.forEach<List<TeamMember>>(
+        _repository.watchTeamMembers(),
+        onData: (allMembers) {
+          // Filter for active members only
+          final activeMembers = allMembers.where((m) => m.isActive).toList();
 
-      if (members.isEmpty) {
-        emit(const TeamEmpty('אין חברי צוות פעילים במערכת'));
-      } else {
-        emit(TeamLoaded(members));
-      }
+          if (activeMembers.isEmpty) {
+            // Check if database is truly empty or just filtered empty
+            final isFiltered = allMembers.isNotEmpty;
+            return TeamEmpty('אין חברי צוות פעילים', isFiltered: isFiltered);
+          } else {
+            return TeamLoaded(activeMembers);
+          }
+        },
+        onError: (error, stackTrace) {
+          return TeamError('שגיאה בטעינת חברי הצוות: $error');
+        },
+      );
     } catch (e) {
       emit(TeamError('שגיאה בטעינת חברי הצוות: $e'));
     }
@@ -122,8 +134,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות נוסף/ה בהצלחה'));
 
-      // Restart real-time listener to continue receiving updates
-      add(const LoadTeamMembers());
+      // Don't restart listener here - the modal will handle it with the correct filter
     } catch (e) {
       emit(TeamError('שגיאה בהוספת חבר/ת צוות: $e'));
     }
@@ -171,8 +182,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('פרטי חבר/ת הצוות עודכנו בהצלחה'));
 
-      // Restart real-time listener to continue receiving updates
-      add(const LoadTeamMembers());
+      // Don't restart listener here - the modal will handle it with the correct filter
     } catch (e) {
       emit(TeamError('שגיאה בעדכון פרטי חבר/ת הצוות: $e'));
     }
@@ -189,8 +199,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות נמחק/ה בהצלחה'));
 
-      // Restart real-time listener to continue receiving updates
-      add(const LoadTeamMembers());
+      // Don't restart listener here - the modal/screen will handle it with the correct filter
     } catch (e) {
       emit(TeamError('שגיאה במחיקת חבר/ת הצוות: $e'));
     }
@@ -206,8 +215,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       await _repository.deactivateTeamMember(event.id);
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות הוסר/ה בהצלחה'));
 
-      // Restart real-time listener to continue receiving updates
-      add(const LoadTeamMembers());
+      // Don't restart listener here - the screen will handle it with the correct filter
     } catch (e) {
       emit(TeamError('שגיאה בהסרת חבר/ת הצוות: $e'));
     }
@@ -223,8 +231,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       await _repository.reactivateTeamMember(event.id);
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות הופעל/ה בהצלחה'));
 
-      // Restart real-time listener to continue receiving updates
-      add(const LoadTeamMembers());
+      // Don't restart listener here - the screen will handle it with the correct filter
     } catch (e) {
       emit(TeamError('שגיאה בהפעלת חבר/ת הצוות: $e'));
     }

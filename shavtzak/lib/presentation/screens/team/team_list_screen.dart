@@ -140,7 +140,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
             }
 
             if (state is TeamEmpty) {
-              return _buildEmptyState(state.message);
+              return _buildEmptyState(state);
             }
 
             if (state is TeamLoaded) {
@@ -157,7 +157,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
               return _buildErrorState(state.message);
             }
 
-            return _buildEmptyState('טוען...');
+            return _buildEmptyState(const TeamEmpty('טוען...'));
           },
         ),
         floatingActionButton: FloatingActionButton(
@@ -273,11 +273,20 @@ class _TeamListScreenState extends State<TeamListScreen> {
                       color: member.isActive ? Colors.green : Colors.grey,
                     ),
                     onPressed: () {
+                      final bloc = context.read<TeamBloc>();
                       if (member.isActive) {
-                        context.read<TeamBloc>().add(DeactivateTeamMember(member.id));
+                        bloc.add(DeactivateTeamMember(member.id));
                       } else {
-                        context.read<TeamBloc>().add(ReactivateTeamMember(member.id));
+                        bloc.add(ReactivateTeamMember(member.id));
                       }
+                      // Reload with the appropriate filter after operation completes
+                      Future.delayed(const Duration(milliseconds: 100), () {
+                        if (_showActiveOnly) {
+                          bloc.add(const LoadActiveTeamMembers());
+                        } else {
+                          bloc.add(const LoadTeamMembers());
+                        }
+                      });
                     },
                     tooltip: member.isActive ? 'השבת' : 'הפעל',
                   ),
@@ -322,6 +331,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
       backgroundColor: Colors.transparent,
       builder: (modalContext) => _TeamMemberFormModal(
         member: member,
+        showActiveOnly: _showActiveOnly,
         onSuccess: () {
           Navigator.of(modalContext).pop();
         },
@@ -357,34 +367,56 @@ class _TeamListScreenState extends State<TeamListScreen> {
     );
   }
 
-  Widget _buildEmptyState(String message) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.people_outline,
-            size: 80,
-            color: Colors.grey.shade400,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey.shade600,
+  Widget _buildEmptyState(TeamEmpty state) {
+    return Column(
+      children: [
+        // Show statistics header if this is a filtered empty state
+        if (state.isFiltered)
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Colors.blue.shade50,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildStatItem('סך הכל', '0'),
+                _buildStatItem('פעילים', '0'),
+                _buildStatItem('לא פעילים', '0'),
+              ],
             ),
           ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
-              _showTeamMemberFormModal(null);
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('הוסף חבר צוות ראשון'),
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.people_outline,
+                  size: 80,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  state.message,
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Only show "add first" button if database is truly empty (not filtered)
+                if (!state.isFiltered)
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      _showTeamMemberFormModal(null);
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('הוסף חבר צוות ראשון'),
+                  ),
+              ],
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -424,10 +456,12 @@ class _TeamListScreenState extends State<TeamListScreen> {
 // Team Member Form Modal Widget
 class _TeamMemberFormModal extends StatefulWidget {
   final TeamMember? member; // null for create, non-null for edit
+  final bool showActiveOnly;
   final VoidCallback onSuccess;
 
   const _TeamMemberFormModal({
     this.member,
+    required this.showActiveOnly,
     required this.onSuccess,
   });
 
@@ -530,11 +564,21 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       }
     }
 
+    final bloc = context.read<TeamBloc>();
     if (_isEditMode) {
-      context.read<TeamBloc>().add(UpdateTeamMember(member));
+      bloc.add(UpdateTeamMember(member));
     } else {
-      context.read<TeamBloc>().add(CreateTeamMember(member));
+      bloc.add(CreateTeamMember(member));
     }
+
+    // Reload with the appropriate filter after operation completes
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (widget.showActiveOnly) {
+        bloc.add(const LoadActiveTeamMembers());
+      } else {
+        bloc.add(const LoadTeamMembers());
+      }
+    });
 
     // Close modal after save operation
     widget.onSuccess();
@@ -761,7 +805,16 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                       TextButton(
                                         child: const Text('מחק', style: TextStyle(color: Colors.red)),
                                         onPressed: () {
-                                          context.read<TeamBloc>().add(DeleteTeamMember(widget.member!.id));
+                                          final bloc = context.read<TeamBloc>();
+                                          bloc.add(DeleteTeamMember(widget.member!.id));
+                                          // Reload with the appropriate filter after operation completes
+                                          Future.delayed(const Duration(milliseconds: 100), () {
+                                            if (widget.showActiveOnly) {
+                                              bloc.add(const LoadActiveTeamMembers());
+                                            } else {
+                                              bloc.add(const LoadTeamMembers());
+                                            }
+                                          });
                                           Navigator.of(dialogContext).pop(); // Close dialog
                                           widget.onSuccess(); // Close modal
                                         },
