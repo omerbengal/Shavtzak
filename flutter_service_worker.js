@@ -29,9 +29,9 @@ const RESOURCES = {"icons/Icon-maskable-512.png": "301a7604d45b3e739efc881eb0489
 "favicon.png": "5dcef449791fa27946b3d35ad8803796",
 "index.html": "0ec9eb859f2690d2b16633e46b9a50fc",
 "/": "0ec9eb859f2690d2b16633e46b9a50fc",
-"flutter_bootstrap.js": "d4fc334232c3d38b9514e73164df9d47",
+"flutter_bootstrap.js": "0f86597fa2f3432c21b2deb679a3b190",
 "flutter.js": "4b2350e14c6650ba82871f60906437ea",
-"main.dart.js": "021ec05d18f22b7bbe8df1c55d256d29",
+"main.dart.js": "9591050ce6123179990c50bb43ad643a",
 "manifest.json": "b7c964b36365091769d23ef38d486b07",
 "version.json": "416d7e37b8478d81f7125dd44026a94d"};
 // The application shell files that are downloaded before a service worker can
