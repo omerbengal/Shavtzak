@@ -12,10 +12,12 @@ import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
+import '../../bloc/team/team_bloc.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/navigation_menu.dart';
 import 'assignment_filter_modal.dart';
 import '../event/widgets/event_form_modal.dart';
+import 'manual_assignment_flow_dialog.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -71,6 +73,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               ),
             ),
           ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _showManualAssignmentFlow(),
+          backgroundColor: Colors.blue,
+          child: const Icon(Icons.add, color: Colors.white),
+          tooltip: 'שיבוץ ידני',
         ),
         body: BlocConsumer<AssignmentBloc, AssignmentState>(
           listener: (context, state) {
@@ -1170,5 +1178,114 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         },
       ),
     );
+  }
+
+  /// Show manual assignment flow (3-step process)
+  Future<void> _showManualAssignmentFlow() async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: ManualAssignmentFlowDialog(),
+      ),
+    );
+
+    if (result != null) {
+      // Extract data from the flow
+      final Event event = result['event'];
+      final TeamMember teamMember = result['teamMember'];
+      final RoleType roleType = result['roleType'];
+
+      // Create assignment and increase quota
+      await _createAssignmentAndQuota(event, teamMember, roleType);
+    }
+  }
+
+  /// Create assignment and increase event quota for the selected role
+  Future<void> _createAssignmentAndQuota(Event event, TeamMember teamMember, RoleType roleType) async {
+    try {
+      final assignmentRepo = context.read<AssignmentRepository>();
+      final eventBloc = context.read<EventBloc>();
+
+      // Step 1: Get all existing assignments for this event and role
+      final existingAssignments = await assignmentRepo.getAssignmentsByEvent(event.id);
+      final roleAssignments = existingAssignments
+          .where((a) => a.roleType == roleType)
+          .toList()
+        ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+
+      // Step 2: Find the next available slot index
+      int nextSlotIndex = 0;
+      for (final assignment in roleAssignments) {
+        if (assignment.slotIndex == nextSlotIndex) {
+          nextSlotIndex++;
+        } else {
+          break; // Found a gap
+        }
+      }
+
+      // Step 3: Create the new assignment
+      final newAssignment = Assignment(
+        id: const Uuid().v4(),
+        eventId: event.id,
+        teamMemberId: teamMember.id,
+        roleType: roleType,
+        slotIndex: nextSlotIndex,
+        status: AssignmentStatus.confirmed,
+        notes: '',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        event: event,
+        teamMember: teamMember,
+      );
+
+      // Step 4: Update event's role requirements (increase quota by 1)
+      final updatedRoleRequirements = Map<RoleType, int>.from(event.roleRequirements);
+      final currentQuota = updatedRoleRequirements[roleType] ?? 0;
+      updatedRoleRequirements[roleType] = currentQuota + 1;
+
+      final updatedEvent = event.copyWith(
+        roleRequirements: updatedRoleRequirements,
+        updatedAt: DateTime.now(),
+      );
+
+      // Step 5: Execute both operations
+      // First update the event quota
+      eventBloc.add(UpdateEvent(updatedEvent));
+
+      // Then create the assignment (bypass conflict checks since admin was warned)
+      context.read<AssignmentBloc>().add(CreateAssignmentWithBypass(newAssignment));
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('שיבוץ חדש נוצר בהצלחה: ${teamMember.name} → ${roleType.hebrewName} באירוע "${event.name}"'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+      }
+
+      // Step 6: Reload assignment slots to reflect changes
+      if (mounted) {
+        context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+      }
+    } catch (e) {
+      // Show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('שגיאה ביצירת שיבוץ: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+      }
+    }
   }
 }

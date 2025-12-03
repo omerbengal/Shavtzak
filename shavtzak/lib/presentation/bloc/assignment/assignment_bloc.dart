@@ -30,6 +30,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<LoadAssignmentsByDateRange>(_onLoadAssignmentsByDateRange);
     on<LoadAssignmentById>(_onLoadAssignmentById);
     on<CreateAssignment>(_onCreateAssignment);
+    on<CreateAssignmentWithBypass>(_onCreateAssignmentWithBypass);
     on<UpdateAssignment>(_onUpdateAssignment);
     on<DeleteAssignment>(_onDeleteAssignment);
     on<UpdateAssignmentStatus>(_onUpdateAssignmentStatus);
@@ -771,6 +772,49 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     if (state is AssignmentSlotsLoaded) {
       final currentState = state as AssignmentSlotsLoaded;
       emit(currentState.copyWith(selectedEventIds: {}));
+    }
+  }
+
+  /// Create new assignment bypassing conflict checks (for manual assignments)
+  Future<void> _onCreateAssignmentWithBypass(
+    CreateAssignmentWithBypass event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    // Store previous state BEFORE any emit
+    final previousState = state;
+
+    emit(const AssignmentOperating('creating'));
+
+    try {
+      // Skip conflict checks for bypass assignments
+      await _repository.createAssignmentWithBypass(event.assignment);
+      emit(const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
+
+      // Check if we're in slots view and reload silently
+      if (previousState is AssignmentSlotsLoaded) {
+        await _reloadSlotsAfterOperation(emit);
+      } else if (previousState is AssignmentsLoaded) {
+        // Restart real-time listener based on current filter
+        final currentState = previousState;
+        if (currentState.filterType == 'event' && currentState.filterId != null) {
+          add(LoadAssignmentsByEvent(currentState.filterId!));
+        } else if (currentState.filterType == 'person' && currentState.filterId != null) {
+          add(LoadAssignmentsByPerson(currentState.filterId!));
+        } else {
+          add(const LoadAssignments());
+        }
+      } else {
+        add(const LoadAssignments());
+      }
+    } catch (e) {
+      if (e is AssignmentConflictException) {
+        emit(AssignmentConflictWarning(e.conflicts, event.assignment));
+        if (previousState is AssignmentSlotsLoaded) {
+          await _reloadSlotsAfterOperation(emit);
+        }
+      } else {
+        emit(AssignmentError('שגיאה ביצירת שיבוץ: $e'));
+      }
     }
   }
 }

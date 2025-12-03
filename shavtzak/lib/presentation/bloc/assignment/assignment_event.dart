@@ -66,6 +66,16 @@ class CreateAssignment extends AssignmentEvent {
   List<Object?> get props => [assignment];
 }
 
+/// Create new assignment bypassing conflict checks (for manual assignments)
+class CreateAssignmentWithBypass extends AssignmentEvent {
+  final Assignment assignment;
+
+  const CreateAssignmentWithBypass(this.assignment);
+
+  @override
+  List<Object?> get props => [assignment];
+}
+
 /// Update assignment
 class UpdateAssignment extends AssignmentEvent {
   final Assignment assignment;

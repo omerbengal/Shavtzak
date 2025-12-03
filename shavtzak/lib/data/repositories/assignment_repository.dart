@@ -89,6 +89,11 @@ class AssignmentRepository {
     await _database.insertAssignment(assignment);
   }
 
+  /// Create assignment bypassing conflict checks (for manual assignments)
+  Future<void> createAssignmentWithBypass(Assignment assignment) async {
+    await _database.insertAssignment(assignment);
+  }
+
   /// Update an existing assignment
   Future<void> updateAssignment(Assignment assignment) async {
     final conflicts = await checkConflicts(assignment);

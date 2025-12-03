@@ -214,9 +214,3 @@ Feature 1: Fix text from 'סה"כ משרות' to 'סה"כ תפקידים' in tea
   ☐ Feature 14: Create user-facing constraint management screen accessible via user URL
   ☐ Feature 14: Change constraint management in admin team members screen: When the user add a constraints request, it should appear in the constraints section in this team member's modal in the admin view - and the admin needs to accept or reject the request.
   ☐ Feature 14: each team member that has an open constraints request - his card in the team members list (in the admin view) should contain any yellow exclamation mark (indicating that there is a matter to be viewed).
-
-
-## Bugs to fix:
-
-
-❗ When adding/deleting/modifying an event - the assignment screen is not being updated (only on pull to update or on page refresh)
