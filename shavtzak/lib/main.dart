@@ -145,61 +145,56 @@ class LoadingApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'שבצק - ניהול צוות',
-      theme: AppTheme.lightTheme,
-      debugShowCheckedModeBanner: false,
-      home: Directionality(
-        textDirection: TextDirection.rtl,
-        child: Scaffold(
-          backgroundColor: Colors.white,
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // App logo or icon (you can customize this)
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade100,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Icon(
-                    Icons.people,
-                    size: 60,
-                    color: Colors.blue.shade700,
-                  ),
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // App logo or icon (you can customize this)
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade100,
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                const SizedBox(height: 32),
-                const Text(
-                  'שבצק',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue,
-                  ),
+                child: Icon(
+                  Icons.people,
+                  size: 60,
+                  color: Colors.blue.shade700,
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'ניהול צוות ואירועים',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                  ),
+              ),
+              const SizedBox(height: 32),
+              const Text(
+                'שבצק',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue,
                 ),
-                const SizedBox(height: 32),
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                const Text(
-                  'טוען...',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'ניהול צוות ואירועים',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 32),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              const Text(
+                'טוען...',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
           ),
         ),
       ),

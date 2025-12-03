@@ -219,12 +219,4 @@ Feature 1: Fix text from 'סה"כ משרות' to 'סה"כ תפקידים' in tea
 ## Bugs to fix:
 
 
-❗ When in one of the three pages (team members, events, assignments), and I perform a hot reload (when the flutter command is running in the terminal), I get this error:
-══╡ EXCEPTION CAUGHT BY FLUTTER FRAMEWORK ╞═════════════════════════════════════════════════════════
-The following message was thrown:
-Could not navigate to initial route.
-The requested route name was: "/events"
-There was no corresponding route in the app, and therefore the initial route specified will be
-ignored and "/" will be used instead.
-════════════════════════════════════════════════════════════════════════════════════════════════════
-I already fixed this by upgrading how the gorouter works, but it seems the issue has returned...
+❗ When adding/deleting/modifying an event - the assignment screen is not being updated (only on pull to update or on page refresh)

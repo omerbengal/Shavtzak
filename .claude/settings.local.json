@@ -27,7 +27,8 @@
       "Bash(nc:*)",
       "Bash(cat:*)",
       "Bash(tree:*)",
-      "mcp__sequential-thinking__sequentialthinking"
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "ask": []
