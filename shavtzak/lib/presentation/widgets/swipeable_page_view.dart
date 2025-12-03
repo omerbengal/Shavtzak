@@ -151,6 +151,7 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
         onPageChanged: _onPageChanged,
         // Disable swipe gestures to avoid conflict with Dismissible
         physics: const NeverScrollableScrollPhysics(),
+        reverse: true,
         children: const [
           HomeScreen(),
           TeamListScreen(),
