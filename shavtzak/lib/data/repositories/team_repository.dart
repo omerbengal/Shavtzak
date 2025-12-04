@@ -10,6 +10,9 @@ class TeamRepository {
 
   TeamRepository(this._database);
 
+  /// Get the database interface for direct access (needed for constraint status updates)
+  DatabaseInterface get database => _database;
+
   /// Watch all team members in real-time
   Stream<List<TeamMember>> watchTeamMembers() {
     // Cast to FirestoreDatabase to access stream methods

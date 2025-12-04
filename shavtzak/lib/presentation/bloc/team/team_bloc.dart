@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../data/repositories/team_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../../core/constants/constraint_status.dart';
 import 'team_event.dart';
 import 'team_state.dart';
 
@@ -22,6 +23,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     on<DeactivateTeamMember>(_onDeactivateTeamMember);
     on<ReactivateTeamMember>(_onReactivateTeamMember);
     on<RefreshTeamMembers>(_onRefreshTeamMembers);
+    on<UpdateConstraintStatus>(_onUpdateConstraintStatus);
+    on<AddConstraintRequest>(_onAddConstraintRequest);
+    on<RemoveConstraintRequest>(_onRemoveConstraintRequest);
   }
 
   /// Load all team members with real-time updates
@@ -244,5 +248,109 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
   ) async {
     // Simply reload
     add(const LoadTeamMembers());
+  }
+
+  /// Update constraint status
+  Future<void> _onUpdateConstraintStatus(
+    UpdateConstraintStatus event,
+    Emitter<TeamState> emit,
+  ) async {
+    try {
+      // Use the repository's database to update constraint status
+      await _repository.database.updateConstraintStatus(
+        event.teamMemberId,
+        event.constraintIndex,
+        event.newStatus,
+      );
+
+      // Emit success message
+      final statusText = event.newStatus.hebrewName;
+      emit(TeamMemberOperationSuccess('סטטוס המגבלה עודכן ל$statusText בהצלחה'));
+    } catch (e) {
+      emit(TeamError('שגיאה בעדכון סטטוס המגבלה: $e'));
+    }
+  }
+
+  /// Add constraint request
+  Future<void> _onAddConstraintRequest(
+    AddConstraintRequest event,
+    Emitter<TeamState> emit,
+  ) async {
+    try {
+      // Get the current team member
+      final currentMember = await _repository.getTeamMemberById(event.teamMemberId);
+      if (currentMember == null) {
+        emit(const TeamError('חבר/ת צוות לא נמצא/ה'));
+        return;
+      }
+
+      // Create new constraint with pending status
+      final newConstraint = DateConstraint(
+        startDate: event.startDate,
+        endDate: event.endDate,
+        note: event.note,
+        status: ConstraintStatus.pending,
+      );
+
+      // Add to constraints list
+      final updatedConstraints = List<DateConstraint>.from(currentMember.constraints);
+      updatedConstraints.add(newConstraint);
+
+      // Update team member
+      final updatedMember = currentMember.copyWith(
+        constraints: updatedConstraints,
+        updatedAt: DateTime.now(),
+      );
+
+      await _repository.updateTeamMember(updatedMember);
+
+      emit(const TeamMemberOperationSuccess('בקשת הגבלה נוספה בהצלחה וממתינה לאישור'));
+    } catch (e) {
+      emit(TeamError('שגיאה בהוספת בקשת הגבלה: $e'));
+    }
+  }
+
+  /// Remove constraint request
+  Future<void> _onRemoveConstraintRequest(
+    RemoveConstraintRequest event,
+    Emitter<TeamState> emit,
+  ) async {
+    try {
+      // Get the current team member
+      final currentMember = await _repository.getTeamMemberById(event.teamMemberId);
+      if (currentMember == null) {
+        emit(const TeamError('חבר/ת צוות לא נמצא/ה'));
+        return;
+      }
+
+      // Check if constraint index is valid
+      if (event.constraintIndex < 0 || event.constraintIndex >= currentMember.constraints.length) {
+        emit(const TeamError('אינדקס מגבלה לא תקין'));
+        return;
+      }
+
+      // Check if constraint is pending (only pending requests can be removed)
+      final constraint = currentMember.constraints[event.constraintIndex];
+      if (!constraint.isPending()) {
+        emit(const TeamError('ניתן למחוק רק בקשות ממתינות לאישור'));
+        return;
+      }
+
+      // Remove constraint
+      final updatedConstraints = List<DateConstraint>.from(currentMember.constraints);
+      updatedConstraints.removeAt(event.constraintIndex);
+
+      // Update team member
+      final updatedMember = currentMember.copyWith(
+        constraints: updatedConstraints,
+        updatedAt: DateTime.now(),
+      );
+
+      await _repository.updateTeamMember(updatedMember);
+
+      emit(const TeamMemberOperationSuccess('בקשת הגבלה נמחקה בהצלחה'));
+    } catch (e) {
+      emit(TeamError('שגיאה במחיקת בקשת הגבלה: $e'));
+    }
   }
 }

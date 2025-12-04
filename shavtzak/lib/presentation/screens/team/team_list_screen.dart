@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/foundation.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/role_types.dart';
+import '../../../core/constants/constraint_status.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../core/utils/validators.dart';
@@ -278,10 +279,31 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     style: const TextStyle(fontSize: 12),
                   ),
                   if (member.constraints.isNotEmpty)
-                    Text(
-                      '${member.constraints.length} מגבלות',
-                      style: const TextStyle(fontSize: 12, color: Colors.orange),
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        '${member.constraints.where((c) => c.status != ConstraintStatus.rejected).length} מגבלות',
+                        style: const TextStyle(fontSize: 12, color: Colors.orange),
+                      ),
+                      if (member.constraints.any((c) => c.isPending())) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.warning_amber,
+                          color: Colors.amber[600],
+                          size: 16,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          '(${member.constraints.where((c) => c.isPending()).length} ממתינות)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.amber[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                   if (member.comments.isNotEmpty)
                     Text(
                       member.comments,
@@ -454,6 +476,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   bool _isDirty = false;
   String? _roleError; // Track role validation error
 
+  // Track local constraint status changes (for approve/reject before saving)
+  final Map<int, ConstraintStatus> _pendingStatusChanges = {};
+
   bool get _isEditMode => widget.member != null;
 
   @override
@@ -500,6 +525,16 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       return;
     }
 
+    // Apply pending status changes to constraints before saving
+    final finalConstraints = List<DateConstraint>.from(_constraints);
+    for (final entry in _pendingStatusChanges.entries) {
+      if (entry.key < finalConstraints.length) {
+        finalConstraints[entry.key] = finalConstraints[entry.key].copyWith(
+          status: entry.value,
+        );
+      }
+    }
+
     final now = DateTime.now();
     final member = TeamMember(
       id: _isEditMode ? widget.member!.id : const Uuid().v4(),
@@ -507,7 +542,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       name: _nameController.text.trim(),
       isActive: _isActive,
       isPermanent: _isPermanent,
-      constraints: _constraints,
+      constraints: finalConstraints,
       roleCapabilities: _roleCapabilities,
       comments: _commentsController.text.trim(),
       createdAt: _isEditMode ? widget.member!.createdAt : now,
@@ -968,32 +1003,13 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                     ),
                                   ),
                                   const Spacer(),
-                                  IconButton(
-                                    onPressed: _addConstraint,
-                                    icon: const Icon(Icons.add_circle),
-                                    tooltip: 'הוסף מגבלה',
-                                  ),
                                 ],
                               ),
 
                               const SizedBox(height: 8),
 
                               // Constraints list
-                              if (_constraints.isEmpty)
-                                const Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: Text(
-                                    'אין מגבלות זמן',
-                                    style: TextStyle(color: Colors.grey),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                )
-                              else
-                                ..._constraints.asMap().entries.map((entry) {
-                                  final index = entry.key;
-                                  final constraint = entry.value;
-                                  return _buildConstraintCard(constraint, index);
-                                }),
+                              ..._buildVisibleConstraintsList(),
 
                               const Divider(height: 32),
 
@@ -1059,31 +1075,189 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   }
 
   Widget _buildConstraintCard(DateConstraint constraint, int index) {
+    // Get the effective status (original or pending change)
+    final effectiveStatus = _pendingStatusChanges[index] ?? constraint.status;
+    final hasPendingChange = _pendingStatusChanges.containsKey(index);
+
     return Card(
-      child: ListTile(
-        leading: const Icon(Icons.event_busy, color: Colors.orange),
-        title: Text(
-          constraint.endDate != null
-              ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
-              : _formatDate(constraint.startDate),
-        ),
-        subtitle: constraint.note != null && constraint.note!.isNotEmpty
-            ? Text(
-                constraint.note!,
-                style: const TextStyle(fontStyle: FontStyle.italic),
-              )
-            : null,
-        trailing: IconButton(
-          icon: const Icon(Icons.delete, color: Colors.red),
-          onPressed: () {
-            setState(() {
-              _constraints.removeAt(index);
-              _isDirty = true;
-            });
-          },
-        ),
-        onTap: () => _editConstraint(constraint, index),
+      child: Column(
+        children: [
+          ListTile(
+            leading: Icon(
+              effectiveStatus == ConstraintStatus.pending ? Icons.hourglass_empty : Icons.event_busy,
+              color: effectiveStatus == ConstraintStatus.pending ? Colors.amber : Colors.orange,
+            ),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    constraint.endDate != null
+                        ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
+                        : _formatDate(constraint.startDate),
+                  ),
+                ),
+                _buildStatusBadge(effectiveStatus, hasPendingChange),
+              ],
+            ),
+            subtitle: constraint.note != null && constraint.note!.isNotEmpty
+                ? Text(
+                    constraint.note!,
+                    style: const TextStyle(fontStyle: FontStyle.italic),
+                  )
+                : null,
+            trailing: null, // Admins cannot delete constraints
+            onTap: null, // Admins cannot edit constraints
+          ),
+          if (constraint.status == ConstraintStatus.pending && !hasPendingChange)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.amber[50],
+                border: Border(top: BorderSide(color: Colors.amber[200]!)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => _approveConstraint(index),
+                    icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.green[50],
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: () => _rejectConstraint(index),
+                    icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                    label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.red[50],
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (hasPendingChange)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: effectiveStatus == ConstraintStatus.approved
+                    ? Colors.green[50]
+                    : Colors.red[50],
+                border: Border(top: BorderSide(
+                  color: effectiveStatus == ConstraintStatus.approved
+                      ? Colors.green[200]!
+                      : Colors.red[200]!
+                )),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        effectiveStatus == ConstraintStatus.approved ? Icons.check_circle : Icons.cancel,
+                        color: effectiveStatus == ConstraintStatus.approved ? Colors.green : Colors.red,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        effectiveStatus == ConstraintStatus.approved ? 'יאושר עם שמירה' : 'יידחה עם שמירה',
+                        style: TextStyle(
+                          color: effectiveStatus == ConstraintStatus.approved ? Colors.green : Colors.red,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _pendingStatusChanges.remove(index);
+                          });
+                        },
+                        icon: const Icon(Icons.undo, size: 16),
+                        label: const Text('בטל'),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildStatusBadge(ConstraintStatus status, [bool hasPendingChange = false]) {
+    Color backgroundColor;
+    Color textColor;
+    String text;
+
+    switch (status) {
+      case ConstraintStatus.pending:
+        backgroundColor = Colors.orange;
+        textColor = Colors.white;
+        text = 'ממתין';
+        break;
+      case ConstraintStatus.approved:
+        backgroundColor = Colors.green;
+        textColor = Colors.white;
+        text = 'אושר';
+        break;
+      case ConstraintStatus.rejected:
+        backgroundColor = Colors.red;
+        textColor = Colors.white;
+        text = 'נדחה';
+        break;
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        if (hasPendingChange) ...[
+          const SizedBox(width: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.blue,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              'שינוי',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 9,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -1091,33 +1265,79 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
-  void _addConstraint() async {
-    final result = await showDialog<DateConstraint>(
-      context: context,
-      builder: (context) => const _ConstraintDialog(),
-    );
+  void _approveConstraint(int index) {
+    if (widget.member == null) return;
 
-    if (result != null) {
-      setState(() {
-        _constraints.add(result);
-        _isDirty = true;
-      });
+    setState(() {
+      _pendingStatusChanges[index] = ConstraintStatus.approved;
+      _isDirty = true;
+    });
+  }
+
+  void _rejectConstraint(int index) {
+    if (widget.member == null) return;
+
+    setState(() {
+      _pendingStatusChanges[index] = ConstraintStatus.rejected;
+      _isDirty = true;
+    });
+  }
+
+  List<Widget> _buildVisibleConstraintsList() {
+    final visibleConstraints = _constraints.asMap().entries.where((entry) {
+      final constraint = entry.value;
+      // Hide rejected constraints from admin view
+      return constraint.status != ConstraintStatus.rejected;
+    }).toList();
+
+    if (visibleConstraints.isEmpty) {
+      return [
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text(
+            'אין מגבלות זמן',
+            style: TextStyle(color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+        )
+      ];
+    } else {
+      return visibleConstraints.map((entry) {
+        final index = entry.key;
+        final constraint = entry.value;
+        return _buildConstraintCard(constraint, index);
+      }).toList();
     }
   }
 
-  void _editConstraint(DateConstraint constraint, int index) async {
-    final result = await showDialog<DateConstraint>(
-      context: context,
-      builder: (context) => _ConstraintDialog(constraint: constraint),
-    );
+  // Admins cannot add or edit constraints - only approve/reject
+  // void _addConstraint() async {
+  //   final result = await showDialog<DateConstraint>(
+  //     context: context,
+  //     builder: (context) => const _ConstraintDialog(),
+  //   );
 
-    if (result != null) {
-      setState(() {
-        _constraints[index] = result;
-        _isDirty = true;
-      });
-    }
-  }
+  //   if (result != null) {
+  //     setState(() {
+  //       _constraints.add(result);
+  //       _isDirty = true;
+  //     });
+  //   }
+  // }
+
+  // void _editConstraint(DateConstraint constraint, int index) async {
+  //   final result = await showDialog<DateConstraint>(
+  //     context: context,
+  //     builder: (context) => _ConstraintDialog(constraint: constraint),
+  //   );
+
+  //   if (result != null) {
+  //     setState(() {
+  //       _constraints[index] = result;
+  //       _isDirty = true;
+  //     });
+  //   }
+  // }
 }
 
 // Constraint Dialog Widget

@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../../core/constants/constraint_status.dart';
 
 /// Events for Team BLoC
 abstract class TeamEvent extends Equatable {
@@ -92,4 +93,52 @@ class ReactivateTeamMember extends TeamEvent {
 /// Refresh team members (reload from database)
 class RefreshTeamMembers extends TeamEvent {
   const RefreshTeamMembers();
+}
+
+/// Update the status of a constraint for a team member
+class UpdateConstraintStatus extends TeamEvent {
+  final String teamMemberId;
+  final int constraintIndex;
+  final ConstraintStatus newStatus;
+
+  const UpdateConstraintStatus({
+    required this.teamMemberId,
+    required this.constraintIndex,
+    required this.newStatus,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId, constraintIndex, newStatus];
+}
+
+/// Add a new constraint request for a team member (user-facing)
+class AddConstraintRequest extends TeamEvent {
+  final String teamMemberId;
+  final DateTime startDate;
+  final DateTime? endDate;
+  final String? note;
+
+  const AddConstraintRequest({
+    required this.teamMemberId,
+    required this.startDate,
+    this.endDate,
+    this.note,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId, startDate, endDate, note];
+}
+
+/// Remove a pending constraint request for a team member (user-facing)
+class RemoveConstraintRequest extends TeamEvent {
+  final String teamMemberId;
+  final int constraintIndex;
+
+  const RemoveConstraintRequest({
+    required this.teamMemberId,
+    required this.constraintIndex,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId, constraintIndex];
 }

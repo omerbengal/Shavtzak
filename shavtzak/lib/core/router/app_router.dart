@@ -8,6 +8,7 @@ import '../../presentation/bloc/user_selection/user_selection_state.dart';
 import '../../presentation/widgets/swipeable_page_view.dart';
 import '../../presentation/screens/whoami/whoami_screen.dart';
 import '../../presentation/screens/user/user_navigation_shell.dart';
+import '../../presentation/screens/user/constraints_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/team/team_list_screen.dart';
 import '../../presentation/screens/event/event_list_screen.dart';
@@ -250,11 +251,7 @@ class AppRouter {
                 GoRoute(
                   path: '/user/constraints',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: Scaffold(
-                      body: Center(
-                        child: Text('הגבלות שלי'),
-                      ),
-                    ),
+                    child: ConstraintsScreen(),
                   ),
                 ),
               ],

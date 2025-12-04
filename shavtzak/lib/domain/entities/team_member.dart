@@ -1,16 +1,19 @@
 import 'package:equatable/equatable.dart';
 import '../../core/constants/role_types.dart';
+import '../../core/constants/constraint_status.dart';
 
 /// Date constraint representing when a team member is unavailable
 class DateConstraint extends Equatable {
   final DateTime startDate;
   final DateTime? endDate; // null means single day constraint
   final String? note; // optional note for the constraint
+  final ConstraintStatus status; // status of the constraint request
 
   const DateConstraint({
     required this.startDate,
     this.endDate,
     this.note,
+    this.status = ConstraintStatus.approved, // default to approved for existing constraints
   });
 
   /// Check if a given date falls within this constraint
@@ -36,14 +39,14 @@ class DateConstraint extends Equatable {
   }
 
   @override
-  List<Object?> get props => [startDate, endDate, note];
+  List<Object?> get props => [startDate, endDate, note, status];
 
   @override
   String toString() {
     if (endDate == null) {
-      return '${startDate.day}/${startDate.month}/${startDate.year}';
+      return '${startDate.day.toString().padLeft(2, '0')}/${startDate.month.toString().padLeft(2, '0')}/${startDate.year}';
     }
-    return '${startDate.day}/${startDate.month}/${startDate.year} - ${endDate!.day}/${endDate!.month}/${endDate!.year}';
+    return '${startDate.day.toString().padLeft(2, '0')}/${startDate.month.toString().padLeft(2, '0')}/${startDate.year} - ${endDate!.day.toString().padLeft(2, '0')}/${endDate!.month.toString().padLeft(2, '0')}/${endDate!.year}';
   }
 
   /// Copy with method for immutability
@@ -51,13 +54,20 @@ class DateConstraint extends Equatable {
     DateTime? startDate,
     DateTime? endDate,
     String? note,
+    ConstraintStatus? status,
   }) {
     return DateConstraint(
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       note: note ?? this.note,
+      status: status ?? this.status,
     );
   }
+
+  /// Helper methods to check constraint status
+  bool isPending() => status == ConstraintStatus.pending;
+  bool isApproved() => status == ConstraintStatus.approved;
+  bool isRejected() => status == ConstraintStatus.rejected;
 }
 
 /// Team member domain entity

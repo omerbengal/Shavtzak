@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
+import '../../core/constants/constraint_status.dart';
 import '../models/assignment_model.dart';
 import '../models/event_model.dart';
 import '../models/team_member_model.dart';
@@ -115,6 +116,53 @@ class FirestoreDatabase implements DatabaseInterface {
           .update(model.toFirestore());
     } catch (e) {
       throw DatabaseException('Failed to update team member: $e');
+    }
+  }
+
+  @override
+  Future<void> updateConstraintStatus(
+    String teamMemberId,
+    int constraintIndex,
+    ConstraintStatus newStatus,
+  ) async {
+    try {
+      // Get the current team member
+      final doc = await _firestore
+          .collection(_teamMembersCollection)
+          .doc(teamMemberId)
+          .get();
+
+      if (!doc.exists) {
+        throw DatabaseException('Team member not found: $teamMemberId');
+      }
+
+      final teamMember = TeamMemberModel.fromFirestore(doc).toEntity();
+
+      // Check if constraint index is valid
+      if (constraintIndex < 0 || constraintIndex >= teamMember.constraints.length) {
+        throw DatabaseException('Invalid constraint index: $constraintIndex');
+      }
+
+      // Update the constraint status
+      final updatedConstraints = List<DateConstraint>.from(teamMember.constraints);
+      updatedConstraints[constraintIndex] = updatedConstraints[constraintIndex].copyWith(
+        status: newStatus,
+      );
+
+      // Create updated team member with new constraint
+      final updatedTeamMember = teamMember.copyWith(
+        constraints: updatedConstraints,
+        updatedAt: DateTime.now(),
+      );
+
+      // Update in Firestore
+      final model = TeamMemberModel.fromEntity(updatedTeamMember);
+      await _firestore
+          .collection(_teamMembersCollection)
+          .doc(teamMemberId)
+          .update(model.toFirestore());
+    } catch (e) {
+      throw DatabaseException('Failed to update constraint status: $e');
     }
   }
 

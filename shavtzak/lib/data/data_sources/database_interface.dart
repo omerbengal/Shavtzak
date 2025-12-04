@@ -1,6 +1,7 @@
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
+import '../../core/constants/constraint_status.dart';
 
 /// Abstract database interface
 /// This allows the app to be backend-agnostic
@@ -25,6 +26,13 @@ abstract class DatabaseInterface {
 
   /// Delete a team member
   Future<void> deleteTeamMember(String id);
+
+  /// Update the status of a specific constraint for a team member
+  Future<void> updateConstraintStatus(
+    String teamMemberId,
+    int constraintIndex,
+    ConstraintStatus newStatus,
+  );
 
   // ========== Events ==========
 

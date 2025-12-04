@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/constants/role_types.dart';
+import '../../core/constants/constraint_status.dart';
 import '../../domain/entities/team_member.dart';
 
 /// Data model for TeamMember with JSON serialization
@@ -198,11 +199,13 @@ class DateConstraintModel {
   final DateTime startDate;
   final DateTime? endDate;
   final String? note;
+  final ConstraintStatus status;
 
   const DateConstraintModel({
     required this.startDate,
     this.endDate,
     this.note,
+    this.status = ConstraintStatus.approved, // default to approved for existing constraints
   });
 
   factory DateConstraintModel.fromEntity(DateConstraint entity) {
@@ -210,6 +213,7 @@ class DateConstraintModel {
       startDate: entity.startDate,
       endDate: entity.endDate,
       note: entity.note,
+      status: entity.status,
     );
   }
 
@@ -218,10 +222,17 @@ class DateConstraintModel {
       startDate: startDate,
       endDate: endDate,
       note: note,
+      status: status,
     );
   }
 
   factory DateConstraintModel.fromJson(Map<String, dynamic> json) {
+    // Handle migration - default to approved for existing constraints missing status
+    final statusValue = json['status'] as String?;
+    final status = statusValue != null
+        ? ConstraintStatus.values.firstWhere((s) => s.name == statusValue)
+        : ConstraintStatus.approved;
+
     return DateConstraintModel(
       startDate: json['startDate'] is Timestamp
           ? (json['startDate'] as Timestamp).toDate()
@@ -232,6 +243,7 @@ class DateConstraintModel {
               ? (json['endDate'] as Timestamp).toDate()
               : DateTime.parse(json['endDate'] as String),
       note: json['note'] as String?,
+      status: status,
     );
   }
 
@@ -240,6 +252,7 @@ class DateConstraintModel {
       'startDate': startDate.toIso8601String(),
       'endDate': endDate?.toIso8601String(),
       'note': note,
+      'status': status.name,
     };
   }
 }
