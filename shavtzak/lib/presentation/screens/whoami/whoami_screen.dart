@@ -109,19 +109,22 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
   Future<void> _showClearCacheDialog(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('ניקוי מטמון'),
-        content: const Text('האם את/ה בטוח/ה שברצונך לנקות את המטמון ולהתחיל מחדש?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('ביטול'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('נקה מטמון'),
-          ),
-        ],
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('ניקוי מטמון'),
+          content: const Text('האם את/ה בטוח/ה שברצונך לנקות את המטמון ולהתחיל מחדש?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('ביטול'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('נקה מטמון'),
+            ),
+          ],
+        ),
       ),
     );
 
