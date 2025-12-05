@@ -1062,6 +1062,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                               // Comments field
                               TextFormField(
                                 controller: _commentsController,
+                                textDirection: TextDirection.rtl,
                                 decoration: const InputDecoration(
                                   labelText: 'הערות',
                                   hintText: 'הערות על חבר הצוות',

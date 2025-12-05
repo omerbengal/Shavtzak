@@ -248,3 +248,8 @@ class ClearLocalConstraintState extends TeamEvent {
   @override
   List<Object?> get props => [teamMemberId];
 }
+
+/// Clear all state (used when user signs out)
+class ClearTeamState extends TeamEvent {
+  const ClearTeamState();
+}

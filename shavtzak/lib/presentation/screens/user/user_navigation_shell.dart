@@ -48,26 +48,10 @@ class UserNavigationShell extends StatelessWidget {
             ),
             centerTitle: true,
             actions: [
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert),
-                tooltip: 'תפריט',
-                onSelected: (value) {
-                  if (value == 'logout') {
-                    _showLogoutDialog(context);
-                  }
-                },
-                itemBuilder: (BuildContext context) => [
-                  const PopupMenuItem<String>(
-                    value: 'logout',
-                    child: Row(
-                      children: [
-                        Icon(Icons.logout, size: 20),
-                        SizedBox(width: 8),
-                        Text('התנתקות'),
-                      ],
-                    ),
-                  ),
-                ],
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'התנתקות',
+                onPressed: () => _showLogoutDialog(context),
               ),
             ],
           );

@@ -40,6 +40,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     on<SyncConstraintsWithDatabase>(_onSyncConstraintsWithDatabase);
     on<SavePendingConstraintChanges>(_onSavePendingConstraintChanges);
     on<ClearLocalConstraintState>(_onClearLocalConstraintState);
+
+    // State management
+    on<ClearTeamState>(_onClearTeamState);
   }
 
   /// Load all team members with real-time updates
@@ -347,14 +350,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         return;
       }
 
-      // Check if constraint is pending (only pending requests can be removed)
-      final constraint = currentMember.constraints[event.constraintIndex];
-      if (!constraint.isPending()) {
-        emit(const TeamError('ניתן למחוק רק בקשות ממתינות לאישור'));
-        return;
-      }
-
-      // Remove constraint
+      // Remove constraint (users can delete their own constraints regardless of status)
       final updatedConstraints = List<DateConstraint>.from(currentMember.constraints);
       updatedConstraints.removeAt(event.constraintIndex);
 
@@ -573,5 +569,16 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     } catch (e) {
       emit(TeamError('שגיאה בניקוי שינויים מקומיים: $e'));
     }
+  }
+
+  /// Clear all state (used when user signs out)
+  Future<void> _onClearTeamState(
+    ClearTeamState event,
+    Emitter<TeamState> emit,
+  ) async {
+    // Clear constraint managers
+    _constraintManagers.clear();
+    // Reset to initial state
+    emit(const TeamInitial());
   }
 }

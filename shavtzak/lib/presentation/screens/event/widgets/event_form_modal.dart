@@ -476,6 +476,7 @@ class _EventFormModalState extends State<EventFormModal> {
                               TextFormField(
                                 controller: _nameController,
                                 focusNode: _nameFocusNode,
+                                textDirection: TextDirection.rtl,
                                 decoration: const InputDecoration(
                                   labelText: 'שם האירוע',
                                   hintText: 'לדוגמה: חתונת כהן',
@@ -494,6 +495,7 @@ class _EventFormModalState extends State<EventFormModal> {
                               // Location field
                               TextFormField(
                                 controller: _locationController,
+                                textDirection: TextDirection.rtl,
                                 decoration: const InputDecoration(
                                   labelText: 'מיקום',
                                   hintText: 'לדוגמה: אולמי ורסאי',

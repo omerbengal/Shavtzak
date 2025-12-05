@@ -14,9 +14,11 @@ import 'core/services/user_cache_service.dart';
 
 // Presentation layer
 import 'presentation/bloc/team/team_bloc.dart';
+import 'presentation/bloc/team/team_event.dart';
 import 'presentation/bloc/event/event_bloc.dart';
 import 'presentation/bloc/assignment/assignment_bloc.dart';
 import 'presentation/bloc/user_selection/user_selection_bloc.dart';
+import 'presentation/bloc/user_selection/user_selection_state.dart';
 
 // Router
 import 'core/router/app_router.dart';
@@ -134,13 +136,24 @@ class MyApp extends StatelessWidget {
           builder: (context) {
             final userSelectionBloc = context.read<UserSelectionBloc>();
             final userSelectionRepository = context.read<UserSelectionRepository>();
-            return MaterialApp.router(
-              title: 'שבצק - ניהול צוות',
-              theme: AppTheme.lightTheme,
-              debugShowCheckedModeBanner: false,
-              routerConfig: AppRouter.router(
-                userSelectionBloc: userSelectionBloc,
-                userSelectionRepository: userSelectionRepository,
+            final teamBloc = context.read<TeamBloc>();
+
+            return BlocListener<UserSelectionBloc, UserSelectionState>(
+              listener: (context, state) {
+                // Clear all BLoC states when user signs out
+                if (state is UserSignedOut) {
+                  teamBloc.add(const ClearTeamState());
+                  // TODO: Add similar clear events for EventBloc and AssignmentBloc
+                }
+              },
+              child: MaterialApp.router(
+                title: 'שבצק - ניהול צוות',
+                theme: AppTheme.lightTheme,
+                debugShowCheckedModeBanner: false,
+                routerConfig: AppRouter.router(
+                  userSelectionBloc: userSelectionBloc,
+                  userSelectionRepository: userSelectionRepository,
+                ),
               ),
             );
           },

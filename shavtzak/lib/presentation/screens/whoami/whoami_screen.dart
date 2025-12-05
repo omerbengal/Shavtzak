@@ -168,6 +168,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
               // Search field
               TextField(
                 controller: _searchController,
+                textDirection: TextDirection.rtl,
                 decoration: const InputDecoration(
                   hintText: 'חפש/י את השם שלך...',
                   prefixIcon: Icon(Icons.search),

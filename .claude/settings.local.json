@@ -30,7 +30,8 @@
       "mcp__sequential-thinking__sequentialthinking",
       "Bash(timeout:*)",
       "Bash(cd:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []

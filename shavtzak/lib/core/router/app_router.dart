@@ -9,6 +9,7 @@ import '../../presentation/widgets/swipeable_page_view.dart';
 import '../../presentation/screens/whoami/whoami_screen.dart';
 import '../../presentation/screens/user/user_navigation_shell.dart';
 import '../../presentation/screens/user/constraints_screen.dart';
+import '../../presentation/screens/admin/admin_choice_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/team/team_list_screen.dart';
 import '../../presentation/screens/event/event_list_screen.dart';
@@ -110,14 +111,11 @@ class AppRouter {
         } else if (currentState is UserAuthenticated) {
           // User is authenticated, redirect based on admin status
           if (currentState.isAdmin) {
-            // Admin user - only redirect from whoami to admin routes
+            // Admin user - only redirect from whoami to admin choice
             if (currentRoute.startsWith('/whoami')) {
-              return '/admin'; // Redirect to admin home
+              return '/admin'; // Redirect to admin choice screen
             }
-            // If admin tries to access user routes, redirect to admin
-            if (currentRoute.startsWith('/user/')) {
-              return '/admin'; // Redirect to admin home
-            }
+            // Admins can access both user and admin routes, no restriction
           } else {
             // Non-admin user - only redirect from whoami to user routes
             if (currentRoute.startsWith('/whoami')) {
@@ -163,13 +161,13 @@ class AppRouter {
             return SwipeablePageView(navigationShell: navigationShell);
           },
           branches: [
-            // Admin home branch
+            // Admin choice branch
             StatefulShellBranch(
               routes: [
                 GoRoute(
                   path: '/admin',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: HomeScreen(),
+                    child: AdminChoiceScreen(),
                   ),
                 ),
               ],
@@ -216,12 +214,12 @@ class AppRouter {
         // User routes shell - uses UserNavigationShell
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
-            // Only allow non-admin users to access this shell
+            // Allow both regular users and admins to access this shell
             final userSelectionState = context.watch<UserSelectionBloc>().state;
-            if (userSelectionState is! UserAuthenticated || userSelectionState.isAdmin) {
+            if (userSelectionState is! UserAuthenticated) {
               return const Scaffold(
                 body: Center(
-                  child: Text('גישה לא מורשית'),
+                  child: Text('גישה לא מורשית - דרוש אימות'),
                 ),
               );
             }
