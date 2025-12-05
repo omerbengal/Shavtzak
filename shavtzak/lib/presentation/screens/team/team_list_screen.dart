@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/constants/constraint_status.dart';
+import '../../../core/state/constraint_manager.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../core/utils/validators.dart';
@@ -279,31 +280,30 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     style: const TextStyle(fontSize: 12),
                   ),
                   if (member.constraints.isNotEmpty)
-                  Row(
-                    children: [
-                      Text(
-                        '${member.constraints.where((c) => c.status != ConstraintStatus.rejected).length} מגבלות',
-                        style: const TextStyle(fontSize: 12, color: Colors.orange),
-                      ),
-                      if (member.constraints.any((c) => c.isPending())) ...[
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.warning_amber,
-                          color: Colors.amber[600],
-                          size: 16,
-                        ),
-                        const SizedBox(width: 2),
+                    Row(
+                      children: [
                         Text(
-                          '(${member.constraints.where((c) => c.isPending()).length} ממתינות)',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.amber[700],
-                            fontWeight: FontWeight.w500,
-                          ),
+                          '${member.constraints.where((c) => c.status != ConstraintStatus.rejected).length} מגבלות',
+                          style: const TextStyle(fontSize: 12, color: Colors.orange),
                         ),
+                        if (member.constraints.any((c) => c.isPending())) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            '(${member.constraints.where((c) => c.isPending()).length} ממתינות)',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
+                    )
+                  else
+                    Text(
+                      '0 מגבלות',
+                      style: const TextStyle(fontSize: 12, color: Colors.orange),
+                    ),
                   if (member.comments.isNotEmpty)
                     Text(
                       member.comments,
@@ -472,13 +472,16 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   bool _isActive = true;
   bool _isPermanent = false;
   Map<RoleType, bool> _roleCapabilities = {};
+
+  late TeamBloc _teamBloc;
   List<DateConstraint> _constraints = [];
   bool _isDirty = false;
   String? _roleError; // Track role validation error
 
-  // Track local constraint status changes (for approve/reject before saving)
-  final Map<int, ConstraintStatus> _pendingStatusChanges = {};
+  // Hybrid constraint state manager
+  LocalConstraintManager? _constraintManager;
 
+  
   bool get _isEditMode => widget.member != null;
 
   @override
@@ -498,6 +501,18 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       _isPermanent = widget.member!.isPermanent;
       _roleCapabilities = Map.from(widget.member!.roleCapabilities);
       _constraints = List.from(widget.member!.constraints);
+
+      // Initialize constraint manager with existing constraints
+      _constraintManager = LocalConstraintManager();
+      _constraintManager!.initializeFromDatabase(_constraints);
+
+      // Initialize constraint manager in BLoC
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        context.read<TeamBloc>().add(InitializeConstraintManager(
+          teamMemberId: widget.member!.id,
+          databaseConstraints: _constraints,
+        ));
+      });
     }
 
     // Track dirty state
@@ -506,9 +521,23 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _teamBloc = context.read<TeamBloc>();
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _commentsController.dispose();
+
+    // Clean up constraint manager if editing
+    if (_isEditMode && _constraintManager != null) {
+      _teamBloc.add(ClearLocalConstraintState(
+        teamMemberId: widget.member!.id,
+      ));
+    }
+
     super.dispose();
   }
 
@@ -525,15 +554,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       return;
     }
 
-    // Apply pending status changes to constraints before saving
-    final finalConstraints = List<DateConstraint>.from(_constraints);
-    for (final entry in _pendingStatusChanges.entries) {
-      if (entry.key < finalConstraints.length) {
-        finalConstraints[entry.key] = finalConstraints[entry.key].copyWith(
-          status: entry.value,
-        );
-      }
-    }
+    // Use effective constraints from constraint manager
+    final finalConstraints = _constraintManager?.getEffectiveConstraints() ?? _constraints;
 
     final now = DateTime.now();
     final member = TeamMember(
@@ -849,7 +871,31 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
                   // Modal Body (Scrollable)
                   Expanded(
-                    child: BlocBuilder<TeamBloc, TeamState>(
+                    child: BlocConsumer<TeamBloc, TeamState>(
+                      listener: (context, state) {
+                        // Update constraint manager BEFORE any UI rebuilds
+                        // This ensures the rejected constraints dialog sees the updated state
+                        if (_isEditMode && state is TeamLoaded) {
+                          final updatedMember = state.members.cast<TeamMember?>().firstWhere(
+                            (member) => member?.id == widget.member!.id,
+                            orElse: () => null,
+                          );
+                          if (updatedMember != null) {
+                            // Always sync with DB updates to clear local changes for updated constraints
+                            // DB updates override local changes per the business logic:
+                            // - If a constraint was updated in DB, clear its local modifications
+                            // - If a constraint was NOT updated in DB, keep its local modifications
+                            _constraints = List.from(updatedMember.constraints);
+
+                            // Use syncWithDatabaseChanges to intelligently handle updates
+                            // This clears local modifications only for constraints that changed in DB
+                            _constraintManager?.syncWithDatabaseChanges(_constraints);
+
+                            // Force rebuild to propagate changes to dialogs
+                            setState(() {});
+                          }
+                        }
+                      },
                       builder: (context, state) {
                         return Form(
                           key: _formKey,
@@ -1074,29 +1120,30 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       );
   }
 
-  Widget _buildConstraintCard(DateConstraint constraint, int index) {
-    // Get the effective status (original or pending change)
-    final effectiveStatus = _pendingStatusChanges[index] ?? constraint.status;
-    final hasPendingChange = _pendingStatusChanges.containsKey(index);
+  Widget _buildConstraintCard(DateConstraint constraint) {
+    // Use the constraint status directly (already effective from constraint manager)
+    final effectiveStatus = constraint.status;
 
     return Card(
       child: Column(
         children: [
           ListTile(
             leading: Icon(
-              effectiveStatus == ConstraintStatus.pending ? Icons.hourglass_empty : Icons.event_busy,
-              color: effectiveStatus == ConstraintStatus.pending ? Colors.amber : Colors.orange,
+              effectiveStatus == ConstraintStatus.pending ? Icons.hourglass_empty :
+              effectiveStatus == ConstraintStatus.approved ? Icons.check_circle : Icons.cancel,
+              color: effectiveStatus == ConstraintStatus.pending ? Colors.amber :
+                     effectiveStatus == ConstraintStatus.approved ? Colors.green : Colors.red,
             ),
             title: Row(
               children: [
                 Expanded(
                   child: Text(
-                    constraint.endDate != null
+                    constraint.endDate != null && !_isSameDay(constraint.startDate, constraint.endDate!)
                         ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
                         : _formatDate(constraint.startDate),
                   ),
                 ),
-                _buildStatusBadge(effectiveStatus, hasPendingChange),
+                _buildStatusBadge(effectiveStatus),
               ],
             ),
             subtitle: constraint.note != null && constraint.note!.isNotEmpty
@@ -1108,18 +1155,90 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
             trailing: null, // Admins cannot delete constraints
             onTap: null, // Admins cannot edit constraints
           ),
-          if (constraint.status == ConstraintStatus.pending && !hasPendingChange)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.amber[50],
-                border: Border(top: BorderSide(color: Colors.amber[200]!)),
+          // Status change controls for all constraints
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: effectiveStatus == ConstraintStatus.pending
+                  ? Colors.amber[50]
+                  : effectiveStatus == ConstraintStatus.approved
+                      ? Colors.green[50]
+                      : Colors.grey[50],
+              border: Border(
+                top: BorderSide(
+                  color: effectiveStatus == ConstraintStatus.pending
+                      ? Colors.amber[200]!
+                      : effectiveStatus == ConstraintStatus.approved
+                          ? Colors.green[200]!
+                          : Colors.grey[200]!,
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                // Right button (first in RTL)
+                if (effectiveStatus == ConstraintStatus.pending)
+                  // Pending: Right = Accept
                   TextButton.icon(
-                    onPressed: () => _approveConstraint(index),
+                    onPressed: () => _approveConstraint(constraint.id),
+                    icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.green[50],
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    ),
+                  )
+                else if (effectiveStatus == ConstraintStatus.approved)
+                  // Approved: Right = Pending
+                  TextButton.icon(
+                    onPressed: () => _setPendingConstraint(constraint.id),
+                    icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 20),
+                    label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.amber[50],
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    ),
+                  )
+                else // Rejected: Right = Pending
+                  TextButton.icon(
+                    onPressed: () => _setPendingConstraint(constraint.id),
+                    icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 20),
+                    label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.amber[50],
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    ),
+                  ),
+
+                const SizedBox(width: 8), // Consistent spacing
+
+                // Left button (last in RTL)
+                if (effectiveStatus == ConstraintStatus.pending)
+                  // Pending: Left = Reject
+                  TextButton.icon(
+                    onPressed: () => _rejectConstraint(constraint.id),
+                    icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                    label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.red[50],
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    ),
+                  )
+                else if (effectiveStatus == ConstraintStatus.approved)
+                  // Approved: Left = Reject
+                  TextButton.icon(
+                    onPressed: () => _rejectConstraint(constraint.id),
+                    icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                    label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.red[50],
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    ),
+                  )
+                else // Rejected: Left = Accept
+                  TextButton.icon(
+                    onPressed: () => _approveConstraint(constraint.id),
                     icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
                     label: const Text('אשר', style: TextStyle(color: Colors.green)),
                     style: TextButton.styleFrom(
@@ -1127,78 +1246,15 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: () => _rejectConstraint(index),
-                    icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
-                    label: const Text('דחה', style: TextStyle(color: Colors.red)),
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.red[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ),
-          if (hasPendingChange)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: effectiveStatus == ConstraintStatus.approved
-                    ? Colors.green[50]
-                    : Colors.red[50],
-                border: Border(top: BorderSide(
-                  color: effectiveStatus == ConstraintStatus.approved
-                      ? Colors.green[200]!
-                      : Colors.red[200]!
-                )),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        effectiveStatus == ConstraintStatus.approved ? Icons.check_circle : Icons.cancel,
-                        color: effectiveStatus == ConstraintStatus.approved ? Colors.green : Colors.red,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        effectiveStatus == ConstraintStatus.approved ? 'יאושר עם שמירה' : 'יידחה עם שמירה',
-                        style: TextStyle(
-                          color: effectiveStatus == ConstraintStatus.approved ? Colors.green : Colors.red,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      TextButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            _pendingStatusChanges.remove(index);
-                          });
-                        },
-                        icon: const Icon(Icons.undo, size: 16),
-                        label: const Text('בטל'),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          minimumSize: Size.zero,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildStatusBadge(ConstraintStatus status, [bool hasPendingChange = false]) {
+  Widget _buildStatusBadge(ConstraintStatus status) {
     Color backgroundColor;
     Color textColor;
     String text;
@@ -1221,43 +1277,20 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         break;
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            text,
-            style: TextStyle(
-              color: textColor,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
         ),
-        if (hasPendingChange) ...[
-          const SizedBox(width: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.blue,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Text(
-              'שינוי',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 9,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ],
+      ),
     );
   }
 
@@ -1265,32 +1298,78 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
-  void _approveConstraint(int index) {
-    if (widget.member == null) return;
-
-    setState(() {
-      _pendingStatusChanges[index] = ConstraintStatus.approved;
-      _isDirty = true;
-    });
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 
-  void _rejectConstraint(int index) {
-    if (widget.member == null) return;
+  void _approveConstraint(String constraintId) {
+    if (widget.member == null || _constraintManager == null) return;
 
-    setState(() {
-      _pendingStatusChanges[index] = ConstraintStatus.rejected;
-      _isDirty = true;
-    });
+    // Update local constraint manager for immediate UI feedback
+    _constraintManager!.updateConstraintStatus(constraintId, ConstraintStatus.approved);
+    _isDirty = true;
+
+    // Also update BLoC for state consistency
+    context.read<TeamBloc>().add(UpdateConstraintStatusLocal(
+      teamMemberId: widget.member!.id,
+      constraintId: constraintId,
+      newStatus: ConstraintStatus.approved,
+    ));
+
+    setState(() {});
+  }
+
+  void _rejectConstraint(String constraintId) {
+    if (widget.member == null || _constraintManager == null) return;
+
+    // Update local constraint manager for immediate UI feedback
+    _constraintManager!.updateConstraintStatus(constraintId, ConstraintStatus.rejected);
+    _isDirty = true;
+
+    // Also update BLoC for state consistency
+    context.read<TeamBloc>().add(UpdateConstraintStatusLocal(
+      teamMemberId: widget.member!.id,
+      constraintId: constraintId,
+      newStatus: ConstraintStatus.rejected,
+    ));
+
+    setState(() {});
+  }
+
+  void _setPendingConstraint(String constraintId) {
+    if (widget.member == null || _constraintManager == null) return;
+
+    // Update local constraint manager for immediate UI feedback
+    _constraintManager!.updateConstraintStatus(constraintId, ConstraintStatus.pending);
+    _isDirty = true;
+
+    // Also update BLoC for state consistency
+    context.read<TeamBloc>().add(UpdateConstraintStatusLocal(
+      teamMemberId: widget.member!.id,
+      constraintId: constraintId,
+      newStatus: ConstraintStatus.pending,
+    ));
+
+    setState(() {});
   }
 
   List<Widget> _buildVisibleConstraintsList() {
-    final visibleConstraints = _constraints.asMap().entries.where((entry) {
-      final constraint = entry.value;
-      // Hide rejected constraints from admin view
+    // Get effective constraints from constraint manager
+    final effectiveConstraints = _constraintManager?.getEffectiveConstraints() ?? _constraints;
+
+    final visibleConstraints = effectiveConstraints.where((constraint) {
+      // Hide rejected constraints from admin view (they'll have a separate button)
       return constraint.status != ConstraintStatus.rejected;
     }).toList();
 
-    if (visibleConstraints.isEmpty) {
+    final rejectedConstraints = effectiveConstraints.where((constraint) {
+      // Only show constraints that are rejected
+      return constraint.status == ConstraintStatus.rejected;
+    }).toList();
+
+    if (visibleConstraints.isEmpty && rejectedConstraints.isEmpty) {
       return [
         const Padding(
           padding: EdgeInsets.all(16),
@@ -1301,13 +1380,56 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
           ),
         )
       ];
-    } else {
-      return visibleConstraints.map((entry) {
-        final index = entry.key;
-        final constraint = entry.value;
-        return _buildConstraintCard(constraint, index);
-      }).toList();
     }
+
+    final widgets = <Widget>[];
+
+    // Add visible constraints
+    if (visibleConstraints.isNotEmpty) {
+      widgets.addAll(visibleConstraints.map((constraint) {
+        return _buildConstraintCard(constraint);
+      }).toList());
+    }
+
+    // Add rejected constraints button if any exist
+    if (rejectedConstraints.isNotEmpty) {
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: OutlinedButton.icon(
+            onPressed: () => _showRejectedConstraints(rejectedConstraints),
+            icon: const Icon(Icons.visibility_off, size: 18),
+            label: Text(
+              'הצג מגבלות שנדחו (${rejectedConstraints.length})',
+              style: const TextStyle(fontSize: 14),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.grey[600],
+              side: BorderSide(color: Colors.grey[300]!),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return widgets;
+  }
+
+  void _showRejectedConstraints(List<DateConstraint> rejectedConstraints) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: _RejectedConstraintsDialog(
+          teamMemberId: widget.member!.id,
+          getEffectiveConstraints: () => _constraintManager?.getEffectiveConstraints() ?? [],
+          onApproveConstraint: (constraintId) => _approveConstraint(constraintId),
+          onRejectConstraint: (constraintId) => _rejectConstraint(constraintId),
+          onSetPendingConstraint: (constraintId) => _setPendingConstraint(constraintId),
+        ),
+      ),
+    );
   }
 
   // Admins cannot add or edit constraints - only approve/reject
@@ -1514,9 +1636,11 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
                     Navigator.pop(
                       context,
                       DateConstraint(
+                        id: widget.constraint?.id ?? const Uuid().v4(), // Use existing ID or generate new one
                         startDate: _startDate!,
                         endDate: _endDate,
                         note: noteText.isEmpty ? null : noteText,
+                        status: widget.constraint?.status ?? ConstraintStatus.approved, // Use existing status or default to approved
                       ),
                     );
                   },
@@ -1525,5 +1649,285 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
         ],
       ),
     );
+  }
+}
+
+// Separate widget for rejected constraints dialog to avoid infinite loop
+class _RejectedConstraintsDialog extends StatefulWidget {
+  final String teamMemberId;
+  final List<DateConstraint> Function() getEffectiveConstraints;
+  final Function(String) onApproveConstraint;
+  final Function(String) onRejectConstraint;
+  final Function(String) onSetPendingConstraint;
+
+  const _RejectedConstraintsDialog({
+    required this.teamMemberId,
+    required this.getEffectiveConstraints,
+    required this.onApproveConstraint,
+    required this.onRejectConstraint,
+    required this.onSetPendingConstraint,
+  });
+
+  @override
+  State<_RejectedConstraintsDialog> createState() => _RejectedConstraintsDialogState();
+}
+
+class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> {
+  bool _isLoading = false;
+
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocListener<TeamBloc, TeamState>(
+      listener: (context, state) {
+        // Trigger rebuild when BLoC state changes to refresh dialog content
+        setState(() {});
+      },
+      child: AlertDialog(
+        title: Text(
+          'מגבלות שנדחו (${_getRejectedConstraints().length})',
+          textAlign: TextAlign.right,
+        ),
+        content: SizedBox(
+          width: 600,
+          height: 400,
+          child: Column(
+            children: [
+              Text(
+                'כאן תוכל לשנות את הסטטוס של מגבלות שנדחו בעבר:',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.right,
+              ),
+              const SizedBox(height: 16),
+              if (_getRejectedConstraints().isEmpty)
+                const Expanded(
+                  child: Center(
+                    child: Text('אין מגבלות שנדחו'),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: _getRejectedConstraints().length,
+                    itemBuilder: (context, index) {
+                      final constraint = _getRejectedConstraints()[index];
+
+                      // The constraint already has the effective status from LocalConstraintManager
+                      final effectiveStatus = constraint.status;
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    effectiveStatus == ConstraintStatus.pending ? Icons.hourglass_empty :
+                                    effectiveStatus == ConstraintStatus.approved ? Icons.check_circle : Icons.cancel,
+                                    color: effectiveStatus == ConstraintStatus.pending ? Colors.amber :
+                                           effectiveStatus == ConstraintStatus.approved ? Colors.green : Colors.red,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      constraint.endDate != null
+                                          ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
+                                          : _formatDate(constraint.startDate),
+                                      style: const TextStyle(fontWeight: FontWeight.w500),
+                                    ),
+                                  ),
+                                  _buildStatusBadge(effectiveStatus),
+                                ],
+                              ),
+                              if (constraint.note != null && constraint.note!.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  constraint.note!,
+                                  style: const TextStyle(
+                                    fontStyle: FontStyle.italic,
+                                    color: Colors.grey,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  // Right button (first in RTL)
+                                  if (effectiveStatus == ConstraintStatus.pending)
+                                    // Pending: Right = Accept
+                                    TextButton.icon(
+                                      onPressed: () => _approveConstraint(constraint.id),
+                                      icon: const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                                      label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                                      style: TextButton.styleFrom(
+                                        backgroundColor: Colors.green[50],
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        minimumSize: Size.zero,
+                                      ),
+                                    )
+                                  else if (effectiveStatus == ConstraintStatus.approved)
+                                    // Approved: Right = Pending
+                                    TextButton.icon(
+                                      onPressed: () => _setPendingConstraint(constraint.id),
+                                      icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 18),
+                                      label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                                      style: TextButton.styleFrom(
+                                        backgroundColor: Colors.amber[50],
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        minimumSize: Size.zero,
+                                      ),
+                                    )
+                                  else // Rejected: Right = Pending
+                                    TextButton.icon(
+                                      onPressed: () => _setPendingConstraint(constraint.id),
+                                      icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 18),
+                                      label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                                      style: TextButton.styleFrom(
+                                        backgroundColor: Colors.amber[50],
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        minimumSize: Size.zero,
+                                      ),
+                                    ),
+
+                                  const SizedBox(width: 8), // Consistent spacing
+
+                                  // Left button (last in RTL)
+                                  if (effectiveStatus == ConstraintStatus.pending)
+                                    // Pending: Left = Reject
+                                    TextButton.icon(
+                                      onPressed: () => _rejectConstraint(constraint.id),
+                                      icon: const Icon(Icons.cancel, color: Colors.red, size: 18),
+                                      label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                                      style: TextButton.styleFrom(
+                                        backgroundColor: Colors.red[50],
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        minimumSize: Size.zero,
+                                      ),
+                                    )
+                                  else if (effectiveStatus == ConstraintStatus.approved)
+                                    // Approved: Left = Reject
+                                    TextButton.icon(
+                                      onPressed: () => _rejectConstraint(constraint.id),
+                                      icon: const Icon(Icons.cancel, color: Colors.red, size: 18),
+                                      label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                                      style: TextButton.styleFrom(
+                                        backgroundColor: Colors.red[50],
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        minimumSize: Size.zero,
+                                      ),
+                                    )
+                                  else // Rejected: Left = Accept
+                                    TextButton.icon(
+                                      onPressed: () => _approveConstraint(constraint.id),
+                                      icon: const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                                      label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                                      style: TextButton.styleFrom(
+                                        backgroundColor: Colors.green[50],
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        minimumSize: Size.zero,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('סגור'),
+            ),
+          ],
+        ),
+    );
+  }
+
+  List<DateConstraint> _getRejectedConstraints() {
+    // Use the parent's LocalConstraintManager to get effective constraints
+    final effectiveConstraints = widget.getEffectiveConstraints();
+
+    // Filter for rejected constraints
+    return effectiveConstraints.where((constraint) {
+      return constraint.status == ConstraintStatus.rejected;
+    }).toList();
+  }
+
+  void _approveConstraint(String constraintId) {
+    // Call parent callback to update LocalConstraintManager
+    widget.onApproveConstraint(constraintId);
+    setState(() {}); // Refresh dialog
+  }
+
+  void _rejectConstraint(String constraintId) {
+    // Call parent callback to update LocalConstraintManager
+    widget.onRejectConstraint(constraintId);
+    setState(() {}); // Refresh dialog
+  }
+
+  void _setPendingConstraint(String constraintId) {
+    // Call parent callback to update LocalConstraintManager
+    widget.onSetPendingConstraint(constraintId);
+    setState(() {}); // Refresh dialog
+  }
+
+  
+  Widget _buildStatusBadge(ConstraintStatus status) {
+    Color backgroundColor;
+    Color textColor;
+    String text;
+
+    switch (status) {
+      case ConstraintStatus.pending:
+        backgroundColor = Colors.orange;
+        textColor = Colors.white;
+        text = 'ממתין';
+        break;
+      case ConstraintStatus.approved:
+        backgroundColor = Colors.green;
+        textColor = Colors.white;
+        text = 'אושר';
+        break;
+      case ConstraintStatus.rejected:
+        backgroundColor = Colors.red;
+        textColor = Colors.white;
+        text = 'נדחה';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 }

@@ -417,7 +417,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        constraint.endDate != null
+                        constraint.endDate != null && !_isSameDay(constraint.startDate, constraint.endDate!)
                             ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
                             : _formatDate(constraint.startDate),
                         style: const TextStyle(fontSize: 14),
@@ -459,6 +459,12 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
+  }
+
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 
   bool _canProceed() {

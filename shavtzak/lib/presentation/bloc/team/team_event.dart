@@ -142,3 +142,109 @@ class RemoveConstraintRequest extends TeamEvent {
   @override
   List<Object?> get props => [teamMemberId, constraintIndex];
 }
+
+// === Hybrid Constraint State Management Events ===
+
+/// Initialize constraint manager with database constraints
+class InitializeConstraintManager extends TeamEvent {
+  final String teamMemberId;
+  final List<DateConstraint> databaseConstraints;
+
+  const InitializeConstraintManager({
+    required this.teamMemberId,
+    required this.databaseConstraints,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId, databaseConstraints];
+}
+
+/// Update constraint status locally (immediate UI update)
+class UpdateConstraintStatusLocal extends TeamEvent {
+  final String teamMemberId;
+  final String constraintId;
+  final ConstraintStatus newStatus;
+
+  const UpdateConstraintStatusLocal({
+    required this.teamMemberId,
+    required this.constraintId,
+    required this.newStatus,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId, constraintId, newStatus];
+}
+
+/// Add new constraint locally (immediate UI update)
+class AddConstraintLocal extends TeamEvent {
+  final String teamMemberId;
+  final DateTime startDate;
+  final DateTime? endDate;
+  final String? note;
+  final ConstraintStatus status;
+
+  const AddConstraintLocal({
+    required this.teamMemberId,
+    required this.startDate,
+    this.endDate,
+    this.note,
+    this.status = ConstraintStatus.pending,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId, startDate, endDate, note, status];
+}
+
+/// Remove constraint locally (immediate UI update)
+class RemoveConstraintLocal extends TeamEvent {
+  final String teamMemberId;
+  final String constraintId;
+  final bool isLocalId;
+
+  const RemoveConstraintLocal({
+    required this.teamMemberId,
+    required this.constraintId,
+    this.isLocalId = false,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId, constraintId, isLocalId];
+}
+
+/// Sync constraint manager with database changes and detect conflicts
+class SyncConstraintsWithDatabase extends TeamEvent {
+  final String teamMemberId;
+  final List<DateConstraint> remoteConstraints;
+
+  const SyncConstraintsWithDatabase({
+    required this.teamMemberId,
+    required this.remoteConstraints,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId, remoteConstraints];
+}
+
+/// Save all pending constraint changes to database
+class SavePendingConstraintChanges extends TeamEvent {
+  final String teamMemberId;
+
+  const SavePendingConstraintChanges({
+    required this.teamMemberId,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId];
+}
+
+/// Clear local constraint state (discard changes)
+class ClearLocalConstraintState extends TeamEvent {
+  final String teamMemberId;
+
+  const ClearLocalConstraintState({
+    required this.teamMemberId,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId];
+}

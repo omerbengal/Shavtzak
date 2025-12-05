@@ -71,7 +71,6 @@ Future<void> _initialize() async {
       userSelectionRepository: userSelectionRepository,
     ));
   } catch (e) {
-    debugPrint('Initialization error: $e');
     // Show error screen
     runApp(ErrorApp(error: e.toString()));
   }
@@ -86,7 +85,6 @@ Future<void> _preloadFont() async {
     await Future.delayed(const Duration(milliseconds: 100));
   } catch (e) {
     // Font loading failed, app will fall back to default system font
-    debugPrint('Failed to preload Rubik font: $e');
   }
 }
 

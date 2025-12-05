@@ -29,7 +29,8 @@
       "Bash(tree:*)",
       "mcp__sequential-thinking__sequentialthinking",
       "Bash(timeout:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

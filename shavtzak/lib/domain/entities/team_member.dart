@@ -4,12 +4,14 @@ import '../../core/constants/constraint_status.dart';
 
 /// Date constraint representing when a team member is unavailable
 class DateConstraint extends Equatable {
+  final String id; // unique identifier for the constraint
   final DateTime startDate;
   final DateTime? endDate; // null means single day constraint
   final String? note; // optional note for the constraint
   final ConstraintStatus status; // status of the constraint request
 
   const DateConstraint({
+    required this.id,
     required this.startDate,
     this.endDate,
     this.note,
@@ -39,24 +41,28 @@ class DateConstraint extends Equatable {
   }
 
   @override
-  List<Object?> get props => [startDate, endDate, note, status];
+  List<Object?> get props => [id, startDate, endDate, note, status];
 
   @override
   String toString() {
-    if (endDate == null) {
+    // If endDate is null or same as startDate, display single date
+    if (endDate == null || _isSameDay(startDate, endDate!)) {
       return '${startDate.day.toString().padLeft(2, '0')}/${startDate.month.toString().padLeft(2, '0')}/${startDate.year}';
     }
+    // Otherwise display date range
     return '${startDate.day.toString().padLeft(2, '0')}/${startDate.month.toString().padLeft(2, '0')}/${startDate.year} - ${endDate!.day.toString().padLeft(2, '0')}/${endDate!.month.toString().padLeft(2, '0')}/${endDate!.year}';
   }
 
   /// Copy with method for immutability
   DateConstraint copyWith({
+    String? id,
     DateTime? startDate,
     DateTime? endDate,
     String? note,
     ConstraintStatus? status,
   }) {
     return DateConstraint(
+      id: id ?? this.id,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       note: note ?? this.note,

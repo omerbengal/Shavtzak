@@ -124,12 +124,18 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
 
         if (isValid) {
           // User is still valid, get updated data
-          final refreshedUser = await _userSelectionRepository.getAllTeamMembers()
-              .then((members) => members.firstWhere(
-                  (member) => member.uniqueKey == currentState.user.uniqueKey,
-                  orElse: () => throw Exception('User not found'),
-                ));
-          emit(UserAuthenticated(refreshedUser));
+          final allMembers = await _userSelectionRepository.getAllTeamMembers();
+          final refreshedUser = allMembers
+              .where((member) => member.uniqueKey == currentState.user.uniqueKey)
+              .firstOrNull;
+
+          if (refreshedUser != null) {
+            emit(UserAuthenticated(refreshedUser));
+          } else {
+            // User not found in current members list, clear cache and require reselection
+            await _userSelectionRepository.clearUserSelection();
+            emit(const UserSelectionRequired());
+          }
         } else {
           // User no longer exists, sign out
           await _userSelectionRepository.clearUserSelection();

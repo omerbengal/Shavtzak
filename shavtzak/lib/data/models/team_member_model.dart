@@ -71,9 +71,10 @@ class TeamMemberModel {
       isPermanent: isPermanent,
       constraints: constraints.map((c) => c.toEntity()).toList(),
       roleCapabilities: Map.fromEntries(
-        roleCapabilities.entries.map(
-          (e) => MapEntry(RoleType.values.firstWhere((r) => r.key == e.key), e.value),
-        ),
+        roleCapabilities.entries.map((e) {
+          final roleType = RoleType.values.where((r) => r.key == e.key).firstOrNull;
+          return roleType != null ? MapEntry(roleType, e.value) : null;
+        }).whereType<MapEntry<RoleType, bool>>(),
       ),
       comments: comments,
       createdAt: createdAt,
@@ -127,8 +128,7 @@ class TeamMemberModel {
       'isAdmin': model.isAdmin,
       'updatedAt': Timestamp.fromDate(DateTime.now()),
     }).catchError((error) {
-      // Log error but don't fail the read operation
-      print('Warning: Failed to migrate team member ${model.id}: $error');
+      // Silently handle migration errors without blocking read operation
     });
   }
 
@@ -196,12 +196,14 @@ class TeamMemberModel {
 
 /// Data model for DateConstraint
 class DateConstraintModel {
+  final String id;
   final DateTime startDate;
   final DateTime? endDate;
   final String? note;
   final ConstraintStatus status;
 
   const DateConstraintModel({
+    required this.id,
     required this.startDate,
     this.endDate,
     this.note,
@@ -210,6 +212,7 @@ class DateConstraintModel {
 
   factory DateConstraintModel.fromEntity(DateConstraint entity) {
     return DateConstraintModel(
+      id: entity.id,
       startDate: entity.startDate,
       endDate: entity.endDate,
       note: entity.note,
@@ -219,6 +222,7 @@ class DateConstraintModel {
 
   DateConstraint toEntity() {
     return DateConstraint(
+      id: id, // Use the id field from this model
       startDate: startDate,
       endDate: endDate,
       note: note,
@@ -230,10 +234,17 @@ class DateConstraintModel {
     // Handle migration - default to approved for existing constraints missing status
     final statusValue = json['status'] as String?;
     final status = statusValue != null
-        ? ConstraintStatus.values.firstWhere((s) => s.name == statusValue)
+        ? ConstraintStatus.values.firstWhere(
+            (s) => s.name == statusValue,
+            orElse: () => ConstraintStatus.pending,
+          )
         : ConstraintStatus.approved;
 
+    // Handle migration - generate ID for existing constraints missing id
+    final constraintId = json['id'] as String? ?? const Uuid().v4();
+
     return DateConstraintModel(
+      id: constraintId,
       startDate: json['startDate'] is Timestamp
           ? (json['startDate'] as Timestamp).toDate()
           : DateTime.parse(json['startDate'] as String),
@@ -249,6 +260,7 @@ class DateConstraintModel {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'startDate': startDate.toIso8601String(),
       'endDate': endDate?.toIso8601String(),
       'note': note,

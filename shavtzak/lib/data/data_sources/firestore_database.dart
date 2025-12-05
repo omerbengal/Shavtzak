@@ -41,9 +41,11 @@ class FirestoreDatabase implements DatabaseInterface {
           .orderBy('name')
           .get();
 
-      return snapshot.docs
+      final teamMembers = snapshot.docs
           .map((doc) => TeamMemberModel.fromFirestore(doc).toEntity())
           .toList();
+
+      return teamMembers;
     } catch (e) {
       throw DatabaseException('Failed to get team members: $e');
     }

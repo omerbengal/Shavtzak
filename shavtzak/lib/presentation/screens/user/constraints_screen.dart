@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
+import 'package:uuid/uuid.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
@@ -19,6 +19,17 @@ class ConstraintsScreen extends StatefulWidget {
 }
 
 class _ConstraintsScreenState extends State<ConstraintsScreen> {
+  TeamMember? _lastKnownUser;
+
+  @override
+  void initState() {
+    super.initState();
+    // Trigger load of all team members for real-time updates
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<TeamBloc>().add(const LoadTeamMembers());
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -33,31 +44,63 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                 );
               }
 
-              return BlocBuilder<TeamBloc, TeamState>(
+              return BlocConsumer<TeamBloc, TeamState>(
+                listener: (context, state) {
+                  // Show snackbar for success/error messages
+                  if (state is TeamMemberOperationSuccess) {
+                    ScaffoldMessenger.of(context)
+                      ..clearSnackBars()
+                      ..showSnackBar(
+                        SnackBar(
+                          content: Text(state.message),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                  } else if (state is TeamError) {
+                    ScaffoldMessenger.of(context)
+                      ..clearSnackBars()
+                      ..showSnackBar(
+                        SnackBar(
+                          content: Text(state.message),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                  }
+                },
                 builder: (context, teamState) {
-                  // Load all team members to get real-time updates
+                  // Show loading only if we don't have any data yet
+                  if (teamState is TeamLoading && _lastKnownUser == null) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+
                   if (teamState is TeamLoaded) {
                     // Find the current user in the team list
                     final currentUser = teamState.members.firstWhere(
                       (member) => member.id == userState.user.id,
                       orElse: () => userState.user,
                     );
+                    _lastKnownUser = currentUser;
                     return _buildConstraintsContent(context, currentUser);
-                  } else if (teamState is TeamLoading) {
-                    return const Center(
-                      child: CircularProgressIndicator(),
-                    );
-                  } else if (teamState is TeamError) {
+                  }
+
+                  // For any other state (Success, Error, etc.), keep showing last known state
+                  if (_lastKnownUser != null) {
+                    return _buildConstraintsContent(context, _lastKnownUser!);
+                  }
+
+                  if (teamState is TeamError) {
                     return Center(
                       child: Text('שגיאה: ${teamState.message}'),
                     );
-                  } else {
-                    // Trigger the load of all team members for real-time updates
-                    context.read<TeamBloc>().add(const LoadTeamMembers());
-                    return const Center(
-                      child: CircularProgressIndicator(),
-                    );
                   }
+
+                  return const Center(
+                    child: CircularProgressIndicator(),
+                  );
                 },
               );
             },
@@ -72,6 +115,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
   }
 
   Widget _buildConstraintsContent(BuildContext context, TeamMember user) {
+    // Simply use constraints from DB - no local state management needed
     final constraints = user.constraints;
 
     return Column(
@@ -182,32 +226,17 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                if (constraint.isPending()) ...[
-                  TextButton.icon(
-                    onPressed: () => _deletePendingRequest(context, user, index),
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    label: const Text('מחק בקשה', style: TextStyle(color: Colors.red)),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: () => _editConstraint(context, user, constraint, index),
-                    icon: const Icon(Icons.edit, color: Colors.blue),
-                    label: const Text('ערוך', style: TextStyle(color: Colors.blue)),
-                  ),
-                ] else ...[
-                  // For approved or rejected constraints, allow editing and deletion
-                  TextButton.icon(
-                    onPressed: () => _editConstraint(context, user, constraint, index),
-                    icon: const Icon(Icons.edit, color: Colors.blue),
-                    label: const Text('ערוך', style: TextStyle(color: Colors.blue)),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: () => _deleteConstraint(context, user, index),
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    label: const Text('מחק', style: TextStyle(color: Colors.red)),
-                  ),
-                ],
+                TextButton.icon(
+                  onPressed: () => _editConstraint(context, user, constraint, index),
+                  icon: const Icon(Icons.edit, color: Colors.blue),
+                  label: const Text('ערוך', style: TextStyle(color: Colors.blue)),
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: () => _deleteConstraint(context, user, constraint.id),
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  label: const Text('מחק', style: TextStyle(color: Colors.red)),
+                ),
               ],
             ),
           ],
@@ -263,6 +292,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
         onAdd: (startDate, endDate, note) {
           final userState = context.read<UserSelectionBloc>().state;
           if (userState is UserAuthenticated) {
+            // Send to database - UI will update automatically via stream
             context.read<TeamBloc>().add(AddConstraintRequest(
               teamMemberId: userState.user.id,
               startDate: startDate,
@@ -275,28 +305,37 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
     );
   }
 
-  void _deletePendingRequest(BuildContext context, TeamMember user, int index) {
+  void _deleteConstraint(BuildContext context, TeamMember user, String constraintId) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('מחיקת בקשה'),
-        content: const Text('האם את/ה בטוח/ה שברצונך למחוק את בקשת ההגבלה הזו?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('ביטול'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              context.read<TeamBloc>().add(RemoveConstraintRequest(
-                teamMemberId: user.id,
-                constraintIndex: index,
-              ));
-            },
-            child: const Text('מחק', style: TextStyle(color: Colors.red)),
-          ),
-        ],
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('מחיקת הגבלה'),
+          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את ההגבלה הזו?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('ביטול'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+
+                // Find the constraint index
+                final constraintIndex = user.constraints.indexWhere((c) => c.id == constraintId);
+                if (constraintIndex != -1) {
+                  // Send to database - UI will update automatically via stream
+                  context.read<TeamBloc>().add(RemoveConstraintRequest(
+                    teamMemberId: user.id,
+                    constraintIndex: constraintIndex,
+                  ));
+                }
+              },
+              child: const Text('מחק', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -329,33 +368,6 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
     );
   }
 
-  void _deleteConstraint(BuildContext context, TeamMember user, int index) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('מחיקת הגבלה'),
-        content: const Text('האם את/ה בטוח/ה שברצונך למחוק את ההגבלה הזו?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('ביטול'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              // Remove constraint by updating team member with new constraints list
-              final updatedConstraints = List<DateConstraint>.from(user.constraints);
-              updatedConstraints.removeAt(index);
-
-              final updatedUser = user.copyWith(constraints: updatedConstraints);
-              context.read<TeamBloc>().add(UpdateTeamMember(updatedUser));
-            },
-            child: const Text('מחק', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// Dialog for adding constraint requests
@@ -393,10 +405,21 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
     });
   }
 
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('הוספת בקשת הגבלה'),
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text(
+          'הוספת בקשת הגבלה',
+          textAlign: TextAlign.right,
+        ),
       content: SizedBox(
         width: 400,
         child: Column(
@@ -419,7 +442,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                     const SizedBox(width: 8),
                     Text(
                       startDate != null
-                          ? (endDate != null
+                          ? (endDate != null && !_isSameDay(startDate!, endDate!)
                               ? '${_formatDate(startDate!)} - ${_formatDate(endDate!)}'
                               : _formatDate(startDate!))
                           : 'בחר תאריך התחלה (וסיום אם רלוונטי)',
@@ -433,8 +456,8 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
             const SizedBox(height: 8),
             TextField(
               controller: noteController,
-              textAlign: TextAlign.center,
-              textAlignVertical: TextAlignVertical.center,
+              textAlign: TextAlign.right,
+              textAlignVertical: TextAlignVertical.top,
               textDirection: TextDirection.rtl,
               decoration: InputDecoration(
                 hintText: 'יש להזין הערה לבקשה...',
@@ -444,6 +467,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                   color: Colors.grey[600],
                   height: 1.5,
                 ),
+                hintTextDirection: TextDirection.rtl,
               ),
               maxLines: 3,
               minLines: 3,
@@ -468,6 +492,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
           child: const Text('הוסף בקשה'),
         ),
       ],
+      ),
     );
   }
 
@@ -486,6 +511,11 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
       setState(() {
         startDate = result['startDate'];
         endDate = result['endDate'];
+
+        // If only start date selected, set end date to start date (single-day constraint)
+        if (startDate != null && endDate == null) {
+          endDate = startDate;
+        }
       });
       _onNoteChanged();
     }
@@ -534,14 +564,34 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
 
   void _onNoteChanged() {
     setState(() {
-      _canSubmit = noteController.text.isNotEmpty;
+      _canSubmit = _hasChanges();
     });
+  }
+
+  bool _hasChanges() {
+    final noteChanged = noteController.text.trim() != (widget.constraint.note ?? '');
+    final startDateChanged = !_isSameDay(startDate, widget.constraint.startDate);
+    final endDateChanged = (endDate == null) != (widget.constraint.endDate == null) ||
+        (endDate != null && widget.constraint.endDate != null && !_isSameDay(endDate!, widget.constraint.endDate!));
+
+    return noteChanged || startDateChanged || endDateChanged;
+  }
+
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('עריכת הגבלה'),
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text(
+          'עריכת הגבלה',
+          textAlign: TextAlign.right,
+        ),
       content: SizedBox(
         width: 400,
         child: Column(
@@ -563,7 +613,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                     const Icon(Icons.calendar_today),
                     const SizedBox(width: 8),
                     Text(
-                      endDate != null
+                      endDate != null && !_isSameDay(startDate, endDate!)
                           ? '${_formatDate(startDate)} - ${_formatDate(endDate!)}'
                           : _formatDate(startDate),
                     ),
@@ -576,8 +626,8 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
             const SizedBox(height: 8),
             TextField(
               controller: noteController,
-              textAlign: TextAlign.center,
-              textAlignVertical: TextAlignVertical.center,
+              textAlign: TextAlign.right,
+              textAlignVertical: TextAlignVertical.top,
               textDirection: TextDirection.rtl,
               decoration: InputDecoration(
                 hintText: 'יש להזין הערה לבקשה...',
@@ -587,6 +637,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                   color: Colors.grey[600],
                   height: 1.5,
                 ),
+                hintTextDirection: TextDirection.rtl,
               ),
               maxLines: 3,
               minLines: 3,
@@ -611,6 +662,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
           child: const Text('שמור שינויים'),
         ),
       ],
+      ),
     );
   }
 
@@ -629,6 +681,11 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
       setState(() {
         startDate = result['startDate']!;
         endDate = result['endDate'];
+
+        // If only start date selected, set end date to start date (single-day constraint)
+        if (endDate == null) {
+          endDate = startDate;
+        }
       });
       _onNoteChanged();
     }

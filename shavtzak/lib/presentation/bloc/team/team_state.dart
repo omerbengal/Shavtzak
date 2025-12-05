@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../../core/state/constraint_manager.dart';
 
 /// States for Team BLoC
 abstract class TeamState extends Equatable {
@@ -95,4 +96,45 @@ class TeamEmpty extends TeamState {
 
   @override
   List<Object?> get props => [message, isFiltered];
+}
+
+// === Hybrid Constraint State Management States ===
+
+/// Constraint manager initialized and ready
+class ConstraintManagerInitialized extends TeamState {
+  final String teamMemberId;
+  final LocalConstraintManager constraintManager;
+
+  const ConstraintManagerInitialized({
+    required this.teamMemberId,
+    required this.constraintManager,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId, constraintManager];
+}
+
+/// Constraint conflicts detected during sync
+class ConstraintConflictsDetected extends TeamState {
+  final String teamMemberId;
+  final List<ConstraintConflict> conflicts;
+
+  const ConstraintConflictsDetected({
+    required this.teamMemberId,
+    required this.conflicts,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId, conflicts];
+}
+
+/// Constraint operations completed successfully
+class ConstraintOperationSuccess extends TeamState {
+  final String message;
+  final String? teamMemberId;
+
+  const ConstraintOperationSuccess(this.message, {this.teamMemberId});
+
+  @override
+  List<Object?> get props => [message, teamMemberId];
 }

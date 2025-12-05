@@ -1,8 +1,10 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:uuid/uuid.dart';
 import '../../../data/repositories/team_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
+import '../../../core/state/constraint_manager.dart';
 import 'team_event.dart';
 import 'team_state.dart';
 
@@ -10,6 +12,9 @@ import 'team_state.dart';
 class TeamBloc extends Bloc<TeamEvent, TeamState> {
   final TeamRepository _repository;
   final AssignmentRepository _assignmentRepository;
+
+  // Store constraint managers for each team member
+  final Map<String, LocalConstraintManager> _constraintManagers = {};
 
   TeamBloc(this._repository, this._assignmentRepository) : super(const TeamInitial()) {
     // Register event handlers - using emit.forEach for real-time updates
@@ -26,6 +31,15 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     on<UpdateConstraintStatus>(_onUpdateConstraintStatus);
     on<AddConstraintRequest>(_onAddConstraintRequest);
     on<RemoveConstraintRequest>(_onRemoveConstraintRequest);
+
+    // Hybrid constraint state management events
+    on<InitializeConstraintManager>(_onInitializeConstraintManager);
+    on<UpdateConstraintStatusLocal>(_onUpdateConstraintStatusLocal);
+    on<AddConstraintLocal>(_onAddConstraintLocal);
+    on<RemoveConstraintLocal>(_onRemoveConstraintLocal);
+    on<SyncConstraintsWithDatabase>(_onSyncConstraintsWithDatabase);
+    on<SavePendingConstraintChanges>(_onSavePendingConstraintChanges);
+    on<ClearLocalConstraintState>(_onClearLocalConstraintState);
   }
 
   /// Load all team members with real-time updates
@@ -285,9 +299,13 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       }
 
       // Create new constraint with pending status
+      // If endDate is null, set it to startDate (single-day constraint)
+      final DateTime effectiveEndDate = event.endDate ?? event.startDate;
+
       final newConstraint = DateConstraint(
+        id: const Uuid().v4(), // Generate unique ID for new constraint
         startDate: event.startDate,
-        endDate: event.endDate,
+        endDate: effectiveEndDate,
         note: event.note,
         status: ConstraintStatus.pending,
       );
@@ -351,6 +369,209 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       emit(const TeamMemberOperationSuccess('בקשת הגבלה נמחקה בהצלחה'));
     } catch (e) {
       emit(TeamError('שגיאה במחיקת בקשת הגבלה: $e'));
+    }
+  }
+
+  /// Helper method to check if two dates are the same day
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
+  }
+
+  // === Hybrid Constraint State Management Event Handlers ===
+
+  /// Initialize constraint manager for a team member
+  Future<void> _onInitializeConstraintManager(
+    InitializeConstraintManager event,
+    Emitter<TeamState> emit,
+  ) async {
+    try {
+      final constraintManager = LocalConstraintManager();
+      constraintManager.initializeFromDatabase(event.databaseConstraints);
+
+      _constraintManagers[event.teamMemberId] = constraintManager;
+
+      emit(ConstraintManagerInitialized(
+        teamMemberId: event.teamMemberId,
+        constraintManager: constraintManager,
+      ));
+    } catch (e) {
+      emit(TeamError('שגיאה באתחול מנהל הגבלות: $e'));
+    }
+  }
+
+  /// Update constraint status locally (immediate UI update)
+  Future<void> _onUpdateConstraintStatusLocal(
+    UpdateConstraintStatusLocal event,
+    Emitter<TeamState> emit,
+  ) async {
+    try {
+      final constraintManager = _constraintManagers[event.teamMemberId];
+      if (constraintManager == null) {
+        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        return;
+      }
+
+      constraintManager.updateConstraintStatus(event.constraintId, event.newStatus);
+
+      emit(ConstraintOperationSuccess(
+        'סטטוס הגבלה עודכן במקומי',
+        teamMemberId: event.teamMemberId,
+      ));
+    } catch (e) {
+      emit(TeamError('שגיאה בעדכון סטטוס הגבלה: $e'));
+    }
+  }
+
+  /// Add new constraint locally (immediate UI update)
+  Future<void> _onAddConstraintLocal(
+    AddConstraintLocal event,
+    Emitter<TeamState> emit,
+  ) async {
+    try {
+      final constraintManager = _constraintManagers[event.teamMemberId];
+      if (constraintManager == null) {
+        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        return;
+      }
+
+      final newConstraint = DateConstraint(
+        id: const Uuid().v4(), // Generate unique ID for new local constraint
+        startDate: event.startDate,
+        endDate: event.endDate,
+        note: event.note,
+        status: event.status,
+      );
+
+      constraintManager.addConstraintLocally(newConstraint);
+
+      emit(ConstraintOperationSuccess(
+        'הגבלה חדשה נוספה במקומי',
+        teamMemberId: event.teamMemberId,
+      ));
+    } catch (e) {
+      emit(TeamError('שגיאה בהוספת הגבלה: $e'));
+    }
+  }
+
+  /// Remove constraint locally (immediate UI update)
+  Future<void> _onRemoveConstraintLocal(
+    RemoveConstraintLocal event,
+    Emitter<TeamState> emit,
+  ) async {
+    try {
+      final constraintManager = _constraintManagers[event.teamMemberId];
+      if (constraintManager == null) {
+        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        return;
+      }
+
+      constraintManager.deleteConstraint(event.constraintId, isLocalId: event.isLocalId);
+
+      emit(ConstraintOperationSuccess(
+        'הגבלה הוסרה במקומי',
+        teamMemberId: event.teamMemberId,
+      ));
+    } catch (e) {
+      emit(TeamError('שגיאה בהסרת הגבלה: $e'));
+    }
+  }
+
+  /// Sync constraint manager with database changes and detect conflicts
+  Future<void> _onSyncConstraintsWithDatabase(
+    SyncConstraintsWithDatabase event,
+    Emitter<TeamState> emit,
+  ) async {
+    try {
+      final constraintManager = _constraintManagers[event.teamMemberId];
+      if (constraintManager == null) {
+        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        return;
+      }
+
+      final conflicts = constraintManager.syncWithDatabaseChanges(event.remoteConstraints);
+
+      if (conflicts.isNotEmpty) {
+        emit(ConstraintConflictsDetected(
+          teamMemberId: event.teamMemberId,
+          conflicts: conflicts,
+        ));
+      } else {
+        emit(ConstraintOperationSuccess(
+          'סנכרון הגבלות הושלם',
+          teamMemberId: event.teamMemberId,
+        ));
+      }
+    } catch (e) {
+      emit(TeamError('שגיאה בסנכרון הגבלות: $e'));
+    }
+  }
+
+  /// Save all pending constraint changes to database
+  Future<void> _onSavePendingConstraintChanges(
+    SavePendingConstraintChanges event,
+    Emitter<TeamState> emit,
+  ) async {
+    try {
+      final constraintManager = _constraintManagers[event.teamMemberId];
+      if (constraintManager == null) {
+        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        return;
+      }
+
+      // Get current team member data
+      final currentState = state;
+      if (currentState is! TeamLoaded) {
+        emit(TeamError('נתוני צוות לא זמינים'));
+        return;
+      }
+
+      final currentMember = currentState.members.firstWhere(
+        (member) => member.id == event.teamMemberId,
+        orElse: () => throw Exception('חבר צוות לא נמצא'),
+      );
+
+      // Get effective constraints from manager
+      final effectiveConstraints = constraintManager.getEffectiveConstraints();
+
+      // Update team member with new constraints
+      final updatedMember = currentMember.copyWith(
+        constraints: effectiveConstraints,
+        updatedAt: DateTime.now(),
+      );
+
+      await _repository.updateTeamMember(updatedMember);
+
+      emit(ConstraintOperationSuccess(
+        'שינויי הגבלות נשמרו בהצלחה',
+        teamMemberId: event.teamMemberId,
+      ));
+    } catch (e) {
+      emit(TeamError('שגיאה בשמירת שינויי הגבלות: $e'));
+    }
+  }
+
+  /// Clear local constraint state (discard changes)
+  Future<void> _onClearLocalConstraintState(
+    ClearLocalConstraintState event,
+    Emitter<TeamState> emit,
+  ) async {
+    try {
+      final constraintManager = _constraintManagers[event.teamMemberId];
+      if (constraintManager == null) {
+        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        return;
+      }
+
+      constraintManager.clearLocalState();
+
+      emit(ConstraintOperationSuccess(
+        'שינויים מקומיים בוטלו',
+        teamMemberId: event.teamMemberId,
+      ));
+    } catch (e) {
+      emit(TeamError('שגיאה בניקוי שינויים מקומיים: $e'));
     }
   }
 }

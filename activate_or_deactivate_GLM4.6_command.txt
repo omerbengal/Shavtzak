@@ -1,0 +1,1 @@
+npx @z_ai/coding-helper

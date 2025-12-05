@@ -21,6 +21,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
   List<TeamMember> _filteredTeamMembers = [];
   bool _isLoading = false;
   String _searchQuery = '';
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -70,6 +71,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
     } catch (e) {
       setState(() {
         _isLoading = false;
+        _errorMessage = e.toString();
       });
     }
   }
@@ -198,6 +200,47 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
       );
     }
 
+    if (_errorMessage != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'שגיאה בטעינת נתונים',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Colors.red[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.red[400],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _errorMessage = null;
+                });
+                _loadAllTeamMembers();
+              },
+              child: const Text('נסה שוב'),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (_allTeamMembers.isEmpty) {
       return Center(
         child: Column(
@@ -215,6 +258,11 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
                 color: Colors.grey[600],
               ),
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _loadAllTeamMembers(),
+              child: const Text('רענן'),
             ),
           ],
         ),
