@@ -23,6 +23,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   StreamSubscription? _teamMemberSubscription;
   StreamSubscription? _eventSubscription;
 
+  // Stream subscriptions for user assignments view
+  StreamSubscription? _userAssignmentSubscription;
+  StreamSubscription? _userEventSubscription;
+
   // Keep the current event filter independent of state
   Set<String> _currentEventFilter = <String>{};
 
@@ -51,6 +55,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<ApplyEventFilter>(_onApplyEventFilter);
     on<ClearEventFilter>(_onClearEventFilter);
     on<RebuildAssignmentSlots>(_onRebuildAssignmentSlots);
+    on<LoadUserAssignments>(_onLoadUserAssignments);
+    on<RebuildUserAssignments>(_onRebuildUserAssignments);
   }
 
   /// Load all assignments with real-time updates
@@ -472,6 +478,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     await _assignmentSubscription?.cancel();
     await _teamMemberSubscription?.cancel();
     await _eventSubscription?.cancel();
+    await _userAssignmentSubscription?.cancel();
+    await _userEventSubscription?.cancel();
     return super.close();
   }
 
@@ -700,6 +708,70 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       } else {
         emit(AssignmentError('שגיאה ביצירת שיבוץ: $e'));
       }
+    }
+  }
+
+  /// Load user assignments with real-time updates for both assignments AND events
+  /// This ensures UI updates when event details change or events are deleted
+  Future<void> _onLoadUserAssignments(
+    LoadUserAssignments event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    emit(const AssignmentLoading());
+
+    try {
+      // Cancel any existing user assignment subscriptions
+      await _userAssignmentSubscription?.cancel();
+      await _userEventSubscription?.cancel();
+
+      // Subscribe to assignments stream for this user
+      _userAssignmentSubscription = _repository.watchAssignmentsByPerson(event.teamMemberId).listen(
+        (_) {
+          add(RebuildUserAssignments(event.teamMemberId));
+        },
+        onError: (e) {
+          add(RebuildUserAssignments(event.teamMemberId));
+        },
+      );
+
+      // Subscribe to events stream to detect changes/deletions
+      _userEventSubscription = _eventRepository.watchEvents().listen(
+        (_) {
+          add(RebuildUserAssignments(event.teamMemberId));
+        },
+        onError: (e) {
+          add(RebuildUserAssignments(event.teamMemberId));
+        },
+      );
+
+      // Initial load
+      add(RebuildUserAssignments(event.teamMemberId));
+    } catch (e) {
+      emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
+    }
+  }
+
+  /// Internal handler to rebuild user assignments (triggered by streams)
+  /// Note: No debounce flag - we always want fresh data when streams fire
+  Future<void> _onRebuildUserAssignments(
+    RebuildUserAssignments event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    try {
+      // Fetch fresh data from repository (with populated relations)
+      final assignments = await _repository.getAssignmentsByPerson(event.teamMemberId);
+
+      if (assignments.isEmpty) {
+        emit(const AssignmentsEmpty('אין שיבוצים לחבר צוות זה'));
+      } else {
+        emit(AssignmentsLoaded.withCounts(
+          assignments,
+          filterType: 'person',
+          filterId: event.teamMemberId,
+        ));
+      }
+    } catch (e) {
+      emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
     }
   }
 }

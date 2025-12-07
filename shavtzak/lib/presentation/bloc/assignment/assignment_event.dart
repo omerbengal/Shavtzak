@@ -178,3 +178,24 @@ class RebuildAssignmentSlots extends AssignmentEvent {
   List<Object?> get props => [preservedFilter];
 }
 
+/// Load assignments for a specific user with real-time updates for both assignments AND events
+/// This ensures that when event details change or events are deleted, the UI updates automatically
+class LoadUserAssignments extends AssignmentEvent {
+  final String teamMemberId;
+
+  const LoadUserAssignments(this.teamMemberId);
+
+  @override
+  List<Object?> get props => [teamMemberId];
+}
+
+/// Internal event to rebuild user assignments (triggered by real-time streams)
+class RebuildUserAssignments extends AssignmentEvent {
+  final String teamMemberId;
+
+  const RebuildUserAssignments(this.teamMemberId);
+
+  @override
+  List<Object?> get props => [teamMemberId];
+}
+

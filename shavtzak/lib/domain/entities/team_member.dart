@@ -107,11 +107,13 @@ class TeamMember extends Equatable {
   });
 
   /// Check if team member is available on a given date
+  /// Only APPROVED constraints are considered (pending/rejected are ignored)
   bool isAvailableOn(DateTime date) {
     if (!isActive) return false;
 
     for (final constraint in constraints) {
-      if (constraint.conflictsWith(date)) {
+      // Only approved constraints affect availability
+      if (constraint.isApproved() && constraint.conflictsWith(date)) {
         return false;
       }
     }

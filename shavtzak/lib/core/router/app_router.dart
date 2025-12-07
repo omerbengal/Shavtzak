@@ -9,6 +9,7 @@ import '../../presentation/widgets/swipeable_page_view.dart';
 import '../../presentation/screens/whoami/whoami_screen.dart';
 import '../../presentation/screens/user/user_navigation_shell.dart';
 import '../../presentation/screens/user/constraints_screen.dart';
+import '../../presentation/screens/user/user_assignments_screen.dart';
 import '../../presentation/screens/admin/admin_choice_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/team/team_list_screen.dart';
@@ -233,11 +234,7 @@ class AppRouter {
                 GoRoute(
                   path: '/user/assignments',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: Scaffold(
-                      body: Center(
-                        child: Text('המשימות שלי'),
-                      ),
-                    ),
+                    child: UserAssignmentsScreen(),
                   ),
                 ),
               ],

@@ -153,8 +153,10 @@ class Assignment extends Equatable {
         notes,
         createdAt,
         updatedAt,
-        // Note: event and teamMember are not included in equality
-        // because they're computed fields
+        // Include event and teamMember in equality so that
+        // changes to nested objects trigger UI updates
+        event,
+        teamMember,
       ];
 
   @override

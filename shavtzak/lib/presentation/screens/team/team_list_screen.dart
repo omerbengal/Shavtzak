@@ -721,10 +721,19 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: conflictingAssignments.map((assignment) {
                         final eventName = assignment.event?.name ?? 'אירוע לא ידוע';
-                        final eventDate = assignment.event?.startDate;
-                        final dateStr = eventDate != null
-                            ? '${eventDate.day}/${eventDate.month}/${eventDate.year}'
-                            : '';
+                        final startDate = assignment.event?.startDate;
+                        final endDate = assignment.event?.endDate;
+                        String dateStr = '';
+                        if (startDate != null) {
+                          dateStr = '${startDate.day}/${startDate.month}/${startDate.year}';
+                          // Add end date if it exists and is different from start date
+                          if (endDate != null &&
+                              (endDate.day != startDate.day ||
+                               endDate.month != startDate.month ||
+                               endDate.year != startDate.year)) {
+                            dateStr += ' - ${endDate.day}/${endDate.month}/${endDate.year}';
+                          }
+                        }
                         final roleName = assignment.roleType.hebrewName;
 
                         return Padding(
