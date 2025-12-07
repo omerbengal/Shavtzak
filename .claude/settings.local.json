@@ -31,7 +31,8 @@
       "Bash(timeout:*)",
       "Bash(cd:*)",
       "Bash(curl:*)",
-      "WebSearch"
+      "WebSearch",
+      "mcp__context7__resolve-library-id"
     ],
     "deny": [],
     "ask": []

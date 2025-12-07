@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../widgets/navigation_menu.dart';
 
 /// Navigation shell for user-facing screens with bottom navigation
 class UserNavigationShell extends StatelessWidget {
@@ -48,11 +49,16 @@ class UserNavigationShell extends StatelessWidget {
             ),
             centerTitle: true,
             actions: [
-              IconButton(
-                icon: const Icon(Icons.logout),
-                tooltip: 'התנתקות',
-                onPressed: () => _showLogoutDialog(context),
-              ),
+              // Show navigation menu (home + logout) only for admin users
+              if (state.user.isAdmin)
+                const NavigationMenu()
+              else
+                // Regular users get only logout button
+                IconButton(
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'התנתקות',
+                  onPressed: () => _showLogoutDialog(context),
+                ),
             ],
           );
         },

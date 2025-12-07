@@ -563,6 +563,9 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
   }
 
   Future<void> _selectDateRange() async {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+
     final result = await showDialog<Map<String, DateTime?>>(
       context: context,
       builder: (context) => DualCalendarDatePicker(
@@ -570,6 +573,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
         initialStartDate: startDate,
         initialEndDate: endDate,
         title: 'בחר תאריכי הגבלה',
+        minDate: todayDate, // Prevent selecting dates before today
       ),
     );
 
@@ -733,6 +737,9 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
   }
 
   Future<void> _selectDateRange() async {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+
     final result = await showDialog<Map<String, DateTime?>>(
       context: context,
       builder: (context) => DualCalendarDatePicker(
@@ -740,6 +747,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
         initialStartDate: startDate,
         initialEndDate: endDate,
         title: 'בחר תאריכי הגבלה',
+        minDate: todayDate, // Prevent selecting dates before today
       ),
     );
 
@@ -1307,6 +1315,9 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
   }
 
   Future<void> _selectDateRange() async {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+
     final result = await showDialog<Map<String, DateTime?>>(
       context: context,
       builder: (context) => DualCalendarDatePicker(
@@ -1314,6 +1325,7 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
         initialStartDate: startDate,
         initialEndDate: endDate,
         title: 'בחר תאריכי הגבלה',
+        minDate: todayDate, // Prevent selecting dates before today
       ),
     );
 
