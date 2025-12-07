@@ -21,6 +21,38 @@ class ConstraintsScreen extends StatefulWidget {
 class _ConstraintsScreenState extends State<ConstraintsScreen> {
   TeamMember? _lastKnownUser;
 
+  // Helper function to check if constraint is past (same logic as modal)
+  bool _isPastConstraint(DateConstraint constraint) {
+    if (constraint.endDate != null) {
+      final today = DateTime.now();
+      final constraintEndDate = DateTime(
+        constraint.endDate!.year,
+        constraint.endDate!.month,
+        constraint.endDate!.day,
+      );
+      final todayDate = DateTime(
+        today.year,
+        today.month,
+        today.day,
+      );
+      return constraintEndDate.isBefore(todayDate);
+    } else {
+      // For single-day constraints (no endDate), check if startDate is before today
+      final today = DateTime.now();
+      final constraintStartDate = DateTime(
+        constraint.startDate.year,
+        constraint.startDate.month,
+        constraint.startDate.day,
+      );
+      final todayDate = DateTime(
+        today.year,
+        today.month,
+        today.day,
+      );
+      return constraintStartDate.isBefore(todayDate);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -115,8 +147,9 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
   }
 
   Widget _buildConstraintsContent(BuildContext context, TeamMember user) {
-    // Simply use constraints from DB - no local state management needed
-    final constraints = user.constraints;
+    // Filter out past constraints from main list (they appear in expired constraints modal)
+    final constraints = user.constraints.where((c) => !_isPastConstraint(c)).toList()
+      ..sort((a, b) => a.startDate.compareTo(b.startDate));
 
     return Column(
       children: [
@@ -126,9 +159,30 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'הגבלות שלי',
-                style: Theme.of(context).textTheme.headlineSmall,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'הגבלות שלי',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  // History button for expired constraints
+                  TextButton.icon(
+                    onPressed: () => _showExpiredConstraintsModal(context, user),
+                    icon: const Icon(
+                      Icons.history,
+                      size: 20,
+                    ),
+                    label: const Text(
+                      'הגבלות לא בתוקף',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey[600],
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Text(
@@ -365,6 +419,18 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
           }
         },
       ),
+    );
+  }
+
+  void _showExpiredConstraintsModal(BuildContext context, TeamMember user) {
+    
+    for (int i = 0; i < user.constraints.length; i++) {
+      final constraint = user.constraints[i];
+      }
+
+    showDialog(
+      context: context,
+      builder: (context) => _ExpiredConstraintsModal(user: user),
     );
   }
 
@@ -662,6 +728,580 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
           child: const Text('שמור שינויים'),
         ),
       ],
+      ),
+    );
+  }
+
+  Future<void> _selectDateRange() async {
+    final result = await showDialog<Map<String, DateTime?>>(
+      context: context,
+      builder: (context) => DualCalendarDatePicker(
+        isSingleDate: false,
+        initialStartDate: startDate,
+        initialEndDate: endDate,
+        title: 'בחר תאריכי הגבלה',
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        startDate = result['startDate']!;
+        endDate = result['endDate'];
+
+        // If only start date selected, set end date to start date (single-day constraint)
+        if (endDate == null) {
+          endDate = startDate;
+        }
+      });
+      _onNoteChanged();
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+}
+/// Modal dialog for displaying and editing expired constraints
+class _ExpiredConstraintsModal extends StatefulWidget {
+  final TeamMember user;
+
+  const _ExpiredConstraintsModal({required this.user});
+
+  @override
+  State<_ExpiredConstraintsModal> createState() => _ExpiredConstraintsModalState();
+}
+
+class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
+  TeamMember? _lastKnownUser;
+  bool _isWaitingForTeamLoaded = false;
+
+  // Helper function to check if constraint is past
+  bool isPastConstraint(DateConstraint constraint) {
+    final today = DateTime.now();
+
+    if (constraint.endDate != null) {
+      final constraintEndDate = DateTime(
+        constraint.endDate!.year,
+        constraint.endDate!.month,
+        constraint.endDate!.day,
+      );
+      final todayDate = DateTime(
+        today.year,
+        today.month,
+        today.day,
+      );
+      final isPast = constraintEndDate.isBefore(todayDate);
+
+  
+      return isPast;
+    } else {
+      // For single-day constraints (no endDate), check if startDate is before today
+      final constraintStartDate = DateTime(
+        constraint.startDate.year,
+        constraint.startDate.month,
+        constraint.startDate.day,
+      );
+      final todayDate = DateTime(
+        today.year,
+        today.month,
+        today.day,
+      );
+      final isPast = constraintStartDate.isBefore(todayDate);
+
+    
+      return isPast;
+    }
+  }
+
+  TeamMember? _getCurrentUserFromState(TeamState state, String userId) {
+    if (state is TeamLoaded) {
+      try {
+        return state.members.firstWhere((member) => member.id == userId);
+      } catch (e) {
+        // Fallback to userSelectionBloc to get current user
+        return null;
+      }
+    } else if (state is TeamLoading) {
+      return null;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.9,
+          height: MediaQuery.of(context).size.height * 0.8,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'הגבלות לא בתוקף',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Description
+              Text(
+                'כאן מוצגות כל ההגבלות שתאריך הסיום שלהן חלף. ניתן לערוך הגבלות אלו אם נדרש.',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Constraints list with real-time updates
+              Expanded(
+                child: BlocConsumer<TeamBloc, TeamState>(
+                  listener: (context, state) {
+                    // Show snackbar for success/error messages
+                    if (state is TeamMemberOperationSuccess) {
+                      ScaffoldMessenger.of(context)
+                        ..clearSnackBars()
+                        ..showSnackBar(
+                          SnackBar(
+                            content: Text(state.message),
+                            backgroundColor: Colors.green,
+                            duration: const Duration(seconds: 1),
+                          ),
+                        );
+                    } else if (state is TeamError) {
+                      ScaffoldMessenger.of(context)
+                        ..clearSnackBars()
+                        ..showSnackBar(
+                          SnackBar(
+                            content: Text(state.message),
+                            backgroundColor: Colors.red,
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                    }
+                  },
+                  builder: (context, state) {
+                    // Get current user data using same pattern as main screen
+                    final userState = context.read<UserSelectionBloc>().state;
+
+                    if (userState is! UserAuthenticated) {
+                      return const Center(
+                        child: Text('אין משתמש מחובר'),
+                      );
+                    }
+
+                    
+                    // Show loading only if we don't have any data yet (same as main screen)
+                    if (state is TeamLoading && _lastKnownUser == null) {
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    }
+
+                    TeamMember currentUser;
+
+                    if (state is TeamLoaded) {
+
+                      // Check if current user is in the team list
+                      final userInTeamList = state.members.any((m) => m.id == userState.user.id);
+
+                      if (userInTeamList) {
+                        final teamUser = state.members.firstWhere((m) => m.id == userState.user.id);
+
+                        currentUser = teamUser;
+                      } else {
+                        return const Center(
+                          child: Text('שגיאה: המשתמש לא נמצא ברשימת צוות'),
+                        );
+                      }
+
+                      _lastKnownUser = currentUser;
+                      _isWaitingForTeamLoaded = false; // Reset waiting flag
+                    } else {
+
+                      // For success states, expect quick transition to TeamLoaded after stream restart
+                      if (state is TeamMemberOperationSuccess) {
+                        return const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 16),
+                              Text('מעדכן נתונים מעודכנים...', style: TextStyle(color: Colors.grey)),
+                            ],
+                          ),
+                        );
+                      } else if (_lastKnownUser != null) {
+                        // For other states, keep showing last known state (same as main screen)
+                        currentUser = _lastKnownUser!;
+                      } else {
+                        // Only show error if we have no data at all
+                        return const Center(
+                          child: Text('לא ניתן לטעון את נתוני המשתמש'),
+                        );
+                      }
+                    }
+
+                    
+                    // Always filter constraints data
+                    final allConstraints = currentUser.constraints;
+
+                    final expiredConstraints = allConstraints.where((c) => isPastConstraint(c)).toList()
+      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+                    
+                    if (expiredConstraints.isEmpty) {
+                      return const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.history,
+                              size: 64,
+                              color: Colors.grey,
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'אין הגבלות לא בתוקף',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      itemCount: expiredConstraints.length,
+                      itemBuilder: (context, index) {
+                        final constraint = expiredConstraints[index];
+                        final originalIndex = currentUser.constraints.indexOf(constraint);
+
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Date range with status
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        constraint.endDate != null
+                                            ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
+                                            : _formatDate(constraint.startDate),
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _getStatusColor(constraint.status).withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: _getStatusColor(constraint.status),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        _getStatusText(constraint.status),
+                                        style: TextStyle(
+                                          color: _getStatusColor(constraint.status),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                // Note
+                                if (constraint.note != null && constraint.note!.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    constraint.note!,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+
+                                // Actions
+                                const SizedBox(height: 12),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: () => _editExpiredConstraint(constraint, originalIndex, currentUser),
+                                      icon: const Icon(Icons.edit, size: 16),
+                                      label: const Text('ערוך'),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.blue,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    TextButton.icon(
+                                      onPressed: () => _deleteConstraint(context, currentUser, constraint.id),
+                                      icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+                                      label: const Text('מחק', style: TextStyle(color: Colors.red)),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.red,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  Color _getStatusColor(ConstraintStatus status) {
+    switch (status) {
+      case ConstraintStatus.pending:
+        return Colors.orange;
+      case ConstraintStatus.approved:
+        return Colors.green;
+      case ConstraintStatus.rejected:
+        return Colors.red;
+    }
+  }
+
+  String _getStatusText(ConstraintStatus status) {
+    switch (status) {
+      case ConstraintStatus.pending:
+        return 'ממתין לאישור';
+      case ConstraintStatus.approved:
+        return 'אושר';
+      case ConstraintStatus.rejected:
+        return 'נדחה';
+    }
+  }
+
+  void _editExpiredConstraint(DateConstraint constraint, int originalIndex, TeamMember currentUser) {
+    showDialog(
+      context: context,
+      builder: (context) => _EditExpiredConstraintDialog(
+        user: currentUser,
+        constraint: constraint,
+        originalIndex: originalIndex,
+      ),
+    );
+  }
+
+  void _deleteConstraint(BuildContext context, TeamMember user, String constraintId) {
+    showDialog(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('מחיקת הגבלה'),
+          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את ההגבלה הזו?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('ביטול'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+
+                // Find the constraint index
+                final constraintIndex = user.constraints.indexWhere((c) => c.id == constraintId);
+                if (constraintIndex != -1) {
+                  // Send to database - UI will update automatically via stream
+                  context.read<TeamBloc>().add(RemoveConstraintRequest(
+                    teamMemberId: user.id,
+                    constraintIndex: constraintIndex,
+                  ));
+                }
+              },
+              child: const Text('מחק', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Dialog for editing expired constraints
+class _EditExpiredConstraintDialog extends StatefulWidget {
+  final TeamMember user;
+  final DateConstraint constraint;
+  final int originalIndex;
+
+  const _EditExpiredConstraintDialog({
+    required this.user,
+    required this.constraint,
+    required this.originalIndex,
+  });
+
+  @override
+  State<_EditExpiredConstraintDialog> createState() => _EditExpiredConstraintDialogState();
+}
+
+class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDialog> {
+  late DateTime startDate;
+  DateTime? endDate;
+  late TextEditingController noteController;
+  bool _canSubmit = false;
+
+  @override
+  void initState() {
+    super.initState();
+    startDate = widget.constraint.startDate;
+    endDate = widget.constraint.endDate;
+    noteController = TextEditingController(text: widget.constraint.note ?? '');
+    _onNoteChanged();
+  }
+
+  @override
+  void dispose() {
+    noteController.dispose();
+    super.dispose();
+  }
+
+  void _onNoteChanged() {
+    setState(() {
+      _canSubmit = noteController.text.trim().isNotEmpty;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text('עריכת הגבלה לא בתוקפה'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Date range display
+              const Text(
+                'תאריכי הגבלה:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: _selectDateRange,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_today),
+                      const SizedBox(width: 8),
+                      Text(
+                        endDate != null
+                            ? '${_formatDate(startDate)} - ${_formatDate(endDate!)}'
+                            : _formatDate(startDate),
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Note field
+              const Text(
+                'הערה (לאישור מנהל):',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: noteController,
+                decoration: const InputDecoration(
+                  hintText: 'הסבר קצר לגבי ההגבלה...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+                onChanged: (value) => _onNoteChanged(),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('ביטול'),
+          ),
+          ElevatedButton(
+            onPressed: _canSubmit
+                ? () {
+                    // Create updated constraint with pending status
+                    final updatedConstraint = DateConstraint(
+                      id: widget.constraint.id,
+                      startDate: startDate,
+                      endDate: endDate,
+                      note: noteController.text.trim().isEmpty
+                          ? null
+                          : noteController.text.trim(),
+                      status: ConstraintStatus.pending, // Reset to pending when edited
+                    );
+
+                    // Update constraint via BLoC (same pattern as existing edit constraint)
+                    final updatedConstraints = List<DateConstraint>.from(widget.user.constraints);
+                    updatedConstraints[widget.originalIndex] = updatedConstraint;
+
+                    final updatedUser = widget.user.copyWith(constraints: updatedConstraints);
+                    context.read<TeamBloc>().add(UpdateTeamMember(updatedUser));
+
+                    Navigator.of(context).pop();
+                  }
+                : null,
+            child: const Text('שמור שינויים'),
+          ),
+        ],
       ),
     );
   }

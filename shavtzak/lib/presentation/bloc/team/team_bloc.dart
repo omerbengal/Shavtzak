@@ -203,7 +203,22 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('פרטי חבר/ת הצוות עודכנו בהצלחה'));
 
-      // Don't restart listener here - the modal will handle it with the correct filter
+      // Restart stream subscription to pick up database changes
+      emit(const TeamLoading());
+
+      await emit.forEach<List<TeamMember>>(
+        _repository.watchTeamMembers(),
+        onData: (members) {
+          if (members.isEmpty) {
+            return const TeamEmpty('אין חברי צוות במערכת');
+          } else {
+            return TeamLoaded(members);
+          }
+        },
+        onError: (error, stackTrace) {
+          return TeamError('שגיאה בטעינת חברי הצוות: $error');
+        },
+      );
     } catch (e) {
       emit(TeamError('שגיאה בעדכון פרטי חבר/ת הצוות: $e'));
     }
@@ -326,6 +341,23 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       await _repository.updateTeamMember(updatedMember);
 
       emit(const TeamMemberOperationSuccess('בקשת הגבלה נוספה בהצלחה וממתינה לאישור'));
+
+      // Restart stream subscription to pick up database changes
+      emit(const TeamLoading());
+
+      await emit.forEach<List<TeamMember>>(
+        _repository.watchTeamMembers(),
+        onData: (members) {
+          if (members.isEmpty) {
+            return const TeamEmpty('אין חברי צוות במערכת');
+          } else {
+            return TeamLoaded(members);
+          }
+        },
+        onError: (error, stackTrace) {
+          return TeamError('שגיאה בטעינת חברי הצוות: $error');
+        },
+      );
     } catch (e) {
       emit(TeamError('שגיאה בהוספת בקשת הגבלה: $e'));
     }
@@ -363,6 +395,23 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       await _repository.updateTeamMember(updatedMember);
 
       emit(const TeamMemberOperationSuccess('בקשת הגבלה נמחקה בהצלחה'));
+
+      // Restart stream subscription to pick up database changes
+      emit(const TeamLoading());
+
+      await emit.forEach<List<TeamMember>>(
+        _repository.watchTeamMembers(),
+        onData: (members) {
+          if (members.isEmpty) {
+            return const TeamEmpty('אין חברי צוות במערכת');
+          } else {
+            return TeamLoaded(members);
+          }
+        },
+        onError: (error, stackTrace) {
+          return TeamError('שגיאה בטעינת חברי הצוות: $error');
+        },
+      );
     } catch (e) {
       emit(TeamError('שגיאה במחיקת בקשת הגבלה: $e'));
     }

@@ -282,27 +282,84 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   if (member.constraints.isNotEmpty)
                     Row(
                       children: [
-                        Text(
-                          '${member.constraints.where((c) => c.status != ConstraintStatus.rejected).length} מגבלות',
-                          style: const TextStyle(fontSize: 12, color: Colors.orange),
+                        // Count approved and pending constraints (excluding past constraints)
+                        Builder(
+                          builder: (context) {
+                            // Helper function to check if constraint is past (same logic as admin modal)
+                            bool isPastConstraint(DateConstraint constraint) {
+                              if (constraint.endDate != null) {
+                                final today = DateTime.now();
+                                final constraintEndDate = DateTime(
+                                  constraint.endDate!.year,
+                                  constraint.endDate!.month,
+                                  constraint.endDate!.day,
+                                );
+                                final todayDate = DateTime(
+                                  today.year,
+                                  today.month,
+                                  today.day,
+                                );
+                                return constraintEndDate.isBefore(todayDate);
+                              } else {
+                                // For single-day constraints (no endDate), check if startDate is before today
+                                final today = DateTime.now();
+                                final constraintStartDate = DateTime(
+                                  constraint.startDate.year,
+                                  constraint.startDate.month,
+                                  constraint.startDate.day,
+                                );
+                                final todayDate = DateTime(
+                                  today.year,
+                                  today.month,
+                                  today.day,
+                                );
+                                return constraintStartDate.isBefore(todayDate);
+                              }
+                            }
+
+                            // Filter out past constraints before counting
+                            final activeConstraints = member.constraints.where((c) => !isPastConstraint(c)).toList();
+                            final approvedCount = activeConstraints.where((c) => c.isApproved()).length;
+                            final pendingCount = activeConstraints.where((c) => c.isPending()).length;
+
+                            // If has approved constraints, show both counters as before
+                            if (approvedCount > 0) {
+                              return Row(
+                                children: [
+                                  Text(
+                                    '$approvedCount מגבלות',
+                                    style: const TextStyle(fontSize: 12, color: Colors.orange),
+                                  ),
+                                  if (pendingCount > 0) ...[
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '($pendingCount ממתינות)',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              );
+                            } else if (pendingCount > 0) {
+                              // If no approved constraints but has pending, show only pending counter in red
+                              return Text(
+                                '$pendingCount ממתינות',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              );
+                            } else {
+                              // No approved or pending constraints (shouldn't happen with constraints.isNotEmpty check)
+                              return const SizedBox.shrink();
+                            }
+                          },
                         ),
-                        if (member.constraints.any((c) => c.isPending())) ...[
-                          const SizedBox(width: 4),
-                          Text(
-                            '(${member.constraints.where((c) => c.isPending()).length} ממתינות)',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.red,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
                       ],
-                    )
-                  else
-                    Text(
-                      '0 מגבלות',
-                      style: const TextStyle(fontSize: 12, color: Colors.orange),
                     ),
                   if (member.comments.isNotEmpty)
                     Text(
@@ -478,11 +535,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   bool _isDirty = false;
   String? _roleError; // Track role validation error
 
-  // Hybrid constraint state manager
-  LocalConstraintManager? _constraintManager;
-
-  
-  bool get _isEditMode => widget.member != null;
+    bool get _isEditMode => widget.member != null;
 
   @override
   void initState() {
@@ -501,18 +554,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       _isPermanent = widget.member!.isPermanent;
       _roleCapabilities = Map.from(widget.member!.roleCapabilities);
       _constraints = List.from(widget.member!.constraints);
-
-      // Initialize constraint manager with existing constraints
-      _constraintManager = LocalConstraintManager();
-      _constraintManager!.initializeFromDatabase(_constraints);
-
-      // Initialize constraint manager in BLoC
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        context.read<TeamBloc>().add(InitializeConstraintManager(
-          teamMemberId: widget.member!.id,
-          databaseConstraints: _constraints,
-        ));
-      });
     }
 
     // Track dirty state
@@ -530,14 +571,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   void dispose() {
     _nameController.dispose();
     _commentsController.dispose();
-
-    // Clean up constraint manager if editing
-    if (_isEditMode && _constraintManager != null) {
-      _teamBloc.add(ClearLocalConstraintState(
-        teamMemberId: widget.member!.id,
-      ));
-    }
-
     super.dispose();
   }
 
@@ -554,8 +587,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       return;
     }
 
-    // Use effective constraints from constraint manager
-    final finalConstraints = _constraintManager?.getEffectiveConstraints() ?? _constraints;
+    // Use the constraints list directly
+    final finalConstraints = _constraints;
 
     final now = DateTime.now();
     final member = TeamMember(
@@ -873,25 +906,15 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                   Expanded(
                     child: BlocConsumer<TeamBloc, TeamState>(
                       listener: (context, state) {
-                        // Update constraint manager BEFORE any UI rebuilds
-                        // This ensures the rejected constraints dialog sees the updated state
+                        // Update constraints when database changes
                         if (_isEditMode && state is TeamLoaded) {
                           final updatedMember = state.members.cast<TeamMember?>().firstWhere(
                             (member) => member?.id == widget.member!.id,
                             orElse: () => null,
                           );
                           if (updatedMember != null) {
-                            // Always sync with DB updates to clear local changes for updated constraints
-                            // DB updates override local changes per the business logic:
-                            // - If a constraint was updated in DB, clear its local modifications
-                            // - If a constraint was NOT updated in DB, keep its local modifications
+                            // Update constraints with the latest database state
                             _constraints = List.from(updatedMember.constraints);
-
-                            // Use syncWithDatabaseChanges to intelligently handle updates
-                            // This clears local modifications only for constraints that changed in DB
-                            _constraintManager?.syncWithDatabaseChanges(_constraints);
-
-                            // Force rebuild to propagate changes to dialogs
                             setState(() {});
                           }
                         }
@@ -1122,7 +1145,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   }
 
   Widget _buildConstraintCard(DateConstraint constraint) {
-    // Use the constraint status directly (already effective from constraint manager)
+    // Use the constraint status directly
     final effectiveStatus = constraint.status;
 
     return Card(
@@ -1306,69 +1329,96 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   }
 
   void _approveConstraint(String constraintId) {
-    if (widget.member == null || _constraintManager == null) return;
+    if (widget.member == null) return;
 
-    // Update local constraint manager for immediate UI feedback
-    _constraintManager!.updateConstraintStatus(constraintId, ConstraintStatus.approved);
-    _isDirty = true;
-
-    // Also update BLoC for state consistency
-    context.read<TeamBloc>().add(UpdateConstraintStatusLocal(
-      teamMemberId: widget.member!.id,
-      constraintId: constraintId,
-      newStatus: ConstraintStatus.approved,
-    ));
-
-    setState(() {});
+    // Find and update the constraint directly in the constraints list
+    final constraintIndex = _constraints.indexWhere((c) => c.id == constraintId);
+    if (constraintIndex != -1) {
+      _constraints[constraintIndex] = _constraints[constraintIndex].copyWith(
+        status: ConstraintStatus.approved,
+      );
+      _isDirty = true;
+      setState(() {});
+    }
   }
 
   void _rejectConstraint(String constraintId) {
-    if (widget.member == null || _constraintManager == null) return;
+    if (widget.member == null) return;
 
-    // Update local constraint manager for immediate UI feedback
-    _constraintManager!.updateConstraintStatus(constraintId, ConstraintStatus.rejected);
-    _isDirty = true;
-
-    // Also update BLoC for state consistency
-    context.read<TeamBloc>().add(UpdateConstraintStatusLocal(
-      teamMemberId: widget.member!.id,
-      constraintId: constraintId,
-      newStatus: ConstraintStatus.rejected,
-    ));
-
-    setState(() {});
+    // Find and update the constraint directly in the constraints list
+    final constraintIndex = _constraints.indexWhere((c) => c.id == constraintId);
+    if (constraintIndex != -1) {
+      _constraints[constraintIndex] = _constraints[constraintIndex].copyWith(
+        status: ConstraintStatus.rejected,
+      );
+      _isDirty = true;
+      setState(() {});
+    }
   }
 
   void _setPendingConstraint(String constraintId) {
-    if (widget.member == null || _constraintManager == null) return;
+    if (widget.member == null) return;
 
-    // Update local constraint manager for immediate UI feedback
-    _constraintManager!.updateConstraintStatus(constraintId, ConstraintStatus.pending);
-    _isDirty = true;
-
-    // Also update BLoC for state consistency
-    context.read<TeamBloc>().add(UpdateConstraintStatusLocal(
-      teamMemberId: widget.member!.id,
-      constraintId: constraintId,
-      newStatus: ConstraintStatus.pending,
-    ));
-
-    setState(() {});
+    // Find and update the constraint directly in the constraints list
+    final constraintIndex = _constraints.indexWhere((c) => c.id == constraintId);
+    if (constraintIndex != -1) {
+      _constraints[constraintIndex] = _constraints[constraintIndex].copyWith(
+        status: ConstraintStatus.pending,
+      );
+      _isDirty = true;
+      setState(() {});
+    }
   }
 
   List<Widget> _buildVisibleConstraintsList() {
-    // Get effective constraints from constraint manager
-    final effectiveConstraints = _constraintManager?.getEffectiveConstraints() ?? _constraints;
-
-    final visibleConstraints = effectiveConstraints.where((constraint) {
+    final visibleConstraints = _constraints.where((constraint) {
       // Hide rejected constraints from admin view (they'll have a separate button)
-      return constraint.status != ConstraintStatus.rejected;
-    }).toList();
+      if (constraint.status == ConstraintStatus.rejected) return false;
 
-    final rejectedConstraints = effectiveConstraints.where((constraint) {
+      // Filter out past constraints (endDate < today) from admin view
+      // These constraints don't need admin inspection
+      if (constraint.endDate != null) {
+        final today = DateTime.now();
+        final constraintEndDate = DateTime(
+          constraint.endDate!.year,
+          constraint.endDate!.month,
+          constraint.endDate!.day,
+        );
+        final todayDate = DateTime(
+          today.year,
+          today.month,
+          today.day,
+        );
+        if (constraintEndDate.isBefore(todayDate)) {
+          return false;
+        }
+      } else {
+        // For single-day constraints (no endDate), check if startDate is before today
+        final today = DateTime.now();
+        final constraintStartDate = DateTime(
+          constraint.startDate.year,
+          constraint.startDate.month,
+          constraint.startDate.day,
+        );
+        final todayDate = DateTime(
+          today.year,
+          today.month,
+          today.day,
+        );
+        if (constraintStartDate.isBefore(todayDate)) {
+          return false;
+        }
+      }
+
+      return true;
+    }).toList()
+      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+
+    final rejectedConstraints = _constraints.where((constraint) {
       // Only show constraints that are rejected
       return constraint.status == ConstraintStatus.rejected;
-    }).toList();
+    }).toList()
+      ..sort((a, b) => a.startDate.compareTo(b.startDate));
 
     if (visibleConstraints.isEmpty && rejectedConstraints.isEmpty) {
       return [
@@ -1424,7 +1474,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         textDirection: TextDirection.rtl,
         child: _RejectedConstraintsDialog(
           teamMemberId: widget.member!.id,
-          getEffectiveConstraints: () => _constraintManager?.getEffectiveConstraints() ?? [],
+          getEffectiveConstraints: () => _constraints,
           onApproveConstraint: (constraintId) => _approveConstraint(constraintId),
           onRejectConstraint: (constraintId) => _rejectConstraint(constraintId),
           onSetPendingConstraint: (constraintId) => _setPendingConstraint(constraintId),
@@ -1866,7 +1916,8 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
     // Filter for rejected constraints
     return effectiveConstraints.where((constraint) {
       return constraint.status == ConstraintStatus.rejected;
-    }).toList();
+    }).toList()
+      ..sort((a, b) => a.startDate.compareTo(b.startDate));
   }
 
   void _approveConstraint(String constraintId) {
