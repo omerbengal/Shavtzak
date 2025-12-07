@@ -534,7 +534,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             const SnackBar(
               content: Text('המשרה נמחקה בהצלחה'),
               backgroundColor: Colors.green,
-              duration: Duration(seconds: 1),
+              duration: Duration(seconds: 2),
             ),
           );
       }
@@ -549,7 +549,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             SnackBar(
               content: Text('שגיאה במחיקת המשרה: $e'),
               backgroundColor: Colors.red,
-              duration: const Duration(seconds: 1),
+              duration: const Duration(seconds: 2),
             ),
           );
       }
@@ -1270,7 +1270,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             SnackBar(
               content: Text('שיבוץ חדש נוצר בהצלחה: ${teamMember.name} → ${roleType.hebrewName} באירוע "${event.name}"'),
               backgroundColor: Colors.green,
-              duration: const Duration(seconds: 1),
+              duration: const Duration(seconds: 2),
             ),
           );
       }

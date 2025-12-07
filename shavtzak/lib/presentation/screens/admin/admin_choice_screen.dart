@@ -55,7 +55,7 @@ class AdminChoiceScreen extends StatelessWidget {
                             ),
                             SizedBox(height: 4),
                             Text(
-                              'צפה בשיבוצים ובקשות הגבלות',
+                              'צפה בשיבוצים ובקשות מגבלות',
                               style: TextStyle(fontSize: 13, color: Colors.grey),
                             ),
                           ],

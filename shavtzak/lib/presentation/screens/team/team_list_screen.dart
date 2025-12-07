@@ -107,7 +107,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   SnackBar(
                     content: Text(state.message),
                     backgroundColor: Colors.red,
-                    duration: const Duration(seconds: 1),
+                    duration: const Duration(seconds: 2),
                   ),
                 );
             } else if (state is TeamMemberOperationSuccess) {
@@ -117,7 +117,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   SnackBar(
                     content: Text(state.message),
                     backgroundColor: Colors.green,
-                    duration: const Duration(seconds: 1),
+                    duration: const Duration(seconds: 2),
                   ),
                 );
             }

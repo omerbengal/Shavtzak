@@ -86,7 +86,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                         SnackBar(
                           content: Text(state.message),
                           backgroundColor: Colors.green,
-                          duration: const Duration(seconds: 1),
+                          duration: const Duration(seconds: 2),
                         ),
                       );
                   } else if (state is TeamError) {
@@ -96,7 +96,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                         SnackBar(
                           content: Text(state.message),
                           backgroundColor: Colors.red,
-                          duration: const Duration(seconds: 1),
+                          duration: const Duration(seconds: 2),
                         ),
                       );
                   }
@@ -163,7 +163,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'הגבלות שלי',
+                    'המגבלות שלי',
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
                   // History button for expired constraints
@@ -174,7 +174,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                       size: 20,
                     ),
                     label: const Text(
-                      'הגבלות לא בתוקף',
+                      'מגבלות לא בתוקף',
                       style: TextStyle(fontSize: 14),
                     ),
                     style: TextButton.styleFrom(
@@ -186,7 +186,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'כאן תוכל/י להוסיף בקשות להגבלות זמן. הבקשות יופיעו כאן עם סטטוס ממתין לאישור עד שמנהל המערכת יאשר אותן.',
+                'כאן תוכל/י להוסיף בקשות למגבלות זמן. הבקשות יופיעו כאן עם סטטוס ממתין לאישור עד שמנהל המערכת יאשר אותן.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.grey[600],
                 ),
@@ -224,7 +224,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'אין לך הגבלות זמן',
+            'אין לך מגבלות זמן',
             style: TextStyle(
               fontSize: 18,
               color: Colors.grey[600],
@@ -365,8 +365,8 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
       builder: (context) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
-          title: const Text('מחיקת הגבלה'),
-          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את ההגבלה הזו?'),
+          title: const Text('מחיקת מגבלה'),
+          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את המגבלה הזו?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -483,7 +483,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
       textDirection: TextDirection.rtl,
       child: AlertDialog(
         title: const Text(
-          'הוספת בקשת הגבלה',
+          'הוספת בקשת מגבלה',
           textAlign: TextAlign.right,
         ),
       content: SizedBox(
@@ -572,7 +572,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
         isSingleDate: false,
         initialStartDate: startDate,
         initialEndDate: endDate,
-        title: 'בחר תאריכי הגבלה',
+        title: 'בחר תאריכי מגבלה',
         minDate: todayDate, // Prevent selecting dates before today
       ),
     );
@@ -659,7 +659,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
       textDirection: TextDirection.rtl,
       child: AlertDialog(
         title: const Text(
-          'עריכת הגבלה',
+          'עריכת מגבלה',
           textAlign: TextAlign.right,
         ),
       content: SizedBox(
@@ -746,7 +746,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
         isSingleDate: false,
         initialStartDate: startDate,
         initialEndDate: endDate,
-        title: 'בחר תאריכי הגבלה',
+        title: 'בחר תאריכי מגבלה',
         minDate: todayDate, // Prevent selecting dates before today
       ),
     );
@@ -854,7 +854,7 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    'הגבלות לא בתוקף',
+                    'המגבלות לא בתוקף',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -870,7 +870,7 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
 
               // Description
               Text(
-                'כאן מוצגות כל ההגבלות שתאריך הסיום שלהן חלף. ניתן לערוך הגבלות אלו אם נדרש.',
+                'כאן מוצגות כל המגבלות שתאריך הסיום שלהן חלף. ניתן לערוך מגבלות אלו אם נדרש.',
                 style: TextStyle(
                   fontSize: 16,
                   color: Colors.grey[600],
@@ -890,7 +890,7 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                           SnackBar(
                             content: Text(state.message),
                             backgroundColor: Colors.green,
-                            duration: const Duration(seconds: 1),
+                            duration: const Duration(seconds: 2),
                           ),
                         );
                     } else if (state is TeamError) {
@@ -986,7 +986,7 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                             ),
                             SizedBox(height: 16),
                             Text(
-                              'אין הגבלות לא בתוקף',
+                              'אין מגבלות לא בתוקף',
                               style: TextStyle(
                                 fontSize: 18,
                                 color: Colors.grey,
@@ -1145,8 +1145,8 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
       builder: (context) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
-          title: const Text('מחיקת הגבלה'),
-          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את ההגבלה הזו?'),
+          title: const Text('מחיקת מגבלה'),
+          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את המגבלה הזו?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -1223,7 +1223,7 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
     return Directionality(
       textDirection: TextDirection.rtl,
       child: AlertDialog(
-        title: const Text('עריכת הגבלה לא בתוקפה'),
+        title: const Text('עריכת מגבלה לא בתוקפה'),
         content: SizedBox(
           width: 400,
           child: Column(
@@ -1232,7 +1232,7 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
             children: [
               // Date range display
               const Text(
-                'תאריכי הגבלה:',
+                'תאריכי מגבלה:',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
@@ -1269,7 +1269,7 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
               TextField(
                 controller: noteController,
                 decoration: const InputDecoration(
-                  hintText: 'הסבר קצר לגבי ההגבלה...',
+                  hintText: 'הסבר קצר לגבי המגבלה...',
                   border: OutlineInputBorder(),
                 ),
                 maxLines: 3,
@@ -1324,7 +1324,7 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
         isSingleDate: false,
         initialStartDate: startDate,
         initialEndDate: endDate,
-        title: 'בחר תאריכי הגבלה',
+        title: 'בחר תאריכי מגבלה',
         minDate: todayDate, // Prevent selecting dates before today
       ),
     );

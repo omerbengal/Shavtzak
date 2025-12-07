@@ -86,7 +86,7 @@ class UserNavigationShell extends StatelessWidget {
             BottomNavigationBarItem(
               icon: Icon(Icons.block),
               activeIcon: Icon(Icons.block),
-              label: 'הגבלות שלי',
+              label: 'המגבלות שלי',
             ),
           ],
         );

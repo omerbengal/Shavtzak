@@ -201,7 +201,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       }
 
       // Emit success to show snackbar, UI will keep showing last state
-      emit(const TeamMemberOperationSuccess('פרטי חבר/ת הצוות עודכנו בהצלחה'));
+      emit(const TeamMemberOperationSuccess('בקשת מגבלה עודכנה בהצלחה וממתינה לאישור'));
 
       // Restart stream subscription to pick up database changes
       emit(const TeamLoading());
@@ -340,7 +340,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
 
       await _repository.updateTeamMember(updatedMember);
 
-      emit(const TeamMemberOperationSuccess('בקשת הגבלה נוספה בהצלחה וממתינה לאישור'));
+      emit(const TeamMemberOperationSuccess('בקשת מגבלה נוספה בהצלחה וממתינה לאישור'));
 
       // Restart stream subscription to pick up database changes
       emit(const TeamLoading());
@@ -359,7 +359,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         },
       );
     } catch (e) {
-      emit(TeamError('שגיאה בהוספת בקשת הגבלה: $e'));
+      emit(TeamError('שגיאה בהוספת בקשת מגבלה: $e'));
     }
   }
 
@@ -394,7 +394,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
 
       await _repository.updateTeamMember(updatedMember);
 
-      emit(const TeamMemberOperationSuccess('בקשת הגבלה נמחקה בהצלחה'));
+      emit(const TeamMemberOperationSuccess('בקשת מגבלה נמחקה בהצלחה'));
 
       // Restart stream subscription to pick up database changes
       emit(const TeamLoading());
@@ -413,7 +413,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         },
       );
     } catch (e) {
-      emit(TeamError('שגיאה במחיקת בקשת הגבלה: $e'));
+      emit(TeamError('שגיאה במחיקת בקשת מגבלה: $e'));
     }
   }
 
@@ -442,7 +442,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         constraintManager: constraintManager,
       ));
     } catch (e) {
-      emit(TeamError('שגיאה באתחול מנהל הגבלות: $e'));
+      emit(TeamError('שגיאה באתחול מנהל מגבלות: $e'));
     }
   }
 
@@ -454,18 +454,18 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       final constraintManager = _constraintManagers[event.teamMemberId];
       if (constraintManager == null) {
-        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        emit(TeamError('מנהל מגבלות לא אותחל עבור חבר הצוות'));
         return;
       }
 
       constraintManager.updateConstraintStatus(event.constraintId, event.newStatus);
 
       emit(ConstraintOperationSuccess(
-        'סטטוס הגבלה עודכן במקומי',
+        'סטטוס מגבלה עודכן במקומי',
         teamMemberId: event.teamMemberId,
       ));
     } catch (e) {
-      emit(TeamError('שגיאה בעדכון סטטוס הגבלה: $e'));
+      emit(TeamError('שגיאה בעדכון סטטוס מגבלה: $e'));
     }
   }
 
@@ -477,7 +477,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       final constraintManager = _constraintManagers[event.teamMemberId];
       if (constraintManager == null) {
-        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        emit(TeamError('מנהל מגבלות לא אותחל עבור חבר הצוות'));
         return;
       }
 
@@ -492,11 +492,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       constraintManager.addConstraintLocally(newConstraint);
 
       emit(ConstraintOperationSuccess(
-        'הגבלה חדשה נוספה במקומי',
+        'מגבלה חדשה נוספה במקומי',
         teamMemberId: event.teamMemberId,
       ));
     } catch (e) {
-      emit(TeamError('שגיאה בהוספת הגבלה: $e'));
+      emit(TeamError('שגיאה בהוספת מגבלה: $e'));
     }
   }
 
@@ -508,18 +508,18 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       final constraintManager = _constraintManagers[event.teamMemberId];
       if (constraintManager == null) {
-        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        emit(TeamError('מנהל מגבלות לא אותחל עבור חבר הצוות'));
         return;
       }
 
       constraintManager.deleteConstraint(event.constraintId, isLocalId: event.isLocalId);
 
       emit(ConstraintOperationSuccess(
-        'הגבלה הוסרה במקומי',
+        'מגבלה הוסרה במקומי',
         teamMemberId: event.teamMemberId,
       ));
     } catch (e) {
-      emit(TeamError('שגיאה בהסרת הגבלה: $e'));
+      emit(TeamError('שגיאה בהסרת מגבלה: $e'));
     }
   }
 
@@ -531,7 +531,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       final constraintManager = _constraintManagers[event.teamMemberId];
       if (constraintManager == null) {
-        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        emit(TeamError('מנהל מגבלות לא אותחל עבור חבר הצוות'));
         return;
       }
 
@@ -544,12 +544,12 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         ));
       } else {
         emit(ConstraintOperationSuccess(
-          'סנכרון הגבלות הושלם',
+          'סנכרון מגבלות הושלם',
           teamMemberId: event.teamMemberId,
         ));
       }
     } catch (e) {
-      emit(TeamError('שגיאה בסנכרון הגבלות: $e'));
+      emit(TeamError('שגיאה בסנכרון מגבלות: $e'));
     }
   }
 
@@ -561,7 +561,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       final constraintManager = _constraintManagers[event.teamMemberId];
       if (constraintManager == null) {
-        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        emit(TeamError('מנהל מגבלות לא אותחל עבור חבר הצוות'));
         return;
       }
 
@@ -589,11 +589,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       await _repository.updateTeamMember(updatedMember);
 
       emit(ConstraintOperationSuccess(
-        'שינויי הגבלות נשמרו בהצלחה',
+        'שינויי מגבלות נשמרו בהצלחה',
         teamMemberId: event.teamMemberId,
       ));
     } catch (e) {
-      emit(TeamError('שגיאה בשמירת שינויי הגבלות: $e'));
+      emit(TeamError('שגיאה בשמירת שינויי מגבלות: $e'));
     }
   }
 
@@ -605,7 +605,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       final constraintManager = _constraintManagers[event.teamMemberId];
       if (constraintManager == null) {
-        emit(TeamError('מנהל הגבלות לא אותחל עבור חבר הצוות'));
+        emit(TeamError('מנהל מגבלות לא אותחל עבור חבר הצוות'));
         return;
       }
 
