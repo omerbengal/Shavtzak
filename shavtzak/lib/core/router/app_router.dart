@@ -3,6 +3,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../services/user_cache_service.dart';
+import '../services/environment_service.dart';
 import '../../presentation/bloc/user_selection/user_selection_bloc.dart';
 import '../../presentation/bloc/user_selection/user_selection_state.dart';
 import '../../presentation/widgets/swipeable_page_view.dart';
@@ -23,6 +24,24 @@ class AppRouter {
   static UserSelectionBloc? _userSelectionBloc;
   static UserSelectionRepository? _userSelectionRepository;
 
+  /// Helper function to check if a path is in test environment
+  static bool _isTestPath(String path) {
+    return path.startsWith('/test/') || path == '/test';
+  }
+
+  /// Helper function to strip test prefix from path
+  static String _stripTestPrefix(String path) {
+    if (path.startsWith('/test')) {
+      return path.substring(5); // Remove '/test' prefix
+    }
+    return path;
+  }
+
+  /// Helper function to get environment prefix based on path
+  static String _getEnvPrefix(String path) {
+    return _isTestPath(path) ? '/test' : '';
+  }
+
   /// Get the router singleton instance
   static GoRouter router({UserSelectionBloc? userSelectionBloc, required UserSelectionRepository userSelectionRepository}) {
     _userSelectionBloc = userSelectionBloc;
@@ -35,20 +54,26 @@ class AppRouter {
         // Trigger a navigation check after state changes
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final currentRoute = _instance!.routeInformationProvider.value.uri.path;
+          final envPrefix = _getEnvPrefix(currentRoute);
+
+          // Update environment service based on current path
+          EnvironmentService.instance.updateFromPath(currentRoute);
 
           if (state is UserAuthenticated) {
             // User became authenticated, navigate to appropriate home
-            if (currentRoute.startsWith('/whoami')) {
+            final strippedRoute = _stripTestPrefix(currentRoute);
+            if (strippedRoute.startsWith('/whoami') || strippedRoute.isEmpty || strippedRoute == '/') {
               if (state.isAdmin) {
-                _instance?.go('/admin');
+                _instance?.go('$envPrefix/admin');
               } else {
-                _instance?.go('/user/assignments');
+                _instance?.go('$envPrefix/user/assignments');
               }
             }
           } else if (state is UserSignedOut) {
-            // User signed out, always go to whoami
-            if (!currentRoute.startsWith('/whoami')) {
-              _instance?.go('/whoami');
+            // User signed out, always go to whoami (with environment prefix)
+            final strippedRoute = _stripTestPrefix(currentRoute);
+            if (!strippedRoute.startsWith('/whoami')) {
+              _instance?.go('$envPrefix/whoami');
             }
           }
         });
@@ -86,13 +111,18 @@ class AppRouter {
       redirect: (context, state) {
         final currentRoute = state.uri.path;
 
+        // Update environment service based on current path
+        EnvironmentService.instance.updateFromPath(currentRoute);
+        final envPrefix = _getEnvPrefix(currentRoute);
+        final strippedRoute = _stripTestPrefix(currentRoute);
+
         // Handle empty path (root URL without hash)
         if (currentRoute.isEmpty || currentRoute == '/') {
-          return '/whoami';
+          return '$envPrefix/whoami';
         }
 
         if (_userSelectionBloc == null || _userSelectionRepository == null) {
-          return '/whoami'; // Default to whoami if no BLoC provided
+          return '$envPrefix/whoami'; // Default to whoami if no BLoC provided
         }
 
         final currentState = _userSelectionBloc!.state;
@@ -106,31 +136,31 @@ class AppRouter {
         // Handle authentication redirects
         if (currentState is UserSignedOut) {
           // User signed out, always redirect to whoami
-          if (!currentRoute.startsWith('/whoami')) {
-            return '/whoami';
+          if (!strippedRoute.startsWith('/whoami')) {
+            return '$envPrefix/whoami';
           }
         } else if (currentState is UserAuthenticated) {
           // User is authenticated, redirect based on admin status
           if (currentState.isAdmin) {
             // Admin user - only redirect from whoami to admin choice
-            if (currentRoute.startsWith('/whoami')) {
-              return '/admin'; // Redirect to admin choice screen
+            if (strippedRoute.startsWith('/whoami')) {
+              return '$envPrefix/admin'; // Redirect to admin choice screen
             }
             // Admins can access both user and admin routes, no restriction
           } else {
             // Non-admin user - only redirect from whoami to user routes
-            if (currentRoute.startsWith('/whoami')) {
-              return '/user/assignments'; // Redirect to user assignments
+            if (strippedRoute.startsWith('/whoami')) {
+              return '$envPrefix/user/assignments'; // Redirect to user assignments
             }
             // If non-admin tries to access admin routes, redirect to user
-            if (currentRoute.startsWith('/admin/')) {
-              return '/user/assignments'; // Redirect to user assignments
+            if (strippedRoute.startsWith('/admin/')) {
+              return '$envPrefix/user/assignments'; // Redirect to user assignments
             }
           }
         } else {
           // User not authenticated, redirect to whoami unless already there
-          if (!currentRoute.startsWith('/whoami')) {
-            return '/whoami';
+          if (!strippedRoute.startsWith('/whoami')) {
+            return '$envPrefix/whoami';
           }
         }
 
@@ -245,6 +275,125 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/user/constraints',
+                  pageBuilder: (context, state) => const NoTransitionPage(
+                    child: ConstraintsScreen(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+
+        // ========== TEST ENVIRONMENT ROUTES ==========
+        // These mirror the production routes but with /test prefix
+
+        // Test authentication route
+        GoRoute(
+          path: '/test/whoami',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: WhoamiScreen(),
+          ),
+        ),
+
+        // Test admin routes shell
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) {
+            // Only allow admin users to access this shell
+            final userSelectionState = context.watch<UserSelectionBloc>().state;
+            if (userSelectionState is! UserAuthenticated || !userSelectionState.isAdmin) {
+              return const Scaffold(
+                body: Center(
+                  child: Text('גישה לא מורשית - דרוש הרשאות מנהל'),
+                ),
+              );
+            }
+
+            return SwipeablePageView(navigationShell: navigationShell);
+          },
+          branches: [
+            // Test admin choice branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/test/admin',
+                  pageBuilder: (context, state) => const NoTransitionPage(
+                    child: AdminChoiceScreen(),
+                  ),
+                ),
+              ],
+            ),
+
+            // Test admin team members branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/test/admin/team-members',
+                  pageBuilder: (context, state) => const NoTransitionPage(
+                    child: TeamListScreen(),
+                  ),
+                ),
+              ],
+            ),
+
+            // Test admin events branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/test/admin/events',
+                  pageBuilder: (context, state) => const NoTransitionPage(
+                    child: EventListScreen(),
+                  ),
+                ),
+              ],
+            ),
+
+            // Test admin assignments branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/test/admin/assignments',
+                  pageBuilder: (context, state) => const NoTransitionPage(
+                    child: AssignmentListScreen(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+
+        // Test user routes shell
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) {
+            // Allow both regular users and admins to access this shell
+            final userSelectionState = context.watch<UserSelectionBloc>().state;
+            if (userSelectionState is! UserAuthenticated) {
+              return const Scaffold(
+                body: Center(
+                  child: Text('גישה לא מורשית - דרוש אימות'),
+                ),
+              );
+            }
+
+            return UserNavigationShell(navigationShell: navigationShell);
+          },
+          branches: [
+            // Test user assignments branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/test/user/assignments',
+                  pageBuilder: (context, state) => const NoTransitionPage(
+                    child: UserAssignmentsScreen(),
+                  ),
+                ),
+              ],
+            ),
+
+            // Test user constraints branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/test/user/constraints',
                   pageBuilder: (context, state) => const NoTransitionPage(
                     child: ConstraintsScreen(),
                   ),

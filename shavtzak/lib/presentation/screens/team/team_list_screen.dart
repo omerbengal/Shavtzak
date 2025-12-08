@@ -16,6 +16,7 @@ import '../../bloc/team/team_state.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../widgets/navigation_menu.dart';
+import '../../widgets/environment_switcher_button.dart';
 import '../../widgets/date_picker_dialog.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../../data/repositories/assignment_repository.dart';
@@ -83,6 +84,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 )
               : const Text(AppStrings.team),
           actions: [
+            const EnvironmentSwitcherButton(),
             const NavigationMenu(),
             IconButton(
               icon: Icon(_showSearch ? Icons.close : Icons.search),

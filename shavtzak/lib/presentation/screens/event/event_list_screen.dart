@@ -7,6 +7,7 @@ import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
 import '../../widgets/navigation_menu.dart';
+import '../../widgets/environment_switcher_button.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import 'widgets/event_form_modal.dart';
 
@@ -73,6 +74,7 @@ class _EventListScreenState extends State<EventListScreen> {
                 )
               : const Text('אירועים'),
           actions: [
+            const EnvironmentSwitcherButton(),
             const NavigationMenu(),
             IconButton(
               icon: Icon(_showSearch ? Icons.close : Icons.search),

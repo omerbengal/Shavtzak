@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../bloc/user_selection/user_selection_state.dart';
+import '../../core/services/environment_service.dart';
 
 /// Navigation menu widget for app bar
 /// Shows home and logout buttons in a compact layout
@@ -22,7 +23,10 @@ class NavigationMenu extends StatelessWidget {
           key: const ValueKey('nav_home_button'),
           icon: const Icon(Icons.home),
           tooltip: 'בית',
-          onPressed: () => context.go('/admin'),
+          onPressed: () {
+            final envPrefix = EnvironmentService.instance.routePrefix;
+            context.go('$envPrefix/admin');
+          },
           iconSize: 24, // Slightly smaller icon size
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           constraints: const BoxConstraints(
@@ -62,7 +66,8 @@ class NavigationMenu extends StatelessWidget {
       if (!handled && state is UserSignedOut && context.mounted) {
         handled = true;
         subscription?.cancel();
-        context.go('/whoami');
+        final envPrefix = EnvironmentService.instance.routePrefix;
+        context.go('$envPrefix/whoami');
       }
     });
   }

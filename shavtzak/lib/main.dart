@@ -11,12 +11,15 @@ import 'data/repositories/event_repository.dart';
 import 'data/repositories/assignment_repository.dart';
 import 'data/repositories/user_selection_repository.dart';
 import 'core/services/user_cache_service.dart';
+import 'core/services/environment_service.dart';
 
 // Presentation layer
 import 'presentation/bloc/team/team_bloc.dart';
 import 'presentation/bloc/team/team_event.dart';
 import 'presentation/bloc/event/event_bloc.dart';
+import 'presentation/bloc/event/event_event.dart';
 import 'presentation/bloc/assignment/assignment_bloc.dart';
+import 'presentation/bloc/assignment/assignment_event.dart';
 import 'presentation/bloc/user_selection/user_selection_bloc.dart';
 import 'presentation/bloc/user_selection/user_selection_state.dart';
 
@@ -38,6 +41,9 @@ void main() {
 
 Future<void> _initialize() async {
   try {
+    // Initialize environment service (detects test vs production from URL)
+    EnvironmentService.instance.initialize();
+
     // Preload Rubik font to prevent FOUT (Flash of Unstyled Text)
     await _preloadFont();
 
@@ -113,51 +119,59 @@ class MyApp extends StatelessWidget {
         RepositoryProvider.value(value: assignmentRepository),
         RepositoryProvider.value(value: userSelectionRepository),
       ],
-      child: MultiBlocProvider(
-        providers: [
-          BlocProvider(
-            create: (context) => TeamBloc(teamRepository, assignmentRepository),
-          ),
-          BlocProvider(
-            create: (context) => EventBloc(eventRepository, assignmentRepository),
-          ),
-          BlocProvider(
-            create: (context) => AssignmentBloc(
-              assignmentRepository,
-              eventRepository,
-              teamRepository,
-            ),
-          ),
-          BlocProvider(
-            create: (context) => UserSelectionBloc(userSelectionRepository, teamRepository),
-          ),
-        ],
-        child: Builder(
-          builder: (context) {
-            final userSelectionBloc = context.read<UserSelectionBloc>();
-            final userSelectionRepository = context.read<UserSelectionRepository>();
-            final teamBloc = context.read<TeamBloc>();
-
-            return BlocListener<UserSelectionBloc, UserSelectionState>(
-              listener: (context, state) {
-                // Clear all BLoC states when user signs out
-                if (state is UserSignedOut) {
-                  teamBloc.add(const ClearTeamState());
-                  // TODO: Add similar clear events for EventBloc and AssignmentBloc
-                }
-              },
-              child: MaterialApp.router(
-                title: 'שבצק - ניהול צוות',
-                theme: AppTheme.lightTheme,
-                debugShowCheckedModeBanner: false,
-                routerConfig: AppRouter.router(
-                  userSelectionBloc: userSelectionBloc,
-                  userSelectionRepository: userSelectionRepository,
+      // Recreate all BLoCs when environment changes by using a key based on environment
+      child: ListenableBuilder(
+        listenable: EnvironmentService.instance,
+        builder: (context, child) {
+          // Using environment as key forces BLoCs to recreate when environment changes
+          return MultiBlocProvider(
+            key: ValueKey(EnvironmentService.instance.isTestMode),
+            providers: [
+              BlocProvider(
+                create: (context) => TeamBloc(teamRepository, assignmentRepository),
+              ),
+              BlocProvider(
+                create: (context) => EventBloc(eventRepository, assignmentRepository),
+              ),
+              BlocProvider(
+                create: (context) => AssignmentBloc(
+                  assignmentRepository,
+                  eventRepository,
+                  teamRepository,
                 ),
               ),
-            );
-          },
-        ),
+              BlocProvider(
+                create: (context) => UserSelectionBloc(userSelectionRepository, teamRepository),
+              ),
+            ],
+            child: Builder(
+              builder: (context) {
+                final userSelectionBloc = context.read<UserSelectionBloc>();
+                final userSelectionRepository = context.read<UserSelectionRepository>();
+                final teamBloc = context.read<TeamBloc>();
+
+                return BlocListener<UserSelectionBloc, UserSelectionState>(
+                  listener: (context, state) {
+                    // Clear all BLoC states when user signs out
+                    if (state is UserSignedOut) {
+                      teamBloc.add(const ClearTeamState());
+                      // TODO: Add similar clear events for EventBloc and AssignmentBloc
+                    }
+                  },
+                  child: MaterialApp.router(
+                    title: 'שבצק - ניהול צוות',
+                    theme: AppTheme.lightTheme,
+                    debugShowCheckedModeBanner: false,
+                    routerConfig: AppRouter.router(
+                      userSelectionBloc: userSelectionBloc,
+                      userSelectionRepository: userSelectionRepository,
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
+        },
       ),
     );
   }

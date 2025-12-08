@@ -4,6 +4,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../../core/services/environment_service.dart';
+import '../../widgets/environment_switcher_button.dart';
 
 /// Admin choice screen - allows admin users to choose between personal area and management
 class AdminChoiceScreen extends StatelessWidget {
@@ -40,7 +42,8 @@ class AdminChoiceScreen extends StatelessWidget {
                     elevation: 4,
                     child: InkWell(
                       onTap: () {
-                        context.go('/user/assignments');
+                        final envPrefix = EnvironmentService.instance.routePrefix;
+                        context.go('$envPrefix/user/assignments');
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
@@ -72,7 +75,8 @@ class AdminChoiceScreen extends StatelessWidget {
                     elevation: 4,
                     child: InkWell(
                       onTap: () {
-                        context.go('/admin/team-members');
+                        final envPrefix = EnvironmentService.instance.routePrefix;
+                        context.go('$envPrefix/admin/team-members');
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
@@ -116,6 +120,9 @@ class AdminChoiceScreen extends StatelessWidget {
             return AppBar(
               title: const Text('שבצק'),
               centerTitle: true,
+              actions: const [
+                EnvironmentSwitcherButton(),
+              ],
             );
           }
 
@@ -126,6 +133,7 @@ class AdminChoiceScreen extends StatelessWidget {
             ),
             centerTitle: true,
             actions: [
+              const EnvironmentSwitcherButton(),
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתקות',

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'test_environment_indicator.dart';
 
 /// PageView-based swipeable navigation wrapper
 ///
@@ -41,8 +42,8 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
     final showBottomNav = bottomNavIndex != -1; // Hide on home page
 
     return Scaffold(
-      // Display the current page from the navigation shell
-      body: widget.navigationShell,
+      // Display the current page from the navigation shell with test environment indicator
+      body: TestEnvironmentIndicator(child: widget.navigationShell),
       bottomNavigationBar: showBottomNav
           ? BottomNavigationBar(
               currentIndex: bottomNavIndex,
