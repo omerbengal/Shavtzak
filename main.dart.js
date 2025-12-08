@@ -27762,8 +27762,7 @@ s=q}while(true)switch(s){case 0:q=3
 h=$.aL
 if(h==null)h=$.aL=new A.bW($.a_())
 g=window.location.hash
-g.toString
-f=B.d.dt(g,1)
+f=g.length!==0?B.d.dt(g,1):""
 e=B.d.cp(f,"/test/")||f==="/test"
 if(h.a!==e){h.a=e
 h.Y()}s=6
