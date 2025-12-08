@@ -5,8 +5,10 @@ import '../../../data/repositories/assignment_repository.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../../core/state/constraint_manager.dart';
+import '../../../core/services/environment_service.dart';
 import 'team_event.dart';
 import 'team_state.dart';
+import 'dart:developer' as developer;
 
 /// BLoC for managing team members
 class TeamBloc extends Bloc<TeamEvent, TeamState> {
@@ -50,6 +52,10 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     LoadTeamMembers event,
     Emitter<TeamState> emit,
   ) async {
+    developer.log('TeamBloc._onLoadTeamMembers: Starting to load team members', name: 'TeamBloc');
+    final currentEnv = EnvironmentService.instance.isTestMode ? 'TEST' : 'PROD';
+    developer.log('TeamBloc._onLoadTeamMembers: Current environment is $currentEnv', name: 'TeamBloc');
+
     emit(const TeamLoading());
 
     try {
@@ -57,6 +63,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       await emit.forEach<List<TeamMember>>(
         _repository.watchTeamMembers(),
         onData: (members) {
+          developer.log('TeamBloc._onLoadTeamMembers: Received ${members.length} team members', name: 'TeamBloc');
           if (members.isEmpty) {
             return const TeamEmpty('אין חברי צוות במערכת');
           } else {
@@ -64,10 +71,12 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
           }
         },
         onError: (error, stackTrace) {
+          developer.log('TeamBloc._onLoadTeamMembers: Error - $error', name: 'TeamBloc', error: error, stackTrace: stackTrace);
           return TeamError('שגיאה בטעינת חברי הצוות: $error');
         },
       );
     } catch (e) {
+      developer.log('TeamBloc._onLoadTeamMembers: Exception - $e', name: 'TeamBloc', error: e);
       emit(TeamError('שגיאה בטעינת חברי הצוות: $e'));
     }
   }
@@ -631,5 +640,12 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     _constraintManagers.clear();
     // Reset to initial state
     emit(const TeamInitial());
+  }
+
+  @override
+  Future<void> close() {
+    // Clear constraint managers
+    _constraintManagers.clear();
+    return super.close();
   }
 }

@@ -254,6 +254,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     // Simply reload
     add(const LoadEvents());
   }
+
+  @override
+  Future<void> close() {
+    return super.close();
+  }
 }
 
 /// Internal helper class to combine events with their assignment counts

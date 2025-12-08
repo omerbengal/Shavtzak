@@ -172,7 +172,7 @@ class AppRouter {
         GoRoute(
           path: '/whoami',
           pageBuilder: (context, state) => const NoTransitionPage(
-            child: WhoamiScreen(),
+            child: WhoamiScreen(key: ValueKey('whoami_prod')),
           ),
         ),
 
@@ -198,7 +198,7 @@ class AppRouter {
                 GoRoute(
                   path: '/admin',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: AdminChoiceScreen(),
+                    child: AdminChoiceScreen(key: ValueKey('admin_choice_prod')),
                   ),
                 ),
               ],
@@ -210,7 +210,7 @@ class AppRouter {
                 GoRoute(
                   path: '/admin/team-members',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: TeamListScreen(),
+                    child: TeamListScreen(key: ValueKey('team_members_prod')),
                   ),
                 ),
               ],
@@ -222,7 +222,7 @@ class AppRouter {
                 GoRoute(
                   path: '/admin/events',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: EventListScreen(),
+                    child: EventListScreen(key: ValueKey('events_prod')),
                   ),
                 ),
               ],
@@ -234,7 +234,7 @@ class AppRouter {
                 GoRoute(
                   path: '/admin/assignments',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: AssignmentListScreen(),
+                    child: AssignmentListScreen(key: ValueKey('assignments_prod')),
                   ),
                 ),
               ],
@@ -264,7 +264,7 @@ class AppRouter {
                 GoRoute(
                   path: '/user/assignments',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: UserAssignmentsScreen(),
+                    child: UserAssignmentsScreen(key: ValueKey('user_assignments_prod')),
                   ),
                 ),
               ],
@@ -276,7 +276,7 @@ class AppRouter {
                 GoRoute(
                   path: '/user/constraints',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: ConstraintsScreen(),
+                    child: ConstraintsScreen(key: ValueKey('user_constraints_prod')),
                   ),
                 ),
               ],
@@ -291,7 +291,7 @@ class AppRouter {
         GoRoute(
           path: '/test/whoami',
           pageBuilder: (context, state) => const NoTransitionPage(
-            child: WhoamiScreen(),
+            child: WhoamiScreen(key: ValueKey('whoami_test')),
           ),
         ),
 
@@ -317,7 +317,7 @@ class AppRouter {
                 GoRoute(
                   path: '/test/admin',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: AdminChoiceScreen(),
+                    child: AdminChoiceScreen(key: ValueKey('admin_choice_test')),
                   ),
                 ),
               ],
@@ -329,7 +329,7 @@ class AppRouter {
                 GoRoute(
                   path: '/test/admin/team-members',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: TeamListScreen(),
+                    child: TeamListScreen(key: ValueKey('team_members_test')),
                   ),
                 ),
               ],
@@ -341,7 +341,7 @@ class AppRouter {
                 GoRoute(
                   path: '/test/admin/events',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: EventListScreen(),
+                    child: EventListScreen(key: ValueKey('events_test')),
                   ),
                 ),
               ],
@@ -353,7 +353,7 @@ class AppRouter {
                 GoRoute(
                   path: '/test/admin/assignments',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: AssignmentListScreen(),
+                    child: AssignmentListScreen(key: ValueKey('assignments_test')),
                   ),
                 ),
               ],
@@ -383,7 +383,7 @@ class AppRouter {
                 GoRoute(
                   path: '/test/user/assignments',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: UserAssignmentsScreen(),
+                    child: UserAssignmentsScreen(key: ValueKey('user_assignments_test')),
                   ),
                 ),
               ],
@@ -395,7 +395,7 @@ class AppRouter {
                 GoRoute(
                   path: '/test/user/constraints',
                   pageBuilder: (context, state) => const NoTransitionPage(
-                    child: ConstraintsScreen(),
+                    child: ConstraintsScreen(key: ValueKey('user_constraints_test')),
                   ),
                 ),
               ],

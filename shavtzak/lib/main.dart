@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'firebase_options.dart';
+import 'dart:developer' as developer;
 
 // Data layer
 import 'data/data_sources/firestore_database.dart';
@@ -124,51 +125,104 @@ class MyApp extends StatelessWidget {
         listenable: EnvironmentService.instance,
         builder: (context, child) {
           // Using environment as key forces BLoCs to recreate when environment changes
-          return MultiBlocProvider(
-            key: ValueKey(EnvironmentService.instance.isTestMode),
-            providers: [
-              BlocProvider(
-                create: (context) => TeamBloc(teamRepository, assignmentRepository),
-              ),
-              BlocProvider(
-                create: (context) => EventBloc(eventRepository, assignmentRepository),
-              ),
-              BlocProvider(
-                create: (context) => AssignmentBloc(
-                  assignmentRepository,
-                  eventRepository,
-                  teamRepository,
-                ),
-              ),
-              BlocProvider(
-                create: (context) => UserSelectionBloc(userSelectionRepository, teamRepository),
-              ),
-            ],
-            child: Builder(
-              builder: (context) {
-                final userSelectionBloc = context.read<UserSelectionBloc>();
-                final userSelectionRepository = context.read<UserSelectionRepository>();
-                final teamBloc = context.read<TeamBloc>();
+          final envKey = 'repos_${EnvironmentService.instance.isTestMode}';
+          final env = EnvironmentService.instance.isTestMode ? 'TEST' : 'PROD';
+          developer.log('main.dart: ListenableBuilder rebuilding with environment=$env, key=$envKey', name: 'Main');
 
-                return BlocListener<UserSelectionBloc, UserSelectionState>(
-                  listener: (context, state) {
-                    // Clear all BLoC states when user signs out
-                    if (state is UserSignedOut) {
-                      teamBloc.add(const ClearTeamState());
-                      // TODO: Add similar clear events for EventBloc and AssignmentBloc
-                    }
+          return MultiRepositoryProvider(
+            key: ValueKey(envKey),
+            providers: [
+              // Recreate repositories with new database instance when environment changes
+              RepositoryProvider(
+                create: (context) {
+                  developer.log('main.dart: Creating TeamRepository with new FirestoreDatabase for $env environment', name: 'Main');
+                  final db = FirestoreDatabase();
+                  return TeamRepository(db);
+                },
+              ),
+              RepositoryProvider(
+                create: (context) {
+                  developer.log('main.dart: Creating EventRepository with new FirestoreDatabase for $env environment', name: 'Main');
+                  final db = FirestoreDatabase();
+                  return EventRepository(db);
+                },
+              ),
+              RepositoryProvider(
+                create: (context) {
+                  developer.log('main.dart: Creating AssignmentRepository with new FirestoreDatabase for $env environment', name: 'Main');
+                  final db = FirestoreDatabase();
+                  return AssignmentRepository(db);
+                },
+              ),
+              RepositoryProvider.value(value: userSelectionRepository),
+            ],
+            child: MultiBlocProvider(
+              key: ValueKey(EnvironmentService.instance.isTestMode),
+              providers: [
+                BlocProvider(
+                  create: (context) {
+                    developer.log('main.dart: Creating TeamBloc for $env environment', name: 'Main');
+                    return TeamBloc(
+                      context.read<TeamRepository>(),
+                      context.read<AssignmentRepository>(),
+                    );
                   },
-                  child: MaterialApp.router(
-                    title: 'שבצק - ניהול צוות',
-                    theme: AppTheme.lightTheme,
-                    debugShowCheckedModeBanner: false,
-                    routerConfig: AppRouter.router(
-                      userSelectionBloc: userSelectionBloc,
-                      userSelectionRepository: userSelectionRepository,
+                ),
+                BlocProvider(
+                  create: (context) {
+                    developer.log('main.dart: Creating EventBloc for $env environment', name: 'Main');
+                    return EventBloc(
+                      context.read<EventRepository>(),
+                      context.read<AssignmentRepository>(),
+                    );
+                  },
+                ),
+                BlocProvider(
+                  create: (context) {
+                    developer.log('main.dart: Creating AssignmentBloc for $env environment', name: 'Main');
+                    return AssignmentBloc(
+                      context.read<AssignmentRepository>(),
+                      context.read<EventRepository>(),
+                      context.read<TeamRepository>(),
+                    );
+                  },
+                ),
+                BlocProvider(
+                  create: (context) {
+                    developer.log('main.dart: Creating UserSelectionBloc for $env environment', name: 'Main');
+                    return UserSelectionBloc(
+                      userSelectionRepository,
+                      context.read<TeamRepository>(),
+                    );
+                  },
+                ),
+              ],
+              child: Builder(
+                builder: (context) {
+                  final userSelectionBloc = context.read<UserSelectionBloc>();
+                  final userSelectionRepository = context.read<UserSelectionRepository>();
+                  final teamBloc = context.read<TeamBloc>();
+
+                  return BlocListener<UserSelectionBloc, UserSelectionState>(
+                    listener: (context, state) {
+                      // Clear all BLoC states when user signs out
+                      if (state is UserSignedOut) {
+                        teamBloc.add(const ClearTeamState());
+                        // TODO: Add similar clear events for EventBloc and AssignmentBloc
+                      }
+                    },
+                    child: MaterialApp.router(
+                      title: 'שבצק - ניהול צוות',
+                      theme: AppTheme.lightTheme,
+                      debugShowCheckedModeBanner: false,
+                      routerConfig: AppRouter.router(
+                        userSelectionBloc: userSelectionBloc,
+                        userSelectionRepository: userSelectionRepository,
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           );
         },

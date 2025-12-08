@@ -8,21 +8,37 @@ import '../models/assignment_model.dart';
 import '../models/event_model.dart';
 import '../models/team_member_model.dart';
 import 'database_interface.dart';
+import 'dart:developer' as developer;
 
 /// Firestore implementation of DatabaseInterface
 class FirestoreDatabase implements DatabaseInterface {
   final FirebaseFirestore _firestore;
+  final String _instanceId; // For debugging
 
   // Collection names with environment prefix
-  String get _teamMembersCollection =>
-      '${EnvironmentService.instance.collectionPrefix}teamMembers';
-  String get _eventsCollection =>
-      '${EnvironmentService.instance.collectionPrefix}events';
-  String get _assignmentsCollection =>
-      '${EnvironmentService.instance.collectionPrefix}assignments';
+  String get _teamMembersCollection {
+    final collection = '${EnvironmentService.instance.collectionPrefix}teamMembers';
+    developer.log('FirestoreDatabase._teamMembersCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
+    return collection;
+  }
+
+  String get _eventsCollection {
+    final collection = '${EnvironmentService.instance.collectionPrefix}events';
+    developer.log('FirestoreDatabase._eventsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
+    return collection;
+  }
+
+  String get _assignmentsCollection {
+    final collection = '${EnvironmentService.instance.collectionPrefix}assignments';
+    developer.log('FirestoreDatabase._assignmentsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
+    return collection;
+  }
 
   FirestoreDatabase({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+      : _firestore = firestore ?? FirebaseFirestore.instance,
+        _instanceId = DateTime.now().millisecondsSinceEpoch.toString() {
+    developer.log('FirestoreDatabase.constructor: instance=$_instanceId created', name: 'Firestore');
+  }
 
   @override
   Future<void> initialize() async {
@@ -57,11 +73,16 @@ class FirestoreDatabase implements DatabaseInterface {
 
   /// Watch team members in real-time
   Stream<List<TeamMember>> watchTeamMembers() {
+    final collection = _teamMembersCollection;
+    developer.log('FirestoreDatabase.watchTeamMembers: instance=$_instanceId, creating stream for collection=$collection', name: 'Firestore');
+
     return _firestore
-        .collection(_teamMembersCollection)
+        .collection(collection)
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
+      final count = snapshot.docs.length;
+      developer.log('FirestoreDatabase.watchTeamMembers: instance=$_instanceId, received snapshot with $count documents from $collection', name: 'Firestore');
       return snapshot.docs
           .map((doc) => TeamMemberModel.fromFirestore(doc).toEntity())
           .toList();
