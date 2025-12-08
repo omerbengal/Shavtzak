@@ -4,11 +4,13 @@ import '../../../data/repositories/team_repository.dart';
 import '../../../domain/entities/team_member.dart';
 import 'user_selection_event.dart';
 import 'user_selection_state.dart';
+import 'dart:async';
 
 /// BLoC for managing user selection and authentication
 class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
   final UserSelectionRepository _userSelectionRepository;
   final TeamRepository _teamRepository;
+  StreamSubscription? _teamStreamSubscription;
 
   UserSelectionBloc(this._userSelectionRepository, this._teamRepository)
       : super(const UserSelectionInitial()) {
@@ -19,6 +21,32 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     on<LoadAllTeamMembers>(_onLoadAllTeamMembers);
     on<SignOut>(_onSignOut);
     on<RefreshUserData>(_onRefreshUserData);
+
+    // Listen to team member changes and refresh current user if needed
+    _teamStreamSubscription = _teamRepository.watchTeamMembers().listen((teamMembers) {
+      final currentState = state;
+      if (currentState is UserAuthenticated) {
+        // Find if current user was updated
+        final updatedUser = teamMembers.firstWhere(
+          (member) => member.uniqueKey == currentState.user.uniqueKey,
+          orElse: () => currentState.user,
+        );
+
+        // If user data changed (specifically isPermanent status), refresh the state
+        if (updatedUser.isPermanent != currentState.user.isPermanent ||
+            updatedUser.name != currentState.user.name ||
+            updatedUser.isAdmin != currentState.user.isAdmin ||
+            updatedUser.constraints.length != currentState.user.constraints.length) {
+          emit(UserAuthenticated(updatedUser));
+        }
+      }
+    });
+  }
+
+  @override
+  Future<void> close() {
+    _teamStreamSubscription?.cancel();
+    return super.close();
   }
 
   /// Check if user is already cached and authenticate them

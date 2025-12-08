@@ -163,7 +163,10 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
 
   Widget _buildConstraintsContent(BuildContext context, TeamMember user) {
     // Filter out past constraints from main list (they appear in expired constraints modal)
-    final constraints = user.constraints.where((c) => !_isPastConstraint(c)).toList()
+    // Only show unavailability constraints for permanent members
+    final constraints = user.constraints
+        .where((c) => c.isUnavailability && !_isPastConstraint(c))
+        .toList()
       ..sort((a, b) => a.startDate.compareTo(b.startDate));
 
     return Column(
@@ -986,8 +989,10 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                     // Always filter constraints data
                     final allConstraints = currentUser.constraints;
 
-                    final expiredConstraints = allConstraints.where((c) => isPastConstraint(c)).toList()
-      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+                    final expiredConstraints = allConstraints
+                        .where((c) => c.isUnavailability && isPastConstraint(c))
+                        .toList()
+                      ..sort((a, b) => a.startDate.compareTo(b.startDate));
                     
                     if (expiredConstraints.isEmpty) {
                       return const Center(

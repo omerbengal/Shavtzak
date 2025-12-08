@@ -280,96 +280,98 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     '$activeRoles תפקידים',
                     style: const TextStyle(fontSize: 12),
                   ),
-                  if (member.constraints.isNotEmpty)
-                    Row(
-                      children: [
-                        // Count approved and pending constraints (excluding past constraints)
-                        Builder(
-                          builder: (context) {
-                            // Helper function to check if constraint is past (same logic as admin modal)
-                            bool isPastConstraint(DateConstraint constraint) {
-                              if (constraint.endDate != null) {
-                                final today = DateTime.now();
-                                final constraintEndDate = DateTime(
-                                  constraint.endDate!.year,
-                                  constraint.endDate!.month,
-                                  constraint.endDate!.day,
-                                );
-                                final todayDate = DateTime(
-                                  today.year,
-                                  today.month,
-                                  today.day,
-                                );
-                                return constraintEndDate.isBefore(todayDate);
-                              } else {
-                                // For single-day constraints (no endDate), check if startDate is before today
-                                final today = DateTime.now();
-                                final constraintStartDate = DateTime(
-                                  constraint.startDate.year,
-                                  constraint.startDate.month,
-                                  constraint.startDate.day,
-                                );
-                                final todayDate = DateTime(
-                                  today.year,
-                                  today.month,
-                                  today.day,
-                                );
-                                return constraintStartDate.isBefore(todayDate);
-                              }
-                            }
+                  // Check if member has any relevant constraints (unavailability for permanent, availability for non-permanent)
+                  Builder(
+                    builder: (context) {
+                      // Helper function to check if constraint is past (same logic as admin modal)
+                      bool isPastConstraint(DateConstraint constraint) {
+                        if (constraint.endDate != null) {
+                          final today = DateTime.now();
+                          final constraintEndDate = DateTime(
+                            constraint.endDate!.year,
+                            constraint.endDate!.month,
+                            constraint.endDate!.day,
+                          );
+                          final todayDate = DateTime(
+                            today.year,
+                            today.month,
+                            today.day,
+                          );
+                          return constraintEndDate.isBefore(todayDate);
+                        } else {
+                          // For single-day constraints (no endDate), check if startDate is before today
+                          final today = DateTime.now();
+                          final constraintStartDate = DateTime(
+                            constraint.startDate.year,
+                            constraint.startDate.month,
+                            constraint.startDate.day,
+                          );
+                          final todayDate = DateTime(
+                            today.year,
+                            today.month,
+                            today.day,
+                          );
+                          return constraintStartDate.isBefore(todayDate);
+                        }
+                      }
 
-                            // Filter out past constraints before counting
-                            final activeConstraints = member.constraints.where((c) => !isPastConstraint(c)).toList();
-                            final approvedCount = activeConstraints.where((c) => c.isApproved()).length;
-                            final pendingCount = activeConstraints.where((c) => c.isPending()).length;
+                      // Filter out past constraints and by constraint type before counting
+                      final activeConstraints = member.constraints
+                          .where((c) => !isPastConstraint(c))
+                          .where((c) => member.isPermanent ? c.isUnavailability : c.isAvailability)
+                          .toList();
+                      final approvedCount = activeConstraints.where((c) => c.isApproved()).length;
+                      final pendingCount = activeConstraints.where((c) => c.isPending()).length;
 
-                            // If has approved constraints, show both counters as before
-                            if (approvedCount > 0) {
-                              return Row(
-                                children: [
-                                  Text(
-                                    member.isPermanent
-                                        ? '$approvedCount מגבלות'
-                                        : '$approvedCount תאריכי זמינות',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: member.isPermanent ? Colors.orange : Colors.green,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  if (pendingCount > 0) ...[
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '($pendingCount ממתינות)',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.red,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              );
-                            } else if (pendingCount > 0) {
-                              // If no approved constraints but has pending, show only pending counter in red
-                              return Text(
-                                member.isPermanent
-                                    ? '$pendingCount מגבלות ממתינות'
-                                    : '$pendingCount ממתינות',
+                      if (activeConstraints.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+
+                      // If has approved constraints, show both counters as before
+                      if (approvedCount > 0) {
+                        return Row(
+                          children: [
+                            Text(
+                              member.isPermanent
+                                  ? '$approvedCount מגבלות'
+                                  : '$approvedCount תאריכי זמינות',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: member.isPermanent ? Colors.orange : Colors.green,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            if (pendingCount > 0) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                '($pendingCount ממתינות)',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.red,
                                   fontWeight: FontWeight.bold,
                                 ),
-                              );
-                            } else {
-                              // No approved or pending constraints (shouldn't happen with constraints.isNotEmpty check)
-                              return const SizedBox.shrink();
-                            }
-                          },
-                        ),
-                      ],
-                    ),
+                              ),
+                            ],
+                          ],
+                        );
+                      } else if (pendingCount > 0) {
+                        // If no approved constraints but has pending, show only pending counter in red
+                        return Text(
+                          member.isPermanent
+                              ? '$pendingCount מגבלות ממתינות'
+                              : '$pendingCount ממתינות',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        );
+                      } else {
+                        // No approved or pending constraints (shouldn't happen with activeConstraints.isEmpty check)
+                        return const SizedBox.shrink();
+                      }
+                    },
+                  ),
                   if (member.comments.isNotEmpty)
                     Text(
                       member.comments,
@@ -1091,16 +1093,16 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                     ),
                                   ),
                                   const Spacer(),
-                                  // Show rejected constraints button only for permanent members
-                                  if (_isPermanent && _constraints.any((c) => c.status == ConstraintStatus.rejected))
+                                  // Show rejected constraints button only for permanent members with unavailability constraints
+                                  if (_isPermanent && _constraints.any((c) => c.isUnavailability && c.status == ConstraintStatus.rejected))
                                     TextButton.icon(
-                                      onPressed: () => _showRejectedConstraints(_constraints.where((c) => c.status == ConstraintStatus.rejected).toList()),
+                                      onPressed: () => _showRejectedConstraints(_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).toList()),
                                       icon: const Icon(
                                         Icons.visibility,
                                         size: 20,
                                       ),
                                       label: Text(
-                                        'הצג מגבלות שנדחו (${_constraints.where((c) => c.status == ConstraintStatus.rejected).length})',
+                                        'הצג מגבלות שנדחו (${_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).length})',
                                         style: const TextStyle(fontSize: 14),
                                       ),
                                       style: TextButton.styleFrom(
@@ -1483,6 +1485,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
   List<Widget> _buildVisibleConstraintsList() {
     final visibleConstraints = _constraints.where((constraint) {
+      // Filter by constraint type based on permanent status
+      if (_isPermanent && constraint.isAvailability) return false; // Permanent members only see unavailability
+      if (!_isPermanent && constraint.isUnavailability) return false; // Non-permanent members only see availability
+
       // Hide rejected constraints from admin view (they'll have a separate button)
       if (constraint.status == ConstraintStatus.rejected) return false;
 
@@ -1526,7 +1532,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       ..sort((a, b) => a.startDate.compareTo(b.startDate));
 
     final rejectedConstraints = _constraints.where((constraint) {
-      // Only show constraints that are rejected
+      // Only show constraints that are rejected AND match the constraint type for this member
+      if (_isPermanent && constraint.isAvailability) return false; // Permanent members only see unavailability
+      if (!_isPermanent && constraint.isUnavailability) return false; // Non-permanent members only see availability
+
       return constraint.status == ConstraintStatus.rejected;
     }).toList()
       ..sort((a, b) => a.startDate.compareTo(b.startDate));
