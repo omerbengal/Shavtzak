@@ -142,9 +142,17 @@ class AssignmentRepository {
       return conflicts;
     }
 
-    // Check availability conflict
-    if (!member.isAvailableOn(event.startDate)) {
-      conflicts.add('${member.name} לא זמין/ה בתאריך ${event.startDate}');
+    // Check availability conflict for entire event duration
+    if (!member.isAvailableForDateRange(event.startDate, event.endDate)) {
+      final dateRange = event.endDate != null
+          ? '${_formatDate(event.startDate)} - ${_formatDate(event.endDate!)}'
+          : _formatDate(event.startDate);
+
+      if (member.isPermanent) {
+        conflicts.add('${member.name} לא זמין/ה בתאריכים $dateRange (יש הגבלה מאושרת)');
+      } else {
+        conflicts.add('${member.name} לא ציין/ה זמינות בתאריכים $dateRange (יש להוסיף זמינות)');
+      }
     }
 
     // Check qualification conflict
@@ -298,6 +306,11 @@ class AssignmentStats {
   bool get isFilled => remaining == 0;
   bool get isOverfilled => remaining < 0;
   bool get needsMore => remaining > 0;
+}
+
+/// Helper method to format date for display
+String _formatDate(DateTime date) {
+  return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 }
 
 /// Exception thrown when assignment has conflicts

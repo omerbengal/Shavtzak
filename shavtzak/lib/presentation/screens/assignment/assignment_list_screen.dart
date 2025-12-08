@@ -78,6 +78,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ],
         ),
         floatingActionButton: FloatingActionButton(
+          heroTag: 'assignment_fab',
           onPressed: () => _showManualAssignmentFlow(),
           backgroundColor: Colors.blue,
           child: const Icon(Icons.add, color: Colors.white),

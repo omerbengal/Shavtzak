@@ -201,6 +201,7 @@ class DateConstraintModel {
   final DateTime? endDate;
   final String? note;
   final ConstraintStatus status;
+  final ConstraintType constraintType;
 
   const DateConstraintModel({
     required this.id,
@@ -208,6 +209,7 @@ class DateConstraintModel {
     this.endDate,
     this.note,
     this.status = ConstraintStatus.approved, // default to approved for existing constraints
+    this.constraintType = ConstraintType.unavailability, // default to unavailability for backward compatibility
   });
 
   factory DateConstraintModel.fromEntity(DateConstraint entity) {
@@ -217,6 +219,7 @@ class DateConstraintModel {
       endDate: entity.endDate,
       note: entity.note,
       status: entity.status,
+      constraintType: entity.constraintType,
     );
   }
 
@@ -227,6 +230,7 @@ class DateConstraintModel {
       endDate: endDate,
       note: note,
       status: status,
+      constraintType: constraintType,
     );
   }
 
@@ -239,6 +243,15 @@ class DateConstraintModel {
             orElse: () => ConstraintStatus.pending,
           )
         : ConstraintStatus.approved;
+
+    // Handle migration - default to unavailability for existing constraints missing constraintType
+    final typeValue = json['constraintType'] as String?;
+    final constraintType = typeValue != null
+        ? ConstraintType.values.firstWhere(
+            (t) => t.name == typeValue,
+            orElse: () => ConstraintType.unavailability,
+          )
+        : ConstraintType.unavailability;
 
     // Handle migration - generate ID for existing constraints missing id
     final constraintId = json['id'] as String? ?? const Uuid().v4();
@@ -255,6 +268,7 @@ class DateConstraintModel {
               : DateTime.parse(json['endDate'] as String),
       note: json['note'] as String?,
       status: status,
+      constraintType: constraintType,
     );
   }
 
@@ -265,6 +279,7 @@ class DateConstraintModel {
       'endDate': endDate?.toIso8601String(),
       'note': note,
       'status': status.name,
+      'constraintType': constraintType.name,
     };
   }
 }

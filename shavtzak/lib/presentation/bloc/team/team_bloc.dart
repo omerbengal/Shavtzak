@@ -326,6 +326,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         endDate: effectiveEndDate,
         note: event.note,
         status: ConstraintStatus.pending,
+        constraintType: ConstraintType.unavailability, // For permanent members
       );
 
       // Add to constraints list
@@ -487,6 +488,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         endDate: event.endDate,
         note: event.note,
         status: event.status,
+        constraintType: ConstraintType.unavailability, // For permanent members
       );
 
       constraintManager.addConstraintLocally(newConstraint);

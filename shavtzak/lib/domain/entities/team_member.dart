@@ -2,13 +2,14 @@ import 'package:equatable/equatable.dart';
 import '../../core/constants/role_types.dart';
 import '../../core/constants/constraint_status.dart';
 
-/// Date constraint representing when a team member is unavailable
+/// Date constraint representing when a team member is unavailable or available
 class DateConstraint extends Equatable {
   final String id; // unique identifier for the constraint
   final DateTime startDate;
   final DateTime? endDate; // null means single day constraint
   final String? note; // optional note for the constraint
   final ConstraintStatus status; // status of the constraint request
+  final ConstraintType constraintType; // type of constraint (unavailability/availability)
 
   const DateConstraint({
     required this.id,
@@ -16,6 +17,7 @@ class DateConstraint extends Equatable {
     this.endDate,
     this.note,
     this.status = ConstraintStatus.approved, // default to approved for existing constraints
+    required this.constraintType, // constraint type must be explicitly provided
   });
 
   /// Check if a given date falls within this constraint
@@ -41,7 +43,7 @@ class DateConstraint extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, startDate, endDate, note, status];
+  List<Object?> get props => [id, startDate, endDate, note, status, constraintType];
 
   @override
   String toString() {
@@ -60,6 +62,7 @@ class DateConstraint extends Equatable {
     DateTime? endDate,
     String? note,
     ConstraintStatus? status,
+    ConstraintType? constraintType,
   }) {
     return DateConstraint(
       id: id ?? this.id,
@@ -67,6 +70,7 @@ class DateConstraint extends Equatable {
       endDate: endDate ?? this.endDate,
       note: note ?? this.note,
       status: status ?? this.status,
+      constraintType: constraintType ?? this.constraintType,
     );
   }
 
@@ -74,6 +78,10 @@ class DateConstraint extends Equatable {
   bool isPending() => status == ConstraintStatus.pending;
   bool isApproved() => status == ConstraintStatus.approved;
   bool isRejected() => status == ConstraintStatus.rejected;
+
+  /// Helper methods to check constraint type
+  bool get isAvailability => constraintType == ConstraintType.availability;
+  bool get isUnavailability => constraintType == ConstraintType.unavailability;
 }
 
 /// Team member domain entity
@@ -107,17 +115,49 @@ class TeamMember extends Equatable {
   });
 
   /// Check if team member is available on a given date
-  /// Only APPROVED constraints are considered (pending/rejected are ignored)
+  /// Logic depends on member type and constraint type
   bool isAvailableOn(DateTime date) {
     if (!isActive) return false;
 
     for (final constraint in constraints) {
-      // Only approved constraints affect availability
-      if (constraint.isApproved() && constraint.conflictsWith(date)) {
+      if (constraint.isAvailability && constraint.conflictsWith(date)) {
+        // Non-permanent member availability - immediate effect
+        return true; // Available if availability constraint matches
+      }
+
+      if (constraint.isUnavailability &&
+          constraint.isApproved() &&
+          constraint.conflictsWith(date)) {
+        // Permanent member constraint - requires approval
         return false;
       }
     }
-    return true;
+
+    // Default availability based on member type
+    return isPermanent; // Permanent: available by default, Non-permanent: unavailable unless specified
+  }
+
+  /// Check if team member is available for ALL dates in a range
+  /// Returns true if available on every day from startDate to endDate (inclusive)
+  bool isAvailableForDateRange(DateTime startDate, DateTime? endDate) {
+    if (!isActive) return false;
+
+    // Normalize dates to remove time component
+    final start = DateTime(startDate.year, startDate.month, startDate.day);
+    final end = endDate != null
+        ? DateTime(endDate.year, endDate.month, endDate.day)
+        : start;
+
+    // Check each day in the range
+    DateTime currentDate = start;
+    while (!currentDate.isAfter(end)) {
+      if (!isAvailableOn(currentDate)) {
+        return false; // Not available on this day
+      }
+      currentDate = currentDate.add(const Duration(days: 1));
+    }
+
+    return true; // Available on all days
   }
 
   /// Check if team member can perform a given role
@@ -129,6 +169,12 @@ class TeamMember extends Equatable {
   bool isQualifiedAndAvailableFor(RoleType role, DateTime date) {
     return canPerformRole(role) && isAvailableOn(date);
   }
+
+  /// Check if this team member can have constraints (permanent members only)
+  bool get canHaveConstraints => isPermanent;
+
+  /// Check if this team member can have availability (non-permanent members only)
+  bool get canHaveAvailability => !isPermanent;
 
   /// Get list of all roles this team member can perform
   List<RoleType> get availableRoles {

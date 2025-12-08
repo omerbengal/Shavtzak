@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
+import 'package:go_router/go_router.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
@@ -9,8 +10,10 @@ import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
 import '../../widgets/date_picker_dialog.dart';
+import 'availability_screen.dart';
 
 /// Screen for non-admin users to manage their constraint requests
+/// Redirects non-permanent users to availability screen
 class ConstraintsScreen extends StatefulWidget {
   const ConstraintsScreen({super.key});
 
@@ -66,17 +69,28 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        body: SafeArea(
-          child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
-            builder: (context, userState) {
-              if (userState is! UserAuthenticated) {
-                return const Center(
+      child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
+        builder: (context, userState) {
+          if (userState is! UserAuthenticated) {
+            return Scaffold(
+              body: SafeArea(
+                child: const Center(
                   child: Text('אין משתמש מחובר'),
-                );
-              }
+                ),
+              ),
+            );
+          }
 
-              return BlocConsumer<TeamBloc, TeamState>(
+          // Redirect non-permanent users to availability screen
+          if (!userState.user.isPermanent) {
+            // Return the availability screen directly
+            return const AvailabilityScreen();
+          }
+
+          // For permanent users, show the constraints screen with FAB
+          return Scaffold(
+            body: SafeArea(
+              child: BlocConsumer<TeamBloc, TeamState>(
                 listener: (context, state) {
                   // Show snackbar for success/error messages
                   if (state is TeamMemberOperationSuccess) {
@@ -134,14 +148,15 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                     child: CircularProgressIndicator(),
                   );
                 },
-              );
-            },
-          ),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => _addConstraintRequest(context),
-          child: const Icon(Icons.add),
-        ),
+              ),
+            ),
+            floatingActionButton: FloatingActionButton(
+              heroTag: 'constraints_fab',
+              onPressed: () => _addConstraintRequest(context),
+              child: const Icon(Icons.add),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1295,6 +1310,7 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
                           ? null
                           : noteController.text.trim(),
                       status: ConstraintStatus.pending, // Reset to pending when edited
+                      constraintType: widget.constraint.constraintType, // Preserve original constraint type
                     );
 
                     // Update constraint via BLoC (same pattern as existing edit constraint)

@@ -1,9 +1,28 @@
+/// Constraint type for date constraints
+enum ConstraintType {
+  unavailability,  // For permanent members - requires approval
+  availability,    // For non-permanent members - immediate effect
+}
+
 /// Constraint status for user-submitted date constraint requests
 /// Hebrew names are stored for display purposes
 enum ConstraintStatus {
   pending,
   approved,
   rejected,
+}
+
+/// Extension to add Hebrew display names for constraint types
+extension ConstraintTypeExtension on ConstraintType {
+  /// Get the Hebrew display name for this type
+  String get hebrewName {
+    switch (this) {
+      case ConstraintType.unavailability:
+        return 'אי-זמינות';
+      case ConstraintType.availability:
+        return 'זמינות';
+    }
+  }
 }
 
 /// Extension to add Hebrew display names and helper methods

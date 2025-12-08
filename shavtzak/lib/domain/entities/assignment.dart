@@ -57,12 +57,12 @@ class Assignment extends Equatable {
   String get roleHebrewName => roleType.hebrewName;
 
   /// Check if this assignment conflicts with team member availability
-  /// Returns true if team member is unavailable on event dates
+  /// Returns true if team member is unavailable on ANY of the event dates
   bool hasAvailabilityConflict() {
     if (event == null || teamMember == null) return false;
 
-    // Check if team member is available on event start date
-    return !teamMember!.isAvailableOn(event!.startDate);
+    // Check availability for the entire event date range
+    return !teamMember!.isAvailableForDateRange(event!.startDate, event!.endDate);
   }
 
   /// Check if team member is qualified for this role

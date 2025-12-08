@@ -534,8 +534,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               // Check capability
               if (!member.canPerformRole(role)) continue;
 
-              // Check availability
-              if (!member.isAvailableOn(event.startDate)) continue;
+              // Check availability for entire event duration
+              if (!member.isAvailableForDateRange(event.startDate, event.endDate)) continue;
 
               // Separate based on whether already assigned to this event
               if (assignedMemberIds.contains(member.id)) {

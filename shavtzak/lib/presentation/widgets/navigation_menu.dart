@@ -19,6 +19,7 @@ class NavigationMenu extends StatelessWidget {
       children: [
         // Home button
         IconButton(
+          key: const ValueKey('nav_home_button'),
           icon: const Icon(Icons.home),
           tooltip: 'בית',
           onPressed: () => context.go('/admin'),
@@ -35,6 +36,7 @@ class NavigationMenu extends StatelessWidget {
 
         // Logout button
         IconButton(
+          key: const ValueKey('nav_logout_button'),
           icon: const Icon(Icons.logout),
           tooltip: 'התנתק',
           onPressed: () => _logout(context),

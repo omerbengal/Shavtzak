@@ -135,6 +135,7 @@ class _EventListScreenState extends State<EventListScreen> {
           },
         ),
         floatingActionButton: FloatingActionButton(
+          heroTag: 'event_fab',
           onPressed: () {
             _showEventFormModal(null);
           },

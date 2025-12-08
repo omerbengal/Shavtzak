@@ -152,6 +152,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
           },
         ),
         floatingActionButton: FloatingActionButton(
+          heroTag: 'team_fab',
           onPressed: () {
             _showTeamMemberFormModal(null);
           },
@@ -327,8 +328,14 @@ class _TeamListScreenState extends State<TeamListScreen> {
                               return Row(
                                 children: [
                                   Text(
-                                    '$approvedCount מגבלות',
-                                    style: const TextStyle(fontSize: 12, color: Colors.orange),
+                                    member.isPermanent
+                                        ? '$approvedCount מגבלות'
+                                        : '$approvedCount תאריכי זמינות',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: member.isPermanent ? Colors.orange : Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                   if (pendingCount > 0) ...[
                                     const SizedBox(width: 4),
@@ -346,7 +353,9 @@ class _TeamListScreenState extends State<TeamListScreen> {
                             } else if (pendingCount > 0) {
                               // If no approved constraints but has pending, show only pending counter in red
                               return Text(
-                                '$pendingCount ממתינות',
+                                member.isPermanent
+                                    ? '$pendingCount מגבלות ממתינות'
+                                    : '$pendingCount ממתינות',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.red,
@@ -1070,23 +1079,53 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
                               const Divider(height: 32),
 
-                              // Date constraints section
+                              // Date constraints/availability section
                               Row(
                                 children: [
-                                  const Text(
-                                    'מגבלות זמן',
+                                  Text(
+                                    _isPermanent ? 'מגבלות זמן' : 'זמינות',
                                     style: TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
+                                      color: _isPermanent ? null : Colors.green[700],
                                     ),
                                   ),
                                   const Spacer(),
+                                  // Show rejected constraints button only for permanent members
+                                  if (_isPermanent && _constraints.any((c) => c.status == ConstraintStatus.rejected))
+                                    TextButton.icon(
+                                      onPressed: () => _showRejectedConstraints(_constraints.where((c) => c.status == ConstraintStatus.rejected).toList()),
+                                      icon: const Icon(
+                                        Icons.visibility,
+                                        size: 20,
+                                      ),
+                                      label: Text(
+                                        'הצג מגבלות שנדחו (${_constraints.where((c) => c.status == ConstraintStatus.rejected).length})',
+                                        style: const TextStyle(fontSize: 14),
+                                      ),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.grey[600],
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      ),
+                                    ),
                                 ],
                               ),
 
                               const SizedBox(height: 8),
 
-                              // Constraints list
+                              // Helper text
+                              Text(
+                                _isPermanent
+                                    ? 'כאן תוכל לאשר או לדחות בקשות מגבלות מחברי צוות קבועים. מגבלות מאושרות ימנעו שיבוץ לאירועים.'
+                                    : 'זמינות שסימן/ה חבר הצוות הזה. זמינות פעילה מאפשרת שיבוץ לאירועים.',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+
+                              const SizedBox(height: 8),
+
+                              // Constraints/Availability list
                               ..._buildVisibleConstraintsList(),
 
                               const Divider(height: 32),
@@ -1154,7 +1193,12 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   }
 
   Widget _buildConstraintCard(DateConstraint constraint) {
-    // Use the constraint status directly
+    // Handle availability constraints differently
+    if (constraint.isAvailability) {
+      return _buildAvailabilityCard(constraint);
+    }
+
+    // For unavailability constraints (permanent members), use existing logic
     final effectiveStatus = constraint.status;
 
     return Card(
@@ -1327,6 +1371,64 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     );
   }
 
+  Widget _buildAvailabilityCard(DateConstraint availability) {
+    return Card(
+      color: Colors.green[50],
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.event_available,
+                  color: Colors.green[600],
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  availability.endDate != null && !_isSameDay(availability.startDate, availability.endDate!)
+                      ? '${_formatDate(availability.startDate)} - ${_formatDate(availability.endDate!)}'
+                      : _formatDate(availability.startDate),
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            if (availability.note != null && availability.note!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green[100],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.note,
+                      size: 16,
+                      color: Colors.green[700],
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        availability.note!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.green[700],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
@@ -1431,11 +1533,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
     if (visibleConstraints.isEmpty && rejectedConstraints.isEmpty) {
       return [
-        const Padding(
-          padding: EdgeInsets.all(16),
+        Padding(
+          padding: const EdgeInsets.all(16),
           child: Text(
-            'אין מגבלות זמן',
-            style: TextStyle(color: Colors.grey),
+            _isPermanent ? 'אין מגבלות זמן' : 'אין זמינות',
+            style: TextStyle(
+              color: Colors.grey,
+              fontSize: 16,
+            ),
             textAlign: TextAlign.center,
           ),
         )
@@ -1701,6 +1806,7 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
                         endDate: _endDate,
                         note: noteText.isEmpty ? null : noteText,
                         status: widget.constraint?.status ?? ConstraintStatus.approved, // Use existing status or default to approved
+                        constraintType: widget.constraint?.constraintType ?? ConstraintType.unavailability, // Use existing type or default to unavailability
                       ),
                     );
                   },
