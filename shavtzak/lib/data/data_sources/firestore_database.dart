@@ -3,6 +3,7 @@ import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
+import '../../core/services/environment_service.dart';
 import '../models/assignment_model.dart';
 import '../models/event_model.dart';
 import '../models/team_member_model.dart';
@@ -12,10 +13,13 @@ import 'database_interface.dart';
 class FirestoreDatabase implements DatabaseInterface {
   final FirebaseFirestore _firestore;
 
-  // Collection names
-  static const String _teamMembersCollection = 'teamMembers';
-  static const String _eventsCollection = 'events';
-  static const String _assignmentsCollection = 'assignments';
+  // Collection names with environment prefix
+  String get _teamMembersCollection =>
+      '${EnvironmentService.instance.collectionPrefix}teamMembers';
+  String get _eventsCollection =>
+      '${EnvironmentService.instance.collectionPrefix}events';
+  String get _assignmentsCollection =>
+      '${EnvironmentService.instance.collectionPrefix}assignments';
 
   FirestoreDatabase({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;

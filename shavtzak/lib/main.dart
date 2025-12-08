@@ -11,6 +11,7 @@ import 'data/repositories/event_repository.dart';
 import 'data/repositories/assignment_repository.dart';
 import 'data/repositories/user_selection_repository.dart';
 import 'core/services/user_cache_service.dart';
+import 'core/services/environment_service.dart';
 
 // Presentation layer
 import 'presentation/bloc/team/team_bloc.dart';
@@ -38,6 +39,9 @@ void main() {
 
 Future<void> _initialize() async {
   try {
+    // Initialize environment service (detects test vs production from URL)
+    EnvironmentService.instance.initialize();
+
     // Preload Rubik font to prevent FOUT (Flash of Unstyled Text)
     await _preloadFont();
 

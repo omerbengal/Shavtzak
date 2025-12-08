@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../widgets/navigation_menu.dart';
+import '../../../core/services/environment_service.dart';
 
 /// Home screen with navigation cards to main sections
 class HomeScreen extends StatelessWidget {
@@ -41,7 +42,8 @@ class HomeScreen extends StatelessWidget {
                     elevation: 4,
                     child: InkWell(
                       onTap: () {
-                        context.go('/admin/team-members');
+                        final envPrefix = EnvironmentService.instance.routePrefix;
+                        context.go('$envPrefix/admin/team-members');
                       },
                       child: const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -65,7 +67,8 @@ class HomeScreen extends StatelessWidget {
                     elevation: 4,
                     child: InkWell(
                       onTap: () {
-                        context.go('/admin/events');
+                        final envPrefix = EnvironmentService.instance.routePrefix;
+                        context.go('$envPrefix/admin/events');
                       },
                       child: const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -89,7 +92,8 @@ class HomeScreen extends StatelessWidget {
                     elevation: 4,
                     child: InkWell(
                       onTap: () {
-                        context.go('/admin/assignments');
+                        final envPrefix = EnvironmentService.instance.routePrefix;
+                        context.go('$envPrefix/admin/assignments');
                       },
                       child: const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
