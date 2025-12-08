@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'dart:html' as html;
 import '../../core/services/environment_service.dart';
 
 /// Button to switch between production and test environments
-/// Always redirects to the whoami screen of the opposite environment
+/// Forces a full page reload to ensure all services reinitialize with new environment
 class EnvironmentSwitcherButton extends StatelessWidget {
   const EnvironmentSwitcherButton({super.key});
 
@@ -20,7 +20,11 @@ class EnvironmentSwitcherButton extends StatelessWidget {
       onPressed: () {
         // Navigate to the opposite environment's whoami screen
         final targetRoute = isTestMode ? '/whoami' : '/test/whoami';
-        context.go(targetRoute);
+
+        // Force a full page reload to reinitialize all services with new environment
+        // This ensures Firestore collections, cache keys, and all widgets update properly
+        html.window.location.href = '#$targetRoute';
+        html.window.location.reload();
       },
     );
   }
