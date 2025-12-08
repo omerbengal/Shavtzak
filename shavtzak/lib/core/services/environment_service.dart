@@ -1,8 +1,9 @@
 import 'dart:html' as html;
+import 'package:flutter/foundation.dart';
 
 /// Service to detect and manage the current environment (test vs production)
-/// based on the URL path.
-class EnvironmentService {
+/// based on the URL path. Notifies listeners when environment changes.
+class EnvironmentService extends ChangeNotifier {
   static EnvironmentService? _instance;
 
   /// Singleton instance
@@ -17,8 +18,12 @@ class EnvironmentService {
 
   /// Initialize the environment service by detecting the current URL
   void initialize() {
-    final currentPath = html.window.location.pathname ?? '';
-    _isTestMode = currentPath.startsWith('/test/') || currentPath == '/test';
+    final currentPath = html.window.location.hash.substring(1); // Remove '#' prefix
+    final newTestMode = currentPath.startsWith('/test/') || currentPath == '/test';
+    if (_isTestMode != newTestMode) {
+      _isTestMode = newTestMode;
+      notifyListeners();
+    }
   }
 
   /// Returns true if the app is running in test environment
@@ -41,11 +46,18 @@ class EnvironmentService {
 
   /// Manually set test mode (useful for testing or direct URL entry)
   void setTestMode(bool isTest) {
-    _isTestMode = isTest;
+    if (_isTestMode != isTest) {
+      _isTestMode = isTest;
+      notifyListeners();
+    }
   }
 
   /// Update test mode based on a given path
   void updateFromPath(String path) {
-    _isTestMode = path.startsWith('/test/') || path == '/test';
+    final newTestMode = path.startsWith('/test/') || path == '/test';
+    if (_isTestMode != newTestMode) {
+      _isTestMode = newTestMode;
+      notifyListeners();
+    }
   }
 }
