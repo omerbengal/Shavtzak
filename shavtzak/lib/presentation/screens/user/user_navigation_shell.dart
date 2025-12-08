@@ -6,6 +6,7 @@ import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/navigation_menu.dart';
 import '../../widgets/test_environment_indicator.dart';
+import '../../widgets/environment_switcher_button.dart';
 
 /// Navigation shell for user-facing screens with bottom navigation
 class UserNavigationShell extends StatelessWidget {
@@ -42,6 +43,9 @@ class UserNavigationShell extends StatelessWidget {
             return AppBar(
               title: const Text('שבצק'),
               centerTitle: true,
+              actions: const [
+                EnvironmentSwitcherButton(),
+              ],
             );
           }
 
@@ -52,6 +56,7 @@ class UserNavigationShell extends StatelessWidget {
             ),
             centerTitle: true,
             actions: [
+              const EnvironmentSwitcherButton(),
               // Show navigation menu (home + logout) only for admin users
               if (state.user.isAdmin)
                 const NavigationMenu()
