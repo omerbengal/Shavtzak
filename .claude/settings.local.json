@@ -32,7 +32,8 @@
       "Bash(cd:*)",
       "Bash(curl:*)",
       "WebSearch",
-      "mcp__context7__resolve-library-id"
+      "mcp__context7__resolve-library-id",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []
