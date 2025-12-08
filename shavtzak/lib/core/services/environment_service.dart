@@ -18,7 +18,9 @@ class EnvironmentService extends ChangeNotifier {
 
   /// Initialize the environment service by detecting the current URL
   void initialize() {
-    final currentPath = html.window.location.hash.substring(1); // Remove '#' prefix
+    final hash = html.window.location.hash;
+    // Remove '#' prefix if it exists, otherwise use empty string
+    final currentPath = hash.isNotEmpty ? hash.substring(1) : '';
     final newTestMode = currentPath.startsWith('/test/') || currentPath == '/test';
     if (_isTestMode != newTestMode) {
       _isTestMode = newTestMode;
