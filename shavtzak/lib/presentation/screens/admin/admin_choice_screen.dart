@@ -5,7 +5,6 @@ import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../../core/services/environment_service.dart';
-import '../../widgets/environment_switcher_button.dart';
 
 /// Admin choice screen - allows admin users to choose between personal area and management
 class AdminChoiceScreen extends StatelessWidget {
@@ -120,9 +119,6 @@ class AdminChoiceScreen extends StatelessWidget {
             return AppBar(
               title: const Text('שבצק'),
               centerTitle: true,
-              actions: const [
-                EnvironmentSwitcherButton(),
-              ],
             );
           }
 
@@ -133,7 +129,6 @@ class AdminChoiceScreen extends StatelessWidget {
             ),
             centerTitle: true,
             actions: [
-              const EnvironmentSwitcherButton(),
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתקות',

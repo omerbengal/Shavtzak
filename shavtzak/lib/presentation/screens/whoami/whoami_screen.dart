@@ -6,7 +6,6 @@ import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/test_environment_indicator.dart';
-import '../../widgets/environment_switcher_button.dart';
 
 /// Screen for user selection - "מי את/ה?"
 class WhoamiScreen extends StatefulWidget {
@@ -87,7 +86,6 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
           title: const Text('בחירת משתמש'),
           centerTitle: true,
           actions: [
-            const EnvironmentSwitcherButton(),
             IconButton(
               icon: const Icon(Icons.logout),
               tooltip: 'ניקוי מטמון',

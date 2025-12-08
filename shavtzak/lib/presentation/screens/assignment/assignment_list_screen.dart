@@ -16,7 +16,6 @@ import '../../bloc/event/event_event.dart';
 import '../../bloc/team/team_bloc.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/navigation_menu.dart';
-import '../../widgets/environment_switcher_button.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import 'assignment_filter_modal.dart';
 import '../event/widgets/event_form_modal.dart';
@@ -75,7 +74,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         appBar: AppBar(
           title: const Text('שיבוצים'),
           actions: const [
-            EnvironmentSwitcherButton(),
             NavigationMenu(),
           ],
         ),
