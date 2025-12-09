@@ -262,8 +262,8 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                           _errorMessage = null; // Clear error on selection
                         });
 
-                        // Reset the flag after a short delay to allow normal changes
-                        Future.delayed(const Duration(milliseconds: 100), () {
+                        // Reset the flag after a short delay - longer for mobile
+                        Future.delayed(const Duration(milliseconds: isMobile ? 150 : 50), () {
                           if (mounted) {
                             _isProcessingChange = false;
                           }

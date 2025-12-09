@@ -451,7 +451,7 @@ class _EventFormModalState extends State<EventFormModal> {
                                         child: TextButton(
                                           child: const Text('מחק', style: TextStyle(color: Colors.red)),
                                           onPressed: () async {
-                                            Navigator.of(dialogContext).pop(); // Close dialog
+                                            Navigator.of(dialogContext).pop(); // Close delete dialog
 
                                             try {
                                               final bloc = context.read<EventBloc>();
@@ -471,10 +471,10 @@ class _EventFormModalState extends State<EventFormModal> {
                                                       duration: Duration(seconds: 2),
                                                     ),
                                                   );
-                                                widget.onSuccess(); // Close modal
+                                                widget.onSuccess(); // Close event modal
                                               }
                                             } catch (e) {
-                                              // Show error message
+                                              // Show error message but still close the modal
                                               if (mounted) {
                                                 ScaffoldMessenger.of(context)
                                                   ..clearSnackBars()
@@ -485,6 +485,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                       duration: const Duration(seconds: 2),
                                                     ),
                                                   );
+                                                // Always close the modal, even on error
+                                                widget.onSuccess();
                                               }
                                             }
                                           },
