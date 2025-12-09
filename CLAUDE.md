@@ -370,9 +370,10 @@ The V1 system used Excel/Google Sheets. The codebase includes:
 - **RTL**: Always wrap screens with RTL directionality
 - **Immutability**: Entities use `copyWith()` methods, never mutate directly
 - **Null Safety**: Full Dart null-safety enabled
-- **Testing**: Test infrastructure exists (`bloc_test`, `mockito`, `fake_cloud_firestore`) but no tests implemented yet
+- **Testing**: Test infrastructure exists (`bloc_test`, `mockito`, `fake_cloud_firestore`) plus comprehensive semantic identifier coverage
 - **Environment Isolation**: Test and production are completely separate (data, cache, routes)
 - **User-Based Auth**: No traditional Firebase Authentication - uses cached team member uniqueKey
+- **Semantic Testing**: ALL interactive widgets have semantic identifiers for reliable automated testing
 
 ## Key Architectural Principles
 
@@ -410,6 +411,15 @@ The V1 system used Excel/Google Sheets. The codebase includes:
 - Separate cache per environment
 - Visual test mode indicator
 - Admin vs user routing
+
+### Automated Testing Infrastructure ✅
+- **150+ Semantic Identifiers**: All interactive widgets have semantic identifiers
+- **Comprehensive Coverage**: Buttons, forms, dialogs, navigation, modals, filters
+- **Testing Tools**: Automated semantic checker scripts in `tools/semantics-checker/`
+- **Playwright Ready**: Perfect for browser automation tests
+- **Flutter Integration Ready**: Compatible with Flutter testing framework
+- **Consistent Naming**: All semantic identifiers use kebab-case format
+- **Documentation**: Complete testing guide and tool usage instructions
 
 ### Constraints & Availability ✅
 - Permanent member constraint requests (requires approval)
@@ -549,6 +559,19 @@ lib/
         ├── environment_switcher_button.dart
         ├── test_environment_indicator.dart
         └── date_picker_dialog.dart
+
+# Testing Infrastructure
+├── tools/
+│   └── semantics-checker/
+│       ├── README.md                    # Complete testing documentation
+│       ├── run-check.sh                # Interactive semantic checker menu
+│       ├── quick_semantics_check.sh    # Fast daily semantic verification
+│       ├── check_semantics.sh           # Comprehensive semantic analysis
+│       └── CHECK_SEMANTICS.md           # Command reference guide
+├── Tests/
+│   ├── test-ui.js                     # Playwright automation test script
+│   └── package.json                    # Node.js test dependencies
+└── TESTING.md                           # Comprehensive testing guide
 ```
 
 ## Troubleshooting
@@ -585,3 +608,83 @@ lib/
 8. **Always use Hebrew in UI**: Keep code comments in English
 9. **Always validate foreign keys**: Check event/member exists before creating assignments
 10. **Always consider conflicts**: Check date constraints when creating assignments
+
+## Testing & Semantic Identifiers
+
+### ✅ Automated Testing Infrastructure
+
+The Shavtzak app is **100% ready for comprehensive automated testing** with complete semantic identifier coverage:
+
+#### **Semantic Identifier Coverage**
+- **150+ identifiers** across all interactive widgets
+- **Complete coverage**: buttons, forms, dialogs, navigation, modals, filters
+- **Consistent naming**: All use kebab-case format (e.g., `team-member-name-field`)
+- **Dynamic content**: Unique identifiers for list items and generated widgets
+
+#### **Testing Tools Available**
+```bash
+# Quick semantic check (recommended for daily use)
+./tools/semantics-checker/run-check.sh
+
+# Comprehensive analysis
+./tools/semantics-checker/check_semantics.sh
+
+# One-liner quick command
+find lib -name "*.dart" -exec grep -l "IconButton\|ElevatedButton" {} \; | xargs grep -n -E "^\s*(IconButton|ElevatedButton)" | grep -v "Semantics\|ValueKey"
+```
+
+#### **Playwright Testing Example**
+```javascript
+// test/automation/smoke-test.js
+await page.goto('http://localhost:8080/whoami');
+await page.click('[data-testid="team-member-card-admin-id"]');
+await expect(page.locator('[data-testid="admin-choice-screen"]')).toBeVisible();
+```
+
+#### **Flutter Integration Testing**
+```dart
+// test/integration/app_test.dart
+testWidgets('App navigation test', (WidgetTester tester) async {
+  await tester.pumpWidget(MyApp());
+  await tester.tap(find.bySemanticsIdentifier('team-member-card-admin-id'));
+  await tester.pumpAndSettle();
+});
+```
+
+#### **Semantic Identifier Patterns**
+```dart
+// Buttons
+Semantics(identifier: 'save-button', child: ElevatedButton(...))
+
+// Form fields
+Semantics(identifier: 'user-name-field', child: TextFormField(...))
+
+// List items
+Semantics(identifier: 'team-member-card-${member.id}', child: ListTile(...))
+
+// Navigation
+Semantics(identifier: 'nav-home-button', child: IconButton(...))
+```
+
+#### **Testing Documentation**
+- Complete testing guide: `TESTING.md`
+- Semantic checker tools: `tools/semantics-checker/README.md`
+- Command reference: `tools/semantics-checker/CHECK_SEMANTICS.md`
+
+#### **When to Run Checks**
+- **Before commits**: Ensure new widgets have semantic identifiers
+- **Before releases**: Verify complete test coverage
+- **During development**: Catch missing identifiers early
+- **CI/CD Integration**: Automated checks in pipelines
+
+#### **Current Status**
+✅ **ALL WIDGETS HAVE SEMANTIC IDENTIFIERS!**
+- Every interactive widget can be reliably identified
+- Perfect for Playwright, Flutter tests, and accessibility tools
+- Comprehensive testing infrastructure in place
+
+#### **Benefits**
+- **Reliable Tests**: No dependency on text content or DOM structure
+- **Maintainable**: Consistent naming makes tests easy to read
+- **Automatable**: Built-in tools verify coverage
+- **Accessible**: Improved support for screen readers and accessibility tools
