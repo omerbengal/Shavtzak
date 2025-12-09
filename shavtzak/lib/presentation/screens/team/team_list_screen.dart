@@ -266,30 +266,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                       ),
                     ),
                   ),
-                  // Activate/Deactivate button
-                  Semantics(
-                    identifier: 'team-member-toggle-status-${member.id}',
-                    child: IconButton(
-                      icon: Icon(
-                        member.isActive ? Icons.check_circle : Icons.cancel,
-                        color: member.isActive ? Colors.green : Colors.grey,
-                      ),
-                      onPressed: () {
-                        final bloc = context.read<TeamBloc>();
-                        if (member.isActive) {
-                          bloc.add(DeactivateTeamMember(member.id));
-                        } else {
-                          bloc.add(ReactivateTeamMember(member.id));
-                        }
-                      // Reload all members after operation completes
-                      Future.delayed(const Duration(milliseconds: 100), () {
-                        bloc.add(const LoadTeamMembers());
-                      });
-                    },
-                    tooltip: member.isActive ? 'השבת' : 'הפעל',
-                  ),
-                ),
-                ],
+                  ],
               ),
               const SizedBox(height: 8),
               // Info row
@@ -684,13 +661,24 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       bloc.add(CreateTeamMember(member));
     }
 
-    // Reload all team members after operation completes (filtering happens in UI)
-    Future.delayed(const Duration(milliseconds: 100), () {
-      bloc.add(const LoadTeamMembers());
-    });
-
     // Close modal after save operation
     widget.onSuccess();
+
+    // Show success message after modal is closed
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        final message = _isEditMode ? 'פרטי חבר הצוות עודכנו בהצלחה' : 'חבר הצוות נוסף בהצלחה';
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+      }
+    });
   }
 
   /// Check if constraints have changed since loading
@@ -952,11 +940,21 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                           onPressed: () {
                                             final bloc = context.read<TeamBloc>();
                                             bloc.add(DeleteTeamMember(widget.member!.id));
-                                            // Reload all team members after operation completes (filtering happens in UI)
-                                            Future.delayed(const Duration(milliseconds: 100), () {
-                                              bloc.add(const LoadTeamMembers());
-                                            });
                                             Navigator.of(dialogContext).pop(); // Close dialog
+
+                                            // Show success message
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                ..clearSnackBars()
+                                                ..showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text('חבר הצוות נמחק בהצלחה'),
+                                                    backgroundColor: Colors.green,
+                                                    duration: Duration(seconds: 2),
+                                                  ),
+                                                );
+                                            }
+
                                             widget.onSuccess(); // Close modal
                                           },
                                         ),

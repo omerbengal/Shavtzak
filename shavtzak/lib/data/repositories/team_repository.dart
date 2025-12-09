@@ -67,15 +67,8 @@ class TeamRepository {
       throw Exception('Team member not found: $id');
     }
 
-    final updated = TeamMember(
-      id: member.id,
-      uniqueKey: member.uniqueKey,
-      name: member.name,
+    final updated = member.copyWith(
       isActive: false,
-      constraints: member.constraints,
-      roleCapabilities: member.roleCapabilities,
-      isAdmin: member.isAdmin,
-      createdAt: member.createdAt,
       updatedAt: DateTime.now(),
     );
 
@@ -89,15 +82,8 @@ class TeamRepository {
       throw Exception('Team member not found: $id');
     }
 
-    final updated = TeamMember(
-      id: member.id,
-      uniqueKey: member.uniqueKey,
-      name: member.name,
+    final updated = member.copyWith(
       isActive: true,
-      constraints: member.constraints,
-      roleCapabilities: member.roleCapabilities,
-      isAdmin: member.isAdmin,
-      createdAt: member.createdAt,
       updatedAt: DateTime.now(),
     );
 

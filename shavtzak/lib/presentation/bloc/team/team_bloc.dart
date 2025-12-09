@@ -161,10 +161,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.createTeamMember(event.member);
-      // Emit success to show snackbar, UI will keep showing last state
-      emit(const TeamMemberOperationSuccess('חבר/ת הצוות נוסף/ה בהצלחה'));
 
-      // Don't restart listener here - the modal will handle it with the correct filter
+      // NOTE: We don't emit TeamMemberOperationSuccess here to avoid UI state issues
+      // The real-time stream from emit.forEach will automatically update the UI
+      // If a success message is needed, the UI layer should handle it
+
     } catch (e) {
       emit(TeamError('שגיאה בהוספת חבר/ת צוות: $e'));
     }
@@ -241,10 +242,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.deleteTeamMember(event.id);
-      // Emit success to show snackbar, UI will keep showing last state
-      emit(const TeamMemberOperationSuccess('חבר/ת הצוות נמחק/ה בהצלחה'));
 
-      // Don't restart listener here - the modal/screen will handle it with the correct filter
+      // NOTE: We don't emit TeamMemberOperationSuccess here to avoid UI state issues
+      // The real-time stream from emit.forEach will automatically update the UI
+      // If a success message is needed, the UI layer should handle it
+
     } catch (e) {
       emit(TeamError('שגיאה במחיקת חבר/ת הצוות: $e'));
     }
@@ -258,9 +260,10 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.deactivateTeamMember(event.id);
-      emit(const TeamMemberOperationSuccess('חבר/ת הצוות הוסר/ה בהצלחה'));
 
-      // Don't restart listener here - the screen will handle it with the correct filter
+      // NOTE: We don't emit TeamMemberOperationSuccess here to avoid UI state issues
+      // The real-time stream from emit.forEach will automatically update the UI
+      // If a success message is needed, the UI layer should handle it
     } catch (e) {
       emit(TeamError('שגיאה בהסרת חבר/ת הצוות: $e'));
     }
@@ -274,9 +277,10 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     try {
       // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.reactivateTeamMember(event.id);
-      emit(const TeamMemberOperationSuccess('חבר/ת הצוות הופעל/ה בהצלחה'));
 
-      // Don't restart listener here - the screen will handle it with the correct filter
+      // NOTE: We don't emit TeamMemberOperationSuccess here to avoid UI state issues
+      // The real-time stream from emit.forEach will automatically update the UI
+      // If a success message is needed, the UI layer should handle it
     } catch (e) {
       emit(TeamError('שגיאה בהפעלת חבר/ת הצוות: $e'));
     }
