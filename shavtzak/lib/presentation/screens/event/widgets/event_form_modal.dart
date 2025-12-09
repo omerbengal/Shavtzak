@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
@@ -451,24 +452,47 @@ class _EventFormModalState extends State<EventFormModal> {
                                         child: TextButton(
                                           child: const Text('מחק', style: TextStyle(color: Colors.red)),
                                           onPressed: () async {
-                                            final bloc = context.read<EventBloc>();
-                                            bloc.add(DeleteEvent(widget.event!.id));
                                             Navigator.of(dialogContext).pop(); // Close dialog
 
-                                            // Show success message
-                                            if (mounted) {
-                                              ScaffoldMessenger.of(context)
-                                                ..clearSnackBars()
-                                                ..showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text('האירוע נמחק בהצלחה'),
-                                                    backgroundColor: Colors.green,
-                                                    duration: Duration(seconds: 2),
-                                                  ),
-                                                );
-                                            }
+                                            // Listen for delete completion
+                                            final bloc = context.read<EventBloc>();
+                                            late StreamSubscription<EventState> subscription;
 
-                                            widget.onSuccess(); // Close modal
+                                            subscription = bloc.stream.listen((state) {
+                                              if (state is EventError) {
+                                                subscription.cancel();
+                                                // Show error message
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                    ..clearSnackBars()
+                                                    ..showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(state.message),
+                                                        backgroundColor: Colors.red,
+                                                        duration: const Duration(seconds: 2),
+                                                      ),
+                                                    );
+                                                }
+                                              } else if (state is EventsLoaded || state is EventsEmpty) {
+                                                subscription.cancel();
+                                                // Show success message and close modal
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                    ..clearSnackBars()
+                                                    ..showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text('האירוע נמחק בהצלחה'),
+                                                        backgroundColor: Colors.green,
+                                                        duration: Duration(seconds: 2),
+                                                      ),
+                                                    );
+                                                  widget.onSuccess(); // Close modal
+                                                }
+                                              }
+                                            });
+
+                                            // Trigger the delete
+                                            bloc.add(DeleteEvent(widget.event!.id));
                                           },
                                         ),
                                       ),
