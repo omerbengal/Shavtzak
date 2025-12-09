@@ -320,11 +320,7 @@ class _EventFormModalState extends State<EventFormModal> {
       bloc.add(CreateEvent(event));
     }
 
-    // Reload all events after operation completes (filtering happens in UI)
-    Future.delayed(const Duration(milliseconds: 100), () {
-      bloc.add(const LoadEvents());
-    });
-
+  
     // Close modal after save operation
     widget.onSuccess();
   }
@@ -431,10 +427,6 @@ class _EventFormModalState extends State<EventFormModal> {
                                         onPressed: () {
                                           final bloc = context.read<EventBloc>();
                                           bloc.add(DeleteEvent(widget.event!.id));
-                                          // Reload all events after operation completes (filtering happens in UI)
-                                          Future.delayed(const Duration(milliseconds: 100), () {
-                                            bloc.add(const LoadEvents());
-                                          });
                                           Navigator.of(dialogContext).pop(); // Close dialog
                                           widget.onSuccess(); // Close modal
                                         },

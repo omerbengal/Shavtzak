@@ -61,28 +61,30 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     final eventsStream = _repository.watchEvents();
     final assignmentsStream = _assignmentRepository.watchAssignments();
 
-    // Cache latest values
-    List<Event>? latestEvents;
-    List<Assignment>? latestAssignments;
+    // Cache latest values - start with empty lists to emit immediately
+    List<Event> latestEvents = [];
+    List<Assignment> latestAssignments = [];
 
     // Create stream controller for combined output
     final controller = StreamController<_EventsWithAssignments>();
 
-    // Helper to emit combined data when both are available
+    // Helper to emit combined data
     void emitCombined() {
-      if (latestEvents != null && latestAssignments != null) {
-        // Calculate assignment counts per event
-        final counts = <String, int>{};
-        for (final assignment in latestAssignments!) {
-          counts[assignment.eventId] = (counts[assignment.eventId] ?? 0) + 1;
-        }
-
-        controller.add(_EventsWithAssignments(
-          events: latestEvents!,
-          assignmentCounts: counts,
-        ));
+      // Always emit, even if one stream hasn't emitted yet
+      // Calculate assignment counts per event
+      final counts = <String, int>{};
+      for (final assignment in latestAssignments) {
+        counts[assignment.eventId] = (counts[assignment.eventId] ?? 0) + 1;
       }
+
+      controller.add(_EventsWithAssignments(
+        events: latestEvents,
+        assignmentCounts: counts,
+      ));
     }
+
+    // Initialize with empty state
+    emitCombined();
 
     // Listen to events stream
     final eventsSubscription = eventsStream.listen(
@@ -235,12 +237,15 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     Emitter<EventState> emit,
   ) async {
     try {
-      // Don't emit EventOperating to avoid UI rebuild
+      // Delete the event
       await _repository.deleteEvent(event.id);
-      // Emit success to show snackbar, UI will keep showing last state
-      emit(const EventOperationSuccess('האירוע נמחק בהצלחה'));
 
-      // Don't restart listener here - the modal will handle it with the correct filter
+      // Immediately reload events to get updated state
+      // This ensures the UI reflects the deletion immediately
+      add(const LoadEvents());
+
+      // Emit success to show snackbar
+      emit(const EventOperationSuccess('האירוע נמחק בהצלחה'));
     } catch (e) {
       emit(EventError('שגיאה במחיקת האירוע: $e'));
     }
