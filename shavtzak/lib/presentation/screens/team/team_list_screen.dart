@@ -70,31 +70,40 @@ class _TeamListScreenState extends State<TeamListScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: _showSearch
-              ? TextField(
-                  controller: _searchController,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'חיפוש חבר צוות...',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(color: Colors.black54),
+              ? Semantics(
+                  identifier: 'team-search-field',
+                  child: TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'חיפוש חבר צוות...',
+                      border: InputBorder.none,
+                      hintStyle: TextStyle(color: Colors.black54),
+                    ),
+                    style: const TextStyle(color: Colors.black),
+                    onChanged: _onSearchChanged,
                   ),
-                  style: const TextStyle(color: Colors.black),
-                  onChanged: _onSearchChanged,
                 )
-              : const Text(AppStrings.team),
+              : Semantics(
+                  identifier: 'team-screen-title',
+                  child: const Text(AppStrings.team),
+                ),
           actions: [
             const NavigationMenu(),
-            IconButton(
-              icon: Icon(_showSearch ? Icons.close : Icons.search),
-              onPressed: () {
-                setState(() {
-                  _showSearch = !_showSearch;
-                  if (!_showSearch) {
-                    _searchController.clear();
-                    context.read<TeamBloc>().add(const LoadTeamMembers());
-                  }
-                });
-              },
+            Semantics(
+              identifier: 'team-search-toggle-button',
+              child: IconButton(
+                icon: Icon(_showSearch ? Icons.close : Icons.search),
+                onPressed: () {
+                  setState(() {
+                    _showSearch = !_showSearch;
+                    if (!_showSearch) {
+                      _searchController.clear();
+                      context.read<TeamBloc>().add(const LoadTeamMembers());
+                    }
+                  });
+                },
+              ),
             ),
           ],
         ),
@@ -151,12 +160,15 @@ class _TeamListScreenState extends State<TeamListScreen> {
             return _buildEmptyState(const TeamEmpty('טוען...'));
           },
         ),
-        floatingActionButton: FloatingActionButton(
-          heroTag: 'team_fab',
-          onPressed: () {
-            _showTeamMemberFormModal(null);
-          },
-          child: const Icon(Icons.add),
+        floatingActionButton: Semantics(
+          identifier: 'add-team-member-fab',
+          child: FloatingActionButton(
+            heroTag: 'team_fab',
+            onPressed: () {
+              _showTeamMemberFormModal(null);
+            },
+            child: const Icon(Icons.add),
+          ),
         ),
       ),
     );
@@ -166,11 +178,13 @@ class _TeamListScreenState extends State<TeamListScreen> {
     // Filter members based on selected filter
     final filteredMembers = _filterMembers(state.members, FilterPersistence.teamFilterIndex);
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        context.read<TeamBloc>().add(const RefreshTeamMembers());
-        await Future.delayed(const Duration(milliseconds: 500));
-      },
+    return Semantics(
+          identifier: 'team-refresh-indicator',
+          child: RefreshIndicator(
+            onRefresh: () async {
+              context.read<TeamBloc>().add(const RefreshTeamMembers());
+              await Future.delayed(const Duration(milliseconds: 500));
+            },
       child: Column(
         children: [
           // Interactive filter bar
@@ -218,11 +232,13 @@ class _TeamListScreenState extends State<TeamListScreen> {
     final activeRoles =
         member.roleCapabilities.values.where((v) => v == true).length;
 
-    return Card(
-      child: InkWell(
-        onTap: () {
-          _showTeamMemberFormModal(member);
-        },
+    return Semantics(
+        identifier: 'team-member-card-${member.id}',
+        child: Card(
+          child: InkWell(
+            onTap: () {
+              _showTeamMemberFormModal(member);
+            },
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -250,18 +266,20 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     ),
                   ),
                   // Activate/Deactivate button
-                  IconButton(
-                    icon: Icon(
-                      member.isActive ? Icons.check_circle : Icons.cancel,
-                      color: member.isActive ? Colors.green : Colors.grey,
-                    ),
-                    onPressed: () {
-                      final bloc = context.read<TeamBloc>();
-                      if (member.isActive) {
-                        bloc.add(DeactivateTeamMember(member.id));
-                      } else {
-                        bloc.add(ReactivateTeamMember(member.id));
-                      }
+                  Semantics(
+                    identifier: 'team-member-toggle-status-${member.id}',
+                    child: IconButton(
+                      icon: Icon(
+                        member.isActive ? Icons.check_circle : Icons.cancel,
+                        color: member.isActive ? Colors.green : Colors.grey,
+                      ),
+                      onPressed: () {
+                        final bloc = context.read<TeamBloc>();
+                        if (member.isActive) {
+                          bloc.add(DeactivateTeamMember(member.id));
+                        } else {
+                          bloc.add(ReactivateTeamMember(member.id));
+                        }
                       // Reload all members after operation completes
                       Future.delayed(const Duration(milliseconds: 100), () {
                         bloc.add(const LoadTeamMembers());
@@ -269,6 +287,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     },
                     tooltip: member.isActive ? 'השבת' : 'הפעל',
                   ),
+                ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -468,12 +487,15 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 const SizedBox(height: 24),
                 // Only show "add first" button if database is truly empty (not filtered)
                 if (!state.isFiltered)
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      _showTeamMemberFormModal(null);
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('הוסף חבר צוות ראשון'),
+                  Semantics(
+                    identifier: 'add-first-team-member-button',
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        _showTeamMemberFormModal(null);
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('הוסף חבר צוות ראשון'),
+                    ),
                   ),
               ],
             ),
@@ -503,12 +525,15 @@ class _TeamListScreenState extends State<TeamListScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
-              context.read<TeamBloc>().add(const LoadTeamMembers());
-            },
-            icon: const Icon(Icons.refresh),
-            label: const Text('נסה שוב'),
+          Semantics(
+            identifier: 'retry-load-team-members-button',
+            child: ElevatedButton.icon(
+              onPressed: () {
+                context.read<TeamBloc>().add(const LoadTeamMembers());
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('נסה שוב'),
+            ),
           ),
         ],
       ),
