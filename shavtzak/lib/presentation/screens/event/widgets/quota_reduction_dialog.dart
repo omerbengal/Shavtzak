@@ -190,19 +190,25 @@ class _QuotaReductionDialogState extends State<QuotaReductionDialog> {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(null),
-            child: const Text('ביטול'),
-          ),
-          ElevatedButton(
-            onPressed: _isValidSelection()
-                ? () => Navigator.of(context).pop(_getAllSelectedIds())
-                : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+          Semantics(
+            identifier: 'quota-reduction-dialog-cancel-button',
+            child: TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('ביטול'),
             ),
-            child: const Text('מחק ושמור אירוע'),
+          ),
+          Semantics(
+            identifier: 'quota-reduction-dialog-save-button',
+            child: ElevatedButton(
+              onPressed: _isValidSelection()
+                  ? () => Navigator.of(context).pop(_getAllSelectedIds())
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('מחק ושמור אירוע'),
+            ),
           ),
         ],
       ),
@@ -251,34 +257,37 @@ class _QuotaReductionDialogState extends State<QuotaReductionDialog> {
                   ?.contains(assignment.id) ??
               false;
 
-          return CheckboxListTile(
-            value: isSelected,
-            onChanged: (bool? value) {
-              setState(() {
-                if (value == true) {
-                  _selectedAssignments[conflict.roleType]!.add(assignment.id);
-                } else {
-                  _selectedAssignments[conflict.roleType]!
-                      .remove(assignment.id);
-                }
-              });
-            },
-            title: Text(
-              assignment.teamMemberName ?? 'שם לא ידוע',
-              style: const TextStyle(fontSize: 14),
+          return Semantics(
+            identifier: 'quota-reduction-checkbox-${assignment.id}',
+            child: CheckboxListTile(
+              value: isSelected,
+              onChanged: (bool? value) {
+                setState(() {
+                  if (value == true) {
+                    _selectedAssignments[conflict.roleType]!.add(assignment.id);
+                  } else {
+                    _selectedAssignments[conflict.roleType]!
+                        .remove(assignment.id);
+                  }
+                });
+              },
+              title: Text(
+                assignment.teamMemberName ?? 'שם לא ידוע',
+                style: const TextStyle(fontSize: 14),
+              ),
+              subtitle: assignment.teamMember != null
+                  ? Text(
+                      'משבצת ${assignment.slotIndex + 1}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    )
+                  : null,
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
             ),
-            subtitle: assignment.teamMember != null
-                ? Text(
-                    'משבצת ${assignment.slotIndex + 1}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
-                  )
-                : null,
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
           );
         }),
       ],

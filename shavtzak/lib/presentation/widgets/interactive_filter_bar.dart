@@ -135,15 +135,18 @@ class _InteractiveFilterBarState extends State<InteractiveFilterBar> {
       );
     }
 
-    return InkWell(
-      onTap: isSelected ? null : () => widget.onFilterChanged(index),
-      borderRadius: BorderRadius.circular(12),
-      splashColor: Colors.green.withOpacity(0.2),
-      highlightColor: Colors.green.withOpacity(0.1),
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 150),
-        opacity: isHovered && !isSelected ? 0.7 : 1.0,
-        child: itemWidget,
+    return Semantics(
+      identifier: 'filter-option-${option.label.toLowerCase().replaceAll(' ', '-')}-$index',
+      child: InkWell(
+        onTap: isSelected ? null : () => widget.onFilterChanged(index),
+        borderRadius: BorderRadius.circular(12),
+        splashColor: Colors.green.withOpacity(0.2),
+        highlightColor: Colors.green.withOpacity(0.1),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 150),
+          opacity: isHovered && !isSelected ? 0.7 : 1.0,
+          child: itemWidget,
+        ),
       ),
     );
   }

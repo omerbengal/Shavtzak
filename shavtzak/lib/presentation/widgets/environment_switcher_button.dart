@@ -15,47 +15,50 @@ class EnvironmentSwitcherButton extends StatelessWidget {
       builder: (context, child) {
         final isTestMode = EnvironmentService.instance.isTestMode;
 
-        return IconButton(
-          icon: Icon(
-            isTestMode ? Icons.public : Icons.science,
-            color: isTestMode ? Colors.yellow.shade700 : Colors.grey.shade700,
+        return Semantics(
+          identifier: 'environment-switcher-button',
+          child: IconButton(
+            icon: Icon(
+              isTestMode ? Icons.public : Icons.science,
+              color: isTestMode ? Colors.yellow.shade700 : Colors.grey.shade700,
+            ),
+            tooltip: isTestMode ? 'עבור לסביבת ייצור' : 'עבור לסביבת בדיקות',
+            onPressed: () {
+              // Get current route
+              final currentRoute = GoRouterState.of(context).uri.path;
+              developer.log('EnvironmentSwitcherButton: Pressed! currentRoute=$currentRoute, isTestMode=$isTestMode', name: 'EnvironmentSwitcher');
+
+              // Convert current route to opposite environment
+              String targetRoute;
+              bool newTestMode;
+              if (isTestMode) {
+                // From test to production - remove /test prefix
+                targetRoute = currentRoute.startsWith('/test')
+                    ? currentRoute.substring(4) // Remove '/test'
+                    : currentRoute;
+                newTestMode = false;
+              } else {
+                // From production to test - add /test prefix
+                targetRoute = currentRoute.startsWith('/test')
+                    ? currentRoute
+                    : '/test${
+                        currentRoute.startsWith('/') ? currentRoute : '/$currentRoute'
+                      }';
+                newTestMode = true;
+              }
+
+              developer.log('EnvironmentSwitcherButton: targetRoute=$targetRoute, newTestMode=$newTestMode', name: 'EnvironmentSwitcher');
+
+              // IMPORTANT: Update EnvironmentService immediately BEFORE navigation
+              // This triggers immediate BLoC recreation with correct environment
+              developer.log('EnvironmentSwitcherButton: Calling setTestMode($newTestMode)...', name: 'EnvironmentSwitcher');
+              EnvironmentService.instance.setTestMode(newTestMode);
+
+              // Navigate to the opposite environment
+              developer.log('EnvironmentSwitcherButton: Navigating to $targetRoute...', name: 'EnvironmentSwitcher');
+              context.go(targetRoute);
+            },
           ),
-          tooltip: isTestMode ? 'עבור לסביבת ייצור' : 'עבור לסביבת בדיקות',
-          onPressed: () {
-            // Get current route
-            final currentRoute = GoRouterState.of(context).uri.path;
-            developer.log('EnvironmentSwitcherButton: Pressed! currentRoute=$currentRoute, isTestMode=$isTestMode', name: 'EnvironmentSwitcher');
-
-            // Convert current route to opposite environment
-            String targetRoute;
-            bool newTestMode;
-            if (isTestMode) {
-              // From test to production - remove /test prefix
-              targetRoute = currentRoute.startsWith('/test')
-                  ? currentRoute.substring(4) // Remove '/test'
-                  : currentRoute;
-              newTestMode = false;
-            } else {
-              // From production to test - add /test prefix
-              targetRoute = currentRoute.startsWith('/test')
-                  ? currentRoute
-                  : '/test${
-                      currentRoute.startsWith('/') ? currentRoute : '/$currentRoute'
-                    }';
-              newTestMode = true;
-            }
-
-            developer.log('EnvironmentSwitcherButton: targetRoute=$targetRoute, newTestMode=$newTestMode', name: 'EnvironmentSwitcher');
-
-            // IMPORTANT: Update EnvironmentService immediately BEFORE navigation
-            // This triggers immediate BLoC recreation with correct environment
-            developer.log('EnvironmentSwitcherButton: Calling setTestMode($newTestMode)...', name: 'EnvironmentSwitcher');
-            EnvironmentService.instance.setTestMode(newTestMode);
-
-            // Navigate to the opposite environment
-            developer.log('EnvironmentSwitcherButton: Navigating to $targetRoute...', name: 'EnvironmentSwitcher');
-            context.go(targetRoute);
-          },
         );
       },
     );
