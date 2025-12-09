@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
@@ -453,42 +454,63 @@ class _EventFormModalState extends State<EventFormModal> {
                                           onPressed: () async {
                                             Navigator.of(dialogContext).pop(); // Close delete dialog
 
-                                            try {
-                                              final bloc = context.read<EventBloc>();
-                                              bloc.add(DeleteEvent(widget.event!.id));
+                                            // Store references to avoid context issues
+                                            final bloc = context.read<EventBloc>();
+                                            final currentContext = context;
 
-                                              // Wait a moment for the delete to process
-                                              await Future.delayed(const Duration(milliseconds: 500));
+                                            // Listen to BLoC state changes to know when deletion is complete
+                                            late StreamSubscription subscription;
+                                            subscription = bloc.stream.listen((state) {
+                                              if (state is EventError) {
+                                                subscription.cancel();
+                                                if (currentContext.mounted) {
+                                                  ScaffoldMessenger.of(currentContext)
+                                                    ..clearSnackBars()
+                                                    ..showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(state.message),
+                                                        backgroundColor: Colors.red,
+                                                        duration: const Duration(seconds: 2),
+                                                      ),
+                                                    );
+                                                  // Close modal even on error
+                                                  widget.onSuccess();
+                                                }
+                                              } else if (state is EventsLoaded || state is EventsEmpty) {
+                                                subscription.cancel();
+                                                if (currentContext.mounted) {
+                                                  ScaffoldMessenger.of(currentContext)
+                                                    ..clearSnackBars()
+                                                    ..showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text('האירוע נמחק בהצלחה'),
+                                                        backgroundColor: Colors.green,
+                                                        duration: Duration(seconds: 2),
+                                                      ),
+                                                    );
+                                                  widget.onSuccess(); // Close event modal
+                                                }
+                                              }
+                                            });
 
-                                              // Show success message and close modal
-                                              if (mounted) {
-                                                ScaffoldMessenger.of(context)
-                                                  ..clearSnackBars()
-                                                  ..showSnackBar(
-                                                    const SnackBar(
-                                                      content: Text('האירוע נמחק בהצלחה'),
-                                                      backgroundColor: Colors.green,
-                                                      duration: Duration(seconds: 2),
-                                                    ),
-                                                  );
-                                                widget.onSuccess(); // Close event modal
+                                            // Trigger the delete operation
+                                            bloc.add(DeleteEvent(widget.event!.id));
+
+                                            // Fallback timeout in case BLoC state doesn't change
+                                            var isCancelled = false;
+                                            Future.delayed(const Duration(seconds: 3), () {
+                                              if (!isCancelled) {
+                                                subscription.cancel();
+                                                if (currentContext.mounted) {
+                                                  widget.onSuccess();
+                                                }
                                               }
-                                            } catch (e) {
-                                              // Show error message but still close the modal
-                                              if (mounted) {
-                                                ScaffoldMessenger.of(context)
-                                                  ..clearSnackBars()
-                                                  ..showSnackBar(
-                                                    SnackBar(
-                                                      content: Text('שגיאה במחיקת האירוע: $e'),
-                                                      backgroundColor: Colors.red,
-                                                      duration: const Duration(seconds: 2),
-                                                    ),
-                                                  );
-                                                // Always close the modal, even on error
-                                                widget.onSuccess();
-                                              }
-                                            }
+                                            });
+
+                                            // Update the flag when subscription is cancelled
+                                            subscription.onDone(() {
+                                              isCancelled = true;
+                                            });
                                           },
                                         ),
                                       ),

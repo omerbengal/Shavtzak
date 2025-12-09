@@ -38,7 +38,6 @@ class DualCalendarDatePicker extends StatefulWidget {
 class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
   List<DateTime?> _selectedDates = [];
   String? _errorMessage;
-  bool _isProcessingChange = false;
 
   @override
   void initState() {
@@ -192,86 +191,60 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                   ),
                 ),
 
-              // Calendar(s) with constrained width
-              Flexible(
-                child: SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: dialogWidth - (horizontalPadding * 2),
+              // Calendar(s) with explicit height constraint to prevent infinite height
+              Container(
+                height: isMobile ? 350 : 450, // Explicit height constraint
+                child: CalendarDatePicker2(
+                  config: CalendarDatePicker2Config(
+                    calendarType: widget.isSingleDate
+                        ? CalendarDatePicker2Type.single
+                        : CalendarDatePicker2Type.range,
+                    selectedDayHighlightColor: Colors.blue,
+                    weekdayLabels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+                    weekdayLabelTextStyle: TextStyle(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.bold,
+                      fontSize: isMobile ? 10 : 14,
                     ),
-                    child: CalendarDatePicker2(
-                      config: CalendarDatePicker2Config(
-                        calendarType: widget.isSingleDate
-                            ? CalendarDatePicker2Type.single
-                            : CalendarDatePicker2Type.range,
-                        selectedDayHighlightColor: Colors.blue,
-                        weekdayLabels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-                        weekdayLabelTextStyle: TextStyle(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.bold,
-                          fontSize: isMobile ? 10 : 14,
-                        ),
-                        firstDayOfWeek: 0,
-                        controlsHeight: isMobile ? 40 : 50,
-                        controlsTextStyle: TextStyle(
-                          color: Colors.black,
-                          fontSize: isMobile ? 10 : 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        dayTextStyle: TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.normal,
-                          fontSize: isMobile ? 11 : 14,
-                        ),
-                        disabledDayTextStyle: TextStyle(
-                          color: Colors.grey,
-                          fontSize: isMobile ? 11 : 14,
-                        ),
-                        // Set the minimum date that can be viewed/selected
-                        firstDate: widget.minDate ?? DateTime.now(),
-                        // Set the current date to initially display
-                        currentDate: widget.minDate ?? DateTime.now(),
-                        selectableDayPredicate: widget.minDate != null
+                    firstDayOfWeek: 0,
+                    controlsHeight: isMobile ? 40 : 50,
+                    controlsTextStyle: TextStyle(
+                      color: Colors.black,
+                      fontSize: isMobile ? 10 : 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    dayTextStyle: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.normal,
+                      fontSize: isMobile ? 11 : 14,
+                    ),
+                    disabledDayTextStyle: TextStyle(
+                      color: Colors.grey,
+                      fontSize: isMobile ? 11 : 14,
+                    ),
+                    // Set the minimum date that can be viewed/selected
+                    firstDate: widget.minDate ?? DateTime.now(),
+                    // Set the current date to initially display
+                    currentDate: widget.minDate ?? DateTime.now(),
+                    selectableDayPredicate: widget.minDate != null
           ? (day) => !day.isBefore(widget.minDate!)
           : (day) => true,
-                        lastMonthIcon: Icon(
-                          Icons.chevron_left,
-                          size: isMobile ? 18 : 24,
-                        ),
-                        nextMonthIcon: Icon(
-                          Icons.chevron_right,
-                          size: isMobile ? 18 : 24,
-                        ),
-                        // Improve mobile touch handling
-                        dayBorderRadius: BorderRadius.circular(8),
-                        selectedDayTextStyle: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        // Better touch targets for mobile
-                        dayMaxWidth: isMobile ? 40 : double.infinity,
-                      ),
-                      value: _selectedDates,
-                      onValueChanged: (dates) {
-                        if (_isProcessingChange) return; // Prevent rapid changes
-
-                        _isProcessingChange = true;
-
-                        setState(() {
-                          _selectedDates = dates;
-                          _errorMessage = null; // Clear error on selection
-                        });
-
-                        // Reset the flag after a short delay - longer for mobile
-                        final delay = isMobile ? 150 : 50;
-                        Future.delayed(Duration(milliseconds: delay), () {
-                          if (mounted) {
-                            _isProcessingChange = false;
-                          }
-                        });
-                      },
+                    lastMonthIcon: Icon(
+                      Icons.chevron_left,
+                      size: isMobile ? 18 : 24,
+                    ),
+                    nextMonthIcon: Icon(
+                      Icons.chevron_right,
+                      size: isMobile ? 18 : 24,
                     ),
                   ),
+                  value: _selectedDates,
+                  onValueChanged: (dates) {
+                    setState(() {
+                      _selectedDates = dates;
+                      _errorMessage = null; // Clear error on selection
+                    });
+                  },
                 ),
               ),
 
