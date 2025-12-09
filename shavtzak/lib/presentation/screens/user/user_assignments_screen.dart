@@ -150,10 +150,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       return b.first.event!.startDate.compareTo(a.first.event!.startDate);
     });
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        _loadUserAssignments();
-      },
+    return Semantics(
+      identifier: 'assignments-refresh-indicator',
+      child: RefreshIndicator(
+        onRefresh: () async {
+          _loadUserAssignments();
+        },
       child: ListView(
         padding: const EdgeInsets.only(top: 8, bottom: 16),
         children: [
@@ -309,9 +311,11 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     final isToday = eventStart.isAtSameMomentAs(today);
     final isTomorrow = eventStart.isAtSameMomentAs(tomorrow);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      elevation: isUpcoming ? 2 : 1,
+    return Semantics(
+      identifier: 'assignment-card-${event.id}',
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        elevation: isUpcoming ? 2 : 1,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
@@ -686,11 +690,14 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: _loadUserAssignments,
-            icon: const Icon(Icons.refresh),
-            label: const Text('נסה שוב'),
-          ),
+          Semantics(
+              identifier: 'retry-load-assignments-button',
+              child: ElevatedButton.icon(
+                onPressed: _loadUserAssignments,
+                icon: const Icon(Icons.refresh),
+                label: const Text('נסה שוב'),
+              ),
+            ),
         ],
       ),
     );

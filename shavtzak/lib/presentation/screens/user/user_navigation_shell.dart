@@ -57,10 +57,13 @@ class UserNavigationShell extends StatelessWidget {
                 const NavigationMenu()
               else
                 // Regular users get only logout button
-                IconButton(
-                  icon: const Icon(Icons.logout),
-                  tooltip: 'התנתקות',
-                  onPressed: () => _showLogoutDialog(context),
+                Semantics(
+                  identifier: 'user-logout-button',
+                  child: IconButton(
+                    icon: const Icon(Icons.logout),
+                    tooltip: 'התנתקות',
+                    onPressed: () => _showLogoutDialog(context),
+                  ),
                 ),
             ],
           );
@@ -78,10 +81,12 @@ class UserNavigationShell extends StatelessWidget {
 
         final isPermanent = state.user.isPermanent;
 
-        return BottomNavigationBar(
-          currentIndex: navigationShell.currentIndex,
-          onTap: (index) => _onItemTapped(index, context),
-          type: BottomNavigationBarType.fixed,
+        return Semantics(
+          identifier: 'user-bottom-navigation',
+          child: BottomNavigationBar(
+            currentIndex: navigationShell.currentIndex,
+            onTap: (index) => _onItemTapped(index, context),
+            type: BottomNavigationBarType.fixed,
           items: [
             const BottomNavigationBarItem(
               icon: Icon(Icons.assignment),
@@ -98,9 +103,9 @@ class UserNavigationShell extends StatelessWidget {
               label: isPermanent ? 'המגבלות שלי' : 'הזמינות שלי',
             ),
           ],
-        );
-      },
-    );
+        ),
+      );
+    }
   }
 
   /// Show logout confirmation dialog
@@ -114,20 +119,26 @@ class UserNavigationShell extends StatelessWidget {
             title: const Text('אישור התנתקות'),
             content: const Text('האם את/ה בטוח/ה שברצונך להתנתק?'),
             actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop(); // Close dialog
-                },
-                child: const Text('ביטול'),
+              Semantics(
+                identifier: 'user-logout-dialog-cancel-button',
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                  },
+                  child: const Text('ביטול'),
+                ),
               ),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop(); // Close dialog
-                  context.read<UserSelectionBloc>().add(const SignOut());
-                },
-                child: const Text(
-                  'התנתקות',
-                  style: TextStyle(color: Colors.red),
+              Semantics(
+                identifier: 'user-logout-dialog-confirm-button',
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                    context.read<UserSelectionBloc>().add(const SignOut());
+                  },
+                  child: const Text(
+                    'התנתקות',
+                    style: TextStyle(color: Colors.red),
+                  ),
                 ),
               ),
             ],

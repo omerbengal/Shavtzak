@@ -35,15 +35,17 @@ class AdminChoiceScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 40),
                 // Personal Area Card
-                SizedBox(
-                  width: 350,
-                  child: Card(
-                    elevation: 4,
-                    child: InkWell(
-                      onTap: () {
-                        final envPrefix = EnvironmentService.instance.routePrefix;
-                        context.go('$envPrefix/user/assignments');
-                      },
+                Semantics(
+                  identifier: 'personal-area-card',
+                  child: SizedBox(
+                    width: 350,
+                    child: Card(
+                      elevation: 4,
+                      child: InkWell(
+                        onTap: () {
+                          final envPrefix = EnvironmentService.instance.routePrefix;
+                          context.go('$envPrefix/user/assignments');
+                        },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                         child: Column(
@@ -66,17 +68,21 @@ class AdminChoiceScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
+                ),
                 const SizedBox(height: 32),
                 // Management Card
-                SizedBox(
-                  width: 350,
-                  child: Card(
-                    elevation: 4,
-                    child: InkWell(
-                      onTap: () {
-                        final envPrefix = EnvironmentService.instance.routePrefix;
-                        context.go('$envPrefix/admin/team-members');
-                      },
+                Semantics(
+                  identifier: 'management-area-card',
+                  child: SizedBox(
+                    width: 350,
+                    child: Card(
+                      elevation: 4,
+                      child: InkWell(
+                        onTap: () {
+                          final envPrefix = EnvironmentService.instance.routePrefix;
+                          context.go('$envPrefix/admin/team-members');
+                        },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                         child: Column(
@@ -98,6 +104,8 @@ class AdminChoiceScreen extends StatelessWidget {
                       ),
                     ),
                   ),
+                ),
+              ),
                 ),
               ],
             ),
@@ -129,10 +137,13 @@ class AdminChoiceScreen extends StatelessWidget {
             ),
             centerTitle: true,
             actions: [
-              IconButton(
-                icon: const Icon(Icons.logout),
-                tooltip: 'התנתקות',
-                onPressed: () => _showLogoutDialog(context),
+              Semantics(
+                identifier: 'admin-logout-button',
+                child: IconButton(
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'התנתקות',
+                  onPressed: () => _showLogoutDialog(context),
+                ),
               ),
             ],
           );
@@ -152,20 +163,26 @@ class AdminChoiceScreen extends StatelessWidget {
             title: const Text('אישור התנתקות'),
             content: const Text('האם את/ה בטוח/ה שברצונך להתנתק?'),
             actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop(); // Close dialog
-                },
-                child: const Text('ביטול'),
+              Semantics(
+                identifier: 'logout-dialog-cancel-button',
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                  },
+                  child: const Text('ביטול'),
+                ),
               ),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop(); // Close dialog
-                  context.read<UserSelectionBloc>().add(const SignOut());
-                },
-                child: const Text(
-                  'התנתקות',
-                  style: TextStyle(color: Colors.red),
+              Semantics(
+                identifier: 'logout-dialog-confirm-button',
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                    context.read<UserSelectionBloc>().add(const SignOut());
+                  },
+                  child: const Text(
+                    'התנתקות',
+                    style: TextStyle(color: Colors.red),
+                  ),
                 ),
               ),
             ],

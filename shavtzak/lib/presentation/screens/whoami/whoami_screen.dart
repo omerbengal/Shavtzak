@@ -83,13 +83,19 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('בחירת משתמש'),
+          title: Semantics(
+            identifier: 'whoami-screen-title',
+            child: const Text('בחירת משתמש'),
+          ),
           centerTitle: true,
           actions: [
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'ניקוי מטמון',
-              onPressed: () => _showClearCacheDialog(context),
+            Semantics(
+              identifier: 'clear-cache-button',
+              child: IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'ניקוי מטמון',
+                onPressed: () => _showClearCacheDialog(context),
+              ),
             ),
           ],
         ),
@@ -118,13 +124,19 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
           title: const Text('ניקוי מטמון'),
           content: const Text('האם את/ה בטוח/ה שברצונך לנקות את המטמון ולהתחיל מחדש?'),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('ביטול'),
+            Semantics(
+              identifier: 'clear-cache-dialog-cancel-button',
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('ביטול'),
+              ),
             ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('נקה מטמון'),
+            Semantics(
+              identifier: 'clear-cache-dialog-confirm-button',
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('נקה מטמון'),
+              ),
             ),
           ],
         ),
@@ -172,13 +184,16 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
               const SizedBox(height: 32),
 
               // Search field
-              TextField(
-                controller: _searchController,
-                textDirection: TextDirection.rtl,
-                decoration: const InputDecoration(
-                  hintText: 'חפש/י את השם שלך...',
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
+              Semantics(
+                identifier: 'team-member-search-field',
+                child: TextField(
+                  controller: _searchController,
+                  textDirection: TextDirection.rtl,
+                  decoration: const InputDecoration(
+                    hintText: 'חפש/י את השם שלך...',
+                    prefixIcon: Icon(Icons.search),
+                    border: OutlineInputBorder(),
+                  ),
                 ),
               ),
             ],
@@ -234,14 +249,17 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _errorMessage = null;
-                });
-                _loadAllTeamMembers();
-              },
-              child: const Text('נסה שוב'),
+            Semantics(
+              identifier: 'retry-load-team-members-button',
+              child: ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _errorMessage = null;
+                  });
+                  _loadAllTeamMembers();
+                },
+                child: const Text('נסה שוב'),
+              ),
             ),
           ],
         ),
@@ -267,9 +285,12 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => _loadAllTeamMembers(),
-              child: const Text('רענן'),
+            Semantics(
+              identifier: 'refresh-team-members-button',
+              child: ElevatedButton(
+                onPressed: () => _loadAllTeamMembers(),
+                child: const Text('רענן'),
+              ),
             ),
           ],
         ),
@@ -337,6 +358,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
                 onTap: () {
                   context.read<UserSelectionBloc>().add(SelectUser(teamMember.uniqueKey));
                 },
+                key: Key('team-member-card-${teamMember.uniqueKey}'),
               );
             },
           ),
@@ -357,11 +379,13 @@ class _TeamMemberCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12.0),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12.0),
+    return Semantics(
+      identifier: 'team-member-card-${teamMember.uniqueKey}',
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12.0),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12.0),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
