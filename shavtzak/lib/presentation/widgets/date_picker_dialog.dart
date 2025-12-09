@@ -263,7 +263,8 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                         });
 
                         // Reset the flag after a short delay - longer for mobile
-                        Future.delayed(const Duration(milliseconds: isMobile ? 150 : 50), () {
+                        final delay = isMobile ? 150 : 50;
+                        Future.delayed(Duration(milliseconds: delay), () {
                           if (mounted) {
                             _isProcessingChange = false;
                           }

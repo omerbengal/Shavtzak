@@ -688,3 +688,4 @@ Semantics(identifier: 'nav-home-button', child: IconButton(...))
 - **Maintainable**: Consistent naming makes tests easy to read
 - **Automatable**: Built-in tools verify coverage
 - **Accessible**: Improved support for screen readers and accessibility tools
+- always, before summarizing a new change, kill all running instances of the app, and try to re-run it
