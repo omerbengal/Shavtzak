@@ -435,16 +435,22 @@ class _TeamListScreenState extends State<TeamListScreen> {
             'האם אתה בטוח שברצונך למחוק את ${member.name}?\nפעולה זו תמחק גם את כל השיבוצים שלו.',
           ),
           actions: [
-            TextButton(
-              child: const Text('ביטול'),
-              onPressed: () => Navigator.pop(context),
+            Semantics(
+              identifier: 'team-member-delete-dialog-cancel-button',
+              child: TextButton(
+                child: const Text('ביטול'),
+                onPressed: () => Navigator.pop(context),
+              ),
             ),
-            TextButton(
-              child: const Text('מחק', style: TextStyle(color: Colors.red)),
-              onPressed: () {
-                context.read<TeamBloc>().add(DeleteTeamMember(member.id));
-                Navigator.pop(context);
-              },
+            Semantics(
+              identifier: 'team-member-delete-dialog-confirm-button',
+              child: TextButton(
+                child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                onPressed: () {
+                  context.read<TeamBloc>().add(DeleteTeamMember(member.id));
+                  Navigator.pop(context);
+                },
+              ),
             ),
           ],
         ),
@@ -800,25 +806,34 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(null),
-              child: const Text('ביטול'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
+            Semantics(
+              identifier: 'conflict-warning-dialog-cancel-button',
+              child: TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(null),
+                child: const Text('ביטול'),
               ),
-              child: const Text('שמור ומחק שיבוצים'),
             ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
+            Semantics(
+              identifier: 'conflict-warning-dialog-save-delete-button',
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('שמור ומחק שיבוצים'),
               ),
-              child: const Text('שמור והשאר שיבוצים'),
+            ),
+            Semantics(
+              identifier: 'conflict-warning-dialog-save-keep-button',
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('שמור והשאר שיבוצים'),
+              ),
             ),
           ],
         ),
@@ -836,16 +851,22 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
             title: const Text('שינויים לא נשמרו'),
             content: const Text('האם אתה בטוח שברצונך לצאת? השינויים לא יישמרו.'),
             actions: [
-              TextButton(
-                child: const Text('ביטול'),
-                onPressed: () => Navigator.of(dialogContext).pop(),
+              Semantics(
+                identifier: 'dirty-close-dialog-cancel-button',
+                child: TextButton(
+                  child: const Text('ביטול'),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                ),
               ),
-              TextButton(
-                child: const Text('צא'),
-                onPressed: () {
-                  Navigator.of(dialogContext).pop(); // Close dialog
-                  widget.onSuccess(); // Close modal
-                },
+              Semantics(
+                identifier: 'dirty-close-dialog-exit-button',
+                child: TextButton(
+                  child: const Text('צא'),
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(); // Close dialog
+                    widget.onSuccess(); // Close modal
+                  },
+                ),
               ),
             ],
           ),
@@ -915,22 +936,28 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                       'האם אתה בטוח שברצונך למחוק את ${widget.member!.name}?\nפעולה זו תמחק גם את כל השיבוצים שלו.',
                                     ),
                                     actions: [
-                                      TextButton(
-                                        child: const Text('ביטול'),
-                                        onPressed: () => Navigator.of(dialogContext).pop(),
+                                      Semantics(
+                                        identifier: 'modal-delete-team-member-cancel-button',
+                                        child: TextButton(
+                                          child: const Text('ביטול'),
+                                          onPressed: () => Navigator.of(dialogContext).pop(),
+                                        ),
                                       ),
-                                      TextButton(
-                                        child: const Text('מחק', style: TextStyle(color: Colors.red)),
-                                        onPressed: () {
-                                          final bloc = context.read<TeamBloc>();
-                                          bloc.add(DeleteTeamMember(widget.member!.id));
-                                          // Reload all team members after operation completes (filtering happens in UI)
-                                          Future.delayed(const Duration(milliseconds: 100), () {
-                                            bloc.add(const LoadTeamMembers());
-                                          });
-                                          Navigator.of(dialogContext).pop(); // Close dialog
-                                          widget.onSuccess(); // Close modal
-                                        },
+                                      Semantics(
+                                        identifier: 'modal-delete-team-member-confirm-button',
+                                        child: TextButton(
+                                          child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                                          onPressed: () {
+                                            final bloc = context.read<TeamBloc>();
+                                            bloc.add(DeleteTeamMember(widget.member!.id));
+                                            // Reload all team members after operation completes (filtering happens in UI)
+                                            Future.delayed(const Duration(milliseconds: 100), () {
+                                              bloc.add(const LoadTeamMembers());
+                                            });
+                                            Navigator.of(dialogContext).pop(); // Close dialog
+                                            widget.onSuccess(); // Close modal
+                                          },
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -979,48 +1006,57 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                               const SizedBox(height: 16),
 
                               // Name field
-                              TextFormField(
-                                controller: _nameController,
-                                decoration: const InputDecoration(
-                                  labelText: 'שם חבר הצוות',
-                                  hintText: 'הזן שם מלא',
-                                  prefixIcon: Icon(Icons.person),
-                                  border: OutlineInputBorder(),
+                              Semantics(
+                                identifier: 'team-member-name-field',
+                                child: TextFormField(
+                                  controller: _nameController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'שם חבר הצוות',
+                                    hintText: 'הזן שם מלא',
+                                    prefixIcon: Icon(Icons.person),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  validator: Validators.validateName,
+                                  textDirection: TextDirection.rtl,
+                                  onChanged: (_) => setState(() => _isDirty = true),
                                 ),
-                                validator: Validators.validateName,
-                                textDirection: TextDirection.rtl,
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               const SizedBox(height: 16),
 
                               // Active status switch
-                              SwitchListTile(
-                                title: const Text('חבר צוות פעיל'),
-                                subtitle: Text(
-                                  _isActive
-                                      ? 'ניתן לשבץ לאירועים'
-                                      : 'לא ניתן לשבץ לאירועים',
+                              Semantics(
+                                identifier: 'team-member-active-switch',
+                                child: SwitchListTile(
+                                  title: const Text('חבר צוות פעיל'),
+                                  subtitle: Text(
+                                    _isActive
+                                        ? 'ניתן לשבץ לאירועים'
+                                        : 'לא ניתן לשבץ לאירועים',
+                                  ),
+                                  value: _isActive,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _isActive = value;
+                                      _isDirty = true;
+                                    });
+                                  },
                                 ),
-                                value: _isActive,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _isActive = value;
-                                    _isDirty = true;
-                                  });
-                                },
                               ),
 
                               // Permanent status switch
-                              SwitchListTile(
-                                title: const Text('חבר צוות קבוע'),
-                                value: _isPermanent,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _isPermanent = value;
-                                    _isDirty = true;
-                                  });
-                                },
+                              Semantics(
+                                identifier: 'team-member-permanent-switch',
+                                child: SwitchListTile(
+                                  title: const Text('חבר צוות קבוע'),
+                                  value: _isPermanent,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _isPermanent = value;
+                                      _isDirty = true;
+                                    });
+                                  },
+                                ),
                               ),
 
                               const Divider(height: 32),
@@ -1036,28 +1072,34 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                     ),
                                   ),
                                   const Spacer(),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        for (final role in RoleType.values) {
-                                          _roleCapabilities[role] = true;
-                                        }
-                                        _roleError = null; // Clear error
-                                        _isDirty = true;
-                                      });
-                                    },
-                                    child: const Text('בחר הכל'),
+                                  Semantics(
+                                    identifier: 'select-all-roles-button',
+                                    child: TextButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          for (final role in RoleType.values) {
+                                            _roleCapabilities[role] = true;
+                                          }
+                                          _roleError = null; // Clear error
+                                          _isDirty = true;
+                                        });
+                                      },
+                                      child: const Text('בחר הכל'),
+                                    ),
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        for (final role in RoleType.values) {
-                                          _roleCapabilities[role] = false;
-                                        }
-                                        _isDirty = true;
-                                      });
-                                    },
-                                    child: const Text('נקה הכל'),
+                                  Semantics(
+                                    identifier: 'clear-all-roles-button',
+                                    child: TextButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          for (final role in RoleType.values) {
+                                            _roleCapabilities[role] = false;
+                                          }
+                                          _isDirty = true;
+                                        });
+                                      },
+                                      child: const Text('נקה הכל'),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1088,17 +1130,20 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                     : null,
                                 child: Column(
                                   children: RoleType.values.map((role) {
-                                    return CheckboxListTile(
-                                      title: Text(role.hebrewName),
-                                      value: _roleCapabilities[role] ?? false,
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _roleCapabilities[role] = value ?? false;
-                                          _roleError = null; // Clear error when user interacts
-                                          _isDirty = true;
-                                        });
-                                      },
-                                      controlAffinity: ListTileControlAffinity.leading,
+                                    return Semantics(
+                                      identifier: 'role-checkbox-${role.name}',
+                                      child: CheckboxListTile(
+                                        title: Text(role.hebrewName),
+                                        value: _roleCapabilities[role] ?? false,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _roleCapabilities[role] = value ?? false;
+                                            _roleError = null; // Clear error when user interacts
+                                            _isDirty = true;
+                                          });
+                                        },
+                                        controlAffinity: ListTileControlAffinity.leading,
+                                      ),
                                     );
                                   }).toList(),
                                 ),
@@ -1120,19 +1165,22 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                   const Spacer(),
                                   // Show rejected constraints button only for permanent members with unavailability constraints
                                   if (_isPermanent && _constraints.any((c) => c.isUnavailability && c.status == ConstraintStatus.rejected))
-                                    TextButton.icon(
-                                      onPressed: () => _showRejectedConstraints(_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).toList()),
-                                      icon: const Icon(
-                                        Icons.visibility,
-                                        size: 20,
-                                      ),
-                                      label: Text(
-                                        'הצג מגבלות שנדחו (${_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).length})',
-                                        style: const TextStyle(fontSize: 14),
-                                      ),
-                                      style: TextButton.styleFrom(
-                                        foregroundColor: Colors.grey[600],
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    Semantics(
+                                      identifier: 'show-rejected-constraints-button',
+                                      child: TextButton.icon(
+                                        onPressed: () => _showRejectedConstraints(_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).toList()),
+                                        icon: const Icon(
+                                          Icons.visibility,
+                                          size: 20,
+                                        ),
+                                        label: Text(
+                                          'הצג מגבלות שנדחו (${_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).length})',
+                                          style: const TextStyle(fontSize: 14),
+                                        ),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Colors.grey[600],
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        ),
                                       ),
                                     ),
                                 ],
@@ -1158,19 +1206,22 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                               const Divider(height: 32),
 
                               // Comments field
-                              TextFormField(
-                                controller: _commentsController,
-                                textDirection: TextDirection.rtl,
-                                decoration: const InputDecoration(
-                                  labelText: 'הערות',
-                                  hintText: 'הערות על חבר הצוות',
-                                  prefixIcon: Icon(Icons.comment),
-                                  border: OutlineInputBorder(),
+                              Semantics(
+                                identifier: 'team-member-comments-field',
+                                child: TextFormField(
+                                  controller: _commentsController,
+                                  textDirection: TextDirection.rtl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'הערות',
+                                    hintText: 'הערות על חבר הצוות',
+                                    prefixIcon: Icon(Icons.comment),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  minLines: 1,
+                                  maxLines: 3,
+                                  scrollPadding: const EdgeInsets.only(bottom: 300),
+                                  onChanged: (_) => setState(() => _isDirty = true),
                                 ),
-                                minLines: 1,
-                                maxLines: 3,
-                                scrollPadding: const EdgeInsets.only(bottom: 300),
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               // Dynamic bottom spacing for keyboard
@@ -1193,16 +1244,22 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: OutlinedButton(
-                            onPressed: _handleClose,
-                            child: const Text('ביטול'),
+                          child: Semantics(
+                            identifier: 'team-member-form-cancel-button',
+                            child: OutlinedButton(
+                              onPressed: _handleClose,
+                              child: const Text('ביטול'),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
-                          child: ElevatedButton(
-                            onPressed: _saveMember,
-                            child: const Text('שמור'),
+                          child: Semantics(
+                            identifier: 'team-member-form-save-button',
+                            child: ElevatedButton(
+                              onPressed: _saveMember,
+                              child: const Text('שמור'),
+                            ),
                           ),
                         ),
                       ],
@@ -1284,34 +1341,43 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 // Right button (first in RTL)
                 if (effectiveStatus == ConstraintStatus.pending)
                   // Pending: Right = Accept
-                  TextButton.icon(
-                    onPressed: () => _approveConstraint(constraint.id),
-                    icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
-                    label: const Text('אשר', style: TextStyle(color: Colors.green)),
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.green[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  Semantics(
+                    identifier: 'constraint-approve-${constraint.id}',
+                    child: TextButton.icon(
+                      onPressed: () => _approveConstraint(constraint.id),
+                      icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                      label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.green[50],
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      ),
                     ),
                   )
                 else if (effectiveStatus == ConstraintStatus.approved)
                   // Approved: Right = Pending
-                  TextButton.icon(
-                    onPressed: () => _setPendingConstraint(constraint.id),
-                    icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 20),
-                    label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.amber[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  Semantics(
+                    identifier: 'constraint-pending-${constraint.id}',
+                    child: TextButton.icon(
+                      onPressed: () => _setPendingConstraint(constraint.id),
+                      icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 20),
+                      label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.amber[50],
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      ),
                     ),
                   )
                 else // Rejected: Right = Pending
-                  TextButton.icon(
-                    onPressed: () => _setPendingConstraint(constraint.id),
-                    icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 20),
-                    label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.amber[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  Semantics(
+                    identifier: 'constraint-pending-${constraint.id}',
+                    child: TextButton.icon(
+                      onPressed: () => _setPendingConstraint(constraint.id),
+                      icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 20),
+                      label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.amber[50],
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      ),
                     ),
                   ),
 
@@ -1320,34 +1386,43 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 // Left button (last in RTL)
                 if (effectiveStatus == ConstraintStatus.pending)
                   // Pending: Left = Reject
-                  TextButton.icon(
-                    onPressed: () => _rejectConstraint(constraint.id),
-                    icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
-                    label: const Text('דחה', style: TextStyle(color: Colors.red)),
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.red[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  Semantics(
+                    identifier: 'constraint-reject-${constraint.id}',
+                    child: TextButton.icon(
+                      onPressed: () => _rejectConstraint(constraint.id),
+                      icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                      label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.red[50],
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      ),
                     ),
                   )
                 else if (effectiveStatus == ConstraintStatus.approved)
                   // Approved: Left = Reject
-                  TextButton.icon(
-                    onPressed: () => _rejectConstraint(constraint.id),
-                    icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
-                    label: const Text('דחה', style: TextStyle(color: Colors.red)),
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.red[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  Semantics(
+                    identifier: 'constraint-reject-${constraint.id}',
+                    child: TextButton.icon(
+                      onPressed: () => _rejectConstraint(constraint.id),
+                      icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                      label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.red[50],
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      ),
                     ),
                   )
                 else // Rejected: Left = Accept
-                  TextButton.icon(
-                    onPressed: () => _approveConstraint(constraint.id),
-                    icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
-                    label: const Text('אשר', style: TextStyle(color: Colors.green)),
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.green[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  Semantics(
+                    identifier: 'constraint-approve-${constraint.id}',
+                    child: TextButton.icon(
+                      onPressed: () => _approveConstraint(constraint.id),
+                      icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                      label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.green[50],
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      ),
                     ),
                   ),
               ],
@@ -1595,17 +1670,20 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       widgets.add(
         Padding(
           padding: const EdgeInsets.all(16),
-          child: OutlinedButton.icon(
-            onPressed: () => _showRejectedConstraints(rejectedConstraints),
-            icon: const Icon(Icons.visibility_off, size: 18),
-            label: Text(
-              'הצג מגבלות שנדחו (${rejectedConstraints.length})',
-              style: const TextStyle(fontSize: 14),
-            ),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.grey[600],
-              side: BorderSide(color: Colors.grey[300]!),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Semantics(
+            identifier: 'show-rejected-constraints-form-button',
+            child: OutlinedButton.icon(
+              onPressed: () => _showRejectedConstraints(rejectedConstraints),
+              icon: const Icon(Icons.visibility_off, size: 18),
+              label: Text(
+                'הצג מגבלות שנדחו (${rejectedConstraints.length})',
+                style: const TextStyle(fontSize: 14),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.grey[600],
+                side: BorderSide(color: Colors.grey[300]!),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              ),
             ),
           ),
         ),
@@ -1720,15 +1798,21 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
                 'האם זו מגבלה ליום בודד (${_formatDate(selectedStartDate!)})?',
               ),
               actions: [
-                TextButton(
+              Semantics(
+                identifier: 'single-day-constraint-dialog-cancel-button',
+                child: TextButton(
                   child: const Text('ביטול'),
                   onPressed: () => Navigator.of(dialogContext).pop(false),
                 ),
-                ElevatedButton(
+              ),
+              Semantics(
+                identifier: 'single-day-constraint-dialog-confirm-button',
+                child: ElevatedButton(
                   child: const Text('כן, מגבלה ליום בודד'),
                   onPressed: () => Navigator.of(dialogContext).pop(true),
                 ),
-              ],
+              ),
+            ],
             ),
           ),
         );
@@ -1771,80 +1855,95 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
             // Date selection button
-            OutlinedButton.icon(
-              onPressed: _pickDates,
-              icon: const Icon(Icons.calendar_month),
-              label: Text(
-                _startDate == null
-                    ? 'בחר תאריכים'
-                    : _endDate != null
-                        ? '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}'
-                        : _formatDate(_startDate!),
-              ),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                alignment: Alignment.centerRight,
+            Semantics(
+              identifier: 'constraint-date-picker-button',
+              child: OutlinedButton.icon(
+                onPressed: _pickDates,
+                icon: const Icon(Icons.calendar_month),
+                label: Text(
+                  _startDate == null
+                      ? 'בחר תאריכים'
+                      : _endDate != null
+                          ? '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}'
+                          : _formatDate(_startDate!),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.all(16),
+                  alignment: Alignment.centerRight,
+                ),
               ),
             ),
 
             if (_startDate != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: TextButton.icon(
-                  onPressed: () => setState(() {
-                    _startDate = null;
-                    _endDate = null;
-                  }),
-                  icon: const Icon(Icons.clear, size: 16),
-                  label: const Text('נקה'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.red,
+                child: Semantics(
+                  identifier: 'constraint-clear-dates-button',
+                  child: TextButton.icon(
+                    onPressed: () => setState(() {
+                      _startDate = null;
+                      _endDate = null;
+                    }),
+                    icon: const Icon(Icons.clear, size: 16),
+                    label: const Text('נקה'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red,
+                    ),
                   ),
                 ),
               ),
 
             // Note text field
             const SizedBox(height: 16),
-            TextField(
-              controller: _noteController,
-              decoration: const InputDecoration(
-                labelText: 'הערה',
-                hintText: 'הוסף הערה למגבלה',
-                prefixIcon: Icon(Icons.note),
-                border: OutlineInputBorder(),
-                alignLabelWithHint: true,
+            Semantics(
+              identifier: 'constraint-note-field',
+              child: TextField(
+                controller: _noteController,
+                decoration: const InputDecoration(
+                  labelText: 'הערה',
+                  hintText: 'הוסף הערה למגבלה',
+                  prefixIcon: Icon(Icons.note),
+                  border: OutlineInputBorder(),
+                  alignLabelWithHint: true,
+                ),
+                maxLines: 3,
+                minLines: 1,
+                textDirection: TextDirection.rtl,
+                textAlignVertical: TextAlignVertical.center,
               ),
-              maxLines: 3,
-              minLines: 1,
-              textDirection: TextDirection.rtl,
-              textAlignVertical: TextAlignVertical.center,
             ),
             ],
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(AppStrings.cancel),
+          Semantics(
+            identifier: 'constraint-dialog-cancel-button',
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(AppStrings.cancel),
+            ),
           ),
-          ElevatedButton(
-            onPressed: _startDate == null
-                ? null
-                : () {
-                    final noteText = _noteController.text.trim();
-                    Navigator.pop(
-                      context,
-                      DateConstraint(
-                        id: widget.constraint?.id ?? const Uuid().v4(), // Use existing ID or generate new one
-                        startDate: _startDate!,
-                        endDate: _endDate,
-                        note: noteText.isEmpty ? null : noteText,
-                        status: widget.constraint?.status ?? ConstraintStatus.approved, // Use existing status or default to approved
-                        constraintType: widget.constraint?.constraintType ?? ConstraintType.unavailability, // Use existing type or default to unavailability
-                      ),
-                    );
-                  },
-            child: Text(widget.constraint == null ? 'הוספה' : 'שמור'),
+          Semantics(
+            identifier: 'constraint-dialog-save-button',
+            child: ElevatedButton(
+              onPressed: _startDate == null
+                  ? null
+                  : () {
+                      final noteText = _noteController.text.trim();
+                      Navigator.pop(
+                        context,
+                        DateConstraint(
+                          id: widget.constraint?.id ?? const Uuid().v4(), // Use existing ID or generate new one
+                          startDate: _startDate!,
+                          endDate: _endDate,
+                          note: noteText.isEmpty ? null : noteText,
+                          status: widget.constraint?.status ?? ConstraintStatus.approved, // Use existing status or default to approved
+                          constraintType: widget.constraint?.constraintType ?? ConstraintType.unavailability, // Use existing type or default to unavailability
+                        ),
+                      );
+                    },
+              child: Text(widget.constraint == null ? 'הוספה' : 'שמור'),
+            ),
           ),
         ],
       ),
@@ -1964,37 +2063,46 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
                                   // Right button (first in RTL)
                                   if (effectiveStatus == ConstraintStatus.pending)
                                     // Pending: Right = Accept
-                                    TextButton.icon(
-                                      onPressed: () => _approveConstraint(constraint.id),
-                                      icon: const Icon(Icons.check_circle, color: Colors.green, size: 18),
-                                      label: const Text('אשר', style: TextStyle(color: Colors.green)),
-                                      style: TextButton.styleFrom(
-                                        backgroundColor: Colors.green[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        minimumSize: Size.zero,
+                                    Semantics(
+                                      identifier: 'rejected-constraint-approve-${constraint.id}',
+                                      child: TextButton.icon(
+                                        onPressed: () => _approveConstraint(constraint.id),
+                                        icon: const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                                        label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                                        style: TextButton.styleFrom(
+                                          backgroundColor: Colors.green[50],
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          minimumSize: Size.zero,
+                                        ),
                                       ),
                                     )
                                   else if (effectiveStatus == ConstraintStatus.approved)
                                     // Approved: Right = Pending
-                                    TextButton.icon(
-                                      onPressed: () => _setPendingConstraint(constraint.id),
-                                      icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 18),
-                                      label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
-                                      style: TextButton.styleFrom(
-                                        backgroundColor: Colors.amber[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        minimumSize: Size.zero,
+                                    Semantics(
+                                      identifier: 'rejected-constraint-pending-${constraint.id}',
+                                      child: TextButton.icon(
+                                        onPressed: () => _setPendingConstraint(constraint.id),
+                                        icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 18),
+                                        label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                                        style: TextButton.styleFrom(
+                                          backgroundColor: Colors.amber[50],
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          minimumSize: Size.zero,
+                                        ),
                                       ),
                                     )
                                   else // Rejected: Right = Pending
-                                    TextButton.icon(
-                                      onPressed: () => _setPendingConstraint(constraint.id),
-                                      icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 18),
-                                      label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
-                                      style: TextButton.styleFrom(
-                                        backgroundColor: Colors.amber[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        minimumSize: Size.zero,
+                                    Semantics(
+                                      identifier: 'rejected-constraint-pending-${constraint.id}',
+                                      child: TextButton.icon(
+                                        onPressed: () => _setPendingConstraint(constraint.id),
+                                        icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 18),
+                                        label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                                        style: TextButton.styleFrom(
+                                          backgroundColor: Colors.amber[50],
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          minimumSize: Size.zero,
+                                        ),
                                       ),
                                     ),
 
@@ -2003,37 +2111,46 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
                                   // Left button (last in RTL)
                                   if (effectiveStatus == ConstraintStatus.pending)
                                     // Pending: Left = Reject
-                                    TextButton.icon(
-                                      onPressed: () => _rejectConstraint(constraint.id),
-                                      icon: const Icon(Icons.cancel, color: Colors.red, size: 18),
-                                      label: const Text('דחה', style: TextStyle(color: Colors.red)),
-                                      style: TextButton.styleFrom(
-                                        backgroundColor: Colors.red[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        minimumSize: Size.zero,
+                                    Semantics(
+                                      identifier: 'rejected-constraint-reject-${constraint.id}',
+                                      child: TextButton.icon(
+                                        onPressed: () => _rejectConstraint(constraint.id),
+                                        icon: const Icon(Icons.cancel, color: Colors.red, size: 18),
+                                        label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                                        style: TextButton.styleFrom(
+                                          backgroundColor: Colors.red[50],
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          minimumSize: Size.zero,
+                                        ),
                                       ),
                                     )
                                   else if (effectiveStatus == ConstraintStatus.approved)
                                     // Approved: Left = Reject
-                                    TextButton.icon(
-                                      onPressed: () => _rejectConstraint(constraint.id),
-                                      icon: const Icon(Icons.cancel, color: Colors.red, size: 18),
-                                      label: const Text('דחה', style: TextStyle(color: Colors.red)),
-                                      style: TextButton.styleFrom(
-                                        backgroundColor: Colors.red[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        minimumSize: Size.zero,
+                                    Semantics(
+                                      identifier: 'rejected-constraint-reject-${constraint.id}',
+                                      child: TextButton.icon(
+                                        onPressed: () => _rejectConstraint(constraint.id),
+                                        icon: const Icon(Icons.cancel, color: Colors.red, size: 18),
+                                        label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                                        style: TextButton.styleFrom(
+                                          backgroundColor: Colors.red[50],
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          minimumSize: Size.zero,
+                                        ),
                                       ),
                                     )
                                   else // Rejected: Left = Accept
-                                    TextButton.icon(
-                                      onPressed: () => _approveConstraint(constraint.id),
-                                      icon: const Icon(Icons.check_circle, color: Colors.green, size: 18),
-                                      label: const Text('אשר', style: TextStyle(color: Colors.green)),
-                                      style: TextButton.styleFrom(
-                                        backgroundColor: Colors.green[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        minimumSize: Size.zero,
+                                    Semantics(
+                                      identifier: 'rejected-constraint-approve-${constraint.id}',
+                                      child: TextButton.icon(
+                                        onPressed: () => _approveConstraint(constraint.id),
+                                        icon: const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                                        label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                                        style: TextButton.styleFrom(
+                                          backgroundColor: Colors.green[50],
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          minimumSize: Size.zero,
+                                        ),
                                       ),
                                     ),
                                 ],
@@ -2049,9 +2166,12 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('סגור'),
+            Semantics(
+              identifier: 'rejected-constraints-dialog-close-button',
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('סגור'),
+              ),
             ),
           ],
         ),
