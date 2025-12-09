@@ -403,9 +403,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                 style: const TextStyle(fontSize: 16),
                               ),
                               actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.of(dialogContext).pop(),
-                                  child: const Text('סגור'),
+                                Semantics(
+                                  identifier: 'duplicate-assignment-dialog-close-button',
+                                  child: TextButton(
+                                    onPressed: () => Navigator.of(dialogContext).pop(),
+                                    child: const Text('סגור'),
+                                  ),
                                 ),
                               ],
                             ),
@@ -466,13 +469,19 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     : 'האם אתה בטוח שברצונך למחוק משרה פנויה זו?\nפעולה זו תקטין את מספר המשרות הנדרשות לתפקיד זה.',
               ),
               actions: [
-                TextButton(
-                  child: const Text('ביטול'),
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                Semantics(
+                  identifier: 'delete-slot-dialog-cancel-button',
+                  child: TextButton(
+                    child: const Text('ביטול'),
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                  ),
                 ),
-                TextButton(
-                  child: const Text('מחק', style: TextStyle(color: Colors.red)),
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                Semantics(
+                  identifier: 'delete-slot-dialog-confirm-button',
+                  child: TextButton(
+                    child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                  ),
                 ),
               ],
             ),
@@ -959,9 +968,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                         return ListTile(
                           title: Text(member.name),
                           subtitle: Text('תפקידים: ${memberRoles.join(", ")}'),
-                          trailing: ElevatedButton(
-                            onPressed: () => Navigator.of(context).pop(member),
-                            child: const Text('שבץ בכל זאת'),
+                          trailing: Semantics(
+                            identifier: 'assign-anyway-button-${member.id}',
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.of(context).pop(member),
+                              child: const Text('שבץ בכל זאת'),
+                            ),
                           ),
                         );
                       },
@@ -972,9 +984,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('סגור'),
+            Semantics(
+              identifier: 'already-assigned-dialog-close-button',
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('סגור'),
+              ),
             ),
           ],
         ),

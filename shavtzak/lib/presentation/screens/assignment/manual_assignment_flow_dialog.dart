@@ -95,9 +95,12 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
         ),
         actions: [
           // Cancel button only - role selection auto-completes the assignment
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('ביטול', style: TextStyle(color: Colors.red)),
+          Semantics(
+            identifier: 'manual-assignment-dialog-cancel-button',
+            child: TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('ביטול', style: TextStyle(color: Colors.red)),
+            ),
           ),
         ],
       ),
@@ -173,40 +176,43 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                     final event = _futureEvents[index];
                     final isSelected = _selectedEvent?.id == event.id;
 
-                    return Card(
-                      elevation: isSelected ? 4 : 1,
-                      color: isSelected ? Colors.blue.shade50 : Colors.white,
-                      child: ListTile(
-                        title: Text(
-                          event.name,
-                          style: TextStyle(
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            color: isSelected ? Colors.blue.shade700 : Colors.black,
+                    return Semantics(
+                      identifier: 'event-selection-${event.id}',
+                      child: Card(
+                        elevation: isSelected ? 4 : 1,
+                        color: isSelected ? Colors.blue.shade50 : Colors.white,
+                        child: ListTile(
+                          title: Text(
+                            event.name,
+                            style: TextStyle(
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected ? Colors.blue.shade700 : Colors.black,
+                            ),
                           ),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(event.dateRangeString),
-                            if (event.location.isNotEmpty) Text('מיקום: ${event.location}'),
-                            Text('${event.startTime} - ${event.endTime}'),
-                          ],
-                        ),
-                        onTap: () {
-                          setState(() {
-                            _selectedEvent = isSelected ? null : event;
-                          });
-                          // Auto-advance to next step if event was selected
-                          if (_selectedEvent != null) {
-                            Future.delayed(const Duration(milliseconds: 300), () {
-                              if (mounted) {
-                                setState(() {
-                                  _currentStep = 1;
-                                });
-                              }
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(event.dateRangeString),
+                              if (event.location.isNotEmpty) Text('מיקום: ${event.location}'),
+                              Text('${event.startTime} - ${event.endTime}'),
+                            ],
+                          ),
+                          onTap: () {
+                            setState(() {
+                              _selectedEvent = isSelected ? null : event;
                             });
-                          }
-                        },
+                            // Auto-advance to next step if event was selected
+                            if (_selectedEvent != null) {
+                              Future.delayed(const Duration(milliseconds: 300), () {
+                                if (mounted) {
+                                  setState(() {
+                                    _currentStep = 1;
+                                  });
+                                }
+                              });
+                            }
+                          },
+                        ),
                       ),
                     );
                   },
@@ -246,40 +252,43 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                     final isSelected = _selectedTeamMember?.id == teamMember.id;
                     final hasConflict = _hasDateConstraintConflict(teamMember);
 
-                    return Card(
-                      elevation: isSelected ? 4 : 1,
-                      color: isSelected ? Colors.blue.shade50 : Colors.white,
-                      child: ListTile(
-                        title: Text(
-                          teamMember.name,
-                          style: TextStyle(
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            color: isSelected ? Colors.blue.shade700 : Colors.black,
+                    return Semantics(
+                      identifier: 'team-member-selection-${teamMember.id}',
+                      child: Card(
+                        elevation: isSelected ? 4 : 1,
+                        color: isSelected ? Colors.blue.shade50 : Colors.white,
+                        child: ListTile(
+                          title: Text(
+                            teamMember.name,
+                            style: TextStyle(
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected ? Colors.blue.shade700 : Colors.black,
+                            ),
                           ),
-                        ),
-                        subtitle: null, // uniqueKey not implemented yet
-                        trailing: hasConflict
-                            ? Icon(Icons.warning, color: Colors.orange.shade700)
-                            : null,
-                        onTap: () {
-                          if (hasConflict) {
-                            _showConstraintWarning(teamMember);
-                          } else {
-                            setState(() {
-                              _selectedTeamMember = isSelected ? null : teamMember;
-                            });
-                            // Auto-advance to next step if team member was selected
-                            if (_selectedTeamMember != null) {
-                              Future.delayed(const Duration(milliseconds: 300), () {
-                                if (mounted) {
-                                  setState(() {
-                                    _currentStep = 2;
-                                  });
-                                }
+                          subtitle: null, // uniqueKey not implemented yet
+                          trailing: hasConflict
+                              ? Icon(Icons.warning, color: Colors.orange.shade700)
+                              : null,
+                          onTap: () {
+                            if (hasConflict) {
+                              _showConstraintWarning(teamMember);
+                            } else {
+                              setState(() {
+                                _selectedTeamMember = isSelected ? null : teamMember;
                               });
+                              // Auto-advance to next step if team member was selected
+                              if (_selectedTeamMember != null) {
+                                Future.delayed(const Duration(milliseconds: 300), () {
+                                  if (mounted) {
+                                    setState(() {
+                                      _currentStep = 2;
+                                    });
+                                  }
+                                });
+                              }
                             }
-                          }
-                        },
+                          },
+                        ),
                       ),
                     );
                   },
@@ -336,29 +345,32 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                     final role = availableRoles[index];
                     final isSelected = _selectedRole == role;
 
-                    return Card(
-                      elevation: isSelected ? 4 : 1,
-                      color: isSelected ? Colors.blue.shade50 : Colors.white,
-                      child: InkWell(
-                        onTap: () {
-                          // Auto-complete assignment when role is selected
-                          if (!isSelected) {
-                            setState(() {
-                              _selectedRole = role;
-                            });
-                            _finish();
-                          }
-                        },
-                        borderRadius: BorderRadius.circular(8),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          child: Text(
-                            role.hebrewName,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                              color: isSelected ? Colors.blue.shade700 : Colors.black,
-                              fontSize: 14,
+                    return Semantics(
+                      identifier: 'role-selection-${role.name}',
+                      child: Card(
+                        elevation: isSelected ? 4 : 1,
+                        color: isSelected ? Colors.blue.shade50 : Colors.white,
+                        child: InkWell(
+                          onTap: () {
+                            // Auto-complete assignment when role is selected
+                            if (!isSelected) {
+                              setState(() {
+                                _selectedRole = role;
+                              });
+                              _finish();
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            child: Text(
+                              role.hebrewName,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                color: isSelected ? Colors.blue.shade700 : Colors.black,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ),
@@ -429,27 +441,33 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('ביטול'),
+            Semantics(
+              identifier: 'constraint-warning-dialog-cancel-button',
+              child: TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('ביטול'),
+              ),
             ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                setState(() {
-                  _selectedTeamMember = teamMember;
-                });
-                // Auto-advance to next step
-                Future.delayed(const Duration(milliseconds: 300), () {
-                  if (mounted) {
-                    setState(() {
-                      _currentStep = 2;
-                    });
-                  }
-                });
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-              child: const Text('שבץ בכל זאת'),
+            Semantics(
+              identifier: 'constraint-warning-dialog-assign-anyway-button',
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  setState(() {
+                    _selectedTeamMember = teamMember;
+                  });
+                  // Auto-advance to next step
+                  Future.delayed(const Duration(milliseconds: 300), () {
+                    if (mounted) {
+                      setState(() {
+                        _currentStep = 2;
+                      });
+                    }
+                  });
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                child: const Text('שבץ בכל זאת'),
+              ),
             ),
           ],
         ),

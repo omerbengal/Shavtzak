@@ -62,10 +62,13 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                       ),
                     ),
                     const Spacer(),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
-                      tooltip: 'סגור',
+                    Semantics(
+                      identifier: 'assignment-filter-modal-close-button',
+                      child: IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close),
+                        tooltip: 'סגור',
+                      ),
                     ),
                   ],
                 ),
@@ -79,12 +82,14 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Events section with dropdown arrow
-                      InkWell(
-                        onTap: () {
-                          setState(() {
-                            _eventsExpanded = !_eventsExpanded;
-                          });
-                        },
+                      Semantics(
+                        identifier: 'events-expand-toggle-button',
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _eventsExpanded = !_eventsExpanded;
+                            });
+                          },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 8),
@@ -130,6 +135,7 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                           ),
                         ),
                       ),
+                    ),
 
                       // Events list
                       if (_eventsExpanded) ...[
@@ -151,32 +157,35 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                           ...widget.availableEvents.map((event) {
                             final isSelected =
                                 _selectedEventIds.contains(event.id);
-                            return CheckboxListTile(
-                              value: isSelected,
-                              onChanged: (value) {
-                                setState(() {
-                                  if (value == true) {
-                                    _selectedEventIds.add(event.id);
-                                  } else {
-                                    _selectedEventIds.remove(event.id);
-                                  }
-                                });
-                              },
-                              title: Text(
-                                event.name,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              subtitle: Text(
-                                _formatEventDate(event),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
+                            return Semantics(
+                              identifier: 'event-checkbox-${event.id}',
+                              child: CheckboxListTile(
+                                value: isSelected,
+                                onChanged: (value) {
+                                  setState(() {
+                                    if (value == true) {
+                                      _selectedEventIds.add(event.id);
+                                    } else {
+                                      _selectedEventIds.remove(event.id);
+                                    }
+                                  });
+                                },
+                                title: Text(
+                                  event.name,
+                                  style: const TextStyle(fontSize: 14),
                                 ),
+                                subtitle: Text(
+                                  _formatEventDate(event),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                                controlAffinity: ListTileControlAffinity.leading,
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 0),
+                                dense: true,
                               ),
-                              controlAffinity: ListTileControlAffinity.leading,
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 0),
-                              dense: true,
                             );
                           }),
                       ],
@@ -195,17 +204,20 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Clear button (left side)
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _selectedEventIds.clear();
-                        });
-                      },
-                      child: const Text(
-                        'ניקוי',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.red,
+                    Semantics(
+                      identifier: 'assignment-filter-clear-button',
+                      child: TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedEventIds.clear();
+                          });
+                        },
+                        child: const Text(
+                          'ניקוי',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.red,
+                          ),
                         ),
                       ),
                     ),
@@ -213,29 +225,35 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                     Row(
                       children: [
                         // Cancel button
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text(
-                            'ביטול',
-                            style: TextStyle(fontSize: 16),
+                        Semantics(
+                          identifier: 'assignment-filter-cancel-button',
+                          child: TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text(
+                              'ביטול',
+                              style: TextStyle(fontSize: 16),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         // Apply button
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.of(context).pop(_selectedEventIds);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 24, vertical: 12),
-                          ),
-                          child: const Text(
-                            'החל',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.white,
+                        Semantics(
+                          identifier: 'assignment-filter-apply-button',
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.of(context).pop(_selectedEventIds);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 12),
+                            ),
+                            child: const Text(
+                              'החל',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),
