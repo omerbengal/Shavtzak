@@ -320,13 +320,24 @@ class _EventFormModalState extends State<EventFormModal> {
       bloc.add(CreateEvent(event));
     }
 
-    // Reload all events after operation completes (filtering happens in UI)
-    Future.delayed(const Duration(milliseconds: 100), () {
-      bloc.add(const LoadEvents());
-    });
-
     // Close modal after save operation
     widget.onSuccess();
+
+    // Show success message after modal is closed
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        final message = _isEditMode ? 'פרטי האירוע עודכנו בהצלחה' : 'האירוע נוסף בהצלחה';
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+      }
+    });
   }
 
   void _handleClose() {
@@ -439,14 +450,24 @@ class _EventFormModalState extends State<EventFormModal> {
                                         identifier: 'event-modal-delete-dialog-confirm-button',
                                         child: TextButton(
                                           child: const Text('מחק', style: TextStyle(color: Colors.red)),
-                                          onPressed: () {
+                                          onPressed: () async {
                                             final bloc = context.read<EventBloc>();
                                             bloc.add(DeleteEvent(widget.event!.id));
-                                            // Reload all events after operation completes (filtering happens in UI)
-                                            Future.delayed(const Duration(milliseconds: 100), () {
-                                              bloc.add(const LoadEvents());
-                                            });
                                             Navigator.of(dialogContext).pop(); // Close dialog
+
+                                            // Show success message
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                ..clearSnackBars()
+                                                ..showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text('האירוע נמחק בהצלחה'),
+                                                    backgroundColor: Colors.green,
+                                                    duration: Duration(seconds: 2),
+                                                  ),
+                                                );
+                                            }
+
                                             widget.onSuccess(); // Close modal
                                           },
                                         ),

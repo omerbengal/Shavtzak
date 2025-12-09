@@ -203,10 +203,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     try {
       // Don't emit EventOperating to avoid UI rebuild
       await _repository.createEvent(event.event);
-      // Emit success to show snackbar, UI will keep showing last state
-      emit(const EventOperationSuccess('האירוע נוסף בהצלחה'));
 
-      // Don't restart listener here - the modal will handle it with the correct filter
+      // NOTE: We don't emit EventOperationSuccess here to avoid UI state issues
+      // The real-time stream from emit.forEach will automatically update the UI
+      // If a success message is needed, the UI layer should handle it
+
     } catch (e) {
       emit(EventError('שגיאה בהוספת אירוע: $e'));
     }
@@ -220,10 +221,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     try {
       // Don't emit EventOperating to avoid UI rebuild
       await _repository.updateEvent(event.event);
-      // Emit success to show snackbar, UI will keep showing last state
-      emit(const EventOperationSuccess('פרטי האירוע עודכנו בהצלחה'));
 
-      // Don't restart listener here - the modal will handle it with the correct filter
+      // NOTE: We don't emit EventOperationSuccess here to avoid UI state issues
+      // The real-time stream from emit.forEach will automatically update the UI
+      // If a success message is needed, the UI layer should handle it
+
     } catch (e) {
       emit(EventError('שגיאה בעדכון פרטי האירוע: $e'));
     }
@@ -237,10 +239,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     try {
       // Don't emit EventOperating to avoid UI rebuild
       await _repository.deleteEvent(event.id);
-      // Emit success to show snackbar, UI will keep showing last state
-      emit(const EventOperationSuccess('האירוע נמחק בהצלחה'));
 
-      // Don't restart listener here - the modal will handle it with the correct filter
+      // NOTE: We don't emit EventOperationSuccess here to avoid UI state issues
+      // The real-time stream from emit.forEach will automatically update the UI
+      // If a success message is needed, the UI layer should handle it
+
     } catch (e) {
       emit(EventError('שגיאה במחיקת האירוע: $e'));
     }
