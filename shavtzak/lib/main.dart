@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'firebase_options.dart';
@@ -32,6 +33,8 @@ import 'core/theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  SemanticsBinding.instance.ensureSemantics();
 
   // Show loading screen immediately
   runApp(const LoadingApp());
@@ -127,7 +130,9 @@ class MyApp extends StatelessWidget {
           // Using environment as key forces BLoCs to recreate when environment changes
           final envKey = 'repos_${EnvironmentService.instance.isTestMode}';
           final env = EnvironmentService.instance.isTestMode ? 'TEST' : 'PROD';
-          developer.log('main.dart: ListenableBuilder rebuilding with environment=$env, key=$envKey', name: 'Main');
+          developer.log(
+              'main.dart: ListenableBuilder rebuilding with environment=$env, key=$envKey',
+              name: 'Main');
 
           return MultiRepositoryProvider(
             key: ValueKey(envKey),
@@ -135,21 +140,27 @@ class MyApp extends StatelessWidget {
               // Recreate repositories with new database instance when environment changes
               RepositoryProvider(
                 create: (context) {
-                  developer.log('main.dart: Creating TeamRepository with new FirestoreDatabase for $env environment', name: 'Main');
+                  developer.log(
+                      'main.dart: Creating TeamRepository with new FirestoreDatabase for $env environment',
+                      name: 'Main');
                   final db = FirestoreDatabase();
                   return TeamRepository(db);
                 },
               ),
               RepositoryProvider(
                 create: (context) {
-                  developer.log('main.dart: Creating EventRepository with new FirestoreDatabase for $env environment', name: 'Main');
+                  developer.log(
+                      'main.dart: Creating EventRepository with new FirestoreDatabase for $env environment',
+                      name: 'Main');
                   final db = FirestoreDatabase();
                   return EventRepository(db);
                 },
               ),
               RepositoryProvider(
                 create: (context) {
-                  developer.log('main.dart: Creating AssignmentRepository with new FirestoreDatabase for $env environment', name: 'Main');
+                  developer.log(
+                      'main.dart: Creating AssignmentRepository with new FirestoreDatabase for $env environment',
+                      name: 'Main');
                   final db = FirestoreDatabase();
                   return AssignmentRepository(db);
                 },
@@ -161,7 +172,9 @@ class MyApp extends StatelessWidget {
               providers: [
                 BlocProvider(
                   create: (context) {
-                    developer.log('main.dart: Creating TeamBloc for $env environment', name: 'Main');
+                    developer.log(
+                        'main.dart: Creating TeamBloc for $env environment',
+                        name: 'Main');
                     return TeamBloc(
                       context.read<TeamRepository>(),
                       context.read<AssignmentRepository>(),
@@ -170,7 +183,9 @@ class MyApp extends StatelessWidget {
                 ),
                 BlocProvider(
                   create: (context) {
-                    developer.log('main.dart: Creating EventBloc for $env environment', name: 'Main');
+                    developer.log(
+                        'main.dart: Creating EventBloc for $env environment',
+                        name: 'Main');
                     return EventBloc(
                       context.read<EventRepository>(),
                       context.read<AssignmentRepository>(),
@@ -179,7 +194,9 @@ class MyApp extends StatelessWidget {
                 ),
                 BlocProvider(
                   create: (context) {
-                    developer.log('main.dart: Creating AssignmentBloc for $env environment', name: 'Main');
+                    developer.log(
+                        'main.dart: Creating AssignmentBloc for $env environment',
+                        name: 'Main');
                     return AssignmentBloc(
                       context.read<AssignmentRepository>(),
                       context.read<EventRepository>(),
@@ -189,7 +206,9 @@ class MyApp extends StatelessWidget {
                 ),
                 BlocProvider(
                   create: (context) {
-                    developer.log('main.dart: Creating UserSelectionBloc for $env environment', name: 'Main');
+                    developer.log(
+                        'main.dart: Creating UserSelectionBloc for $env environment',
+                        name: 'Main');
                     return UserSelectionBloc(
                       userSelectionRepository,
                       context.read<TeamRepository>(),
@@ -200,7 +219,8 @@ class MyApp extends StatelessWidget {
               child: Builder(
                 builder: (context) {
                   final userSelectionBloc = context.read<UserSelectionBloc>();
-                  final userSelectionRepository = context.read<UserSelectionRepository>();
+                  final userSelectionRepository =
+                      context.read<UserSelectionRepository>();
                   final teamBloc = context.read<TeamBloc>();
 
                   return BlocListener<UserSelectionBloc, UserSelectionState>(

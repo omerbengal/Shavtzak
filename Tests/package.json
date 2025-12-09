@@ -1,0 +1,23 @@
+{
+  "name": "shavtzak-ui-tests",
+  "version": "1.0.0",
+  "description": "UI tests for Shavtzak web app using Playwright",
+  "main": "test-ui.js",
+  "scripts": {
+    "test": "node test-ui.js",
+    "test:headless": "HEADLESS=true node test-ui.js",
+    "install:playwright": "npm install playwright"
+  },
+  "dependencies": {
+    "playwright": "^1.57.0"
+  },
+  "keywords": [
+    "ui-testing",
+    "e2e-testing",
+    "playwright",
+    "flutter",
+    "shavtzak"
+  ],
+  "author": "Shavtzak Team",
+  "license": "MIT"
+}
