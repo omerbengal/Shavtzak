@@ -339,16 +339,22 @@ class _EventFormModalState extends State<EventFormModal> {
             title: const Text('שינויים לא נשמרו'),
             content: const Text('האם אתה בטוח שברצונך לצאת? השינויים לא יישמרו.'),
             actions: [
-              TextButton(
-                child: const Text('ביטול'),
-                onPressed: () => Navigator.of(dialogContext).pop(),
+              Semantics(
+                identifier: 'event-dirty-close-dialog-cancel-button',
+                child: TextButton(
+                  child: const Text('ביטול'),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                ),
               ),
-              TextButton(
-                child: const Text('צא'),
-                onPressed: () {
-                  Navigator.of(dialogContext).pop(); // Close dialog
-                  widget.onSuccess(); // Close modal
-                },
+              Semantics(
+                identifier: 'event-dirty-close-dialog-exit-button',
+                child: TextButton(
+                  child: const Text('צא'),
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(); // Close dialog
+                    widget.onSuccess(); // Close modal
+                  },
+                ),
               ),
             ],
           ),
@@ -422,22 +428,28 @@ class _EventFormModalState extends State<EventFormModal> {
                                       'האם אתה בטוח שברצונך למחוק את ${widget.event!.name}?\nפעולה זו תמחק גם את כל השיבוצים.',
                                     ),
                                     actions: [
-                                      TextButton(
-                                        child: const Text('ביטול'),
-                                        onPressed: () => Navigator.of(dialogContext).pop(),
+                                      Semantics(
+                                        identifier: 'event-modal-delete-dialog-cancel-button',
+                                        child: TextButton(
+                                          child: const Text('ביטול'),
+                                          onPressed: () => Navigator.of(dialogContext).pop(),
+                                        ),
                                       ),
-                                      TextButton(
-                                        child: const Text('מחק', style: TextStyle(color: Colors.red)),
-                                        onPressed: () {
-                                          final bloc = context.read<EventBloc>();
-                                          bloc.add(DeleteEvent(widget.event!.id));
-                                          // Reload all events after operation completes (filtering happens in UI)
-                                          Future.delayed(const Duration(milliseconds: 100), () {
-                                            bloc.add(const LoadEvents());
-                                          });
-                                          Navigator.of(dialogContext).pop(); // Close dialog
-                                          widget.onSuccess(); // Close modal
-                                        },
+                                      Semantics(
+                                        identifier: 'event-modal-delete-dialog-confirm-button',
+                                        child: TextButton(
+                                          child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                                          onPressed: () {
+                                            final bloc = context.read<EventBloc>();
+                                            bloc.add(DeleteEvent(widget.event!.id));
+                                            // Reload all events after operation completes (filtering happens in UI)
+                                            Future.delayed(const Duration(milliseconds: 100), () {
+                                              bloc.add(const LoadEvents());
+                                            });
+                                            Navigator.of(dialogContext).pop(); // Close dialog
+                                            widget.onSuccess(); // Close modal
+                                          },
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -473,42 +485,48 @@ class _EventFormModalState extends State<EventFormModal> {
                               const SizedBox(height: 16),
 
                               // Name field
-                              TextFormField(
-                                controller: _nameController,
-                                focusNode: _nameFocusNode,
-                                textDirection: TextDirection.rtl,
-                                decoration: const InputDecoration(
-                                  labelText: 'שם האירוע',
-                                  hintText: 'לדוגמה: חתונת כהן',
-                                  prefixIcon: Icon(Icons.event),
-                                  border: OutlineInputBorder(),
+                              Semantics(
+                                identifier: 'event-name-field',
+                                child: TextFormField(
+                                  controller: _nameController,
+                                  focusNode: _nameFocusNode,
+                                  textDirection: TextDirection.rtl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'שם האירוע',
+                                    hintText: 'לדוגמה: חתונת כהן',
+                                    prefixIcon: Icon(Icons.event),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  autovalidateMode: _validateName
+                                      ? AutovalidateMode.onUserInteraction
+                                      : AutovalidateMode.disabled,
+                                  validator: Validators.validateName,
+                                  onChanged: (_) => setState(() => _isDirty = true),
                                 ),
-                                autovalidateMode: _validateName
-                                    ? AutovalidateMode.onUserInteraction
-                                    : AutovalidateMode.disabled,
-                                validator: Validators.validateName,
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               const SizedBox(height: 16),
 
                               // Location field
-                              TextFormField(
-                                controller: _locationController,
-                                textDirection: TextDirection.rtl,
-                                decoration: const InputDecoration(
-                                  labelText: 'מיקום',
-                                  hintText: 'לדוגמה: אולמי ורסאי',
-                                  prefixIcon: Icon(Icons.location_on),
-                                  border: OutlineInputBorder(),
+                              Semantics(
+                                identifier: 'event-location-field',
+                                child: TextFormField(
+                                  controller: _locationController,
+                                  textDirection: TextDirection.rtl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'מיקום',
+                                    hintText: 'לדוגמה: אולמי ורסאי',
+                                    prefixIcon: Icon(Icons.location_on),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'נא למלא מיקום';
+                                    }
+                                    return null;
+                                  },
+                                  onChanged: (_) => setState(() => _isDirty = true),
                                 ),
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'נא למלא מיקום';
-                                  }
-                                  return null;
-                                },
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               const SizedBox(height: 16),
@@ -517,88 +535,97 @@ class _EventFormModalState extends State<EventFormModal> {
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  OutlinedButton.icon(
-                                    onPressed: () async {
-                                      final result = await showDialog<Map<String, DateTime?>>(
-                                        context: context,
-                                        builder: (context) => DualCalendarDatePicker(
-                                          isSingleDate: false,
-                                          initialStartDate: _startDate,
-                                          initialEndDate: _endDate,
-                                          title: 'בחר תאריכי אירוע',
-                                        ),
-                                      );
+                                  Semantics(
+                                    identifier: 'event-date-picker-button',
+                                    child: OutlinedButton.icon(
+                                      onPressed: () async {
+                                        final result = await showDialog<Map<String, DateTime?>>(
+                                          context: context,
+                                          builder: (context) => DualCalendarDatePicker(
+                                            isSingleDate: false,
+                                            initialStartDate: _startDate,
+                                            initialEndDate: _endDate,
+                                            title: 'בחר תאריכי אירוע',
+                                          ),
+                                        );
 
-                                      if (result != null) {
-                                        final selectedStartDate = result['startDate'];
-                                        final selectedEndDate = result['endDate'];
+                                        if (result != null) {
+                                          final selectedStartDate = result['startDate'];
+                                          final selectedEndDate = result['endDate'];
 
-                                        // Check if only start date was selected
-                                        if (selectedStartDate != null && selectedEndDate == null) {
-                                          // Show confirmation dialog for single-day event
-                                          final confirmed = await showDialog<bool>(
-                                            context: context,
-                                            builder: (dialogContext) => Directionality(
-                                              textDirection: TextDirection.rtl,
-                                              child: AlertDialog(
-                                                title: const Text('אישור אירוע ליום בודד'),
-                                                content: Text(
-                                                  'האם זה אירוע ליום בודד (${_formatDate(selectedStartDate!)})?',
+                                          // Check if only start date was selected
+                                          if (selectedStartDate != null && selectedEndDate == null) {
+                                            // Show confirmation dialog for single-day event
+                                            final confirmed = await showDialog<bool>(
+                                              context: context,
+                                              builder: (dialogContext) => Directionality(
+                                                textDirection: TextDirection.rtl,
+                                                child: AlertDialog(
+                                                  title: const Text('אישור אירוע ליום בודד'),
+                                                  content: Text(
+                                                    'האם זה אירוע ליום בודד (${_formatDate(selectedStartDate!)})?',
+                                                  ),
+                                                  actions: [
+                                                    Semantics(
+                                                      identifier: 'single-day-event-dialog-cancel-button',
+                                                      child: TextButton(
+                                                        child: const Text('ביטול'),
+                                                        onPressed: () => Navigator.of(dialogContext).pop(false),
+                                                      ),
+                                                    ),
+                                                    Semantics(
+                                                      identifier: 'single-day-event-dialog-confirm-button',
+                                                      child: ElevatedButton(
+                                                        child: const Text('כן, אירוע ליום בודד'),
+                                                        onPressed: () => Navigator.of(dialogContext).pop(true),
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
-                                                actions: [
-                                                  TextButton(
-                                                    child: const Text('ביטול'),
-                                                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                                                  ),
-                                                  ElevatedButton(
-                                                    child: const Text('כן, אירוע ליום בודד'),
-                                                    onPressed: () => Navigator.of(dialogContext).pop(true),
-                                                  ),
-                                                ],
                                               ),
-                                            ),
-                                          );
+                                            );
 
-                                          if (confirmed == true) {
+                                            if (confirmed == true) {
+                                              setState(() {
+                                                _startDate = selectedStartDate;
+                                                _endDate = null; // Single day event
+                                                _dateError = null;
+                                                _isDirty = true;
+                                              });
+                                            }
+                                          } else if (selectedStartDate != null && selectedEndDate != null) {
+                                            // Check if start and end dates are the same
+                                            final isSameDate = selectedStartDate.year == selectedEndDate.year &&
+                                                selectedStartDate.month == selectedEndDate.month &&
+                                                selectedStartDate.day == selectedEndDate.day;
+
                                             setState(() {
                                               _startDate = selectedStartDate;
-                                              _endDate = null; // Single day event
+                                              // Automatically convert to single day if same date selected
+                                              _endDate = isSameDate ? null : selectedEndDate;
                                               _dateError = null;
                                               _isDirty = true;
                                             });
                                           }
-                                        } else if (selectedStartDate != null && selectedEndDate != null) {
-                                          // Check if start and end dates are the same
-                                          final isSameDate = selectedStartDate.year == selectedEndDate.year &&
-                                              selectedStartDate.month == selectedEndDate.month &&
-                                              selectedStartDate.day == selectedEndDate.day;
-
-                                          setState(() {
-                                            _startDate = selectedStartDate;
-                                            // Automatically convert to single day if same date selected
-                                            _endDate = isSameDate ? null : selectedEndDate;
-                                            _dateError = null;
-                                            _isDirty = true;
-                                          });
                                         }
-                                      }
-                                    },
-                                    icon: const Icon(Icons.calendar_month),
-                                    label: Text(
-                                      _startDate == null
-                                          ? 'בחר תאריכי אירוע'
-                                          : _endDate == null
-                                              ? 'מ-${_formatDate(_startDate!)}'
-                                              : '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}',
-                                    ),
-                                    style: OutlinedButton.styleFrom(
-                                      padding: const EdgeInsets.all(16),
-                                      alignment: Alignment.centerRight,
-                                      side: BorderSide(
-                                        color: _dateError != null ? Colors.red.shade700 : Colors.grey,
-                                        width: _dateError != null ? 2 : 1,
+                                      },
+                                      icon: const Icon(Icons.calendar_month),
+                                      label: Text(
+                                        _startDate == null
+                                            ? 'בחר תאריכי אירוע'
+                                            : _endDate == null
+                                                ? 'מ-${_formatDate(_startDate!)}'
+                                                : '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}',
                                       ),
-                                      backgroundColor: _dateError != null ? Colors.red.shade50 : null,
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.all(16),
+                                        alignment: Alignment.centerRight,
+                                        side: BorderSide(
+                                          color: _dateError != null ? Colors.red.shade700 : Colors.grey,
+                                          width: _dateError != null ? 2 : 1,
+                                        ),
+                                        backgroundColor: _dateError != null ? Colors.red.shade50 : null,
+                                      ),
                                     ),
                                   ),
                                   if (_dateError != null)
@@ -617,6 +644,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                       padding: const EdgeInsets.only(top: 8),
                                       child: Align(
                                         alignment: Alignment.centerLeft,
+                                        child: Semantics(
+                                        identifier: 'event-clear-dates-button',
                                         child: TextButton.icon(
                                           onPressed: () => setState(() {
                                             _startDate = null;
@@ -637,55 +666,67 @@ class _EventFormModalState extends State<EventFormModal> {
                               const SizedBox(height: 16),
 
                               // Start Time
-                              TextFormField(
-                                controller: _startTimeController,
-                                decoration: const InputDecoration(
-                                  labelText: 'שעת התחלה (אופציונלי)',
-                                  hintText: 'לדוגמה: 18:00',
-                                  prefixIcon: Icon(Icons.access_time),
-                                  border: OutlineInputBorder(),
+                              Semantics(
+                                identifier: 'event-start-time-field',
+                                child: TextFormField(
+                                  controller: _startTimeController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'שעת התחלה (אופציונלי)',
+                                    hintText: 'לדוגמה: 18:00',
+                                    prefixIcon: Icon(Icons.access_time),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onChanged: (_) => setState(() => _isDirty = true),
                                 ),
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               const SizedBox(height: 16),
 
                               // End Time
-                              TextFormField(
-                                controller: _endTimeController,
-                                decoration: const InputDecoration(
-                                  labelText: 'שעת סיום (אופציונלי)',
-                                  hintText: 'לדוגמה: 23:00',
-                                  prefixIcon: Icon(Icons.access_time),
-                                  border: OutlineInputBorder(),
+                              Semantics(
+                                identifier: 'event-end-time-field',
+                                child: TextFormField(
+                                  controller: _endTimeController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'שעת סיום (אופציונלי)',
+                                    hintText: 'לדוגמה: 23:00',
+                                    prefixIcon: Icon(Icons.access_time),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onChanged: (_) => setState(() => _isDirty = true),
                                 ),
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               const SizedBox(height: 16),
 
                               // Assembly Time
-                              TextFormField(
-                                controller: _assemblyTimeController,
-                                decoration: const InputDecoration(
-                                  labelText: 'שעת התייצבות (אופציונלי)',
-                                  hintText: 'לדוגמה: 17:00',
-                                  prefixIcon: Icon(Icons.access_time),
-                                  border: OutlineInputBorder(),
+                              Semantics(
+                                identifier: 'event-assembly-time-field',
+                                child: TextFormField(
+                                  controller: _assemblyTimeController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'שעת התייצבות (אופציונלי)',
+                                    hintText: 'לדוגמה: 17:00',
+                                    prefixIcon: Icon(Icons.access_time),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onChanged: (_) => setState(() => _isDirty = true),
                                 ),
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               const SizedBox(height: 16),
 
                               // Requires Armed
-                              SwitchListTile(
-                                title: const Text('דרוש חמוש'),
-                                value: _requiresArmed,
-                                onChanged: (v) => setState(() {
-                                  _requiresArmed = v;
-                                  _isDirty = true;
-                                }),
+                              Semantics(
+                                identifier: 'event-requires-armed-switch',
+                                child: SwitchListTile(
+                                  title: const Text('דרוש חמוש'),
+                                  value: _requiresArmed,
+                                  onChanged: (v) => setState(() {
+                                    _requiresArmed = v;
+                                    _isDirty = true;
+                                  }),
+                                ),
                               ),
 
                               const Divider(height: 32),
@@ -724,16 +765,19 @@ class _EventFormModalState extends State<EventFormModal> {
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        IconButton(
-                                          icon: const Icon(Icons.remove_circle_outline),
-                                          onPressed: () {
-                                            if (_roleRequirements[role]! > 0) {
-                                              setState(() {
-                                                _roleRequirements[role] = _roleRequirements[role]! - 1;
-                                                _isDirty = true;
-                                              });
-                                            }
-                                          },
+                                        Semantics(
+                                          identifier: 'role-${role.name}-decrement-button',
+                                          child: IconButton(
+                                            icon: const Icon(Icons.remove_circle_outline),
+                                            onPressed: () {
+                                              if (_roleRequirements[role]! > 0) {
+                                                setState(() {
+                                                  _roleRequirements[role] = _roleRequirements[role]! - 1;
+                                                  _isDirty = true;
+                                                });
+                                              }
+                                            },
+                                          ),
                                         ),
                                         SizedBox(
                                           width: 40,
@@ -743,14 +787,17 @@ class _EventFormModalState extends State<EventFormModal> {
                                             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                           ),
                                         ),
-                                        IconButton(
-                                          icon: const Icon(Icons.add_circle_outline),
-                                          onPressed: () {
-                                            setState(() {
-                                              _roleRequirements[role] = _roleRequirements[role]! + 1;
-                                              _isDirty = true;
-                                            });
-                                          },
+                                        Semantics(
+                                          identifier: 'role-${role.name}-increment-button',
+                                          child: IconButton(
+                                            icon: const Icon(Icons.add_circle_outline),
+                                            onPressed: () {
+                                              setState(() {
+                                                _roleRequirements[role] = _roleRequirements[role]! + 1;
+                                                _isDirty = true;
+                                              });
+                                            },
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -761,18 +808,21 @@ class _EventFormModalState extends State<EventFormModal> {
                               const Divider(height: 32),
 
                               // Comments
-                              TextFormField(
-                                controller: _commentsController,
-                                decoration: const InputDecoration(
-                                  labelText: 'הערות',
-                                  hintText: 'הערות על האירוע',
-                                  prefixIcon: Icon(Icons.comment),
-                                  border: OutlineInputBorder(),
+                              Semantics(
+                                identifier: 'event-comments-field',
+                                child: TextFormField(
+                                  controller: _commentsController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'הערות',
+                                    hintText: 'הערות על האירוע',
+                                    prefixIcon: Icon(Icons.comment),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  minLines: 1,
+                                  maxLines: 3,
+                                  scrollPadding: const EdgeInsets.only(bottom: 300),
+                                  onChanged: (_) => setState(() => _isDirty = true),
                                 ),
-                                minLines: 1,
-                                maxLines: 3,
-                                scrollPadding: const EdgeInsets.only(bottom: 300),
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               // Dynamic bottom spacing for keyboard
@@ -796,16 +846,22 @@ class _EventFormModalState extends State<EventFormModal> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: OutlinedButton(
-                            onPressed: _handleClose,
-                            child: const Text('ביטול'),
+                          child: Semantics(
+                            identifier: 'event-form-cancel-button',
+                            child: OutlinedButton(
+                              onPressed: _handleClose,
+                              child: const Text('ביטול'),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
-                          child: ElevatedButton(
-                            onPressed: _saveEvent,
-                            child: const Text('שמור'),
+                          child: Semantics(
+                            identifier: 'event-form-save-button',
+                            child: ElevatedButton(
+                              onPressed: _saveEvent,
+                              child: const Text('שמור'),
+                            ),
                           ),
                         ),
                       ],
