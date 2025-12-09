@@ -168,13 +168,13 @@ class _EventListScreenState extends State<EventListScreen> {
     final filteredEvents = _filterEvents(state.events, FilterPersistence.eventFilterIndex);
 
     return Semantics(
-          identifier: 'event-refresh-indicator',
-          child: RefreshIndicator(
-            onRefresh: () async {
-              context.read<EventBloc>().add(const RefreshEvents());
-              await Future.delayed(const Duration(milliseconds: 500));
-            },
-      child: Column(
+      identifier: 'event-refresh-indicator',
+      child: RefreshIndicator(
+        onRefresh: () async {
+          context.read<EventBloc>().add(const RefreshEvents());
+          await Future.delayed(const Duration(milliseconds: 500));
+        },
+        child: Column(
         children: [
           // Interactive filter bar
           InteractiveFilterBar(
@@ -197,7 +197,8 @@ class _EventListScreenState extends State<EventListScreen> {
           ),
         ],
       ),
-    );
+        ),
+      );
   }
 
   /// Filter events based on selected filter index
@@ -260,12 +261,12 @@ class _EventListScreenState extends State<EventListScreen> {
     final cardColor = _getEventCardColor(event, assignmentCounts);
 
     return Semantics(
-        identifier: 'event-card-${event.id}',
-        child: Card(
-          color: cardColor,
-          child: InkWell(
-            onTap: () => _showEventFormModal(event),
-        child: Padding(
+      identifier: 'event-card-${event.id}',
+      child: Card(
+        color: cardColor,
+        child: InkWell(
+          onTap: () => _showEventFormModal(event),
+          child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -311,8 +312,9 @@ class _EventListScreenState extends State<EventListScreen> {
             ],
           ),
         ),
-      ),
-    );
+          ),
+        ),
+      );
   }
 
   void _showEventFormModal(Event? event) {

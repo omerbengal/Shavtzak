@@ -373,6 +373,7 @@ class _TeamMemberCard extends StatelessWidget {
   final VoidCallback onTap;
 
   const _TeamMemberCard({
+    super.key,
     required this.teamMember,
     required this.onTap,
   });
@@ -386,7 +387,7 @@ class _TeamMemberCard extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(12.0),
-        child: Padding(
+          child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
             children: [
@@ -440,6 +441,6 @@ class _TeamMemberCard extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }

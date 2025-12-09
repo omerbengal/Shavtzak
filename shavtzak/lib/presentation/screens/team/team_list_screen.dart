@@ -179,13 +179,13 @@ class _TeamListScreenState extends State<TeamListScreen> {
     final filteredMembers = _filterMembers(state.members, FilterPersistence.teamFilterIndex);
 
     return Semantics(
-          identifier: 'team-refresh-indicator',
-          child: RefreshIndicator(
-            onRefresh: () async {
-              context.read<TeamBloc>().add(const RefreshTeamMembers());
-              await Future.delayed(const Duration(milliseconds: 500));
-            },
-      child: Column(
+      identifier: 'team-refresh-indicator',
+      child: RefreshIndicator(
+        onRefresh: () async {
+          context.read<TeamBloc>().add(const RefreshTeamMembers());
+          await Future.delayed(const Duration(milliseconds: 500));
+        },
+        child: Column(
         children: [
           // Interactive filter bar
           InteractiveFilterBar(
@@ -210,7 +210,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
           ),
         ],
       ),
-    );
+        ),
+      );
   }
 
   /// Filter members based on selected filter index
@@ -233,13 +234,13 @@ class _TeamListScreenState extends State<TeamListScreen> {
         member.roleCapabilities.values.where((v) => v == true).length;
 
     return Semantics(
-        identifier: 'team-member-card-${member.id}',
-        child: Card(
-          child: InkWell(
-            onTap: () {
-              _showTeamMemberFormModal(member);
-            },
-        child: Padding(
+      identifier: 'team-member-card-${member.id}',
+      child: Card(
+        child: InkWell(
+          onTap: () {
+            _showTeamMemberFormModal(member);
+          },
+          child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -404,6 +405,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
           ),
         ),
       ),
+        ),
     );
   }
 

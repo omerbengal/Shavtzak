@@ -645,23 +645,24 @@ class _EventFormModalState extends State<EventFormModal> {
                                       child: Align(
                                         alignment: Alignment.centerLeft,
                                         child: Semantics(
-                                        identifier: 'event-clear-dates-button',
-                                        child: TextButton.icon(
-                                          onPressed: () => setState(() {
-                                            _startDate = null;
-                                            _endDate = null;
-                                            _isDirty = true;
-                                          }),
-                                          icon: const Icon(Icons.clear, size: 16),
-                                          label: const Text('נקה'),
-                                          style: TextButton.styleFrom(
-                                            foregroundColor: Colors.red,
+                                          identifier: 'event-clear-dates-button',
+                                          child: TextButton.icon(
+                                            onPressed: () => setState(() {
+                                              _startDate = null;
+                                              _endDate = null;
+                                              _isDirty = true;
+                                            }),
+                                            icon: const Icon(Icons.clear, size: 16),
+                                            label: const Text('נקה'),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: Colors.red,
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                ],
-                              ),
+                                    ],
+                                  ),
 
                               const SizedBox(height: 16),
 

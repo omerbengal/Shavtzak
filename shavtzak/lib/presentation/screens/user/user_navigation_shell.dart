@@ -87,25 +87,26 @@ class UserNavigationShell extends StatelessWidget {
             currentIndex: navigationShell.currentIndex,
             onTap: (index) => _onItemTapped(index, context),
             type: BottomNavigationBarType.fixed,
-          items: [
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.assignment),
-              activeIcon: Icon(Icons.assignment_turned_in),
-              label: 'המשימות שלי',
-            ),
-            BottomNavigationBarItem(
-              icon: isPermanent
-                  ? const Icon(Icons.block)
-                  : const Icon(Icons.event_available),
-              activeIcon: isPermanent
-                  ? const Icon(Icons.block)
-                  : const Icon(Icons.event_available),
-              label: isPermanent ? 'המגבלות שלי' : 'הזמינות שלי',
-            ),
-          ],
-        ),
-      );
-    }
+            items: [
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.assignment),
+                activeIcon: Icon(Icons.assignment_turned_in),
+                label: 'המשימות שלי',
+              ),
+              BottomNavigationBarItem(
+                icon: isPermanent
+                    ? const Icon(Icons.block)
+                    : const Icon(Icons.event_available),
+                activeIcon: isPermanent
+                    ? const Icon(Icons.block)
+                    : const Icon(Icons.event_available),
+                label: isPermanent ? 'המגבלות שלי' : 'הזמינות שלי',
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   /// Show logout confirmation dialog

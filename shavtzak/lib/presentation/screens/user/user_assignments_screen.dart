@@ -156,7 +156,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
         onRefresh: () async {
           _loadUserAssignments();
         },
-      child: ListView(
+        child: ListView(
         padding: const EdgeInsets.only(top: 8, bottom: 16),
         children: [
           // Header
@@ -215,7 +215,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             ),
         ],
       ),
-    );
+        ),
+      );
   }
 
   Widget _buildSectionHeader(BuildContext context, String title, int count, Color color) {
@@ -316,14 +317,14 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         elevation: isUpcoming ? 2 : 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: isToday ? Colors.orange.shade400 : borderColor,
-          width: isToday ? 2 : 1,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: isToday ? Colors.orange.shade400 : borderColor,
+            width: isToday ? 2 : 1,
+          ),
         ),
-      ),
-      color: backgroundColor,
+        color: backgroundColor,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -546,6 +547,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           ],
         ),
       ),
+        ),
     );
   }
 

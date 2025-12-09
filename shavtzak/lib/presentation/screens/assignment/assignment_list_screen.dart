@@ -297,8 +297,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ),
         ),
       ],
-      ),
-    );
+    ),
+        ),
+      );
   }
 
   Widget _buildSlotRow(AssignmentSlot slot) {

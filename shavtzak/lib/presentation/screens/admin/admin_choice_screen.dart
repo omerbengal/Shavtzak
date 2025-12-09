@@ -46,7 +46,7 @@ class AdminChoiceScreen extends StatelessWidget {
                           final envPrefix = EnvironmentService.instance.routePrefix;
                           context.go('$envPrefix/user/assignments');
                         },
-                      child: Padding(
+                        child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -65,12 +65,11 @@ class AdminChoiceScreen extends StatelessWidget {
                           ],
                         ),
                       ),
+                        ),
                     ),
                   ),
                 ),
-              ),
-                ),
-                const SizedBox(height: 32),
+              const SizedBox(height: 32),
                 // Management Card
                 Semantics(
                   identifier: 'management-area-card',
@@ -83,36 +82,35 @@ class AdminChoiceScreen extends StatelessWidget {
                           final envPrefix = EnvironmentService.instance.routePrefix;
                           context.go('$envPrefix/admin/team-members');
                         },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.admin_panel_settings, size: 56, color: Colors.green),
-                            SizedBox(height: 10),
-                            Text(
-                              'ניהול שבצק',
-                              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'ניהול צוות, אירועים ושיבוצים',
-                              style: TextStyle(fontSize: 13, color: Colors.grey),
-                            ),
-                          ],
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Icon(Icons.admin_panel_settings, size: 56, color: Colors.green),
+                              SizedBox(height: 10),
+                              Text(
+                                'ניהול שבצק',
+                                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'ניהול צוות, אירועים ושיבוצים',
+                                style: TextStyle(fontSize: 13, color: Colors.grey),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
                 ),
               ],
             ),
           ),
         ),
       ),
-      ),
+        ),
       ),
     );
   }
