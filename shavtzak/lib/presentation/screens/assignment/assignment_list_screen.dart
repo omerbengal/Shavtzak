@@ -72,17 +72,23 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('שיבוצים'),
+          title: Semantics(
+            identifier: 'assignment-screen-title',
+            child: const Text('שיבוצים'),
+          ),
           actions: const [
             NavigationMenu(),
           ],
         ),
-        floatingActionButton: FloatingActionButton(
-          heroTag: 'assignment_fab',
-          onPressed: () => _showManualAssignmentFlow(),
-          backgroundColor: Colors.blue,
-          child: const Icon(Icons.add, color: Colors.white),
-          tooltip: 'שיבוץ ידני',
+        floatingActionButton: Semantics(
+          identifier: 'manual-assignment-fab',
+          child: FloatingActionButton(
+            heroTag: 'assignment_fab',
+            onPressed: () => _showManualAssignmentFlow(),
+            backgroundColor: Colors.blue,
+            child: const Icon(Icons.add, color: Colors.white),
+            tooltip: 'שיבוץ ידני',
+          ),
         ),
         body: BlocConsumer<AssignmentBloc, AssignmentState>(
           listener: (context, state) {
@@ -224,11 +230,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return _buildEmptyState(totalSlots, filledSlots, unfilledSlots);
     }
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
-        await Future.delayed(const Duration(milliseconds: 500));
-      },
+    return Semantics(
+          identifier: 'assignment-refresh-indicator',
+          child: RefreshIndicator(
+            onRefresh: () async {
+              context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+              await Future.delayed(const Duration(milliseconds: 500));
+            },
       child: Column(
       children: [
         // Interactive filter bar
@@ -429,8 +437,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
 
     // Make all slots dismissible (both filled and unfilled)
-    return Dismissible(
-      key: Key('slot_${slot.event.id}_${slot.roleType.name}_${slot.slotIndex}'),
+    return Semantics(
+      identifier: 'assignment-slot-${slot.event.id}-${slot.roleType.name}-${slot.slotIndex}',
+      child: Dismissible(
+        key: Key('slot_${slot.event.id}_${slot.roleType.name}_${slot.slotIndex}'),
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerLeft, // RTL: left side is the visible side
@@ -479,6 +489,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         return false;
       },
       child: rowContent,
+      ),
     );
   }
 
@@ -656,9 +667,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         // Main dropdown with string values
         Expanded(
           flex: 2,
-          child: DropdownButtonFormField<String>(
-            key: ValueKey('${_getSlotKey(slot)}_${_dropdownResetCounters[_getSlotKey(slot)] ?? 0}'),
-            value: currentMember?.id,
+          child: Semantics(
+              identifier: 'assignment-dropdown-${slot.event.id}-${slot.roleType.name}-${slot.slotIndex}',
+              child: DropdownButtonFormField<String>(
+                key: ValueKey('${_getSlotKey(slot)}_${_dropdownResetCounters[_getSlotKey(slot)] ?? 0}'),
+                value: currentMember?.id,
             hint: Directionality(
               textDirection: TextDirection.rtl,
               child: Center(child: Text('בחר...')),
@@ -725,6 +738,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             } : null, // Disable dropdown when no options available
           ),
         ),
+      ),
 
         const SizedBox(width: 8),
 
@@ -733,23 +747,29 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           SizedBox(
             width: isMobile ? 40 : 60,
             child: isMobile
-                ? IconButton(
-                    onPressed: () => _handleClearAssignment(slot),
-                    icon: const Icon(Icons.clear, size: 20),
-                    color: Colors.red,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    tooltip: 'ניקוי',
-                  )
-                : ElevatedButton(
-                    onPressed: () => _handleClearAssignment(slot),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade100,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ? Semantics(
+                    identifier: 'clear-assignment-button-${slot.event.id}-${slot.roleType.name}-${slot.slotIndex}',
+                    child: IconButton(
+                      onPressed: () => _handleClearAssignment(slot),
+                      icon: const Icon(Icons.clear, size: 20),
+                      color: Colors.red,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: 'ניקוי',
                     ),
+                  )
+                : Semantics(
+                    identifier: 'clear-assignment-button-${slot.event.id}-${slot.roleType.name}-${slot.slotIndex}',
+                    child: ElevatedButton(
+                      onPressed: () => _handleClearAssignment(slot),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade100,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      ),
                     child: const Text(
                       'ניקוי',
                       style: TextStyle(fontSize: 12, color: Colors.red),
+                    ),
                     ),
                   ),
           ),
