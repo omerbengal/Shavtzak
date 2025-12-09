@@ -60,31 +60,40 @@ class _EventListScreenState extends State<EventListScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: _showSearch
-              ? TextField(
-                  controller: _searchController,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'חיפוש אירוע...',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(color: Colors.black54),
+              ? Semantics(
+                  identifier: 'event-search-field',
+                  child: TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'חיפוש אירוע...',
+                      border: InputBorder.none,
+                      hintStyle: TextStyle(color: Colors.black54),
+                    ),
+                    style: const TextStyle(color: Colors.black),
+                    onChanged: _onSearchChanged,
                   ),
-                  style: const TextStyle(color: Colors.black),
-                  onChanged: _onSearchChanged,
                 )
-              : const Text('אירועים'),
+              : Semantics(
+                  identifier: 'event-screen-title',
+                  child: const Text('אירועים'),
+                ),
           actions: [
             const NavigationMenu(),
-            IconButton(
-              icon: Icon(_showSearch ? Icons.close : Icons.search),
-              onPressed: () {
-                setState(() {
-                  _showSearch = !_showSearch;
-                  if (!_showSearch) {
-                    _searchController.clear();
-                    context.read<EventBloc>().add(const LoadEvents());
-                  }
-                });
-              },
+            Semantics(
+              identifier: 'event-search-toggle-button',
+              child: IconButton(
+                icon: Icon(_showSearch ? Icons.close : Icons.search),
+                onPressed: () {
+                  setState(() {
+                    _showSearch = !_showSearch;
+                    if (!_showSearch) {
+                      _searchController.clear();
+                      context.read<EventBloc>().add(const LoadEvents());
+                    }
+                  });
+                },
+              ),
             ),
           ],
         ),
@@ -134,12 +143,15 @@ class _EventListScreenState extends State<EventListScreen> {
             return _buildEmptyState(const EventsEmpty('טוען...'));
           },
         ),
-        floatingActionButton: FloatingActionButton(
-          heroTag: 'event_fab',
-          onPressed: () {
-            _showEventFormModal(null);
-          },
-          child: const Icon(Icons.add),
+        floatingActionButton: Semantics(
+          identifier: 'add-event-fab',
+          child: FloatingActionButton(
+            heroTag: 'event_fab',
+            onPressed: () {
+              _showEventFormModal(null);
+            },
+            child: const Icon(Icons.add),
+          ),
         ),
       ),
     );
@@ -155,11 +167,13 @@ class _EventListScreenState extends State<EventListScreen> {
     // Filter events based on selected filter
     final filteredEvents = _filterEvents(state.events, FilterPersistence.eventFilterIndex);
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        context.read<EventBloc>().add(const RefreshEvents());
-        await Future.delayed(const Duration(milliseconds: 500));
-      },
+    return Semantics(
+          identifier: 'event-refresh-indicator',
+          child: RefreshIndicator(
+            onRefresh: () async {
+              context.read<EventBloc>().add(const RefreshEvents());
+              await Future.delayed(const Duration(milliseconds: 500));
+            },
       child: Column(
         children: [
           // Interactive filter bar
@@ -245,10 +259,12 @@ class _EventListScreenState extends State<EventListScreen> {
 
     final cardColor = _getEventCardColor(event, assignmentCounts);
 
-    return Card(
-      color: cardColor,
-      child: InkWell(
-        onTap: () => _showEventFormModal(event),
+    return Semantics(
+        identifier: 'event-card-${event.id}',
+        child: Card(
+          color: cardColor,
+          child: InkWell(
+            onTap: () => _showEventFormModal(event),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -327,16 +343,22 @@ class _EventListScreenState extends State<EventListScreen> {
             'האם אתה בטוח שברצונך למחוק את ${event.name}?\nפעולה זו תמחק גם את כל השיבוצים.',
           ),
           actions: [
-            TextButton(
-              child: const Text('ביטול'),
-              onPressed: () => Navigator.pop(context),
+            Semantics(
+              identifier: 'event-delete-dialog-cancel-button',
+              child: TextButton(
+                child: const Text('ביטול'),
+                onPressed: () => Navigator.pop(context),
+              ),
             ),
-            TextButton(
-              child: const Text('מחק', style: TextStyle(color: Colors.red)),
-              onPressed: () {
-                context.read<EventBloc>().add(DeleteEvent(event.id));
-                Navigator.pop(context);
-              },
+            Semantics(
+              identifier: 'event-delete-dialog-confirm-button',
+              child: TextButton(
+                child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                onPressed: () {
+                  context.read<EventBloc>().add(DeleteEvent(event.id));
+                  Navigator.pop(context);
+                },
+              ),
             ),
           ],
         ),
@@ -394,12 +416,15 @@ class _EventListScreenState extends State<EventListScreen> {
                 const SizedBox(height: 24),
                 // Only show "add first" button if database is truly empty (not filtered)
                 if (!state.isFiltered)
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      _showEventFormModal(null);
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('הוסף אירוע ראשון'),
+                  Semantics(
+                    identifier: 'add-first-event-button',
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        _showEventFormModal(null);
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('הוסף אירוע ראשון'),
+                    ),
                   ),
               ],
             ),
@@ -418,10 +443,13 @@ class _EventListScreenState extends State<EventListScreen> {
           const SizedBox(height: 16),
           Text(message, style: const TextStyle(fontSize: 18, color: Colors.red), textAlign: TextAlign.center),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () => context.read<EventBloc>().add(const LoadEvents()),
-            icon: const Icon(Icons.refresh),
-            label: const Text('נסה שוב'),
+          Semantics(
+            identifier: 'retry-load-events-button',
+            child: ElevatedButton.icon(
+              onPressed: () => context.read<EventBloc>().add(const LoadEvents()),
+              icon: const Icon(Icons.refresh),
+              label: const Text('נסה שוב'),
+            ),
           ),
         ],
       ),
