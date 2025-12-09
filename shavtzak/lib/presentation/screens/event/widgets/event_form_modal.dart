@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
@@ -454,45 +453,40 @@ class _EventFormModalState extends State<EventFormModal> {
                                           onPressed: () async {
                                             Navigator.of(dialogContext).pop(); // Close dialog
 
-                                            // Listen for delete completion
-                                            final bloc = context.read<EventBloc>();
-                                            late StreamSubscription<EventState> subscription;
+                                            try {
+                                              final bloc = context.read<EventBloc>();
+                                              bloc.add(DeleteEvent(widget.event!.id));
 
-                                            subscription = bloc.stream.listen((state) {
-                                              if (state is EventError) {
-                                                subscription.cancel();
-                                                // Show error message
-                                                if (mounted) {
-                                                  ScaffoldMessenger.of(context)
-                                                    ..clearSnackBars()
-                                                    ..showSnackBar(
-                                                      SnackBar(
-                                                        content: Text(state.message),
-                                                        backgroundColor: Colors.red,
-                                                        duration: const Duration(seconds: 2),
-                                                      ),
-                                                    );
-                                                }
-                                              } else if (state is EventsLoaded || state is EventsEmpty) {
-                                                subscription.cancel();
-                                                // Show success message and close modal
-                                                if (mounted) {
-                                                  ScaffoldMessenger.of(context)
-                                                    ..clearSnackBars()
-                                                    ..showSnackBar(
-                                                      const SnackBar(
-                                                        content: Text('האירוע נמחק בהצלחה'),
-                                                        backgroundColor: Colors.green,
-                                                        duration: Duration(seconds: 2),
-                                                      ),
-                                                    );
-                                                  widget.onSuccess(); // Close modal
-                                                }
+                                              // Wait a moment for the delete to process
+                                              await Future.delayed(const Duration(milliseconds: 500));
+
+                                              // Show success message and close modal
+                                              if (mounted) {
+                                                ScaffoldMessenger.of(context)
+                                                  ..clearSnackBars()
+                                                  ..showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text('האירוע נמחק בהצלחה'),
+                                                      backgroundColor: Colors.green,
+                                                      duration: Duration(seconds: 2),
+                                                    ),
+                                                  );
+                                                widget.onSuccess(); // Close modal
                                               }
-                                            });
-
-                                            // Trigger the delete
-                                            bloc.add(DeleteEvent(widget.event!.id));
+                                            } catch (e) {
+                                              // Show error message
+                                              if (mounted) {
+                                                ScaffoldMessenger.of(context)
+                                                  ..clearSnackBars()
+                                                  ..showSnackBar(
+                                                    SnackBar(
+                                                      content: Text('שגיאה במחיקת האירוע: $e'),
+                                                      backgroundColor: Colors.red,
+                                                      duration: const Duration(seconds: 2),
+                                                    ),
+                                                  );
+                                              }
+                                            }
                                           },
                                         ),
                                       ),
@@ -597,6 +591,9 @@ class _EventFormModalState extends State<EventFormModal> {
                                         if (result != null) {
                                           final selectedStartDate = result['startDate'];
                                           final selectedEndDate = result['endDate'];
+
+                                          // Add a small delay to prevent accidental triggers on mobile
+                                          await Future.delayed(const Duration(milliseconds: 100));
 
                                           // Check if only start date was selected
                                           if (selectedStartDate != null && selectedEndDate == null) {

@@ -38,6 +38,7 @@ class DualCalendarDatePicker extends StatefulWidget {
 class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
   List<DateTime?> _selectedDates = [];
   String? _errorMessage;
+  bool _isProcessingChange = false;
 
   @override
   void initState() {
@@ -241,12 +242,31 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                           Icons.chevron_right,
                           size: isMobile ? 18 : 24,
                         ),
+                        // Improve mobile touch handling
+                        dayBorderRadius: BorderRadius.circular(8),
+                        selectedDayTextStyle: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        // Better touch targets for mobile
+                        dayMaxWidth: isMobile ? 40 : double.infinity,
                       ),
                       value: _selectedDates,
                       onValueChanged: (dates) {
+                        if (_isProcessingChange) return; // Prevent rapid changes
+
+                        _isProcessingChange = true;
+
                         setState(() {
                           _selectedDates = dates;
                           _errorMessage = null; // Clear error on selection
+                        });
+
+                        // Reset the flag after a short delay to allow normal changes
+                        Future.delayed(const Duration(milliseconds: 100), () {
+                          if (mounted) {
+                            _isProcessingChange = false;
+                          }
                         });
                       },
                     ),
