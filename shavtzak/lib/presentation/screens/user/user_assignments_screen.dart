@@ -365,6 +365,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                 children: [
                   // Date row (always at top)
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Icon(
                         Icons.calendar_today,
@@ -395,7 +396,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   // Location row (if exists) - now first
                   if (event.location.isNotEmpty) ...[
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Icon(
                           Icons.location_on,
@@ -428,6 +429,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   ],
                   // Assembly time row
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Icon(
                         Icons.access_time_filled,
