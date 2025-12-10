@@ -348,53 +348,6 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
             const SizedBox(height: 12),
 
-            // Top row: Date + Today badge
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.calendar_today,
-                  size: 18,
-                  color: iconColor,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _formatDateDisplay(event, isToday, isTomorrow),
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: isToday ? Colors.orange.shade800 : textColor,
-                          ),
-                        ),
-                      ),
-                      if (isToday)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade100,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'היום!',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange.shade800,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
             // Assembly time & Location (most important info!)
             Container(
               padding: const EdgeInsets.all(14),
@@ -410,6 +363,35 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Date row (always at top)
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.calendar_today,
+                        size: 22,
+                        color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        _isSameDay(event.startDate, event.endDate) ? 'תאריך:' : 'תאריכים:',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: secondaryTextColor,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: RichText(
+                          text: _formatDateWithHighlight(
+                            _formatDateDisplay(event, isToday, isTomorrow),
+                            isUpcoming,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   // Location row (if exists) - now first
                   if (event.location.isNotEmpty) ...[
                     Row(
@@ -434,8 +416,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                           child: Text(
                             event.location,
                             style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
                               color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
                             ),
                           ),
@@ -448,7 +430,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   Row(
                     children: [
                       Icon(
-                        Icons.flag,
+                        Icons.access_time_filled,
                         size: 22,
                         color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
                       ),
@@ -463,9 +445,9 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        event.assemblyTime,
+                        event.assemblyTime.isNotEmpty ? event.assemblyTime : 'טרם נקבעה',
                         style: TextStyle(
-                          fontSize: 22,
+                          fontSize: 20,
                           fontWeight: FontWeight.bold,
                           color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
                         ),
@@ -496,7 +478,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${event.startTime} - ${event.endTime}',
+                  _formatEventTimes(event.startTime, event.endTime),
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -576,21 +558,30 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     final startDate = event.startDate;
     final endDate = event.endDate;
 
-    if (isToday) {
-      return 'היום - ${_formatDayMonth(startDate)}';
-    }
-
-    if (isTomorrow) {
-      return 'מחר - ${_formatDayMonth(startDate)}';
-    }
-
     // Check if same day
     if (_isSameDay(startDate, endDate)) {
-      return '${_getHebrewDayName(startDate.weekday)} ${_formatDayMonth(startDate)}';
+      final dateStr = 'יום ${_getFullHebrewDayName(startDate.weekday)} ${startDate.day} ב${_getHebrewMonthName(startDate.month)}';
+
+      if (isToday) {
+        return '$dateStr (היום)';
+      }
+      if (isTomorrow) {
+        return '$dateStr (מחר)';
+      }
+      return dateStr;
     }
 
     // Multi-day event
-    return '${_getHebrewDayName(startDate.weekday)} ${_formatDayMonth(startDate)} - ${_getHebrewDayName(endDate.weekday)} ${_formatDayMonth(endDate)}';
+    final startDateStr = 'יום ${_getFullHebrewDayName(startDate.weekday)} ${startDate.day} ב${_getHebrewMonthName(startDate.month)}';
+    final endDateStr = 'יום ${_getFullHebrewDayName(endDate.weekday)} ${endDate.day} ב${_getHebrewMonthName(endDate.month)}';
+
+    if (isToday) {
+      return '$startDateStr (היום) - $endDateStr';
+    }
+    if (isTomorrow) {
+      return '$startDateStr (מחר) - $endDateStr';
+    }
+    return '$startDateStr - $endDateStr';
   }
 
   String _formatDayMonth(DateTime date) {
@@ -604,12 +595,117 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     return days[weekday == 7 ? 7 : weekday];
   }
 
+  String _getFullHebrewDayName(int weekday) {
+    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    return days[weekday == 7 ? 7 : weekday];
+  }
+
+  TextSpan _formatDateWithHighlight(String dateText, bool isUpcoming) {
+    final color = isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700;
+
+    if (dateText.contains('(היום)')) {
+      final parts = dateText.split('(היום)');
+      return TextSpan(
+        children: [
+          TextSpan(
+            text: parts[0],
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          TextSpan(
+            text: '(היום)',
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.red,
+            ),
+          ),
+          if (parts.length > 1)
+            TextSpan(
+              text: parts[1],
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+        ],
+      );
+    }
+
+    if (dateText.contains('(מחר)')) {
+      final parts = dateText.split('(מחר)');
+      return TextSpan(
+        children: [
+          TextSpan(
+            text: parts[0],
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          TextSpan(
+            text: '(מחר)',
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.red,
+            ),
+          ),
+          if (parts.length > 1)
+            TextSpan(
+              text: parts[1],
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+        ],
+      );
+    }
+
+    // No special indicators
+    return TextSpan(
+      text: dateText,
+      style: TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+        color: color,
+      ),
+    );
+  }
+
   String _getHebrewMonthName(int month) {
     const months = [
-      '', 'בינואר', 'בפברואר', 'במרץ', 'באפריל', 'במאי', 'ביוני',
-      'ביולי', 'באוגוסט', 'בספטמבר', 'באוקטובר', 'בנובמבר', 'בדצמבר'
+      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
     ];
     return months[month];
+  }
+
+  String _formatEventTimes(String startTime, String endTime) {
+    // Check if both times are empty
+    if (startTime.isEmpty && endTime.isEmpty) {
+      return 'טרם נקבעו';
+    }
+
+    // Check if only start time is empty
+    if (startTime.isEmpty && endTime.isNotEmpty) {
+      return 'טרם נקבעה -> $endTime';
+    }
+
+    // Check if only end time is empty
+    if (startTime.isNotEmpty && endTime.isEmpty) {
+      return '$startTime -> טרם נקבעה';
+    }
+
+    // Both times are available
+    return '$startTime -> $endTime';
   }
 
   bool _isSameDay(DateTime date1, DateTime date2) {
