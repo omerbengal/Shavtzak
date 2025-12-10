@@ -122,6 +122,21 @@ The app supports **test** and **production** environments with complete data iso
   - `cachePrefix`: 'test_' or ''
   - `routePrefix`: '/test' or ''
 
+**Environment-Aware Architecture**:
+The app provides two approaches for implementing test-only features:
+
+1. **Simple UI Changes** (Current Approach):
+   - Use `EnvironmentService.instance.isTestMode` directly
+   - Wrap with `ListenableBuilder` for reactive UI updates
+   - Perfect for: visibility changes, different icons, simple conditional logic
+   - Example: FAB button showing smiley emoji in test mode
+
+2. **Complex State Management** (Factory Pattern):
+   - Use `EnvironmentAwareFactory` and `ServiceLocator` for advanced scenarios
+   - Use when you need: different BLoC implementations, alternative repository behaviors, test-specific business logic
+   - Infrastructure ready for future complex test-only features
+   - Migration approach: start simple, upgrade to factory when complexity demands it
+
 **How it works**:
 1. On app initialization, EnvironmentService detects current mode from URL
 2. FirestoreDatabase uses `collectionPrefix` for all collection names
@@ -349,6 +364,35 @@ The V1 system used Excel/Google Sheets. The codebase includes:
 - Test environment switching during development
 - Be aware that test and production data are completely isolated
 
+### Environment-Aware Development Patterns
+
+**When to use each approach:**
+
+1. **Direct EnvironmentService access** (Simple changes):
+   ```dart
+   ListenableBuilder(
+     listenable: EnvironmentService.instance,
+     builder: (context, _) => YourWidget(
+       child: EnvironmentService.instance.isTestMode
+         ? TestSpecificWidget()
+         : ProductionWidget(),
+     ),
+   )
+   ```
+   Use for: UI variations, conditional visibility, different icons/text
+
+2. **Factory Pattern** (Complex state management):
+   ```dart
+   // Instead of: context.read<EventBloc>()
+   final bloc = serviceLocator.createEventBloc();
+   ```
+   Use for: Different business logic, alternative repositories, test-only BLoC features
+
+**Migration Guidelines:**
+- Start with direct `EnvironmentService.instance` access for new features
+- Upgrade to factory pattern when complexity increases (multiple environment-specific implementations)
+- Keep both approaches available - they serve different complexity levels
+
 ### Firebase Best Practices
 - Use batch operations for multiple writes (`insertTeamMembersBatch`)
 - Validate foreign keys before creating assignments (see `_validateAssignmentForeignKeys`)
@@ -488,6 +532,8 @@ lib/
 │   │   └── app_router.dart           # GoRouter config (test/prod routes)
 │   ├── services/
 │   │   ├── environment_service.dart  # Test/prod environment management
+│   │   ├── environment_aware_factory.dart  # Factory for environment-aware dependency injection
+│   │   ├── service_locator.dart     # Service locator for dependency management
 │   │   └── user_cache_service.dart   # localStorage for user sessions
 │   ├── theme/
 │   │   └── app_theme.dart            # App theme configuration

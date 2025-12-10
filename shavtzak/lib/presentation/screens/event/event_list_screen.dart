@@ -136,9 +136,7 @@ class _EventListScreenState extends State<EventListScreen> {
         ),
         floatingActionButton: FloatingActionButton(
           heroTag: 'event_fab',
-          onPressed: () {
-            _showEventFormModal(null);
-          },
+          onPressed: () => _showEventFormModal(null),
           child: const Icon(Icons.add),
         ),
       ),
@@ -316,6 +314,7 @@ class _EventListScreenState extends State<EventListScreen> {
     );
   }
 
+  
   void _showDeleteConfirmation(Event event) {
     showDialog(
       context: context,
