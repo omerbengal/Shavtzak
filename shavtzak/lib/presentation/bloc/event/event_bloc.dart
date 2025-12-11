@@ -61,16 +61,20 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     final eventsStream = _repository.watchEvents();
     final assignmentsStream = _assignmentRepository.watchAssignments();
 
-    // Cache latest values - start with empty lists to emit immediately
+    // Cache latest values and track whether each stream has emitted
     List<Event> latestEvents = [];
     List<Assignment> latestAssignments = [];
+    bool eventsLoaded = false;
+    bool assignmentsLoaded = false;
 
     // Create stream controller for combined output
     final controller = StreamController<_EventsWithAssignments>();
 
     // Helper to emit combined data
     void emitCombined() {
-      // Always emit, even if one stream hasn't emitted yet
+      // Only emit after both streams have loaded data to prevent incorrect colors
+      if (!eventsLoaded || !assignmentsLoaded) return;
+
       // Calculate assignment counts per event
       final counts = <String, int>{};
       for (final assignment in latestAssignments) {
@@ -83,13 +87,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       ));
     }
 
-    // Initialize with empty state
-    emitCombined();
-
     // Listen to events stream
     final eventsSubscription = eventsStream.listen(
       (events) {
         latestEvents = events;
+        eventsLoaded = true;
         emitCombined();
       },
       onError: controller.addError,
@@ -99,6 +101,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     final assignmentsSubscription = assignmentsStream.listen(
       (assignments) {
         latestAssignments = assignments;
+        assignmentsLoaded = true;
         emitCombined();
       },
       onError: controller.addError,
