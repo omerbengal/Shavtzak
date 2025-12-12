@@ -692,8 +692,12 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       for (final assignment in allAssignments) {
         if (assignment.event == null) continue;
 
-        // Check if any constraint conflicts with the assignment's event date
+        // Check if any ACTIVE constraint conflicts with the assignment's event date
+        // Rejected constraints should not cause conflicts
         for (final constraint in member.constraints) {
+          // Skip rejected constraints - they should not affect assignments
+          if (constraint.status == ConstraintStatus.rejected) continue;
+
           if (constraint.conflictsWith(assignment.event!.startDate)) {
             conflicting.add(assignment);
             break; // No need to check other constraints for this assignment
