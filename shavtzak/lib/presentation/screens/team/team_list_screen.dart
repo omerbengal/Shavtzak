@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/foundation.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/constants/constraint_status.dart';
@@ -9,19 +10,25 @@ import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/filter_persistence.dart';
+import '../../../core/services/environment_service.dart';
 import 'package:uuid/uuid.dart';
 import '../../bloc/team/team_bloc.dart';
-import '../../bloc/team/team_event.dart';
+import '../../bloc/team/team_event.dart' as team;
 import '../../bloc/team/team_state.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
+import '../../bloc/user_selection/user_selection_bloc.dart';
+import '../../bloc/user_selection/user_selection_event.dart';
+import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/navigation_menu.dart';
 import '../../widgets/date_picker_dialog.dart';
 import '../../widgets/interactive_filter_bar.dart';
+import '../../widgets/swipeable_page_view.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../bloc/calendar_sync/calendar_sync_state.dart';
+import 'dart:async';
 
 // Filter enum for team members (0=all, 1=active, 2=inactive)
 enum TeamFilter { all, active, inactive }
@@ -37,25 +44,39 @@ class _TeamListScreenState extends State<TeamListScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
   TeamLoaded? _lastLoadedState;
+  bool _hasTriggeredInitialSync = false;
 
   @override
   void initState() {
     super.initState();
     // Always load ALL team members - filtering happens in UI
-    context.read<TeamBloc>().add(const LoadTeamMembers());
+    context.read<TeamBloc>().add(const team.LoadTeamMembers());
+    // Trigger calendar validation sync to check for deleted events on initial load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<CalendarSyncBloc>().add(const ValidateSyncedEvents());
+      _hasTriggeredInitialSync = true;
+    });
+    // Register callback for when this page becomes visible
+    onTeamPageVisible = () {
+      if (mounted && _hasTriggeredInitialSync) {
+        context.read<CalendarSyncBloc>().add(const ValidateSyncedEvents());
+      }
+    };
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    // Unregister callback
+    onTeamPageVisible = null;
     super.dispose();
   }
 
   void _onSearchChanged(String query) {
     if (query.isEmpty) {
-      context.read<TeamBloc>().add(const LoadTeamMembers());
+      context.read<TeamBloc>().add(const team.LoadTeamMembers());
     } else {
-      context.read<TeamBloc>().add(SearchTeamMembers(query));
+      context.read<TeamBloc>().add(team.SearchTeamMembers(query));
     }
   }
 
@@ -85,85 +106,108 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   onChanged: _onSearchChanged,
                 )
               : const Text(AppStrings.team),
-          actions: [
-            const NavigationMenu(),
-            // Manual sync button
-            BlocListener<CalendarSyncBloc, CalendarSyncState>(
-              listener: (context, state) {
-                if (state is CalendarSyncBidirectionalComplete) {
-                  ScaffoldMessenger.of(context)
-                    ..clearSnackBars()
-                    ..showSnackBar(
-                      SnackBar(
-                        content: Directionality(
-                          textDirection: TextDirection.rtl,
-                          child: Text(state.message),
-                        ),
-                        backgroundColor: Colors.green,
-                        duration: const Duration(seconds: 3),
-                      ),
-                    );
-                } else if (state is CalendarSyncFailure && state.constraintId == 'bidirectional') {
-                  ScaffoldMessenger.of(context)
-                    ..clearSnackBars()
-                    ..showSnackBar(
-                      SnackBar(
-                        content: Directionality(
-                          textDirection: TextDirection.rtl,
-                          child: Text(state.errorMessage),
-                        ),
-                        backgroundColor: Colors.red,
-                        duration: const Duration(seconds: 3),
-                        action: SnackBarAction(
-                          label: 'נסה שוב',
-                          textColor: Colors.white,
-                          onPressed: () {
-                            context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
-                          },
-                        ),
-                      ),
-                    );
-                }
-              },
-              child: BlocBuilder<CalendarSyncBloc, CalendarSyncState>(
-                builder: (context, state) {
-                  final isInProgress = state is CalendarSyncInProgress && state.constraintId == 'bidirectional';
-                  return IconButton(
-                    icon: isInProgress
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.sync),
-                    onPressed: isInProgress
-                        ? null
-                        : () {
-                            context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
-                          },
-                    tooltip: 'סנכרון עם יומן גוגל',
-                  );
-                },
-              ),
-            ),
-            IconButton(
-              icon: Icon(_showSearch ? Icons.close : Icons.search),
-              onPressed: () {
-                setState(() {
-                  _showSearch = !_showSearch;
-                  if (!_showSearch) {
-                    _searchController.clear();
-                    context.read<TeamBloc>().add(const LoadTeamMembers());
-                  }
-                });
-              },
-            ),
-          ],
+          leading: IconButton(
+          icon: Icon(_showSearch ? Icons.close : Icons.search),
+          onPressed: () {
+            setState(() {
+              _showSearch = !_showSearch;
+              if (!_showSearch) {
+                _searchController.clear();
+                context.read<TeamBloc>().add(const team.LoadTeamMembers());
+              }
+            });
+          },
         ),
-        body: BlocConsumer<TeamBloc, TeamState>(
+        actions: [
+          // Sync button (appears closest to title in RTL)
+          BlocListener<CalendarSyncBloc, CalendarSyncState>(
+            listener: (context, state) {
+              if (state is CalendarSyncBidirectionalComplete) {
+                ScaffoldMessenger.of(context)
+                  ..clearSnackBars()
+                  ..showSnackBar(
+                    SnackBar(
+                      content: Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: Text(state.message),
+                      ),
+                      backgroundColor: Colors.green,
+                      duration: const Duration(seconds: 3),
+                    ),
+                  );
+              } else if (state is CalendarSyncFailure && state.constraintId == 'bidirectional') {
+                ScaffoldMessenger.of(context)
+                  ..clearSnackBars()
+                  ..showSnackBar(
+                    SnackBar(
+                      content: Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: Text(state.errorMessage),
+                      ),
+                      backgroundColor: Colors.red,
+                      duration: const Duration(seconds: 3),
+                      action: SnackBarAction(
+                        label: 'נסה שוב',
+                        textColor: Colors.white,
+                        onPressed: () {
+                          context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
+                        },
+                      ),
+                    ),
+                  );
+              }
+            },
+            child: BlocBuilder<CalendarSyncBloc, CalendarSyncState>(
+              builder: (context, state) {
+                final isInProgress = state is CalendarSyncInProgress && state.constraintId == 'bidirectional';
+                return IconButton(
+                  icon: isInProgress
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.sync),
+                  onPressed: isInProgress
+                      ? null
+                      : () {
+                          context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
+                        },
+                  tooltip: 'סנכרון עם יומן גוגל',
+                  iconSize: 24,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+                );
+              },
+            ),
+          ),
+          // Home button (appears middle from left in RTL)
+          IconButton(
+            icon: const Icon(Icons.home),
+            tooltip: 'בית',
+            onPressed: () {
+              final envPrefix = EnvironmentService.instance.routePrefix;
+              context.go('$envPrefix/admin');
+            },
+            iconSize: 20,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+          ),
+          // Logout button (appears farthest left in RTL)
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'התנתק',
+            onPressed: () => _logout(context),
+            iconSize: 20,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+          ),
+        ],
+      ),
+      body: BlocConsumer<TeamBloc, TeamState>(
           listener: (context, state) {
             if (state is TeamError) {
               ScaffoldMessenger.of(context)
@@ -233,7 +277,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
 
     return RefreshIndicator(
       onRefresh: () async {
-        context.read<TeamBloc>().add(const RefreshTeamMembers());
+        context.read<TeamBloc>().add(const team.RefreshTeamMembers());
         await Future.delayed(const Duration(milliseconds: 500));
       },
       child: Column(
@@ -323,13 +367,13 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     onPressed: () {
                       final bloc = context.read<TeamBloc>();
                       if (member.isActive) {
-                        bloc.add(DeactivateTeamMember(member.id));
+                        bloc.add(team.DeactivateTeamMember(member.id));
                       } else {
-                        bloc.add(ReactivateTeamMember(member.id));
+                        bloc.add(team.ReactivateTeamMember(member.id));
                       }
                       // Reload all members after operation completes
                       Future.delayed(const Duration(milliseconds: 100), () {
-                        bloc.add(const LoadTeamMembers());
+                        bloc.add(const team.LoadTeamMembers());
                       });
                     },
                     tooltip: member.isActive ? 'השבת' : 'הפעל',
@@ -488,7 +532,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
             TextButton(
               child: const Text('מחק', style: TextStyle(color: Colors.red)),
               onPressed: () {
-                context.read<TeamBloc>().add(DeleteTeamMember(member.id));
+                context.read<TeamBloc>().add(team.DeleteTeamMember(member.id));
                 Navigator.pop(context);
               },
             ),
@@ -570,7 +614,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () {
-              context.read<TeamBloc>().add(const LoadTeamMembers());
+              context.read<TeamBloc>().add(const team.LoadTeamMembers());
             },
             icon: const Icon(Icons.refresh),
             label: const Text('נסה שוב'),
@@ -578,6 +622,23 @@ class _TeamListScreenState extends State<TeamListScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    // Sign out first
+    context.read<UserSelectionBloc>().add(const SignOut());
+
+    // Listen for the state change and then navigate once
+    bool handled = false;
+    StreamSubscription? subscription;
+    subscription = context.read<UserSelectionBloc>().stream.listen((state) {
+      if (!handled && state is UserSignedOut && context.mounted) {
+        handled = true;
+        subscription?.cancel();
+        final envPrefix = EnvironmentService.instance.routePrefix;
+        context.go('$envPrefix/whoami');
+      }
+    });
   }
 }
 
@@ -711,14 +772,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
     final bloc = context.read<TeamBloc>();
     if (_isEditMode) {
-      bloc.add(UpdateTeamMember(member));
+      bloc.add(team.UpdateTeamMember(member));
     } else {
-      bloc.add(CreateTeamMember(member));
+      bloc.add(team.CreateTeamMember(member));
     }
 
     // Reload all team members after operation completes (filtering happens in UI)
     Future.delayed(const Duration(milliseconds: 100), () {
-      bloc.add(const LoadTeamMembers());
+      bloc.add(const team.LoadTeamMembers());
     });
 
     // Close modal after save operation
@@ -967,10 +1028,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         child: const Text('מחק', style: TextStyle(color: Colors.red)),
                                         onPressed: () {
                                           final bloc = context.read<TeamBloc>();
-                                          bloc.add(DeleteTeamMember(widget.member!.id));
+                                          bloc.add(team.DeleteTeamMember(widget.member!.id));
                                           // Reload all team members after operation completes (filtering happens in UI)
                                           Future.delayed(const Duration(milliseconds: 100), () {
-                                            bloc.add(const LoadTeamMembers());
+                                            bloc.add(const team.LoadTeamMembers());
                                           });
                                           Navigator.of(dialogContext).pop(); // Close dialog
                                           widget.onSuccess(); // Close modal

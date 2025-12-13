@@ -18,7 +18,17 @@ class SwipeablePageView extends StatefulWidget {
   State<SwipeablePageView> createState() => _SwipeablePageViewState();
 }
 
+// Global callback to trigger team sync when team page becomes visible
+void Function()? onTeamPageVisible;
+
 class _SwipeablePageViewState extends State<SwipeablePageView> {
+  int? _previousIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _previousIndex = widget.navigationShell.currentIndex;
+  }
 
   /// Map page index to bottom nav index
   /// Page order: Home (0) → Team (1) → Events (2) → Assignments (3)
@@ -38,6 +48,18 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
 
   @override
   Widget build(BuildContext context) {
+    final currentIndex = widget.navigationShell.currentIndex;
+
+    // Check if we just navigated to the team page (index 1)
+    if (_previousIndex != null && _previousIndex != currentIndex && currentIndex == 1) {
+      // Just navigated to team page
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        onTeamPageVisible?.call();
+      });
+    }
+
+    _previousIndex = currentIndex;
+
     final bottomNavIndex = _getBottomNavIndex();
     final showBottomNav = bottomNavIndex != -1; // Hide on home page
 

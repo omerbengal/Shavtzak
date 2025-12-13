@@ -9,6 +9,8 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
+import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
+import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../widgets/date_picker_dialog.dart';
 import 'availability_screen.dart';
 
@@ -62,6 +64,8 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
     // Trigger load of all team members for real-time updates
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<TeamBloc>().add(const LoadTeamMembers());
+      // Trigger calendar validation sync to check for deleted events
+      context.read<CalendarSyncBloc>().add(const ValidateSyncedEvents());
     });
   }
 
