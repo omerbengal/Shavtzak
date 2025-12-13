@@ -1351,5 +1351,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         context.go('$envPrefix/whoami');
       }
     });
+
+    // Add timeout to prevent memory leak if navigation never completes
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!handled) {
+        subscription?.cancel();
+      }
+    });
   }
 }
