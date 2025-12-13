@@ -15,7 +15,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
   final DatabaseInterface _database;
   CalendarSyncService? _syncService;
   final GoogleCalendarService _calendarService;
-  Timer? _validationTimer;
 
   CalendarSyncBloc({
     required DatabaseInterface database,
@@ -83,9 +82,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         'CalendarSyncBloc: Initialized with ${failedSyncs.length} failed syncs pending',
         name: 'CalendarSyncBloc',
       );
-
-      // Start periodic validation timer (run every 10 minutes)
-      _startValidationTimer();
 
       emit(CalendarSyncReady(
         isTestMode: _calendarService.isTestMode,
@@ -583,21 +579,8 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     }
   }
 
-  /// Start periodic validation timer
-  void _startValidationTimer() {
-    _validationTimer?.cancel();
-    _validationTimer = Timer.periodic(
-      const Duration(minutes: 10),
-      (timer) {
-        print('🗓️ [CalendarSyncBloc] Periodic validation triggered');
-        add(const ValidateSyncedEvents());
-      },
-    );
-  }
-
   @override
   Future<void> close() {
-    _validationTimer?.cancel();
     _syncService?.dispose();
     return super.close();
   }

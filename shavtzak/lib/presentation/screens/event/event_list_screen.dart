@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/utils/event_assignment_status.dart';
 import '../../../core/utils/filter_persistence.dart';
+import '../../../core/services/environment_service.dart';
 import '../../../domain/entities/event.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
-import '../../widgets/navigation_menu.dart';
+import '../../bloc/user_selection/user_selection_bloc.dart';
+import '../../bloc/user_selection/user_selection_event.dart';
+import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import 'widgets/event_form_modal.dart';
+import 'dart:async';
 
 // Filter enum for events (0=all, 1=future, 2=past)
 enum EventFilter { all, future, past }
@@ -72,19 +77,37 @@ class _EventListScreenState extends State<EventListScreen> {
                   onChanged: _onSearchChanged,
                 )
               : const Text('אירועים'),
+          leading: IconButton(
+            icon: Icon(_showSearch ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                _showSearch = !_showSearch;
+                if (!_showSearch) {
+                  _searchController.clear();
+                  context.read<EventBloc>().add(const LoadEvents());
+                }
+              });
+            },
+          ),
           actions: [
-            const NavigationMenu(),
             IconButton(
-              icon: Icon(_showSearch ? Icons.close : Icons.search),
+              icon: const Icon(Icons.home),
+              tooltip: 'בית',
               onPressed: () {
-                setState(() {
-                  _showSearch = !_showSearch;
-                  if (!_showSearch) {
-                    _searchController.clear();
-                    context.read<EventBloc>().add(const LoadEvents());
-                  }
-                });
+                final envPrefix = EnvironmentService.instance.routePrefix;
+                context.go('$envPrefix/admin');
               },
+              iconSize: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'התנתק',
+              onPressed: () => _logout(context),
+              iconSize: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
             ),
           ],
         ),
@@ -425,5 +448,22 @@ class _EventListScreenState extends State<EventListScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    // Sign out first
+    context.read<UserSelectionBloc>().add(const SignOut());
+
+    // Listen for the state change and then navigate once
+    bool handled = false;
+    StreamSubscription? subscription;
+    subscription = context.read<UserSelectionBloc>().stream.listen((state) {
+      if (!handled && state is UserSignedOut && context.mounted) {
+        handled = true;
+        subscription?.cancel();
+        final envPrefix = EnvironmentService.instance.routePrefix;
+        context.go('$envPrefix/whoami');
+      }
+    });
   }
 }
