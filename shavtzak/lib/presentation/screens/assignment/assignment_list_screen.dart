@@ -91,7 +91,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 ..clearSnackBars()
                 ..showSnackBar(
                   SnackBar(
-                      content: Text(state.message),
+                      content: Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: Text(state.message),
+                      ),
                       backgroundColor: Colors.red),
                 );
             } else if (state is AssignmentOperationSuccess) {
@@ -117,7 +120,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 ..clearSnackBars()
                 ..showSnackBar(
                   SnackBar(
-                      content: Text(state.message),
+                      content: Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: Text(state.message),
+                      ),
                       backgroundColor: Colors.green),
                 );
             } else if (state is AssignmentConflictWarning) {
@@ -126,7 +132,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 ..clearSnackBars()
                 ..showSnackBar(
                   SnackBar(
-                    content: Text('שיבוץ לא בוצע: ${state.conflicts.join(", ")}'),
+                    content: Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: Text('שיבוץ לא בוצע: ${state.conflicts.join(", ")}'),
+                    ),
                     backgroundColor: Colors.orange,
                     duration: const Duration(seconds: 2),
                   ),
@@ -533,7 +542,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ..clearSnackBars()
           ..showSnackBar(
             const SnackBar(
-              content: Text('המשרה נמחקה בהצלחה'),
+              content: Directionality(
+                textDirection: TextDirection.rtl,
+                child: Text('המשרה נמחקה בהצלחה'),
+              ),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 2),
             ),
@@ -548,7 +560,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ..clearSnackBars()
           ..showSnackBar(
             SnackBar(
-              content: Text('שגיאה במחיקת המשרה: $e'),
+              content: Directionality(
+                textDirection: TextDirection.rtl,
+                child: Text('שגיאה במחיקת המשרה: $e'),
+              ),
               backgroundColor: Colors.red,
               duration: const Duration(seconds: 2),
             ),
@@ -1269,7 +1284,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ..clearSnackBars()
           ..showSnackBar(
             SnackBar(
-              content: Text('שיבוץ חדש נוצר בהצלחה: ${teamMember.name} → ${roleType.hebrewName} באירוע "${event.name}"'),
+              content: Directionality(
+                textDirection: TextDirection.rtl,
+                child: Text('שיבוץ חדש נוצר בהצלחה: ${teamMember.name} → ${roleType.hebrewName} באירוע "${event.name}"'),
+              ),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 2),
             ),
@@ -1284,7 +1302,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ..clearSnackBars()
           ..showSnackBar(
             SnackBar(
-              content: Text('שגיאה ביצירת שיבוץ: $e'),
+              content: Directionality(
+                textDirection: TextDirection.rtl,
+                child: Text('שגיאה ביצירת שיבוץ: $e'),
+              ),
               backgroundColor: Colors.red,
             ),
           );

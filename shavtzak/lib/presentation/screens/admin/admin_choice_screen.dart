@@ -133,6 +133,9 @@ class AdminChoiceScreen extends StatelessWidget {
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתקות',
                 onPressed: () => _showLogoutDialog(context),
+                iconSize: 24,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
               ),
             ],
           );

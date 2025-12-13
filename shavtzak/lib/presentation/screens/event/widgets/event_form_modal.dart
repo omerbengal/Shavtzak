@@ -285,7 +285,10 @@ class _EventFormModalState extends State<EventFormModal> {
             ..clearSnackBars()
             ..showSnackBar(
               SnackBar(
-                content: Text('שגיאה בניתוח שיבוצים: $e'),
+                content: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Text('שגיאה בניתוח שיבוצים: $e'),
+                ),
                 backgroundColor: Colors.red,
                 duration: const Duration(seconds: 2),
               ),

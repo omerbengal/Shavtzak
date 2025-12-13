@@ -102,7 +102,10 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                       ..clearSnackBars()
                       ..showSnackBar(
                         SnackBar(
-                          content: Text(state.message),
+                          content: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Text(state.message),
+                          ),
                           backgroundColor: Colors.green,
                           duration: const Duration(seconds: 2),
                         ),
@@ -112,7 +115,10 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                       ..clearSnackBars()
                       ..showSnackBar(
                         SnackBar(
-                          content: Text(state.message),
+                          content: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Text(state.message),
+                          ),
                           backgroundColor: Colors.red,
                           duration: const Duration(seconds: 2),
                         ),
@@ -910,7 +916,10 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                         ..clearSnackBars()
                         ..showSnackBar(
                           SnackBar(
-                            content: Text(state.message),
+                            content: Directionality(
+                              textDirection: TextDirection.rtl,
+                              child: Text(state.message),
+                            ),
                             backgroundColor: Colors.green,
                             duration: const Duration(seconds: 2),
                           ),
@@ -920,7 +929,10 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                         ..clearSnackBars()
                         ..showSnackBar(
                           SnackBar(
-                            content: Text(state.message),
+                            content: Directionality(
+                              textDirection: TextDirection.rtl,
+                              child: Text(state.message),
+                            ),
                             backgroundColor: Colors.red,
                             duration: const Duration(seconds: 2),
                           ),
