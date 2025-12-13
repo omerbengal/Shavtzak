@@ -58,8 +58,21 @@ class GoogleCalendarService {
 
     try {
       print('🗓️ [GoogleCalendarService] Parsing service account credentials...');
+
+      // Parse the JSON and fix the private key formatting
+      final Map<String, dynamic> serviceAccountData = jsonDecode(serviceAccountJson);
+
+      // Fix the private key by replacing literal \n with actual newlines
+      if (serviceAccountData.containsKey('private_key')) {
+        String privateKey = serviceAccountData['private_key'] as String;
+        // Replace the literal \n with actual newlines for PEM format
+        privateKey = privateKey.replaceAll(r'\n', '\n');
+        serviceAccountData['private_key'] = privateKey;
+        print('🗓️ [GoogleCalendarService] Fixed private key formatting');
+      }
+
       final credentials = ServiceAccountCredentials.fromJson(
-        jsonDecode(serviceAccountJson),
+        serviceAccountData,
       );
       print('🗓️ [GoogleCalendarService] Credentials parsed, client email: ${credentials.email}');
 

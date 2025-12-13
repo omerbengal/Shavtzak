@@ -120,148 +120,140 @@ class MyApp extends StatelessWidget {
         RepositoryProvider.value(value: assignmentRepository),
         RepositoryProvider.value(value: userSelectionRepository),
       ],
-      // Recreate all BLoCs when environment changes by using a key based on environment
       child: ListenableBuilder(
         listenable: EnvironmentService.instance,
         builder: (context, child) {
-          // Using environment as key forces BLoCs to recreate when environment changes
-          final envKey = 'repos_${EnvironmentService.instance.isTestMode}';
           final env = EnvironmentService.instance.isTestMode ? 'TEST' : 'PROD';
-          developer.log('main.dart: ListenableBuilder rebuilding with environment=$env, key=$envKey', name: 'Main');
-
-          return MultiRepositoryProvider(
-            key: ValueKey(envKey),
-            providers: [
-              // Recreate repositories with new database instance when environment changes
-              RepositoryProvider(
-                create: (context) {
-                  developer.log('main.dart: Creating TeamRepository with new FirestoreDatabase for $env environment', name: 'Main');
-                  final db = FirestoreDatabase();
-                  return TeamRepository(db);
-                },
-              ),
-              RepositoryProvider(
-                create: (context) {
-                  developer.log('main.dart: Creating EventRepository with new FirestoreDatabase for $env environment', name: 'Main');
-                  final db = FirestoreDatabase();
-                  return EventRepository(db);
-                },
-              ),
-              RepositoryProvider(
-                create: (context) {
-                  developer.log('main.dart: Creating AssignmentRepository with new FirestoreDatabase for $env environment', name: 'Main');
-                  final db = FirestoreDatabase();
-                  return AssignmentRepository(db);
-                },
-              ),
-              RepositoryProvider.value(value: userSelectionRepository),
-            ],
-            child: MultiBlocProvider(
-              key: ValueKey(EnvironmentService.instance.isTestMode),
-              providers: [
-                // CalendarSyncBloc must be created first since TeamBloc depends on it
-                BlocProvider<CalendarSyncBloc>(
-                  create: (context) {
-                    print('🗓️ [main.dart] Creating CalendarSyncBloc for $env environment');
-                    developer.log('main.dart: Creating CalendarSyncBloc for $env environment', name: 'Main');
-                    final db = FirestoreDatabase();
-                    final bloc = CalendarSyncBloc(database: db);
-
-                    // Initialize with credentials
-                    print('🗓️ [main.dart] Adding InitializeCalendarSync event...');
-                    bloc.add(InitializeCalendarSync(
-                      serviceAccountJson: '''
-{
-  "type": "service_account",
-  "project_id": "nice-abbey-481107-a2",
-  "private_key_id": "de9c0ea20ad8b93734faab3688b5689344e28a13",
-  "private_key": "-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDyvetTt+oZP5Tp\\nf7DAEb2jdq9/Cz95d5U0eS80yNj9m5V295lL0yHDnOSIF13NpbjgSi8wzh0jQo2J\\nBzmURejktA+HxN4xwtucmcQY7ZhL4583uHc/qigHGNYlamLzFVTLyXBd+BZnlf66\\nqq/aLQA9vnYLo1MebUU/XQXRZJ/zQS5zMI40emOMfyMIPR2ikmRFUt8dgvCkLGZb\\n7LJB4JaR8QMdkRIdn63UozKGC/s2DHIHo68jvrGxQ68LzQlwtK2237ohID1CHAxu\\ndpQhl/Vu5AVd9PXbpKwQjOP9CkNqFQOUM6u9YakTKNVE8sU51rVtsot0FJP/Xewq\\n6KrMfu4VAgMBAAECggEAKAhWzlqDNtFD1YNryq1SVWpONJlOCVIFrx76QE4MbTzS\\nuElKxJTIGXrfPKt/2pnFZOYPJNElQIqqDWp93jxuVYN1mTpIO7QrZEb+rm7GwmNC\\nf53COuNs0QjRTl/efEDtGGO7DqBKz6AO38mlEUoBI22tCavQmjDCrhnBCyC5eVQZ\\nHz6LN4cmeCg+j5iboJvlezTncStSQjVghd21B+fC8kjQspJ99EYshqrHUsa5aGt1\\nty/wUzgHnHcVFUjRs361cifxd48Jgn6DJy0jAL9RkYtBsH9+VSzk2d4QfNb4iaT4\\nqDu2X8nBLTlKl/uLtyUUJFcwDEY0HbyLI2mv7RHoCQKBgQD+nHr+ZfEyvkTIY8Xm\\nRAcVW8tFFLd+71MlQE91AU7DXxy8s4hw/AxkJh6sTktr7LdlgXQIS2Ki9AyXm46q\\nmS7z8MYNhkc8LpkayL78VV0h5jLThNfagQeeYvwcjVGFq7E4Dl3HoEEj7HnKUYGR\\n9s+JmmN0ySUEmPg6/HTvcv5U+QKBgQD0EN2FMaVDmsul9eYT0Wgvr6ykeNhXuoGc\\nscH9bDok9c8SENRHFYEmPW3vMnCHEGs4q7BLPkU3ghLVav/k45qqR91SBOrrtgeg\\nkqxI5dgV2drkxONFRgNznVrQl9oa8yS1CM1hJOkezNhRvB1/HEiBz+DpYbk416Pp\\nSCe0cG2U/QKBgFxKxJqqwT+vkKdC412QkzC+0XP9CnbMscrzANpc2vwe4f/U5ERw\\nWN2Eo+G5j8VTTTdSMYlAKkT/SgE6tgBI/qgWQvRsFC5QhdcbpX86QkQjeZEKumPO\\nGcDkCJcg8sgNcHPtYTkXcgVfltYrrVgHqzsp55tRvkVoXbKkCI8zk9WhAoGAUdzu\\nUGSsiBZ9xDbMa01L4uLLx4b5GcPnAYXmCXipsAf64pZefVFLNmZYX2jNsZ/iNunv\\nge1rDglFA+yV1FI7aG4eYApiOZmeyU8pFnJxnjKqZx1bFbs8ISVgdqLYdz2izE4d\\nhT36K2iODixIwH/eGhx91gn/NH+v7OlU2AL13okCgYEAskmPeX9IG3O9X5PdyCC7\\nWlSk1mj91/L2Ha+7uGhInqOpVINAuZV4vpOHDPtAGZ+7Run5yGOfMbRNhtTh0RF8\\nYXwyixMSWjrw1m+6M53qSAiMR11LsDU73QVaG9NtGlmkMi620o+W+T+si5px9rEw\\nuYpB9wSJ1npg6poVc3laRq4=\\n-----END PRIVATE KEY-----\\n",
-  "client_email": "shavtzak-googlecalendar-sync@nice-abbey-481107-a2.iam.gserviceaccount.com",
-  "client_id": "112794767181200330833",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/shavtzak-googlecalendar-sync%40nice-abbey-481107-a2.iam.gserviceaccount.com",
-  "universe_domain": "googleapis.com"
-}
-''',
-                      calendarId: 'atkamiluaim@gmail.com',
-                    ));
-
-                    return bloc;
-                  },
-                ),
-                BlocProvider(
-                  create: (context) {
-                    developer.log('main.dart: Creating TeamBloc for $env environment', name: 'Main');
-                    return TeamBloc(
-                      context.read<TeamRepository>(),
-                      context.read<AssignmentRepository>(),
-                      calendarSyncBloc: context.read<CalendarSyncBloc>(),
-                    );
-                  },
-                ),
-                BlocProvider(
-                  create: (context) {
-                    developer.log('main.dart: Creating EventBloc for $env environment', name: 'Main');
-                    return EventBloc(
-                      context.read<EventRepository>(),
-                      context.read<AssignmentRepository>(),
-                    );
-                  },
-                ),
-                BlocProvider(
-                  create: (context) {
-                    developer.log('main.dart: Creating AssignmentBloc for $env environment', name: 'Main');
-                    return AssignmentBloc(
-                      context.read<AssignmentRepository>(),
-                      context.read<EventRepository>(),
-                      context.read<TeamRepository>(),
-                    );
-                  },
-                ),
-                BlocProvider(
-                  create: (context) {
-                    developer.log('main.dart: Creating UserSelectionBloc for $env environment', name: 'Main');
-                    return UserSelectionBloc(
-                      userSelectionRepository,
-                      context.read<TeamRepository>(),
-                    );
-                  },
-                ),
-              ],
-              child: Builder(
-                builder: (context) {
-                  final userSelectionBloc = context.read<UserSelectionBloc>();
-                  final userSelectionRepository = context.read<UserSelectionRepository>();
-                  final teamBloc = context.read<TeamBloc>();
-
-                  return BlocListener<UserSelectionBloc, UserSelectionState>(
-                    listener: (context, state) {
-                      // Clear all BLoC states when user signs out
-                      if (state is UserSignedOut) {
-                        teamBloc.add(const ClearTeamState());
-                        // TODO: Add similar clear events for EventBloc and AssignmentBloc
-                      }
-                    },
-                    child: MaterialApp.router(
-                      title: 'שבצק - ניהול צוות',
-                      theme: AppTheme.lightTheme,
-                      debugShowCheckedModeBanner: false,
-                      routerConfig: AppRouter.router(
-                        userSelectionBloc: userSelectionBloc,
-                        userSelectionRepository: userSelectionRepository,
-                      ),
+          return FutureBuilder<CalendarSyncBloc>(
+            future: _createCalendarSyncBloc(env),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const MaterialApp(
+                  home: Scaffold(
+                    body: Center(
+                      child: CircularProgressIndicator(),
                     ),
-                  );
-                },
-              ),
-            ),
+                  ),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return MaterialApp(
+                  home: Scaffold(
+                    body: Center(
+                      child: Text('Error initializing app: ${snapshot.error}'),
+                    ),
+                  ),
+                );
+              }
+
+              final calendarSyncBloc = snapshot.data!;
+
+              return MultiBlocProvider(
+                key: ValueKey(EnvironmentService.instance.isTestMode),
+                providers: [
+                  // CalendarSyncBloc
+                  BlocProvider.value(value: calendarSyncBloc),
+                  BlocProvider(
+                    create: (context) {
+                      developer.log('main.dart: Creating TeamBloc for $env environment', name: 'Main');
+                      return TeamBloc(
+                        context.read<TeamRepository>(),
+                        context.read<AssignmentRepository>(),
+                        calendarSyncBloc: context.read<CalendarSyncBloc>(),
+                      );
+                    },
+                  ),
+                  BlocProvider(
+                    create: (context) {
+                      developer.log('main.dart: Creating EventBloc for $env environment', name: 'Main');
+                      return EventBloc(
+                        context.read<EventRepository>(),
+                        context.read<AssignmentRepository>(),
+                      );
+                    },
+                  ),
+                  BlocProvider(
+                    create: (context) {
+                      developer.log('main.dart: Creating AssignmentBloc for $env environment', name: 'Main');
+                      return AssignmentBloc(
+                        context.read<AssignmentRepository>(),
+                        context.read<EventRepository>(),
+                        context.read<TeamRepository>(),
+                      );
+                    },
+                  ),
+                  BlocProvider(
+                    create: (context) {
+                      developer.log('main.dart: Creating UserSelectionBloc for $env environment', name: 'Main');
+                      return UserSelectionBloc(
+                        userSelectionRepository,
+                        context.read<TeamRepository>(),
+                      );
+                    },
+                  ),
+                ],
+                child: Builder(
+                  builder: (context) {
+                    final userSelectionBloc = context.read<UserSelectionBloc>();
+                    final userSelectionRepository = context.read<UserSelectionRepository>();
+                    final teamBloc = context.read<TeamBloc>();
+
+                    return BlocListener<UserSelectionBloc, UserSelectionState>(
+                      listener: (context, state) {
+                        // Clear all BLoC states when user signs out
+                        if (state is UserSignedOut) {
+                          teamBloc.add(const ClearTeamState());
+                          // TODO: Add similar clear events for EventBloc and AssignmentBloc
+                        }
+                      },
+                      child: MaterialApp.router(
+                        title: 'שבצק - ניהול צוות',
+                        theme: AppTheme.lightTheme,
+                        debugShowCheckedModeBanner: false,
+                        routerConfig: AppRouter.router(
+                          userSelectionBloc: userSelectionBloc,
+                          userSelectionRepository: userSelectionRepository,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
           );
         },
       ),
     );
   }
+}
+
+/// Create and initialize CalendarSyncBloc with config from Firestore
+Future<CalendarSyncBloc> _createCalendarSyncBloc(String env) async {
+  print('🗓️ [main.dart] Creating CalendarSyncBloc for $env environment');
+  developer.log('main.dart: Creating CalendarSyncBloc for $env environment', name: 'Main');
+  final db = FirestoreDatabase();
+  final bloc = CalendarSyncBloc(database: db);
+
+  // Initialize with credentials from Firestore
+  print('🗓️ [main.dart] Fetching Google Calendar config from Firestore...');
+  final config = await db.getGoogleCalendarConfig();
+
+  if (config != null && config['serviceAccountJson'] != null && config['calendarId'] != null) {
+    print('🗓️ [main.dart] Google Calendar config found, initializing...');
+    bloc.add(InitializeCalendarSync(
+      serviceAccountJson: config['serviceAccountJson']!,
+      calendarId: config['calendarId']!,
+    ));
+  } else {
+    print('🗓️ [main.dart] No Google Calendar config found, sync disabled');
+    bloc.add(const InitializeCalendarSync(
+      serviceAccountJson: null,
+      calendarId: null,
+    ));
+  }
+
+  return bloc;
 }
 
 /// Loading screen shown during app initialization
@@ -272,54 +264,61 @@ class LoadingApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // App logo or icon (you can customize this)
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade100,
-                  borderRadius: BorderRadius.circular(20),
+      child: MaterialApp(
+        title: 'שבצק - ניהול צוות',
+        theme: AppTheme.lightTheme,
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: Colors.white,
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // App Logo/Icon
+                Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Icon(
+                    Icons.group,
+                    size: 60,
+                    color: Colors.blue[600],
+                  ),
                 ),
-                child: Icon(
-                  Icons.people,
-                  size: 60,
-                  color: Colors.blue.shade700,
+                const SizedBox(height: 32),
+                // App Name
+                const Text(
+                  'שבצק',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 32),
-              const Text(
-                'שבצק',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue,
+                const SizedBox(height: 8),
+                const Text(
+                  'מערכת ניהול צוות',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'ניהול צוות ואירועים',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
+                const SizedBox(height: 48),
+                // Loading Indicator
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                const Text(
+                  'טוען...',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 32),
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              const Text(
-                'טוען...',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -374,20 +373,9 @@ class ErrorApp extends StatelessWidget {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      // Reload the page
-                      // ignore: avoid_web_libraries_in_flutter
-                      // html.window.location.reload();
-                    },
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('נסה שוב'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 32,
-                        vertical: 16,
-                      ),
-                    ),
+                  ElevatedButton(
+                    onPressed: () => main(),
+                    child: const Text('נסה שוב'),
                   ),
                 ],
               ),

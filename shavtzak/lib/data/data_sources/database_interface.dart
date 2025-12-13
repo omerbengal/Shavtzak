@@ -167,4 +167,8 @@ abstract class DatabaseInterface {
 
   /// Get all synced constraints for a team member
   Future<List<Map<String, dynamic>>> getSyncedConstraintsForMember(String teamMemberId);
+
+  /// Get Google Calendar configuration from Firestore
+  /// Returns a map containing serviceAccountJson and calendarId
+  Future<Map<String, String?>?> getGoogleCalendarConfig();
 }

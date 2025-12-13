@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:developer' as developer;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
@@ -5,11 +8,11 @@ import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
 import '../../core/services/environment_service.dart';
+import '../../core/utils/json_utils.dart';
 import '../models/assignment_model.dart';
 import '../models/event_model.dart';
 import '../models/team_member_model.dart';
 import 'database_interface.dart';
-import 'dart:developer' as developer;
 
 /// Firestore implementation of DatabaseInterface
 class FirestoreDatabase implements DatabaseInterface {
@@ -1014,6 +1017,71 @@ class FirestoreDatabase implements DatabaseInterface {
       print('🔥 [FirestoreDatabase] ❌ Failed to get synced constraints: $e');
       throw DatabaseException('Failed to get synced constraints: $e');
     }
+  }
+
+  @override
+  Future<Map<String, String?>?> getGoogleCalendarConfig() async {
+    try {
+      print('🔥 [FirestoreDatabase] Fetching Google Calendar config from keys collection');
+
+      final doc = await _firestore.collection('keys').doc('googleCalendar').get();
+
+      if (!doc.exists) {
+        print('🔥 [FirestoreDatabase] ❌ Google Calendar config not found in keys collection');
+        return null;
+      }
+
+      final data = doc.data() as Map<String, dynamic>;
+      print('🔥 [FirestoreDatabase] Raw data from Firestore: $data');
+
+      // Handle service account credentials - should be stored as a Map/Object
+      String? serviceAccountJson;
+      final serviceAccountData = data['serviceAccountJson'];
+      print('🔥 [FirestoreDatabase] serviceAccountData type: ${serviceAccountData.runtimeType}');
+
+      if (serviceAccountData is Map) {
+        // If stored as a Map, convert to JSON string
+        serviceAccountJson = _convertMapToJsonString(Map<String, dynamic>.from(serviceAccountData));
+        print('🔥 [FirestoreDatabase] Successfully converted Map to JSON string');
+      } else if (serviceAccountData is String) {
+        // If still stored as a string, try to use it directly
+        print('🔥 [FirestoreDatabase] Warning: serviceAccountJson is stored as string, should be stored as Map');
+        serviceAccountJson = serviceAccountData;
+      } else {
+        print('🔥 [FirestoreDatabase] ❌ serviceAccountJson field is missing or invalid type');
+        serviceAccountJson = null;
+      }
+
+      final result = {
+        'serviceAccountJson': serviceAccountJson,
+        'calendarId': data['calendarId'] as String?,
+      };
+
+      print('🔥 [FirestoreDatabase] ✅ Google Calendar config retrieved successfully');
+      return result;
+    } catch (e) {
+      print('🔥 [FirestoreDatabase] ❌ Failed to fetch Google Calendar config: $e');
+      throw DatabaseException('Failed to fetch Google Calendar config: $e');
+    }
+  }
+
+  /// Helper method to convert a Map to a JSON string with properly formatted private key
+  String _convertMapToJsonString(Map<String, dynamic> map) {
+    // Create a copy to avoid modifying the original
+    final Map<String, dynamic> jsonMap = Map.from(map);
+
+    // For the private_key field, ensure newlines are preserved (NOT escaped)
+    // Firestore will handle the JSON encoding properly when storing as a Map
+    // When we retrieve it, the private_key should already have proper newlines
+    if (jsonMap.containsKey('private_key') && jsonMap['private_key'] is String) {
+      final privateKey = jsonMap['private_key'] as String;
+      // Keep the newlines as-is - they should be stored properly in the Map
+      print('🔥 [FirestoreDatabase] Private key length: ${privateKey.length}');
+      print('🔥 [FirestoreDatabase] Private key contains newlines: ${privateKey.contains('\n')}');
+    }
+
+    // Use jsonEncode directly without escaping newlines
+    return jsonEncode(jsonMap);
   }
 }
 
