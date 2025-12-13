@@ -192,18 +192,18 @@ class _TeamListScreenState extends State<TeamListScreen> {
               final envPrefix = EnvironmentService.instance.routePrefix;
               context.go('$envPrefix/admin');
             },
-            iconSize: 20,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            iconSize: 24,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
           ),
           // Logout button (appears farthest left in RTL)
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'התנתק',
             onPressed: () => _logout(context),
-            iconSize: 20,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            iconSize: 24,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
           ),
         ],
       ),
@@ -214,7 +214,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 ..clearSnackBars()
                 ..showSnackBar(
                   SnackBar(
-                    content: Text(state.message),
+                    content: Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: Text(state.message),
+                    ),
                     backgroundColor: Colors.red,
                     duration: const Duration(seconds: 2),
                   ),
@@ -224,7 +227,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 ..clearSnackBars()
                 ..showSnackBar(
                   SnackBar(
-                    content: Text(state.message),
+                    content: Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: Text(state.message),
+                    ),
                     backgroundColor: Colors.green,
                     duration: const Duration(seconds: 2),
                   ),

@@ -84,7 +84,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
                       ..clearSnackBars()
                       ..showSnackBar(
                         SnackBar(
-                          content: Text(state.message),
+                          content: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Text(state.message),
+                          ),
                           backgroundColor: Colors.red,
                           duration: const Duration(seconds: 2),
                         ),
@@ -331,7 +334,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
               ..clearSnackBars()
               ..showSnackBar(
                 const SnackBar(
-                  content: Text('הזמינות נוספה בהצלחה'),
+                  content: Directionality(
+                    textDirection: TextDirection.rtl,
+                    child: Text('הזמינות נוספה בהצלחה'),
+                  ),
                   backgroundColor: Colors.green,
                   duration: Duration(seconds: 2),
                 ),
@@ -370,7 +376,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
             ..clearSnackBars()
             ..showSnackBar(
               const SnackBar(
-                content: Text('הזמינות עודכנה בהצלחה'),
+                content: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Text('הזמינות עודכנה בהצלחה'),
+                ),
                 backgroundColor: Colors.green,
                 duration: Duration(seconds: 2),
               ),
@@ -411,7 +420,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
                   ..clearSnackBars()
                   ..showSnackBar(
                     const SnackBar(
-                      content: Text('הזמינות נמחקה בהצלחה'),
+                      content: Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: Text('הזמינות נמחקה בהצלחה'),
+                      ),
                       backgroundColor: Colors.green,
                       duration: Duration(seconds: 2),
                     ),

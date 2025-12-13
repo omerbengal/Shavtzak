@@ -59,7 +59,10 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       ..clearSnackBars()
                       ..showSnackBar(
                         SnackBar(
-                          content: Text(state.message),
+                          content: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Text(state.message),
+                          ),
                           backgroundColor: Colors.red,
                           duration: const Duration(seconds: 2),
                         ),
