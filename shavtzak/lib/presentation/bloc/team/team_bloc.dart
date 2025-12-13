@@ -6,6 +6,8 @@ import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../../core/state/constraint_manager.dart';
 import '../../../core/services/environment_service.dart';
+import '../calendar_sync/calendar_sync_bloc.dart';
+import '../calendar_sync/calendar_sync_event.dart';
 import 'team_event.dart';
 import 'team_state.dart';
 import 'dart:developer' as developer;
@@ -14,11 +16,17 @@ import 'dart:developer' as developer;
 class TeamBloc extends Bloc<TeamEvent, TeamState> {
   final TeamRepository _repository;
   final AssignmentRepository _assignmentRepository;
+  final CalendarSyncBloc? _calendarSyncBloc;
 
   // Store constraint managers for each team member
   final Map<String, LocalConstraintManager> _constraintManagers = {};
 
-  TeamBloc(this._repository, this._assignmentRepository) : super(const TeamInitial()) {
+  TeamBloc(
+    this._repository,
+    this._assignmentRepository, {
+    CalendarSyncBloc? calendarSyncBloc,
+  })  : _calendarSyncBloc = calendarSyncBloc,
+        super(const TeamInitial()) {
     // Register event handlers - using emit.forEach for real-time updates
     on<LoadTeamMembers>(_onLoadTeamMembers);
     on<LoadActiveTeamMembers>(_onLoadActiveTeamMembers);
@@ -207,10 +215,89 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
             }
           }
         }
+
+        // === Calendar Sync: Check for constraint status changes ===
+        print('🗓️ [TeamBloc._onUpdateTeamMember] Checking for constraint status changes...');
+        print('🗓️ [TeamBloc._onUpdateTeamMember] CalendarSyncBloc is ${_calendarSyncBloc == null ? "NULL" : "available"}');
+
+        if (_calendarSyncBloc != null) {
+          // Build a map of old constraints by ID for easy lookup
+          final oldConstraintsById = <String, DateConstraint>{};
+          for (final constraint in oldMember.constraints) {
+            oldConstraintsById[constraint.id] = constraint;
+          }
+
+          // Check each new constraint for status changes
+          for (final newConstraint in event.member.constraints) {
+            final oldConstraint = oldConstraintsById[newConstraint.id];
+
+            if (oldConstraint != null) {
+              // Existing constraint - check for status change
+              if (oldConstraint.status != newConstraint.status) {
+                print('🗓️ [TeamBloc._onUpdateTeamMember] Constraint ${newConstraint.id} status changed: ${oldConstraint.status} -> ${newConstraint.status}');
+
+                if (newConstraint.status == ConstraintStatus.approved) {
+                  // Constraint changed to approved - sync to calendar ONLY for unavailability constraints
+                  if (newConstraint.isUnavailability) {
+                    print('🗓️ [TeamBloc._onUpdateTeamMember] ✅ Triggering calendar sync for unavailability constraint ${newConstraint.id}');
+                    developer.log(
+                      'TeamBloc: Unavailability constraint approved via UpdateTeamMember, triggering calendar sync',
+                      name: 'TeamBloc',
+                    );
+                    _calendarSyncBloc!.add(SyncConstraintToCalendar(
+                      constraintId: newConstraint.id,
+                      teamMember: event.member,
+                      constraint: newConstraint,
+                    ));
+                  } else {
+                    print('🗓️ [TeamBloc._onUpdateTeamMember] ⚠️ Availability constraint approved - NOT syncing to calendar');
+                  }
+                } else if (oldConstraint.status == ConstraintStatus.approved) {
+                  // Constraint changed from approved - remove from calendar ONLY if it was unavailability
+                  if (oldConstraint.isUnavailability) {
+                    print('🗓️ [TeamBloc._onUpdateTeamMember] ❌ Removing unavailability constraint ${newConstraint.id} from calendar');
+                    developer.log(
+                      'TeamBloc: Unavailability constraint un-approved via UpdateTeamMember, removing from calendar',
+                      name: 'TeamBloc',
+                    );
+                    _calendarSyncBloc!.add(RemoveConstraintFromCalendar(
+                      constraintId: newConstraint.id,
+                    ));
+                  } else {
+                    print('🗓️ [TeamBloc._onUpdateTeamMember] ⚠️ Availability constraint un-approved - NOT removing from calendar');
+                  }
+                }
+              }
+            }
+            // Note: New constraints don't need sync yet - they start as pending
+          }
+
+          // Check for deleted constraints that were approved
+          for (final oldConstraint in oldMember.constraints) {
+            final stillExists = event.member.constraints.any((c) => c.id == oldConstraint.id);
+            if (!stillExists && oldConstraint.status == ConstraintStatus.approved) {
+              // Only remove from calendar if it was an unavailability constraint
+              if (oldConstraint.isUnavailability) {
+                print('🗓️ [TeamBloc._onUpdateTeamMember] ❌ Approved unavailability constraint ${oldConstraint.id} was deleted, removing from calendar');
+                developer.log(
+                  'TeamBloc: Approved unavailability constraint deleted via UpdateTeamMember, removing from calendar',
+                  name: 'TeamBloc',
+                );
+                _calendarSyncBloc!.add(RemoveConstraintFromCalendar(
+                  constraintId: oldConstraint.id,
+                ));
+              } else {
+                print('🗓️ [TeamBloc._onUpdateTeamMember] ⚠️ Approved availability constraint ${oldConstraint.id} was deleted - NOT removing from calendar');
+              }
+            }
+          }
+        } else {
+          print('🗓️ [TeamBloc._onUpdateTeamMember] ⚠️ CalendarSyncBloc is NULL - sync not available');
+        }
       }
 
       // Emit success to show snackbar, UI will keep showing last state
-      emit(const TeamMemberOperationSuccess('בקשת מגבלה עודכנה בהצלחה וממתינה לאישור'));
+      emit(const TeamMemberOperationSuccess('פרטי חבר/ת הצוות עודכנו בהצלחה'));
 
       // Restart stream subscription to pick up database changes
       emit(const TeamLoading());
@@ -297,12 +384,75 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     Emitter<TeamState> emit,
   ) async {
     try {
+      // Get the current team member to check old status
+      final currentMember = await _repository.getTeamMemberById(event.teamMemberId);
+      if (currentMember == null) {
+        emit(const TeamError('חבר/ת צוות לא נמצא/ה'));
+        return;
+      }
+
+      // Check if constraint index is valid
+      if (event.constraintIndex < 0 || event.constraintIndex >= currentMember.constraints.length) {
+        emit(const TeamError('אינדקס מגבלה לא תקין'));
+        return;
+      }
+
+      // Get the old status before updating
+      final constraint = currentMember.constraints[event.constraintIndex];
+      final oldStatus = constraint.status;
+
       // Use the repository's database to update constraint status
       await _repository.database.updateConstraintStatus(
         event.teamMemberId,
         event.constraintIndex,
         event.newStatus,
       );
+
+      // Trigger calendar sync if status changed to/from approved
+      print('🗓️ [TeamBloc] Checking calendar sync trigger...');
+      print('🗓️ [TeamBloc] _calendarSyncBloc is ${_calendarSyncBloc == null ? "NULL" : "available"}');
+      print('🗓️ [TeamBloc] oldStatus: $oldStatus, newStatus: ${event.newStatus}');
+
+      if (_calendarSyncBloc != null && oldStatus != event.newStatus) {
+        if (event.newStatus == ConstraintStatus.approved) {
+          // Status changed to approved - sync to calendar ONLY for unavailability constraints
+          if (constraint.isUnavailability) {
+            print('🗓️ [TeamBloc] ✅ Unavailability constraint APPROVED - triggering calendar sync');
+            print('🗓️ [TeamBloc] Constraint ID: ${constraint.id}');
+            print('🗓️ [TeamBloc] Team Member: ${currentMember.name}');
+            developer.log(
+              'TeamBloc: Unavailability constraint approved, triggering calendar sync',
+              name: 'TeamBloc',
+            );
+            _calendarSyncBloc!.add(SyncConstraintToCalendar(
+              constraintId: constraint.id,
+              teamMember: currentMember,
+              constraint: constraint.copyWith(status: ConstraintStatus.approved),
+            ));
+            print('🗓️ [TeamBloc] SyncConstraintToCalendar event added to CalendarSyncBloc');
+          } else {
+            print('🗓️ [TeamBloc] ⚠️ Availability constraint approved - NOT syncing to calendar');
+          }
+        } else if (oldStatus == ConstraintStatus.approved) {
+          // Status changed from approved - remove from calendar ONLY if it was unavailability
+          if (constraint.isUnavailability) {
+            print('🗓️ [TeamBloc] ❌ Unavailability constraint UN-APPROVED - removing from calendar');
+            developer.log(
+              'TeamBloc: Unavailability constraint status changed from approved, removing from calendar',
+              name: 'TeamBloc',
+            );
+            _calendarSyncBloc!.add(RemoveConstraintFromCalendar(
+              constraintId: constraint.id,
+            ));
+          } else {
+            print('🗓️ [TeamBloc] ⚠️ Availability constraint un-approved - NOT removing from calendar');
+          }
+        }
+      } else if (_calendarSyncBloc == null) {
+        print('🗓️ [TeamBloc] ⚠️ CalendarSyncBloc is NULL - sync not available');
+      } else {
+        print('🗓️ [TeamBloc] Status unchanged, no sync needed');
+      }
 
       // Emit success message
       final statusText = event.newStatus.hebrewName;
@@ -390,6 +540,20 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       if (event.constraintIndex < 0 || event.constraintIndex >= currentMember.constraints.length) {
         emit(const TeamError('אינדקס מגבלה לא תקין'));
         return;
+      }
+
+      // Get the constraint before removing it
+      final constraint = currentMember.constraints[event.constraintIndex];
+
+      // If constraint was approved AND it's an unavailability constraint, remove from calendar
+      if (_calendarSyncBloc != null && constraint.isApproved() && constraint.isUnavailability) {
+        developer.log(
+          'TeamBloc: Removing approved unavailability constraint from calendar',
+          name: 'TeamBloc',
+        );
+        _calendarSyncBloc!.add(RemoveConstraintFromCalendar(
+          constraintId: constraint.id,
+        ));
       }
 
       // Remove constraint (users can delete their own constraints regardless of status)

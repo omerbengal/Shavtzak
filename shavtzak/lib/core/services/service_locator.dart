@@ -1,5 +1,13 @@
 import '../services/environment_service.dart';
 import 'environment_aware_factory.dart';
+import '../../data/repositories/team_repository.dart';
+import '../../data/repositories/event_repository.dart';
+import '../../data/repositories/assignment_repository.dart';
+import '../../data/repositories/user_selection_repository.dart';
+import '../../presentation/bloc/team/team_bloc.dart';
+import '../../presentation/bloc/event/event_bloc.dart';
+import '../../presentation/bloc/assignment/assignment_bloc.dart';
+import '../../presentation/bloc/user_selection/user_selection_bloc.dart';
 
 /// Simple service locator for dependency injection
 /// Centralizes all service creation and ensures single instances

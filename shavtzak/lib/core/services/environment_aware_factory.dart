@@ -9,7 +9,7 @@ import '../../../presentation/bloc/team/team_bloc.dart';
 import '../../../presentation/bloc/event/event_bloc.dart';
 import '../../../presentation/bloc/assignment/assignment_bloc.dart';
 import '../../../presentation/bloc/user_selection/user_selection_bloc.dart';
-import '../../services/user_cache_service.dart';
+import 'user_cache_service.dart';
 
 /// Factory that creates environment-aware instances
 /// This is the single point where test vs production logic is decided

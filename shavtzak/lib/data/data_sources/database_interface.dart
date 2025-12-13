@@ -2,6 +2,7 @@ import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
+import '../../core/constants/calendar_constants.dart';
 
 /// Abstract database interface
 /// This allows the app to be backend-agnostic
@@ -27,13 +28,7 @@ abstract class DatabaseInterface {
   /// Delete a team member
   Future<void> deleteTeamMember(String id);
 
-  /// Update the status of a specific constraint for a team member
-  Future<void> updateConstraintStatus(
-    String teamMemberId,
-    int constraintIndex,
-    ConstraintStatus newStatus,
-  );
-
+  
   // ========== Events ==========
 
   /// Get all events
@@ -119,4 +114,61 @@ abstract class DatabaseInterface {
 
   /// Clear all data (for testing purposes only)
   Future<void> clearAllData();
+
+  // ========== Calendar Sync State ==========
+
+  /// Save calendar sync state mapping constraint ID to calendar event ID
+  Future<void> saveCalendarSyncState({
+    required String constraintId,
+    required String calendarEventId,
+    required String teamMemberId,
+    required CalendarSyncStatus status,
+  });
+
+  /// Get calendar event ID for a constraint
+  Future<String?> getCalendarEventId(String constraintId);
+
+  /// Get calendar sync state for a constraint
+  Future<Map<String, dynamic>?> getCalendarSyncState(String constraintId);
+
+  /// Update calendar sync status for a constraint
+  Future<void> updateCalendarSyncStatus(
+    String constraintId,
+    CalendarSyncStatus status, {
+    String? errorMessage,
+    int? retryCount,
+  });
+
+  /// Remove calendar sync state for a constraint
+  Future<void> removeCalendarSyncState(String constraintId);
+
+  /// Atomically create or update calendar sync state and return the appropriate action
+  /// Returns a map with 'action' ('create' or 'update') and 'calendarEventId' if updating
+  Future<Map<String, dynamic>?> atomicCheckAndSetSyncState(
+    String constraintId,
+    String teamMemberId,
+  );
+
+  /// Get all failed sync states for retry
+  Future<List<Map<String, dynamic>>> getFailedSyncStates();
+
+  /// Get all synced constraints across all team members
+  Future<List<Map<String, dynamic>>> getSyncedConstraintsForAllMembers();
+
+  /// Update constraint status
+  /// If constraintIndex is null, teamMemberIdOrConstraintId is treated as constraintId
+  /// If constraintIndex is provided, teamMemberIdOrConstraintId is treated as teamMemberId
+  Future<void> updateConstraintStatus(
+    String teamMemberIdOrConstraintId,
+    int? constraintIndex,
+    ConstraintStatus newStatus, {
+    String? note,
+  });
+
+  /// Get all synced constraints for a team member
+  Future<List<Map<String, dynamic>>> getSyncedConstraintsForMember(String teamMemberId);
+
+  /// Get Google Calendar configuration from Firestore
+  /// Returns a map containing serviceAccountJson and calendarId
+  Future<Map<String, String?>?> getGoogleCalendarConfig();
 }

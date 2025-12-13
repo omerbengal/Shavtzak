@@ -1,14 +1,18 @@
+import 'dart:convert';
+import 'dart:developer' as developer;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
+import '../../core/constants/calendar_constants.dart';
 import '../../core/services/environment_service.dart';
+import '../../core/utils/json_utils.dart';
 import '../models/assignment_model.dart';
 import '../models/event_model.dart';
 import '../models/team_member_model.dart';
 import 'database_interface.dart';
-import 'dart:developer' as developer;
 
 /// Firestore implementation of DatabaseInterface
 class FirestoreDatabase implements DatabaseInterface {
@@ -31,6 +35,12 @@ class FirestoreDatabase implements DatabaseInterface {
   String get _assignmentsCollection {
     final collection = '${EnvironmentService.instance.collectionPrefix}assignments';
     developer.log('FirestoreDatabase._assignmentsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
+    return collection;
+  }
+
+  String get _calendarSyncCollection {
+    final collection = '${EnvironmentService.instance.collectionPrefix}calendar_sync';
+    developer.log('FirestoreDatabase._calendarSyncCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
     return collection;
   }
 
@@ -148,46 +158,110 @@ class FirestoreDatabase implements DatabaseInterface {
 
   @override
   Future<void> updateConstraintStatus(
-    String teamMemberId,
-    int constraintIndex,
-    ConstraintStatus newStatus,
-  ) async {
+    String teamMemberIdOrConstraintId,
+    int? constraintIndex,
+    ConstraintStatus newStatus, {
+    String? note,
+  }) async {
+    print('🔥 [FirestoreDatabase] updateConstraintStatus called');
+    print('🔥 [FirestoreDatabase] teamMemberIdOrConstraintId: $teamMemberIdOrConstraintId');
+    print('🔥 [FirestoreDatabase] constraintIndex: $constraintIndex');
+    print('🔥 [FirestoreDatabase] newStatus: $newStatus');
+    print('🔥 [FirestoreDatabase] note: $note');
+
     try {
-      // Get the current team member
-      final doc = await _firestore
-          .collection(_teamMembersCollection)
-          .doc(teamMemberId)
-          .get();
+      // If constraintIndex is null, teamMemberIdOrConstraintId is actually the constraintId
+      // and we need to find which team member owns this constraint
+      if (constraintIndex == null) {
+        print('🔥 [FirestoreDatabase] Finding constraint by ID across all team members...');
+        // Find constraint by ID across all team members
+        final teamMembersSnapshot = await _firestore
+            .collection(_teamMembersCollection)
+            .get();
 
-      if (!doc.exists) {
-        throw DatabaseException('Team member not found: $teamMemberId');
+        print('🔥 [FirestoreDatabase] Found ${teamMembersSnapshot.docs.length} team members');
+
+        bool constraintFound = false;
+        for (final teamMemberDoc in teamMembersSnapshot.docs) {
+          final teamMemberData = teamMemberDoc.data();
+          final constraints = (teamMemberData['constraints'] as List<dynamic>?);
+
+          if (constraints != null) {
+            // Find the constraint in the inline array
+            final constraintIndex = constraints.indexWhere(
+              (c) => c['id'] == teamMemberIdOrConstraintId,
+            );
+
+            if (constraintIndex != -1) {
+              print('🔥 [FirestoreDatabase] ✅ Found constraint ${teamMemberIdOrConstraintId} in team member ${teamMemberDoc.id} at index $constraintIndex');
+              constraintFound = true;
+
+              // Update the constraint status in the array
+              final updatedConstraints = List<dynamic>.from(constraints);
+              updatedConstraints[constraintIndex]['status'] = newStatus.name;
+
+              if (note != null) {
+                updatedConstraints[constraintIndex]['note'] = note;
+              }
+
+              print('🔥 [FirestoreDatabase] Updating constraint status to ${newStatus.name}');
+              await teamMemberDoc.reference.update({
+                'constraints': updatedConstraints,
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+              print('🔥 [FirestoreDatabase] ✅ Constraint status updated successfully');
+              return;
+            }
+          }
+        }
+
+        if (!constraintFound) {
+          print('🔥 [FirestoreDatabase] ❌ Constraint not found: $teamMemberIdOrConstraintId');
+          throw DatabaseException('Constraint not found: $teamMemberIdOrConstraintId');
+        }
+      } else {
+        // Original logic: update constraint by index in a specific team member
+        final teamMemberId = teamMemberIdOrConstraintId;
+
+        // Get the current team member
+        final doc = await _firestore
+            .collection(_teamMembersCollection)
+            .doc(teamMemberId)
+            .get();
+
+        if (!doc.exists) {
+          throw DatabaseException('Team member not found: $teamMemberId');
+        }
+
+        final teamMember = TeamMemberModel.fromFirestore(doc).toEntity();
+
+        // Check if constraint index is valid
+        if (constraintIndex < 0 || constraintIndex >= teamMember.constraints.length) {
+          throw DatabaseException('Invalid constraint index: $constraintIndex');
+        }
+
+        // Update the constraint status
+        final updatedConstraints = List<DateConstraint>.from(teamMember.constraints);
+        updatedConstraints[constraintIndex] = updatedConstraints[constraintIndex].copyWith(
+          status: newStatus,
+          note: note, // Also update the note if provided
+        );
+
+        // Convert DateConstraint entities to JSON
+        final constraintsJson = updatedConstraints.map((constraint) {
+          final model = DateConstraintModel.fromEntity(constraint);
+          return model.toJson();
+        }).toList();
+
+        // Update only the constraints field in Firestore
+        await _firestore
+            .collection(_teamMembersCollection)
+            .doc(teamMemberId)
+            .update({
+              'constraints': constraintsJson,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
       }
-
-      final teamMember = TeamMemberModel.fromFirestore(doc).toEntity();
-
-      // Check if constraint index is valid
-      if (constraintIndex < 0 || constraintIndex >= teamMember.constraints.length) {
-        throw DatabaseException('Invalid constraint index: $constraintIndex');
-      }
-
-      // Update the constraint status
-      final updatedConstraints = List<DateConstraint>.from(teamMember.constraints);
-      updatedConstraints[constraintIndex] = updatedConstraints[constraintIndex].copyWith(
-        status: newStatus,
-      );
-
-      // Create updated team member with new constraint
-      final updatedTeamMember = teamMember.copyWith(
-        constraints: updatedConstraints,
-        updatedAt: DateTime.now(),
-      );
-
-      // Update in Firestore
-      final model = TeamMemberModel.fromEntity(updatedTeamMember);
-      await _firestore
-          .collection(_teamMembersCollection)
-          .doc(teamMemberId)
-          .update(model.toFirestore());
     } catch (e) {
       throw DatabaseException('Failed to update constraint status: $e');
     }
@@ -701,6 +775,313 @@ class FirestoreDatabase implements DatabaseInterface {
     if (member == null) {
       throw DatabaseException('Team member not found: $teamMemberId');
     }
+  }
+
+  // ========== Calendar Sync State ==========
+
+  @override
+  Future<void> saveCalendarSyncState({
+    required String constraintId,
+    required String calendarEventId,
+    required String teamMemberId,
+    required CalendarSyncStatus status,
+  }) async {
+    try {
+      await _firestore.collection(_calendarSyncCollection).doc(constraintId).set({
+        'calendarEventId': calendarEventId,
+        'teamMemberId': teamMemberId,
+        'status': status.name,
+        'syncedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'retryCount': 0,
+        'errorMessage': null,
+      });
+    } catch (e) {
+      throw DatabaseException('Failed to save calendar sync state: $e');
+    }
+  }
+
+  @override
+  Future<String?> getCalendarEventId(String constraintId) async {
+    try {
+      final doc = await _firestore
+          .collection(_calendarSyncCollection)
+          .doc(constraintId)
+          .get();
+
+      if (!doc.exists) return null;
+
+      return doc.data()?['calendarEventId'] as String?;
+    } catch (e) {
+      throw DatabaseException('Failed to get calendar event ID: $e');
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getCalendarSyncState(String constraintId) async {
+    try {
+      final doc = await _firestore
+          .collection(_calendarSyncCollection)
+          .doc(constraintId)
+          .get();
+
+      if (!doc.exists) return null;
+
+      final data = doc.data();
+      if (data == null) return null;
+
+      return {
+        'constraintId': constraintId,
+        'calendarEventId': data['calendarEventId'],
+        'teamMemberId': data['teamMemberId'],
+        'status': data['status'],
+        'syncedAt': data['syncedAt'],
+        'updatedAt': data['updatedAt'],
+        'retryCount': data['retryCount'] ?? 0,
+        'errorMessage': data['errorMessage'],
+      };
+    } catch (e) {
+      throw DatabaseException('Failed to get calendar sync state: $e');
+    }
+  }
+
+  @override
+  Future<void> updateCalendarSyncStatus(
+    String constraintId,
+    CalendarSyncStatus status, {
+    String? errorMessage,
+    int? retryCount,
+  }) async {
+    try {
+      final updates = <String, dynamic>{
+        'status': status.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      if (errorMessage != null) {
+        updates['errorMessage'] = errorMessage;
+      }
+
+      if (retryCount != null) {
+        updates['retryCount'] = retryCount;
+      }
+
+      await _firestore
+          .collection(_calendarSyncCollection)
+          .doc(constraintId)
+          .update(updates);
+    } catch (e) {
+      throw DatabaseException('Failed to update calendar sync status: $e');
+    }
+  }
+
+  @override
+  Future<void> removeCalendarSyncState(String constraintId) async {
+    try {
+      await _firestore
+          .collection(_calendarSyncCollection)
+          .doc(constraintId)
+          .delete();
+    } catch (e) {
+      throw DatabaseException('Failed to remove calendar sync state: $e');
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getFailedSyncStates() async {
+    try {
+      final snapshot = await _firestore
+          .collection(_calendarSyncCollection)
+          .where('status', isEqualTo: CalendarSyncStatus.failed.name)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'constraintId': doc.id,
+          'calendarEventId': data['calendarEventId'],
+          'teamMemberId': data['teamMemberId'],
+          'status': data['status'],
+          'syncedAt': data['syncedAt'],
+          'updatedAt': data['updatedAt'],
+          'retryCount': data['retryCount'] ?? 0,
+          'errorMessage': data['errorMessage'],
+        };
+      }).toList();
+    } catch (e) {
+      throw DatabaseException('Failed to get failed sync states: $e');
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getSyncedConstraintsForMember(
+      String teamMemberId) async {
+    try {
+      final snapshot = await _firestore
+          .collection(_calendarSyncCollection)
+          .where('teamMemberId', isEqualTo: teamMemberId)
+          .where('status', isEqualTo: CalendarSyncStatus.synced.name)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'constraintId': doc.id,
+          'calendarEventId': data['calendarEventId'],
+          'teamMemberId': data['teamMemberId'],
+          'status': data['status'],
+          'syncedAt': data['syncedAt'],
+          'updatedAt': data['updatedAt'],
+        };
+      }).toList();
+    } catch (e) {
+      throw DatabaseException('Failed to get synced constraints for member: $e');
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> atomicCheckAndSetSyncState(
+    String constraintId,
+    String teamMemberId,
+  ) async {
+    try {
+      return await _firestore.runTransaction((transaction) async {
+        // Get the current sync state document
+        final docRef = _firestore.collection(_calendarSyncCollection).doc(constraintId);
+        final docSnapshot = await transaction.get(docRef);
+
+        if (docSnapshot.exists) {
+          final data = docSnapshot.data();
+          if (data != null && data['status'] == CalendarSyncStatus.synced.name) {
+            // Already synced - return update action with existing calendar event ID
+            return {
+              'action': 'update',
+              'calendarEventId': data['calendarEventId'],
+              'teamMemberId': data['teamMemberId'],
+            };
+          }
+        }
+
+        // Not synced or doesn't exist - set a pending state to reserve the sync
+        final now = FieldValue.serverTimestamp();
+        transaction.set(docRef, {
+          'calendarEventId': '', // Empty placeholder
+          'teamMemberId': teamMemberId,
+          'status': CalendarSyncStatus.pending.name,
+          'syncedAt': now,
+          'updatedAt': now,
+          'retryCount': 0,
+          'errorMessage': null,
+          'reservedBy': DateTime.now().millisecondsSinceEpoch, // For debugging race conditions
+        });
+
+        // Return create action
+        return {
+          'action': 'create',
+          'calendarEventId': null,
+          'teamMemberId': teamMemberId,
+        };
+      });
+    } catch (e) {
+      throw DatabaseException('Failed to atomic check and set sync state: $e');
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getSyncedConstraintsForAllMembers() async {
+    try {
+      print('🔥 [FirestoreDatabase] Getting synced constraints from collection: $_calendarSyncCollection');
+      print('🔥 [FirestoreDatabase] Querying where status == ${CalendarSyncStatus.synced.name}');
+
+      final snapshot = await _firestore
+          .collection(_calendarSyncCollection)
+          .where('status', isEqualTo: CalendarSyncStatus.synced.name)
+          .get();
+
+      print('🔥 [FirestoreDatabase] Found ${snapshot.docs.length} synced constraints');
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        final result = {
+          'constraintId': doc.id,
+          'calendarEventId': data['calendarEventId'],
+          'teamMemberId': data['teamMemberId'],
+          'status': data['status'],
+          'syncedAt': data['syncedAt'],
+          'updatedAt': data['updatedAt'],
+        };
+        print('🔥 [FirestoreDatabase] Synced constraint: ${result['constraintId']} -> ${result['calendarEventId']}');
+        return result;
+      }).toList();
+    } catch (e) {
+      print('🔥 [FirestoreDatabase] ❌ Failed to get synced constraints: $e');
+      throw DatabaseException('Failed to get synced constraints: $e');
+    }
+  }
+
+  @override
+  Future<Map<String, String?>?> getGoogleCalendarConfig() async {
+    try {
+      print('🔥 [FirestoreDatabase] Fetching Google Calendar config from keys collection');
+
+      final doc = await _firestore.collection('keys').doc('googleCalendar').get();
+
+      if (!doc.exists) {
+        print('🔥 [FirestoreDatabase] ❌ Google Calendar config not found in keys collection');
+        return null;
+      }
+
+      final data = doc.data() as Map<String, dynamic>;
+      print('🔥 [FirestoreDatabase] Raw data from Firestore: $data');
+
+      // Handle service account credentials - should be stored as a Map/Object
+      String? serviceAccountJson;
+      final serviceAccountData = data['serviceAccountJson'];
+      print('🔥 [FirestoreDatabase] serviceAccountData type: ${serviceAccountData.runtimeType}');
+
+      if (serviceAccountData is Map) {
+        // If stored as a Map, convert to JSON string
+        serviceAccountJson = _convertMapToJsonString(Map<String, dynamic>.from(serviceAccountData));
+        print('🔥 [FirestoreDatabase] Successfully converted Map to JSON string');
+      } else if (serviceAccountData is String) {
+        // If still stored as a string, try to use it directly
+        print('🔥 [FirestoreDatabase] Warning: serviceAccountJson is stored as string, should be stored as Map');
+        serviceAccountJson = serviceAccountData;
+      } else {
+        print('🔥 [FirestoreDatabase] ❌ serviceAccountJson field is missing or invalid type');
+        serviceAccountJson = null;
+      }
+
+      final result = {
+        'serviceAccountJson': serviceAccountJson,
+        'calendarId': data['calendarId'] as String?,
+      };
+
+      print('🔥 [FirestoreDatabase] ✅ Google Calendar config retrieved successfully');
+      return result;
+    } catch (e) {
+      print('🔥 [FirestoreDatabase] ❌ Failed to fetch Google Calendar config: $e');
+      throw DatabaseException('Failed to fetch Google Calendar config: $e');
+    }
+  }
+
+  /// Helper method to convert a Map to a JSON string with properly formatted private key
+  String _convertMapToJsonString(Map<String, dynamic> map) {
+    // Create a copy to avoid modifying the original
+    final Map<String, dynamic> jsonMap = Map.from(map);
+
+    // For the private_key field, ensure newlines are preserved (NOT escaped)
+    // Firestore will handle the JSON encoding properly when storing as a Map
+    // When we retrieve it, the private_key should already have proper newlines
+    if (jsonMap.containsKey('private_key') && jsonMap['private_key'] is String) {
+      final privateKey = jsonMap['private_key'] as String;
+      // Keep the newlines as-is - they should be stored properly in the Map
+      print('🔥 [FirestoreDatabase] Private key length: ${privateKey.length}');
+      print('🔥 [FirestoreDatabase] Private key contains newlines: ${privateKey.contains('\n')}');
+    }
+
+    // Use jsonEncode directly without escaping newlines
+    return jsonEncode(jsonMap);
   }
 }
 
