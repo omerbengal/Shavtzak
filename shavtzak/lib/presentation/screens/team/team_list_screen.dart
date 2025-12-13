@@ -19,6 +19,9 @@ import '../../widgets/navigation_menu.dart';
 import '../../widgets/date_picker_dialog.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../../data/repositories/assignment_repository.dart';
+import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
+import '../../bloc/calendar_sync/calendar_sync_event.dart';
+import '../../bloc/calendar_sync/calendar_sync_state.dart';
 
 // Filter enum for team members (0=all, 1=active, 2=inactive)
 enum TeamFilter { all, active, inactive }
@@ -84,6 +87,68 @@ class _TeamListScreenState extends State<TeamListScreen> {
               : const Text(AppStrings.team),
           actions: [
             const NavigationMenu(),
+            // Manual sync button
+            BlocListener<CalendarSyncBloc, CalendarSyncState>(
+              listener: (context, state) {
+                if (state is CalendarSyncBidirectionalComplete) {
+                  ScaffoldMessenger.of(context)
+                    ..clearSnackBars()
+                    ..showSnackBar(
+                      SnackBar(
+                        content: Directionality(
+                          textDirection: TextDirection.rtl,
+                          child: Text(state.message),
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                } else if (state is CalendarSyncFailure && state.constraintId == 'bidirectional') {
+                  ScaffoldMessenger.of(context)
+                    ..clearSnackBars()
+                    ..showSnackBar(
+                      SnackBar(
+                        content: Directionality(
+                          textDirection: TextDirection.rtl,
+                          child: Text(state.errorMessage),
+                        ),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 3),
+                        action: SnackBarAction(
+                          label: 'נסה שוב',
+                          textColor: Colors.white,
+                          onPressed: () {
+                            context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
+                          },
+                        ),
+                      ),
+                    );
+                }
+              },
+              child: BlocBuilder<CalendarSyncBloc, CalendarSyncState>(
+                builder: (context, state) {
+                  final isInProgress = state is CalendarSyncInProgress && state.constraintId == 'bidirectional';
+                  return IconButton(
+                    icon: isInProgress
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.sync),
+                    onPressed: isInProgress
+                        ? null
+                        : () {
+                            context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
+                          },
+                    tooltip: 'סנכרון עם יומן גוגל',
+                  );
+                },
+              ),
+            ),
             IconButton(
               icon: Icon(_showSearch ? Icons.close : Icons.search),
               onPressed: () {
@@ -1912,9 +1977,7 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      constraint.endDate != null
-                                          ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
-                                          : _formatDate(constraint.startDate),
+                                      constraint.toString(),
                                       style: const TextStyle(fontWeight: FontWeight.w500),
                                     ),
                                   ),

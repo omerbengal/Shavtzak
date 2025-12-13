@@ -18,11 +18,11 @@ import 'core/services/environment_service.dart';
 import 'presentation/bloc/team/team_bloc.dart';
 import 'presentation/bloc/team/team_event.dart';
 import 'presentation/bloc/event/event_bloc.dart';
-import 'presentation/bloc/event/event_event.dart';
 import 'presentation/bloc/assignment/assignment_bloc.dart';
-import 'presentation/bloc/assignment/assignment_event.dart';
 import 'presentation/bloc/user_selection/user_selection_bloc.dart';
 import 'presentation/bloc/user_selection/user_selection_state.dart';
+import 'presentation/bloc/calendar_sync/calendar_sync_bloc.dart';
+import 'presentation/bloc/calendar_sync/calendar_sync_event.dart';
 
 // Router
 import 'core/router/app_router.dart';
@@ -159,12 +159,45 @@ class MyApp extends StatelessWidget {
             child: MultiBlocProvider(
               key: ValueKey(EnvironmentService.instance.isTestMode),
               providers: [
+                // CalendarSyncBloc must be created first since TeamBloc depends on it
+                BlocProvider<CalendarSyncBloc>(
+                  create: (context) {
+                    print('🗓️ [main.dart] Creating CalendarSyncBloc for $env environment');
+                    developer.log('main.dart: Creating CalendarSyncBloc for $env environment', name: 'Main');
+                    final db = FirestoreDatabase();
+                    final bloc = CalendarSyncBloc(database: db);
+
+                    // Initialize with credentials
+                    print('🗓️ [main.dart] Adding InitializeCalendarSync event...');
+                    bloc.add(InitializeCalendarSync(
+                      serviceAccountJson: '''
+{
+  "type": "service_account",
+  "project_id": "nice-abbey-481107-a2",
+  "private_key_id": "de9c0ea20ad8b93734faab3688b5689344e28a13",
+  "private_key": "-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDyvetTt+oZP5Tp\\nf7DAEb2jdq9/Cz95d5U0eS80yNj9m5V295lL0yHDnOSIF13NpbjgSi8wzh0jQo2J\\nBzmURejktA+HxN4xwtucmcQY7ZhL4583uHc/qigHGNYlamLzFVTLyXBd+BZnlf66\\nqq/aLQA9vnYLo1MebUU/XQXRZJ/zQS5zMI40emOMfyMIPR2ikmRFUt8dgvCkLGZb\\n7LJB4JaR8QMdkRIdn63UozKGC/s2DHIHo68jvrGxQ68LzQlwtK2237ohID1CHAxu\\ndpQhl/Vu5AVd9PXbpKwQjOP9CkNqFQOUM6u9YakTKNVE8sU51rVtsot0FJP/Xewq\\n6KrMfu4VAgMBAAECggEAKAhWzlqDNtFD1YNryq1SVWpONJlOCVIFrx76QE4MbTzS\\nuElKxJTIGXrfPKt/2pnFZOYPJNElQIqqDWp93jxuVYN1mTpIO7QrZEb+rm7GwmNC\\nf53COuNs0QjRTl/efEDtGGO7DqBKz6AO38mlEUoBI22tCavQmjDCrhnBCyC5eVQZ\\nHz6LN4cmeCg+j5iboJvlezTncStSQjVghd21B+fC8kjQspJ99EYshqrHUsa5aGt1\\nty/wUzgHnHcVFUjRs361cifxd48Jgn6DJy0jAL9RkYtBsH9+VSzk2d4QfNb4iaT4\\nqDu2X8nBLTlKl/uLtyUUJFcwDEY0HbyLI2mv7RHoCQKBgQD+nHr+ZfEyvkTIY8Xm\\nRAcVW8tFFLd+71MlQE91AU7DXxy8s4hw/AxkJh6sTktr7LdlgXQIS2Ki9AyXm46q\\nmS7z8MYNhkc8LpkayL78VV0h5jLThNfagQeeYvwcjVGFq7E4Dl3HoEEj7HnKUYGR\\n9s+JmmN0ySUEmPg6/HTvcv5U+QKBgQD0EN2FMaVDmsul9eYT0Wgvr6ykeNhXuoGc\\nscH9bDok9c8SENRHFYEmPW3vMnCHEGs4q7BLPkU3ghLVav/k45qqR91SBOrrtgeg\\nkqxI5dgV2drkxONFRgNznVrQl9oa8yS1CM1hJOkezNhRvB1/HEiBz+DpYbk416Pp\\nSCe0cG2U/QKBgFxKxJqqwT+vkKdC412QkzC+0XP9CnbMscrzANpc2vwe4f/U5ERw\\nWN2Eo+G5j8VTTTdSMYlAKkT/SgE6tgBI/qgWQvRsFC5QhdcbpX86QkQjeZEKumPO\\nGcDkCJcg8sgNcHPtYTkXcgVfltYrrVgHqzsp55tRvkVoXbKkCI8zk9WhAoGAUdzu\\nUGSsiBZ9xDbMa01L4uLLx4b5GcPnAYXmCXipsAf64pZefVFLNmZYX2jNsZ/iNunv\\nge1rDglFA+yV1FI7aG4eYApiOZmeyU8pFnJxnjKqZx1bFbs8ISVgdqLYdz2izE4d\\nhT36K2iODixIwH/eGhx91gn/NH+v7OlU2AL13okCgYEAskmPeX9IG3O9X5PdyCC7\\nWlSk1mj91/L2Ha+7uGhInqOpVINAuZV4vpOHDPtAGZ+7Run5yGOfMbRNhtTh0RF8\\nYXwyixMSWjrw1m+6M53qSAiMR11LsDU73QVaG9NtGlmkMi620o+W+T+si5px9rEw\\nuYpB9wSJ1npg6poVc3laRq4=\\n-----END PRIVATE KEY-----\\n",
+  "client_email": "shavtzak-googlecalendar-sync@nice-abbey-481107-a2.iam.gserviceaccount.com",
+  "client_id": "112794767181200330833",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/shavtzak-googlecalendar-sync%40nice-abbey-481107-a2.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
+''',
+                      calendarId: 'atkamiluaim@gmail.com',
+                    ));
+
+                    return bloc;
+                  },
+                ),
                 BlocProvider(
                   create: (context) {
                     developer.log('main.dart: Creating TeamBloc for $env environment', name: 'Main');
                     return TeamBloc(
                       context.read<TeamRepository>(),
                       context.read<AssignmentRepository>(),
+                      calendarSyncBloc: context.read<CalendarSyncBloc>(),
                     );
                   },
                 ),

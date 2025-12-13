@@ -1,0 +1,119 @@
+import 'package:equatable/equatable.dart';
+import '../../../domain/entities/team_member.dart';
+
+/// Base class for calendar sync events
+abstract class CalendarSyncEvent extends Equatable {
+  const CalendarSyncEvent();
+
+  @override
+  List<Object?> get props => [];
+}
+
+/// Initialize the calendar sync service
+class InitializeCalendarSync extends CalendarSyncEvent {
+  final String? serviceAccountJson;
+  final String? calendarId;
+
+  const InitializeCalendarSync({
+    this.serviceAccountJson,
+    this.calendarId,
+  });
+
+  @override
+  List<Object?> get props => [serviceAccountJson, calendarId];
+}
+
+/// Sync a constraint to the calendar when it's approved
+class SyncConstraintToCalendar extends CalendarSyncEvent {
+  final String constraintId;
+  final TeamMember teamMember;
+  final DateConstraint constraint;
+
+  const SyncConstraintToCalendar({
+    required this.constraintId,
+    required this.teamMember,
+    required this.constraint,
+  });
+
+  @override
+  List<Object?> get props => [constraintId, teamMember, constraint];
+}
+
+/// Remove a constraint from the calendar
+class RemoveConstraintFromCalendar extends CalendarSyncEvent {
+  final String constraintId;
+
+  const RemoveConstraintFromCalendar({
+    required this.constraintId,
+  });
+
+  @override
+  List<Object?> get props => [constraintId];
+}
+
+/// Sync all approved constraints for a team member
+class SyncAllApprovedConstraints extends CalendarSyncEvent {
+  final TeamMember teamMember;
+
+  const SyncAllApprovedConstraints({
+    required this.teamMember,
+  });
+
+  @override
+  List<Object?> get props => [teamMember];
+}
+
+/// Retry all failed syncs
+class RetryFailedSyncs extends CalendarSyncEvent {
+  const RetryFailedSyncs();
+}
+
+/// Retry a specific failed sync
+class RetryFailedSync extends CalendarSyncEvent {
+  final String constraintId;
+  final TeamMember teamMember;
+  final DateConstraint constraint;
+
+  const RetryFailedSync({
+    required this.constraintId,
+    required this.teamMember,
+    required this.constraint,
+  });
+
+  @override
+  List<Object?> get props => [constraintId, teamMember, constraint];
+}
+
+/// Clear sync state for a constraint (used when constraint is deleted)
+class ClearConstraintSyncState extends CalendarSyncEvent {
+  final String constraintId;
+
+  const ClearConstraintSyncState({
+    required this.constraintId,
+  });
+
+  @override
+  List<Object?> get props => [constraintId];
+}
+
+/// Check sync status for a constraint
+class CheckSyncStatus extends CalendarSyncEvent {
+  final String constraintId;
+
+  const CheckSyncStatus({
+    required this.constraintId,
+  });
+
+  @override
+  List<Object?> get props => [constraintId];
+}
+
+/// Validate all synced events with Google Calendar and reject constraints for deleted events
+class ValidateSyncedEvents extends CalendarSyncEvent {
+  const ValidateSyncedEvents();
+}
+
+/// Perform bidirectional sync between app and Google Calendar
+class PerformBidirectionalSync extends CalendarSyncEvent {
+  const PerformBidirectionalSync();
+}
