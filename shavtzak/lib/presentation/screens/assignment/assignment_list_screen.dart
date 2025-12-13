@@ -2,20 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import 'package:collection/collection.dart';
+import 'package:go_router/go_router.dart';
+import 'dart:async';
 import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/event.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../core/utils/filter_persistence.dart';
+import '../../../core/services/environment_service.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/team/team_bloc.dart';
+import '../../bloc/user_selection/user_selection_bloc.dart';
+import '../../bloc/user_selection/user_selection_event.dart';
+import '../../bloc/user_selection/user_selection_state.dart';
 import 'models/assignment_slot.dart';
-import '../../widgets/navigation_menu.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import 'assignment_filter_modal.dart';
 import '../event/widgets/event_form_modal.dart';
@@ -73,8 +78,26 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('שיבוצים'),
-          actions: const [
-            NavigationMenu(),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.home),
+              tooltip: 'בית',
+              onPressed: () {
+                final envPrefix = EnvironmentService.instance.routePrefix;
+                context.go('$envPrefix/admin');
+              },
+              iconSize: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'התנתק',
+              onPressed: () => _logout(context),
+              iconSize: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+            ),
           ],
         ),
         floatingActionButton: FloatingActionButton(
@@ -1311,5 +1334,22 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           );
       }
     }
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    // Sign out first
+    context.read<UserSelectionBloc>().add(const SignOut());
+
+    // Listen for the state change and then navigate once
+    bool handled = false;
+    StreamSubscription? subscription;
+    subscription = context.read<UserSelectionBloc>().stream.listen((state) {
+      if (!handled && state is UserSignedOut && context.mounted) {
+        handled = true;
+        subscription?.cancel();
+        final envPrefix = EnvironmentService.instance.routePrefix;
+        context.go('$envPrefix/whoami');
+      }
+    });
   }
 }
