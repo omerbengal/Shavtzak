@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/role_types.dart';
+import '../../../core/utils/filter_persistence.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/team_repository.dart';
@@ -490,12 +491,20 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     Set<String>? selectedEventIds,
   }) async {
     // 1. Load all events
-    final events = await _eventRepository.getAllEvents();
+    var events = await _eventRepository.getAllEvents();
 
-    // 2. Load all active team members
+    // 2. Filter events based on showPastEvents flag
+    if (!FilterPersistence.showPastEvents) {
+      final now = DateTime.now();
+      // Only include events where end date >= today (start of day)
+      final todayStart = DateTime(now.year, now.month, now.day);
+      events = events.where((event) => event.endDate.isAfter(todayStart.subtract(const Duration(days: 1)))).toList();
+    }
+
+    // 3. Load all active team members
     final allMembers = await _teamRepository.getActiveTeamMembers();
 
-    // 3. Build slots
+    // 4. Build slots
     final slots = <AssignmentSlot>[];
 
       for (final event in events) {
@@ -594,7 +603,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         }
       }
 
-    // 4. Sort slots by event date, then event name, then role
+    // 6. Sort slots by event date, then event name, then role
     slotsWithDoubleAssignmentDetection.sort((a, b) {
       final dateCompare = a.event.startDate.compareTo(b.event.startDate);
       if (dateCompare != 0) return dateCompare;

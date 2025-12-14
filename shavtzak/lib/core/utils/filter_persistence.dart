@@ -14,4 +14,7 @@ class FilterPersistence {
   /// Selected filter index for Assignments screen
   /// 0 = All (סה״כ), 1 = Filled (משובצים), 2 = Unfilled (לא משובצים)
   static int assignmentFilterIndex = 0; // Default to all
+
+  /// Whether to show past events in Assignments screen
+  static bool showPastEvents = false; // Default to false (hide past events)
 }

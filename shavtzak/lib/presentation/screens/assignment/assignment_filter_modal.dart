@@ -18,7 +18,7 @@ class AssignmentFilterModal extends StatefulWidget {
 
 class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
   late Set<String> _selectedEventIds;
-  bool _eventsExpanded = false;
+  bool _eventsExpanded = true;
 
   @override
   void initState() {

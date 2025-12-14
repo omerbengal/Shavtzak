@@ -9,6 +9,7 @@ import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/event.dart';
 import '../../../data/repositories/assignment_repository.dart';
+import '../../../data/repositories/event_repository.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/services/environment_service.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
@@ -78,6 +79,50 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('שיבוצים'),
+          leading: Container(
+            width: 180,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  FilterPersistence.showPastEvents = !FilterPersistence.showPastEvents;
+                });
+                // Reload assignments with new filter setting
+                context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  color: FilterPersistence.showPastEvents
+                      ? Colors.green.shade50
+                      : Colors.grey.shade100,
+                  border: Border.all(
+                    color: FilterPersistence.showPastEvents
+                        ? Colors.green
+                        : Colors.grey.shade400,
+                    width: 2,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    FilterPersistence.showPastEvents
+                        ? 'מציג אירועי עבר'
+                        : 'לא מציג אירועי עבר',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: FilterPersistence.showPastEvents
+                          ? Colors.green.shade700
+                          : Colors.grey.shade700,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          leadingWidth: 200,
           actions: [
             IconButton(
               icon: const Icon(Icons.home),
@@ -334,7 +379,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         // Grid rows
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.only(bottom: 80),
             itemCount: slots.length,
             itemBuilder: (context, index) {
               return _buildSlotRow(slots[index]);
@@ -419,6 +464,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 12,
+                        fontWeight: FontWeight.bold,
                         color: Colors.blue,
                         decoration: TextDecoration.none,
                       ),
@@ -1211,33 +1257,63 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   Future<void> _showFilterModal(
       BuildContext context, AssignmentSlotsLoaded state) async {
-    // Get unique events from slots that have at least one role with capacity > 0
-    final eventsMap = <String, Event>{};
-    for (final slot in state.slots) {
-      if (!eventsMap.containsKey(slot.event.id)) {
-        eventsMap[slot.event.id] = slot.event;
+    // Get all events from repository (not just from slots) when showPastEvents is true
+    // This ensures past events appear in the filter when the switch is on
+    if (FilterPersistence.showPastEvents) {
+      final eventRepo = context.read<EventRepository>();
+      final allEvents = await eventRepo.getAllEvents();
+      final availableEvents = allEvents
+        ..sort((a, b) => a.startDate.compareTo(b.startDate));
+
+      final result = await showDialog<Set<String>>(
+        context: context,
+        builder: (context) => AssignmentFilterModal(
+          availableEvents: availableEvents,
+          selectedEventIds: state.selectedEventIds,
+        ),
+      );
+
+      if (result != null) {
+        if (!mounted) return;
+
+        if (result.isEmpty) {
+          // Clear filter
+          context.read<AssignmentBloc>().add(const ClearEventFilter());
+        } else {
+          // Apply filter
+          context.read<AssignmentBloc>().add(ApplyEventFilter(result));
+        }
       }
-    }
-    final availableEvents = eventsMap.values.toList()
-      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+    } else {
+      // Original behavior when showPastEvents is false
+      // Get unique events from slots that have at least one role with capacity > 0
+      final eventsMap = <String, Event>{};
+      for (final slot in state.slots) {
+        if (!eventsMap.containsKey(slot.event.id)) {
+          eventsMap[slot.event.id] = slot.event;
+        }
+      }
+      final availableEvents = eventsMap.values.toList()
+        ..sort((a, b) => a.startDate.compareTo(b.startDate));
 
-    final result = await showDialog<Set<String>>(
-      context: context,
-      builder: (context) => AssignmentFilterModal(
-        availableEvents: availableEvents,
-        selectedEventIds: state.selectedEventIds,
-      ),
-    );
+      final result = await showDialog<Set<String>>(
+        context: context,
+        builder: (context) => AssignmentFilterModal(
+          availableEvents: availableEvents,
+          selectedEventIds: state.selectedEventIds,
+        ),
+      );
 
-    if (result != null) {
-      if (!mounted) return;
+      if (result != null) {
+        if (!mounted) return;
 
-      if (result.isEmpty) {
-        // Clear filter
-        context.read<AssignmentBloc>().add(const ClearEventFilter());
-      } else {
-        // Apply filter
-        context.read<AssignmentBloc>().add(ApplyEventFilter(result));
+        if (result.isEmpty) {
+          // Clear filter
+          context.read<AssignmentBloc>().add(const ClearEventFilter());
+        } else {
+          // Apply filter
+          context.read<AssignmentBloc>().add(ApplyEventFilter(result));
+        }
       }
     }
   }
