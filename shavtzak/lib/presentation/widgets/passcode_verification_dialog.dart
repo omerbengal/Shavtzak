@@ -35,10 +35,17 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       _focusNodes.add(FocusNode());
     }
 
-    // Focus on first field after widget is built
+    // Robust focus mechanism: Use both postFrameCallback and delayed focus
+    // This ensures keyboard opens reliably across platforms (web, mobile)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _focusNodes[0].requestFocus();
+        // Additional delayed focus to handle dialog animation completion
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            _focusNodes[0].requestFocus();
+          }
+        });
       }
     });
   }
@@ -61,7 +68,7 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       child: AlertDialog(
         title: const Text('הזן קוד גישה'),
         content: SizedBox(
-          width: 300,
+          width: 400,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -121,22 +128,16 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
                   obscureText: _obscurePasscode,
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
+                Align(
+                  alignment: Alignment.center,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
+                    icon: Icon(
                       _obscurePasscode ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.grey[600],
+                      size: 20,
                     ),
-                    const SizedBox(width: 8),
-                    TextButton(
-                      onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
-                      child: Text(
-                        _obscurePasscode ? 'הצג קוד' : 'הסתר קוד',
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                    ),
-                  ],
+                    label: Text(_obscurePasscode ? 'הצג קוד' : 'הסתר קוד'),
+                  ),
                 ),
               ],
             ],

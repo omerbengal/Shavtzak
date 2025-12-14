@@ -45,10 +45,16 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       _confirmFocusNodes.add(FocusNode());
     }
 
-    // Focus on first current passcode field after widget is built
+    // Robust focus mechanism: Use both postFrameCallback and delayed focus
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _currentFocusNodes[0].requestFocus();
+        // Additional delayed focus to handle dialog animation completion
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            _currentFocusNodes[0].requestFocus();
+          }
+        });
       }
     });
   }
@@ -85,7 +91,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
                    _currentStep == 1 ? 'בחר אורך חדש' :
                    _currentStep == 2 ? 'הזן קוד גישה חדש' : 'אשר קוד גישה חדש'),
         content: SizedBox(
-          width: 300,
+          width: 400,
           child: _buildCurrentStep(),
         ),
         actions: _buildActions(),
@@ -136,22 +142,16 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
           obscureText: _obscureCurrent,
         ),
         const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
+        Align(
+          alignment: Alignment.center,
+          child: TextButton.icon(
+            onPressed: () => setState(() => _obscureCurrent = !_obscureCurrent),
+            icon: Icon(
               _obscureCurrent ? Icons.visibility_off : Icons.visibility,
-              color: Colors.grey[600],
+              size: 20,
             ),
-            const SizedBox(width: 8),
-            TextButton(
-              onPressed: () => setState(() => _obscureCurrent = !_obscureCurrent),
-              child: Text(
-                _obscureCurrent ? 'הצג קוד' : 'הסתר קוד',
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ),
-          ],
+            label: Text(_obscureCurrent ? 'הצג קוד' : 'הסתר קוד'),
+          ),
         ),
       ],
     );
@@ -237,22 +237,16 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
           obscureText: _obscureNew,
         ),
         const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
+        Align(
+          alignment: Alignment.center,
+          child: TextButton.icon(
+            onPressed: () => setState(() => _obscureNew = !_obscureNew),
+            icon: Icon(
               _obscureNew ? Icons.visibility_off : Icons.visibility,
-              color: Colors.grey[600],
+              size: 20,
             ),
-            const SizedBox(width: 8),
-            TextButton(
-              onPressed: () => setState(() => _obscureNew = !_obscureNew),
-              child: Text(
-                _obscureNew ? 'הצג קוד' : 'הסתר קוד',
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ),
-          ],
+            label: Text(_obscureNew ? 'הצג קוד' : 'הסתר קוד'),
+          ),
         ),
       ],
     );
@@ -344,10 +338,16 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       _currentStep = 2;
     });
     
-    // Focus on first passcode field after widget is rebuilt
+    // Robust focus mechanism: Use both postFrameCallback and delayed focus
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _passcodeFocusNodes[0].requestFocus();
+        // Additional delayed focus to handle dialog animation completion
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            _passcodeFocusNodes[0].requestFocus();
+          }
+        });
       }
     });
   }
@@ -369,10 +369,16 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       _currentStep = 3;
     });
     
-    // Focus on first confirm field after widget is rebuilt
+    // Robust focus mechanism: Use both postFrameCallback and delayed focus
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _confirmFocusNodes[0].requestFocus();
+        // Additional delayed focus to handle dialog animation completion
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            _confirmFocusNodes[0].requestFocus();
+          }
+        });
       }
     });
   }
