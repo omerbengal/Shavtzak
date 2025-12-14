@@ -154,6 +154,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
           digitCount: _selectedLength,
           controllers: controllers,
           focusNodes: focusNodes,
+          obscureText: _obscurePasscode,
         ),
         const SizedBox(height: 16),
         Row(

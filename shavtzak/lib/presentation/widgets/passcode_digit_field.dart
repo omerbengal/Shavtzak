@@ -97,6 +97,7 @@ class PasscodeInputRow extends StatefulWidget {
   final List<TextEditingController> controllers;
   final List<FocusNode> focusNodes;
   final VoidCallback? onAllFilled;
+  final bool obscureText;
 
   const PasscodeInputRow({
     super.key,
@@ -104,6 +105,7 @@ class PasscodeInputRow extends StatefulWidget {
     required this.controllers,
     required this.focusNodes,
     this.onAllFilled,
+    this.obscureText = true,
   });
 
   @override
@@ -155,6 +157,8 @@ class _PasscodeInputRowState extends State<PasscodeInputRow> {
               allControllers: widget.controllers,
               allFocusNodes: widget.focusNodes,
               onAllFilled: widget.onAllFilled,
+              obscureText: widget.obscureText,
+              autoFocus: index == 0,
             );
           }),
         ),
