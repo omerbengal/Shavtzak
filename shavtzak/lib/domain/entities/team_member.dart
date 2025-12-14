@@ -104,6 +104,10 @@ class TeamMember extends Equatable {
   final String uniqueKey; // UUID for user identification (not shown in UI)
   final bool isAdmin;     // Admin status (defaults to false for non-admin)
 
+  // Passcode security fields
+  final String? passcode;        // 4 or 6 digit passcode (null = no passcode)
+  final int? passcodeLength;     // Length of passcode (4 or 6, null = no passcode)
+
   const TeamMember({
     required this.id,
     required this.name,
@@ -116,6 +120,8 @@ class TeamMember extends Equatable {
     required this.updatedAt,
     required this.uniqueKey,
     this.isAdmin = false,
+    this.passcode,
+    this.passcodeLength,
   });
 
   /// Check if team member is available on a given date
@@ -201,6 +207,9 @@ class TeamMember extends Equatable {
     DateTime? updatedAt,
     String? uniqueKey,
     bool? isAdmin,
+    String? passcode,
+    int? passcodeLength,
+    bool clearPasscode = false,
   }) {
     return TeamMember(
       id: id ?? this.id,
@@ -214,6 +223,8 @@ class TeamMember extends Equatable {
       updatedAt: updatedAt ?? this.updatedAt,
       uniqueKey: uniqueKey ?? this.uniqueKey,
       isAdmin: isAdmin ?? this.isAdmin,
+      passcode: clearPasscode ? null : (passcode ?? this.passcode),
+      passcodeLength: clearPasscode ? null : (passcodeLength ?? this.passcodeLength),
     );
   }
 
@@ -230,6 +241,8 @@ class TeamMember extends Equatable {
         updatedAt,
         uniqueKey,
         isAdmin,
+        passcode,
+        passcodeLength,
       ];
 
   @override

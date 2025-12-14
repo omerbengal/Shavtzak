@@ -6,6 +6,7 @@ import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/navigation_menu.dart';
 import '../../widgets/test_environment_indicator.dart';
+import '../../widgets/settings_dialog.dart';
 
 // Global callback to trigger constraints sync when constraints page becomes visible
 void Function()? onConstraintsPageVisible;
@@ -81,12 +82,20 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
               overflow: TextOverflow.ellipsis,
             ),
             centerTitle: true,
-            actions: [
+            leading: state.user.isAdmin ? null : IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'הגדרות',
+            onPressed: () => _showSettingsDialog(context),
+            iconSize: 24,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+          ),
+          actions: [
               // Show navigation menu (home + logout) only for admin users
               if (state.user.isAdmin)
                 const NavigationMenu()
               else
-                // Regular users get only logout button
+                // Regular users get logout button
                 IconButton(
                   icon: const Icon(Icons.logout),
                   tooltip: 'התנתקות',
@@ -129,6 +138,16 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
             ),
           ],
         );
+      },
+    );
+  }
+
+  /// Show settings dialog
+  void _showSettingsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return const SettingsDialog();
       },
     );
   }

@@ -5,6 +5,7 @@ import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../../core/services/environment_service.dart';
+import '../../widgets/settings_dialog.dart';
 
 /// Admin choice screen - allows admin users to choose between personal area and management
 class AdminChoiceScreen extends StatelessWidget {
@@ -130,7 +131,15 @@ class AdminChoiceScreen extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
             centerTitle: true,
-            actions: [
+            leading: IconButton(
+          icon: const Icon(Icons.settings),
+          tooltip: 'הגדרות',
+          onPressed: () => _showSettingsDialog(context),
+          iconSize: 24,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+        ),
+        actions: [
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתקות',
@@ -143,6 +152,16 @@ class AdminChoiceScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+
+  /// Show settings dialog
+  void _showSettingsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return const SettingsDialog();
+      },
     );
   }
 

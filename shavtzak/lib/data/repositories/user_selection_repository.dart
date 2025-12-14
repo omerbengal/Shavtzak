@@ -114,6 +114,80 @@ class UserSelectionRepository {
       return false;
     }
   }
+
+  /// Verify team member's passcode
+  Future<bool> verifyTeamMemberPasscode(String uniqueKey, String enteredPasscode) async {
+    try {
+      final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
+      if (teamMember == null || teamMember.passcode == null) {
+        return false;
+      }
+      return teamMember.passcode == enteredPasscode;
+    } catch (e) {
+      throw UserSelectionException('Failed to verify passcode: $e');
+    }
+  }
+
+  /// Set passcode for a team member
+  Future<void> setTeamMemberPasscode(String uniqueKey, String passcode, int length) async {
+    try {
+      final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
+      if (teamMember == null) {
+        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+      }
+
+      final updatedMember = teamMember.copyWith(
+        passcode: passcode,
+        passcodeLength: length,
+        updatedAt: DateTime.now(),
+      );
+
+      await _database.updateTeamMember(updatedMember);
+    } catch (e) {
+      if (e is UserSelectionException) rethrow;
+      throw UserSelectionException('Failed to set passcode: $e');
+    }
+  }
+
+  /// Clear passcode for a team member
+  Future<void> clearTeamMemberPasscode(String uniqueKey) async {
+    try {
+      final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
+      if (teamMember == null) {
+        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+      }
+
+      final updatedMember = teamMember.copyWith(
+        clearPasscode: true,
+        updatedAt: DateTime.now(),
+      );
+
+      await _database.updateTeamMember(updatedMember);
+    } catch (e) {
+      if (e is UserSelectionException) rethrow;
+      throw UserSelectionException('Failed to clear passcode: $e');
+    }
+  }
+
+  /// Check if team member has a passcode set
+  Future<bool> hasTeamMemberPasscode(String uniqueKey) async {
+    try {
+      final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
+      return teamMember?.passcode != null && teamMember?.passcode!.isNotEmpty == true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Get passcode length for a team member
+  Future<int?> getTeamMemberPasscodeLength(String uniqueKey) async {
+    try {
+      final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
+      return teamMember?.passcodeLength;
+    } catch (e) {
+      return null;
+    }
+  }
 }
 
 /// Custom exception for user selection errors

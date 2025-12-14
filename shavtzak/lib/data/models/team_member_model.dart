@@ -20,6 +20,10 @@ class TeamMemberModel {
   final String uniqueKey; // UUID for user identification (not shown in UI)
   final bool isAdmin;     // Admin status (defaults to false for non-admin)
 
+  // Passcode security fields
+  final String? passcode;        // 4 or 6 digit passcode (null = no passcode)
+  final int? passcodeLength;     // Length of passcode (4 or 6, null = no passcode)
+
   const TeamMemberModel({
     required this.id,
     required this.name,
@@ -32,6 +36,8 @@ class TeamMemberModel {
     required this.updatedAt,
     required this.uniqueKey,
     this.isAdmin = false,
+    this.passcode,
+    this.passcodeLength,
   });
 
   /// Generate a UUID for team members
@@ -59,6 +65,8 @@ class TeamMemberModel {
       updatedAt: entity.updatedAt,
       uniqueKey: entity.uniqueKey,
       isAdmin: entity.isAdmin,
+      passcode: entity.passcode,
+      passcodeLength: entity.passcodeLength,
     );
   }
 
@@ -81,6 +89,8 @@ class TeamMemberModel {
       updatedAt: updatedAt,
       uniqueKey: uniqueKey,
       isAdmin: isAdmin,
+      passcode: passcode,
+      passcodeLength: passcodeLength,
     );
   }
 
@@ -94,6 +104,10 @@ class TeamMemberModel {
 
     // Handle migration - default to false for existing members missing isAdmin
     final isAdmin = data['isAdmin'] as bool? ?? false;
+
+    // Handle migration - passcode fields are optional, default to null for existing members
+    final passcode = data['passcode'] as String?;
+    final passcodeLength = data['passcodeLength'] as int?;
 
     final model = TeamMemberModel(
       id: doc.id,
@@ -114,6 +128,8 @@ class TeamMemberModel {
           : DateTime.now(),
       uniqueKey: generatedUniqueKey,
       isAdmin: isAdmin,
+      passcode: passcode,
+      passcodeLength: passcodeLength,
     );
 
     // If migration was needed (UUID was generated), update the document
@@ -150,6 +166,8 @@ class TeamMemberModel {
       'updatedAt': Timestamp.fromDate(updatedAt),
       'uniqueKey': uniqueKey,
       'isAdmin': isAdmin,
+      'passcode': passcode,
+      'passcodeLength': passcodeLength,
     };
   }
 
@@ -161,6 +179,10 @@ class TeamMemberModel {
 
     // Handle migration - default to false for existing members missing isAdmin
     final isAdmin = json['isAdmin'] as bool? ?? false;
+
+    // Handle migration - passcode fields are optional, default to null for existing members
+    final passcode = json['passcode'] as String?;
+    final passcodeLength = json['passcodeLength'] as int?;
 
     return TeamMemberModel(
       id: json['id'] as String,
@@ -177,6 +199,8 @@ class TeamMemberModel {
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       uniqueKey: generatedUniqueKey,
       isAdmin: isAdmin,
+      passcode: passcode,
+      passcodeLength: passcodeLength,
     );
   }
 
@@ -194,6 +218,8 @@ class TeamMemberModel {
       'updatedAt': updatedAt.toIso8601String(),
       'uniqueKey': uniqueKey,
       'isAdmin': isAdmin,
+      'passcode': passcode,
+      'passcodeLength': passcodeLength,
     };
   }
 }

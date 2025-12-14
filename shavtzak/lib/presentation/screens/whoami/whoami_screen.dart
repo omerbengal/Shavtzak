@@ -6,6 +6,7 @@ import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/test_environment_indicator.dart';
+import '../../widgets/passcode_verification_dialog.dart';
 
 /// Screen for user selection - "מי את/ה?"
 class WhoamiScreen extends StatefulWidget {
@@ -54,6 +55,32 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
         ).toList();
       }
     });
+  }
+
+  Future<void> _handleTeamMemberSelection(BuildContext context, TeamMember teamMember) async {
+    // Check if team member has passcode
+    if (teamMember.passcode != null && teamMember.passcodeLength != null) {
+      // Show passcode verification dialog
+      final verified = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false, // Prevent dismissing by tapping outside
+        builder: (context) => PasscodeVerificationDialog(
+          passcodeLength: teamMember.passcodeLength!,
+          correctPasscode: teamMember.passcode!,
+        ),
+      );
+
+      if (verified == true) {
+        // Passcode verified, proceed with selection
+        if (context.mounted) {
+          context.read<UserSelectionBloc>().add(SelectUser(teamMember.uniqueKey));
+        }
+      }
+      // If verified is false or null, do nothing (user cancelled or verification failed)
+    } else {
+      // No passcode set, proceed directly
+      context.read<UserSelectionBloc>().add(SelectUser(teamMember.uniqueKey));
+    }
   }
 
   Future<void> _loadAllTeamMembers() async {
@@ -337,8 +364,8 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
               final teamMember = _filteredTeamMembers[index];
               return _TeamMemberCard(
                 teamMember: teamMember,
-                onTap: () {
-                  context.read<UserSelectionBloc>().add(SelectUser(teamMember.uniqueKey));
+                onTap: () async {
+                  await _handleTeamMemberSelection(context, teamMember);
                 },
               );
             },
@@ -409,11 +436,24 @@ class _TeamMemberCard extends StatelessWidget {
                 ),
               ),
 
-              // Arrow icon
-              const Icon(
-                Icons.arrow_back_ios,
-                size: 16,
-                color: Colors.grey,
+              // Arrow icon with optional lock indicator
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (teamMember.passcode != null) ...[
+                    Icon(
+                      Icons.lock,
+                      size: 16,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  const Icon(
+                    Icons.arrow_back_ios,
+                    size: 16,
+                    color: Colors.grey,
+                  ),
+                ],
               ),
             ],
           ),

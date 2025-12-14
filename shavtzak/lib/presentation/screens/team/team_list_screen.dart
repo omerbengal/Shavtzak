@@ -25,6 +25,8 @@ import '../../widgets/navigation_menu.dart';
 import '../../widgets/date_picker_dialog.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/swipeable_page_view.dart';
+import '../../widgets/admin_passcode_dialog.dart';
+import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
@@ -969,6 +971,77 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     }
   }
 
+  void _showAdminPasscodeDialog() async {
+    if (!_isEditMode || widget.member == null) return;
+
+    final result = await showDialog<Map<String, dynamic>?>(
+      context: context,
+      builder: (context) => AdminPasscodeDialog(
+        teamMemberName: widget.member!.name,
+        currentPasscode: widget.member!.passcode,
+        currentLength: widget.member!.passcodeLength,
+      ),
+    );
+
+    if (result != null && result['action'] == 'set' && context.mounted) {
+      // Set or change passcode
+      try {
+        final userSelectionRepo = context.read<UserSelectionRepository>();
+        await userSelectionRepo.setTeamMemberPasscode(
+          widget.member!.uniqueKey,
+          result['passcode'] as String,
+          result['length'] as int,
+        );
+
+        // Refresh team member data
+        _teamBloc.add(const team.LoadTeamMembers());
+
+        // Close modal to refresh the UI and show updated passcode status
+        widget.onSuccess();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('קוד הגישה עודכן בהצלחה'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('שגיאה בעדכון קוד גישה: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } else if (result != null && result['action'] == 'remove' && context.mounted) {
+      // Remove passcode
+      try {
+        final userSelectionRepo = context.read<UserSelectionRepository>();
+        await userSelectionRepo.clearTeamMemberPasscode(widget.member!.uniqueKey);
+
+        // Refresh team member data
+        _teamBloc.add(const team.LoadTeamMembers());
+
+        // Close modal to refresh the UI and show updated passcode status
+        widget.onSuccess();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('קוד הגישה הוסר בהצלחה'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('שגיאה בהסרת קוד גישה: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
@@ -1267,6 +1340,66 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
                               // Constraints/Availability list
                               ..._buildVisibleConstraintsList(),
+
+                              const Divider(height: 32),
+
+                              // Passcode management section (admin only, edit mode only)
+                              if (_isEditMode) ...[
+                                Row(
+                                  children: [
+                                    const Text(
+                                      'ניהול קוד גישה',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    TextButton.icon(
+                                      onPressed: () => _showAdminPasscodeDialog(),
+                                      icon: const Icon(Icons.admin_panel_settings, size: 20),
+                                      label: const Text('נהל קוד'),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Theme.of(context).primaryColor,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey[300]!),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        widget.member?.passcode != null ? Icons.lock : Icons.lock_open,
+                                        color: widget.member?.passcode != null
+                                            ? Theme.of(context).primaryColor
+                                            : Colors.grey[400],
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          widget.member?.passcode != null
+                                              ? 'קוד גישה מוגדר (${widget.member?.passcodeLength} ספרות)'
+                                              : 'לא הוגדר קוד גישה',
+                                          style: TextStyle(
+                                            color: widget.member?.passcode != null
+                                                ? null
+                                                : Colors.grey[600],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
 
                               const Divider(height: 32),
 
