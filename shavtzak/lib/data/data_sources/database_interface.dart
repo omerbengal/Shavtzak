@@ -163,6 +163,7 @@ abstract class DatabaseInterface {
     int? constraintIndex,
     ConstraintStatus newStatus, {
     String? note,
+    bool? wasAutoRejectedFromCalendar,
   });
 
   /// Get all synced constraints for a team member

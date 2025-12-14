@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import 'package:go_router/go_router.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
+import '../../../core/constants/calendar_constants.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/team/team_bloc.dart';
@@ -13,6 +14,7 @@ import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../widgets/date_picker_dialog.dart';
 import 'availability_screen.dart';
+import 'user_navigation_shell.dart'; // Import for onConstraintsPageVisible callback
 
 /// Screen for non-admin users to manage their constraint requests
 /// Redirects non-permanent users to availability screen
@@ -25,6 +27,7 @@ class ConstraintsScreen extends StatefulWidget {
 
 class _ConstraintsScreenState extends State<ConstraintsScreen> {
   TeamMember? _lastKnownUser;
+  bool _hasTriggeredInitialSync = false;
 
   // Helper function to check if constraint is past (same logic as modal)
   bool _isPastConstraint(DateConstraint constraint) {
@@ -64,9 +67,23 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
     // Trigger load of all team members for real-time updates
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<TeamBloc>().add(const LoadTeamMembers());
-      // Trigger calendar validation sync to check for deleted events
+      // Trigger calendar validation sync to check for deleted events on initial load
       context.read<CalendarSyncBloc>().add(const ValidateSyncedEvents());
+      _hasTriggeredInitialSync = true;
     });
+    // Register callback for when this page becomes visible (e.g., when navigating back from assignments)
+    onConstraintsPageVisible = () {
+      if (mounted && _hasTriggeredInitialSync) {
+        context.read<CalendarSyncBloc>().add(const ValidateSyncedEvents());
+      }
+    };
+  }
+
+  @override
+  void dispose() {
+    // Unregister callback
+    onConstraintsPageVisible = null;
+    super.dispose();
   }
 
   @override
@@ -304,6 +321,18 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                 ),
               ),
             ],
+            // Show auto-rejection message in red if applicable
+            if (constraint.wasAutoRejectedFromCalendar) ...[
+              const SizedBox(height: 8),
+              Text(
+                CalendarAutoRejection.message,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.red,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -434,6 +463,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
             endDate: endDate,
             note: note,
             status: ConstraintStatus.pending, // Always change to pending when edited
+            wasAutoRejectedFromCalendar: false, // Reset auto-rejection flag when edited
           );
 
           final userState = context.read<UserSelectionBloc>().state;
@@ -1094,6 +1124,19 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                                     style: TextStyle(
                                       fontSize: 14,
                                       color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+
+                                // Auto-rejection message in red if applicable
+                                if (constraint.wasAutoRejectedFromCalendar) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    CalendarAutoRejection.message,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.red,
+                                      fontStyle: FontStyle.italic,
                                     ),
                                   ),
                                 ],

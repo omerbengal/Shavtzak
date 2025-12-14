@@ -10,6 +10,7 @@ class DateConstraint extends Equatable {
   final String? note; // optional note for the constraint
   final ConstraintStatus status; // status of the constraint request
   final ConstraintType constraintType; // type of constraint (unavailability/availability)
+  final bool wasAutoRejectedFromCalendar; // true if constraint was auto-rejected due to calendar event deletion
 
   const DateConstraint({
     required this.id,
@@ -18,6 +19,7 @@ class DateConstraint extends Equatable {
     this.note,
     this.status = ConstraintStatus.approved, // default to approved for existing constraints
     required this.constraintType, // constraint type must be explicitly provided
+    this.wasAutoRejectedFromCalendar = false, // default to false
   });
 
   /// Check if a given date falls within this constraint
@@ -43,7 +45,7 @@ class DateConstraint extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, startDate, endDate, note, status, constraintType];
+  List<Object?> get props => [id, startDate, endDate, note, status, constraintType, wasAutoRejectedFromCalendar];
 
   @override
   String toString() {
@@ -63,6 +65,7 @@ class DateConstraint extends Equatable {
     String? note,
     ConstraintStatus? status,
     ConstraintType? constraintType,
+    bool? wasAutoRejectedFromCalendar,
   }) {
     return DateConstraint(
       id: id ?? this.id,
@@ -71,6 +74,7 @@ class DateConstraint extends Equatable {
       note: note ?? this.note,
       status: status ?? this.status,
       constraintType: constraintType ?? this.constraintType,
+      wasAutoRejectedFromCalendar: wasAutoRejectedFromCalendar ?? this.wasAutoRejectedFromCalendar,
     );
   }
 

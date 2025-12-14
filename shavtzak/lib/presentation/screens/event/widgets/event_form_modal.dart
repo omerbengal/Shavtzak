@@ -343,6 +343,7 @@ class _EventFormModalState extends State<EventFormModal> {
                 onPressed: () => Navigator.of(dialogContext).pop(),
               ),
               TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
                 child: const Text('צא'),
                 onPressed: () {
                   Navigator.of(dialogContext).pop(); // Close dialog

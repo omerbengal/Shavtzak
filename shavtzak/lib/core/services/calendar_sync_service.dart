@@ -340,42 +340,12 @@ class CalendarSyncService {
             name: 'CalendarSync',
           );
 
-          // Get the existing constraint to preserve its note
-          final teamMembers = await _database.getTeamMembers();
-          String? existingNote = null;
-
-          for (final teamMember in teamMembers) {
-            final constraint = teamMember.constraints.cast<DateConstraint?>().firstWhere(
-              (c) => c?.id == constraintId,
-              orElse: () => null,
-            );
-            if (constraint != null) {
-              existingNote = constraint.note;
-              break;
-            }
-          }
-
-          // Build the new note - preserve existing note and add the rejection reason if not already present
-          String newNote;
-          const rejectionMessage = '(מגבלה זו נדחתה באופן אוטומטי בגלל שאחד מהמנהלים מחק את המגבלה מגוגל קלנדר)';
-
-          if (existingNote != null && existingNote.isNotEmpty) {
-            // Check if the rejection message is already present at the end
-            if (existingNote.trim().endsWith(rejectionMessage)) {
-              newNote = existingNote; // Already has the rejection message
-            } else {
-              newNote = '$existingNote\n\n$rejectionMessage';
-            }
-          } else {
-            newNote = rejectionMessage;
-          }
-
-          // Update the constraint status to rejected
+          // Update the constraint status to rejected and mark as auto-rejected from calendar
           await _database.updateConstraintStatus(
             constraintId,
             null, // constraintIndex is null when using constraintId
             ConstraintStatus.rejected,
-            note: newNote,
+            wasAutoRejectedFromCalendar: true,
           );
 
           // Remove the sync state

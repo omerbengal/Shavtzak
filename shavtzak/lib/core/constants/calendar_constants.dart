@@ -110,14 +110,19 @@ class CalendarEventDescriptions {
   static String? _cleanNote(String? note) {
     if (note == null || note.isEmpty) return null;
 
-    const rejectionMessage = '(מגבלה זו נדחתה באופן אוטומטי בגלל שאחד מהמנהלים מחק את המגבלה מגוגל קלנדר)';
-
     // Remove the rejection message and any preceding newlines
     final cleaned = note
-        .replaceAll('\n\n$rejectionMessage', '')
-        .replaceAll(rejectionMessage, '')
+        .replaceAll('\n\n${CalendarAutoRejection.message}', '')
+        .replaceAll(CalendarAutoRejection.message, '')
         .trim();
 
     return cleaned.isEmpty ? null : cleaned;
   }
+}
+
+/// Helper class for auto-rejected constraints messaging
+/// A constraint is considered auto-rejected when an admin deletes it from Google Calendar
+class CalendarAutoRejection {
+  /// The message to display when a constraint was auto-rejected from Google Calendar
+  static const String message = '(מגבלה זו נדחתה באופן אוטומטי בגלל שאחד מהמנהלים מחק את המגבלה מגוגל קלנדר)';
 }

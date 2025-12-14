@@ -206,6 +206,7 @@ class DateConstraintModel {
   final String? note;
   final ConstraintStatus status;
   final ConstraintType constraintType;
+  final bool wasAutoRejectedFromCalendar;
 
   const DateConstraintModel({
     required this.id,
@@ -214,6 +215,7 @@ class DateConstraintModel {
     this.note,
     this.status = ConstraintStatus.approved, // default to approved for existing constraints
     this.constraintType = ConstraintType.unavailability, // default to unavailability for backward compatibility
+    this.wasAutoRejectedFromCalendar = false, // default to false for existing constraints
   });
 
   factory DateConstraintModel.fromEntity(DateConstraint entity) {
@@ -224,6 +226,7 @@ class DateConstraintModel {
       note: entity.note,
       status: entity.status,
       constraintType: entity.constraintType,
+      wasAutoRejectedFromCalendar: entity.wasAutoRejectedFromCalendar,
     );
   }
 
@@ -235,6 +238,7 @@ class DateConstraintModel {
       note: note,
       status: status,
       constraintType: constraintType,
+      wasAutoRejectedFromCalendar: wasAutoRejectedFromCalendar,
     );
   }
 
@@ -260,6 +264,9 @@ class DateConstraintModel {
     // Handle migration - generate ID for existing constraints missing id
     final constraintId = json['id'] as String? ?? const Uuid().v4();
 
+    // Handle migration - default to false for existing constraints missing wasAutoRejectedFromCalendar
+    final wasAutoRejectedFromCalendar = json['wasAutoRejectedFromCalendar'] as bool? ?? false;
+
     return DateConstraintModel(
       id: constraintId,
       startDate: json['startDate'] is Timestamp
@@ -273,6 +280,7 @@ class DateConstraintModel {
       note: json['note'] as String?,
       status: status,
       constraintType: constraintType,
+      wasAutoRejectedFromCalendar: wasAutoRejectedFromCalendar,
     );
   }
 
@@ -284,6 +292,7 @@ class DateConstraintModel {
       'note': note,
       'status': status.name,
       'constraintType': constraintType.name,
+      'wasAutoRejectedFromCalendar': wasAutoRejectedFromCalendar,
     };
   }
 }

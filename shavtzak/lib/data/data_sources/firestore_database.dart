@@ -162,6 +162,7 @@ class FirestoreDatabase implements DatabaseInterface {
     int? constraintIndex,
     ConstraintStatus newStatus, {
     String? note,
+    bool? wasAutoRejectedFromCalendar,
   }) async {
 
     try {
@@ -194,6 +195,10 @@ class FirestoreDatabase implements DatabaseInterface {
 
               if (note != null) {
                 updatedConstraints[constraintIndex]['note'] = note;
+              }
+
+              if (wasAutoRejectedFromCalendar != null) {
+                updatedConstraints[constraintIndex]['wasAutoRejectedFromCalendar'] = wasAutoRejectedFromCalendar;
               }
 
               await teamMemberDoc.reference.update({
@@ -234,6 +239,7 @@ class FirestoreDatabase implements DatabaseInterface {
         updatedConstraints[constraintIndex] = updatedConstraints[constraintIndex].copyWith(
           status: newStatus,
           note: note, // Also update the note if provided
+          wasAutoRejectedFromCalendar: wasAutoRejectedFromCalendar,
         );
 
         // Convert DateConstraint entities to JSON

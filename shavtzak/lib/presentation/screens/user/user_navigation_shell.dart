@@ -7,8 +7,11 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/navigation_menu.dart';
 import '../../widgets/test_environment_indicator.dart';
 
+// Global callback to trigger constraints sync when constraints page becomes visible
+void Function()? onConstraintsPageVisible;
+
 /// Navigation shell for user-facing screens with bottom navigation
-class UserNavigationShell extends StatelessWidget {
+class UserNavigationShell extends StatefulWidget {
   final StatefulNavigationShell navigationShell;
 
   const UserNavigationShell({
@@ -17,14 +20,39 @@ class UserNavigationShell extends StatelessWidget {
   });
 
   @override
+  State<UserNavigationShell> createState() => _UserNavigationShellState();
+}
+
+class _UserNavigationShellState extends State<UserNavigationShell> {
+  int? _previousIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _previousIndex = widget.navigationShell.currentIndex;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final currentIndex = widget.navigationShell.currentIndex;
+
+    // Check if we just navigated to the constraints page (index 1)
+    if (_previousIndex != null && _previousIndex != currentIndex && currentIndex == 1) {
+      // Just navigated to constraints page
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        onConstraintsPageVisible?.call();
+      });
+    }
+
+    _previousIndex = currentIndex;
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: _buildAppBar(context),
         body: TestEnvironmentIndicator(
           child: SafeArea(
-            child: navigationShell,
+            child: widget.navigationShell,
           ),
         ),
         bottomNavigationBar: _buildBottomNavigationBar(context),
@@ -81,7 +109,7 @@ class UserNavigationShell extends StatelessWidget {
         final isPermanent = state.user.isPermanent;
 
         return BottomNavigationBar(
-          currentIndex: navigationShell.currentIndex,
+          currentIndex: widget.navigationShell.currentIndex,
           onTap: (index) => _onItemTapped(index, context),
           type: BottomNavigationBarType.fixed,
           items: [
@@ -142,10 +170,10 @@ class UserNavigationShell extends StatelessWidget {
   void _onItemTapped(int index, BuildContext context) {
     switch (index) {
       case 0:
-        navigationShell.goBranch(0);
+        widget.navigationShell.goBranch(0);
         break;
       case 1:
-        navigationShell.goBranch(1);
+        widget.navigationShell.goBranch(1);
         break;
     }
   }

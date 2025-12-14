@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/constants/constraint_status.dart';
+import '../../../core/constants/calendar_constants.dart';
 import '../../../core/state/constraint_manager.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/assignment.dart';
@@ -952,6 +953,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 onPressed: () => Navigator.of(dialogContext).pop(),
               ),
               TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
                 child: const Text('צא'),
                 onPressed: () {
                   Navigator.of(dialogContext).pop(); // Close dialog
@@ -1585,6 +1587,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     if (constraintIndex != -1) {
       _constraints[constraintIndex] = _constraints[constraintIndex].copyWith(
         status: ConstraintStatus.approved,
+        wasAutoRejectedFromCalendar: false, // Reset auto-rejection flag when approved
       );
       _isDirty = true;
       setState(() {});
@@ -1599,6 +1602,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     if (constraintIndex != -1) {
       _constraints[constraintIndex] = _constraints[constraintIndex].copyWith(
         status: ConstraintStatus.rejected,
+        // Note: Don't reset wasAutoRejectedFromCalendar here - manual rejection is different
       );
       _isDirty = true;
       setState(() {});
@@ -1613,6 +1617,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     if (constraintIndex != -1) {
       _constraints[constraintIndex] = _constraints[constraintIndex].copyWith(
         status: ConstraintStatus.pending,
+        wasAutoRejectedFromCalendar: false, // Reset auto-rejection flag when set to pending
       );
       _isDirty = true;
       setState(() {});
@@ -2055,6 +2060,7 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
                                   _buildStatusBadge(effectiveStatus),
                                 ],
                               ),
+                              // Note
                               if (constraint.note != null && constraint.note!.isNotEmpty) ...[
                                 const SizedBox(height: 4),
                                 Text(
@@ -2063,6 +2069,18 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
                                     fontStyle: FontStyle.italic,
                                     color: Colors.grey,
                                     fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                              // Auto-rejection message in red if applicable
+                              if (constraint.wasAutoRejectedFromCalendar) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  CalendarAutoRejection.message,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.red,
+                                    fontStyle: FontStyle.italic,
                                   ),
                                 ),
                               ],
