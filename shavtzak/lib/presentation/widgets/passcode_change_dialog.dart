@@ -126,6 +126,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
           digitCount: widget.currentLength,
           controllers: _currentControllers,
           focusNodes: _currentFocusNodes,
+          obscureText: _obscureCurrent,
         ),
         const SizedBox(height: 16),
         Row(
@@ -226,6 +227,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
           digitCount: _selectedLength,
           controllers: controllers,
           focusNodes: focusNodes,
+          obscureText: _obscureNew,
         ),
         const SizedBox(height: 16),
         Row(

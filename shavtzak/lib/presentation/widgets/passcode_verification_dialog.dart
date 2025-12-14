@@ -24,6 +24,7 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
   bool _isError = false;
   bool _isBlocked = false;
   int _blockCountdown = 0;
+  bool _obscurePasscode = true;
 
   @override
   void initState() {
@@ -115,6 +116,25 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
                       _verifyPasscode();
                     });
                   },
+                  obscureText: _obscurePasscode,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      _obscurePasscode ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.grey[600],
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
+                      child: Text(
+                        _obscurePasscode ? 'הצג קוד' : 'הסתר קוד',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ],
