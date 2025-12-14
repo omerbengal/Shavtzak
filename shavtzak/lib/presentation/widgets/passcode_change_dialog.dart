@@ -44,6 +44,13 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       _passcodeFocusNodes.add(FocusNode());
       _confirmFocusNodes.add(FocusNode());
     }
+
+    // Focus on first current passcode field after widget is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _currentFocusNodes[0].requestFocus();
+      }
+    });
   }
 
   @override
@@ -328,15 +335,20 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
   }
 
   void _nextStep() {
+    // Clear passcode fields
+    for (int i = 0; i < _passcodeControllers.length; i++) {
+      _passcodeControllers[i].clear();
+    }
+    
     setState(() {
       _currentStep = 2;
-      // Clear passcode fields
-      for (int i = 0; i < _passcodeControllers.length; i++) {
-        _passcodeControllers[i].clear();
-      }
-      Future.delayed(const Duration(milliseconds: 100), () {
+    });
+    
+    // Focus on first passcode field after widget is rebuilt
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
         _passcodeFocusNodes[0].requestFocus();
-      });
+      }
     });
   }
 
@@ -348,15 +360,20 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       return;
     }
 
+    // Clear confirm fields
+    for (int i = 0; i < _confirmControllers.length; i++) {
+      _confirmControllers[i].clear();
+    }
+
     setState(() {
       _currentStep = 3;
-      // Clear confirm fields
-      for (int i = 0; i < _confirmControllers.length; i++) {
-        _confirmControllers[i].clear();
-      }
-      Future.delayed(const Duration(milliseconds: 100), () {
+    });
+    
+    // Focus on first confirm field after widget is rebuilt
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
         _confirmFocusNodes[0].requestFocus();
-      });
+      }
     });
   }
 
