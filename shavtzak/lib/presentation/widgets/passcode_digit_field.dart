@@ -36,7 +36,7 @@ class _PasscodeDigitFieldState extends State<PasscodeDigitField> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: SizedBox(
-        width: 40,
+        width: 50,
         height: 55,
         child: TextField(
           controller: widget.controller,
@@ -55,6 +55,7 @@ class _PasscodeDigitFieldState extends State<PasscodeDigitField> {
             LengthLimitingTextInputFormatter(1),
           ],
           decoration: InputDecoration(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
             ),

@@ -35,9 +35,11 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       _focusNodes.add(FocusNode());
     }
 
-    // Focus on first field
-    Future.delayed(const Duration(milliseconds: 100), () {
-      _focusNodes[0].requestFocus();
+    // Focus on first field after widget is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _focusNodes[0].requestFocus();
+      }
     });
   }
 

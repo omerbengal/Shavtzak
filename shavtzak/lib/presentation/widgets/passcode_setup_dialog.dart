@@ -221,10 +221,12 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
   void _nextStep() {
     setState(() {
       _currentStep = 1;
-      // Focus on first passcode field
-      Future.delayed(const Duration(milliseconds: 100), () {
+    });
+    // Focus on first passcode field after widget is rebuilt
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
         _passcodeFocusNodes[0].requestFocus();
-      });
+      }
     });
   }
 
@@ -236,15 +238,20 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
       return;
     }
 
+    // Clear previous entries
+    for (int i = 0; i < _confirmControllers.length; i++) {
+      _confirmControllers[i].clear();
+    }
+
     setState(() {
       _currentStep = 2;
-      // Focus on first confirm field and clear previous entries
-      for (int i = 0; i < _confirmControllers.length; i++) {
-        _confirmControllers[i].clear();
-      }
-      Future.delayed(const Duration(milliseconds: 100), () {
+    });
+    
+    // Focus on first confirm field after widget is rebuilt
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
         _confirmFocusNodes[0].requestFocus();
-      });
+      }
     });
   }
 
