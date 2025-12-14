@@ -34,7 +34,7 @@ class _PasscodeDigitFieldState extends State<PasscodeDigitField> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 2),
       child: SizedBox(
         width: 50,
         height: 55,

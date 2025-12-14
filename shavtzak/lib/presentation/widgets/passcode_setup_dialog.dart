@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'passcode_digit_field.dart';
 
 /// Dialog for setting up a new passcode
@@ -11,7 +12,6 @@ class PasscodeSetupDialog extends StatefulWidget {
 }
 
 class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
-  static const Duration _focusDelay = Duration(milliseconds: 300);
   static const double _iconSize = 20.0;
   
   int _currentStep = 0;
@@ -59,7 +59,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
         title: Text(_currentStep == 0 ? 'הגדרת קוד גישה' :
                    _currentStep == 1 ? 'הזן קוד גישה' : 'אשר קוד גישה'),
         content: SizedBox(
-          width: 400,
+          width: 450,
           child: _buildCurrentStep(),
         ),
         actions: _buildActions(),
@@ -219,15 +219,18 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
     setState(() {
       _currentStep = 1;
     });
-    // Robust focus mechanism: Use both postFrameCallback and delayed focus
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Ultra-reliable focus mechanism for keyboard opening
+    SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _passcodeFocusNodes[0].requestFocus();
-        // Additional delayed focus to handle dialog animation completion
-        Future.delayed(_focusDelay, () {
-          if (mounted) {
-            _passcodeFocusNodes[0].requestFocus();
-          }
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted) _passcodeFocusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted) _passcodeFocusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) _passcodeFocusNodes[0].requestFocus();
         });
       }
     });
@@ -250,15 +253,18 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
       _currentStep = 2;
     });
     
-    // Robust focus mechanism: Use both postFrameCallback and delayed focus
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Ultra-reliable focus mechanism for keyboard opening
+    SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _confirmFocusNodes[0].requestFocus();
-        // Additional delayed focus to handle dialog animation completion
-        Future.delayed(_focusDelay, () {
-          if (mounted) {
-            _confirmFocusNodes[0].requestFocus();
-          }
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted) _confirmFocusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted) _confirmFocusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) _confirmFocusNodes[0].requestFocus();
         });
       }
     });

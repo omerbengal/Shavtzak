@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'passcode_digit_field.dart';
 
 /// Dialog for verifying passcode before allowing user selection
@@ -18,7 +19,6 @@ class PasscodeVerificationDialog extends StatefulWidget {
 }
 
 class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog> {
-  static const Duration _focusDelay = Duration(milliseconds: 300);
   static const double _iconSize = 20.0;
   
   final List<TextEditingController> _controllers = [];
@@ -38,16 +38,20 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       _focusNodes.add(FocusNode());
     }
 
-    // Robust focus mechanism: Use both postFrameCallback and delayed focus
-    // This ensures keyboard opens reliably across platforms (web, mobile)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Ultra-reliable focus mechanism for keyboard opening
+    // Using SchedulerBinding to ensure dialog is fully built and rendered
+    SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
+        // Multiple focus requests with increasing delays for maximum reliability
         _focusNodes[0].requestFocus();
-        // Additional delayed focus to handle dialog animation completion
-        Future.delayed(_focusDelay, () {
-          if (mounted) {
-            _focusNodes[0].requestFocus();
-          }
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted) _focusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted) _focusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) _focusNodes[0].requestFocus();
         });
       }
     });
@@ -71,7 +75,7 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       child: AlertDialog(
         title: const Text('הזן קוד גישה'),
         content: SizedBox(
-          width: 400,
+          width: 450,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
