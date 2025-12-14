@@ -63,10 +63,11 @@ class _InteractiveFilterBarState extends State<InteractiveFilterBar> {
       padding: const EdgeInsets.all(16),
       color: widget.backgroundColor ?? Colors.blue.shade50,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: List.generate(
           widget.options.length,
-          (index) => _buildFilterOption(index),
+          (index) => Expanded(
+            child: _buildFilterOption(index),
+          ),
         ),
       ),
     );
@@ -140,10 +141,12 @@ class _InteractiveFilterBarState extends State<InteractiveFilterBar> {
       borderRadius: BorderRadius.circular(12),
       splashColor: Colors.green.withOpacity(0.2),
       highlightColor: Colors.green.withOpacity(0.1),
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 150),
-        opacity: isHovered && !isSelected ? 0.7 : 1.0,
-        child: itemWidget,
+      child: Center(
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 150),
+          opacity: isHovered && !isSelected ? 0.7 : 1.0,
+          child: itemWidget,
+        ),
       ),
     );
   }
