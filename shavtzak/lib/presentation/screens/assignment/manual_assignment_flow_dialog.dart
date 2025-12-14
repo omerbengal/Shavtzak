@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/role_types.dart';
+import '../../../core/constants/constraint_status.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
@@ -233,7 +234,32 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
           'בחר איש צוות לשיבוץ באירוע "${_selectedEvent?.name}":',
           style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
+        // Note about member availability
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.blue.shade200),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'חברי צוות לא-קבועים יופיעו אם ורק אם יש להם זמינות שאושרה לתאריכי האירוע',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.blue.shade700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
         Expanded(
           child: _teamMembers.isEmpty
               ? const Center(
@@ -245,41 +271,66 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                     final teamMember = _teamMembers[index];
                     final isSelected = _selectedTeamMember?.id == teamMember.id;
                     final hasConflict = _hasDateConstraintConflict(teamMember);
+                    final hasAvailability = _hasAvailabilityForEvent(teamMember);
+
+                    // Disable the card if member has no availability for the event
+                    final isDisabled = !teamMember.isPermanent && !hasAvailability;
 
                     return Card(
-                      elevation: isSelected ? 4 : 1,
-                      color: isSelected ? Colors.blue.shade50 : Colors.white,
-                      child: ListTile(
-                        title: Text(
-                          teamMember.name,
-                          style: TextStyle(
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            color: isSelected ? Colors.blue.shade700 : Colors.black,
+                      elevation: isSelected ? 4 : (isDisabled ? 0 : 1),
+                      color: isSelected
+                          ? Colors.blue.shade50
+                          : isDisabled
+                              ? Colors.grey.shade100
+                              : Colors.white,
+                      child: Opacity(
+                        opacity: isDisabled ? 0.5 : 1.0,
+                        child: ListTile(
+                          title: Text(
+                            teamMember.name,
+                            style: TextStyle(
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected
+                                  ? Colors.blue.shade700
+                                  : isDisabled
+                                      ? Colors.grey.shade500
+                                      : Colors.black,
+                            ),
                           ),
+                          subtitle: isDisabled
+                              ? Text(
+                                  'לא זמין לתאריכי האירוע',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 12,
+                                  ),
+                                )
+                              : null, // uniqueKey not implemented yet
+                          trailing: hasConflict
+                              ? Icon(Icons.warning, color: Colors.orange.shade700)
+                              : null,
+                          onTap: isDisabled
+                              ? null // Disable tap for non-available members
+                              : () {
+                                  if (hasConflict) {
+                                    _showConstraintWarning(teamMember);
+                                  } else {
+                                    setState(() {
+                                      _selectedTeamMember = isSelected ? null : teamMember;
+                                    });
+                                    // Auto-advance to next step if team member was selected
+                                    if (_selectedTeamMember != null) {
+                                      Future.delayed(const Duration(milliseconds: 300), () {
+                                        if (mounted) {
+                                          setState(() {
+                                            _currentStep = 2;
+                                          });
+                                        }
+                                      });
+                                    }
+                                  }
+                                },
                         ),
-                        subtitle: null, // uniqueKey not implemented yet
-                        trailing: hasConflict
-                            ? Icon(Icons.warning, color: Colors.orange.shade700)
-                            : null,
-                        onTap: () {
-                          if (hasConflict) {
-                            _showConstraintWarning(teamMember);
-                          } else {
-                            setState(() {
-                              _selectedTeamMember = isSelected ? null : teamMember;
-                            });
-                            // Auto-advance to next step if team member was selected
-                            if (_selectedTeamMember != null) {
-                              Future.delayed(const Duration(milliseconds: 300), () {
-                                if (mounted) {
-                                  setState(() {
-                                    _currentStep = 2;
-                                  });
-                                }
-                              });
-                            }
-                          }
-                        },
                       ),
                     );
                   },
@@ -375,6 +426,20 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     if (_selectedEvent == null) return false;
 
     return teamMember.constraints.any((constraint) {
+      // Only consider APPROVED constraints for conflicts
+      if (constraint.status != ConstraintStatus.approved) return false;
+
+      // For permanent members, check for unavailability constraints
+      // For non-permanent members, check if they DON'T have availability
+      if (teamMember.isPermanent) {
+        // Permanent members: unavailability constraints cause conflicts
+        if (constraint.constraintType != ConstraintType.unavailability) return false;
+      } else {
+        // Non-permanent members: lack of availability causes conflicts
+        // But we don't show this as a constraint warning - they just can't be selected
+        return false;
+      }
+
       // Check if constraint overlaps with event dates
       final constraintStart = constraint.startDate;
       final constraintEnd = constraint.endDate ?? constraint.startDate;
@@ -383,8 +448,37 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     });
   }
 
+  /// Check if non-permanent member has availability for the event dates
+  bool _hasAvailabilityForEvent(TeamMember teamMember) {
+    // Permanent members are always considered available unless they have unavailability constraints
+    if (teamMember.isPermanent) return true;
+
+    if (_selectedEvent == null) return false;
+
+    // For non-permanent members, check if they have approved availability that covers the event
+    return teamMember.constraints.any((constraint) {
+      // Only consider APPROVED availability constraints
+      if (constraint.status != ConstraintStatus.approved) return false;
+      if (constraint.constraintType != ConstraintType.availability) return false;
+
+      // Check if availability covers the entire event date range
+      final constraintStart = constraint.startDate;
+      final constraintEnd = constraint.endDate ?? constraint.startDate;
+
+      // Availability must start before or on event start and end after or on event end
+      return constraintStart.isBefore(_selectedEvent!.startDate.add(const Duration(days: 1))) &&
+             (constraintEnd.isAfter(_selectedEvent!.endDate.subtract(const Duration(days: 1))) ||
+              constraintEnd.isAtSameMomentAs(_selectedEvent!.endDate));
+    });
+  }
+
   void _showConstraintWarning(TeamMember teamMember) {
     final conflictingConstraints = teamMember.constraints.where((constraint) {
+      // Only show approved unavailability constraints for permanent members
+      if (constraint.status != ConstraintStatus.approved) return false;
+      if (teamMember.isPermanent && constraint.constraintType != ConstraintType.unavailability) return false;
+      if (!teamMember.isPermanent) return false; // Don't show for non-permanent members
+
       final constraintStart = constraint.startDate;
       final constraintEnd = constraint.endDate ?? constraint.startDate;
       return !(constraintEnd.isBefore(_selectedEvent!.startDate) ||
@@ -407,7 +501,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('ל${teamMember.name} יש מגבלות תאריך החופפות לאירוע "${_selectedEvent!.name}":'),
+              Text('ל${teamMember.name} יש הגבלות אישורות החופפות לאירוע "${_selectedEvent!.name}":'),
               const SizedBox(height: 12),
               ...conflictingConstraints.map((constraint) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -494,6 +588,33 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
 
   void _finish() {
     if (_selectedEvent != null && _selectedTeamMember != null && _selectedRole != null) {
+      // Final validation for non-permanent members
+      if (!_selectedTeamMember!.isPermanent) {
+        final hasAvailability = _hasAvailabilityForEvent(_selectedTeamMember!);
+        if (!hasAvailability) {
+          showDialog(
+            context: context,
+            builder: (dialogContext) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                title: const Text('שגיאת שיבוץ'),
+                content: Text(
+                  '${_selectedTeamMember!.name} אינו זמין לתאריכי האירוע "${_selectedEvent!.name}".\n\n'
+                  'חברי צוות לא-קבועים חייבים לציין זמינות מראש כדי להיות משובצים.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('הבנתי'),
+                  ),
+                ],
+              ),
+            ),
+          );
+          return;
+        }
+      }
+
       Navigator.of(context).pop({
         'event': _selectedEvent!,
         'teamMember': _selectedTeamMember!,

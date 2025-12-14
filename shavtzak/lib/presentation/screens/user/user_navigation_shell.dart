@@ -49,6 +49,8 @@ class UserNavigationShell extends StatelessWidget {
             title: Text(
               'שלום, ${state.user.name}',
               textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
             centerTitle: true,
             actions: [
