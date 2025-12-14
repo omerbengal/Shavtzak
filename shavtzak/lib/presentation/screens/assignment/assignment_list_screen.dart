@@ -369,7 +369,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
                       color: Colors.blue,
-                      decoration: TextDecoration.underline,
+                      decoration: TextDecoration.none,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -419,7 +419,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 12,
-                        decoration: TextDecoration.underline,
+                        color: Colors.blue,
+                        decoration: TextDecoration.none,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -639,9 +640,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         value: member.id,
         child: Directionality(
           textDirection: TextDirection.rtl,
-          child: Center(
+          child: SizedBox(
+            width: double.infinity,
             child: Text(
               member.name,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 4,
               style: isCurrentlyAssigned
                   ? const TextStyle(
                       color: Colors.green,
@@ -661,9 +666,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         value: currentMember.id,
         child: Directionality(
           textDirection: TextDirection.rtl,
-          child: Center(
+          child: SizedBox(
+            width: double.infinity,
             child: Text(
               currentMember.name,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 4,
               style: const TextStyle(
                 color: Colors.green,
                 fontWeight: FontWeight.bold,
@@ -715,76 +724,76 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         // Main dropdown with string values
         Expanded(
           flex: 2,
-          child: DropdownButtonFormField<String>(
-            key: ValueKey('${_getSlotKey(slot)}_${_dropdownResetCounters[_getSlotKey(slot)] ?? 0}'),
-            value: currentMember?.id,
-            isExpanded: true, // This makes the dropdown take full width
-            hint: SizedBox(
-              width: double.infinity,
-              child: const Text(
-                'בחר...',
-                textAlign: TextAlign.center,
-              ),
-            ),
-            style: const TextStyle(fontSize: 12, color: Colors.black, fontWeight: FontWeight.normal),
-            decoration: InputDecoration(
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              border: const OutlineInputBorder(),
-              filled: true,
-              fillColor: hasOptions
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey),
+              borderRadius: BorderRadius.circular(4),
+              color: hasOptions
                   ? (slot.isFilled ? Colors.green.shade50 : Colors.white)
-                  : Colors.grey.shade200, // Gray out when no options
-              hintStyle: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
+                  : Colors.grey.shade200,
             ),
-            icon: const Icon(Icons.arrow_drop_down, size: 20),
-            items: items,
-            selectedItemBuilder: (context) {
-              // Build plain text items for closed dropdown display (no green/bold styling)
-              final selectedItems = <Widget>[];
-
-              // Available members (plain style)
-              for (var member in slot.availableMembers) {
-                selectedItems.add(Container(
-                  constraints: const BoxConstraints(minWidth: double.infinity),
-                  child: Text(
-                    member.name,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ));
-              }
-
-              // Current member from already assigned (if exists)
-              if (currentMember != null &&
-                  !slot.availableMembers.any((m) => m.id == currentMember.id)) {
-                selectedItems.insert(0, Container(
-                  constraints: const BoxConstraints(minWidth: double.infinity),
-                  child: Text(
-                    currentMember.name,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ));
-              }
-
-              // Divider and "show already assigned" option
-              selectedItems.add(const SizedBox.shrink()); // For divider
-              selectedItems.add(Container(
-                constraints: const BoxConstraints(minWidth: double.infinity),
-                child: Text(
-                  'שובצו כבר...',
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                key: ValueKey('${_getSlotKey(slot)}_${_dropdownResetCounters[_getSlotKey(slot)] ?? 0}'),
+                value: currentMember?.id,
+                isExpanded: true,
+                hint: const Text(
+                  'בחר...',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 12),
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
-              ));
+                style: const TextStyle(fontSize: 12, color: Colors.black),
+                icon: const Icon(Icons.arrow_drop_down, size: 20),
+                alignment: AlignmentDirectional.center,
+                selectedItemBuilder: (context) {
+                  final selectedItems = <Widget>[];
 
-              return selectedItems;
-            },
-            onChanged: hasOptions ? (selectedValue) {
+                  // Build custom selected item display with proper wrapping
+                  for (var member in slot.availableMembers) {
+                    selectedItems.add(
+                      DropdownMenuItem<String>(
+                        value: member.id,
+                        enabled: false,
+                        child: Container(
+                          constraints: const BoxConstraints(minWidth: double.infinity),
+                          child: Text(
+                            member.name,
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 4,
+                            style: const TextStyle(fontSize: 12, color: Colors.black),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Current member from already assigned (if exists)
+                  if (currentMember != null &&
+                      !slot.availableMembers.any((m) => m.id == currentMember.id)) {
+                    selectedItems.insert(0,
+                      DropdownMenuItem<String>(
+                        value: currentMember.id,
+                        enabled: false,
+                        child: Container(
+                          constraints: const BoxConstraints(minWidth: double.infinity),
+                          child: Text(
+                            currentMember.name,
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 4,
+                            style: const TextStyle(fontSize: 12, color: Colors.black),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  return selectedItems;
+                },
+                items: items,
+                onChanged: hasOptions ? (selectedValue) {
               if (selectedValue == '__show_already_assigned__') {
                 // Show dialog for already-assigned members
                 _showAlreadyAssignedDialog(slot);
@@ -802,35 +811,23 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 }
               }
             } : null, // Disable dropdown when no options available
+              ),
+            ),
           ),
         ),
 
-        const SizedBox(width: 8),
+        const SizedBox(width: 4),
 
         // "ניקוי" button - only show if slot is filled AND currentMember is valid
         if (slot.isFilled && currentMember != null)
-          SizedBox(
-            width: isMobile ? 40 : 60,
-            child: isMobile
-                ? IconButton(
-                    onPressed: () => _handleClearAssignment(slot),
-                    icon: const Icon(Icons.clear, size: 20),
-                    color: Colors.red,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    tooltip: 'ניקוי',
-                  )
-                : ElevatedButton(
-                    onPressed: () => _handleClearAssignment(slot),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade100,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    ),
-                    child: const Text(
-                      'ניקוי',
-                      style: TextStyle(fontSize: 12, color: Colors.red),
-                    ),
-                  ),
+          IconButton(
+            onPressed: () => _handleClearAssignment(slot),
+            icon: const Icon(Icons.clear, size: 20),
+            color: Colors.red,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            tooltip: 'ניקוי',
+            splashRadius: 16,
           ),
 
         // Removed: "שובצו כבר" button - now integrated in dropdown
