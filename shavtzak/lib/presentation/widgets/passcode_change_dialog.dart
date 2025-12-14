@@ -18,6 +18,9 @@ class PasscodeChangeDialog extends StatefulWidget {
 }
 
 class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
+  static const Duration _focusDelay = Duration(milliseconds: 300);
+  static const double _iconSize = 20.0;
+  
   int _currentStep = 0;
   int _selectedLength = 4;
   final List<TextEditingController> _currentControllers = [];
@@ -50,7 +53,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       if (mounted) {
         _currentFocusNodes[0].requestFocus();
         // Additional delayed focus to handle dialog animation completion
-        Future.delayed(const Duration(milliseconds: 300), () {
+        Future.delayed(_focusDelay, () {
           if (mounted) {
             _currentFocusNodes[0].requestFocus();
           }
@@ -148,7 +151,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
             onPressed: () => setState(() => _obscureCurrent = !_obscureCurrent),
             icon: Icon(
               _obscureCurrent ? Icons.visibility_off : Icons.visibility,
-              size: 20,
+              size: _iconSize,
             ),
             label: Text(_obscureCurrent ? 'הצג קוד' : 'הסתר קוד'),
           ),
@@ -243,7 +246,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
             onPressed: () => setState(() => _obscureNew = !_obscureNew),
             icon: Icon(
               _obscureNew ? Icons.visibility_off : Icons.visibility,
-              size: 20,
+              size: _iconSize,
             ),
             label: Text(_obscureNew ? 'הצג קוד' : 'הסתר קוד'),
           ),
@@ -343,7 +346,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       if (mounted) {
         _passcodeFocusNodes[0].requestFocus();
         // Additional delayed focus to handle dialog animation completion
-        Future.delayed(const Duration(milliseconds: 300), () {
+        Future.delayed(_focusDelay, () {
           if (mounted) {
             _passcodeFocusNodes[0].requestFocus();
           }
@@ -374,7 +377,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       if (mounted) {
         _confirmFocusNodes[0].requestFocus();
         // Additional delayed focus to handle dialog animation completion
-        Future.delayed(const Duration(milliseconds: 300), () {
+        Future.delayed(_focusDelay, () {
           if (mounted) {
             _confirmFocusNodes[0].requestFocus();
           }

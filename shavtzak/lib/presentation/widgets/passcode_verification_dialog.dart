@@ -18,6 +18,9 @@ class PasscodeVerificationDialog extends StatefulWidget {
 }
 
 class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog> {
+  static const Duration _focusDelay = Duration(milliseconds: 300);
+  static const double _iconSize = 20.0;
+  
   final List<TextEditingController> _controllers = [];
   final List<FocusNode> _focusNodes = [];
   int _failedAttempts = 0;
@@ -41,7 +44,7 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       if (mounted) {
         _focusNodes[0].requestFocus();
         // Additional delayed focus to handle dialog animation completion
-        Future.delayed(const Duration(milliseconds: 300), () {
+        Future.delayed(_focusDelay, () {
           if (mounted) {
             _focusNodes[0].requestFocus();
           }
@@ -134,7 +137,7 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
                     onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
                     icon: Icon(
                       _obscurePasscode ? Icons.visibility_off : Icons.visibility,
-                      size: 20,
+                      size: _iconSize,
                     ),
                     label: Text(_obscurePasscode ? 'הצג קוד' : 'הסתר קוד'),
                   ),

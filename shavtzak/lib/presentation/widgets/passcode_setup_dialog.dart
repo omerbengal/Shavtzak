@@ -11,6 +11,9 @@ class PasscodeSetupDialog extends StatefulWidget {
 }
 
 class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
+  static const Duration _focusDelay = Duration(milliseconds: 300);
+  static const double _iconSize = 20.0;
+  
   int _currentStep = 0;
   int _selectedLength = 4;
   final List<TextEditingController> _passcodeControllers = [];
@@ -163,7 +166,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
             onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
             icon: Icon(
               _obscurePasscode ? Icons.visibility_off : Icons.visibility,
-              size: 20,
+              size: _iconSize,
             ),
             label: Text(_obscurePasscode ? 'הצג קוד' : 'הסתר קוד'),
           ),
@@ -221,7 +224,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
       if (mounted) {
         _passcodeFocusNodes[0].requestFocus();
         // Additional delayed focus to handle dialog animation completion
-        Future.delayed(const Duration(milliseconds: 300), () {
+        Future.delayed(_focusDelay, () {
           if (mounted) {
             _passcodeFocusNodes[0].requestFocus();
           }
@@ -252,7 +255,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
       if (mounted) {
         _confirmFocusNodes[0].requestFocus();
         // Additional delayed focus to handle dialog animation completion
-        Future.delayed(const Duration(milliseconds: 300), () {
+        Future.delayed(_focusDelay, () {
           if (mounted) {
             _confirmFocusNodes[0].requestFocus();
           }
