@@ -39,13 +39,11 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     InitializeCalendarSync event,
     Emitter<CalendarSyncState> emit,
   ) async {
-    print('🗓️ [CalendarSyncBloc] _onInitialize called');
     emit(const CalendarSyncInitializing());
 
     try {
       // Check if credentials are provided
       if (event.serviceAccountJson == null || event.calendarId == null) {
-        print('🗓️ [CalendarSyncBloc] No credentials provided, sync disabled');
         developer.log(
           'CalendarSyncBloc: No credentials provided, sync disabled',
           name: 'CalendarSyncBloc',
@@ -56,8 +54,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         return;
       }
 
-      print('🗓️ [CalendarSyncBloc] Credentials provided, initializing Google Calendar service...');
-      print('🗓️ [CalendarSyncBloc] Calendar ID: ${event.calendarId}');
 
       // Initialize Google Calendar service
       await _calendarService.initialize(
@@ -65,8 +61,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         calendarId: event.calendarId!,
       );
 
-      print('🗓️ [CalendarSyncBloc] Google Calendar service initialized successfully');
-      print('🗓️ [CalendarSyncBloc] Test mode: ${_calendarService.isTestMode}');
 
       // Create sync service
       _syncService = CalendarSyncService(
@@ -77,7 +71,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
       // Get initial failed sync count
       final failedSyncs = await _database.getFailedSyncStates();
 
-      print('🗓️ [CalendarSyncBloc] Initialized with ${failedSyncs.length} failed syncs pending');
       developer.log(
         'CalendarSyncBloc: Initialized with ${failedSyncs.length} failed syncs pending',
         name: 'CalendarSyncBloc',
@@ -88,8 +81,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         failedSyncs: failedSyncs.length,
       ));
     } catch (e, stackTrace) {
-      print('🗓️ [CalendarSyncBloc] ❌ Initialization failed: $e');
-      print('🗓️ [CalendarSyncBloc] Stack trace: $stackTrace');
       developer.log(
         'CalendarSyncBloc: Initialization failed - $e',
         name: 'CalendarSyncBloc',
@@ -104,13 +95,8 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     SyncConstraintToCalendar event,
     Emitter<CalendarSyncState> emit,
   ) async {
-    print('🗓️ [CalendarSyncBloc] _onSyncConstraint called');
-    print('🗓️ [CalendarSyncBloc] Constraint ID: ${event.constraintId}');
-    print('🗓️ [CalendarSyncBloc] Team Member: ${event.teamMember.name}');
-    print('🗓️ [CalendarSyncBloc] Constraint dates: ${event.constraint.startDate} - ${event.constraint.endDate}');
 
     if (_syncService == null) {
-      print('🗓️ [CalendarSyncBloc] ❌ Sync service is NULL - skipping sync');
       developer.log(
         'CalendarSyncBloc: Sync service not initialized, skipping sync',
         name: 'CalendarSyncBloc',
@@ -118,31 +104,26 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
       return;
     }
 
-    print('🗓️ [CalendarSyncBloc] Sync service is available, proceeding...');
     emit(CalendarSyncInProgress(
       constraintId: event.constraintId,
       message: 'מסנכרן מגבלה ליומן גוגל...',
     ));
 
     try {
-      print('🗓️ [CalendarSyncBloc] Calling syncConstraintToCalendar...');
       final result = await _syncService!.syncConstraintToCalendar(
         constraintId: event.constraintId,
         teamMember: event.teamMember,
         constraint: event.constraint,
       );
 
-      print('🗓️ [CalendarSyncBloc] Sync result: success=${result.success}, eventId=${result.calendarEventId}');
 
       if (result.success) {
-        print('🗓️ [CalendarSyncBloc] ✅ Sync successful!');
         emit(CalendarSyncSuccess(
           constraintId: event.constraintId,
           calendarEventId: result.calendarEventId,
           message: 'המגבלה סונכרנה ליומן גוגל בהצלחה',
         ));
       } else {
-        print('🗓️ [CalendarSyncBloc] ❌ Sync failed: ${result.errorMessage}');
         emit(CalendarSyncFailure(
           constraintId: event.constraintId,
           errorMessage: result.errorMessage ?? 'שגיאה לא ידועה',
@@ -150,8 +131,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         ));
       }
     } catch (e, stackTrace) {
-      print('🗓️ [CalendarSyncBloc] ❌ Exception during sync: $e');
-      print('🗓️ [CalendarSyncBloc] Stack trace: $stackTrace');
       developer.log(
         'CalendarSyncBloc: Sync failed - $e',
         name: 'CalendarSyncBloc',
@@ -169,11 +148,8 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     RemoveConstraintFromCalendar event,
     Emitter<CalendarSyncState> emit,
   ) async {
-    print('🗓️ [CalendarSyncBloc] _onRemoveConstraint called');
-    print('🗓️ [CalendarSyncBloc] Constraint ID: ${event.constraintId}');
 
     if (_syncService == null) {
-      print('🗓️ [CalendarSyncBloc] ❌ Sync service is NULL - skipping removal');
       developer.log(
         'CalendarSyncBloc: Sync service not initialized, skipping removal',
         name: 'CalendarSyncBloc',
@@ -187,21 +163,17 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     ));
 
     try {
-      print('🗓️ [CalendarSyncBloc] Calling removeConstraintFromCalendar...');
       final result = await _syncService!.removeConstraintFromCalendar(
         event.constraintId,
       );
 
-      print('🗓️ [CalendarSyncBloc] Removal result: success=${result.success}');
 
       if (result.success) {
-        print('🗓️ [CalendarSyncBloc] ✅ Constraint removal successful!');
         emit(CalendarSyncRemovalSuccess(
           constraintId: event.constraintId,
           message: 'המגבלה הוסרה מיומן גוגל בהצלחה',
         ));
       } else {
-        print('🗓️ [CalendarSyncBloc] ❌ Constraint removal failed: ${result.errorMessage}');
         emit(CalendarSyncFailure(
           constraintId: event.constraintId,
           errorMessage: result.errorMessage ?? 'שגיאה בהסרה מהיומן',
@@ -209,7 +181,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         ));
       }
     } catch (e) {
-      print('🗓️ [CalendarSyncBloc] ❌ Exception during removal: $e');
       developer.log(
         'CalendarSyncBloc: Removal failed - $e',
         name: 'CalendarSyncBloc',
@@ -479,7 +450,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
       return;
     }
 
-    print('🗓️ [CalendarSyncBloc] Starting bidirectional sync...');
     emit(const CalendarSyncInProgress(
       constraintId: 'bidirectional',
       message: 'מבצע סנכרון דו-כיווני עם יומן גוגל...',
@@ -487,12 +457,9 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
 
     try {
       // Step 1: Validate synced events and update constraints if calendar events were deleted
-      print('🗓️ [CalendarSyncBloc] Step 1: Validating synced events...');
       final rejectedCount = await _syncService!.validateSyncedEventsWithCalendar();
-      print('🗓️ [CalendarSyncBloc] Step 1 complete: $rejectedCount constraints rejected');
 
       // Step 2: Get all failed syncs and retry them
-      print('🗓️ [CalendarSyncBloc] Step 2: Retrying failed syncs...');
       final failedSyncs = await _syncService!.getFailedSyncs();
       int retriedCount = 0;
       int successCount = 0;
@@ -511,7 +478,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
           );
 
           if (teamMember == null) {
-            print('🗓️ [CalendarSyncBloc] Team member not found for failed sync: $teamMemberId');
             continue;
           }
 
@@ -533,16 +499,12 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
           retriedCount++;
           if (result.success) {
             successCount++;
-            print('🗓️ [CalendarSyncBloc] ✅ Retry successful for constraint $constraintId');
           } else {
-            print('🗓️ [CalendarSyncBloc] ❌ Retry failed for constraint $constraintId: ${result.errorMessage}');
           }
         } catch (e) {
-          print('🗓️ [CalendarSyncBloc] ❌ Error retrying sync: $e');
         }
       }
 
-      print('🗓️ [CalendarSyncBloc] Step 2 complete: $retriedCount retries, $successCount successful');
 
       // Step 3: Emit completion state
       String message = 'הסנכרון הדו-כיווני הושלם. ';
@@ -563,9 +525,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         message: message,
       ));
 
-      print('🗓️ [CalendarSyncBloc] ✅ Bidirectional sync complete');
     } catch (e) {
-      print('🗓️ [CalendarSyncBloc] ❌ Bidirectional sync failed: $e');
       developer.log(
         'CalendarSyncBloc: Bidirectional sync failed - $e',
         name: 'CalendarSyncBloc',

@@ -324,23 +324,19 @@ class LoadingApp extends StatelessWidget {
 
 /// Create and initialize CalendarSyncBloc with config from Firestore
 Future<CalendarSyncBloc> _createCalendarSyncBloc(String env) async {
-  print('🗓️ [main.dart] Creating CalendarSyncBloc for $env environment');
   developer.log('main.dart: Creating CalendarSyncBloc for $env environment', name: 'Main');
   final db = FirestoreDatabase();
   final bloc = CalendarSyncBloc(database: db);
 
   // Initialize with credentials from Firestore
-  print('🗓️ [main.dart] Fetching Google Calendar config from Firestore...');
   final config = await db.getGoogleCalendarConfig();
 
   if (config != null && config['serviceAccountJson'] != null && config['calendarId'] != null) {
-    print('🗓️ [main.dart] Google Calendar config found, initializing...');
     bloc.add(InitializeCalendarSync(
       serviceAccountJson: config['serviceAccountJson']!,
       calendarId: config['calendarId']!,
     ));
   } else {
-    print('🗓️ [main.dart] No Google Calendar config found, sync disabled');
     bloc.add(const InitializeCalendarSync(
       serviceAccountJson: null,
       calendarId: null,

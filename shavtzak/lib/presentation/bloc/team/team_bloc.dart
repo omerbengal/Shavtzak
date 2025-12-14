@@ -217,8 +217,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         }
 
         // === Calendar Sync: Check for constraint status changes ===
-        print('🗓️ [TeamBloc._onUpdateTeamMember] Checking for constraint status changes...');
-        print('🗓️ [TeamBloc._onUpdateTeamMember] CalendarSyncBloc is ${_calendarSyncBloc == null ? "NULL" : "available"}');
 
         if (_calendarSyncBloc != null) {
           // Build a map of old constraints by ID for easy lookup
@@ -234,12 +232,10 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
             if (oldConstraint != null) {
               // Existing constraint - check for status change
               if (oldConstraint.status != newConstraint.status) {
-                print('🗓️ [TeamBloc._onUpdateTeamMember] Constraint ${newConstraint.id} status changed: ${oldConstraint.status} -> ${newConstraint.status}');
 
                 if (newConstraint.status == ConstraintStatus.approved) {
                   // Constraint changed to approved - sync to calendar ONLY for unavailability constraints
                   if (newConstraint.isUnavailability) {
-                    print('🗓️ [TeamBloc._onUpdateTeamMember] ✅ Triggering calendar sync for unavailability constraint ${newConstraint.id}');
                     developer.log(
                       'TeamBloc: Unavailability constraint approved via UpdateTeamMember, triggering calendar sync',
                       name: 'TeamBloc',
@@ -250,12 +246,10 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
                       constraint: newConstraint,
                     ));
                   } else {
-                    print('🗓️ [TeamBloc._onUpdateTeamMember] ⚠️ Availability constraint approved - NOT syncing to calendar');
                   }
                 } else if (oldConstraint.status == ConstraintStatus.approved) {
                   // Constraint changed from approved - remove from calendar ONLY if it was unavailability
                   if (oldConstraint.isUnavailability) {
-                    print('🗓️ [TeamBloc._onUpdateTeamMember] ❌ Removing unavailability constraint ${newConstraint.id} from calendar');
                     developer.log(
                       'TeamBloc: Unavailability constraint un-approved via UpdateTeamMember, removing from calendar',
                       name: 'TeamBloc',
@@ -264,7 +258,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
                       constraintId: newConstraint.id,
                     ));
                   } else {
-                    print('🗓️ [TeamBloc._onUpdateTeamMember] ⚠️ Availability constraint un-approved - NOT removing from calendar');
                   }
                 }
               }
@@ -278,7 +271,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
             if (!stillExists && oldConstraint.status == ConstraintStatus.approved) {
               // Only remove from calendar if it was an unavailability constraint
               if (oldConstraint.isUnavailability) {
-                print('🗓️ [TeamBloc._onUpdateTeamMember] ❌ Approved unavailability constraint ${oldConstraint.id} was deleted, removing from calendar');
                 developer.log(
                   'TeamBloc: Approved unavailability constraint deleted via UpdateTeamMember, removing from calendar',
                   name: 'TeamBloc',
@@ -287,12 +279,10 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
                   constraintId: oldConstraint.id,
                 ));
               } else {
-                print('🗓️ [TeamBloc._onUpdateTeamMember] ⚠️ Approved availability constraint ${oldConstraint.id} was deleted - NOT removing from calendar');
               }
             }
           }
         } else {
-          print('🗓️ [TeamBloc._onUpdateTeamMember] ⚠️ CalendarSyncBloc is NULL - sync not available');
         }
       }
 
@@ -409,17 +399,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       );
 
       // Trigger calendar sync if status changed to/from approved
-      print('🗓️ [TeamBloc] Checking calendar sync trigger...');
-      print('🗓️ [TeamBloc] _calendarSyncBloc is ${_calendarSyncBloc == null ? "NULL" : "available"}');
-      print('🗓️ [TeamBloc] oldStatus: $oldStatus, newStatus: ${event.newStatus}');
 
       if (_calendarSyncBloc != null && oldStatus != event.newStatus) {
         if (event.newStatus == ConstraintStatus.approved) {
           // Status changed to approved - sync to calendar ONLY for unavailability constraints
           if (constraint.isUnavailability) {
-            print('🗓️ [TeamBloc] ✅ Unavailability constraint APPROVED - triggering calendar sync');
-            print('🗓️ [TeamBloc] Constraint ID: ${constraint.id}');
-            print('🗓️ [TeamBloc] Team Member: ${currentMember.name}');
             developer.log(
               'TeamBloc: Unavailability constraint approved, triggering calendar sync',
               name: 'TeamBloc',
@@ -429,14 +413,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
               teamMember: currentMember,
               constraint: constraint.copyWith(status: ConstraintStatus.approved),
             ));
-            print('🗓️ [TeamBloc] SyncConstraintToCalendar event added to CalendarSyncBloc');
           } else {
-            print('🗓️ [TeamBloc] ⚠️ Availability constraint approved - NOT syncing to calendar');
           }
         } else if (oldStatus == ConstraintStatus.approved) {
           // Status changed from approved - remove from calendar ONLY if it was unavailability
           if (constraint.isUnavailability) {
-            print('🗓️ [TeamBloc] ❌ Unavailability constraint UN-APPROVED - removing from calendar');
             developer.log(
               'TeamBloc: Unavailability constraint status changed from approved, removing from calendar',
               name: 'TeamBloc',
@@ -445,13 +426,10 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
               constraintId: constraint.id,
             ));
           } else {
-            print('🗓️ [TeamBloc] ⚠️ Availability constraint un-approved - NOT removing from calendar');
           }
         }
       } else if (_calendarSyncBloc == null) {
-        print('🗓️ [TeamBloc] ⚠️ CalendarSyncBloc is NULL - sync not available');
       } else {
-        print('🗓️ [TeamBloc] Status unchanged, no sync needed');
       }
 
       // Emit success message

@@ -276,36 +276,57 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
         // Header row
         Container(
-          padding: const EdgeInsets.all(12),
+          height: 56, // Fixed height to accommodate both layers
           color: Colors.grey.shade200,
-          child: Row(
+          child: Stack(
             children: [
-              // Filter icon (right side in RTL)
-              IconButton(
-                icon: Icon(
-                  Icons.filter_list,
-                  color: state.selectedEventIds.isEmpty
-                      ? Colors.grey.shade700
-                      : Colors.blue,
+              // Bottom layer: Column titles with exact same structure as data rows
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  child: Row(
+                    children: [
+                      // Event column (matches data row flex: 3)
+                      Expanded(
+                        flex: 3,
+                        child: Text('אירוע',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                      // Role column (matches data row flex: 2)
+                      Expanded(
+                        flex: 2,
+                        child: Text('תפקיד',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                      // Assignment column (matches data row flex: 3)
+                      Expanded(
+                        flex: 3,
+                        child: Text('שיבוץ',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    ],
+                  ),
                 ),
-                onPressed: () => _showFilterModal(context, state),
-                tooltip: 'סינון',
               ),
-              Expanded(
-                  flex: 3,
-                  child: Text('אירוע',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontWeight: FontWeight.bold))),
-              Expanded(
-                  flex: 2,
-                  child: Text('תפקיד',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontWeight: FontWeight.bold))),
-              Expanded(
-                  flex: 3,
-                  child: Text('שיבוץ',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontWeight: FontWeight.bold))),
+              // Top layer: Filter icon positioned on the right (in RTL)
+              Positioned(
+                right: 12,
+                top: 6,
+                bottom: 6,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.filter_list,
+                    color: state.selectedEventIds.isEmpty
+                        ? Colors.grey.shade700
+                        : Colors.blue,
+                  ),
+                  onPressed: () => _showFilterModal(context, state),
+                  tooltip: 'סינון',
+                  iconSize: 24,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+                ),
+              ),
             ],
           ),
         ),
@@ -449,7 +470,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
           // Assignment cell with dropdown and buttons
           Expanded(
-            flex: 4,
+            flex: 3,
             child: LayoutBuilder(
               builder: (context, constraints) {
                 return _buildAssignmentCell(slot, constraints.maxWidth);
@@ -697,19 +718,27 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           child: DropdownButtonFormField<String>(
             key: ValueKey('${_getSlotKey(slot)}_${_dropdownResetCounters[_getSlotKey(slot)] ?? 0}'),
             value: currentMember?.id,
-            hint: Directionality(
-              textDirection: TextDirection.rtl,
-              child: Center(child: Text('בחר...')),
+            isExpanded: true, // This makes the dropdown take full width
+            hint: SizedBox(
+              width: double.infinity,
+              child: const Text(
+                'בחר...',
+                textAlign: TextAlign.center,
+              ),
             ),
             style: const TextStyle(fontSize: 12, color: Colors.black, fontWeight: FontWeight.normal),
             decoration: InputDecoration(
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               border: const OutlineInputBorder(),
               filled: true,
               fillColor: hasOptions
                   ? (slot.isFilled ? Colors.green.shade50 : Colors.white)
                   : Colors.grey.shade200, // Gray out when no options
+              hintStyle: const TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+              ),
             ),
             icon: const Icon(Icons.arrow_drop_down, size: 20),
             items: items,
@@ -719,26 +748,38 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
               // Available members (plain style)
               for (var member in slot.availableMembers) {
-                selectedItems.add(Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: Center(child: Text(member.name)),
+                selectedItems.add(Container(
+                  constraints: const BoxConstraints(minWidth: double.infinity),
+                  child: Text(
+                    member.name,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ));
               }
 
               // Current member from already assigned (if exists)
               if (currentMember != null &&
                   !slot.availableMembers.any((m) => m.id == currentMember.id)) {
-                selectedItems.insert(0, Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: Center(child: Text(currentMember.name)),
+                selectedItems.insert(0, Container(
+                  constraints: const BoxConstraints(minWidth: double.infinity),
+                  child: Text(
+                    currentMember.name,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ));
               }
 
               // Divider and "show already assigned" option
               selectedItems.add(const SizedBox.shrink()); // For divider
-              selectedItems.add(Directionality(
-                textDirection: TextDirection.rtl,
-                child: Center(child: Text('שובצו כבר...')),
+              selectedItems.add(Container(
+                constraints: const BoxConstraints(minWidth: double.infinity),
+                child: Text(
+                  'שובצו כבר...',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12),
+                ),
               ));
 
               return selectedItems;

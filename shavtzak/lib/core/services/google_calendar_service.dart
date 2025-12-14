@@ -39,15 +39,11 @@ class GoogleCalendarService {
     required String calendarId,
     bool testMode = false,
   }) async {
-    print('🗓️ [GoogleCalendarService] initialize() called');
-    print('🗓️ [GoogleCalendarService] Calendar ID: $calendarId');
-    print('🗓️ [GoogleCalendarService] Environment test mode: ${EnvironmentService.instance.isTestMode}');
 
     _isTestMode = testMode || EnvironmentService.instance.isTestMode;
     _calendarId = calendarId;
 
     if (_isTestMode) {
-      print('🗓️ [GoogleCalendarService] Running in TEST mode - operations will be mocked');
       developer.log(
         'GoogleCalendarService: Initialized in TEST mode - operations will be mocked',
         name: 'GoogleCalendar',
@@ -57,7 +53,6 @@ class GoogleCalendarService {
     }
 
     try {
-      print('🗓️ [GoogleCalendarService] Parsing service account credentials...');
 
       // Parse the JSON and fix the private key formatting
       final Map<String, dynamic> serviceAccountData = jsonDecode(serviceAccountJson);
@@ -68,32 +63,25 @@ class GoogleCalendarService {
         // Replace the literal \n with actual newlines for PEM format
         privateKey = privateKey.replaceAll(r'\n', '\n');
         serviceAccountData['private_key'] = privateKey;
-        print('🗓️ [GoogleCalendarService] Fixed private key formatting');
       }
 
       final credentials = ServiceAccountCredentials.fromJson(
         serviceAccountData,
       );
-      print('🗓️ [GoogleCalendarService] Credentials parsed, client email: ${credentials.email}');
 
-      print('🗓️ [GoogleCalendarService] Authenticating with Google...');
       _authClient = await clientViaServiceAccount(
         credentials,
         [calendar.CalendarApi.calendarScope],
       );
-      print('🗓️ [GoogleCalendarService] ✅ Authentication successful');
 
       _calendarApi = calendar.CalendarApi(_authClient!);
       _isInitialized = true;
 
-      print('🗓️ [GoogleCalendarService] ✅ Initialized successfully');
       developer.log(
         'GoogleCalendarService: Initialized successfully with calendar ID: $calendarId',
         name: 'GoogleCalendar',
       );
     } catch (e, stackTrace) {
-      print('🗓️ [GoogleCalendarService] ❌ Failed to initialize: $e');
-      print('🗓️ [GoogleCalendarService] Stack trace: $stackTrace');
       developer.log(
         'GoogleCalendarService: Failed to initialize - $e',
         name: 'GoogleCalendar',
@@ -118,12 +106,6 @@ class GoogleCalendarService {
     required TeamMember teamMember,
     required DateConstraint constraint,
   }) async {
-    print('🗓️ [GoogleCalendarService] createConstraintEvent() called');
-    print('🗓️ [GoogleCalendarService] Constraint ID: $constraintId');
-    print('🗓️ [GoogleCalendarService] Team Member: ${teamMember.name}');
-    print('🗓️ [GoogleCalendarService] Start Date: ${constraint.startDate}');
-    print('🗓️ [GoogleCalendarService] End Date: ${constraint.endDate}');
-    print('🗓️ [GoogleCalendarService] Is Unavailability: ${constraint.isUnavailability}');
 
     _ensureInitialized();
 
@@ -132,7 +114,6 @@ class GoogleCalendarService {
         ? CalendarEventTitles.unavailability(teamMember.name)
         : CalendarEventTitles.availability(teamMember.name);
 
-    print('🗓️ [GoogleCalendarService] Event title: $title');
 
     final description = CalendarEventDescriptions.constraint(
       memberName: teamMember.name,
@@ -143,7 +124,6 @@ class GoogleCalendarService {
 
     if (_isTestMode) {
       final mockEventId = 'mock_event_${constraintId}_${DateTime.now().millisecondsSinceEpoch}';
-      print('🗓️ [GoogleCalendarService] TEST MODE - returning mock event ID: $mockEventId');
       developer.log(
         'GoogleCalendarService [TEST]: Would create event: $title',
         name: 'GoogleCalendar',
@@ -163,10 +143,6 @@ class GoogleCalendarService {
             constraint.startDate.add(const Duration(days: 1)),
       );
 
-      print('🗓️ [GoogleCalendarService] Creating event...');
-      print('🗓️ [GoogleCalendarService] Start: $startDate, End: $endDate');
-      print('🗓️ [GoogleCalendarService] Calendar ID: $_calendarId');
-      print('🗓️ [GoogleCalendarService] Color ID: ${isUnavailability ? CalendarEventColors.unavailability : CalendarEventColors.availability}');
 
       final event = calendar.Event(
         summary: title,
@@ -185,12 +161,8 @@ class GoogleCalendarService {
         ),
       );
 
-      print('🗓️ [GoogleCalendarService] Calling Google Calendar API...');
       final createdEvent = await _calendarApi!.events.insert(event, _calendarId!);
 
-      print('🗓️ [GoogleCalendarService] ✅ Event created successfully!');
-      print('🗓️ [GoogleCalendarService] Event ID: ${createdEvent.id}');
-      print('🗓️ [GoogleCalendarService] Event Link: ${createdEvent.htmlLink}');
 
       developer.log(
         'GoogleCalendarService: Created event ${createdEvent.id} for constraint $constraintId',
@@ -199,8 +171,6 @@ class GoogleCalendarService {
 
       return createdEvent.id!;
     } catch (e, stackTrace) {
-      print('🗓️ [GoogleCalendarService] ❌ Failed to create event: $e');
-      print('🗓️ [GoogleCalendarService] Stack trace: $stackTrace');
       developer.log(
         'GoogleCalendarService: Failed to create event - $e',
         name: 'GoogleCalendar',
@@ -321,11 +291,9 @@ class GoogleCalendarService {
 
   /// Debug method to list all events in the calendar (for testing)
   Future<void> listAllEvents() async {
-    print('🗓️ [GoogleCalendarService] ==== DEBUG: Listing all events ====');
     _ensureInitialized();
 
     if (_isTestMode) {
-      print('🗓️ [GoogleCalendarService] In test mode, skipping event list');
       return;
     }
 
@@ -339,67 +307,40 @@ class GoogleCalendarService {
         orderBy: 'startTime',
       );
 
-      print('🗓️ [GoogleCalendarService] Found ${events.items?.length ?? 0} events');
 
       if (events.items != null) {
         for (final event in events.items!) {
-          print('🗓️ [GoogleCalendarService] - Event: ${event.summary}');
-          print('🗓️ [GoogleCalendarService]   ID: ${event.id}');
-          print('🗓️ [GoogleCalendarService]   Status: ${event.status}');
-          print('🗓️ [GoogleCalendarService]   Start: ${event.start?.date ?? event.start?.dateTime}');
-          print('🗓️ [GoogleCalendarService]   End: ${event.end?.date ?? event.end?.dateTime}');
-          print('🗓️ [GoogleCalendarService]   ---');
         }
       }
     } catch (e) {
-      print('🗓️ [GoogleCalendarService] ❌ Error listing events: $e');
     }
   }
 
   /// Get an event by ID to check if it exists
   Future<bool> eventExists(String calendarEventId) async {
-    print('🗓️ [GoogleCalendarService] eventExists() called for event ID: $calendarEventId');
-    print('🗓️ [GoogleCalendarService] Test mode: $_isTestMode');
-    print('🗓️ [GoogleCalendarService] Calendar ID: $_calendarId');
 
     _ensureInitialized();
 
     if (_isTestMode) {
-      print('🗓️ [GoogleCalendarService] In test mode, checking if event ID starts with "mock_event_"');
       final exists = calendarEventId.startsWith('mock_event_');
-      print('🗓️ [GoogleCalendarService] Event exists in test mode: $exists');
       return exists;
     }
 
     try {
-      print('🗓️ [GoogleCalendarService] Fetching event from Google Calendar API...');
       final event = await _calendarApi!.events.get(_calendarId!, calendarEventId);
-      print('🗓️ [GoogleCalendarService] ✅ Event found in Google Calendar');
-      print('🗓️ [GoogleCalendarService] Event summary: ${event.summary}');
-      print('🗓️ [GoogleCalendarService] Event status: ${event.status}');
-      print('🗓️ [GoogleCalendarService] Event start: ${event.start?.date ?? event.start?.dateTime}');
-      print('🗓️ [GoogleCalendarService] Event end: ${event.end?.date ?? event.end?.dateTime}');
-      print('🗓️ [GoogleCalendarService] Event ID: ${event.id}');
 
       // Consider cancelled events as non-existent
       if (event.status == 'cancelled') {
-        print('🗓️ [GoogleCalendarService] ❌ Event is cancelled, treating as deleted');
         return false;
       }
 
       return true;
     } on calendar.DetailedApiRequestError catch (e) {
-      print('🗓️ [GoogleCalendarService] ❌ API Error: ${e.status} - ${e.message}');
-      print('🗓️ [GoogleCalendarService] Error details: ${e.errors?.map((err) => '${err.reason}: ${err.message}').join(', ')}');
       if (e.status == 404 || e.status == 410) {
-        print('🗓️ [GoogleCalendarService] Event not found (404/410), returning false');
         return false;
       }
-      print('🗓️ [GoogleCalendarService] Rethrowing non-404/410 error');
       rethrow;
     } catch (e) {
-      print('🗓️ [GoogleCalendarService] ❌ Unexpected error: $e');
-      print('🗓️ [GoogleCalendarService] Stack trace: ${StackTrace.current}');
       rethrow;
     }
   }

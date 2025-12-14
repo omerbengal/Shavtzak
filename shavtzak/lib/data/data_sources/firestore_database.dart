@@ -163,23 +163,16 @@ class FirestoreDatabase implements DatabaseInterface {
     ConstraintStatus newStatus, {
     String? note,
   }) async {
-    print('🔥 [FirestoreDatabase] updateConstraintStatus called');
-    print('🔥 [FirestoreDatabase] teamMemberIdOrConstraintId: $teamMemberIdOrConstraintId');
-    print('🔥 [FirestoreDatabase] constraintIndex: $constraintIndex');
-    print('🔥 [FirestoreDatabase] newStatus: $newStatus');
-    print('🔥 [FirestoreDatabase] note: $note');
 
     try {
       // If constraintIndex is null, teamMemberIdOrConstraintId is actually the constraintId
       // and we need to find which team member owns this constraint
       if (constraintIndex == null) {
-        print('🔥 [FirestoreDatabase] Finding constraint by ID across all team members...');
         // Find constraint by ID across all team members
         final teamMembersSnapshot = await _firestore
             .collection(_teamMembersCollection)
             .get();
 
-        print('🔥 [FirestoreDatabase] Found ${teamMembersSnapshot.docs.length} team members');
 
         bool constraintFound = false;
         for (final teamMemberDoc in teamMembersSnapshot.docs) {
@@ -193,7 +186,6 @@ class FirestoreDatabase implements DatabaseInterface {
             );
 
             if (constraintIndex != -1) {
-              print('🔥 [FirestoreDatabase] ✅ Found constraint ${teamMemberIdOrConstraintId} in team member ${teamMemberDoc.id} at index $constraintIndex');
               constraintFound = true;
 
               // Update the constraint status in the array
@@ -204,19 +196,16 @@ class FirestoreDatabase implements DatabaseInterface {
                 updatedConstraints[constraintIndex]['note'] = note;
               }
 
-              print('🔥 [FirestoreDatabase] Updating constraint status to ${newStatus.name}');
               await teamMemberDoc.reference.update({
                 'constraints': updatedConstraints,
                 'updatedAt': FieldValue.serverTimestamp(),
               });
-              print('🔥 [FirestoreDatabase] ✅ Constraint status updated successfully');
               return;
             }
           }
         }
 
         if (!constraintFound) {
-          print('🔥 [FirestoreDatabase] ❌ Constraint not found: $teamMemberIdOrConstraintId');
           throw DatabaseException('Constraint not found: $teamMemberIdOrConstraintId');
         }
       } else {
@@ -990,15 +979,12 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<List<Map<String, dynamic>>> getSyncedConstraintsForAllMembers() async {
     try {
-      print('🔥 [FirestoreDatabase] Getting synced constraints from collection: $_calendarSyncCollection');
-      print('🔥 [FirestoreDatabase] Querying where status == ${CalendarSyncStatus.synced.name}');
 
       final snapshot = await _firestore
           .collection(_calendarSyncCollection)
           .where('status', isEqualTo: CalendarSyncStatus.synced.name)
           .get();
 
-      print('🔥 [FirestoreDatabase] Found ${snapshot.docs.length} synced constraints');
 
       return snapshot.docs.map((doc) {
         final data = doc.data();
@@ -1010,11 +996,9 @@ class FirestoreDatabase implements DatabaseInterface {
           'syncedAt': data['syncedAt'],
           'updatedAt': data['updatedAt'],
         };
-        print('🔥 [FirestoreDatabase] Synced constraint: ${result['constraintId']} -> ${result['calendarEventId']}');
         return result;
       }).toList();
     } catch (e) {
-      print('🔥 [FirestoreDatabase] ❌ Failed to get synced constraints: $e');
       throw DatabaseException('Failed to get synced constraints: $e');
     }
   }
@@ -1022,33 +1006,26 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<Map<String, String?>?> getGoogleCalendarConfig() async {
     try {
-      print('🔥 [FirestoreDatabase] Fetching Google Calendar config from keys collection');
 
       final doc = await _firestore.collection('keys').doc('googleCalendar').get();
 
       if (!doc.exists) {
-        print('🔥 [FirestoreDatabase] ❌ Google Calendar config not found in keys collection');
         return null;
       }
 
       final data = doc.data() as Map<String, dynamic>;
-      print('🔥 [FirestoreDatabase] Raw data from Firestore: $data');
 
       // Handle service account credentials - should be stored as a Map/Object
       String? serviceAccountJson;
       final serviceAccountData = data['serviceAccountJson'];
-      print('🔥 [FirestoreDatabase] serviceAccountData type: ${serviceAccountData.runtimeType}');
 
       if (serviceAccountData is Map) {
         // If stored as a Map, convert to JSON string
         serviceAccountJson = _convertMapToJsonString(Map<String, dynamic>.from(serviceAccountData));
-        print('🔥 [FirestoreDatabase] Successfully converted Map to JSON string');
       } else if (serviceAccountData is String) {
         // If still stored as a string, try to use it directly
-        print('🔥 [FirestoreDatabase] Warning: serviceAccountJson is stored as string, should be stored as Map');
         serviceAccountJson = serviceAccountData;
       } else {
-        print('🔥 [FirestoreDatabase] ❌ serviceAccountJson field is missing or invalid type');
         serviceAccountJson = null;
       }
 
@@ -1057,10 +1034,8 @@ class FirestoreDatabase implements DatabaseInterface {
         'calendarId': data['calendarId'] as String?,
       };
 
-      print('🔥 [FirestoreDatabase] ✅ Google Calendar config retrieved successfully');
       return result;
     } catch (e) {
-      print('🔥 [FirestoreDatabase] ❌ Failed to fetch Google Calendar config: $e');
       throw DatabaseException('Failed to fetch Google Calendar config: $e');
     }
   }
@@ -1076,8 +1051,6 @@ class FirestoreDatabase implements DatabaseInterface {
     if (jsonMap.containsKey('private_key') && jsonMap['private_key'] is String) {
       final privateKey = jsonMap['private_key'] as String;
       // Keep the newlines as-is - they should be stored properly in the Map
-      print('🔥 [FirestoreDatabase] Private key length: ${privateKey.length}');
-      print('🔥 [FirestoreDatabase] Private key contains newlines: ${privateKey.contains('\n')}');
     }
 
     // Use jsonEncode directly without escaping newlines

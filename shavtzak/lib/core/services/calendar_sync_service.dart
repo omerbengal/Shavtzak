@@ -308,7 +308,6 @@ class CalendarSyncService {
   /// Check synced events in Google Calendar and update constraint status if events were deleted
   /// Returns the number of constraints that were rejected due to deleted calendar events
   Future<int> validateSyncedEventsWithCalendar() async {
-    print('🗓️ [CalendarSyncService] Starting validation of synced events with Google Calendar');
     developer.log(
       'CalendarSyncService: Starting validation of synced events with Google Calendar',
       name: 'CalendarSync',
@@ -317,7 +316,6 @@ class CalendarSyncService {
     try {
       // Get all synced constraints
       final syncedStates = await _database.getSyncedConstraintsForAllMembers();
-      print('🗓️ [CalendarSyncService] Found ${syncedStates.length} synced constraints to validate');
       int rejectedCount = 0;
 
       for (final syncState in syncedStates) {
@@ -325,7 +323,6 @@ class CalendarSyncService {
         final calendarEventId = syncState['calendarEventId'] as String?;
 
         if (calendarEventId == null || calendarEventId.isEmpty) {
-          print('🗓️ [CalendarSyncService] Constraint $constraintId has empty calendar event ID, skipping');
           developer.log(
             'CalendarSyncService: Constraint $constraintId has empty calendar event ID, skipping validation',
             name: 'CalendarSync',
@@ -333,14 +330,11 @@ class CalendarSyncService {
           continue;
         }
 
-        print('🗓️ [CalendarSyncService] Checking if event $calendarEventId still exists for constraint $constraintId');
 
         // Check if the event still exists in Google Calendar
         final eventExists = await _calendarService.eventExists(calendarEventId);
-        print('🗓️ [CalendarSyncService] Event $calendarEventId exists: $eventExists');
 
         if (!eventExists) {
-          print('🗓️ [CalendarSyncService] ❌ Event $calendarEventId not found in Google Calendar, rejecting constraint $constraintId');
           developer.log(
             'CalendarSyncService: Event $calendarEventId not found in Google Calendar, rejecting constraint $constraintId',
             name: 'CalendarSync',
@@ -383,19 +377,15 @@ class CalendarSyncService {
             ConstraintStatus.rejected,
             note: newNote,
           );
-          print('🗓️ [CalendarSyncService] ✅ Updated constraint $constraintId status to rejected');
 
           // Remove the sync state
           await _database.removeCalendarSyncState(constraintId);
-          print('🗓️ [CalendarSyncService] ✅ Removed sync state for constraint $constraintId');
 
           rejectedCount++;
         } else {
-          print('🗓️ [CalendarSyncService] ✅ Event $calendarEventId exists in Google Calendar');
         }
       }
 
-      print('🗓️ [CalendarSyncService] Validation complete - rejected $rejectedCount constraints due to deleted calendar events');
       developer.log(
         'CalendarSyncService: Validation complete - rejected $rejectedCount constraints due to deleted calendar events',
         name: 'CalendarSync',
@@ -403,7 +393,6 @@ class CalendarSyncService {
 
       return rejectedCount;
     } catch (e) {
-      print('🗓️ [CalendarSyncService] ❌ Failed to validate synced events: $e');
       developer.log(
         'CalendarSyncService: Failed to validate synced events - $e',
         name: 'CalendarSync',
