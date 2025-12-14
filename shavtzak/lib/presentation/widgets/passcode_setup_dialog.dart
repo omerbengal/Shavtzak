@@ -11,6 +11,9 @@ class PasscodeSetupDialog extends StatefulWidget {
 }
 
 class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
+  static const Duration _focusDelay = Duration(milliseconds: 300);
+  static const double _iconSize = 20.0;
+  
   int _currentStep = 0;
   int _selectedLength = 4;
   final List<TextEditingController> _passcodeControllers = [];
@@ -56,7 +59,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
         title: Text(_currentStep == 0 ? 'הגדרת קוד גישה' :
                    _currentStep == 1 ? 'הזן קוד גישה' : 'אשר קוד גישה'),
         content: SizedBox(
-          width: 300,
+          width: 400,
           child: _buildCurrentStep(),
         ),
         actions: _buildActions(),
@@ -157,22 +160,16 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
           obscureText: _obscurePasscode,
         ),
         const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
+        Align(
+          alignment: Alignment.center,
+          child: TextButton.icon(
+            onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
+            icon: Icon(
               _obscurePasscode ? Icons.visibility_off : Icons.visibility,
-              color: Colors.grey[600],
+              size: _iconSize,
             ),
-            const SizedBox(width: 8),
-            TextButton(
-              onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
-              child: Text(
-                _obscurePasscode ? 'הצג קוד' : 'הסתר קוד',
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ),
-          ],
+            label: Text(_obscurePasscode ? 'הצג קוד' : 'הסתר קוד'),
+          ),
         ),
       ],
     );
@@ -222,10 +219,16 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
     setState(() {
       _currentStep = 1;
     });
-    // Focus on first passcode field after widget is rebuilt
+    // Robust focus mechanism: Use both postFrameCallback and delayed focus
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _passcodeFocusNodes[0].requestFocus();
+        // Additional delayed focus to handle dialog animation completion
+        Future.delayed(_focusDelay, () {
+          if (mounted) {
+            _passcodeFocusNodes[0].requestFocus();
+          }
+        });
       }
     });
   }
@@ -247,10 +250,16 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
       _currentStep = 2;
     });
     
-    // Focus on first confirm field after widget is rebuilt
+    // Robust focus mechanism: Use both postFrameCallback and delayed focus
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _confirmFocusNodes[0].requestFocus();
+        // Additional delayed focus to handle dialog animation completion
+        Future.delayed(_focusDelay, () {
+          if (mounted) {
+            _confirmFocusNodes[0].requestFocus();
+          }
+        });
       }
     });
   }

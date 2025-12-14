@@ -18,6 +18,9 @@ class PasscodeVerificationDialog extends StatefulWidget {
 }
 
 class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog> {
+  static const Duration _focusDelay = Duration(milliseconds: 300);
+  static const double _iconSize = 20.0;
+  
   final List<TextEditingController> _controllers = [];
   final List<FocusNode> _focusNodes = [];
   int _failedAttempts = 0;
@@ -35,10 +38,17 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       _focusNodes.add(FocusNode());
     }
 
-    // Focus on first field after widget is built
+    // Robust focus mechanism: Use both postFrameCallback and delayed focus
+    // This ensures keyboard opens reliably across platforms (web, mobile)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _focusNodes[0].requestFocus();
+        // Additional delayed focus to handle dialog animation completion
+        Future.delayed(_focusDelay, () {
+          if (mounted) {
+            _focusNodes[0].requestFocus();
+          }
+        });
       }
     });
   }
@@ -61,7 +71,7 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       child: AlertDialog(
         title: const Text('הזן קוד גישה'),
         content: SizedBox(
-          width: 300,
+          width: 400,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -121,22 +131,16 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
                   obscureText: _obscurePasscode,
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
+                Align(
+                  alignment: Alignment.center,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
+                    icon: Icon(
                       _obscurePasscode ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.grey[600],
+                      size: _iconSize,
                     ),
-                    const SizedBox(width: 8),
-                    TextButton(
-                      onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
-                      child: Text(
-                        _obscurePasscode ? 'הצג קוד' : 'הסתר קוד',
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                    ),
-                  ],
+                    label: Text(_obscurePasscode ? 'הצג קוד' : 'הסתר קוד'),
+                  ),
                 ),
               ],
             ],
