@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'passcode_digit_field.dart';
 
 /// Dialog for changing an existing passcode
@@ -18,7 +19,6 @@ class PasscodeChangeDialog extends StatefulWidget {
 }
 
 class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
-  static const Duration _focusDelay = Duration(milliseconds: 300);
   static const double _iconSize = 20.0;
   
   int _currentStep = 0;
@@ -48,15 +48,18 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       _confirmFocusNodes.add(FocusNode());
     }
 
-    // Robust focus mechanism: Use both postFrameCallback and delayed focus
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Ultra-reliable focus mechanism for keyboard opening
+    SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _currentFocusNodes[0].requestFocus();
-        // Additional delayed focus to handle dialog animation completion
-        Future.delayed(_focusDelay, () {
-          if (mounted) {
-            _currentFocusNodes[0].requestFocus();
-          }
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted) _currentFocusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted) _currentFocusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) _currentFocusNodes[0].requestFocus();
         });
       }
     });
@@ -94,7 +97,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
                    _currentStep == 1 ? 'בחר אורך חדש' :
                    _currentStep == 2 ? 'הזן קוד גישה חדש' : 'אשר קוד גישה חדש'),
         content: SizedBox(
-          width: 400,
+          width: 450,
           child: _buildCurrentStep(),
         ),
         actions: _buildActions(),
@@ -341,15 +344,18 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       _currentStep = 2;
     });
     
-    // Robust focus mechanism: Use both postFrameCallback and delayed focus
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Ultra-reliable focus mechanism for keyboard opening
+    SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _passcodeFocusNodes[0].requestFocus();
-        // Additional delayed focus to handle dialog animation completion
-        Future.delayed(_focusDelay, () {
-          if (mounted) {
-            _passcodeFocusNodes[0].requestFocus();
-          }
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted) _passcodeFocusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted) _passcodeFocusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) _passcodeFocusNodes[0].requestFocus();
         });
       }
     });
@@ -372,15 +378,18 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       _currentStep = 3;
     });
     
-    // Robust focus mechanism: Use both postFrameCallback and delayed focus
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Ultra-reliable focus mechanism for keyboard opening
+    SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _confirmFocusNodes[0].requestFocus();
-        // Additional delayed focus to handle dialog animation completion
-        Future.delayed(_focusDelay, () {
-          if (mounted) {
-            _confirmFocusNodes[0].requestFocus();
-          }
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted) _confirmFocusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted) _confirmFocusNodes[0].requestFocus();
+        });
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) _confirmFocusNodes[0].requestFocus();
         });
       }
     });

@@ -34,7 +34,7 @@ class _PasscodeDigitFieldState extends State<PasscodeDigitField> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 2),
       child: SizedBox(
         width: 50,
         height: 55,
@@ -48,8 +48,9 @@ class _PasscodeDigitFieldState extends State<PasscodeDigitField> {
             fontSize: 24,
             fontWeight: FontWeight.bold,
           ),
-          keyboardType: TextInputType.numberWithOptions(signed: false, decimal: false),
-          enableInteractiveSelection: false,
+          keyboardType: TextInputType.number,
+          showCursor: true,
+          readOnly: false,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
             LengthLimitingTextInputFormatter(1),
