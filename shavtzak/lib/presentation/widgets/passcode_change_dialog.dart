@@ -387,10 +387,21 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
 
   
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
+    showDialog(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('שגיאה', textAlign: TextAlign.center),
+          content: Text(message, textAlign: TextAlign.center),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('אישור', textAlign: TextAlign.center),
+            ),
+          ],
+        ),
       ),
     );
   }

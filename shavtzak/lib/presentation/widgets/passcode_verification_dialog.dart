@@ -24,8 +24,6 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
   final List<FocusNode> _focusNodes = [];
   int _failedAttempts = 0;
   bool _isError = false;
-  bool _isBlocked = false;
-  int _blockCountdown = 0;
   bool _obscurePasscode = true;
 
   @override
@@ -64,94 +62,60 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              if (_isBlocked) ...[
-                Icon(
-                  Icons.lock,
-                  size: 64,
-                  color: Colors.red[400],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'יותר מדי ניסיונות כושלים',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.red[600],
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
+              Text(
+                'הזן קוד גישה של ${widget.passcodeLength} ספרות:',
+                style: const TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              if (_isError) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'נסה שוב בעוד $_blockCountdown שניות',
+                  'קוד שגוי',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.grey[600],
+                    color: Colors.red[600],
                   ),
                   textAlign: TextAlign.center,
-                ),
-              ] else ...[
-                Text(
-                  'הזן קוד גישה של ${widget.passcodeLength} ספרות:',
-                  style: const TextStyle(fontSize: 16),
-                  textAlign: TextAlign.center,
-                ),
-                if (_isError) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'קוד שגוי. ניסיונות נותרים: ${3 - _failedAttempts}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.red[600],
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-                const SizedBox(height: 24),
-                PasscodeInputRow(
-                  digitCount: widget.passcodeLength,
-                  controllers: _controllers,
-                  focusNodes: _focusNodes,
-                  onAllFilled: () {
-                    // Auto-submit when all fields are filled
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      _verifyPasscode();
-                    });
-                  },
-                  obscureText: _obscurePasscode,
-                ),
-                const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.center,
-                  child: TextButton.icon(
-                    onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
-                    icon: Icon(
-                      _obscurePasscode ? Icons.visibility_off : Icons.visibility,
-                      size: _iconSize,
-                    ),
-                    label: Text(_obscurePasscode ? 'הצג קוד' : 'הסתר קוד'),
-                  ),
                 ),
               ],
+              const SizedBox(height: 24),
+              PasscodeInputRow(
+                digitCount: widget.passcodeLength,
+                controllers: _controllers,
+                focusNodes: _focusNodes,
+                onAllFilled: () {
+                  // Auto-submit when all fields are filled
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _verifyPasscode();
+                  });
+                },
+                obscureText: _obscurePasscode,
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.center,
+                child: TextButton.icon(
+                  onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
+                  icon: Icon(
+                    _obscurePasscode ? Icons.visibility_off : Icons.visibility,
+                    size: _iconSize,
+                  ),
+                  label: Text(_obscurePasscode ? 'הצג קוד' : 'הסתר קוד'),
+                ),
+              ),
             ],
           ),
         ),
-        actions: _isBlocked
-            ? [
-                TextButton(
-                  onPressed: null,
-                  child: Text('חכה $_blockCountdown שניות', textAlign: TextAlign.center),
-                ),
-              ]
-            : [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('ביטול', textAlign: TextAlign.center),
-                ),
-                ElevatedButton(
-                  onPressed: _isBlocked ? null : _verifyPasscode,
-                  child: const Text('אישור', textAlign: TextAlign.center),
-                ),
-              ],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('ביטול', textAlign: TextAlign.center),
+          ),
+          ElevatedButton(
+            onPressed: _verifyPasscode,
+            child: const Text('אישור', textAlign: TextAlign.center),
+          ),
+        ],
       ),
     );
   }
@@ -182,13 +146,8 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       // Focus back to first field
       _focusNodes[0].requestFocus();
 
-      if (_failedAttempts >= 3) {
-        // Block user with exponential backoff
-        _blockUser();
-      } else {
-        // Shake animation
-        _shakeError();
-      }
+      // Haptic feedback
+      HapticFeedback.lightImpact();
     }
   }
 
@@ -199,46 +158,22 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
         .join();
   }
 
-  void _blockUser() {
-    setState(() {
-      _isBlocked = true;
-      _blockCountdown = _getBlockDuration();
-    });
-
-    // Countdown timer
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted && _blockCountdown > 1) {
-        setState(() => _blockCountdown--);
-        _blockUser();
-      } else if (mounted) {
-        // Unblock and reset
-        setState(() {
-          _isBlocked = false;
-          _isError = false;
-          _failedAttempts = 0;
-          _blockCountdown = 0;
-        });
-        _focusNodes[0].requestFocus();
-      }
-    });
-  }
-
-  int _getBlockDuration() {
-    // Exponential backoff: 2^failedAttempts seconds
-    // 3 attempts: 8 seconds
-    return 8;
-  }
-
-  void _shakeError() {
-    HapticFeedback.lightImpact();
-    // Visual feedback is handled by the red border
-  }
-
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
+    showDialog(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('שגיאה', textAlign: TextAlign.center),
+          content: Text(message, textAlign: TextAlign.center),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('אישור', textAlign: TextAlign.center),
+            ),
+          ],
+        ),
       ),
     );
   }
