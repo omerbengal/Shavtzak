@@ -48,8 +48,9 @@ class _PasscodeDigitFieldState extends State<PasscodeDigitField> {
             fontSize: 24,
             fontWeight: FontWeight.bold,
           ),
-          keyboardType: TextInputType.numberWithOptions(signed: false, decimal: false),
-          enableInteractiveSelection: false,
+          keyboardType: TextInputType.number,
+          showCursor: true,
+          readOnly: false,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
             LengthLimitingTextInputFormatter(1),
