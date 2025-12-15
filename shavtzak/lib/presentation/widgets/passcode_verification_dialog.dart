@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/scheduler.dart';
 import 'passcode_digit_field.dart';
 
 /// Dialog for verifying passcode before allowing user selection
@@ -37,19 +36,8 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       _controllers.add(TextEditingController());
       _focusNodes.add(FocusNode());
     }
-
-    // Mobile keyboard auto-open strategy:
-    // Since we use showGeneralDialog with Duration.zero, focus should happen
-    // very close to the original user tap gesture. We use addPostFrameCallback
-    // to ensure the widget tree is built, then request focus and explicitly
-    // invoke TextInput.show to maximize chances of keyboard appearing.
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _focusNodes[0].requestFocus();
-        // Explicitly request the keyboard to show via platform channel
-        SystemChannels.textInput.invokeMethod('TextInput.show');
-      }
-    });
+    // No auto-focus: user must tap a digit field to open keyboard.
+    // This ensures keyboard opens reliably on mobile (direct user gesture).
   }
 
   @override

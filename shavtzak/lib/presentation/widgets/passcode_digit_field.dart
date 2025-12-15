@@ -31,6 +31,27 @@ class PasscodeDigitField extends StatefulWidget {
 }
 
 class _PasscodeDigitFieldState extends State<PasscodeDigitField> {
+  /// Find the first empty field index, or 0 if all fields are empty
+  int _findFirstEmptyFieldIndex() {
+    for (int i = 0; i < widget.totalDigits; i++) {
+      if (widget.allControllers[i].text.isEmpty) {
+        return i;
+      }
+    }
+    // All fields are filled, return last field
+    return widget.totalDigits - 1;
+  }
+
+  /// Handle tap on this field - redirect to first empty field if needed
+  void _handleTap() {
+    final targetIndex = _findFirstEmptyFieldIndex();
+    if (targetIndex != widget.index) {
+      // Redirect focus to the correct field
+      widget.allFocusNodes[targetIndex].requestFocus();
+    }
+    // If targetIndex == widget.index, normal focus behavior will apply
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -38,55 +59,59 @@ class _PasscodeDigitFieldState extends State<PasscodeDigitField> {
       child: SizedBox(
         width: 50,
         height: 55,
-        child: TextField(
-          controller: widget.controller,
-          focusNode: widget.focusNode,
-          autofocus: widget.autoFocus,
-          obscureText: widget.obscureText,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-          ),
-          keyboardType: TextInputType.number,
-          showCursor: true,
-          readOnly: false,
-          inputFormatters: [
-            FilteringTextInputFormatter.digitsOnly,
-            LengthLimitingTextInputFormatter(1),
-          ],
-          decoration: InputDecoration(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+        child: GestureDetector(
+          onTap: _handleTap,
+          child: TextField(
+            controller: widget.controller,
+            focusNode: widget.focusNode,
+            autofocus: false, // Disabled - user must tap to open keyboard
+            obscureText: widget.obscureText,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
             ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: Theme.of(context).primaryColor,
-                width: 2,
+            keyboardType: TextInputType.number,
+            showCursor: true,
+            readOnly: false,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(1),
+            ],
+            decoration: InputDecoration(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: Theme.of(context).primaryColor,
+                  width: 2,
+                ),
               ),
             ),
-          ),
-          onChanged: (value) {
-            // When a digit is entered, move to next field
-            if (value.isNotEmpty && widget.index < widget.totalDigits - 1) {
-              widget.allFocusNodes[widget.index + 1].requestFocus();
-            }
-            // Check if all fields are filled
-            if (widget.onAllFilled != null) {
-              bool allFilled = true;
-              for (int i = 0; i < widget.totalDigits; i++) {
-                if (widget.allControllers[i].text.isEmpty) {
-                  allFilled = false;
-                  break;
+            onTap: _handleTap,
+            onChanged: (value) {
+              // When a digit is entered, move to next field
+              if (value.isNotEmpty && widget.index < widget.totalDigits - 1) {
+                widget.allFocusNodes[widget.index + 1].requestFocus();
+              }
+              // Check if all fields are filled
+              if (widget.onAllFilled != null) {
+                bool allFilled = true;
+                for (int i = 0; i < widget.totalDigits; i++) {
+                  if (widget.allControllers[i].text.isEmpty) {
+                    allFilled = false;
+                    break;
+                  }
+                }
+                if (allFilled) {
+                  widget.onAllFilled!();
                 }
               }
-              if (allFilled) {
-                widget.onAllFilled!();
-              }
-            }
-          },
+            },
+          ),
         ),
       ),
     );
@@ -160,7 +185,7 @@ class _PasscodeInputRowState extends State<PasscodeInputRow> {
               allFocusNodes: widget.focusNodes,
               onAllFilled: widget.onAllFilled,
               obscureText: widget.obscureText,
-              autoFocus: index == 0,
+              autoFocus: false, // Disabled - user tap triggers keyboard
             );
           }),
         ),

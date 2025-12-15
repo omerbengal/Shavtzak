@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter/scheduler.dart';
 import 'passcode_digit_field.dart';
 
 /// Dialog for setting up a new passcode
@@ -219,13 +217,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
     setState(() {
       _currentStep = 1;
     });
-    // Focus and show keyboard for the first field
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _passcodeFocusNodes[0].requestFocus();
-        SystemChannels.textInput.invokeMethod('TextInput.show');
-      }
-    });
+    // No auto-focus: user must tap a digit field to open keyboard
   }
 
   void _validateAndProceed() {
@@ -244,14 +236,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
     setState(() {
       _currentStep = 2;
     });
-
-    // Focus and show keyboard for the first field
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _confirmFocusNodes[0].requestFocus();
-        SystemChannels.textInput.invokeMethod('TextInput.show');
-      }
-    });
+    // No auto-focus: user must tap a digit field to open keyboard
   }
 
   void _validateAndConfirm() {

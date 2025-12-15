@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter/scheduler.dart';
 import 'passcode_digit_field.dart';
 
 /// Dialog for changing an existing passcode
@@ -48,13 +46,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       _confirmFocusNodes.add(FocusNode());
     }
 
-    // Focus and show keyboard for the first field
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _currentFocusNodes[0].requestFocus();
-        SystemChannels.textInput.invokeMethod('TextInput.show');
-      }
-    });
+    // No auto-focus: user must tap a digit field to open keyboard
   }
 
   @override
@@ -335,14 +327,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
     setState(() {
       _currentStep = 2;
     });
-
-    // Focus and show keyboard for the first field
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _passcodeFocusNodes[0].requestFocus();
-        SystemChannels.textInput.invokeMethod('TextInput.show');
-      }
-    });
+    // No auto-focus: user must tap a digit field to open keyboard
   }
 
   void _validateAndProceed() {
@@ -361,14 +346,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
     setState(() {
       _currentStep = 3;
     });
-
-    // Focus and show keyboard for the first field
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _confirmFocusNodes[0].requestFocus();
-        SystemChannels.textInput.invokeMethod('TextInput.show');
-      }
-    });
+    // No auto-focus: user must tap a digit field to open keyboard
   }
 
   void _validateAndConfirm() {
