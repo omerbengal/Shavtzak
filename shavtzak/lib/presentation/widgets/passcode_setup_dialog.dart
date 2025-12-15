@@ -219,19 +219,11 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
     setState(() {
       _currentStep = 1;
     });
-    // Ultra-reliable focus mechanism for keyboard opening
+    // Focus and show keyboard for the first field
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _passcodeFocusNodes[0].requestFocus();
-        Future.delayed(const Duration(milliseconds: 50), () {
-          if (mounted) _passcodeFocusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 150), () {
-          if (mounted) _passcodeFocusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) _passcodeFocusNodes[0].requestFocus();
-        });
+        SystemChannels.textInput.invokeMethod('TextInput.show');
       }
     });
   }
@@ -252,20 +244,12 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
     setState(() {
       _currentStep = 2;
     });
-    
-    // Ultra-reliable focus mechanism for keyboard opening
+
+    // Focus and show keyboard for the first field
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _confirmFocusNodes[0].requestFocus();
-        Future.delayed(const Duration(milliseconds: 50), () {
-          if (mounted) _confirmFocusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 150), () {
-          if (mounted) _confirmFocusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) _confirmFocusNodes[0].requestFocus();
-        });
+        SystemChannels.textInput.invokeMethod('TextInput.show');
       }
     });
   }

@@ -60,11 +60,17 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
   Future<void> _handleTeamMemberSelection(BuildContext context, TeamMember teamMember) async {
     // Check if team member has passcode
     if (teamMember.passcode != null && teamMember.passcodeLength != null) {
-      // Show passcode verification dialog
-      final verified = await showDialog<bool>(
+      // Show passcode verification dialog with ZERO transition duration
+      // This is critical for mobile keyboard auto-open: by removing the animation,
+      // we keep the focus request closer to the original user tap gesture,
+      // giving the browser a better chance to allow keyboard popup
+      final verified = await showGeneralDialog<bool>(
         context: context,
-        barrierDismissible: false, // Prevent dismissing by tapping outside
-        builder: (context) => PasscodeVerificationDialog(
+        barrierDismissible: false,
+        barrierLabel: 'Passcode Dialog',
+        barrierColor: Colors.black54,
+        transitionDuration: Duration.zero, // Instant dialog - no animation
+        pageBuilder: (context, animation, secondaryAnimation) => PasscodeVerificationDialog(
           passcodeLength: teamMember.passcodeLength!,
           correctPasscode: teamMember.passcode!,
         ),

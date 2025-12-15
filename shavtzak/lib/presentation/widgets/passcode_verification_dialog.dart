@@ -38,21 +38,16 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       _focusNodes.add(FocusNode());
     }
 
-    // Ultra-reliable focus mechanism for keyboard opening
-    // Using SchedulerBinding to ensure dialog is fully built and rendered
+    // Mobile keyboard auto-open strategy:
+    // Since we use showGeneralDialog with Duration.zero, focus should happen
+    // very close to the original user tap gesture. We use addPostFrameCallback
+    // to ensure the widget tree is built, then request focus and explicitly
+    // invoke TextInput.show to maximize chances of keyboard appearing.
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        // Multiple focus requests with increasing delays for maximum reliability
         _focusNodes[0].requestFocus();
-        Future.delayed(const Duration(milliseconds: 50), () {
-          if (mounted) _focusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 150), () {
-          if (mounted) _focusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) _focusNodes[0].requestFocus();
-        });
+        // Explicitly request the keyboard to show via platform channel
+        SystemChannels.textInput.invokeMethod('TextInput.show');
       }
     });
   }

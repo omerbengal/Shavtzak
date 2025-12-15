@@ -48,19 +48,11 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       _confirmFocusNodes.add(FocusNode());
     }
 
-    // Ultra-reliable focus mechanism for keyboard opening
+    // Focus and show keyboard for the first field
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _currentFocusNodes[0].requestFocus();
-        Future.delayed(const Duration(milliseconds: 50), () {
-          if (mounted) _currentFocusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 150), () {
-          if (mounted) _currentFocusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) _currentFocusNodes[0].requestFocus();
-        });
+        SystemChannels.textInput.invokeMethod('TextInput.show');
       }
     });
   }
@@ -339,24 +331,16 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
     for (int i = 0; i < _passcodeControllers.length; i++) {
       _passcodeControllers[i].clear();
     }
-    
+
     setState(() {
       _currentStep = 2;
     });
-    
-    // Ultra-reliable focus mechanism for keyboard opening
+
+    // Focus and show keyboard for the first field
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _passcodeFocusNodes[0].requestFocus();
-        Future.delayed(const Duration(milliseconds: 50), () {
-          if (mounted) _passcodeFocusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 150), () {
-          if (mounted) _passcodeFocusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) _passcodeFocusNodes[0].requestFocus();
-        });
+        SystemChannels.textInput.invokeMethod('TextInput.show');
       }
     });
   }
@@ -377,20 +361,12 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
     setState(() {
       _currentStep = 3;
     });
-    
-    // Ultra-reliable focus mechanism for keyboard opening
+
+    // Focus and show keyboard for the first field
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _confirmFocusNodes[0].requestFocus();
-        Future.delayed(const Duration(milliseconds: 50), () {
-          if (mounted) _confirmFocusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 150), () {
-          if (mounted) _confirmFocusNodes[0].requestFocus();
-        });
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) _confirmFocusNodes[0].requestFocus();
-        });
+        SystemChannels.textInput.invokeMethod('TextInput.show');
       }
     });
   }
