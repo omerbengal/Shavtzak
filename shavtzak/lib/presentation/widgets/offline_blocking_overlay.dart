@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/services/connectivity_service.dart';
-import '../../core/services/environment_service.dart';
 
 /// A widget that displays a blocking dialog when the device is offline.
-/// IMPORTANT: This feature is only active in TEST MODE.
-/// In production mode, this widget simply passes through its child.
+/// Shows in both test and production modes.
 class OfflineBlockingOverlay extends StatelessWidget {
   final Widget child;
 
@@ -15,34 +13,20 @@ class OfflineBlockingOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Listen to both environment and connectivity changes
     return ListenableBuilder(
-      listenable: EnvironmentService.instance,
+      listenable: ConnectivityService.instance,
       builder: (context, _) {
-        final isTestMode = EnvironmentService.instance.isTestMode;
+        final isOffline = ConnectivityService.instance.isOffline;
 
-        // In production mode, just return the child without any overlay
-        if (!isTestMode) {
-          return child;
-        }
+        return Stack(
+          children: [
+            // Always render the app
+            child,
 
-        // In test mode, wrap with connectivity listener
-        return ListenableBuilder(
-          listenable: ConnectivityService.instance,
-          builder: (context, _) {
-            final isOffline = ConnectivityService.instance.isOffline;
-
-            return Stack(
-              children: [
-                // Always render the app
-                child,
-
-                // Show blocking overlay when offline (test mode only)
-                if (isOffline)
-                  const _OfflineBlockingDialog(),
-              ],
-            );
-          },
+            // Show blocking overlay when offline
+            if (isOffline)
+              const _OfflineBlockingDialog(),
+          ],
         );
       },
     );
@@ -141,42 +125,6 @@ class _OfflineBlockingDialog extends StatelessWidget {
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Test mode indicator
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.yellow[100],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Colors.yellow[700]!,
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.science,
-                          size: 16,
-                          color: Colors.yellow[800],
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'פעיל רק בסביבת בדיקות',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.yellow[900],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ],
               ),
