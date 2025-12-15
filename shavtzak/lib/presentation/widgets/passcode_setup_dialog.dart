@@ -207,7 +207,10 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
       case 2:
         return [
           TextButton(
-            onPressed: () => setState(() => _currentStep = 1),
+            onPressed: () => setState(() {
+              _currentStep = 1;
+              _obscurePasscode = true; // Reset visibility state when going back
+            }),
             child: const Text('חזור', textAlign: TextAlign.center),
           ),
           ElevatedButton(
@@ -242,6 +245,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
 
     setState(() {
       _currentStep = 2;
+      _obscurePasscode = true; // Reset visibility state for confirm step
     });
     // No auto-focus: user must tap a digit field to open keyboard
   }
