@@ -54,8 +54,12 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: AlertDialog(
-        title: Text(_currentStep == 0 ? 'הגדרת קוד גישה' :
-                   _currentStep == 1 ? 'הזן קוד גישה' : 'אשר קוד גישה'),
+        title: Text(
+          _currentStep == 0 ? 'הגדרת קוד גישה' :
+          _currentStep == 1 ? 'הזן קוד גישה' : 'אשר קוד גישה',
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
         content: SizedBox(
           width: 450,
           child: _buildCurrentStep(),
@@ -81,6 +85,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
   Widget _buildLengthSelection() {
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         const Text(
           'בחר אורך קוד גישה:',
@@ -89,9 +94,10 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
         ),
         const SizedBox(height: 24),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _buildLengthOption(4),
+            const SizedBox(width: 20),
             _buildLengthOption(6),
           ],
         ),
@@ -144,6 +150,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
 
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           isConfirm ? 'הזן שוב את קוד הגישה:' : 'הזן קוד גישה:',
@@ -179,33 +186,33 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
         return [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('ביטול'),
+            child: const Text('ביטול', textAlign: TextAlign.center),
           ),
           ElevatedButton(
             onPressed: _nextStep,
-            child: const Text('הבא'),
+            child: const Text('הבא', textAlign: TextAlign.center),
           ),
         ];
       case 1:
         return [
           TextButton(
             onPressed: () => setState(() => _currentStep = 0),
-            child: const Text('חזור'),
+            child: const Text('חזור', textAlign: TextAlign.center),
           ),
           ElevatedButton(
             onPressed: _validateAndProceed,
-            child: const Text('הבא'),
+            child: const Text('הבא', textAlign: TextAlign.center),
           ),
         ];
       case 2:
         return [
           TextButton(
             onPressed: () => setState(() => _currentStep = 1),
-            child: const Text('חזור'),
+            child: const Text('חזור', textAlign: TextAlign.center),
           ),
           ElevatedButton(
             onPressed: _validateAndConfirm,
-            child: const Text('אישור'),
+            child: const Text('אישור', textAlign: TextAlign.center),
           ),
         ];
       default:
@@ -269,10 +276,21 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
 
   
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
+    showDialog(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('שגיאה', textAlign: TextAlign.center),
+          content: Text(message, textAlign: TextAlign.center),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('אישור', textAlign: TextAlign.center),
+            ),
+          ],
+        ),
       ),
     );
   }

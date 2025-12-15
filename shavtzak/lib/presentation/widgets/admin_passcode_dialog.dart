@@ -28,16 +28,19 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
       textDirection: TextDirection.rtl,
       child: AlertDialog(
         title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.admin_panel_settings, size: 24),
             const SizedBox(width: 8),
             Text('ניהול קוד גישה: ${widget.teamMemberName}'),
           ],
         ),
+        actionsAlignment: MainAxisAlignment.center,
         content: SizedBox(
           width: 350,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
@@ -113,24 +116,28 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
                 const SizedBox(height: 24),
               ],
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   if (widget.currentPasscode != null) ...[
                     ElevatedButton.icon(
                       onPressed: () => _showRemoveConfirmation(context),
                       icon: const Icon(Icons.delete_outline),
-                      label: const Text('הסר קוד'),
+                      label: const Text('הסר קוד', textAlign: TextAlign.center),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       ),
                     ),
+                    const SizedBox(width: 12),
                   ],
                   ElevatedButton.icon(
                     onPressed: () => _showSetPasscodeDialog(context),
                     icon: Icon(widget.currentPasscode != null ? Icons.edit : Icons.add),
-                    label: Text(widget.currentPasscode != null ? 'שנה קוד' : 'הגדר קוד'),
+                    label: Text(
+                      widget.currentPasscode != null ? 'שנה קוד' : 'הגדר קוד',
+                      textAlign: TextAlign.center,
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: widget.currentPasscode != null
                           ? Theme.of(context).primaryColor
@@ -147,7 +154,7 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('סגור'),
+            child: const Text('סגור', textAlign: TextAlign.center),
           ),
         ],
       ),
@@ -175,7 +182,8 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
       builder: (context) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
-          title: const Text('אישור הסרת קוד גישה'),
+          title: const Text('אישור הסרת קוד גישה', textAlign: TextAlign.center),
+          actionsAlignment: MainAxisAlignment.center,
           content: Text(
             'האם את/ה בטוח/ה שברצונך להסיר את קוד הגישה עבור ${widget.teamMemberName}?\n\nפעולה זו תאפשר לכל אחד לגשת לחשבון זה.',
             textAlign: TextAlign.center,
@@ -183,14 +191,14 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('ביטול'),
+              child: const Text('ביטול', textAlign: TextAlign.center),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
               style: TextButton.styleFrom(
                 foregroundColor: Colors.red,
               ),
-              child: const Text('הסר קוד'),
+              child: const Text('הסר קוד', textAlign: TextAlign.center),
             ),
           ],
         ),
