@@ -77,9 +77,13 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: AlertDialog(
-        title: Text(_currentStep == 0 ? 'שינוי קוד גישה' :
-                   _currentStep == 1 ? 'בחר אורך חדש' :
-                   _currentStep == 2 ? 'הזן קוד גישה חדש' : 'אשר קוד גישה חדש'),
+        title: Text(
+          _currentStep == 0 ? 'שינוי קוד גישה' :
+          _currentStep == 1 ? 'בחר אורך חדש' :
+          _currentStep == 2 ? 'הזן קוד גישה חדש' : 'אשר קוד גישה חדש',
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
         content: SizedBox(
           width: 450,
           child: _buildCurrentStep(),
@@ -107,6 +111,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
   Widget _buildCurrentPasscodeEntry() {
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           'הזן את קוד הגישה הנוכחי:',
@@ -150,6 +155,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
   Widget _buildLengthSelection() {
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         const Text(
           'בחר אורך חדש לקוד גישה:',
@@ -158,9 +164,10 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
         ),
         const SizedBox(height: 24),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _buildLengthOption(4),
+            const SizedBox(width: 20),
             _buildLengthOption(6),
           ],
         ),
@@ -213,6 +220,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
 
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           isConfirm ? 'הזן שוב את קוד הגישה החדש:' : 'הזן קוד גישה חדש:',
@@ -248,44 +256,44 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
         return [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('ביטול'),
+            child: const Text('ביטול', textAlign: TextAlign.center),
           ),
           ElevatedButton(
             onPressed: _verifyCurrentPasscode,
-            child: const Text('הבא'),
+            child: const Text('הבא', textAlign: TextAlign.center),
           ),
         ];
       case 1:
         return [
           TextButton(
             onPressed: () => setState(() => _currentStep = 0),
-            child: const Text('חזור'),
+            child: const Text('חזור', textAlign: TextAlign.center),
           ),
           ElevatedButton(
             onPressed: _nextStep,
-            child: const Text('הבא'),
+            child: const Text('הבא', textAlign: TextAlign.center),
           ),
         ];
       case 2:
         return [
           TextButton(
             onPressed: () => setState(() => _currentStep = 1),
-            child: const Text('חזור'),
+            child: const Text('חזור', textAlign: TextAlign.center),
           ),
           ElevatedButton(
             onPressed: _validateAndProceed,
-            child: const Text('הבא'),
+            child: const Text('הבא', textAlign: TextAlign.center),
           ),
         ];
       case 3:
         return [
           TextButton(
             onPressed: () => setState(() => _currentStep = 2),
-            child: const Text('חזור'),
+            child: const Text('חזור', textAlign: TextAlign.center),
           ),
           ElevatedButton(
             onPressed: _validateAndConfirm,
-            child: const Text('אישור'),
+            child: const Text('אישור', textAlign: TextAlign.center),
           ),
         ];
       default:

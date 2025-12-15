@@ -56,11 +56,13 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
     return Directionality(
       textDirection: TextDirection.rtl,
       child: AlertDialog(
-        title: const Text('הזן קוד גישה'),
+        title: const Text('הזן קוד גישה', textAlign: TextAlign.center),
+        actionsAlignment: MainAxisAlignment.center,
         content: SizedBox(
           width: 450,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               if (_isBlocked) ...[
                 Icon(
@@ -137,17 +139,17 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
             ? [
                 TextButton(
                   onPressed: null,
-                  child: Text('חכה $_blockCountdown שניות'),
+                  child: Text('חכה $_blockCountdown שניות', textAlign: TextAlign.center),
                 ),
               ]
             : [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('ביטול'),
+                  child: const Text('ביטול', textAlign: TextAlign.center),
                 ),
                 ElevatedButton(
                   onPressed: _isBlocked ? null : _verifyPasscode,
-                  child: const Text('אישור'),
+                  child: const Text('אישור', textAlign: TextAlign.center),
                 ),
               ],
       ),
