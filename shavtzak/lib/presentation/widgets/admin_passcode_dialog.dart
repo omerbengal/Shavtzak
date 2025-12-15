@@ -27,13 +27,9 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: AlertDialog(
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.admin_panel_settings, size: 24),
-            const SizedBox(width: 8),
-            Text('ניהול קוד גישה: ${widget.teamMemberName}'),
-          ],
+        title: Text(
+          'ניהול קוד גישה: ${widget.teamMemberName}',
+          textAlign: TextAlign.center,
         ),
         actionsAlignment: MainAxisAlignment.center,
         content: SizedBox(
@@ -118,26 +114,8 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (widget.currentPasscode != null) ...[
-                    ElevatedButton.icon(
-                      onPressed: () => _showRemoveConfirmation(context),
-                      icon: const Icon(Icons.delete_outline),
-                      label: const Text('הסר קוד', textAlign: TextAlign.center),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                  ],
-                  ElevatedButton.icon(
+                  ElevatedButton(
                     onPressed: () => _showSetPasscodeDialog(context),
-                    icon: Icon(widget.currentPasscode != null ? Icons.edit : Icons.add),
-                    label: Text(
-                      widget.currentPasscode != null ? 'שנה קוד' : 'הגדר קוד',
-                      textAlign: TextAlign.center,
-                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: widget.currentPasscode != null
                           ? Theme.of(context).primaryColor
@@ -145,7 +123,20 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     ),
+                    child: Text(widget.currentPasscode != null ? 'שנה קוד' : 'הגדר קוד'),
                   ),
+                  if (widget.currentPasscode != null) ...[
+                    const SizedBox(width: 12),
+                    ElevatedButton(
+                      onPressed: () => _showRemoveConfirmation(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      ),
+                      child: const Text('הסר קוד'),
+                    ),
+                  ],
                 ],
               ),
             ],

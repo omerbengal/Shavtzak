@@ -53,23 +53,21 @@ class SettingsDialog extends StatelessWidget {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            ElevatedButton.icon(
+                            ElevatedButton(
                               onPressed: () => _showChangePasscodeDialog(context),
-                              icon: const Icon(Icons.edit),
-                              label: const Text('שנה קוד'),
                               style: ElevatedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               ),
+                              child: const Text('שנה קוד'),
                             ),
-                            ElevatedButton.icon(
+                            ElevatedButton(
                               onPressed: () => _showRemovePasscodeDialog(context),
-                              icon: const Icon(Icons.delete_outline),
-                              label: const Text('הסר קוד'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.red,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               ),
+                              child: const Text('הסר קוד'),
                             ),
                           ],
                         ),
@@ -98,14 +96,13 @@ class SettingsDialog extends StatelessWidget {
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 24),
-                        ElevatedButton.icon(
+                        ElevatedButton(
                           onPressed: () => _showSetupPasscodeDialog(context),
-                          icon: const Icon(Icons.lock),
-                          label: const Text('הגדר קוד גישה'),
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                             textStyle: const TextStyle(fontSize: 16),
                           ),
+                          child: const Text('הגדר קוד גישה'),
                         ),
                       ],
                     );

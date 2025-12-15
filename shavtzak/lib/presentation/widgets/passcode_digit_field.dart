@@ -173,21 +173,27 @@ class _PasscodeInputRowState extends State<PasscodeInputRow> {
       },
       child: Directionality(
         textDirection: TextDirection.ltr,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(widget.digitCount, (index) {
-            return PasscodeDigitField(
-              controller: widget.controllers[index],
-              focusNode: widget.focusNodes[index],
-              index: index,
-              totalDigits: widget.digitCount,
-              allControllers: widget.controllers,
-              allFocusNodes: widget.focusNodes,
-              onAllFilled: widget.onAllFilled,
-              obscureText: widget.obscureText,
-              autoFocus: false, // Disabled - user tap triggers keyboard
-            );
-          }),
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(widget.digitCount, (index) {
+                return PasscodeDigitField(
+                  controller: widget.controllers[index],
+                  focusNode: widget.focusNodes[index],
+                  index: index,
+                  totalDigits: widget.digitCount,
+                  allControllers: widget.controllers,
+                  allFocusNodes: widget.focusNodes,
+                  onAllFilled: widget.onAllFilled,
+                  obscureText: widget.obscureText,
+                  autoFocus: false, // Disabled - user tap triggers keyboard
+                );
+              }),
+            ),
+          ),
         ),
       ),
     );
