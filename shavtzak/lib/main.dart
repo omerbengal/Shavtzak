@@ -13,6 +13,8 @@ import 'data/repositories/assignment_repository.dart';
 import 'data/repositories/user_selection_repository.dart';
 import 'core/services/user_cache_service.dart';
 import 'core/services/environment_service.dart';
+import 'core/services/connectivity_service.dart';
+import 'presentation/widgets/offline_blocking_overlay.dart';
 
 // Presentation layer
 import 'presentation/bloc/team/team_bloc.dart';
@@ -44,6 +46,9 @@ Future<void> _initialize() async {
   try {
     // Initialize environment service (detects test vs production from URL)
     EnvironmentService.instance.initialize();
+
+    // Initialize connectivity service (for offline detection in test mode)
+    ConnectivityService.instance.initialize();
 
     // Preload Rubik font to prevent FOUT (Flash of Unstyled Text)
     await _preloadFont();
@@ -207,13 +212,15 @@ class MyApp extends StatelessWidget {
                           // TODO: Add similar clear events for EventBloc and AssignmentBloc
                         }
                       },
-                      child: MaterialApp.router(
-                        title: 'שבצק - ניהול צוות',
-                        theme: AppTheme.lightTheme,
-                        debugShowCheckedModeBanner: false,
-                        routerConfig: AppRouter.router(
-                          userSelectionBloc: userSelectionBloc,
-                          userSelectionRepository: userSelectionRepository,
+                      child: OfflineBlockingOverlay(
+                        child: MaterialApp.router(
+                          title: 'שבצק - ניהול צוות',
+                          theme: AppTheme.lightTheme,
+                          debugShowCheckedModeBanner: false,
+                          routerConfig: AppRouter.router(
+                            userSelectionBloc: userSelectionBloc,
+                            userSelectionRepository: userSelectionRepository,
+                          ),
                         ),
                       ),
                     );
