@@ -581,12 +581,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     final endDateStr = 'יום ${_getFullHebrewDayName(endDate.weekday)} ${endDate.day} ב${_getHebrewMonthName(endDate.month)}';
 
     if (isToday) {
-      return '$startDateStr (היום) - $endDateStr';
+      return '$startDateStr (היום) --> $endDateStr';
     }
     if (isTomorrow) {
-      return '$startDateStr (מחר) - $endDateStr';
+      return '$startDateStr (מחר) --> $endDateStr';
     }
-    return '$startDateStr - $endDateStr';
+    return '$startDateStr --> $endDateStr';
   }
 
   String _formatDayMonth(DateTime date) {
@@ -701,16 +701,16 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
     // Check if only start time is empty
     if (startTime.isEmpty && endTime.isNotEmpty) {
-      return 'טרם נקבעה -> $endTime';
+      return 'טרם נקבעה --> $endTime';
     }
 
     // Check if only end time is empty
     if (startTime.isNotEmpty && endTime.isEmpty) {
-      return '$startTime -> טרם נקבעה';
+      return '$startTime --> טרם נקבעה';
     }
 
     // Both times are available
-    return '$startTime -> $endTime';
+    return '$startTime --> $endTime';
   }
 
   bool _isSameDay(DateTime date1, DateTime date2) {

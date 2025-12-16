@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/event.dart';
+import '../../../core/constants/role_types.dart';
 
 /// Base event class for EventBloc
 abstract class EventEvent extends Equatable {
@@ -74,31 +75,46 @@ class RefreshEvents extends EventEvent {
   const RefreshEvents();
 }
 
-/// Duplicate an event with new date/time
+/// Duplicate an event with new date/time and other fields
 class DuplicateEvent extends EventEvent {
   final String eventId;
+  final String newName;
+  final String newLocation;
+  final String newComments;
   final DateTime newStartDate;
   final DateTime newEndDate;
   final String newStartTime;
   final String newEndTime;
   final String newAssemblyTime;
+  final bool newRequiresArmed;
+  final Map<RoleType, int> newRoleRequirements;
 
   const DuplicateEvent({
     required this.eventId,
+    required this.newName,
+    required this.newLocation,
+    required this.newComments,
     required this.newStartDate,
     required this.newEndDate,
     required this.newStartTime,
     required this.newEndTime,
     required this.newAssemblyTime,
+    required this.newRequiresArmed,
+    required this.newRoleRequirements,
   });
 
   @override
   List<Object?> get props => [
         eventId,
+        newName,
+        newLocation,
+        newComments,
         newStartDate,
         newEndDate,
         newStartTime,
         newEndTime,
         newAssemblyTime,
+        newRequiresArmed,
+        newRoleRequirements,
       ];
 }

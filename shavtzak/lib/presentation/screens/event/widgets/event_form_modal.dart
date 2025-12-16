@@ -177,26 +177,46 @@ class _EventFormModalState extends State<EventFormModal> {
     // Enable validation for all fields after first submit attempt
     setState(() {
       _validateName = true;
-      // Validate date field
-      _dateError = _startDate == null ? 'יש לבחור תאריך/ים לאירוע' : null;
+      // Always validate date field when save is attempted
+      if (_startDate == null || _endDate == null) {
+        _dateError = widget.isDuplication
+            ? '↑ יש לבחור תאריכי התחלה וסיום לאירוע המשוכפל ↑'
+            : 'יש לבחור תאריכי התחלה וסיום לאירוע';
+      } else {
+        _dateError = null;
+      }
     });
 
     if (!_formKey.currentState!.validate()) {
       return;
     }
-    if (_startDate == null) {
+    if (_startDate == null || _endDate == null) {
+      // This is now redundant since we set the error above, but keeping for safety
       return;
     }
 
     // For duplication mode, create the duplicated event
     if (widget.isDuplication) {
+      // Validate that dates are selected
+      if (_startDate == null || _endDate == null) {
+        setState(() {
+          _dateError = '↑ יש לבחור תאריכי התחלה וסיום לאירוע המשוכפל ↑';
+        });
+        return;
+      }
+
       context.read<EventBloc>().add(DuplicateEvent(
         eventId: widget.event!.id,
+        newName: _nameController.text,
+        newLocation: _locationController.text,
+        newComments: _commentsController.text,
         newStartDate: _startDate!,
         newEndDate: _endDate!,
         newStartTime: _startTimeController.text,
         newEndTime: _endTimeController.text,
         newAssemblyTime: _assemblyTimeController.text,
+        newRequiresArmed: _requiresArmed,
+        newRoleRequirements: Map.from(_roleRequirements),
       ));
       widget.onSuccess();
       return;
@@ -328,7 +348,7 @@ class _EventFormModalState extends State<EventFormModal> {
       id: _isEditMode ? widget.event!.id : const Uuid().v4(),
       name: _nameController.text.trim(),
       startDate: _startDate!,
-      endDate: _endDate ?? _startDate!,
+      endDate: _endDate!,
       startTime: _startTimeController.text.trim(),
       endTime: _endTimeController.text.trim(),
       assemblyTime: _assemblyTimeController.text.trim(),
@@ -536,9 +556,11 @@ class _EventFormModalState extends State<EventFormModal> {
                                   prefixIcon: const Icon(Icons.event),
                                   border: const OutlineInputBorder(),
                                   helperText: widget.isDuplication && _nameController.text.isNotEmpty && !_validateName
-                                      ? 'ניתן לערוך את שם האירוע לשכפול'
+                                      ? '↑ ניתן לערוך את שם האירוע המשוכפל ↑'
                                       : null,
-                                  helperStyle: const TextStyle(color: Colors.red),
+                                  helperStyle: widget.isDuplication && _nameController.text.isNotEmpty && !_validateName
+                                      ? const TextStyle(color: Colors.green)
+                                      : null,
                                   errorText: _validateName && _nameController.text.isEmpty
                                       ? 'שדה חובה'
                                       : null,
@@ -622,7 +644,7 @@ class _EventFormModalState extends State<EventFormModal> {
                                           if (confirmed == true) {
                                             setState(() {
                                               _startDate = selectedStartDate;
-                                              _endDate = null; // Single day event
+                                              _endDate = selectedStartDate; // For single day event
                                               _dateError = null;
                                               _isDirty = true;
                                             });
@@ -633,13 +655,48 @@ class _EventFormModalState extends State<EventFormModal> {
                                               selectedStartDate.month == selectedEndDate.month &&
                                               selectedStartDate.day == selectedEndDate.day;
 
-                                          setState(() {
-                                            _startDate = selectedStartDate;
-                                            // Automatically convert to single day if same date selected
-                                            _endDate = isSameDate ? null : selectedEndDate;
-                                            _dateError = null;
-                                            _isDirty = true;
-                                          });
+                                          if (isSameDate) {
+                                            // Show confirmation dialog for single-day event
+                                            final confirmed = await showDialog<bool>(
+                                              context: context,
+                                              builder: (dialogContext) => Directionality(
+                                                textDirection: TextDirection.rtl,
+                                                child: AlertDialog(
+                                                  title: const Text('אישור אירוע ליום בודד'),
+                                                  content: Text(
+                                                    'האם זה אירוע ליום בודד (${_formatDate(selectedStartDate)})?',
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      child: const Text('ביטול'),
+                                                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                                                    ),
+                                                    ElevatedButton(
+                                                      child: const Text('כן, אירוע ליום בודד'),
+                                                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+
+                                            if (confirmed == true) {
+                                              setState(() {
+                                                _startDate = selectedStartDate;
+                                                _endDate = selectedStartDate; // For single day event
+                                                _dateError = null;
+                                                _isDirty = true;
+                                              });
+                                            }
+                                          } else {
+                                            // Multi-day event
+                                            setState(() {
+                                              _startDate = selectedStartDate;
+                                              _endDate = selectedEndDate;
+                                              _dateError = null;
+                                              _isDirty = true;
+                                            });
+                                          }
                                         }
                                       }
                                     },
@@ -647,9 +704,11 @@ class _EventFormModalState extends State<EventFormModal> {
                                     label: Text(
                                       _startDate == null
                                           ? 'בחר תאריכי אירוע'
-                                          : _endDate == null
-                                              ? 'מ-${_formatDate(_startDate!)}'
-                                              : '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}',
+                                          : (_endDate != null && _isSameDay(_startDate!, _endDate!))
+                                              ? _formatDate(_startDate!)
+                                              : _endDate == null
+                                                  ? 'מ-${_formatDate(_startDate!)}'
+                                                  : '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}',
                                     ),
                                     style: OutlinedButton.styleFrom(
                                       padding: const EdgeInsets.all(16),
@@ -661,24 +720,24 @@ class _EventFormModalState extends State<EventFormModal> {
                                       backgroundColor: _dateError != null ? Colors.red.shade50 : null,
                                     ),
                                   ),
-                                  if (_dateError != null)
+                                  if (widget.isDuplication && _startDate == null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 16, top: 4, bottom: 8),
+                                      child: Text(
+                                        _dateError ?? '↑ יש לבחור תאריכים חדשים לאירוע המשוכפל ↑',
+                                        style: TextStyle(
+                                          color: _dateError != null ? Colors.red.shade700 : Colors.green,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  if (!widget.isDuplication && _dateError != null)
                                     Padding(
                                       padding: const EdgeInsets.only(right: 16, top: 4, bottom: 8),
                                       child: Text(
                                         _dateError!,
                                         style: TextStyle(
                                           color: Colors.red.shade700,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                  if (widget.isDuplication && _startDate == null && _dateError == null)
-                                    const Padding(
-                                      padding: EdgeInsets.only(right: 16, top: 4, bottom: 8),
-                                      child: Text(
-                                        'יש לבחור תאריכים חדשים לאירוע המשוכפל',
-                                        style: TextStyle(
-                                          color: Colors.red,
                                           fontSize: 12,
                                         ),
                                       ),
@@ -914,5 +973,11 @@ class _EventFormModalState extends State<EventFormModal> {
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 }
