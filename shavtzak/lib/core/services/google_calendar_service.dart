@@ -29,11 +29,11 @@ class GoogleCalendarService {
   /// Check if the service is initialized
   bool get isInitialized => _isInitialized;
 
-  /// Check if running in test mode (mock operations)
+  /// Check if running in test mode (events created with yellow color and prefix)
   bool get isTestMode => _isTestMode;
 
   /// Initialize the service with service account credentials
-  /// In test mode, operations are mocked and not sent to Google Calendar
+  /// In test mode, events are created with yellow color and "שבצק טסטינג: " prefix
   Future<void> initialize({
     required String serviceAccountJson,
     required String calendarId,
@@ -42,15 +42,6 @@ class GoogleCalendarService {
 
     _isTestMode = testMode || EnvironmentService.instance.isTestMode;
     _calendarId = calendarId;
-
-    if (_isTestMode) {
-      developer.log(
-        'GoogleCalendarService: Initialized in TEST mode - operations will be mocked',
-        name: 'GoogleCalendar',
-      );
-      _isInitialized = true;
-      return;
-    }
 
     try {
 
@@ -78,7 +69,7 @@ class GoogleCalendarService {
       _isInitialized = true;
 
       developer.log(
-        'GoogleCalendarService: Initialized successfully with calendar ID: $calendarId',
+        'GoogleCalendarService: Initialized successfully with calendar ID: $calendarId${_isTestMode ? ' [TEST MODE - events will be yellow with prefix]' : ''}',
         name: 'GoogleCalendar',
       );
     } catch (e, stackTrace) {
@@ -101,6 +92,7 @@ class GoogleCalendarService {
 
   /// Create a calendar event for a constraint
   /// Returns the created event ID
+  /// In test mode, events are created with yellow color and "שבצק טסטינג: " prefix
   Future<String> createConstraintEvent({
     required String constraintId,
     required TeamMember teamMember,
@@ -110,9 +102,10 @@ class GoogleCalendarService {
     _ensureInitialized();
 
     final isUnavailability = constraint.isUnavailability;
+    // Use test mode prefix in title when in test mode
     final title = isUnavailability
-        ? CalendarEventTitles.unavailability(teamMember.name)
-        : CalendarEventTitles.availability(teamMember.name);
+        ? CalendarEventTitles.unavailability(teamMember.name, isTestMode: _isTestMode)
+        : CalendarEventTitles.availability(teamMember.name, isTestMode: _isTestMode);
 
 
     final description = CalendarEventDescriptions.constraint(
@@ -122,19 +115,6 @@ class GoogleCalendarService {
       isUnavailability: isUnavailability,
     );
 
-    if (_isTestMode) {
-      final mockEventId = 'mock_event_${constraintId}_${DateTime.now().millisecondsSinceEpoch}';
-      developer.log(
-        'GoogleCalendarService [TEST]: Would create event: $title',
-        name: 'GoogleCalendar',
-      );
-      developer.log(
-        'GoogleCalendarService [TEST]: Mock event ID: $mockEventId',
-        name: 'GoogleCalendar',
-      );
-      return mockEventId;
-    }
-
     try {
       // For all-day events, use date property with date-only DateTime
       final startDate = _toDateOnly(constraint.startDate);
@@ -143,20 +123,25 @@ class GoogleCalendarService {
             constraint.startDate.add(const Duration(days: 1)),
       );
 
+      // Use yellow color in test mode, otherwise use appropriate color
+      final colorId = _isTestMode
+          ? CalendarEventColors.testMode
+          : (isUnavailability
+              ? CalendarEventColors.unavailability
+              : CalendarEventColors.availability);
 
       final event = calendar.Event(
         summary: title,
         description: description,
         start: calendar.EventDateTime(date: startDate),
         end: calendar.EventDateTime(date: endDate),
-        colorId: isUnavailability
-            ? CalendarEventColors.unavailability
-            : CalendarEventColors.availability,
+        colorId: colorId,
         extendedProperties: calendar.EventExtendedProperties(
           private: {
             'constraintId': constraintId,
             'teamMemberId': teamMember.id,
             'constraintType': constraint.constraintType.name,
+            'isTestMode': _isTestMode.toString(),
           },
         ),
       );
@@ -165,7 +150,7 @@ class GoogleCalendarService {
 
 
       developer.log(
-        'GoogleCalendarService: Created event ${createdEvent.id} for constraint $constraintId',
+        'GoogleCalendarService: Created event ${createdEvent.id} for constraint $constraintId${_isTestMode ? ' [TEST MODE]' : ''}',
         name: 'GoogleCalendar',
       );
 
@@ -181,6 +166,7 @@ class GoogleCalendarService {
   }
 
   /// Update an existing calendar event
+  /// In test mode, events are updated with yellow color and "שבצק טסטינג: " prefix
   Future<void> updateConstraintEvent({
     required String calendarEventId,
     required String constraintId,
@@ -190,9 +176,10 @@ class GoogleCalendarService {
     _ensureInitialized();
 
     final isUnavailability = constraint.isUnavailability;
+    // Use test mode prefix in title when in test mode
     final title = isUnavailability
-        ? CalendarEventTitles.unavailability(teamMember.name)
-        : CalendarEventTitles.availability(teamMember.name);
+        ? CalendarEventTitles.unavailability(teamMember.name, isTestMode: _isTestMode)
+        : CalendarEventTitles.availability(teamMember.name, isTestMode: _isTestMode);
 
     final description = CalendarEventDescriptions.constraint(
       memberName: teamMember.name,
@@ -200,14 +187,6 @@ class GoogleCalendarService {
       note: constraint.note,
       isUnavailability: isUnavailability,
     );
-
-    if (_isTestMode) {
-      developer.log(
-        'GoogleCalendarService [TEST]: Would update event $calendarEventId: $title',
-        name: 'GoogleCalendar',
-      );
-      return;
-    }
 
     try {
       // For all-day events, use date property with date-only DateTime
@@ -217,19 +196,25 @@ class GoogleCalendarService {
             constraint.startDate.add(const Duration(days: 1)),
       );
 
+      // Use yellow color in test mode, otherwise use appropriate color
+      final colorId = _isTestMode
+          ? CalendarEventColors.testMode
+          : (isUnavailability
+              ? CalendarEventColors.unavailability
+              : CalendarEventColors.availability);
+
       final event = calendar.Event(
         summary: title,
         description: description,
         start: calendar.EventDateTime(date: startDate),
         end: calendar.EventDateTime(date: endDate),
-        colorId: isUnavailability
-            ? CalendarEventColors.unavailability
-            : CalendarEventColors.availability,
+        colorId: colorId,
         extendedProperties: calendar.EventExtendedProperties(
           private: {
             'constraintId': constraintId,
             'teamMemberId': teamMember.id,
             'constraintType': constraint.constraintType.name,
+            'isTestMode': _isTestMode.toString(),
           },
         ),
       );
@@ -237,7 +222,7 @@ class GoogleCalendarService {
       await _calendarApi!.events.update(event, _calendarId!, calendarEventId);
 
       developer.log(
-        'GoogleCalendarService: Updated event $calendarEventId for constraint $constraintId',
+        'GoogleCalendarService: Updated event $calendarEventId for constraint $constraintId${_isTestMode ? ' [TEST MODE]' : ''}',
         name: 'GoogleCalendar',
       );
     } catch (e) {
@@ -254,19 +239,11 @@ class GoogleCalendarService {
   Future<void> deleteConstraintEvent(String calendarEventId) async {
     _ensureInitialized();
 
-    if (_isTestMode) {
-      developer.log(
-        'GoogleCalendarService [TEST]: Would delete event $calendarEventId',
-        name: 'GoogleCalendar',
-      );
-      return;
-    }
-
     try {
       await _calendarApi!.events.delete(_calendarId!, calendarEventId);
 
       developer.log(
-        'GoogleCalendarService: Deleted event $calendarEventId',
+        'GoogleCalendarService: Deleted event $calendarEventId${_isTestMode ? ' [TEST MODE]' : ''}',
         name: 'GoogleCalendar',
       );
     } on calendar.DetailedApiRequestError catch (e) {
@@ -320,11 +297,6 @@ class GoogleCalendarService {
   Future<bool> eventExists(String calendarEventId) async {
 
     _ensureInitialized();
-
-    if (_isTestMode) {
-      final exists = calendarEventId.startsWith('mock_event_');
-      return exists;
-    }
 
     try {
       final event = await _calendarApi!.events.get(_calendarId!, calendarEventId);

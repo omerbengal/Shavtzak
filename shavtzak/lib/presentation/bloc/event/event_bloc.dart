@@ -12,6 +12,17 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   final EventRepository _repository;
   final AssignmentRepository _assignmentRepository;
 
+  // Stream subscriptions for manual control to prevent memory leaks
+  StreamSubscription<List<Event>>? _eventsSubscription;
+  StreamSubscription<List<Assignment>>? _assignmentsSubscription;
+
+  // Cache latest values for combining streams
+  List<Event> _latestEvents = [];
+  List<Assignment> _latestAssignments = [];
+  bool _eventsLoaded = false;
+  bool _assignmentsLoaded = false;
+  bool _upcomingOnly = false;
+
   EventBloc(this._repository, this._assignmentRepository) : super(const EventInitial()) {
     // Register event handlers
     on<LoadEvents>(_onLoadEvents);
@@ -22,6 +33,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     on<UpdateEvent>(_onUpdateEvent);
     on<DeleteEvent>(_onDeleteEvent);
     on<RefreshEvents>(_onRefreshEvents);
+    on<_EventsDataUpdated>(_onEventsDataUpdated);
   }
 
   /// Load all events with real-time updates (including assignment counts)
@@ -30,90 +42,112 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     Emitter<EventState> emit,
   ) async {
     emit(const EventLoading());
+    _upcomingOnly = false;
 
     try {
-      // Use emit.forEach to subscribe to combined stream of events + assignments
-      await emit.forEach<_EventsWithAssignments>(
-        _combineEventsAndAssignments(),
-        onData: (data) {
-          if (data.events.isEmpty) {
-            return const EventsEmpty('אין אירועים במערכת');
-          } else {
-            return EventsLoaded.withCounts(
-              data.events,
-              assignmentCounts: data.assignmentCounts,
-            );
-          }
-        },
-        onError: (error, stackTrace) {
-          return EventError('שגיאה בטעינת אירועים: $error');
-        },
-      );
+      // Start combined stream subscriptions
+      await _startCombinedStreams();
     } catch (e) {
       emit(EventError('שגיאה בטעינת אירועים: $e'));
     }
   }
 
-  /// Combines events and assignments streams into a single stream
-  /// that emits whenever either source changes
-  Stream<_EventsWithAssignments> _combineEventsAndAssignments() async* {
-    // Listen to both streams
-    final eventsStream = _repository.watchEvents();
-    final assignmentsStream = _assignmentRepository.watchAssignments();
+  /// Start combined stream subscriptions for events and assignments
+  Future<void> _startCombinedStreams() async {
+    // Cancel previous subscriptions before starting new ones to prevent memory leaks
+    await _eventsSubscription?.cancel();
+    await _assignmentsSubscription?.cancel();
 
-    // Cache latest values and track whether each stream has emitted
-    List<Event> latestEvents = [];
-    List<Assignment> latestAssignments = [];
-    bool eventsLoaded = false;
-    bool assignmentsLoaded = false;
+    // Reset state
+    _eventsLoaded = false;
+    _assignmentsLoaded = false;
+    _latestEvents = [];
+    _latestAssignments = [];
 
-    // Create stream controller for combined output
-    final controller = StreamController<_EventsWithAssignments>();
+    // Subscribe to events stream
+    _eventsSubscription = _repository.watchEvents().listen(
+      (events) {
+        _latestEvents = events;
+        _eventsLoaded = true;
+        _emitCombinedIfReady();
+      },
+      onError: (error) {
+        _latestEvents = [];
+        _eventsLoaded = true;
+        _emitCombinedIfReady();
+      },
+    );
 
-    // Helper to emit combined data
-    void emitCombined() {
-      // Only emit after both streams have loaded data to prevent incorrect colors
-      if (!eventsLoaded || !assignmentsLoaded) return;
+    // Subscribe to assignments stream
+    _assignmentsSubscription = _assignmentRepository.watchAssignments().listen(
+      (assignments) {
+        _latestAssignments = assignments;
+        _assignmentsLoaded = true;
+        _emitCombinedIfReady();
+      },
+      onError: (error) {
+        _latestAssignments = [];
+        _assignmentsLoaded = true;
+        _emitCombinedIfReady();
+      },
+    );
+  }
 
-      // Calculate assignment counts per event
-      final counts = <String, int>{};
-      for (final assignment in latestAssignments) {
-        counts[assignment.eventId] = (counts[assignment.eventId] ?? 0) + 1;
-      }
+  /// Emit combined data when both streams have loaded
+  void _emitCombinedIfReady() {
+    if (!_eventsLoaded || !_assignmentsLoaded) return;
 
-      controller.add(_EventsWithAssignments(
-        events: latestEvents,
-        assignmentCounts: counts,
-      ));
+    // Calculate assignment counts per event
+    final counts = <String, int>{};
+    for (final assignment in _latestAssignments) {
+      counts[assignment.eventId] = (counts[assignment.eventId] ?? 0) + 1;
     }
 
-    // Listen to events stream
-    final eventsSubscription = eventsStream.listen(
-      (events) {
-        latestEvents = events;
-        eventsLoaded = true;
-        emitCombined();
-      },
-      onError: controller.addError,
-    );
+    add(_EventsDataUpdated(
+      events: _latestEvents,
+      assignmentCounts: counts,
+      upcomingOnly: _upcomingOnly,
+    ));
+  }
 
-    // Listen to assignments stream
-    final assignmentsSubscription = assignmentsStream.listen(
-      (assignments) {
-        latestAssignments = assignments;
-        assignmentsLoaded = true;
-        emitCombined();
-      },
-      onError: controller.addError,
-    );
+  /// Handle combined events and assignments data update
+  Future<void> _onEventsDataUpdated(
+    _EventsDataUpdated event,
+    Emitter<EventState> emit,
+  ) async {
+    var events = event.events;
 
-    // Forward combined stream
-    yield* controller.stream;
+    if (event.upcomingOnly) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
 
-    // Cleanup when stream is cancelled
-    await controller.done;
-    await eventsSubscription.cancel();
-    await assignmentsSubscription.cancel();
+      // Filter for future events
+      final futureEvents = events.where((e) {
+        return e.endDate.isAfter(today) ||
+               (e.endDate.year == today.year &&
+                e.endDate.month == today.month &&
+                e.endDate.day == today.day);
+      }).toList();
+
+      if (futureEvents.isEmpty) {
+        final isFiltered = events.isNotEmpty;
+        emit(EventsEmpty('אין אירועים עתידיים', isFiltered: isFiltered));
+      } else {
+        emit(EventsLoaded.withCounts(
+          futureEvents,
+          assignmentCounts: event.assignmentCounts,
+        ));
+      }
+    } else {
+      if (events.isEmpty) {
+        emit(const EventsEmpty('אין אירועים במערכת'));
+      } else {
+        emit(EventsLoaded.withCounts(
+          events,
+          assignmentCounts: event.assignmentCounts,
+        ));
+      }
+    }
   }
 
   /// Load upcoming events only (future events with real-time updates)
@@ -122,39 +156,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     Emitter<EventState> emit,
   ) async {
     emit(const EventLoading());
+    _upcomingOnly = true;
 
     try {
-      final now = DateTime.now();
-      // Start of today (midnight)
-      final today = DateTime(now.year, now.month, now.day);
-
-      // Use emit.forEach to subscribe to combined stream of events + assignments
-      await emit.forEach<_EventsWithAssignments>(
-        _combineEventsAndAssignments(),
-        onData: (data) {
-          // Filter for future events (end date >= today)
-          final futureEvents = data.events.where((event) {
-            return event.endDate.isAfter(today) ||
-                   (event.endDate.year == today.year &&
-                    event.endDate.month == today.month &&
-                    event.endDate.day == today.day);
-          }).toList();
-
-          if (futureEvents.isEmpty) {
-            // Check if database is truly empty or just filtered empty
-            final isFiltered = data.events.isNotEmpty;
-            return EventsEmpty('אין אירועים עתידיים', isFiltered: isFiltered);
-          } else {
-            return EventsLoaded.withCounts(
-              futureEvents,
-              assignmentCounts: data.assignmentCounts,
-            );
-          }
-        },
-        onError: (error, stackTrace) {
-          return EventError('שגיאה בטעינת אירועים: $error');
-        },
-      );
+      // Start combined stream subscriptions
+      await _startCombinedStreams();
     } catch (e) {
       emit(EventError('שגיאה בטעינת אירועים: $e'));
     }
@@ -264,18 +270,27 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   }
 
   @override
-  Future<void> close() {
+  Future<void> close() async {
+    // Cancel stream subscriptions to prevent memory leaks
+    await _eventsSubscription?.cancel();
+    await _assignmentsSubscription?.cancel();
     return super.close();
   }
 }
 
-/// Internal helper class to combine events with their assignment counts
-class _EventsWithAssignments {
+/// Internal event: Received events and assignments update from streams
+/// This is used to properly manage stream subscriptions and prevent memory leaks
+class _EventsDataUpdated extends EventEvent {
   final List<Event> events;
   final Map<String, int> assignmentCounts;
+  final bool upcomingOnly;
 
-  _EventsWithAssignments({
+  const _EventsDataUpdated({
     required this.events,
     required this.assignmentCounts,
+    this.upcomingOnly = false,
   });
+
+  @override
+  List<Object?> get props => [events, assignmentCounts, upcomingOnly];
 }

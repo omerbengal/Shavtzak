@@ -6,90 +6,39 @@ This document outlines technical improvements, missing features, and code qualit
 
 ## 🔴 CRITICAL (Technical Debt)
 
-### 1. Stream Subscription Memory Leaks in BLoCs
+### 1. ✅ FIXED - Stream Subscription Memory Leaks in BLoCs
 
-**What's the problem:**
-Multiple BLoCs use `emit.forEach()` to listen to Firestore streams. After certain operations (like updating a team member or creating an assignment), the BLoC restarts the stream listener by calling `emit.forEach()` again. However, the previous subscription may still be active, creating a race condition where two listeners compete to emit state.
+**What was the problem:**
+Multiple BLoCs used `emit.forEach()` to listen to Firestore streams. After certain operations (like updating a team member or creating an assignment), the BLoC restarted the stream listener by calling `emit.forEach()` again. However, the previous subscription may still be active, creating a race condition where two listeners compete to emit state.
 
-**Where it exists:**
-- `shavtzak/lib/presentation/bloc/team/team_bloc.dart` - Lines 293-307 in `_onUpdateTeamMember`
-- `shavtzak/lib/presentation/bloc/event/event_bloc.dart` - Lines 59-117 in `_combineEventsAndAssignments`
-- `shavtzak/lib/presentation/bloc/assignment/assignment_bloc.dart` - Multiple stream subscriptions
+**Where it existed:**
+- `shavtzak/lib/presentation/bloc/team/team_bloc.dart`
+- `shavtzak/lib/presentation/bloc/event/event_bloc.dart`
 
-**Specific code pattern causing issues:**
-```dart
-// In TeamBloc - after updating a member, immediately restarts listener
-await emit.forEach<List<TeamMember>>(
-  _repository.watchTeamMembers(),
-  onData: (members) => TeamLoaded(...),
-);
-// Previous emit.forEach subscription may still be active!
-```
-
-**Why it's a problem:**
-- Memory leaks from orphaned subscriptions
-- Race conditions can cause UI to display stale data
-- If BLoC is closed during `emit.forEach`, cleanup depends on state machine timing
-- Multiple listeners = multiple state emissions = UI flickering
-
-**How to fix:**
-Add explicit subscription tracking with cancellation before starting new subscriptions:
-```dart
-StreamSubscription<List<TeamMember>>? _teamSubscription;
-
-Future<void> _onLoadTeamMembers(...) async {
-  await _teamSubscription?.cancel(); // Cancel previous before starting new
-  _teamSubscription = _repository.watchTeamMembers().listen((members) {
-    add(_TeamMembersUpdated(members));
-  });
-}
-
-@override
-Future<void> close() {
-  _teamSubscription?.cancel();
-  return super.close();
-}
-```
-
-**Additional issue in EventBloc:**
-The `_combineEventsAndAssignments()` method creates a `StreamController` that is never explicitly closed. Line 117 waits for `controller.done` but the controller closure depends on stream cancellation timing.
+**Fix applied:**
+Added explicit `StreamSubscription` tracking with proper cancellation:
+- `TeamBloc`: Added `_teamSubscription` field, cancel before starting new subscription, cancel in `close()`
+- `EventBloc`: Added `_eventsSubscription` and `_assignmentsSubscription` fields, proper lifecycle management
+- Both BLoCs now use internal events (`_TeamMembersUpdated`, `_EventsDataUpdated`) to emit states from stream updates
+- Removed redundant `emit.forEach()` calls that were restarting streams after operations
 
 ---
 
-### 2. Calendar Config Not Environment-Isolated
+### 2. ✅ FIXED - Calendar Sync in Test Mode
 
-**What's the problem:**
-The Firestore collection that stores Google Calendar API credentials (`'keys'`) is NOT prefixed with the environment prefix. This means test mode and production mode share the same Google Calendar configuration, breaking data isolation.
+**What was the problem:**
+The test mode was mocking calendar operations instead of actually syncing to the calendar. This meant test events were not being created in Google Calendar at all.
 
-**Where it exists:**
-- `shavtzak/lib/data/data_sources/firestore_database.dart` - Line 1016
+**Where it existed:**
+- `shavtzak/lib/core/services/google_calendar_service.dart` - `createConstraintEvent`, `updateConstraintEvent`, `deleteConstraintEvent`, `eventExists`
 
-**Specific code:**
-```dart
-// Line 1016 - 'keys' is hardcoded, not using environmentService.collectionPrefix
-final keysCollection = _firestore.collection('keys');
-```
-
-**Compare to other collections which ARE properly prefixed:**
-```dart
-// Correct pattern used elsewhere:
-CollectionReference get _teamMembersCollection =>
-    _firestore.collection('${_environmentService.collectionPrefix}teamMembers');
-```
-
-**Why it's a problem:**
-- Test environment can modify production Google Calendar settings
-- Production environment can be affected by test mode operations
-- Violates the complete test/prod isolation principle documented in CLAUDE.md
-- Security risk: test users could access production calendar credentials
-
-**How to fix:**
-Change line 1016 to use the environment prefix:
-```dart
-final keysCollection = _firestore.collection('${_environmentService.collectionPrefix}keys');
-```
-
-Then ensure test environment has its own calendar credentials configured, or disable calendar sync entirely in test mode.
+**Fix applied:**
+Test mode now creates real calendar events with visual differentiation:
+- **Yellow color**: Test events use `CalendarEventColors.testMode = '5'` (Banana/Yellow) instead of red/green
+- **Title prefix**: Test event titles start with `"שבצק טסטינג: "` (e.g., `"שבצק טסטינג: יוסי כהן - מגבלה"`)
+- Same Google Calendar is used for both test and production
+- Test events are easily identifiable by their yellow color and prefix
+- The `'keys'` collection is intentionally shared (same calendar credentials for both environments)
 
 ---
 

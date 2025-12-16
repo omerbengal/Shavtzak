@@ -47,6 +47,9 @@ class CalendarEventColors {
 
   // Availability constraints - Green tone
   static const String availability = '10'; // Green (Basil)
+
+  // Test mode - Yellow tone (used for all test events)
+  static const String testMode = '5'; // Yellow (Banana)
 }
 
 /// Calendar sync configuration
@@ -75,13 +78,22 @@ class CalendarSyncConfig {
 
 /// Calendar event title templates (Hebrew)
 class CalendarEventTitles {
+  /// Prefix for test mode events
+  static const String testModePrefix = 'שבצק טסטינג: ';
+
   /// Title for unavailability constraint events
-  /// Format: "[Name] - מגבלה"
-  static String unavailability(String memberName) => '$memberName - מגבלה';
+  /// Format: "[Name] - מגבלה" (or "שבצק טסטינג: [Name] - מגבלה" in test mode)
+  static String unavailability(String memberName, {bool isTestMode = false}) {
+    final title = '$memberName - מגבלה';
+    return isTestMode ? '$testModePrefix$title' : title;
+  }
 
   /// Title for availability constraint events
-  /// Format: "[Name] - זמינות"
-  static String availability(String memberName) => '$memberName - זמינות';
+  /// Format: "[Name] - זמינות" (or "שבצק טסטינג: [Name] - זמינות" in test mode)
+  static String availability(String memberName, {bool isTestMode = false}) {
+    final title = '$memberName - זמינות';
+    return isTestMode ? '$testModePrefix$title' : title;
+  }
 }
 
 /// Calendar event description templates (Hebrew)

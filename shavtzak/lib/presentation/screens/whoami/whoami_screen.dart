@@ -5,6 +5,9 @@ import '../../../data/repositories/user_selection_repository.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../bloc/team/team_bloc.dart';
+import '../../bloc/team/team_event.dart';
+import '../../bloc/team/team_state.dart';
 import '../../widgets/test_environment_indicator.dart';
 import '../../widgets/passcode_verification_dialog.dart';
 
@@ -21,7 +24,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
 
   List<TeamMember> _allTeamMembers = [];
   List<TeamMember> _filteredTeamMembers = [];
-  bool _isLoading = false;
+  bool _isLoading = true;
   String _searchQuery = '';
   String? _errorMessage;
 
@@ -31,7 +34,8 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
     // Trigger initial check and load team members
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<UserSelectionBloc>().add(const CheckCachedUser());
-      _loadAllTeamMembers();
+      // Trigger TeamBloc to load all team members (including inactive)
+      context.read<TeamBloc>().add(const LoadTeamMembers());
     });
 
     _searchController.addListener(_onSearchChanged);
@@ -83,27 +87,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
     }
   }
 
-  Future<void> _loadAllTeamMembers() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final userSelectionRepo = context.read<UserSelectionRepository>();
-      final teamMembers = await userSelectionRepo.getAllTeamMembers();
-      setState(() {
-        _allTeamMembers = teamMembers;
-        _filteredTeamMembers = List.from(teamMembers);
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = e.toString();
-      });
-    }
-  }
-
+  
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -125,13 +109,42 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
         ),
         body: TestEnvironmentIndicator(
           child: SafeArea(
-            child: BlocListener<UserSelectionBloc, UserSelectionState>(
-              listener: (context, state) {
-                if (state is UserAuthenticated) {
-                  // Navigate will be handled by router redirect logic
-                }
-              },
-              child: _buildSingleScreenLayout(),
+            child: MultiBlocListener(
+              listeners: [
+                BlocListener<UserSelectionBloc, UserSelectionState>(
+                  listener: (context, state) {
+                    if (state is UserAuthenticated) {
+                      // Navigate will be handled by router redirect logic
+                    }
+                  },
+                ),
+              ],
+              child: BlocBuilder<TeamBloc, TeamState>(
+                builder: (context, teamState) {
+                  // Handle team state updates
+                  if (teamState is TeamLoading) {
+                    _isLoading = true;
+                    _errorMessage = null;
+                  } else if (teamState is TeamError) {
+                    _isLoading = false;
+                    _errorMessage = teamState.message;
+                  } else if (teamState is TeamLoaded) {
+                    _isLoading = false;
+                    _errorMessage = null;
+                    _allTeamMembers = teamState.members;
+                    // Apply search filter if needed
+                    if (_searchQuery.isEmpty) {
+                      _filteredTeamMembers = List.from(_allTeamMembers);
+                    } else {
+                      _filteredTeamMembers = _allTeamMembers.where((member) =>
+                        member.name.toLowerCase().contains(_searchQuery)
+                      ).toList();
+                    }
+                  }
+
+                  return _buildSingleScreenLayout();
+                },
+              ),
             ),
           ),
         ),
@@ -269,7 +282,8 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
                 setState(() {
                   _errorMessage = null;
                 });
-                _loadAllTeamMembers();
+                // Retry by triggering TeamBloc to refresh
+                context.read<TeamBloc>().add(const LoadTeamMembers());
               },
               child: const Text('נסה שוב'),
             ),
@@ -298,7 +312,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: () => _loadAllTeamMembers(),
+              onPressed: () => context.read<TeamBloc>().add(const LoadTeamMembers()),
               child: const Text('רענן'),
             ),
           ],

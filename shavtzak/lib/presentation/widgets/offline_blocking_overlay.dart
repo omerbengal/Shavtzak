@@ -18,15 +18,19 @@ class OfflineBlockingOverlay extends StatelessWidget {
       builder: (context, _) {
         final isOffline = ConnectivityService.instance.isOffline;
 
-        return Stack(
-          children: [
-            // Always render the app
-            child,
+        // Wrap with Directionality for cases where this widget is above MaterialApp
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: Stack(
+            children: [
+              // Always render the app
+              child,
 
-            // Show blocking overlay when offline
-            if (isOffline)
-              const _OfflineBlockingDialog(),
-          ],
+              // Show blocking overlay when offline
+              if (isOffline)
+                const _OfflineBlockingDialog(),
+            ],
+          ),
         );
       },
     );

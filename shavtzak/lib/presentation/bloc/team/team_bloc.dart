@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../data/repositories/team_repository.dart';
@@ -17,6 +19,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
   final TeamRepository _repository;
   final AssignmentRepository _assignmentRepository;
   final CalendarSyncBloc? _calendarSyncBloc;
+
+  // Stream subscription for manual control to prevent memory leaks
+  StreamSubscription<List<TeamMember>>? _teamSubscription;
 
   // Store constraint managers for each team member
   final Map<String, LocalConstraintManager> _constraintManagers = {};
@@ -53,7 +58,13 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
 
     // State management
     on<ClearTeamState>(_onClearTeamState);
+
+    // Internal event for stream updates
+    on<_TeamMembersUpdated>(_onTeamMembersUpdated);
   }
+
+  // Track whether we're filtering for active members only
+  bool _activeOnly = false;
 
   /// Load all team members with real-time updates
   Future<void> _onLoadTeamMembers(
@@ -65,22 +76,21 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     developer.log('TeamBloc._onLoadTeamMembers: Current environment is $currentEnv', name: 'TeamBloc');
 
     emit(const TeamLoading());
+    _activeOnly = false;
 
     try {
-      // Use emit.forEach to subscribe to real-time stream
-      await emit.forEach<List<TeamMember>>(
-        _repository.watchTeamMembers(),
-        onData: (members) {
+      // Cancel previous subscription before starting new one to prevent memory leaks
+      await _teamSubscription?.cancel();
+
+      // Use explicit subscription management instead of emit.forEach
+      _teamSubscription = _repository.watchTeamMembers().listen(
+        (members) {
           developer.log('TeamBloc._onLoadTeamMembers: Received ${members.length} team members', name: 'TeamBloc');
-          if (members.isEmpty) {
-            return const TeamEmpty('אין חברי צוות במערכת');
-          } else {
-            return TeamLoaded(members);
-          }
+          add(_TeamMembersUpdated(members, activeOnly: false));
         },
         onError: (error, stackTrace) {
           developer.log('TeamBloc._onLoadTeamMembers: Error - $error', name: 'TeamBloc', error: error, stackTrace: stackTrace);
-          return TeamError('שגיאה בטעינת חברי הצוות: $error');
+          add(_TeamMembersUpdated(const [], activeOnly: false));
         },
       );
     } catch (e) {
@@ -95,29 +105,50 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     Emitter<TeamState> emit,
   ) async {
     emit(const TeamLoading());
+    _activeOnly = true;
 
     try {
-      // Use emit.forEach to subscribe to real-time stream
-      await emit.forEach<List<TeamMember>>(
-        _repository.watchTeamMembers(),
-        onData: (allMembers) {
-          // Filter for active members only
-          final activeMembers = allMembers.where((m) => m.isActive).toList();
+      // Cancel previous subscription before starting new one to prevent memory leaks
+      await _teamSubscription?.cancel();
 
-          if (activeMembers.isEmpty) {
-            // Check if database is truly empty or just filtered empty
-            final isFiltered = allMembers.isNotEmpty;
-            return TeamEmpty('אין חברי צוות פעילים', isFiltered: isFiltered);
-          } else {
-            return TeamLoaded(activeMembers);
-          }
+      // Use explicit subscription management instead of emit.forEach
+      _teamSubscription = _repository.watchTeamMembers().listen(
+        (allMembers) {
+          add(_TeamMembersUpdated(allMembers, activeOnly: true));
         },
         onError: (error, stackTrace) {
-          return TeamError('שגיאה בטעינת חברי הצוות: $error');
+          add(_TeamMembersUpdated(const [], activeOnly: true));
         },
       );
     } catch (e) {
       emit(TeamError('שגיאה בטעינת חברי הצוות: $e'));
+    }
+  }
+
+  /// Handle stream updates - this is the single place where stream data is processed
+  Future<void> _onTeamMembersUpdated(
+    _TeamMembersUpdated event,
+    Emitter<TeamState> emit,
+  ) async {
+    final members = event.members;
+
+    if (event.activeOnly) {
+      // Filter for active members only
+      final activeMembers = members.where((m) => m.isActive).toList();
+
+      if (activeMembers.isEmpty) {
+        // Check if database is truly empty or just filtered empty
+        final isFiltered = members.isNotEmpty;
+        emit(TeamEmpty('אין חברי צוות פעילים', isFiltered: isFiltered));
+      } else {
+        emit(TeamLoaded(activeMembers));
+      }
+    } else {
+      if (members.isEmpty) {
+        emit(const TeamEmpty('אין חברי צוות במערכת'));
+      } else {
+        emit(TeamLoaded(members));
+      }
     }
   }
 
@@ -286,25 +317,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         }
       }
 
-      // Emit success to show snackbar, UI will keep showing last state
+      // Emit success to show snackbar
+      // The existing stream subscription will automatically pick up the database changes
       emit(const TeamMemberOperationSuccess('פרטי חבר/ת הצוות עודכנו בהצלחה'));
-
-      // Restart stream subscription to pick up database changes
-      emit(const TeamLoading());
-
-      await emit.forEach<List<TeamMember>>(
-        _repository.watchTeamMembers(),
-        onData: (members) {
-          if (members.isEmpty) {
-            return const TeamEmpty('אין חברי צוות במערכת');
-          } else {
-            return TeamLoaded(members);
-          }
-        },
-        onError: (error, stackTrace) {
-          return TeamError('שגיאה בטעינת חברי הצוות: $error');
-        },
-      );
     } catch (e) {
       emit(TeamError('שגיאה בעדכון פרטי חבר/ת הצוות: $e'));
     }
@@ -478,24 +493,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
 
       await _repository.updateTeamMember(updatedMember);
 
+      // Emit success to show snackbar
+      // The existing stream subscription will automatically pick up the database changes
       emit(const TeamMemberOperationSuccess('בקשת מגבלה נוספה בהצלחה וממתינה לאישור'));
-
-      // Restart stream subscription to pick up database changes
-      emit(const TeamLoading());
-
-      await emit.forEach<List<TeamMember>>(
-        _repository.watchTeamMembers(),
-        onData: (members) {
-          if (members.isEmpty) {
-            return const TeamEmpty('אין חברי צוות במערכת');
-          } else {
-            return TeamLoaded(members);
-          }
-        },
-        onError: (error, stackTrace) {
-          return TeamError('שגיאה בטעינת חברי הצוות: $error');
-        },
-      );
     } catch (e) {
       emit(TeamError('שגיאה בהוספת בקשת מגבלה: $e'));
     }
@@ -546,24 +546,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
 
       await _repository.updateTeamMember(updatedMember);
 
+      // Emit success to show snackbar
+      // The existing stream subscription will automatically pick up the database changes
       emit(const TeamMemberOperationSuccess('בקשת מגבלה נמחקה בהצלחה'));
-
-      // Restart stream subscription to pick up database changes
-      emit(const TeamLoading());
-
-      await emit.forEach<List<TeamMember>>(
-        _repository.watchTeamMembers(),
-        onData: (members) {
-          if (members.isEmpty) {
-            return const TeamEmpty('אין חברי צוות במערכת');
-          } else {
-            return TeamLoaded(members);
-          }
-        },
-        onError: (error, stackTrace) {
-          return TeamError('שגיאה בטעינת חברי הצוות: $error');
-        },
-      );
     } catch (e) {
       emit(TeamError('שגיאה במחיקת בקשת מגבלה: $e'));
     }
@@ -778,6 +763,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     ClearTeamState event,
     Emitter<TeamState> emit,
   ) async {
+    // Cancel stream subscription
+    await _teamSubscription?.cancel();
+    _teamSubscription = null;
     // Clear constraint managers
     _constraintManagers.clear();
     // Reset to initial state
@@ -785,9 +773,23 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
   }
 
   @override
-  Future<void> close() {
+  Future<void> close() async {
+    // Cancel stream subscription to prevent memory leaks
+    await _teamSubscription?.cancel();
     // Clear constraint managers
     _constraintManagers.clear();
     return super.close();
   }
+}
+
+/// Internal event: Received team members update from stream
+/// This is used to properly manage stream subscriptions and prevent memory leaks
+class _TeamMembersUpdated extends TeamEvent {
+  final List<TeamMember> members;
+  final bool activeOnly;
+
+  const _TeamMembersUpdated(this.members, {this.activeOnly = false});
+
+  @override
+  List<Object?> get props => [members, activeOnly];
 }
