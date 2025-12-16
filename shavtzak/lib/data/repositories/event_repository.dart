@@ -144,7 +144,7 @@ class EventRepository {
     Event newEvent,
     List<Assignment> originalAssignments,
   ) async {
-    
+
     // Create the new event in database
     await _database.insertEvent(newEvent);
 
@@ -165,5 +165,56 @@ class EventRepository {
 
     // Insert all new assignments in batch
     await _database.insertAssignmentsBatch(newAssignments);
+  }
+
+  /// Duplicate an event with new date/time and copy all assignments
+  /// Returns the created assignments with their IDs mapped from original assignments
+  Future<Map<String, Assignment>> duplicateEventWithAssignmentIds(
+    Event originalEvent,
+    Event newEvent,
+    List<Assignment> originalAssignments,
+  ) async {
+
+    // Create the new event in database
+    await _database.insertEvent(newEvent);
+
+    // Create new assignments for the duplicated event
+    final newAssignments = originalAssignments.map((assignment) {
+      final newId = const Uuid().v4();
+      return Assignment(
+        id: newId, // Generate unique ID for each duplicated assignment
+        eventId: newEvent.id, // Use the ID from newEvent directly
+        teamMemberId: assignment.teamMemberId,
+        roleType: assignment.roleType,
+        slotIndex: assignment.slotIndex,
+        status: AssignmentStatus.confirmed, // Default to confirmed for duplicated assignments
+        notes: assignment.notes,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        teamMember: assignment.teamMember,
+        event: newEvent, // Use newEvent directly
+      );
+    }).toList();
+
+    // Insert all new assignments in batch
+    await _database.insertAssignmentsBatch(newAssignments);
+
+    // Return map of original assignment IDs to new assignments
+    final idMap = <String, Assignment>{};
+    for (int i = 0; i < originalAssignments.length; i++) {
+      idMap[originalAssignments[i].id] = newAssignments[i];
+    }
+
+    return idMap;
+  }
+
+  /// Remove specific assignments after duplication based on quota reduction
+  Future<void> removeAssignmentsAfterDuplication(
+    List<String> assignmentIdsToRemove,
+  ) async {
+    // Delete the specified assignments
+    for (final assignmentId in assignmentIdsToRemove) {
+      await _database.deleteAssignment(assignmentId);
+    }
   }
 }

@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/assignment.dart';
+import '../../screens/event/quota_reduction_analyzer.dart';
 
 /// Base state class for EventBloc
 abstract class EventState extends Equatable {
@@ -125,6 +127,22 @@ class EventDuplicatedWithConflicts extends EventState {
   List<Object?> get props => [duplicatedEvent, assignmentConflicts];
 }
 
+/// Event duplicated with quota reduction conflicts
+class EventDuplicatedWithQuotaConflicts extends EventState {
+  final Event duplicatedEvent;
+  final List<RoleQuotaConflict> quotaConflicts;
+  final Map<String, String> oldToNewAssignmentIds; // Map old assignment IDs to new ones
+
+  const EventDuplicatedWithQuotaConflicts({
+    required this.duplicatedEvent,
+    required this.quotaConflicts,
+    required this.oldToNewAssignmentIds,
+  });
+
+  @override
+  List<Object?> get props => [duplicatedEvent, quotaConflicts, oldToNewAssignmentIds];
+}
+
 /// Assignment conflict information
 class AssignmentConflict extends Equatable {
   final String assignmentId;
@@ -141,4 +159,69 @@ class AssignmentConflict extends Equatable {
 
   @override
   List<Object?> get props => [assignmentId, teamMemberName, roleName, conflictReasons];
+}
+
+/// State emitted when duplication has conflicts that need user resolution
+/// BEFORE any database writes occur
+class DuplicationRequiresConflictResolution extends EventState {
+  final Event originalEvent;
+  final Event proposedEvent;
+  final List<AssignmentDuplicationInfo> assignmentInfos;
+  final Map<String, int> roleQuotas; // New quotas from proposed event
+
+  const DuplicationRequiresConflictResolution({
+    required this.originalEvent,
+    required this.proposedEvent,
+    required this.assignmentInfos,
+    required this.roleQuotas,
+  });
+
+  /// Get assignments grouped by role
+  Map<String, List<AssignmentDuplicationInfo>> get assignmentsByRole {
+    final grouped = <String, List<AssignmentDuplicationInfo>>{};
+    for (final info in assignmentInfos) {
+      final roleKey = info.assignment.roleType.name;
+      grouped.putIfAbsent(roleKey, () => []);
+      grouped[roleKey]!.add(info);
+    }
+    return grouped;
+  }
+
+  /// Check if there are any conflicts
+  bool get hasConflicts => assignmentInfos.any((a) => a.hasAnyConflict);
+
+  /// Get all assignments with availability conflicts
+  List<AssignmentDuplicationInfo> get availabilityConflicts =>
+      assignmentInfos.where((a) => a.hasAvailabilityConflict).toList();
+
+  /// Get suggested exclusions (all availability-conflicted assignments)
+  Set<String> get suggestedExclusions =>
+      assignmentInfos
+          .where((a) => a.hasAvailabilityConflict)
+          .map((a) => a.assignment.id)
+          .toSet();
+
+  @override
+  List<Object?> get props => [originalEvent, proposedEvent, assignmentInfos, roleQuotas];
+}
+
+/// Information about a single assignment during duplication conflict analysis
+class AssignmentDuplicationInfo extends Equatable {
+  final Assignment assignment;
+  final bool hasAvailabilityConflict;
+  final String? availabilityReason;
+  final bool isInOverQuotaRole; // True if this role has more assignments than new quota
+
+  const AssignmentDuplicationInfo({
+    required this.assignment,
+    required this.hasAvailabilityConflict,
+    this.availabilityReason,
+    required this.isInOverQuotaRole,
+  });
+
+  /// True if this assignment has any type of conflict
+  bool get hasAnyConflict => hasAvailabilityConflict || isInOverQuotaRole;
+
+  @override
+  List<Object?> get props => [assignment, hasAvailabilityConflict, availabilityReason, isInOverQuotaRole];
 }

@@ -29,7 +29,7 @@ class RoleQuotaConflict {
 
 /// Analyzes quota reductions and identifies conflicts
 class QuotaReductionAnalyzer {
-  /// Analyzes quota reductions for an event
+  /// Analyzes quota reductions for an event using existing assignments
   /// Returns list of roles that have filled slots needing removal
   static Future<List<RoleQuotaConflict>> analyzeQuotaReductions({
     required Event originalEvent,
@@ -42,6 +42,35 @@ class QuotaReductionAnalyzer {
     final allAssignments = await assignmentRepo.getAssignmentsByEvent(
       originalEvent.id,
     );
+
+    return _analyzeQuotaReductionsWithAssignments(
+      originalEvent: originalEvent,
+      newRoleRequirements: newRoleRequirements,
+      allAssignments: allAssignments,
+    );
+  }
+
+  /// Analyzes quota reductions for an event using provided assignments list
+  /// Returns list of roles that have filled slots needing removal
+  static List<RoleQuotaConflict> analyzeQuotaReductionsWithAssignments({
+    required Event originalEvent,
+    required Map<RoleType, int> newRoleRequirements,
+    required List<Assignment> assignments,
+  }) {
+    return _analyzeQuotaReductionsWithAssignments(
+      originalEvent: originalEvent,
+      newRoleRequirements: newRoleRequirements,
+      allAssignments: assignments,
+    );
+  }
+
+  /// Internal implementation that works with assignments list
+  static List<RoleQuotaConflict> _analyzeQuotaReductionsWithAssignments({
+    required Event originalEvent,
+    required Map<RoleType, int> newRoleRequirements,
+    required List<Assignment> allAssignments,
+  }) {
+    final conflicts = <RoleQuotaConflict>[];
 
     // Check each role for quota reduction
     for (final roleType in RoleType.values) {

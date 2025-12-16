@@ -5,12 +5,14 @@ import '../../../../core/constants/role_types.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../data/repositories/assignment_repository.dart';
+import '../../../../data/repositories/event_repository.dart';
 import '../../../bloc/event/event_bloc.dart';
 import '../../../bloc/event/event_event.dart';
 import '../../../bloc/event/event_state.dart';
 import '../../../widgets/date_picker_dialog.dart';
 import '../quota_reduction_analyzer.dart';
 import 'quota_reduction_dialog.dart';
+import 'duplication_conflict_resolution_dialog.dart';
 
 /// Public Event Form Modal Widget for creating/editing events
 /// Can be used from any screen that needs to create or edit events
@@ -51,6 +53,7 @@ class _EventFormModalState extends State<EventFormModal> {
   bool _validateName = false; // Enable name validation after blur or submit
   String? _dateError; // Track date validation error
   final _nameFocusNode = FocusNode(); // For name field blur detection
+  bool _duplicateAssignments = false; // For duplication mode checkbox
 
   // For highlighting selected role
   ScrollController? _scrollController; // Will be set from DraggableScrollableSheet
@@ -217,8 +220,17 @@ class _EventFormModalState extends State<EventFormModal> {
         newAssemblyTime: _assemblyTimeController.text,
         newRequiresArmed: _requiresArmed,
         newRoleRequirements: Map.from(_roleRequirements),
+        duplicateAssignments: _duplicateAssignments,
       ));
-      widget.onSuccess();
+
+      // If duplicating WITH assignments, DON'T close immediately!
+      // The BlocListener will handle showing conflict dialog or closing on success.
+      // If duplicating WITHOUT assignments, close immediately (no conflicts possible).
+      if (!_duplicateAssignments) {
+        widget.onSuccess();
+      }
+      // When _duplicateAssignments is true, the modal stays open
+      // and the BlocListener will handle the response
       return;
     }
 
@@ -417,8 +429,8 @@ class _EventFormModalState extends State<EventFormModal> {
           _scrollController = scrollController;
 
           return Directionality(
-            textDirection: TextDirection.rtl,
-            child: LayoutBuilder(
+              textDirection: TextDirection.rtl,
+              child: LayoutBuilder(
               builder: (context, constraints) {
                 final maxWidth = constraints.maxWidth;
                 final horizontalPadding = maxWidth > 1000
@@ -529,7 +541,77 @@ class _EventFormModalState extends State<EventFormModal> {
 
                   // Modal Body (Scrollable)
                   Expanded(
-                    child: BlocBuilder<EventBloc, EventState>(
+                    child: BlocConsumer<EventBloc, EventState>(
+                      listener: (context, state) async {
+                        // Only handle duplication-related states when in duplication mode
+                        if (!widget.isDuplication) return;
+
+                        // Handle duplication conflict resolution state (NEW FLOW)
+                        // This is triggered BEFORE any database writes
+                        if (state is DuplicationRequiresConflictResolution) {
+                          // Show the unified conflict resolution dialog
+                          final excludedIds = await DuplicationConflictResolutionDialog.show(
+                            context,
+                            state,
+                          );
+
+                          if (excludedIds != null) {
+                            // User confirmed - dispatch confirmation event with exclusions
+                            if (context.mounted) {
+                              context.read<EventBloc>().add(ConfirmDuplicationWithExclusions(
+                                originalEvent: state.originalEvent,
+                                proposedEvent: state.proposedEvent,
+                                assignmentIdsToExclude: excludedIds,
+                                originalAssignmentIds: state.assignmentInfos
+                                    .map((info) => info.assignment.id)
+                                    .toList(),
+                              ));
+                            }
+                          } else {
+                            // User cancelled - close the modal
+                            if (context.mounted) {
+                              widget.onSuccess();
+                            }
+                          }
+                        }
+
+                        // Handle success state - close modal when duplication completes
+                        if (state is EventOperationSuccess) {
+                          if (context.mounted) {
+                            widget.onSuccess();
+                          }
+                        }
+
+                        // Handle old quota conflicts state (LEGACY - kept for backwards compatibility)
+                        if (state is EventDuplicatedWithQuotaConflicts) {
+                          // Show the quota reduction dialog
+                          final assignmentIdsToRemove = await QuotaReductionDialog.show(
+                            context,
+                            state.quotaConflicts,
+                          );
+
+                          // If user made selections, remove the selected assignments
+                          if (assignmentIdsToRemove != null) {
+                            // Convert old assignment IDs to new assignment IDs
+                            final newAssignmentIdsToRemove = assignmentIdsToRemove
+                                .map((oldId) => state.oldToNewAssignmentIds[oldId])
+                                .where((id) => id != null)
+                                .cast<String>()
+                                .toList();
+
+                            // Remove the assignments using the repository
+                            if (context.mounted) {
+                              final repository = context.read<EventRepository>();
+                              await repository.removeAssignmentsAfterDuplication(newAssignmentIdsToRemove);
+                            }
+                          }
+
+                          // Close the modal after handling quota reduction
+                          if (context.mounted) {
+                            widget.onSuccess();
+                          }
+                        }
+                      },
                       builder: (context, state) {
                         return Form(
                           key: _formKey,
@@ -818,6 +900,25 @@ class _EventFormModalState extends State<EventFormModal> {
                                 }),
                               ),
 
+                              // Duplicate Assignments (only show in duplication mode)
+                              if (widget.isDuplication) ...[
+                                const SizedBox(height: 8),
+                                SwitchListTile(
+                                  title: const Text('שכפל גם את השיבוצים'),
+                                  subtitle: Text(
+                                    _duplicateAssignments
+                                      ? 'כל השיבוצים יועברו לאירוע החדש (בהתחשב בזמינות)'
+                                      : 'רק פרטי האירוע ישוכפלו, ללא שיבוצים',
+                                  ),
+                                  value: _duplicateAssignments,
+                                  onChanged: (v) => setState(() {
+                                    _duplicateAssignments = v;
+                                    _isDirty = true;
+                                  }),
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+
                               const Divider(height: 32),
 
                               // Role Requirements
@@ -948,8 +1049,8 @@ class _EventFormModalState extends State<EventFormModal> {
               },
             ),
           );
-        },
-      );
+        }, // Close DraggableScrollableSheet builder
+      ); // Close DraggableScrollableSheet
   }
 
   

@@ -35,6 +35,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     on<UpdateEvent>(_onUpdateEvent);
     on<DeleteEvent>(_onDeleteEvent);
     on<DuplicateEvent>(_onDuplicateEvent);
+    on<ConfirmDuplicationWithExclusions>(_onConfirmDuplicationWithExclusions);
     on<RefreshEvents>(_onRefreshEvents);
     on<_EventsDataUpdated>(_onEventsDataUpdated);
   }
@@ -273,12 +274,13 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   }
 
   /// Duplicate event with new date/time
+  /// NEW FLOW: Check for conflicts FIRST, emit conflict state if any,
+  /// and DON'T create anything until user confirms via ConfirmDuplicationWithExclusions
   Future<void> _onDuplicateEvent(
     DuplicateEvent event,
     Emitter<EventState> emit,
   ) async {
     try {
-      
       // Get the original event
       final originalEvent = await _repository.getEventById(event.eventId);
       if (originalEvent == null) {
@@ -286,11 +288,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         return;
       }
 
-      // Get all assignments for the original event
-      final assignments = await _assignmentRepository.getAssignmentsByEvent(event.eventId);
-
-      // Create the duplicated event with all new values
-      final duplicatedEvent = Event(
+      // Create the proposed duplicated event with all new values
+      final proposedEvent = Event(
         id: const Uuid().v4(), // Generate unique ID for the duplicated event
         name: event.newName,
         location: event.newLocation,
@@ -306,53 +305,183 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         updatedAt: DateTime.now(),
       );
 
-      // Check for assignment conflicts with new dates
-      final conflicts = <AssignmentConflict>[];
+      // If not duplicating assignments, just create the event directly
+      if (!event.duplicateAssignments) {
+        await _repository.duplicateEvent(
+          originalEvent,
+          proposedEvent,
+          [],
+        );
+        emit(const EventOperationSuccess('האירוע שוכפל בהצלחה ללא שיבוצים'));
+        add(const LoadEvents());
+        return;
+      }
 
-      for (final assignment in assignments) {
-        if (assignment.teamMember != null) {
-          final conflictReasons = <String>[];
+      // Get assignments to duplicate
+      final assignments = await _assignmentRepository.getAssignmentsByEvent(event.eventId);
 
-          // Check availability conflict with new dates
-          if (!assignment.teamMember!.isAvailableForDateRange(event.newStartDate, event.newEndDate)) {
-            conflictReasons.add('חבר הצוות לא זמין בתאריכים החדשים');
-          }
+      if (assignments.isEmpty) {
+        // No assignments to duplicate, just create the event
+        await _repository.duplicateEvent(
+          originalEvent,
+          proposedEvent,
+          [],
+        );
+        emit(const EventOperationSuccess('האירוע שוכפל בהצלחה (ללא שיבוצים קיימים)'));
+        add(const LoadEvents());
+        return;
+      }
 
-          // Add to conflicts list if any conflicts found
-          if (conflictReasons.isNotEmpty) {
-            conflicts.add(AssignmentConflict(
-              assignmentId: assignment.id,
-              teamMemberName: assignment.teamMember!.name,
-              roleName: assignment.roleType.hebrewName,
-              conflictReasons: conflictReasons,
-            ));
-          }
+      // Calculate role quotas that would be over-filled
+      final overQuotaRoles = <RoleType>{};
+      for (final roleType in RoleType.values) {
+        final newQuota = event.newRoleRequirements[roleType] ?? 0;
+        final assignmentCount = assignments.where((a) => a.roleType == roleType).length;
+        if (assignmentCount > newQuota) {
+          overQuotaRoles.add(roleType);
         }
       }
 
-      // Use repository method to duplicate event and assignments
-      await _repository.duplicateEvent(
-        originalEvent,
-        duplicatedEvent,
-        assignments,
-      );
+      // Build assignment info list with conflict details
+      final assignmentInfos = <AssignmentDuplicationInfo>[];
+      bool hasAnyConflict = false;
 
-      // If there are conflicts, emit special state
-      if (conflicts.isNotEmpty) {
-        emit(EventDuplicatedWithConflicts(
-          duplicatedEvent: duplicatedEvent,
-          assignmentConflicts: conflicts,
+      for (final assignment in assignments) {
+        bool hasAvailabilityConflict = false;
+        String? availabilityReason;
+
+        // Check availability conflict with new dates
+        if (assignment.teamMember != null) {
+          if (!assignment.teamMember!.isAvailableForDateRange(event.newStartDate, event.newEndDate)) {
+            hasAvailabilityConflict = true;
+            availabilityReason = 'חבר הצוות לא זמין בתאריכים החדשים';
+          }
+        }
+
+        final isInOverQuotaRole = overQuotaRoles.contains(assignment.roleType);
+
+        if (hasAvailabilityConflict || isInOverQuotaRole) {
+          hasAnyConflict = true;
+        }
+
+        assignmentInfos.add(AssignmentDuplicationInfo(
+          assignment: assignment,
+          hasAvailabilityConflict: hasAvailabilityConflict,
+          availabilityReason: availabilityReason,
+          isInOverQuotaRole: isInOverQuotaRole,
         ));
-      } else {
-        // Otherwise emit success
-        emit(const EventOperationSuccess('האירוע שוכפל בהצלחה עם כל השיבוצים'));
       }
 
-      // Reload events to show the new one
+      // If there are ANY conflicts, emit state for user resolution
+      // DO NOT create anything yet!
+      if (hasAnyConflict) {
+        // Convert role requirements to Map<String, int> for the state
+        final roleQuotas = <String, int>{};
+        for (final entry in event.newRoleRequirements.entries) {
+          roleQuotas[entry.key.name] = entry.value;
+        }
+
+        emit(DuplicationRequiresConflictResolution(
+          originalEvent: originalEvent,
+          proposedEvent: proposedEvent,
+          assignmentInfos: assignmentInfos,
+          roleQuotas: roleQuotas,
+        ));
+        return; // STOP HERE - wait for user to confirm via ConfirmDuplicationWithExclusions
+      }
+
+      // No conflicts - proceed with full duplication
+      await _repository.duplicateEvent(
+        originalEvent,
+        proposedEvent,
+        assignments,
+      );
+      emit(const EventOperationSuccess('האירוע שוכפל בהצלחה עם כל השיבוצים'));
       add(const LoadEvents());
     } catch (e) {
       emit(EventError('שגיאה בשכפול האירוע: $e'));
     }
+  }
+
+  /// Handle confirmed duplication after user resolves conflicts
+  /// This creates the event and ONLY the assignments the user chose to include
+  /// Logic fix: Adjusts quotas in the proposed event to match kept assignments
+  Future<void> _onConfirmDuplicationWithExclusions(
+    ConfirmDuplicationWithExclusions event,
+    Emitter<EventState> emit,
+  ) async {
+    try {
+      // Get the original assignments
+      final allAssignments = await _assignmentRepository.getAssignmentsByEvent(event.originalEvent.id);
+
+      // Filter out excluded assignments
+      final assignmentsToInclude = allAssignments
+          .where((a) => !event.assignmentIdsToExclude.contains(a.id))
+          .toList();
+
+      // LOGIC FIX: Adjust quotas in the proposed event to match kept assignments
+      final adjustedEvent = _adjustQuotasToMatchAssignments(event.proposedEvent, assignmentsToInclude);
+
+      // Create the event with adjusted quotas and filtered assignments
+      await _repository.duplicateEvent(
+        event.originalEvent,
+        adjustedEvent,
+        assignmentsToInclude,
+      );
+
+      // Build success message
+      final excludedCount = event.assignmentIdsToExclude.length;
+      final includedCount = assignmentsToInclude.length;
+
+      String message;
+      if (excludedCount == 0) {
+        message = 'האירוע שוכפל בהצלחה עם כל $includedCount השיבוצים';
+      } else if (includedCount == 0) {
+        message = 'האירוע שוכפל בהצלחה ללא שיבוצים';
+      } else {
+        message = 'האירוע שוכפל בהצלחה עם $includedCount שיבוצים ($excludedCount הוסרו)';
+      }
+
+      emit(EventOperationSuccess(message));
+      add(const LoadEvents());
+    } catch (e) {
+      emit(EventError('שגיאה בשכפול האירוע: $e'));
+    }
+  }
+
+  /// Adjust role requirements in the event to match the number of kept assignments
+  /// This ensures the event's quotas are consistent with what will be created
+  Event _adjustQuotasToMatchAssignments(Event proposedEvent, List<Assignment> assignmentsToInclude) {
+    // Count assignments by role
+    final roleCounts = <RoleType, int>{};
+    for (final assignment in assignmentsToInclude) {
+      roleCounts[assignment.roleType] = (roleCounts[assignment.roleType] ?? 0) + 1;
+    }
+
+    // Update the proposed event's role requirements to match the kept assignments
+    final updatedRoleRequirements = Map<RoleType, int>.from(proposedEvent.roleRequirements);
+
+    // Set each role's quota to match the number of kept assignments
+    for (final entry in roleCounts.entries) {
+      updatedRoleRequirements[entry.key] = entry.value;
+    }
+
+    // Create a new event with adjusted quotas
+    return Event(
+      id: proposedEvent.id,
+      name: proposedEvent.name,
+      location: proposedEvent.location,
+      comments: proposedEvent.comments,
+      startDate: proposedEvent.startDate,
+      endDate: proposedEvent.endDate,
+      startTime: proposedEvent.startTime,
+      endTime: proposedEvent.endTime,
+      assemblyTime: proposedEvent.assemblyTime,
+      requiresArmed: proposedEvent.requiresArmed,
+      roleRequirements: updatedRoleRequirements,
+      createdAt: proposedEvent.createdAt,
+      updatedAt: DateTime.now(), // Update timestamp since we're modifying quotas
+    );
   }
 
   @override

@@ -88,6 +88,7 @@ class DuplicateEvent extends EventEvent {
   final String newAssemblyTime;
   final bool newRequiresArmed;
   final Map<RoleType, int> newRoleRequirements;
+  final bool duplicateAssignments;
 
   const DuplicateEvent({
     required this.eventId,
@@ -101,6 +102,7 @@ class DuplicateEvent extends EventEvent {
     required this.newAssemblyTime,
     required this.newRequiresArmed,
     required this.newRoleRequirements,
+    this.duplicateAssignments = false,
   });
 
   @override
@@ -116,5 +118,30 @@ class DuplicateEvent extends EventEvent {
         newAssemblyTime,
         newRequiresArmed,
         newRoleRequirements,
+        duplicateAssignments,
+      ];
+}
+
+/// Confirm duplication after user resolves conflicts
+/// This event is dispatched AFTER the user selects which assignments to exclude
+class ConfirmDuplicationWithExclusions extends EventEvent {
+  final Event originalEvent;
+  final Event proposedEvent;
+  final Set<String> assignmentIdsToExclude;
+  final List<String> originalAssignmentIds; // All original assignment IDs
+
+  const ConfirmDuplicationWithExclusions({
+    required this.originalEvent,
+    required this.proposedEvent,
+    required this.assignmentIdsToExclude,
+    required this.originalAssignmentIds,
+  });
+
+  @override
+  List<Object?> get props => [
+        originalEvent,
+        proposedEvent,
+        assignmentIdsToExclude,
+        originalAssignmentIds,
       ];
 }
