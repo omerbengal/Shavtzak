@@ -19,6 +19,7 @@ class EventFormModal extends StatefulWidget {
   final VoidCallback onSuccess;
   final RoleType? selectedRole; // Optional role to highlight/scroll to
   final int filterIndex; // Filter index to reload with after operations (0=all, 1=future, 2=past)
+  final bool isDuplication; // true if this is a duplication modal
 
   const EventFormModal({
     super.key,
@@ -26,6 +27,7 @@ class EventFormModal extends StatefulWidget {
     required this.onSuccess,
     this.selectedRole,
     this.filterIndex = 1, // Default to future
+    this.isDuplication = false, // Default to false
   });
 
   @override
@@ -57,7 +59,7 @@ class _EventFormModalState extends State<EventFormModal> {
   RoleType? _highlightedRole;
   double _highlightOpacity = 1.0; // For fade animation
 
-  bool get _isEditMode => widget.event != null;
+  bool get _isEditMode => widget.event != null || widget.isDuplication;
 
   @override
   void initState() {
@@ -74,8 +76,17 @@ class _EventFormModalState extends State<EventFormModal> {
       _startTimeController.text = widget.event!.startTime;
       _endTimeController.text = widget.event!.endTime;
       _assemblyTimeController.text = widget.event!.assemblyTime;
-      _startDate = widget.event!.startDate;
-      _endDate = widget.event!.endDate;
+
+      if (widget.isDuplication) {
+        // For duplication mode, reset dates to allow user to select new ones
+        _startDate = null;
+        _endDate = null;
+      } else {
+        // For regular edit mode
+        _startDate = widget.event!.startDate;
+        _endDate = widget.event!.endDate;
+      }
+
       _requiresArmed = widget.event!.requiresArmed;
       _roleRequirements = Map.from(widget.event!.roleRequirements);
     }
@@ -167,13 +178,27 @@ class _EventFormModalState extends State<EventFormModal> {
     setState(() {
       _validateName = true;
       // Validate date field
-      _dateError = _startDate == null ? 'יש לבחור תאריך התחלה' : null;
+      _dateError = _startDate == null ? 'יש לבחור תאריך/ים לאירוע' : null;
     });
 
     if (!_formKey.currentState!.validate()) {
       return;
     }
     if (_startDate == null) {
+      return;
+    }
+
+    // For duplication mode, create the duplicated event
+    if (widget.isDuplication) {
+      context.read<EventBloc>().add(DuplicateEvent(
+        eventId: widget.event!.id,
+        newStartDate: _startDate!,
+        newEndDate: _endDate!,
+        newStartTime: _startTimeController.text,
+        newEndTime: _endTimeController.text,
+        newAssemblyTime: _assemblyTimeController.text,
+      ));
+      widget.onSuccess();
       return;
     }
 
@@ -400,13 +425,36 @@ class _EventFormModalState extends State<EventFormModal> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            _isEditMode ? 'עריכת אירוע' : 'הוספת אירוע',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          child: widget.isDuplication
+                              ? RichText(
+                                  text: TextSpan(
+                                    children: [
+                                      const TextSpan(
+                                        text: 'שכפול אירוע: ',
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.red,
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text: widget.event?.name ?? '',
+                                        style: const TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : Text(
+                                  _isEditMode ? 'עריכת אירוע' : 'הוספת אירוע',
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                         ),
                         if (_isEditMode)
                           IconButton(
@@ -442,6 +490,15 @@ class _EventFormModalState extends State<EventFormModal> {
                             },
                             tooltip: 'מחק',
                           ),
+                        if (_isEditMode && !widget.isDuplication)
+                          IconButton(
+                            icon: const Icon(Icons.copy, color: Colors.blue),
+                            onPressed: () {
+                              Navigator.of(context).pop(); // Close current modal
+                              _showDuplicationModal(); // Open duplication modal
+                            },
+                            tooltip: 'שכפל אירוע',
+                          ),
                         IconButton(
                           icon: const Icon(Icons.close),
                           onPressed: _handleClose,
@@ -473,11 +530,18 @@ class _EventFormModalState extends State<EventFormModal> {
                                 controller: _nameController,
                                 focusNode: _nameFocusNode,
                                 textDirection: TextDirection.rtl,
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
                                   labelText: 'שם האירוע',
                                   hintText: 'לדוגמה: חתונת כהן',
-                                  prefixIcon: Icon(Icons.event),
-                                  border: OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.event),
+                                  border: const OutlineInputBorder(),
+                                  helperText: widget.isDuplication && _nameController.text.isNotEmpty && !_validateName
+                                      ? 'ניתן לערוך את שם האירוע לשכפול'
+                                      : null,
+                                  helperStyle: const TextStyle(color: Colors.red),
+                                  errorText: _validateName && _nameController.text.isEmpty
+                                      ? 'שדה חובה'
+                                      : null,
                                 ),
                                 autovalidateMode: _validateName
                                     ? AutovalidateMode.onUserInteraction
@@ -604,6 +668,17 @@ class _EventFormModalState extends State<EventFormModal> {
                                         _dateError!,
                                         style: TextStyle(
                                           color: Colors.red.shade700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  if (widget.isDuplication && _startDate == null && _dateError == null)
+                                    const Padding(
+                                      padding: EdgeInsets.only(right: 16, top: 4, bottom: 8),
+                                      child: Text(
+                                        'יש לבחור תאריכים חדשים לאירוע המשוכפל',
+                                        style: TextStyle(
+                                          color: Colors.red,
                                           fontSize: 12,
                                         ),
                                       ),
@@ -801,7 +876,7 @@ class _EventFormModalState extends State<EventFormModal> {
                         Expanded(
                           child: ElevatedButton(
                             onPressed: _saveEvent,
-                            child: const Text('שמור'),
+                            child: Text(widget.isDuplication ? 'שכפל אירוע' : 'שמור'),
                           ),
                         ),
                       ],
@@ -816,6 +891,25 @@ class _EventFormModalState extends State<EventFormModal> {
           );
         },
       );
+  }
+
+  
+  void _showDuplicationModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (modalContext) => EventFormModal(
+        event: widget.event,
+        isDuplication: true,
+        filterIndex: widget.filterIndex,
+        onSuccess: () {
+          Navigator.of(modalContext).pop();
+        },
+      ),
+    );
   }
 
   String _formatDate(DateTime date) {

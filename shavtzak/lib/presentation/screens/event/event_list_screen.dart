@@ -292,7 +292,7 @@ class _EventListScreenState extends State<EventListScreen> {
                   Expanded(
                     child: Text(event.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
                   ),
-                ],
+                  ],
               ),
               const SizedBox(height: 12),
               // All fields in a single Wrap for horizontal flow
@@ -343,6 +343,7 @@ class _EventListScreenState extends State<EventListScreen> {
     );
   }
 
+  
   
   void _showDeleteConfirmation(Event event) {
     showDialog(

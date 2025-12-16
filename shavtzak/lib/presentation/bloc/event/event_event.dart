@@ -73,3 +73,32 @@ class DeleteEvent extends EventEvent {
 class RefreshEvents extends EventEvent {
   const RefreshEvents();
 }
+
+/// Duplicate an event with new date/time
+class DuplicateEvent extends EventEvent {
+  final String eventId;
+  final DateTime newStartDate;
+  final DateTime newEndDate;
+  final String newStartTime;
+  final String newEndTime;
+  final String newAssemblyTime;
+
+  const DuplicateEvent({
+    required this.eventId,
+    required this.newStartDate,
+    required this.newEndDate,
+    required this.newStartTime,
+    required this.newEndTime,
+    required this.newAssemblyTime,
+  });
+
+  @override
+  List<Object?> get props => [
+        eventId,
+        newStartDate,
+        newEndDate,
+        newStartTime,
+        newEndTime,
+        newAssemblyTime,
+      ];
+}

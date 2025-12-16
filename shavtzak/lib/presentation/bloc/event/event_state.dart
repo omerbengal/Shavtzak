@@ -110,3 +110,35 @@ class EventError extends EventState {
   @override
   List<Object?> get props => [message];
 }
+
+/// Event duplicated with conflicts
+class EventDuplicatedWithConflicts extends EventState {
+  final Event duplicatedEvent;
+  final List<AssignmentConflict> assignmentConflicts;
+
+  const EventDuplicatedWithConflicts({
+    required this.duplicatedEvent,
+    required this.assignmentConflicts,
+  });
+
+  @override
+  List<Object?> get props => [duplicatedEvent, assignmentConflicts];
+}
+
+/// Assignment conflict information
+class AssignmentConflict extends Equatable {
+  final String assignmentId;
+  final String teamMemberName;
+  final String roleName;
+  final List<String> conflictReasons;
+
+  const AssignmentConflict({
+    required this.assignmentId,
+    required this.teamMemberName,
+    required this.roleName,
+    required this.conflictReasons,
+  });
+
+  @override
+  List<Object?> get props => [assignmentId, teamMemberName, roleName, conflictReasons];
+}
