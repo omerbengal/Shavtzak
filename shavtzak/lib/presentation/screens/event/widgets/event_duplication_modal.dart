@@ -366,11 +366,17 @@ class _EventDuplicationModalState extends State<EventDuplicationModal> {
     if (_formKey.currentState?.validate() ?? false) {
       context.read<EventBloc>().add(DuplicateEvent(
         eventId: widget.event.id,
+        newName: widget.event.name,
+        newLocation: widget.event.location,
+        newComments: widget.event.comments,
         newStartDate: _startDate,
         newEndDate: _endDate,
         newStartTime: _startTimeController.text,
         newEndTime: _endTimeController.text,
         newAssemblyTime: _assemblyTimeController.text,
+        newRequiresArmed: widget.event.requiresArmed,
+        newRoleRequirements: widget.event.roleRequirements,
+        duplicateAssignments: true,
       ));
     }
   }

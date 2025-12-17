@@ -1066,7 +1066,7 @@ class _EventFormModalState extends State<EventFormModal> {
         isDuplication: true,
         filterIndex: widget.filterIndex,
         onSuccess: () {
-          Navigator.of(modalContext).pop();
+          Navigator.of(modalContext).pop(); // Close the duplication modal
         },
       ),
     );
