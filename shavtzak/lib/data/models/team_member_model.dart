@@ -24,6 +24,9 @@ class TeamMemberModel {
   final String? passcode;        // 4 or 6 digit passcode (null = no passcode)
   final int? passcodeLength;     // Length of passcode (4 or 6, null = no passcode)
 
+  // Multiple assignment field
+  final bool allowMultipleAssignments; // Allow assigning to same event multiple times
+
   const TeamMemberModel({
     required this.id,
     required this.name,
@@ -38,6 +41,7 @@ class TeamMemberModel {
     this.isAdmin = false,
     this.passcode,
     this.passcodeLength,
+    this.allowMultipleAssignments = false,
   });
 
   /// Generate a UUID for team members
@@ -67,6 +71,7 @@ class TeamMemberModel {
       isAdmin: entity.isAdmin,
       passcode: entity.passcode,
       passcodeLength: entity.passcodeLength,
+      allowMultipleAssignments: entity.allowMultipleAssignments,
     );
   }
 
@@ -91,6 +96,7 @@ class TeamMemberModel {
       isAdmin: isAdmin,
       passcode: passcode,
       passcodeLength: passcodeLength,
+      allowMultipleAssignments: allowMultipleAssignments,
     );
   }
 
@@ -108,6 +114,9 @@ class TeamMemberModel {
     // Handle migration - passcode fields are optional, default to null for existing members
     final passcode = data['passcode'] as String?;
     final passcodeLength = data['passcodeLength'] as int?;
+
+    // Handle migration - default to false for existing members missing allowMultipleAssignments
+    final allowMultipleAssignments = data['allowMultipleAssignments'] as bool? ?? false;
 
     final model = TeamMemberModel(
       id: doc.id,
@@ -130,6 +139,7 @@ class TeamMemberModel {
       isAdmin: isAdmin,
       passcode: passcode,
       passcodeLength: passcodeLength,
+      allowMultipleAssignments: allowMultipleAssignments,
     );
 
     // If migration was needed (UUID was generated), update the document
@@ -168,6 +178,7 @@ class TeamMemberModel {
       'isAdmin': isAdmin,
       'passcode': passcode,
       'passcodeLength': passcodeLength,
+      'allowMultipleAssignments': allowMultipleAssignments,
     };
   }
 
@@ -183,6 +194,9 @@ class TeamMemberModel {
     // Handle migration - passcode fields are optional, default to null for existing members
     final passcode = json['passcode'] as String?;
     final passcodeLength = json['passcodeLength'] as int?;
+
+    // Handle migration - default to false for existing members missing allowMultipleAssignments
+    final allowMultipleAssignments = json['allowMultipleAssignments'] as bool? ?? false;
 
     return TeamMemberModel(
       id: json['id'] as String,
@@ -201,6 +215,7 @@ class TeamMemberModel {
       isAdmin: isAdmin,
       passcode: passcode,
       passcodeLength: passcodeLength,
+      allowMultipleAssignments: allowMultipleAssignments,
     );
   }
 
@@ -220,6 +235,7 @@ class TeamMemberModel {
       'isAdmin': isAdmin,
       'passcode': passcode,
       'passcodeLength': passcodeLength,
+      'allowMultipleAssignments': allowMultipleAssignments,
     };
   }
 }

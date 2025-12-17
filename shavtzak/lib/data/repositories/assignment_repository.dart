@@ -143,7 +143,8 @@ class AssignmentRepository {
     }
 
     // Check availability conflict for entire event duration
-    if (!member.isAvailableForDateRange(event.startDate, event.endDate)) {
+    // Skip for members with allowMultipleAssignments
+    if (!member.allowMultipleAssignments && !member.isAvailableForDateRange(event.startDate, event.endDate)) {
       final dateRange = event.endDate != null
           ? '${_formatDate(event.startDate)} - ${_formatDate(event.endDate!)}'
           : _formatDate(event.startDate);
@@ -168,18 +169,21 @@ class AssignmentRepository {
     }
 
     // Check for duplicate assignments (same person, same event, same role)
-    final existingAssignments = await getAssignmentsByEvent(assignment.eventId);
-    final duplicate = existingAssignments.any(
-      (a) =>
-          a.id != assignment.id && // Don't check against itself
-          a.teamMemberId == assignment.teamMemberId &&
-          a.roleType == assignment.roleType,
-    );
-
-    if (duplicate) {
-      conflicts.add(
-        '${member.name} כבר משובץ/ת לתפקיד ${assignment.roleType.hebrewName} באירוע זה',
+    // Skip for members with allowMultipleAssignments
+    if (!member.allowMultipleAssignments) {
+      final existingAssignments = await getAssignmentsByEvent(assignment.eventId);
+      final duplicate = existingAssignments.any(
+        (a) =>
+            a.id != assignment.id && // Don't check against itself
+            a.teamMemberId == assignment.teamMemberId &&
+            a.roleType == assignment.roleType,
       );
+
+      if (duplicate) {
+        conflicts.add(
+          '${member.name} כבר משובץ/ת לתפקיד ${assignment.roleType.hebrewName} באירוע זה',
+        );
+      }
     }
 
     return conflicts;

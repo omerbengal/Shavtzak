@@ -544,10 +544,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               if (!member.canPerformRole(role)) continue;
 
               // Check availability for entire event duration
-              if (!member.isAvailableForDateRange(event.startDate, event.endDate)) continue;
+              // Skip availability check for members with allowMultipleAssignments
+              if (!member.allowMultipleAssignments &&
+                  !member.isAvailableForDateRange(event.startDate, event.endDate)) continue;
 
               // Separate based on whether already assigned to this event
-              if (assignedMemberIds.contains(member.id)) {
+              // Members with allowMultipleAssignments always go to available list
+              if (member.allowMultipleAssignments) {
+                availableMembersMap[member.id] = member;
+              } else if (assignedMemberIds.contains(member.id)) {
                 alreadyAssignedMembersMap[member.id] = member;
               } else {
                 availableMembersMap[member.id] = member;
@@ -570,9 +575,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
 
       // 5. Detect double assignments (person assigned to multiple roles in same event)
+      // Skip for members with allowMultipleAssignments since it's expected behavior
       final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
       for (final slot in slots) {
         if (slot.isFilled) {
+          // Check if member has allowMultipleAssignments - skip double assignment warning
+          final teamMember = slot.currentAssignment!.teamMember;
+          final skipDoubleAssignmentWarning = teamMember?.allowMultipleAssignments ?? false;
+
           // Check if this person has other assignments in the same event
           final otherAssignments = slots.where((s) =>
               s.event.id == slot.event.id &&
@@ -581,7 +591,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                   slot.currentAssignment!.teamMemberId &&
               s.roleType != slot.roleType).toList();
 
-          if (otherAssignments.isNotEmpty) {
+          if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
             // This person has multiple roles in this event
             final otherRoleNames =
                 otherAssignments.map((s) => s.roleType.hebrewName).toList();

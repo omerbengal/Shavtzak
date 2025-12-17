@@ -108,6 +108,9 @@ class TeamMember extends Equatable {
   final String? passcode;        // 4 or 6 digit passcode (null = no passcode)
   final int? passcodeLength;     // Length of passcode (4 or 6, null = no passcode)
 
+  // Multiple assignment field
+  final bool allowMultipleAssignments; // Allow assigning to same event multiple times
+
   const TeamMember({
     required this.id,
     required this.name,
@@ -122,6 +125,7 @@ class TeamMember extends Equatable {
     this.isAdmin = false,
     this.passcode,
     this.passcodeLength,
+    this.allowMultipleAssignments = false,
   });
 
   /// Check if team member is available on a given date
@@ -210,6 +214,7 @@ class TeamMember extends Equatable {
     String? passcode,
     int? passcodeLength,
     bool clearPasscode = false,
+    bool? allowMultipleAssignments,
   }) {
     return TeamMember(
       id: id ?? this.id,
@@ -225,6 +230,7 @@ class TeamMember extends Equatable {
       isAdmin: isAdmin ?? this.isAdmin,
       passcode: clearPasscode ? null : (passcode ?? this.passcode),
       passcodeLength: clearPasscode ? null : (passcodeLength ?? this.passcodeLength),
+      allowMultipleAssignments: allowMultipleAssignments ?? this.allowMultipleAssignments,
     );
   }
 
@@ -243,6 +249,7 @@ class TeamMember extends Equatable {
         isAdmin,
         passcode,
         passcodeLength,
+        allowMultipleAssignments,
       ];
 
   @override

@@ -674,6 +674,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
   bool _isActive = true;
   bool _isPermanent = false;
+  bool _allowMultipleAssignments = false;
   Map<RoleType, bool> _roleCapabilities = {};
 
   late TeamBloc _teamBloc;
@@ -698,6 +699,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       _commentsController.text = widget.member!.comments;
       _isActive = widget.member!.isActive;
       _isPermanent = widget.member!.isPermanent;
+      _allowMultipleAssignments = widget.member!.allowMultipleAssignments;
       _roleCapabilities = Map.from(widget.member!.roleCapabilities);
       _constraints = List.from(widget.member!.constraints);
     }
@@ -743,6 +745,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       name: _nameController.text.trim(),
       isActive: _isActive,
       isPermanent: _isPermanent,
+      allowMultipleAssignments: _allowMultipleAssignments,
       constraints: finalConstraints,
       roleCapabilities: _roleCapabilities,
       comments: _commentsController.text.trim(),
@@ -1204,6 +1207,21 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                 onChanged: (value) {
                                   setState(() {
                                     _isPermanent = value;
+                                    _isDirty = true;
+                                  });
+                                },
+                              ),
+
+                              // Multiple assignment switch
+                              SwitchListTile(
+                                title: const Text('שיבוץ מרובה'),
+                                subtitle: const Text(
+                                  'מאפשר שיבוץ לאותו אירוע מספר פעמים',
+                                ),
+                                value: _allowMultipleAssignments,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _allowMultipleAssignments = value;
                                     _isDirty = true;
                                   });
                                 },

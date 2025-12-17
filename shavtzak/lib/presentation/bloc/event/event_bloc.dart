@@ -351,7 +351,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         String? availabilityReason;
 
         // Check availability conflict with new dates
-        if (assignment.teamMember != null) {
+        // Skip for members with allowMultipleAssignments
+        if (assignment.teamMember != null && !assignment.teamMember!.allowMultipleAssignments) {
           if (!assignment.teamMember!.isAvailableForDateRange(event.newStartDate, event.newEndDate)) {
             hasAvailabilityConflict = true;
             availabilityReason = 'חבר הצוות לא זמין בתאריכים החדשים';

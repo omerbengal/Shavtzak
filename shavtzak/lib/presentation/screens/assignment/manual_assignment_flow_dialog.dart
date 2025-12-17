@@ -425,6 +425,9 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
   bool _hasDateConstraintConflict(TeamMember teamMember) {
     if (_selectedEvent == null) return false;
 
+    // Members with allowMultipleAssignments bypass constraint checks
+    if (teamMember.allowMultipleAssignments) return false;
+
     return teamMember.constraints.any((constraint) {
       // Only consider APPROVED constraints for conflicts
       if (constraint.status != ConstraintStatus.approved) return false;
@@ -450,6 +453,9 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
 
   /// Check if non-permanent member has availability for the event dates
   bool _hasAvailabilityForEvent(TeamMember teamMember) {
+    // Members with allowMultipleAssignments bypass availability checks
+    if (teamMember.allowMultipleAssignments) return true;
+
     // Permanent members are always considered available unless they have unavailability constraints
     if (teamMember.isPermanent) return true;
 
