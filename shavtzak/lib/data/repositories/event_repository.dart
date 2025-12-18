@@ -1,16 +1,31 @@
 import 'package:uuid/uuid.dart';
+import 'dart:developer' as developer;
+import 'package:flutter/material.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/assignment.dart';
 import '../../core/constants/role_types.dart';
+import '../../core/services/drive_service.dart';
 import '../data_sources/database_interface.dart';
 import '../data_sources/firestore_database.dart';
+import '../../core/router/app_router.dart'; // Import for navigatorKey
+
+/// Exception thrown when trying to create a duplicate event
+class DuplicateEventException implements Exception {
+  final String message;
+  DuplicateEventException(this.message);
+
+  @override
+  String toString() => message;
+}
 
 /// Repository for event operations
 /// Provides high-level business logic on top of database operations
 class EventRepository {
   final DatabaseInterface _database;
+  final DriveService _driveService;
 
-  EventRepository(this._database);
+  EventRepository(this._database, {DriveService? driveService})
+      : _driveService = driveService ?? DriveService.instance;
 
   /// Watch all events in real-time
   Stream<List<Event>> watchEvents() {
@@ -51,24 +66,198 @@ class EventRepository {
     return all.where((event) => event.occursOn(date)).toList();
   }
 
+  /// Check if an event with the same name and date already exists
+  Future<bool> isDuplicateEvent(String name, DateTime startDate, {String? excludeEventId}) async {
+    return await _database.isDuplicateEvent(name, startDate, excludeEventId: excludeEventId);
+  }
+
   /// Create a new event
-  Future<void> createEvent(Event event) async {
+  /// Creates Drive folder in the background and triggers archive check
+  /// Throws DuplicateEventException if an event with the same name and date exists
+  Future<Event> createEvent(Event event) async {
+    // Check for duplicate event
+    try {
+      final isDuplicate = await isDuplicateEvent(event.name, event.startDate);
+      if (isDuplicate) {
+        throw DuplicateEventException('כבר קיים אירוע בשם זה בתאריך זה');
+      }
+    } catch (e) {
+      if (e is DuplicateEventException) {
+        rethrow;
+      }
+      developer.log(
+        'EventRepository.createEvent: Duplicate check failed: $e',
+        name: 'EventRepository',
+        error: e,
+      );
+      // Continue with event creation if duplicate check fails (e.g., missing index)
+      // The error will be logged but won't block event creation
+    }
+
+    // Insert event to database first
     await _database.insertEvent(event);
+
+    // Create Drive folder in background (don't wait for it)
+    _createDriveFolderInBackground(event);
+
+    // Run archive check in background
+    _runArchiveCheckInBackground();
+
+    return event;
   }
 
   /// Update an existing event
-  Future<void> updateEvent(Event event) async {
+  /// Renames the Drive folder in background if name/date changed and triggers archive check
+  /// Throws DuplicateEventException if another event with the same name and date exists
+  Future<Event> updateEvent(Event event) async {
+    // Check for duplicate event (excluding this event)
+    try {
+      final isDuplicate = await isDuplicateEvent(
+        event.name,
+        event.startDate,
+        excludeEventId: event.id,
+      );
+      if (isDuplicate) {
+        throw DuplicateEventException('כבר קיים אירוע בשם זה בתאריך זה');
+      }
+    } catch (e) {
+      if (e is DuplicateEventException) {
+        rethrow;
+      }
+      developer.log(
+        'EventRepository.updateEvent: Duplicate check failed: $e',
+        name: 'EventRepository',
+        error: e,
+      );
+      // Continue with event update if duplicate check fails (e.g., missing index)
+    }
+
+    // Get the original event to check if name/date changed
+    final originalEvent = await getEventById(event.id);
+
+    // Update event in database first
     await _database.updateEvent(event);
+
+    // Rename Drive folder in background if needed
+    if (_driveService.isInitialized && event.hasDriveFolder) {
+      // Check if name or date changed
+      final nameChanged = originalEvent?.name != event.name;
+      final dateChanged = originalEvent?.startDate != event.startDate || originalEvent?.endDate != event.endDate;
+
+      if (nameChanged || dateChanged) {
+        _renameDriveFolderInBackground(event, originalEvent);
+      }
+    }
+
+    // Run archive check in background
+    _runArchiveCheckInBackground();
+
+    return event;
   }
 
   /// Delete an event
-  /// Also deletes all assignments for this event
+  /// Also deletes all assignments and the Drive folder for this event in background
   Future<void> deleteEvent(String id) async {
+    // Get event to check for Drive folder
+    final event = await getEventById(id);
+
+    // Delete Drive folder in background if exists
+    if (_driveService.isInitialized && event != null && event.hasDriveFolder) {
+      _deleteDriveFolderInBackground(event.driveFolderId!);
+    }
+
     // Delete all assignments first
     await _database.deleteAssignmentsByEvent(id);
 
     // Then delete the event
     await _database.deleteEvent(id);
+
+    // Run archive check in background
+    _runArchiveCheckInBackground();
+  }
+
+  /// Run archive check - move old event folders to archive
+  Future<void> _runArchiveCheck() async {
+    if (!_driveService.isInitialized) return;
+
+    try {
+      // Get events that need to be archived
+      final eventsToArchive = await _database.getEventsToArchive();
+
+      if (eventsToArchive.isEmpty) {
+        developer.log(
+          'EventRepository._runArchiveCheck: No events to archive',
+          name: 'EventRepository',
+        );
+        return;
+      }
+
+      developer.log(
+        'EventRepository._runArchiveCheck: Found ${eventsToArchive.length} events to archive',
+        name: 'EventRepository',
+      );
+
+      // Prepare archive data
+      final archiveData = eventsToArchive
+          .map((e) => ArchiveEventData(
+                folderId: e.driveFolderId!,
+                endDate: e.endDate,
+                isArchived: e.isArchived,
+              ))
+          .toList();
+
+      // Call Drive service to archive
+      final result = await _driveService.archiveCheck(events: archiveData);
+
+      if (result.success && result.archivedFolderIds.isNotEmpty) {
+        // Update isArchived flag for archived events
+        for (final folderId in result.archivedFolderIds) {
+          final event = eventsToArchive.firstWhere(
+            (e) => e.driveFolderId == folderId,
+            orElse: () => throw StateError('Event not found for folder $folderId'),
+          );
+          await _database.updateEventArchiveStatus(event.id, true);
+          developer.log(
+            'EventRepository._runArchiveCheck: Archived event ${event.id}',
+            name: 'EventRepository',
+          );
+        }
+      }
+    } catch (e) {
+      developer.log(
+        'EventRepository._runArchiveCheck: Error: $e',
+        name: 'EventRepository',
+        error: e,
+      );
+      // Don't throw - archive check failure shouldn't break the main operation
+    }
+  }
+
+  /// Get files attached to an event from its Drive folder
+  Future<List<DriveFile>> getEventFiles(String eventId) async {
+    final event = await getEventById(eventId);
+    if (event == null || !event.hasDriveFolder) {
+      return [];
+    }
+
+    if (!_driveService.isInitialized) {
+      return [];
+    }
+
+    try {
+      final result = await _driveService.listFiles(folderId: event.driveFolderId!);
+      if (result.success) {
+        return result.files;
+      }
+      return [];
+    } catch (e) {
+      developer.log(
+        'EventRepository.getEventFiles: Error: $e',
+        name: 'EventRepository',
+        error: e,
+      );
+      return [];
+    }
   }
 
   /// Search events by name or location
@@ -139,19 +328,23 @@ class EventRepository {
   }
 
   /// Duplicate an event with new date/time and copy all assignments
+  /// Creates Drive folder for the new event and runs archive check
   Future<void> duplicateEvent(
     Event originalEvent,
     Event newEvent,
     List<Assignment> originalAssignments,
   ) async {
 
-    // Create the new event in database
+    // Insert event to database first (Drive folder created in background)
     await _database.insertEvent(newEvent);
+
+    // Create Drive folder in background
+    _createDriveFolderInBackground(newEvent);
 
     // Create new assignments for the duplicated event
     final newAssignments = originalAssignments.map((assignment) => Assignment(
       id: const Uuid().v4(), // Generate unique ID for each duplicated assignment
-      eventId: newEvent.id, // Use the ID from newEvent directly
+      eventId: newEvent.id, // Use the ID from newEvent
       teamMemberId: assignment.teamMemberId,
       roleType: assignment.roleType,
       slotIndex: assignment.slotIndex,
@@ -165,6 +358,9 @@ class EventRepository {
 
     // Insert all new assignments in batch
     await _database.insertAssignmentsBatch(newAssignments);
+
+    // Run archive check in background
+    _runArchiveCheckInBackground();
   }
 
   /// Duplicate an event with new date/time and copy all assignments
@@ -175,15 +371,18 @@ class EventRepository {
     List<Assignment> originalAssignments,
   ) async {
 
-    // Create the new event in database
+    // Insert event to database first (Drive folder created in background)
     await _database.insertEvent(newEvent);
+
+    // Create Drive folder in background
+    _createDriveFolderInBackground(newEvent);
 
     // Create new assignments for the duplicated event
     final newAssignments = originalAssignments.map((assignment) {
       final newId = const Uuid().v4();
       return Assignment(
         id: newId, // Generate unique ID for each duplicated assignment
-        eventId: newEvent.id, // Use the ID from newEvent directly
+        eventId: newEvent.id, // Use the ID from newEvent
         teamMemberId: assignment.teamMemberId,
         roleType: assignment.roleType,
         slotIndex: assignment.slotIndex,
@@ -205,6 +404,9 @@ class EventRepository {
       idMap[originalAssignments[i].id] = newAssignments[i];
     }
 
+    // Run archive check in background
+    _runArchiveCheckInBackground();
+
     return idMap;
   }
 
@@ -215,6 +417,194 @@ class EventRepository {
     // Delete the specified assignments
     for (final assignmentId in assignmentIdsToRemove) {
       await _database.deleteAssignment(assignmentId);
+    }
+  }
+
+  /// Show error snackbar with Drive error details
+  void _showDriveErrorSnackBar(String error) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = navigatorKey.currentContext;
+      if (context != null) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Text(
+                'אירעה שגיאה בעת ניסיון עדכון הדרייב. השגיאה:\n$error\nנא לצלם לעומר בנגל ולשלוח בוואטסאפ!',
+              ),
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 20),
+            action: SnackBarAction(
+              label: 'סגור',
+              textColor: Colors.white,
+              onPressed: () {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              },
+            ),
+          ),
+        );
+      }
+    });
+  }
+
+  /// Create Drive folder in background
+  Future<void> _createDriveFolderInBackground(Event event) async {
+    if (!_driveService.isInitialized) return;
+
+    try {
+      final result = await _driveService.createFolder(
+        eventName: event.name,
+        date: event.startDate,
+        endDate: event.endDate, // Add end date
+      );
+
+      if (result.success) {
+        // Update event with Drive folder info
+        final updatedEvent = event.copyWith(
+          driveFolderId: result.folderId,
+          driveFolderLink: result.folderLink,
+        );
+        await _database.updateEvent(updatedEvent);
+        developer.log(
+          'EventRepository: Created Drive folder ${result.folderId}',
+          name: 'EventRepository',
+        );
+      } else {
+        developer.log(
+          'EventRepository: Failed to create Drive folder: ${result.error}',
+          name: 'EventRepository',
+          error: result.error,
+        );
+        _showDriveErrorSnackBar(result.error ?? 'שגיאה ביצירת תיקיית דרייב');
+      }
+    } catch (e) {
+      developer.log(
+        'EventRepository: Drive error: $e',
+        name: 'EventRepository',
+        error: e,
+      );
+      _showDriveErrorSnackBar(e.toString());
+    }
+  }
+
+  /// Rename Drive folder in background
+  Future<void> _renameDriveFolderInBackground(Event event, Event? originalEvent) async {
+    if (!_driveService.isInitialized || !event.hasDriveFolder) return;
+
+    try {
+      final success = await _driveService.renameFolder(
+        folderId: event.driveFolderId!,
+        newName: event.name,
+        newDate: event.startDate,
+        newEndDate: event.endDate, // Add end date
+      );
+
+      if (success) {
+        developer.log(
+          'EventRepository: Renamed Drive folder ${event.driveFolderId}',
+          name: 'EventRepository',
+        );
+      } else {
+        developer.log(
+          'EventRepository: Failed to rename Drive folder',
+          name: 'EventRepository',
+        );
+        _showDriveErrorSnackBar('שגיאה בשינוי שם תיקיית דרייב');
+      }
+    } catch (e) {
+      developer.log(
+        'EventRepository: Drive error: $e',
+        name: 'EventRepository',
+        error: e,
+      );
+      _showDriveErrorSnackBar(e.toString());
+    }
+  }
+
+  /// Delete Drive folder in background
+  Future<void> _deleteDriveFolderInBackground(String folderId) async {
+    if (!_driveService.isInitialized) return;
+
+    try {
+      final success = await _driveService.deleteFolder(folderId: folderId);
+      if (success) {
+        developer.log(
+          'EventRepository: Deleted Drive folder $folderId',
+          name: 'EventRepository',
+        );
+      } else {
+        developer.log(
+          'EventRepository: Failed to delete Drive folder',
+          name: 'EventRepository',
+        );
+        _showDriveErrorSnackBar('שגיאה במחיקת תיקיית דרייב');
+      }
+    } catch (e) {
+      developer.log(
+        'EventRepository: Drive error: $e',
+        name: 'EventRepository',
+        error: e,
+      );
+      _showDriveErrorSnackBar(e.toString());
+    }
+  }
+
+  /// Run archive check in background
+  Future<void> _runArchiveCheckInBackground() async {
+    if (!_driveService.isInitialized) return;
+
+    try {
+      // Get events that need to be archived
+      final eventsToArchive = await _database.getEventsToArchive();
+
+      if (eventsToArchive.isEmpty) {
+        developer.log(
+          'EventRepository: No events to archive',
+          name: 'EventRepository',
+        );
+        return;
+      }
+
+      developer.log(
+        'EventRepository: Found ${eventsToArchive.length} events to archive',
+        name: 'EventRepository',
+      );
+
+      // Prepare archive data
+      final archiveData = eventsToArchive
+          .map((e) => ArchiveEventData(
+                folderId: e.driveFolderId!,
+                endDate: e.endDate,
+                isArchived: e.isArchived,
+              ))
+          .toList();
+
+      // Call Drive service to archive
+      final result = await _driveService.archiveCheck(events: archiveData);
+
+      if (result.success && result.archivedFolderIds.isNotEmpty) {
+        // Update isArchived flag for archived events
+        for (final folderId in result.archivedFolderIds) {
+          final event = eventsToArchive.firstWhere(
+            (e) => e.driveFolderId == folderId,
+            orElse: () => throw StateError('Event not found for folder $folderId'),
+          );
+          await _database.updateEventArchiveStatus(event.id, true);
+          developer.log(
+            'EventRepository: Archived event ${event.id}',
+            name: 'EventRepository',
+          );
+        }
+      }
+    } catch (e) {
+      developer.log(
+        'EventRepository: Archive check error: $e',
+        name: 'EventRepository',
+        error: e,
+      );
+      _showDriveErrorSnackBar('שגיאה בארכוב תיקיות דרייב ישנות: $e');
     }
   }
 }

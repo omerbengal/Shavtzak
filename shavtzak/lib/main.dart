@@ -14,6 +14,7 @@ import 'data/repositories/user_selection_repository.dart';
 import 'core/services/user_cache_service.dart';
 import 'core/services/environment_service.dart';
 import 'core/services/connectivity_service.dart';
+import 'core/services/drive_service.dart';
 import 'presentation/widgets/offline_blocking_overlay.dart';
 
 // Presentation layer
@@ -67,6 +68,9 @@ Future<void> _initialize() async {
 
     // Initialize services
     final userCacheService = UserCacheService();
+
+    // Initialize DriveService from Firestore config
+    await _initializeDriveService(database);
 
     // Initialize repositories
     final teamRepository = TeamRepository(database);
@@ -235,6 +239,36 @@ class MyApp extends StatelessWidget {
   }
 }
 
+/// Initialize DriveService with config from Firestore
+Future<void> _initializeDriveService(FirestoreDatabase database) async {
+  try {
+    final config = await database.getDriveConfig();
+
+    if (config != null && config['scriptUrl'] != null && config['apiKey'] != null) {
+      DriveService.instance.initialize(
+        scriptUrl: config['scriptUrl']!,
+        apiKey: config['apiKey']!,
+      );
+      developer.log(
+        'main.dart: DriveService initialized successfully',
+        name: 'Main',
+      );
+    } else {
+      developer.log(
+        'main.dart: DriveService not initialized - missing config in Firestore (keys/googleDrive)',
+        name: 'Main',
+      );
+    }
+  } catch (e) {
+    developer.log(
+      'main.dart: Failed to initialize DriveService: $e',
+      name: 'Main',
+      error: e,
+    );
+    // Don't throw - app can work without Drive integration
+  }
+}
+
 /// Create and initialize CalendarSyncBloc with config from Firestore
 Future<CalendarSyncBloc> _createCalendarSyncBloc(String env) async {
   developer.log('main.dart: Creating CalendarSyncBloc for $env environment', name: 'Main');
@@ -268,6 +302,7 @@ class LoadingApp extends StatelessWidget {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: MaterialApp(
+        navigatorKey: navigatorKey, // Global navigator key for snackbars
         title: 'שבצק - ניהול צוות',
         theme: AppTheme.lightTheme,
         debugShowCheckedModeBanner: false,
@@ -338,6 +373,7 @@ class ErrorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey, // Global navigator key for snackbars
       title: 'שבצק - ניהול צוות',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,

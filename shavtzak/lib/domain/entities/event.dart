@@ -17,6 +17,11 @@ class Event extends Equatable {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  // Google Drive integration fields
+  final String? driveFolderId; // Google Drive folder ID for event files
+  final String? driveFolderLink; // Direct link to the Drive folder
+  final bool isArchived; // True when folder has been moved to archive
+
   const Event({
     required this.id,
     required this.name,
@@ -31,6 +36,9 @@ class Event extends Equatable {
     required this.roleRequirements,
     required this.createdAt,
     required this.updatedAt,
+    this.driveFolderId,
+    this.driveFolderLink,
+    this.isArchived = false,
   });
 
   /// Check if event occurs on a given date
@@ -96,6 +104,9 @@ class Event extends Equatable {
         date1.day == date2.day;
   }
 
+  /// Check if event has a Drive folder attached
+  bool get hasDriveFolder => driveFolderId != null && driveFolderId!.isNotEmpty;
+
   /// Copy with method for immutability
   Event copyWith({
     String? id,
@@ -111,6 +122,9 @@ class Event extends Equatable {
     Map<RoleType, int>? roleRequirements,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? driveFolderId,
+    String? driveFolderLink,
+    bool? isArchived,
   }) {
     return Event(
       id: id ?? this.id,
@@ -126,6 +140,9 @@ class Event extends Equatable {
       roleRequirements: roleRequirements ?? this.roleRequirements,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      driveFolderId: driveFolderId ?? this.driveFolderId,
+      driveFolderLink: driveFolderLink ?? this.driveFolderLink,
+      isArchived: isArchived ?? this.isArchived,
     );
   }
 
@@ -144,6 +161,9 @@ class Event extends Equatable {
         roleRequirements,
         createdAt,
         updatedAt,
+        driveFolderId,
+        driveFolderLink,
+        isArchived,
       ];
 
   @override

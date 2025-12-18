@@ -289,6 +289,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       }
 
       // Create the proposed duplicated event with all new values
+      // Note: Drive fields (driveFolderId, driveFolderLink, isArchived) will be null
+      // and will be created automatically when duplicating
       final proposedEvent = Event(
         id: const Uuid().v4(), // Generate unique ID for the duplicated event
         name: event.newName,
@@ -303,6 +305,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         roleRequirements: Map.from(event.newRoleRequirements),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
+        // Drive fields are omitted - they will be created by createEvent
       );
 
       // If not duplicating assignments, just create the event directly
@@ -482,6 +485,10 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       roleRequirements: updatedRoleRequirements,
       createdAt: proposedEvent.createdAt,
       updatedAt: DateTime.now(), // Update timestamp since we're modifying quotas
+      // Preserve Drive fields from proposedEvent (if any)
+      driveFolderId: proposedEvent.driveFolderId,
+      driveFolderLink: proposedEvent.driveFolderLink,
+      isArchived: proposedEvent.isArchived,
     );
   }
 

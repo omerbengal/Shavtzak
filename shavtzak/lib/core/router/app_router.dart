@@ -18,6 +18,9 @@ import '../../presentation/screens/event/event_list_screen.dart';
 import '../../presentation/screens/assignment/assignment_list_screen.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 
+/// Global navigator key for showing snackbars from outside widget tree
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 /// Application router configuration using go_router with authentication
 class AppRouter {
   static GoRouter? _instance;
@@ -106,6 +109,9 @@ class AppRouter {
     return GoRouter(
       // Initial location determined by cached user check
       initialLocation: '/whoami', // Fallback, will be updated by redirect logic
+
+      // Set the global navigator key
+      navigatorKey: navigatorKey,
 
       // Redirect based on authentication state
       redirect: (context, state) {

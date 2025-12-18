@@ -425,6 +425,69 @@ class FirestoreDatabase implements DatabaseInterface {
     }
   }
 
+  @override
+  Future<bool> isDuplicateEvent(String name, DateTime startDate, {String? excludeEventId}) async {
+    try {
+      // Normalize the date to midnight for comparison
+      final normalizedDate = DateTime(startDate.year, startDate.month, startDate.day);
+      final startOfDay = Timestamp.fromDate(normalizedDate);
+      final endOfDay = Timestamp.fromDate(normalizedDate.add(const Duration(days: 1)));
+
+      final snapshot = await _firestore
+          .collection(_eventsCollection)
+          .where('name', isEqualTo: name)
+          .where('startDate', isGreaterThanOrEqualTo: startOfDay)
+          .where('startDate', isLessThan: endOfDay)
+          .get();
+
+      // If excludeEventId is provided, filter it out
+      if (excludeEventId != null) {
+        return snapshot.docs.any((doc) => doc.id != excludeEventId);
+      }
+
+      return snapshot.docs.isNotEmpty;
+    } catch (e) {
+      throw DatabaseException('Failed to check for duplicate event: $e');
+    }
+  }
+
+  @override
+  Future<List<Event>> getEventsToArchive() async {
+    try {
+      final now = Timestamp.fromDate(DateTime.now());
+
+      // Get events where endDate < now, isArchived = false, and driveFolderId is not null
+      // Note: Firestore doesn't support != null queries directly, so we filter in memory
+      final snapshot = await _firestore
+          .collection(_eventsCollection)
+          .where('endDate', isLessThan: now)
+          .where('isArchived', isEqualTo: false)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => EventModel.fromFirestore(doc).toEntity())
+          .where((event) => event.driveFolderId != null && event.driveFolderId!.isNotEmpty)
+          .toList();
+    } catch (e) {
+      throw DatabaseException('Failed to get events to archive: $e');
+    }
+  }
+
+  @override
+  Future<void> updateEventArchiveStatus(String eventId, bool isArchived) async {
+    try {
+      await _firestore
+          .collection(_eventsCollection)
+          .doc(eventId)
+          .update({
+            'isArchived': isArchived,
+            'updatedAt': Timestamp.fromDate(DateTime.now()),
+          });
+    } catch (e) {
+      throw DatabaseException('Failed to update event archive status: $e');
+    }
+  }
+
   // ========== Assignments ==========
 
   /// Watch all assignments in real-time
@@ -1043,6 +1106,26 @@ class FirestoreDatabase implements DatabaseInterface {
       return result;
     } catch (e) {
       throw DatabaseException('Failed to fetch Google Calendar config: $e');
+    }
+  }
+
+  @override
+  Future<Map<String, String?>?> getDriveConfig() async {
+    try {
+      final doc = await _firestore.collection('keys').doc('googleDrive').get();
+
+      if (!doc.exists) {
+        return null;
+      }
+
+      final data = doc.data() as Map<String, dynamic>;
+
+      return {
+        'scriptUrl': data['scriptUrl'] as String?,
+        'apiKey': data['apiKey'] as String?,
+      };
+    } catch (e) {
+      throw DatabaseException('Failed to fetch Google Drive config: $e');
     }
   }
 

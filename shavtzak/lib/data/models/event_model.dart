@@ -18,6 +18,11 @@ class EventModel {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  // Google Drive integration fields
+  final String? driveFolderId;
+  final String? driveFolderLink;
+  final bool isArchived;
+
   const EventModel({
     required this.id,
     required this.name,
@@ -32,6 +37,9 @@ class EventModel {
     required this.roleRequirements,
     required this.createdAt,
     required this.updatedAt,
+    this.driveFolderId,
+    this.driveFolderLink,
+    this.isArchived = false,
   });
 
   /// Convert from domain entity
@@ -54,6 +62,9 @@ class EventModel {
       ),
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
+      driveFolderId: entity.driveFolderId,
+      driveFolderLink: entity.driveFolderLink,
+      isArchived: entity.isArchived,
     );
   }
 
@@ -80,6 +91,9 @@ class EventModel {
       ),
       createdAt: createdAt,
       updatedAt: updatedAt,
+      driveFolderId: driveFolderId,
+      driveFolderLink: driveFolderLink,
+      isArchived: isArchived,
     );
   }
 
@@ -101,6 +115,9 @@ class EventModel {
       roleRequirements: Map<String, int>.from(data['roleRequirements'] as Map? ?? {}),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
+      driveFolderId: data['driveFolderId'] as String?,
+      driveFolderLink: data['driveFolderLink'] as String?,
+      isArchived: data['isArchived'] as bool? ?? false,
     );
   }
 
@@ -120,6 +137,9 @@ class EventModel {
       'roleRequirements': roleRequirements,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
+      'driveFolderId': driveFolderId,
+      'driveFolderLink': driveFolderLink,
+      'isArchived': isArchived,
     };
   }
 
@@ -139,6 +159,9 @@ class EventModel {
       roleRequirements: Map<String, int>.from(json['roleRequirements'] as Map? ?? {}),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      driveFolderId: json['driveFolderId'] as String?,
+      driveFolderLink: json['driveFolderLink'] as String?,
+      isArchived: json['isArchived'] as bool? ?? false,
     );
   }
 
@@ -158,6 +181,9 @@ class EventModel {
       'roleRequirements': roleRequirements,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
+      'driveFolderId': driveFolderId,
+      'driveFolderLink': driveFolderLink,
+      'isArchived': isArchived,
     };
   }
 }

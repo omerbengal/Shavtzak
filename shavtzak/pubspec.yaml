@@ -39,9 +39,9 @@ dependencies:
   equatable: ^2.0.5
 
   # Firebase / Cloud Database
-  firebase_core: ^2.24.0
-  cloud_firestore: ^4.13.0
-  firebase_auth: ^4.15.0
+  firebase_core: ^3.3.0
+  cloud_firestore: ^5.2.0
+  firebase_auth: ^5.1.0
 
   # Utilities
   uuid: ^4.1.0
@@ -77,7 +77,7 @@ dev_dependencies:
   bloc_test: ^9.1.5
   mockito: ^5.4.4
   build_runner: ^2.4.7
-  fake_cloud_firestore: ^2.4.2
+  fake_cloud_firestore: ^3.1.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

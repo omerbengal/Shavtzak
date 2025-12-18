@@ -52,6 +52,16 @@ abstract class DatabaseInterface {
   /// Get events by date range
   Future<List<Event>> getEventsByDateRange(DateTime start, DateTime end);
 
+  /// Check if an event with the same name and start date already exists
+  /// If excludeEventId is provided, that event is excluded from the check (for updates)
+  Future<bool> isDuplicateEvent(String name, DateTime startDate, {String? excludeEventId});
+
+  /// Get events that need to be archived (endDate < today, not yet archived, has drive folder)
+  Future<List<Event>> getEventsToArchive();
+
+  /// Update the isArchived flag for an event
+  Future<void> updateEventArchiveStatus(String eventId, bool isArchived);
+
   // ========== Assignments ==========
 
   /// Get all assignments
@@ -172,4 +182,8 @@ abstract class DatabaseInterface {
   /// Get Google Calendar configuration from Firestore
   /// Returns a map containing serviceAccountJson and calendarId
   Future<Map<String, String?>?> getGoogleCalendarConfig();
+
+  /// Get Google Drive configuration from Firestore
+  /// Returns a map containing scriptUrl and apiKey
+  Future<Map<String, String?>?> getDriveConfig();
 }

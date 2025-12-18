@@ -370,6 +370,10 @@ class _EventFormModalState extends State<EventFormModal> {
       roleRequirements: _roleRequirements,
       createdAt: _isEditMode ? widget.event!.createdAt : now,
       updatedAt: now,
+      // Preserve Drive-related fields when updating
+      driveFolderId: _isEditMode ? widget.event!.driveFolderId : null,
+      driveFolderLink: _isEditMode ? widget.event!.driveFolderLink : null,
+      isArchived: _isEditMode ? widget.event!.isArchived : false,
     );
 
     if (!mounted) return;
