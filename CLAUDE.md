@@ -492,16 +492,13 @@ The V1 system used Excel/Google Sheets. The codebase includes:
 ### Starting Development
 1. Navigate to Flutter app: `cd shavtzak`
 2. Install dependencies: `flutter pub get`
-3. Run app: `flutter run -d chrome`
-4. App opens at `/whoami` or loads cached user
-5. Select yourself as user (or admin) to begin
-6. Use environment switcher to toggle test/prod
 
 ### Testing Changes
-1. Switch to test environment via UI or navigate to `/test/whoami`
-2. All changes use test Firestore collections
-3. Test data completely isolated from production
-4. Can clear test data without affecting production
+When making changes to the code:
+1. Run `flutter analyze` to check for compilation errors and warnings
+2. **Do not run the app** - I will run the app myself to test the changes
+3. If `flutter analyze` passes, the code is ready for testing
+4. I will test the changes in both test and production environments as needed
 
 ### Deploying
 1. Build production: `flutter build web`
