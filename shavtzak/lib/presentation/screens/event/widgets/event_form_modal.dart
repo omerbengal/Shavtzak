@@ -13,6 +13,7 @@ import '../../../widgets/date_picker_dialog.dart';
 import '../quota_reduction_analyzer.dart';
 import 'quota_reduction_dialog.dart';
 import 'duplication_conflict_resolution_dialog.dart';
+import 'event_drive_files_section.dart';
 
 /// Public Event Form Modal Widget for creating/editing events
 /// Can be used from any screen that needs to create or edit events
@@ -993,7 +994,15 @@ class _EventFormModalState extends State<EventFormModal> {
                                 );
                               }),
 
-                              const Divider(height: 32),
+                              // Drive Files Section (only in edit mode, not duplication)
+                              if (_isEditMode && !widget.isDuplication && widget.event?.hasDriveFolder == true) ...[
+                                  EventDriveFilesSection(
+                                    driveFolderId: widget.event!.driveFolderId,
+                                    driveFolderLink: widget.event!.driveFolderLink,
+                                    eventName: widget.event!.name,
+                                  ),
+                                  const Divider(height: 32),
+                                ],
 
                               // Comments
                               TextFormField(
