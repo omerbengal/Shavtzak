@@ -47,3 +47,13 @@ class SignOut extends UserSelectionEvent {
 class RefreshUserData extends UserSelectionEvent {
   const RefreshUserData();
 }
+
+/// Update user's phone number
+class UpdatePhoneNumber extends UserSelectionEvent {
+  final String? phoneNumber;
+
+  const UpdatePhoneNumber(this.phoneNumber);
+
+  @override
+  List<Object?> get props => [phoneNumber];
+}

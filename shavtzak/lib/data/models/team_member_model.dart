@@ -27,6 +27,9 @@ class TeamMemberModel {
   // Multiple assignment field
   final bool allowMultipleAssignments; // Allow assigning to same event multiple times
 
+  // Phone number field
+  final String? phoneNumber; // Optional Israeli phone number
+
   const TeamMemberModel({
     required this.id,
     required this.name,
@@ -42,6 +45,7 @@ class TeamMemberModel {
     this.passcode,
     this.passcodeLength,
     this.allowMultipleAssignments = false,
+    this.phoneNumber,
   });
 
   /// Generate a UUID for team members
@@ -72,6 +76,7 @@ class TeamMemberModel {
       passcode: entity.passcode,
       passcodeLength: entity.passcodeLength,
       allowMultipleAssignments: entity.allowMultipleAssignments,
+      phoneNumber: entity.phoneNumber,
     );
   }
 
@@ -97,6 +102,7 @@ class TeamMemberModel {
       passcode: passcode,
       passcodeLength: passcodeLength,
       allowMultipleAssignments: allowMultipleAssignments,
+      phoneNumber: phoneNumber,
     );
   }
 
@@ -117,6 +123,9 @@ class TeamMemberModel {
 
     // Handle migration - default to false for existing members missing allowMultipleAssignments
     final allowMultipleAssignments = data['allowMultipleAssignments'] as bool? ?? false;
+
+    // Handle migration - phone number is optional, default to null for existing members
+    final phoneNumber = data['phoneNumber'] as String?;
 
     final model = TeamMemberModel(
       id: doc.id,
@@ -140,6 +149,7 @@ class TeamMemberModel {
       passcode: passcode,
       passcodeLength: passcodeLength,
       allowMultipleAssignments: allowMultipleAssignments,
+      phoneNumber: phoneNumber,
     );
 
     // If migration was needed (UUID was generated), update the document
@@ -179,6 +189,7 @@ class TeamMemberModel {
       'passcode': passcode,
       'passcodeLength': passcodeLength,
       'allowMultipleAssignments': allowMultipleAssignments,
+      'phoneNumber': phoneNumber,
     };
   }
 
@@ -198,6 +209,9 @@ class TeamMemberModel {
     // Handle migration - default to false for existing members missing allowMultipleAssignments
     final allowMultipleAssignments = json['allowMultipleAssignments'] as bool? ?? false;
 
+    // Handle migration - phone number is optional, default to null for existing members
+    final phoneNumber = json['phoneNumber'] as String?;
+
     return TeamMemberModel(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -216,6 +230,7 @@ class TeamMemberModel {
       passcode: passcode,
       passcodeLength: passcodeLength,
       allowMultipleAssignments: allowMultipleAssignments,
+      phoneNumber: phoneNumber,
     );
   }
 
@@ -236,6 +251,7 @@ class TeamMemberModel {
       'passcode': passcode,
       'passcodeLength': passcodeLength,
       'allowMultipleAssignments': allowMultipleAssignments,
+      'phoneNumber': phoneNumber,
     };
   }
 }

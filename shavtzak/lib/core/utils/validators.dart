@@ -185,6 +185,69 @@ class Validators {
     return null;
   }
 
+  /// Validate Israeli phone number
+  static String? validatePhoneNumber(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return null; // Phone number is optional
+    }
+
+    // Remove any non-digit characters except dash
+    final clean = value.replaceAll(RegExp(r'[^0-9-]'), '');
+
+    // Check if matches allowed patterns
+    if (!RegExp(r'^05[0-9]-?[0-9]{7}$').hasMatch(clean)) {
+      return 'מספר טלפון חייב להיות בתבנית: 05XXXXXXXX או 05X-XXXXXXX';
+    }
+
+    // Ensure dash is only in correct position if present
+    if (clean.contains('-')) {
+      if (clean.indexOf('-') != 3 || clean.lastIndexOf('-') != 3) {
+        return 'המקף יכול להופיע רק בין הספרה השלישית לרביעית';
+      }
+    }
+
+    return null;
+  }
+
+  /// Format Israeli phone number for display
+  static String formatPhoneNumber(String? phoneNumber) {
+    if (phoneNumber == null || phoneNumber.isEmpty) return '';
+
+    // Remove any existing dash and other non-digit characters
+    final clean = phoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
+
+    // Format as XXX-XXXXXXX if we have 10 digits
+    if (clean.length == 10) {
+      return '${clean.substring(0, 3)}-${clean.substring(3)}';
+    }
+
+    return phoneNumber;
+  }
+
+  /// Auto-format phone number as user types with smart dash handling
+  static String autoFormatPhoneInput(String text, {bool isDeleting = false}) {
+    // Remove any non-digit characters
+    String clean = text.replaceAll(RegExp(r'[^0-9]'), '');
+
+    // Limit to 10 digits
+    if (clean.length > 10) {
+      clean = clean.substring(0, 10);
+    }
+
+    // If deleting and we have 4+ digits, check if we need to delete the 3rd digit with the dash
+    if (isDeleting && clean.length == 3) {
+      // When deleting from 4 digits to 3, return only the first 3 digits (no dash)
+      return clean;
+    }
+
+    // Auto-add dash after 3 digits
+    if (clean.length >= 4) {
+      return '${clean.substring(0, 3)}-${clean.substring(3)}';
+    }
+
+    return clean;
+  }
+
   /// Combine multiple validators
   static String? combine(
     String? value,

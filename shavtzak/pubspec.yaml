@@ -63,6 +63,9 @@ dependencies:
   # Date Picker
   calendar_date_picker2: ^1.1.7
 
+  # URL Launcher for phone calls
+  url_launcher: ^6.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

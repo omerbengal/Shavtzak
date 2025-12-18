@@ -111,6 +111,9 @@ class TeamMember extends Equatable {
   // Multiple assignment field
   final bool allowMultipleAssignments; // Allow assigning to same event multiple times
 
+  // Phone number field
+  final String? phoneNumber; // Optional Israeli phone number
+
   const TeamMember({
     required this.id,
     required this.name,
@@ -126,6 +129,7 @@ class TeamMember extends Equatable {
     this.passcode,
     this.passcodeLength,
     this.allowMultipleAssignments = false,
+    this.phoneNumber,
   });
 
   /// Check if team member is available on a given date
@@ -215,6 +219,8 @@ class TeamMember extends Equatable {
     int? passcodeLength,
     bool clearPasscode = false,
     bool? allowMultipleAssignments,
+    String? phoneNumber,
+    bool clearPhone = false,
   }) {
     return TeamMember(
       id: id ?? this.id,
@@ -231,6 +237,7 @@ class TeamMember extends Equatable {
       passcode: clearPasscode ? null : (passcode ?? this.passcode),
       passcodeLength: clearPasscode ? null : (passcodeLength ?? this.passcodeLength),
       allowMultipleAssignments: allowMultipleAssignments ?? this.allowMultipleAssignments,
+      phoneNumber: clearPhone ? null : (phoneNumber ?? this.phoneNumber),
     );
   }
 
@@ -250,6 +257,7 @@ class TeamMember extends Equatable {
         passcode,
         passcodeLength,
         allowMultipleAssignments,
+        phoneNumber,
       ];
 
   @override

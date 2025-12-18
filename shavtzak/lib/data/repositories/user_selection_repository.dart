@@ -188,6 +188,27 @@ class UserSelectionRepository {
       return null;
     }
   }
+
+  /// Update phone number for a team member
+  Future<void> updateTeamMemberPhoneNumber(String uniqueKey, String? phoneNumber) async {
+    try {
+      final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
+      if (teamMember == null) {
+        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+      }
+
+      final updatedMember = teamMember.copyWith(
+        phoneNumber: phoneNumber,
+        clearPhone: phoneNumber == null,
+        updatedAt: DateTime.now(),
+      );
+
+      await _database.updateTeamMember(updatedMember);
+    } catch (e) {
+      if (e is UserSelectionException) rethrow;
+      throw UserSelectionException('Failed to update phone number: $e');
+    }
+  }
 }
 
 /// Custom exception for user selection errors

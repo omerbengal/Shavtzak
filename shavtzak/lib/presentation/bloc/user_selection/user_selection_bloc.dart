@@ -21,6 +21,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     on<LoadAllTeamMembers>(_onLoadAllTeamMembers);
     on<SignOut>(_onSignOut);
     on<RefreshUserData>(_onRefreshUserData);
+    on<UpdatePhoneNumber>(_onUpdatePhoneNumber);
 
     // Listen to team member changes and refresh current user if needed
     _teamStreamSubscription = _teamRepository.watchTeamMembers().listen((teamMembers) {
@@ -32,11 +33,8 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
           orElse: () => currentState.user,
         );
 
-        // If user data changed (specifically isPermanent status), refresh the state
-        if (updatedUser.isPermanent != currentState.user.isPermanent ||
-            updatedUser.name != currentState.user.name ||
-            updatedUser.isAdmin != currentState.user.isAdmin ||
-            updatedUser.constraints.length != currentState.user.constraints.length) {
+        // Check if any user data changed
+        if (updatedUser != currentState.user) {
           emit(UserAuthenticated(updatedUser));
         }
       }
@@ -171,6 +169,28 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
         }
       } catch (e) {
         emit(UserSelectionError('שגיאה ברענון נתוני משתמש: $e'));
+      }
+    }
+  }
+
+  /// Update user's phone number
+  Future<void> _onUpdatePhoneNumber(
+    UpdatePhoneNumber event,
+    Emitter<UserSelectionState> emit,
+  ) async {
+    final currentState = state;
+
+    if (currentState is UserAuthenticated) {
+      try {
+        await _userSelectionRepository.updateTeamMemberPhoneNumber(
+          currentState.user.uniqueKey,
+          event.phoneNumber,
+        );
+
+        // Refresh user data to get the updated phone number
+        add(const RefreshUserData());
+      } catch (e) {
+        emit(UserSelectionError('שגיאה בעדכון מספר טלפון: $e'));
       }
     }
   }

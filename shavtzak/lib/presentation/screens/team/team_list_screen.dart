@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/constants/constraint_status.dart';
@@ -10,6 +12,7 @@ import '../../../core/state/constraint_manager.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../core/utils/validators.dart';
+import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/services/environment_service.dart';
 import 'package:uuid/uuid.dart';
@@ -80,6 +83,36 @@ class _TeamListScreenState extends State<TeamListScreen> {
       context.read<TeamBloc>().add(const team.LoadTeamMembers());
     } else {
       context.read<TeamBloc>().add(team.SearchTeamMembers(query));
+    }
+  }
+
+  /// Handle phone number click with device-specific behavior
+  Future<void> onPhoneClicked(String phoneNumber) async {
+    // Remove any formatting characters (dashes, spaces)
+    final cleanPhone = phoneNumber.replaceAll(RegExp(r'[-\s]'), '');
+    final phoneUri = Uri(scheme: 'tel', path: cleanPhone);
+
+    // Try to launch the phone URI
+    if (await canLaunchUrl(phoneUri)) {
+      await launchUrl(phoneUri);
+    } else {
+      // Cannot launch tel:// URI - likely on desktop
+      showDialog(
+        context: context,
+        builder: (context) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('שיחת טלפון'),
+            content: Text('לא ניתן להתקשר מהמחשב\nמספר הטלפון: $phoneNumber'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('סגור'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
   }
 
@@ -394,6 +427,23 @@ class _TeamListScreenState extends State<TeamListScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Phone number if available
+                  if (member.phoneNumber != null && member.phoneNumber!.isNotEmpty)
+                    InkWell(
+                      onTap: () => onPhoneClicked(member.phoneNumber!),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          Validators.formatPhoneNumber(member.phoneNumber),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 2),
                   Text(
                     '$activeRoles תפקידים',
                     style: const TextStyle(fontSize: 12),
@@ -670,6 +720,7 @@ class _TeamMemberFormModal extends StatefulWidget {
 class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _commentsController = TextEditingController();
 
   bool _isActive = true;
@@ -696,6 +747,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     // Load existing member data if editing
     if (_isEditMode) {
       _nameController.text = widget.member!.name;
+      _phoneController.text = widget.member!.phoneNumber ?? '';
       _commentsController.text = widget.member!.comments;
       _isActive = widget.member!.isActive;
       _isPermanent = widget.member!.isPermanent;
@@ -706,6 +758,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
     // Track dirty state
     _nameController.addListener(() => _isDirty = true);
+    _phoneController.addListener(() => _isDirty = true);
     _commentsController.addListener(() => _isDirty = true);
   }
 
@@ -718,6 +771,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   @override
   void dispose() {
     _nameController.dispose();
+    _phoneController.dispose();
     _commentsController.dispose();
     super.dispose();
   }
@@ -743,6 +797,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       id: _isEditMode ? widget.member!.id : const Uuid().v4(),
       uniqueKey: _isEditMode ? widget.member!.uniqueKey : const Uuid().v4(),
       name: _nameController.text.trim(),
+      phoneNumber: _phoneController.text.trim().isEmpty
+        ? null
+        : _phoneController.text.trim(),
       isActive: _isActive,
       isPermanent: _isPermanent,
       allowMultipleAssignments: _allowMultipleAssignments,
@@ -943,6 +1000,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     );
   }
 
+  
   void _handleClose() {
     if (_isDirty) {
       showDialog(
@@ -1178,6 +1236,31 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                 ),
                                 validator: Validators.validateName,
                                 textDirection: TextDirection.rtl,
+                                onChanged: (_) => setState(() => _isDirty = true),
+                              ),
+
+                              const SizedBox(height: 16),
+
+                              // Phone number field
+                              TextFormField(
+                                controller: _phoneController,
+                                decoration: const InputDecoration(
+                                  labelText: 'מספר טלפון',
+                                  hintText: '05X-XXXXXXX',
+                                  prefixIcon: Icon(Icons.phone),
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                ),
+                                validator: Validators.validatePhoneNumber,
+                                keyboardType: TextInputType.phone,
+                                textDirection: TextDirection.ltr,
+                                smartQuotesType: SmartQuotesType.disabled,
+                                smartDashesType: SmartDashesType.disabled,
+                                textAlign: TextAlign.end, // Right-aligned while keeping LTR
+                                inputFormatters: [
+                                  PhoneNumberTextInputFormatter(),
+                                ],
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
