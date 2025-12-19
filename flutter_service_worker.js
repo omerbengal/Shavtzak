@@ -14,7 +14,7 @@ const RESOURCES = {"favicon.png": "5dcef449791fa27946b3d35ad8803796",
 "assets/fonts/MaterialIcons-Regular.otf": "73ca58b65dc44db5f1eb0ee7ac5c4fff",
 "assets/AssetManifest.bin": "ffaec01aed5fe18a659518becc3805f6",
 "assets/AssetManifest.json": "2086679ed776ee1b87c8038789830aad",
-"flutter_bootstrap.js": "5291acae4d27fe5c9d304869b53a6faf",
+"flutter_bootstrap.js": "ecb0a5bd83557a6354bdd45cf3f30bd2",
 "flutter.js": "4b2350e14c6650ba82871f60906437ea",
 "canvaskit/skwasm.wasm": "828c26a0b1cc8eb1adacbdd0c5e8bcfa",
 "canvaskit/canvaskit.js": "26eef3024dbc64886b7f48e1b6fb05cf",
@@ -35,7 +35,7 @@ const RESOURCES = {"favicon.png": "5dcef449791fa27946b3d35ad8803796",
 "index.html": "98c95de4e1c2f41e7ecfda9ea2cc032e",
 "/": "98c95de4e1c2f41e7ecfda9ea2cc032e",
 "manifest.json": "b7c964b36365091769d23ef38d486b07",
-"main.dart.js": "44b636f1f27bdaad50a290ea419c8a07",
+"main.dart.js": "44932ead49f62955aacd3e136db4fce7",
 "favicon.svg": "bc87fc3255362a4fb8c2b197fd2fa1b0"};
 // The application shell files that are downloaded before a service worker can
 // start.
