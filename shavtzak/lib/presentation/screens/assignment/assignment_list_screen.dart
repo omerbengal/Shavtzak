@@ -546,9 +546,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 child: Text(
                   slot.currentAssignment!.notes,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: Colors.blue,
+                    color: Colors.purple.shade700,
                     fontStyle: FontStyle.italic,
                     fontWeight: FontWeight.w500,
                   ),
@@ -768,7 +768,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   fillColor: Colors.grey.shade50,
                 ),
                 textDirection: TextDirection.rtl,
-                autofocus: true,
+                autofocus: false,
               ),
               // Delete note button (only show if there are existing notes)
               if (assignment.notes.isNotEmpty) ...[
