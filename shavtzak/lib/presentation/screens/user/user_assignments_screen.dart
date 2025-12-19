@@ -288,6 +288,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     // Get all role types for this event
     final roles = assignmentGroup.map((a) => a.roleType).toList();
 
+    // Collect assignment notes (filter out empty ones)
+    final assignmentNotes = assignmentGroup
+        .where((a) => a.notes.isNotEmpty)
+        .map((a) => MapEntry(a.roleType, a.notes))
+        .toList();
+
     final backgroundColor = isUpcoming
         ? Colors.blue.shade50
         : Colors.grey.shade100;
@@ -339,6 +345,40 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
+
+            // Event comments (moved to just below title)
+            if (event.comments.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 18,
+                      color: Colors.amber.shade700,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        event.comments,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontStyle: FontStyle.italic,
+                          color: Colors.amber.shade900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             const SizedBox(height: 8),
 
@@ -493,35 +533,72 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               ],
             ),
 
-            // Comments (if any)
-            if (event.comments.isNotEmpty) ...[
+            // Assignment notes (at the bottom)
+            if (assignmentNotes.isNotEmpty) ...[
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.amber.shade50,
+                  color: Colors.purple.shade50,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.amber.shade200),
+                  border: Border.all(color: Colors.purple.shade200),
                 ),
-                child: Row(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.info_outline,
-                      size: 18,
-                      color: Colors.amber.shade700,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        event.comments,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontStyle: FontStyle.italic,
-                          color: Colors.amber.shade900,
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.note_alt_outlined,
+                          size: 18,
+                          color: Colors.purple.shade700,
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'הערות לשיבוץ:',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.purple.shade800,
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 6),
+                    ...assignmentNotes.map((entry) => Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '• ',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.purple.shade700,
+                            ),
+                          ),
+                          if (assignmentNotes.length > 1) ...[
+                            Text(
+                              '${entry.key.hebrewName}: ',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.purple.shade800,
+                              ),
+                            ),
+                          ],
+                          Expanded(
+                            child: Text(
+                              entry.value,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.purple.shade900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )),
                   ],
                 ),
               ),
