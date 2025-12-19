@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/services/drive_service.dart';
+import '../../../../core/utils/web_url_launcher.dart';
 import '../../../../data/data_sources/firestore_database.dart';
 
 /// Widget to display Drive files for an event
@@ -143,21 +143,17 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
   }
 
   Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Directionality(
-              textDirection: TextDirection.rtl,
-              child: Text('לא ניתן לפתוח את הקישור'),
-            ),
-            backgroundColor: Colors.red,
+    final success = await launchUrlWithAutoClose(url);
+    if (!success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Text('לא ניתן לפתוח את הקישור'),
           ),
-        );
-      }
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -318,10 +314,8 @@ class _FileTile extends StatelessWidget {
   const _FileTile({required this.file});
 
   Future<void> _launchUrl(BuildContext context, String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
+    final success = await launchUrlWithAutoClose(url);
+    if (!success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Directionality(
