@@ -12,23 +12,18 @@ Future<bool> launchUrlWeb(String url) async {
       // Attempt to close the window after a delay
       // This works when the browser has redirected to an external app
       // and the tab is left empty/blank
-      Timer(const Duration(milliseconds: 1500), () {
+      Timer(const Duration(milliseconds: 500), () {
         try {
-          // Check if the window is still open and try to close it
-          // This will only succeed if:
-          // 1. The window was opened by our script (same-origin policy)
-          // 2. The window has navigated away (to an app) leaving it closeable
           if (!openedWindow.closed!) {
             openedWindow.close();
           }
         } catch (e) {
           // Browser may block this - that's expected
-          // The window.close() is blocked if the page is still active
         }
       });
 
-      // Also try after a longer delay in case redirect takes time
-      Timer(const Duration(milliseconds: 3000), () {
+      // Retry in case redirect takes a bit longer
+      Timer(const Duration(milliseconds: 1000), () {
         try {
           if (!openedWindow.closed!) {
             openedWindow.close();
