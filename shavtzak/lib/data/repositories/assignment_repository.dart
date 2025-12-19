@@ -9,6 +9,9 @@ import '../data_sources/firestore_database.dart';
 class AssignmentRepository {
   final DatabaseInterface _database;
 
+  // Cache for current assignments to support real-time updates
+  List<Assignment> _cachedAssignments = [];
+
   AssignmentRepository(this._database);
 
   /// Watch all assignments in real-time
@@ -292,6 +295,31 @@ class AssignmentRepository {
   /// Decline assignment
   Future<void> declineAssignment(String id) async {
     await updateAssignmentStatus(id, AssignmentStatus.declined);
+  }
+
+  /// Update assignment notes
+  Future<void> updateAssignmentNotes(String id, String notes) async {
+    final assignment = await getAssignmentById(id);
+    if (assignment == null) {
+      throw Exception('Assignment not found: $id');
+    }
+
+    final updated = assignment.copyWith(
+      notes: notes,
+      updatedAt: DateTime.now(),
+    );
+
+    await _database.updateAssignment(updated);
+  }
+
+  /// Cache current assignments for real-time updates
+  void cacheCurrentAssignments(List<Assignment> assignments) {
+    _cachedAssignments = assignments;
+  }
+
+  /// Get currently cached assignments
+  List<Assignment> getCurrentAssignments() {
+    return _cachedAssignments;
   }
 }
 

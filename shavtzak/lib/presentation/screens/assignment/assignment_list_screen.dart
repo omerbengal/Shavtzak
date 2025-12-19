@@ -392,194 +392,242 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   }
 
   Widget _buildSlotRow(AssignmentSlot slot) {
+    final hasNotes = slot.isFilled &&
+                     slot.currentAssignment != null &&
+                     slot.currentAssignment!.notes.isNotEmpty;
+
     final rowContent = Container(
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+        border: Border(bottom: BorderSide(color: Colors.grey.shade400, width: 1.5)),
         color: slot.isFilled ? null : Colors.orange.shade50,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Event column
-          Expanded(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                GestureDetector(
-                  onTap: () => _showEventFormModal(slot.event),
-                  child: Text(
-                    slot.event.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: Colors.blue,
-                      decoration: TextDecoration.none,
+          // Main row content
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  // Event column
+                  Expanded(
+                    flex: 3,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        GestureDetector(
+                          onTap: () => _showEventFormModal(slot.event),
+                          child: Text(
+                            slot.event.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: Colors.blue,
+                              decoration: TextDecoration.none,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        // Line 1: Dates (single date if same, or date range)
+                        Text(
+                          _isSameDay(slot.event.startDate, slot.event.endDate)
+                              ? _formatDate(slot.event.startDate)
+                              : '${_formatDate(slot.event.startDate)} - ${_formatDate(slot.event.endDate)}',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        // Line 2: Times (show if at least one time is filled)
+                        if (slot.event.startTime.isNotEmpty || slot.event.endTime.isNotEmpty)
+                          Text(
+                            '${slot.event.startTime.isNotEmpty ? slot.event.startTime : "?"} - ${slot.event.endTime.isNotEmpty ? slot.event.endTime : "?"}',
+                            style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        // Line 3: Location (only if not empty)
+                        if (slot.event.location.isNotEmpty)
+                          Text(
+                            slot.event.location,
+                            style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
                     ),
-                    textAlign: TextAlign.center,
                   ),
-                ),
-                // Line 1: Dates (single date if same, or date range)
-                Text(
-                  _isSameDay(slot.event.startDate, slot.event.endDate)
-                      ? _formatDate(slot.event.startDate)
-                      : '${_formatDate(slot.event.startDate)} - ${_formatDate(slot.event.endDate)}',
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                // Line 2: Times (show if at least one time is filled)
-                if (slot.event.startTime.isNotEmpty || slot.event.endTime.isNotEmpty)
-                  Text(
-                    '${slot.event.startTime.isNotEmpty ? slot.event.startTime : "?"} - ${slot.event.endTime.isNotEmpty ? slot.event.endTime : "?"}',
-                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                // Line 3: Location (only if not empty)
-                if (slot.event.location.isNotEmpty)
-                  Text(
-                    slot.event.location,
-                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-              ],
-            ),
-          ),
 
-          // Role column
-          Expanded(
-            flex: 2,
-            child: Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => _showEventFormModal(slot.event, selectedRole: slot.roleType),
-                    child: Text(
-                      slot.roleType.hebrewName,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
-                        decoration: TextDecoration.none,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-                if (slot.hasDoubleAssignment)
-                  Tooltip(
-                    message: 'משובץ גם ל: ${slot.otherRoles.join(", ")}',
-                    child: InkWell(
-                      onTap: () {
-                        showDialog(
-                          context: context,
-                          builder: (dialogContext) => Directionality(
-                            textDirection: TextDirection.rtl,
-                            child: AlertDialog(
-                              title: Row(
-                                children: const [
-                                  Icon(Icons.warning, color: Colors.orange),
-                                  SizedBox(width: 8),
-                                  Text('שיבוץ כפול'),
-                                ],
+                  // Role column
+                  Expanded(
+                    flex: 2,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => _showEventFormModal(slot.event, selectedRole: slot.roleType),
+                            child: Text(
+                              slot.roleType.hebrewName,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
+                                decoration: TextDecoration.none,
                               ),
-                              content: Text(
-                                'משובץ גם לתפקידים: ${slot.otherRoles.join(", ")}',
-                                style: const TextStyle(fontSize: 16),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.of(dialogContext).pop(),
-                                  child: const Text('סגור'),
-                                ),
-                              ],
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        );
-                      },
-                      child: const Icon(
-                        Icons.warning,
-                        color: Colors.orange,
-                        size: 20,
-                      ),
+                        ),
+                        if (slot.hasDoubleAssignment)
+                          Tooltip(
+                            message: 'משובץ גם ל: ${slot.otherRoles.join(", ")}',
+                            child: InkWell(
+                              onTap: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (dialogContext) => Directionality(
+                                    textDirection: TextDirection.rtl,
+                                    child: AlertDialog(
+                                      title: Row(
+                                        children: const [
+                                          Icon(Icons.warning, color: Colors.orange),
+                                          SizedBox(width: 8),
+                                          Text('שיבוץ כפול'),
+                                        ],
+                                      ),
+                                      content: Text(
+                                        'משובץ גם לתפקידים: ${slot.otherRoles.join(", ")}',
+                                        style: const TextStyle(fontSize: 16),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.of(dialogContext).pop(),
+                                          child: const Text('סגור'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: const Icon(
+                                Icons.warning,
+                                color: Colors.orange,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-              ],
+
+                  // Assignment cell with dropdown and buttons
+                  Expanded(
+                    flex: 3,
+                    child: _buildAssignmentCell(slot),
+                  ),
+                ],
+              ),
             ),
           ),
 
-          // Assignment cell with dropdown and buttons
-          Expanded(
-            flex: 3,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return _buildAssignmentCell(slot, constraints.maxWidth);
-              },
+          // Notes section (only shown if there are notes)
+          if (hasNotes)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+              child: Directionality(
+                textDirection: TextDirection.rtl,
+                child: Text(
+                  slot.currentAssignment!.notes,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.blue,
+                    fontStyle: FontStyle.italic,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
 
-    // Make all slots dismissible (both filled and unfilled)
+    // Return the assignment row with swipe gestures:
+    // - Swipe left (endToStart): Delete slot
+    // - Swipe right (startToEnd): Edit notes (only for filled slots)
     return Dismissible(
       key: Key('slot_${slot.event.id}_${slot.roleType.name}_${slot.slotIndex}'),
-      direction: DismissDirection.endToStart,
-      background: Container(
+      direction: slot.isFilled
+          ? DismissDirection.horizontal  // Both directions for filled slots
+          : DismissDirection.endToStart, // Only delete for empty slots
+      // Right-to-left swipe (delete) - red background
+      secondaryBackground: Container(
         alignment: Alignment.centerLeft, // RTL: left side is the visible side
         padding: const EdgeInsets.only(left: 20),
         color: Colors.red,
         child: const Icon(Icons.delete, color: Colors.white, size: 32),
       ),
+      // Left-to-right swipe (notes) - blue background
+      background: Container(
+        alignment: Alignment.centerRight, // RTL: right side is the visible side
+        padding: const EdgeInsets.only(right: 20),
+        color: Colors.blue,
+        child: const Icon(Icons.edit_note, color: Colors.white, size: 32),
+      ),
       dismissThresholds: const {
         DismissDirection.endToStart: 0.5,
+        DismissDirection.startToEnd: 0.5,
       },
-      confirmDismiss: (direction) async {
-        // Show confirmation dialog
-        final isSlotFilled = slot.isFilled;
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => Directionality(
-            textDirection: TextDirection.rtl,
-            child: AlertDialog(
-              title: const Text('מחיקת משרה'),
-              content: Text(
-                isSlotFilled
-                    ? 'האם אתה בטוח שברצונך למחוק משרה זו?\nפעולה זו תמחק את השיבוץ ותקטין את מספר המשרות הנדרשות לתפקיד זה.'
-                    : 'האם אתה בטוח שברצונך למחוק משרה פנויה זו?\nפעולה זו תקטין את מספר המשרות הנדרשות לתפקיד זה.',
+        confirmDismiss: (direction) async {
+          if (direction == DismissDirection.startToEnd) {
+            // Notes swipe - show notes dialog
+            if (slot.isFilled && slot.currentAssignment != null) {
+              await _showNotesDialog(slot);
+            }
+            return false; // Never actually dismiss
+          } else {
+            // Delete swipe - show delete confirmation dialog
+            final isSlotFilled = slot.isFilled;
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) => Directionality(
+                textDirection: TextDirection.rtl,
+                child: AlertDialog(
+                  title: const Text('מחיקת משרה'),
+                  content: Text(
+                    isSlotFilled
+                        ? 'האם אתה בטוח שברצונך למחוק משרה זו?\nפעולה זו תמחק את השיבוץ ותקטין את מספר המשרות הנדרשות לתפקיד זה.'
+                        : 'האם אתה בטוח שברצונך למחוק משרה פנויה זו?\nפעולה זו תקטין את מספר המשרות הנדרשות לתפקיד זה.',
+                  ),
+                  actions: [
+                    TextButton(
+                      child: const Text('ביטול'),
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                    ),
+                    TextButton(
+                      child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                    ),
+                  ],
+                ),
               ),
-              actions: [
-                TextButton(
-                  child: const Text('ביטול'),
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                ),
-                TextButton(
-                  child: const Text('מחק', style: TextStyle(color: Colors.red)),
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                ),
-              ],
-            ),
-          ),
+            );
+
+            if (confirmed == true) {
+              await _handleSlotDismiss(slot);
+            }
+            return false;
+          }
+          },
+          child: rowContent,
         );
-
-        // If user confirmed, handle the dismissal
-        if (confirmed == true) {
-          await _handleSlotDismiss(slot);
-        }
-
-        // Always return false to prevent automatic dismissal
-        // (we handle removal by reloading the data)
-        return false;
-      },
-      child: rowContent,
-    );
   }
 
   /// Handle dismissing a slot - removes role slot from event (reduces capacity)
@@ -663,8 +711,112 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     }
   }
 
-  Widget _buildAssignmentCell(AssignmentSlot slot, double availableWidth) {
-    final isMobile = availableWidth < 300; // Detect mobile/narrow screens
+  /// Show notes dialog for editing assignment notes
+  Future<void> _showNotesDialog(AssignmentSlot slot) async {
+    final assignment = slot.currentAssignment;
+    if (assignment == null) return;
+
+    final controller = TextEditingController(text: assignment.notes);
+
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          actionsAlignment: MainAxisAlignment.center,
+          title: Row(
+            children: [
+              const Icon(Icons.edit_note, color: Colors.blue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'הערות לשיבוץ',
+                  style: const TextStyle(fontSize: 18),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Show assignment info
+              Text(
+                '${slot.currentAssignment?.teamMember?.name ?? ""} - ${slot.roleType.hebrewName}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                slot.event.name,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  hintText: 'הכנס הערות...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                ),
+                textDirection: TextDirection.rtl,
+                autofocus: true,
+              ),
+              // Delete note button (only show if there are existing notes)
+              if (assignment.notes.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.of(dialogContext).pop(''),
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    label: const Text(
+                      'מחק הערה',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.red.shade50,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(null),
+              child: const Text('ביטול'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('שמור'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      // Update notes via BLoC (empty string = delete note)
+      context.read<AssignmentBloc>().add(
+        UpdateAssignmentNotes(assignment.id, result),
+      );
+    }
+  }
+
+  Widget _buildAssignmentCell(AssignmentSlot slot) {
     // Get current assigned member:
     // - First try from assignment object itself (handles deactivated members)
     // - Then try from available/alreadyAssigned lists (handles active members)

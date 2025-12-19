@@ -1,6 +1,8 @@
 import 'package:equatable/equatable.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/assignment.dart';
+import '../../../domain/entities/event.dart';
+import '../../../domain/entities/team_member.dart';
 
 /// Base event class for AssignmentBloc
 abstract class AssignmentEvent extends Equatable {
@@ -197,5 +199,35 @@ class RebuildUserAssignments extends AssignmentEvent {
 
   @override
   List<Object?> get props => [teamMemberId];
+}
+
+/// Internal event to rebuild slots from cached data (for real-time updates)
+/// This event carries all necessary data to rebuild slots without async calls
+class RebuildAssignmentSlotsFromData extends AssignmentEvent {
+  final List<Assignment> assignments;
+  final Map<String, Event> events;
+  final Map<String, TeamMember> teamMembers;
+  final Set<String> selectedEventIds;
+
+  const RebuildAssignmentSlotsFromData(
+    this.assignments,
+    this.events,
+    this.teamMembers,
+    this.selectedEventIds,
+  );
+
+  @override
+  List<Object?> get props => [assignments, events, teamMembers, selectedEventIds];
+}
+
+/// Update assignment notes
+class UpdateAssignmentNotes extends AssignmentEvent {
+  final String id;
+  final String notes;
+
+  const UpdateAssignmentNotes(this.id, this.notes);
+
+  @override
+  List<Object?> get props => [id, notes];
 }
 

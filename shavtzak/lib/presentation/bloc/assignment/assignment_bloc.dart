@@ -7,6 +7,7 @@ import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/team_repository.dart';
 import '../../../domain/entities/assignment.dart';
+import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
 import 'assignment_event.dart';
 import 'assignment_state.dart';
@@ -56,8 +57,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<ApplyEventFilter>(_onApplyEventFilter);
     on<ClearEventFilter>(_onClearEventFilter);
     on<RebuildAssignmentSlots>(_onRebuildAssignmentSlots);
+    on<RebuildAssignmentSlotsFromData>(_onRebuildAssignmentSlotsFromData);
     on<LoadUserAssignments>(_onLoadUserAssignments);
     on<RebuildUserAssignments>(_onRebuildUserAssignments);
+    on<UpdateAssignmentNotes>(_onUpdateAssignmentNotes);
   }
 
   /// Load all assignments with real-time updates
@@ -451,24 +454,59 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _teamMemberSubscription?.cancel();
       await _eventSubscription?.cancel();
 
-      // Subscribe to all three streams manually - dispatch internal event when they fire
+      // Load and cache events and team members first
+      final cachedEvents = await _eventRepository.getAllEvents();
+      final cachedMembers = await _teamRepository.getActiveTeamMembers();
+
+      final cachedMembersMap = <String, TeamMember>{};
+      cachedMembersMap.addAll({for (var tm in cachedMembers) tm.id: tm});
+      final cachedEventsMap = <String, Event>{};
+      cachedEventsMap.addAll({for (var e in cachedEvents) e.id: e});
+
+      // Subscribe to real-time updates on assignments
       _assignmentSubscription = _repository.watchAssignments().listen(
-        (_) => add(const RebuildAssignmentSlots()),
-        onError: (e) => add(const RebuildAssignmentSlots()),
+        (assignments) {
+          // Rebuild slots using cached data
+          add(RebuildAssignmentSlotsFromData(assignments, cachedEventsMap, cachedMembersMap, currentFilter));
+        },
+        onError: (e) {
+          emit(AssignmentError('שגיאה בהאזנה לשיבוצים: $e'));
+        },
       );
 
+      // Also listen for team member changes
       _teamMemberSubscription = _teamRepository.watchTeamMembers().listen(
-        (_) => add(const RebuildAssignmentSlots()),
-        onError: (e) => add(const RebuildAssignmentSlots()),
+        (updatedMembers) {
+          // Update member cache
+          cachedMembersMap.clear();
+          cachedMembersMap.addAll({for (var tm in updatedMembers) tm.id: tm});
+          // Trigger rebuild with updated cache
+          final currentAssignments = _repository.getCurrentAssignments();
+          add(RebuildAssignmentSlotsFromData(currentAssignments, cachedEventsMap, cachedMembersMap, currentFilter));
+        },
+        onError: (e) {
+          emit(AssignmentError('שגיאה בהאזנה לחברי צוות: $e'));
+        },
       );
 
+      // Also listen for event changes
       _eventSubscription = _eventRepository.watchEvents().listen(
-        (_) => add(const RebuildAssignmentSlots()),
-        onError: (e) => add(const RebuildAssignmentSlots()),
+        (updatedEvents) {
+          // Update event cache
+          cachedEventsMap.clear();
+          cachedEventsMap.addAll({for (var e in updatedEvents) e.id: e});
+          // Trigger rebuild with updated cache
+          final currentAssignments = _repository.getCurrentAssignments();
+          add(RebuildAssignmentSlotsFromData(currentAssignments, cachedEventsMap, cachedMembersMap, currentFilter));
+        },
+        onError: (e) {
+          emit(AssignmentError('שגיאה בהאזנה לאירועים: $e'));
+        },
       );
 
-      // Initial load - pass the preserved filter
-      add(RebuildAssignmentSlots(preservedFilter: currentFilter));
+      // Initial load
+      final initialAssignments = await _repository.getAllAssignments();
+      add(RebuildAssignmentSlotsFromData(initialAssignments, cachedEventsMap, cachedMembersMap, currentFilter));
     } catch (e) {
       emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
     }
@@ -688,6 +726,173 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     }
   }
 
+  /// Rebuild slots using pre-loaded data (for real-time updates)
+  Future<void> _onRebuildAssignmentSlotsFromData(
+    RebuildAssignmentSlotsFromData rebuildEvent,
+    Emitter<AssignmentState> emit,
+  ) async {
+    if (_isRebuilding) return; // Skip if already rebuilding
+    _isRebuilding = true;
+
+    try {
+      // Update the repository's cached assignments
+      _repository.cacheCurrentAssignments(rebuildEvent.assignments);
+
+      // Convert maps to lists for the build method
+      final eventsList = rebuildEvent.events.values.toList();
+      final teamMembersMap = rebuildEvent.teamMembers;
+      final teamMembers = rebuildEvent.teamMembers.values.toList();
+
+      // Filter events based on showPastEvents flag
+      var filteredEvents = eventsList;
+      if (!FilterPersistence.showPastEvents) {
+        final now = DateTime.now();
+        final todayStart = DateTime(now.year, now.month, now.day);
+        filteredEvents = filteredEvents.where((e) => e.endDate.isAfter(todayStart.subtract(const Duration(days: 1)))).toList();
+      }
+
+      // Build slots using the existing method
+      final slots = <AssignmentSlot>[];
+      for (final eventData in filteredEvents) {
+        // For each role requirement in the event (in enum order)
+        for (final role in RoleType.values) {
+          final requiredCount = eventData.roleRequirements[role] ?? 0;
+          if (requiredCount == 0) continue; // Skip roles with 0 requirement
+
+          // Get assignments for this event+role from the assignments list
+          final roleAssignments = rebuildEvent.assignments
+              .where((a) => a.eventId == eventData.id && a.roleType == role)
+              .map((a) => a.withRelations(
+                event: eventData,
+                teamMember: teamMembersMap[a.teamMemberId],
+              ))
+              .toList();
+
+          // Create slots (one per required count)
+          for (int i = 0; i < requiredCount; i++) {
+            // Find if this slot is filled (match by slotIndex, not array position)
+            final assignment = roleAssignments
+                .cast<Assignment?>()
+                .firstWhere((a) => a?.slotIndex == i, orElse: () => null);
+
+            // Get all assignments for this event to check who's already assigned
+            final eventAssignments = rebuildEvent.assignments
+                .where((a) => a.eventId == eventData.id)
+                .toList();
+            final assignedMemberIds = eventAssignments
+                .map((a) => a.teamMemberId)
+                .toSet();
+
+            // Separate members into available (not assigned to this event)
+            // and already assigned (assigned to this event)
+            // Use Maps to prevent duplicates
+            final availableMembersMap = <String, TeamMember>{};
+            final alreadyAssignedMembersMap = <String, TeamMember>{};
+
+            for (final member in teamMembers) {
+              // Check capability
+              if (!member.canPerformRole(role)) continue;
+
+              // Check availability for entire event duration
+              // Skip availability check for members with allowMultipleAssignments
+              if (!member.allowMultipleAssignments &&
+                  !member.isAvailableForDateRange(eventData.startDate, eventData.endDate)) continue;
+
+              // Separate based on whether already assigned to this event
+              // Members with allowMultipleAssignments always go to available list
+              if (member.allowMultipleAssignments) {
+                availableMembersMap[member.id] = member;
+              } else if (assignedMemberIds.contains(member.id)) {
+                alreadyAssignedMembersMap[member.id] = member;
+              } else {
+                availableMembersMap[member.id] = member;
+              }
+            }
+
+            final availableMembers = availableMembersMap.values.toList();
+            final alreadyAssignedMembers = alreadyAssignedMembersMap.values.toList();
+
+            slots.add(AssignmentSlot(
+              event: eventData,
+              roleType: role,
+              slotIndex: i,
+              currentAssignment: assignment,
+              availableMembers: availableMembers,
+              alreadyAssignedMembers: alreadyAssignedMembers,
+            ));
+          }
+        }
+      }
+
+      // Detect double assignments
+      final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
+      for (final slot in slots) {
+        if (slot.isFilled) {
+          // Check if member has allowMultipleAssignments - skip double assignment warning
+          final teamMember = slot.currentAssignment!.teamMember;
+          final skipDoubleAssignmentWarning = teamMember?.allowMultipleAssignments ?? false;
+
+          // Check if this person has other assignments in the same event
+          final otherAssignments = slots.where((s) =>
+              s.event.id == slot.event.id &&
+              s.isFilled &&
+              s.currentAssignment!.teamMemberId ==
+                  slot.currentAssignment!.teamMemberId &&
+              s.roleType != slot.roleType).toList();
+
+          if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
+            // This person has multiple roles in this event
+            final otherRoleNames =
+                otherAssignments.map((s) => s.roleType.hebrewName).toList();
+            slotsWithDoubleAssignmentDetection.add(AssignmentSlot(
+              event: slot.event,
+              roleType: slot.roleType,
+              slotIndex: slot.slotIndex,
+              currentAssignment: slot.currentAssignment,
+              availableMembers: slot.availableMembers,
+              alreadyAssignedMembers: slot.alreadyAssignedMembers,
+              hasDoubleAssignment: true,
+              otherRoles: otherRoleNames,
+            ));
+          } else {
+            slotsWithDoubleAssignmentDetection.add(slot);
+          }
+        } else {
+          slotsWithDoubleAssignmentDetection.add(slot);
+        }
+      }
+
+      // Sort slots by event date, then event name, then role
+      slotsWithDoubleAssignmentDetection.sort((a, b) {
+        final dateCompare = a.event.startDate.compareTo(b.event.startDate);
+        if (dateCompare != 0) return dateCompare;
+
+        final nameCompare = a.event.name.compareTo(b.event.name);
+        if (nameCompare != 0) return nameCompare;
+
+        // Sort by enum order (not alphabetically)
+        return a.roleType.index.compareTo(b.roleType.index);
+      });
+
+      // Apply filter if needed
+      final filteredSlots = rebuildEvent.selectedEventIds.isNotEmpty
+          ? slotsWithDoubleAssignmentDetection.where((slot) => rebuildEvent.selectedEventIds.contains(slot.event.id)).toList()
+          : slotsWithDoubleAssignmentDetection;
+
+      // Remember the filter
+      _currentEventFilter = rebuildEvent.selectedEventIds;
+
+      emit(AssignmentSlotsLoaded(
+        filteredSlots,
+        selectedEventIds: rebuildEvent.selectedEventIds,
+      ));
+    } catch (e) {
+      emit(AssignmentError('שגיאה בבניית שיבוצים: $e'));
+    } finally {
+      _isRebuilding = false;
+    }
+  }
+
   /// Create new assignment bypassing conflict checks (for manual assignments)
   Future<void> _onCreateAssignmentWithBypass(
     CreateAssignmentWithBypass event,
@@ -791,6 +996,41 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
     } catch (e) {
       emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
+    }
+  }
+
+  /// Update assignment notes
+  Future<void> _onUpdateAssignmentNotes(
+    UpdateAssignmentNotes event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    // Store previous state BEFORE any emit
+    final previousState = state;
+
+    try {
+      await _repository.updateAssignmentNotes(event.id, event.notes);
+      emit(const AssignmentOperationSuccess('הערות עודכנו בהצלחה'));
+
+      // Trigger rebuild based on current view type
+      if (previousState is AssignmentSlotsLoaded) {
+        // For slots view, trigger a rebuild with preserved filter
+        add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+      } else if (previousState is AssignmentsLoaded) {
+        // For list view, restart listener
+        final currentState = previousState;
+        if (currentState.filterType == 'event' && currentState.filterId != null) {
+          add(LoadAssignmentsByEvent(currentState.filterId!));
+        } else if (currentState.filterType == 'person' && currentState.filterId != null) {
+          add(LoadAssignmentsByPerson(currentState.filterId!));
+        } else {
+          add(const LoadAssignments());
+        }
+      } else {
+        // Default: reload all assignments
+        add(const LoadAssignments());
+      }
+    } catch (e) {
+      emit(AssignmentError('שגיאה בעדכון הערות: $e'));
     }
   }
 }

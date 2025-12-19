@@ -1,15 +1,19 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/services/drive_service.dart';
+import '../../../../data/data_sources/firestore_database.dart';
 
 /// Widget to display Drive files for an event
 class EventDriveFilesSection extends StatefulWidget {
+  final String eventId;
   final String? driveFolderId;
   final String? driveFolderLink;
   final String eventName;
 
   const EventDriveFilesSection({
     super.key,
+    required this.eventId,
     this.driveFolderId,
     this.driveFolderLink,
     required this.eventName,
@@ -22,29 +26,93 @@ class EventDriveFilesSection extends StatefulWidget {
 class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
   List<DriveFile> _files = [];
   bool _isLoading = false;
+  bool _isWaitingForFolder = false;
   String? _error;
+  Timer? _pollTimer;
+
+  // Current folder info (may be updated via polling)
+  String? _currentFolderId;
+  String? _currentFolderLink;
 
   @override
   void initState() {
     super.initState();
-    if (widget.driveFolderId != null && widget.driveFolderId!.isNotEmpty) {
+    _currentFolderId = widget.driveFolderId;
+    _currentFolderLink = widget.driveFolderLink;
+
+    if (_currentFolderId != null && _currentFolderId!.isNotEmpty) {
       _loadFiles();
+    } else {
+      // No folder yet - start polling for folder creation
+      _startPollingForFolder();
     }
   }
 
   @override
   void didUpdateWidget(EventDriveFilesSection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Reload files if the folder ID changes
-    if (oldWidget.driveFolderId != widget.driveFolderId &&
-        widget.driveFolderId != null &&
-        widget.driveFolderId!.isNotEmpty) {
-      _loadFiles();
+    // Update if folder ID changed from widget
+    if (oldWidget.driveFolderId != widget.driveFolderId) {
+      _currentFolderId = widget.driveFolderId;
+      _currentFolderLink = widget.driveFolderLink;
+
+      if (_currentFolderId != null && _currentFolderId!.isNotEmpty) {
+        _stopPolling();
+        _loadFiles();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopPolling();
+    super.dispose();
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  /// Start polling to check if the Drive folder has been created
+  void _startPollingForFolder() {
+    setState(() {
+      _isWaitingForFolder = true;
+    });
+
+    // Poll every 2 seconds
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      await _checkForFolder();
+    });
+  }
+
+  /// Check if the event now has a Drive folder
+  Future<void> _checkForFolder() async {
+    if (!mounted) return;
+
+    try {
+      final database = FirestoreDatabase();
+      final event = await database.getEventById(widget.eventId);
+
+      if (event != null && event.hasDriveFolder) {
+        // Folder was created!
+        _stopPolling();
+        if (mounted) {
+          setState(() {
+            _isWaitingForFolder = false;
+            _currentFolderId = event.driveFolderId;
+            _currentFolderLink = event.driveFolderLink;
+          });
+          _loadFiles();
+        }
+      }
+    } catch (e) {
+      // Silently ignore polling errors - we'll try again
     }
   }
 
   Future<void> _loadFiles() async {
-    if (!DriveService.instance.isInitialized || widget.driveFolderId == null) return;
+    if (!DriveService.instance.isInitialized || _currentFolderId == null) return;
 
     setState(() {
       _isLoading = true;
@@ -52,7 +120,7 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
     });
 
     try {
-      final result = await DriveService.instance.listFiles(folderId: widget.driveFolderId!);
+      final result = await DriveService.instance.listFiles(folderId: _currentFolderId!);
 
       if (mounted) {
         setState(() {
@@ -95,11 +163,6 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
 
   @override
   Widget build(BuildContext context) {
-    // Don't show anything if there's no folder
-    if (widget.driveFolderId == null || widget.driveFolderId!.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -117,31 +180,68 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const Spacer(),
-            // Manual refresh button
-            IconButton(
-              onPressed: _isLoading ? null : _loadFiles,
-              icon: const Icon(Icons.refresh),
-              tooltip: 'רענן קבצים',
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              color: _isLoading ? Colors.grey : Colors.blue,
-            ),
-            // Link to folder
-            if (widget.driveFolderLink != null)
-              TextButton.icon(
-                onPressed: () => _launchUrl(widget.driveFolderLink!),
-                icon: const Icon(Icons.link, size: 16),
-                label: const Text('פתח תיקייה'),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.blue,
-                ),
+            // Only show refresh and open buttons when folder exists
+            if (_currentFolderId != null && _currentFolderId!.isNotEmpty) ...[
+              // Manual refresh button
+              IconButton(
+                onPressed: _isLoading ? null : _loadFiles,
+                icon: const Icon(Icons.refresh),
+                tooltip: 'רענן קבצים',
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                color: _isLoading ? Colors.grey : Colors.blue,
               ),
+              // Link to folder
+              if (_currentFolderLink != null)
+                TextButton.icon(
+                  onPressed: () => _launchUrl(_currentFolderLink!),
+                  icon: const Icon(Icons.link, size: 16),
+                  label: const Text('פתח תיקייה'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.blue,
+                  ),
+                ),
+            ],
           ],
         ),
 
         const SizedBox(height: 8),
 
-        // Loading indicator
-        if (_isLoading)
+        // Waiting for folder creation state
+        if (_isWaitingForFolder)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              border: Border.all(color: Colors.blue.shade200),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              textDirection: TextDirection.rtl,
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.blue.shade600,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'תיקיית דרייב נוצרת...',
+                  style: TextStyle(
+                    color: Colors.blue.shade800,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
+              ],
+            ),
+          ),
+
+        // Loading files indicator
+        if (!_isWaitingForFolder && _isLoading)
           const Center(
             child: Padding(
               padding: EdgeInsets.all(16),
@@ -150,7 +250,7 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
           ),
 
         // Error message
-        if (_error != null)
+        if (!_isWaitingForFolder && _error != null)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
@@ -182,7 +282,7 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
           ),
 
         // Files list
-        if (!_isLoading && _error == null) ...[
+        if (!_isWaitingForFolder && !_isLoading && _error == null) ...[
           if (_files.isEmpty)
             Container(
               width: double.infinity,

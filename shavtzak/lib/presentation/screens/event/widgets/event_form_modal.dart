@@ -995,10 +995,12 @@ class _EventFormModalState extends State<EventFormModal> {
                               }),
 
                               // Drive Files Section (only in edit mode, not duplication)
-                              if (_isEditMode && !widget.isDuplication && widget.event?.hasDriveFolder == true) ...[
+                              // Show immediately even if drive folder doesn't exist yet - section handles pending state
+                              if (_isEditMode && !widget.isDuplication) ...[
                                   EventDriveFilesSection(
-                                    driveFolderId: widget.event!.driveFolderId,
-                                    driveFolderLink: widget.event!.driveFolderLink,
+                                    eventId: widget.event!.id,
+                                    driveFolderId: widget.event?.driveFolderId,
+                                    driveFolderLink: widget.event?.driveFolderLink,
                                     eventName: widget.event!.name,
                                   ),
                                   const Divider(height: 32),
