@@ -61,14 +61,75 @@ class MapLocationResult {
 /// A search result from Nominatim geocoding
 class _SearchResult {
   final String displayName;
+  final String formattedName; // Our custom formatted name
   final double latitude;
   final double longitude;
 
   const _SearchResult({
     required this.displayName,
+    required this.formattedName,
     required this.latitude,
     required this.longitude,
   });
+
+  /// Create a search result from Nominatim JSON response
+  /// Uses addressdetails for structured address fields
+  factory _SearchResult.fromJson(Map<String, dynamic> json) {
+    final lat = double.parse(json['lat'] as String);
+    final lng = double.parse(json['lon'] as String);
+    final displayName = json['display_name'] as String;
+
+    // Extract structured address fields
+    final address = json['address'] as Map<String, dynamic>?;
+    String formattedName = displayName;
+
+    if (address != null) {
+      final parts = <String>[];
+
+      // 1. Place name (amenity, building, tourism, etc.) - if it's a named place
+      final name = address['amenity'] ??
+          address['building'] ??
+          address['tourism'] ??
+          address['shop'] ??
+          address['leisure'] ??
+          address['office'] ??
+          address['historic'];
+      if (name != null) {
+        parts.add(name as String);
+      }
+
+      // 2. Street with house number
+      final road = address['road'] ?? address['street'];
+      final houseNumber = address['house_number'];
+      if (road != null) {
+        if (houseNumber != null) {
+          parts.add('$road $houseNumber');
+        } else {
+          parts.add(road as String);
+        }
+      }
+
+      // 3. City (try multiple fields)
+      final city = address['city'] ??
+          address['town'] ??
+          address['village'] ??
+          address['municipality'];
+      if (city != null) {
+        parts.add(city as String);
+      }
+
+      if (parts.isNotEmpty) {
+        formattedName = parts.join(', ');
+      }
+    }
+
+    return _SearchResult(
+      displayName: displayName,
+      formattedName: formattedName,
+      latitude: lat,
+      longitude: lng,
+    );
+  }
 }
 
 /// A dialog that displays an interactive map for picking a location.
@@ -165,90 +226,6 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
     });
   }
 
-  /// Format the display name from Nominatim to be more readable
-  /// Nominatim format: "Name, Number, Street, Neighborhood, City, District, Country"
-  /// We want: "Name, Street Number, City" or "Street Number, City"
-  String _formatDisplayName(String displayName) {
-    final parts = displayName.split(',').map((p) => p.trim()).toList();
-
-    if (parts.isEmpty) return displayName;
-    if (parts.length == 1) return parts[0];
-
-    final result = <String>[];
-
-    // Check if first part is a place name (not just a number)
-    final firstPart = parts[0];
-    final isFirstPartNumber = RegExp(r'^\d+$').hasMatch(firstPart);
-
-    String? placeName;
-    String? streetWithNumber;
-    String? city;
-
-    int startIndex = 0;
-
-    // If first part is not a number, it's likely a place name
-    if (!isFirstPartNumber) {
-      // Check if it looks like a street name (contains common street words)
-      final streetKeywords = ['רחוב', 'שדרות', 'דרך', 'סמטת', 'משעול', 'כיכר'];
-      final isStreet = streetKeywords.any((keyword) => firstPart.contains(keyword));
-
-      if (!isStreet) {
-        placeName = firstPart;
-        startIndex = 1;
-      }
-    }
-
-    // Find street with number
-    // Look for a number followed by street name, or street name followed by number
-    for (int i = startIndex; i < parts.length && i < startIndex + 3; i++) {
-      final part = parts[i];
-      final hasNumber = RegExp(r'\d').hasMatch(part);
-      final isJustNumber = RegExp(r'^\d+$').hasMatch(part);
-
-      if (isJustNumber && i + 1 < parts.length) {
-        // Number followed by street name: "123, Dizengoff Street"
-        streetWithNumber = '${parts[i + 1]} $part';
-        startIndex = i + 2;
-        break;
-      } else if (hasNumber) {
-        // Street with number included: "Dizengoff Street 123"
-        streetWithNumber = part;
-        startIndex = i + 1;
-        break;
-      }
-    }
-
-    // If no street with number found, take the first available part as street
-    if (streetWithNumber == null && startIndex < parts.length) {
-      streetWithNumber = parts[startIndex];
-      startIndex++;
-    }
-
-    // Find city - search BACKWARDS from the end to find the city
-    // City is typically right before district (נפת/מחוז) or country
-    // Skip: districts, country, and take the first valid city name
-    for (int i = parts.length - 1; i >= startIndex; i--) {
-      final part = parts[i];
-      // Skip district, country indicators
-      if (part.contains('נפת') ||
-          part.contains('מחוז') ||
-          part.contains('ישראל') ||
-          part.contains('Israel')) {
-        continue;
-      }
-      // Found the city (first non-district/country from the end)
-      city = part;
-      break;
-    }
-
-    // Build result
-    if (placeName != null) result.add(placeName);
-    if (streetWithNumber != null) result.add(streetWithNumber);
-    if (city != null) result.add(city);
-
-    return result.isNotEmpty ? result.join(', ') : displayName;
-  }
-
   void _confirmSelection() {
     if (_selectedLocation != null) {
       Navigator.of(context).pop(MapLocationResult(
@@ -279,14 +256,15 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
 
     try {
       // Use Nominatim API (free, no API key required)
-      // Adding countrycodes=il to prioritize Israel results
+      // addressdetails=1 returns structured address fields (road, city, etc.)
       final uri = Uri.parse(
         'https://nominatim.openstreetmap.org/search'
         '?q=${Uri.encodeComponent(query)}'
         '&format=json'
         '&limit=5'
         '&countrycodes=il'
-        '&accept-language=he',
+        '&accept-language=he'
+        '&addressdetails=1',
       );
 
       final response = await http.get(
@@ -299,13 +277,9 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         setState(() {
-          _searchResults = data.map((item) {
-            return _SearchResult(
-              displayName: item['display_name'] as String,
-              latitude: double.parse(item['lat'] as String),
-              longitude: double.parse(item['lon'] as String),
-            );
-          }).toList();
+          _searchResults = data
+              .map((item) => _SearchResult.fromJson(item as Map<String, dynamic>))
+              .toList();
           _isSearching = false;
         });
       } else {
@@ -335,7 +309,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
     final location = LatLng(result.latitude, result.longitude);
     setState(() {
       _selectedLocation = location;
-      _selectedLocationName = _formatDisplayName(result.displayName);
+      _selectedLocationName = result.formattedName;
       _searchResults = [];
       // Keep search text so admin can see what they searched for
     });
@@ -511,7 +485,6 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                   ),
                                   itemBuilder: (context, index) {
                                     final result = _searchResults[index];
-                                    final formattedName = _formatDisplayName(result.displayName);
                                     return InkWell(
                                       onTap: () => _selectSearchResult(result),
                                       child: Padding(
@@ -529,7 +502,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                             const SizedBox(width: 12),
                                             Expanded(
                                               child: Text(
-                                                formattedName,
+                                                result.formattedName,
                                                 maxLines: 2,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: const TextStyle(fontSize: 14),
