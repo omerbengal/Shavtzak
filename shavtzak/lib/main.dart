@@ -112,6 +112,8 @@ Future<void> _preloadFont() async {
       fontData.buffer.asUint8List(),
       fontFamily: 'Rubik',
     );
+    // Wait for font to be fully registered with rendering pipeline
+    await Future.delayed(const Duration(milliseconds: 50));
   } catch (e) {
     // Font loading failed, app will fall back to default system font
     developer.log('Font preload failed: $e', name: 'Main');
