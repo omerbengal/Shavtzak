@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 /// Result from the map location picker containing latitude and longitude
@@ -16,6 +19,19 @@ class MapLocationResult {
   String toDisplayString() {
     return '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
   }
+}
+
+/// A search result from Nominatim geocoding
+class _SearchResult {
+  final String displayName;
+  final double latitude;
+  final double longitude;
+
+  const _SearchResult({
+    required this.displayName,
+    required this.latitude,
+    required this.longitude,
+  });
 }
 
 /// A dialog that displays an interactive map for picking a location.
@@ -69,6 +85,13 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   LatLng? _selectedLocation;
   late LatLng _initialCenter;
 
+  // Search functionality
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  List<_SearchResult> _searchResults = [];
+  bool _isSearching = false;
+  Timer? _debounceTimer;
+
   // Default to Tel Aviv if no initial location provided
   static const _defaultLatitude = 32.0853;
   static const _defaultLongitude = 34.7818;
@@ -90,12 +113,16 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   @override
   void dispose() {
     _mapController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
   void _onMapTap(TapPosition tapPosition, LatLng point) {
     setState(() {
       _selectedLocation = point;
+      _searchResults = []; // Clear search results when tapping map
     });
   }
 
@@ -110,6 +137,85 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
 
   void _cancel() {
     Navigator.of(context).pop();
+  }
+
+  /// Search for locations using Nominatim (OpenStreetMap geocoding)
+  Future<void> _searchLocation(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+    });
+
+    try {
+      // Use Nominatim API (free, no API key required)
+      // Adding countrycodes=il to prioritize Israel results
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search'
+        '?q=${Uri.encodeComponent(query)}'
+        '&format=json'
+        '&limit=5'
+        '&countrycodes=il'
+        '&accept-language=he',
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'User-Agent': 'Shavtzak App (contact@shavtzak.com)',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        setState(() {
+          _searchResults = data.map((item) {
+            return _SearchResult(
+              displayName: item['display_name'] as String,
+              latitude: double.parse(item['lat'] as String),
+              longitude: double.parse(item['lon'] as String),
+            );
+          }).toList();
+          _isSearching = false;
+        });
+      } else {
+        setState(() {
+          _searchResults = [];
+          _isSearching = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+    }
+  }
+
+  /// Handle search input with debouncing
+  void _onSearchChanged(String query) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _searchLocation(query);
+    });
+  }
+
+  /// Select a search result
+  void _selectSearchResult(_SearchResult result) {
+    final location = LatLng(result.latitude, result.longitude);
+    setState(() {
+      _selectedLocation = location;
+      _searchResults = [];
+      _searchController.clear();
+    });
+    _searchFocusNode.unfocus();
+    _mapController.move(location, 16.0); // Zoom in to selected location
   }
 
   @override
@@ -185,6 +291,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                   point: _selectedLocation!,
                                   width: 40,
                                   height: 40,
+                                  alignment: Alignment.topCenter,
                                   child: const Icon(
                                     Icons.location_pin,
                                     color: Colors.red,
@@ -196,10 +303,127 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                         ],
                       ),
 
-                      // Coordinates display
-                      if (_selectedLocation != null)
+                      // Search bar
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        right: 8,
+                        child: Column(
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.15),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: TextField(
+                                controller: _searchController,
+                                focusNode: _searchFocusNode,
+                                textDirection: TextDirection.rtl,
+                                decoration: InputDecoration(
+                                  hintText: 'חיפוש מיקום...',
+                                  prefixIcon: _isSearching
+                                      ? const Padding(
+                                          padding: EdgeInsets.all(12),
+                                          child: SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                        )
+                                      : const Icon(Icons.search),
+                                  suffixIcon: _searchController.text.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear),
+                                          onPressed: () {
+                                            _searchController.clear();
+                                            setState(() {
+                                              _searchResults = [];
+                                            });
+                                          },
+                                        )
+                                      : null,
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 14,
+                                  ),
+                                ),
+                                onChanged: _onSearchChanged,
+                              ),
+                            ),
+                            // Search results dropdown
+                            if (_searchResults.isNotEmpty)
+                              Container(
+                                margin: const EdgeInsets.only(top: 4),
+                                constraints: const BoxConstraints(maxHeight: 200),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.15),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: ListView.separated(
+                                  shrinkWrap: true,
+                                  padding: EdgeInsets.zero,
+                                  itemCount: _searchResults.length,
+                                  separatorBuilder: (_, __) => Divider(
+                                    height: 1,
+                                    color: Colors.grey.shade200,
+                                  ),
+                                  itemBuilder: (context, index) {
+                                    final result = _searchResults[index];
+                                    return InkWell(
+                                      onTap: () => _selectSearchResult(result),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.location_on,
+                                              color: Colors.grey.shade600,
+                                              size: 20,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Text(
+                                                result.displayName,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(fontSize: 14),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+
+                      // Coordinates display (when location selected and no search results)
+                      if (_selectedLocation != null && _searchResults.isEmpty)
                         Positioned(
-                          top: 8,
+                          top: 60,
                           left: 8,
                           right: 8,
                           child: Container(
@@ -208,31 +432,37 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.9),
+                              color: Colors.green.shade50.withOpacity(0.95),
                               borderRadius: BorderRadius.circular(8),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
+                              border: Border.all(color: Colors.green.shade300),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.check_circle,
+                                  color: Colors.green.shade700,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${_selectedLocation!.latitude.toStringAsFixed(6)}, ${_selectedLocation!.longitude.toStringAsFixed(6)}',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.green.shade800,
+                                  ),
                                 ),
                               ],
-                            ),
-                            child: Text(
-                              'נקודה נבחרה: ${_selectedLocation!.latitude.toStringAsFixed(6)}, ${_selectedLocation!.longitude.toStringAsFixed(6)}',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
                             ),
                           ),
                         ),
 
-                      // Instruction text
-                      if (_selectedLocation == null)
+                      // Instruction text (when no location selected and no search)
+                      if (_selectedLocation == null && _searchResults.isEmpty && !_isSearching)
                         Positioned(
-                          top: 8,
+                          top: 60,
                           left: 8,
                           right: 8,
                           child: Container(
@@ -241,12 +471,12 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.blue.shade50.withOpacity(0.9),
+                              color: Colors.blue.shade50.withOpacity(0.95),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: Colors.blue.shade200),
                             ),
                             child: const Text(
-                              'לחץ על המפה לבחירת מיקום',
+                              'חפש מיקום או לחץ על המפה',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 14,
