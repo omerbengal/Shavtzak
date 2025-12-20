@@ -24,18 +24,33 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
 
   List<TeamMember> _allTeamMembers = [];
   List<TeamMember> _filteredTeamMembers = [];
-  bool _isLoading = true;
+  late bool _isLoading;
   String _searchQuery = '';
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
+
+    // Check initial TeamBloc state - if already loaded, use that data immediately
+    final teamState = context.read<TeamBloc>().state;
+    if (teamState is TeamLoaded) {
+      _isLoading = false;
+      _allTeamMembers = teamState.members;
+      _filteredTeamMembers = List.from(_allTeamMembers);
+    } else {
+      _isLoading = true;
+    }
+
     // Trigger initial check and load team members
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<UserSelectionBloc>().add(const CheckCachedUser());
-      // Trigger TeamBloc to load all team members (including inactive)
-      context.read<TeamBloc>().add(const LoadTeamMembers());
+      // Only trigger LoadTeamMembers if TeamBloc is in initial state
+      // (main.dart now auto-loads team members when TeamBloc is created)
+      final currentState = context.read<TeamBloc>().state;
+      if (currentState is TeamInitial) {
+        context.read<TeamBloc>().add(const LoadTeamMembers());
+      }
     });
 
     _searchController.addListener(_onSearchChanged);

@@ -51,11 +51,8 @@ Future<void> _initialize() async {
     // Initialize connectivity service (for offline detection in test mode)
     ConnectivityService.instance.initialize();
 
-    // Preload Rubik font to prevent FOUT (Flash of Unstyled Text)
-    await _preloadFont();
-
-    // Use path-based URLs instead of hash-based URLs
-    // usePathUrlStrategy();
+    // Start font preloading in parallel (don't await yet)
+    final fontFuture = _preloadFont();
 
     // Initialize Firebase
     await Firebase.initializeApp(
@@ -69,8 +66,17 @@ Future<void> _initialize() async {
     // Initialize services
     final userCacheService = UserCacheService();
 
-    // Initialize DriveService from Firestore config
-    await _initializeDriveService(database);
+    // Run parallel initialization tasks:
+    // 1. DriveService config loading
+    // 2. CalendarSyncBloc config loading
+    // 3. Font preloading (already started)
+    final results = await Future.wait([
+      _initializeDriveService(database),
+      _createCalendarSyncBloc(database),
+      fontFuture,
+    ]);
+
+    final calendarSyncBloc = results[1] as CalendarSyncBloc;
 
     // Initialize repositories
     final teamRepository = TeamRepository(database);
@@ -87,6 +93,7 @@ Future<void> _initialize() async {
       eventRepository: eventRepository,
       assignmentRepository: assignmentRepository,
       userSelectionRepository: userSelectionRepository,
+      calendarSyncBloc: calendarSyncBloc,
     ));
   } catch (e) {
     // Show error screen
@@ -99,8 +106,7 @@ Future<void> _preloadFont() async {
   try {
     // Preload the font by loading it into memory
     await rootBundle.load('assets/fonts/Rubik-VariableFont_wght.ttf');
-    // Give the font a moment to register with the Flutter engine
-    await Future.delayed(const Duration(milliseconds: 100));
+    // Font is loaded - Flutter engine will register it on next frame
   } catch (e) {
     // Font loading failed, app will fall back to default system font
   }
@@ -111,6 +117,7 @@ class MyApp extends StatelessWidget {
   final EventRepository eventRepository;
   final AssignmentRepository assignmentRepository;
   final UserSelectionRepository userSelectionRepository;
+  final CalendarSyncBloc calendarSyncBloc;
 
   const MyApp({
     super.key,
@@ -118,6 +125,7 @@ class MyApp extends StatelessWidget {
     required this.eventRepository,
     required this.assignmentRepository,
     required this.userSelectionRepository,
+    required this.calendarSyncBloc,
   });
 
   @override
@@ -133,105 +141,82 @@ class MyApp extends StatelessWidget {
         listenable: EnvironmentService.instance,
         builder: (context, child) {
           final env = EnvironmentService.instance.isTestMode ? 'TEST' : 'PROD';
-          return FutureBuilder<CalendarSyncBloc>(
-            future: _createCalendarSyncBloc(env),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const MaterialApp(
-                  home: Scaffold(
-                    body: Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
-                );
-              }
 
-              if (snapshot.hasError) {
-                return MaterialApp(
-                  home: Scaffold(
-                    body: Center(
-                      child: Text('Error initializing app: ${snapshot.error}'),
-                    ),
-                  ),
-                );
-              }
+          return MultiBlocProvider(
+            key: ValueKey(EnvironmentService.instance.isTestMode),
+            providers: [
+              // CalendarSyncBloc - already initialized
+              BlocProvider.value(value: calendarSyncBloc),
+              BlocProvider(
+                create: (context) {
+                  developer.log('main.dart: Creating TeamBloc for $env environment', name: 'Main');
+                  final teamBloc = TeamBloc(
+                    context.read<TeamRepository>(),
+                    context.read<AssignmentRepository>(),
+                    calendarSyncBloc: context.read<CalendarSyncBloc>(),
+                  );
+                  // Start loading team members immediately to avoid loading screen in WhoamiScreen
+                  teamBloc.add(const LoadTeamMembers());
+                  return teamBloc;
+                },
+              ),
+              BlocProvider(
+                create: (context) {
+                  developer.log('main.dart: Creating EventBloc for $env environment', name: 'Main');
+                  return EventBloc(
+                    context.read<EventRepository>(),
+                    context.read<AssignmentRepository>(),
+                  );
+                },
+              ),
+              BlocProvider(
+                create: (context) {
+                  developer.log('main.dart: Creating AssignmentBloc for $env environment', name: 'Main');
+                  return AssignmentBloc(
+                    context.read<AssignmentRepository>(),
+                    context.read<EventRepository>(),
+                    context.read<TeamRepository>(),
+                  );
+                },
+              ),
+              BlocProvider(
+                create: (context) {
+                  developer.log('main.dart: Creating UserSelectionBloc for $env environment', name: 'Main');
+                  return UserSelectionBloc(
+                    userSelectionRepository,
+                    context.read<TeamRepository>(),
+                  );
+                },
+              ),
+            ],
+            child: Builder(
+              builder: (context) {
+                final userSelectionBloc = context.read<UserSelectionBloc>();
+                final userSelectionRepository = context.read<UserSelectionRepository>();
+                final teamBloc = context.read<TeamBloc>();
 
-              final calendarSyncBloc = snapshot.data!;
-
-              return MultiBlocProvider(
-                key: ValueKey(EnvironmentService.instance.isTestMode),
-                providers: [
-                  // CalendarSyncBloc
-                  BlocProvider.value(value: calendarSyncBloc),
-                  BlocProvider(
-                    create: (context) {
-                      developer.log('main.dart: Creating TeamBloc for $env environment', name: 'Main');
-                      return TeamBloc(
-                        context.read<TeamRepository>(),
-                        context.read<AssignmentRepository>(),
-                        calendarSyncBloc: context.read<CalendarSyncBloc>(),
-                      );
-                    },
-                  ),
-                  BlocProvider(
-                    create: (context) {
-                      developer.log('main.dart: Creating EventBloc for $env environment', name: 'Main');
-                      return EventBloc(
-                        context.read<EventRepository>(),
-                        context.read<AssignmentRepository>(),
-                      );
-                    },
-                  ),
-                  BlocProvider(
-                    create: (context) {
-                      developer.log('main.dart: Creating AssignmentBloc for $env environment', name: 'Main');
-                      return AssignmentBloc(
-                        context.read<AssignmentRepository>(),
-                        context.read<EventRepository>(),
-                        context.read<TeamRepository>(),
-                      );
-                    },
-                  ),
-                  BlocProvider(
-                    create: (context) {
-                      developer.log('main.dart: Creating UserSelectionBloc for $env environment', name: 'Main');
-                      return UserSelectionBloc(
-                        userSelectionRepository,
-                        context.read<TeamRepository>(),
-                      );
-                    },
-                  ),
-                ],
-                child: Builder(
-                  builder: (context) {
-                    final userSelectionBloc = context.read<UserSelectionBloc>();
-                    final userSelectionRepository = context.read<UserSelectionRepository>();
-                    final teamBloc = context.read<TeamBloc>();
-
-                    return BlocListener<UserSelectionBloc, UserSelectionState>(
-                      listener: (context, state) {
-                        // Clear all BLoC states when user signs out
-                        if (state is UserSignedOut) {
-                          teamBloc.add(const ClearTeamState());
-                          // TODO: Add similar clear events for EventBloc and AssignmentBloc
-                        }
-                      },
-                      child: OfflineBlockingOverlay(
-                        child: MaterialApp.router(
-                          title: 'שבצק - ניהול צוות',
-                          theme: AppTheme.lightTheme,
-                          debugShowCheckedModeBanner: false,
-                          routerConfig: AppRouter.router(
-                            userSelectionBloc: userSelectionBloc,
-                            userSelectionRepository: userSelectionRepository,
-                          ),
-                        ),
-                      ),
-                    );
+                return BlocListener<UserSelectionBloc, UserSelectionState>(
+                  listener: (context, state) {
+                    // Clear all BLoC states when user signs out
+                    if (state is UserSignedOut) {
+                      teamBloc.add(const ClearTeamState());
+                      // TODO: Add similar clear events for EventBloc and AssignmentBloc
+                    }
                   },
-                ),
-              );
-            },
+                  child: OfflineBlockingOverlay(
+                    child: MaterialApp.router(
+                      title: 'שבצק - ניהול צוות',
+                      theme: AppTheme.lightTheme,
+                      debugShowCheckedModeBanner: false,
+                      routerConfig: AppRouter.router(
+                        userSelectionBloc: userSelectionBloc,
+                        userSelectionRepository: userSelectionRepository,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
           );
         },
       ),
@@ -270,13 +255,13 @@ Future<void> _initializeDriveService(FirestoreDatabase database) async {
 }
 
 /// Create and initialize CalendarSyncBloc with config from Firestore
-Future<CalendarSyncBloc> _createCalendarSyncBloc(String env) async {
+Future<CalendarSyncBloc> _createCalendarSyncBloc(FirestoreDatabase database) async {
+  final env = EnvironmentService.instance.isTestMode ? 'TEST' : 'PROD';
   developer.log('main.dart: Creating CalendarSyncBloc for $env environment', name: 'Main');
-  final db = FirestoreDatabase();
-  final bloc = CalendarSyncBloc(database: db);
+  final bloc = CalendarSyncBloc(database: database);
 
   // Initialize with credentials from Firestore
-  final config = await db.getGoogleCalendarConfig();
+  final config = await database.getGoogleCalendarConfig();
 
   if (config != null && config['serviceAccountJson'] != null && config['calendarId'] != null) {
     bloc.add(InitializeCalendarSync(
