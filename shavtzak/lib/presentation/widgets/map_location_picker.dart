@@ -337,7 +337,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
       _selectedLocation = location;
       _selectedLocationName = _formatDisplayName(result.displayName);
       _searchResults = [];
-      _searchController.clear();
+      // Keep search text so admin can see what they searched for
     });
     _searchFocusNode.unfocus();
     _mapController.move(location, 16.0); // Zoom in to selected location
