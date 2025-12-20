@@ -165,6 +165,9 @@ class MapLocationPicker extends StatefulWidget {
   /// Initial longitude (defaults to Tel Aviv)
   final double? initialLongitude;
 
+  /// Initial location name (to display when re-opening with existing location)
+  final String? initialLocationName;
+
   /// Initial zoom level
   final double initialZoom;
 
@@ -175,6 +178,7 @@ class MapLocationPicker extends StatefulWidget {
     super.key,
     this.initialLatitude,
     this.initialLongitude,
+    this.initialLocationName,
     this.initialZoom = 13.0,
     this.title = 'בחר מיקום',
   });
@@ -184,6 +188,7 @@ class MapLocationPicker extends StatefulWidget {
     BuildContext context, {
     double? initialLatitude,
     double? initialLongitude,
+    String? initialLocationName,
     double initialZoom = 13.0,
     String title = 'בחר מיקום',
   }) {
@@ -192,6 +197,7 @@ class MapLocationPicker extends StatefulWidget {
       builder: (context) => MapLocationPicker(
         initialLatitude: initialLatitude,
         initialLongitude: initialLongitude,
+        initialLocationName: initialLocationName,
         initialZoom: initialZoom,
         title: title,
       ),
@@ -230,6 +236,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
     // If initial location was provided, set it as selected
     if (widget.initialLatitude != null && widget.initialLongitude != null) {
       _selectedLocation = _initialCenter;
+      _selectedLocationName = widget.initialLocationName;
     }
   }
 
