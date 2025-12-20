@@ -66,6 +66,10 @@ dependencies:
   # URL Launcher for phone calls
   url_launcher: ^6.3.0
 
+  # Map (for location picking in test environment)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
