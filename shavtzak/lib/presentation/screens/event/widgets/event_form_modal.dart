@@ -679,15 +679,14 @@ class _EventFormModalState extends State<EventFormModal> {
                                           tooltip: 'בחר מיקום במפה',
                                           onPressed: () async {
                                             // Try to parse existing coordinates from location field
+                                            // Handles both "Name (lat, lng)" and "lat, lng" formats
                                             double? initialLat;
                                             double? initialLng;
                                             final currentLocation = _locationController.text.trim();
                                             if (currentLocation.isNotEmpty) {
-                                              final parts = currentLocation.split(',');
-                                              if (parts.length == 2) {
-                                                initialLat = double.tryParse(parts[0].trim());
-                                                initialLng = double.tryParse(parts[1].trim());
-                                              }
+                                              final (lat, lng) = MapLocationResult.parseCoordinates(currentLocation);
+                                              initialLat = lat;
+                                              initialLng = lng;
                                             }
 
                                             final result = await MapLocationPicker.show(

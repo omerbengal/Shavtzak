@@ -17,15 +17,44 @@ class MapLocationResult {
     this.locationName,
   });
 
-  /// Format as a string for display
-  /// Returns location name if available, otherwise coordinates
+  /// Format as a string for display and storage
+  /// Format: "Location Name (lat, lng)" or just "lat, lng" if no name
+  /// This format allows re-parsing to extract coordinates later
   String toDisplayString() {
-    return locationName ?? '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+    final coords = '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+    if (locationName != null) {
+      return '$locationName ($coords)';
+    }
+    return coords;
   }
 
   /// Get coordinates as a string
   String toCoordinatesString() {
     return '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+  }
+
+  /// Parse a location string to extract coordinates
+  /// Handles both "Name (lat, lng)" and "lat, lng" formats
+  static (double?, double?) parseCoordinates(String location) {
+    // Try to extract coordinates from parentheses: "Name (lat, lng)"
+    final parenMatch = RegExp(r'\(([^)]+)\)$').firstMatch(location);
+    String coordsPart;
+
+    if (parenMatch != null) {
+      coordsPart = parenMatch.group(1)!;
+    } else {
+      coordsPart = location;
+    }
+
+    final parts = coordsPart.split(',');
+    if (parts.length == 2) {
+      final lat = double.tryParse(parts[0].trim());
+      final lng = double.tryParse(parts[1].trim());
+      if (lat != null && lng != null) {
+        return (lat, lng);
+      }
+    }
+    return (null, null);
   }
 }
 
@@ -195,17 +224,19 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
       startIndex++;
     }
 
-    // Find city - skip neighborhoods/districts, look for a city-like part
-    // Cities in Israel usually don't have "רחוב", numbers, or "נפת"
-    for (int i = startIndex; i < parts.length; i++) {
+    // Find city - search BACKWARDS from the end to find the city
+    // City is typically right before district (נפת/מחוז) or country
+    // Skip: districts, country, and take the first valid city name
+    for (int i = parts.length - 1; i >= startIndex; i--) {
       final part = parts[i];
-      // Skip if it's a district, country, or has street indicators
+      // Skip district, country indicators
       if (part.contains('נפת') ||
           part.contains('מחוז') ||
           part.contains('ישראל') ||
           part.contains('Israel')) {
         continue;
       }
+      // Found the city (first non-district/country from the end)
       city = part;
       break;
     }
