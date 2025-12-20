@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
-import '../../../../core/services/environment_service.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../data/repositories/assignment_repository.dart';
@@ -695,57 +694,55 @@ class _EventFormModalState extends State<EventFormModal> {
                                   hintText: 'לדוגמה: אולמי ורסאי',
                                   prefixIcon: const Icon(Icons.location_on),
                                   border: const OutlineInputBorder(),
-                                  // Map picker button - only in test mode
-                                  suffixIcon: EnvironmentService.instance.isTestMode
-                                      ? IconButton(
-                                          icon: const Icon(Icons.map, color: Colors.blue),
-                                          tooltip: 'בחר מיקום במפה',
-                                          onPressed: () async {
-                                            // Try to parse existing coordinates from raw location value
-                                            // Only use if user hasn't manually edited the field
-                                            double? initialLat;
-                                            double? initialLng;
-                                            String? initialName;
+                                  // Map picker button
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.map, color: Colors.blue),
+                                    tooltip: 'בחר מיקום במפה',
+                                    onPressed: () async {
+                                      // Try to parse existing coordinates from raw location value
+                                      // Only use if user hasn't manually edited the field
+                                      double? initialLat;
+                                      double? initialLng;
+                                      String? initialName;
 
-                                            final currentText = _locationController.text.trim();
-                                            final rawLocation = _rawLocationValue;
+                                      final currentText = _locationController.text.trim();
+                                      final rawLocation = _rawLocationValue;
 
-                                            // Check if user manually edited the field
-                                            if (rawLocation != null && currentText.isNotEmpty) {
-                                              final strippedRaw = MapLocationResult.stripCoordinates(rawLocation);
-                                              if (strippedRaw == currentText) {
-                                                // User didn't edit, use saved coordinates
-                                                final (lat, lng) = MapLocationResult.parseCoordinates(rawLocation);
-                                                initialLat = lat;
-                                                initialLng = lng;
-                                                initialName = strippedRaw;
-                                                // Only use name if it's not just coordinates
-                                                if (initialName == rawLocation && lat != null) {
-                                                  initialName = null;
-                                                }
-                                              }
-                                              // If user edited, leave initialLat/Lng/Name as null (fresh start)
-                                            }
+                                      // Check if user manually edited the field
+                                      if (rawLocation != null && currentText.isNotEmpty) {
+                                        final strippedRaw = MapLocationResult.stripCoordinates(rawLocation);
+                                        if (strippedRaw == currentText) {
+                                          // User didn't edit, use saved coordinates
+                                          final (lat, lng) = MapLocationResult.parseCoordinates(rawLocation);
+                                          initialLat = lat;
+                                          initialLng = lng;
+                                          initialName = strippedRaw;
+                                          // Only use name if it's not just coordinates
+                                          if (initialName == rawLocation && lat != null) {
+                                            initialName = null;
+                                          }
+                                        }
+                                        // If user edited, leave initialLat/Lng/Name as null (fresh start)
+                                      }
 
-                                            final result = await MapLocationPicker.show(
-                                              context,
-                                              title: 'בחר מיקום לאירוע',
-                                              initialLatitude: initialLat,
-                                              initialLongitude: initialLng,
-                                              initialLocationName: initialName,
-                                            );
-                                            if (result != null) {
-                                              setState(() {
-                                                // Store raw value with coordinates for later use
-                                                _rawLocationValue = result.toDisplayString();
-                                                // Display stripped version (name only, no coordinates)
-                                                _locationController.text = MapLocationResult.stripCoordinates(result.toDisplayString());
-                                                _isDirty = true;
-                                              });
-                                            }
-                                          },
-                                        )
-                                      : null,
+                                      final result = await MapLocationPicker.show(
+                                        context,
+                                        title: 'בחר מיקום לאירוע',
+                                        initialLatitude: initialLat,
+                                        initialLongitude: initialLng,
+                                        initialLocationName: initialName,
+                                      );
+                                      if (result != null) {
+                                        setState(() {
+                                          // Store raw value with coordinates for later use
+                                          _rawLocationValue = result.toDisplayString();
+                                          // Display stripped version (name only, no coordinates)
+                                          _locationController.text = MapLocationResult.stripCoordinates(result.toDisplayString());
+                                          _isDirty = true;
+                                        });
+                                      }
+                                    },
+                                  ),
                                 ),
                                 validator: (value) {
                                   if (value == null || value.trim().isEmpty) {
