@@ -59,6 +59,7 @@ class AppTheme {
         elevation: 2,
         centerTitle: true,
         titleTextStyle: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: textOnPrimary,
