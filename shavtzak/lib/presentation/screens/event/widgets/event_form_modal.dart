@@ -57,6 +57,7 @@ class _EventFormModalState extends State<EventFormModal> {
   String? _dateError; // Track date validation error
   final _nameFocusNode = FocusNode(); // For name field blur detection
   bool _duplicateAssignments = false; // For duplication mode checkbox
+  String? _rawLocationValue; // Stores location with hidden coordinates (Name||lat,lng)
 
   // For highlighting selected role
   ScrollController? _scrollController; // Will be set from DraggableScrollableSheet
@@ -77,7 +78,9 @@ class _EventFormModalState extends State<EventFormModal> {
     }
     if (_isEditMode) {
       _nameController.text = widget.event!.name;
-      _locationController.text = widget.event!.location;
+      // Store raw location value and display stripped version
+      _rawLocationValue = widget.event!.location;
+      _locationController.text = MapLocationResult.stripCoordinates(widget.event!.location);
       _commentsController.text = widget.event!.comments;
       _startTimeController.text = widget.event!.startTime;
       _endTimeController.text = widget.event!.endTime;
@@ -211,10 +214,19 @@ class _EventFormModalState extends State<EventFormModal> {
         return;
       }
 
+      // Use raw location value (with hidden coordinates) if available and unchanged
+      String dupLocationValue = _locationController.text.trim();
+      if (_rawLocationValue != null) {
+        final strippedRaw = MapLocationResult.stripCoordinates(_rawLocationValue!);
+        if (strippedRaw == dupLocationValue) {
+          dupLocationValue = _rawLocationValue!;
+        }
+      }
+
       context.read<EventBloc>().add(DuplicateEvent(
         eventId: widget.event!.id,
         newName: _nameController.text,
-        newLocation: _locationController.text,
+        newLocation: dupLocationValue,
         newComments: _commentsController.text,
         newStartDate: _startDate!,
         newEndDate: _endDate!,
@@ -359,6 +371,17 @@ class _EventFormModalState extends State<EventFormModal> {
     }
 
     final now = DateTime.now();
+    // Use raw location value (with hidden coordinates) if available and unchanged
+    // Otherwise use the text field value (user typed manually)
+    String locationValue = _locationController.text.trim();
+    if (_rawLocationValue != null) {
+      final strippedRaw = MapLocationResult.stripCoordinates(_rawLocationValue!);
+      if (strippedRaw == locationValue) {
+        // User didn't manually edit, use raw value with coordinates
+        locationValue = _rawLocationValue!;
+      }
+    }
+
     final event = Event(
       id: _isEditMode ? widget.event!.id : const Uuid().v4(),
       name: _nameController.text.trim(),
@@ -367,7 +390,7 @@ class _EventFormModalState extends State<EventFormModal> {
       startTime: _startTimeController.text.trim(),
       endTime: _endTimeController.text.trim(),
       assemblyTime: _assemblyTimeController.text.trim(),
-      location: _locationController.text.trim(),
+      location: locationValue,
       requiresArmed: _requiresArmed,
       comments: _commentsController.text.trim(),
       roleRequirements: _roleRequirements,
@@ -678,13 +701,13 @@ class _EventFormModalState extends State<EventFormModal> {
                                           icon: const Icon(Icons.map, color: Colors.blue),
                                           tooltip: 'בחר מיקום במפה',
                                           onPressed: () async {
-                                            // Try to parse existing coordinates from location field
-                                            // Handles both "Name (lat, lng)" and "lat, lng" formats
+                                            // Try to parse existing coordinates from raw location value
+                                            // Handles: "Name||lat,lng", "Name (lat, lng)", and "lat, lng" formats
                                             double? initialLat;
                                             double? initialLng;
-                                            final currentLocation = _locationController.text.trim();
-                                            if (currentLocation.isNotEmpty) {
-                                              final (lat, lng) = MapLocationResult.parseCoordinates(currentLocation);
+                                            final rawLocation = _rawLocationValue ?? _locationController.text.trim();
+                                            if (rawLocation.isNotEmpty) {
+                                              final (lat, lng) = MapLocationResult.parseCoordinates(rawLocation);
                                               initialLat = lat;
                                               initialLng = lng;
                                             }
@@ -697,7 +720,10 @@ class _EventFormModalState extends State<EventFormModal> {
                                             );
                                             if (result != null) {
                                               setState(() {
-                                                _locationController.text = result.toDisplayString();
+                                                // Store raw value with coordinates for later use
+                                                _rawLocationValue = result.toDisplayString();
+                                                // Display stripped version (name only, no coordinates)
+                                                _locationController.text = MapLocationResult.stripCoordinates(result.toDisplayString());
                                                 _isDirty = true;
                                               });
                                             }
