@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../../core/utils/web_url_launcher.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
 import '../../../core/constants/role_types.dart';
@@ -470,32 +470,23 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    // Navigation buttons row
+                    // Navigation icons (inline with location)
                     Row(
                       children: [
-                        const SizedBox(width: 32), // Align with text above
-                        Text(
-                          'נווט עם:',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: secondaryTextColor,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Google Maps button
-                        _buildNavigationButton(
-                          icon: Icons.map,
-                          label: 'Google Maps',
+                        const SizedBox(width: 8),
+                        // Google Maps icon button
+                        _buildNavigationIconButton(
+                          icon: Icons.map_outlined,
+                          tooltip: 'Google Maps',
                           color: Colors.green.shade600,
                           onTap: () => _openGoogleMaps(event.location),
                         ),
-                        const SizedBox(width: 12),
-                        // Waze button
-                        _buildNavigationButton(
-                          icon: Icons.navigation,
-                          label: 'Waze',
-                          color: Colors.blue.shade600,
+                        const SizedBox(width: 8),
+                        // Waze icon button
+                        _buildNavigationIconButton(
+                          icon: Icons.navigation_outlined,
+                          tooltip: 'Waze',
+                          color: Colors.lightBlue.shade500,
                           onTap: () => _openWaze(event.location),
                         ),
                       ],
@@ -828,77 +819,62 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
         date1.day == date2.day;
   }
 
-  Widget _buildNavigationButton({
+  Widget _buildNavigationIconButton({
     required IconData icon,
-    required String label,
+    required String tooltip,
     required Color color,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: color.withAlpha((255 * 0.1).round()),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withAlpha((255 * 0.3).round())),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-            ),
-          ],
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withAlpha((255 * 0.15).round()),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withAlpha((255 * 0.4).round())),
+          ),
+          child: Icon(icon, size: 24, color: color),
         ),
       ),
     );
   }
 
   /// Open Google Maps with directions to the location
-  Future<void> _openGoogleMaps(String location) async {
+  void _openGoogleMaps(String location) {
     final (lat, lng) = MapLocationResult.parseCoordinates(location);
 
-    Uri uri;
+    String url;
     if (lat != null && lng != null) {
       // Use coordinates for precise navigation
-      uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+      url = 'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng';
     } else {
       // Fall back to search by location name
       final query = MapLocationResult.stripCoordinates(location);
-      uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}');
+      url = 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}';
     }
 
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    launchUrlWithAutoClose(url);
   }
 
   /// Open Waze with directions to the location
-  Future<void> _openWaze(String location) async {
+  void _openWaze(String location) {
     final (lat, lng) = MapLocationResult.parseCoordinates(location);
 
-    Uri uri;
+    String url;
     if (lat != null && lng != null) {
       // Use coordinates for precise navigation
-      uri = Uri.parse('https://waze.com/ul?ll=$lat,$lng&navigate=yes');
+      url = 'https://waze.com/ul?ll=$lat,$lng&navigate=yes';
     } else {
       // Fall back to search by location name
       final query = MapLocationResult.stripCoordinates(location);
-      uri = Uri.parse('https://waze.com/ul?q=${Uri.encodeComponent(query)}&navigate=yes');
+      url = 'https://waze.com/ul?q=${Uri.encodeComponent(query)}&navigate=yes';
     }
 
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    launchUrlWithAutoClose(url);
   }
 
   Widget _buildEmptyState() {
