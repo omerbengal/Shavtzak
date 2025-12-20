@@ -5,18 +5,26 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
-/// Result from the map location picker containing latitude and longitude
+/// Result from the map location picker containing latitude, longitude, and optional name
 class MapLocationResult {
   final double latitude;
   final double longitude;
+  final String? locationName; // Name from search, null if manually tapped
 
   const MapLocationResult({
     required this.latitude,
     required this.longitude,
+    this.locationName,
   });
 
   /// Format as a string for display
+  /// Returns location name if available, otherwise coordinates
   String toDisplayString() {
+    return locationName ?? '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+  }
+
+  /// Get coordinates as a string
+  String toCoordinatesString() {
     return '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
   }
 }
@@ -83,6 +91,7 @@ class MapLocationPicker extends StatefulWidget {
 class _MapLocationPickerState extends State<MapLocationPicker> {
   late MapController _mapController;
   LatLng? _selectedLocation;
+  String? _selectedLocationName; // Name of the selected location (from search)
   late LatLng _initialCenter;
 
   // Search functionality
@@ -122,8 +131,27 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   void _onMapTap(TapPosition tapPosition, LatLng point) {
     setState(() {
       _selectedLocation = point;
+      _selectedLocationName = null; // Clear name when tapping manually
       _searchResults = []; // Clear search results when tapping map
     });
+  }
+
+  /// Format the display name from Nominatim to be more readable
+  /// Reverses the order (Nominatim returns: specific → general, we want: general → specific for Hebrew)
+  /// and takes only the most relevant parts
+  String _formatDisplayName(String displayName) {
+    final parts = displayName.split(',').map((p) => p.trim()).toList();
+
+    // Take up to 3-4 most relevant parts and reverse for Hebrew reading
+    // Nominatim format: "Street, Neighborhood, City, District, Country"
+    // We want: "City, Neighborhood, Street" or similar
+    if (parts.length <= 3) {
+      return parts.reversed.join(', ');
+    }
+
+    // For longer addresses, take the first 3 parts (most specific) and reverse
+    final relevantParts = parts.take(3).toList().reversed.toList();
+    return relevantParts.join(', ');
   }
 
   void _confirmSelection() {
@@ -131,6 +159,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
       Navigator.of(context).pop(MapLocationResult(
         latitude: _selectedLocation!.latitude,
         longitude: _selectedLocation!.longitude,
+        locationName: _selectedLocationName,
       ));
     }
   }
@@ -211,6 +240,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
     final location = LatLng(result.latitude, result.longitude);
     setState(() {
       _selectedLocation = location;
+      _selectedLocationName = _formatDisplayName(result.displayName);
       _searchResults = [];
       _searchController.clear();
     });
@@ -386,6 +416,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                   ),
                                   itemBuilder: (context, index) {
                                     final result = _searchResults[index];
+                                    final formattedName = _formatDisplayName(result.displayName);
                                     return InkWell(
                                       onTap: () => _selectSearchResult(result),
                                       child: Padding(
@@ -403,7 +434,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                             const SizedBox(width: 12),
                                             Expanded(
                                               child: Text(
-                                                result.displayName,
+                                                formattedName,
                                                 maxLines: 2,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: const TextStyle(fontSize: 14),
@@ -420,7 +451,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                         ),
                       ),
 
-                      // Coordinates display (when location selected and no search results)
+                      // Selected location display (when location selected and no search results)
                       if (_selectedLocation != null && _searchResults.isEmpty)
                         Positioned(
                           top: 60,
@@ -445,13 +476,19 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                   size: 18,
                                 ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  '${_selectedLocation!.latitude.toStringAsFixed(6)}, ${_selectedLocation!.longitude.toStringAsFixed(6)}',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.green.shade800,
+                                Flexible(
+                                  child: Text(
+                                    // Show location name if available, otherwise show coordinates
+                                    _selectedLocationName ??
+                                        '${_selectedLocation!.latitude.toStringAsFixed(6)}, ${_selectedLocation!.longitude.toStringAsFixed(6)}',
+                                    textAlign: TextAlign.center,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 2,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.green.shade800,
+                                    ),
                                   ),
                                 ),
                               ],
