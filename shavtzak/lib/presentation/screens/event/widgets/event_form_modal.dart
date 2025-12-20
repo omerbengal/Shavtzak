@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
+import '../../../../core/services/environment_service.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../data/repositories/assignment_repository.dart';
@@ -10,6 +11,7 @@ import '../../../bloc/event/event_bloc.dart';
 import '../../../bloc/event/event_event.dart';
 import '../../../bloc/event/event_state.dart';
 import '../../../widgets/date_picker_dialog.dart';
+import '../../../widgets/map_location_picker.dart';
 import '../quota_reduction_analyzer.dart';
 import 'quota_reduction_dialog.dart';
 import 'duplication_conflict_resolution_dialog.dart';
@@ -665,11 +667,44 @@ class _EventFormModalState extends State<EventFormModal> {
                               TextFormField(
                                 controller: _locationController,
                                 textDirection: TextDirection.rtl,
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
                                   labelText: 'מיקום',
                                   hintText: 'לדוגמה: אולמי ורסאי',
-                                  prefixIcon: Icon(Icons.location_on),
-                                  border: OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.location_on),
+                                  border: const OutlineInputBorder(),
+                                  // Map picker button - only in test mode
+                                  suffixIcon: EnvironmentService.instance.isTestMode
+                                      ? IconButton(
+                                          icon: const Icon(Icons.map, color: Colors.blue),
+                                          tooltip: 'בחר מיקום במפה',
+                                          onPressed: () async {
+                                            // Try to parse existing coordinates from location field
+                                            double? initialLat;
+                                            double? initialLng;
+                                            final currentLocation = _locationController.text.trim();
+                                            if (currentLocation.isNotEmpty) {
+                                              final parts = currentLocation.split(',');
+                                              if (parts.length == 2) {
+                                                initialLat = double.tryParse(parts[0].trim());
+                                                initialLng = double.tryParse(parts[1].trim());
+                                              }
+                                            }
+
+                                            final result = await MapLocationPicker.show(
+                                              context,
+                                              title: 'בחר מיקום לאירוע',
+                                              initialLatitude: initialLat,
+                                              initialLongitude: initialLng,
+                                            );
+                                            if (result != null) {
+                                              setState(() {
+                                                _locationController.text = result.toDisplayString();
+                                                _isDirty = true;
+                                              });
+                                            }
+                                          },
+                                        )
+                                      : null,
                                 ),
                                 validator: (value) {
                                   if (value == null || value.trim().isEmpty) {
