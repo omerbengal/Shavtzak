@@ -94,6 +94,10 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # App assets
+  assets:
+    - assets/images/
+
   # Custom fonts for Hebrew support
   fonts:
     - family: Rubik

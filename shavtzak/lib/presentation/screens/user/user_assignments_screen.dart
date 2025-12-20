@@ -458,7 +458,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Expanded(
+                        Flexible(
                           child: Text(
                             MapLocationResult.stripCoordinates(event.location),
                             style: TextStyle(
@@ -466,34 +466,19 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                               fontWeight: FontWeight.bold,
                               color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        // Navigation icons (inline with location) - only show if location was picked using map picker
+                        if (_isLocationPickedFromMap(event.location)) ...[
+                          const SizedBox(width: 8),
+                          _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.location)),
+                          const SizedBox(width: 8),
+                          _buildWazeButton(onTap: () => _openWaze(event.location)),
+                        ],
                       ],
                     ),
-                    // Navigation icons (inline with location) - only show if location was picked using map picker
-                    if (_isLocationPickedFromMap(event.location)) ...[
-                      Row(
-                        children: [
-                          const SizedBox(width: 8),
-                          // Google Maps icon button
-                          _buildNavigationIconButton(
-                            icon: Icons.map_outlined,
-                            tooltip: 'Google Maps',
-                            color: Colors.green.shade600,
-                            onTap: () => _openGoogleMaps(event.location),
-                          ),
-                          const SizedBox(width: 8),
-                          // Waze icon button
-                          _buildNavigationIconButton(
-                            icon: Icons.navigation_outlined,
-                            tooltip: 'Waze',
-                            color: Colors.lightBlue.shade500,
-                            onTap: () => _openWaze(event.location),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                    ],
+                    const SizedBox(height: 10),
                   ],
                   // Assembly time row
                   Row(
@@ -821,25 +806,63 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
         date1.day == date2.day;
   }
 
-  Widget _buildNavigationIconButton({
-    required IconData icon,
-    required String tooltip,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildGoogleMapsButton({required VoidCallback onTap}) {
     return Tooltip(
-      message: tooltip,
+      message: 'Google Maps',
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: const EdgeInsets.all(8),
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
-            color: color.withAlpha((255 * 0.15).round()),
+            color: Colors.transparent,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withAlpha((255 * 0.4).round())),
           ),
-          child: Icon(icon, size: 24, color: color),
+          child: Image.asset(
+            'assets/images/google_maps.png',
+            width: 40,
+            height: 40,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return Icon(
+                Icons.map_outlined,
+                size: 40,
+                color: Colors.red.shade600,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWazeButton({required VoidCallback onTap}) {
+    return Tooltip(
+      message: 'Waze',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Image.asset(
+            'assets/images/waze.png',
+            width: 40,
+            height: 40,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return Icon(
+                Icons.navigation_outlined,
+                size: 40,
+                color: Colors.blue.shade600,
+              );
+            },
+          ),
         ),
       ),
     );
@@ -963,3 +986,4 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     );
   }
 }
+

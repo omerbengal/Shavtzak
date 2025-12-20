@@ -33,7 +33,11 @@
       "Bash(curl:*)",
       "WebSearch",
       "mcp__context7__resolve-library-id",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(file:*)",
+      "Bash(dart analyze:*)",
+      "Bash(dart:*)",
+      "Bash(echo:*)"
     ],
     "deny": [],
     "ask": []
