@@ -470,28 +470,30 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                         ),
                       ],
                     ),
-                    // Navigation icons (inline with location)
-                    Row(
-                      children: [
-                        const SizedBox(width: 8),
-                        // Google Maps icon button
-                        _buildNavigationIconButton(
-                          icon: Icons.map_outlined,
-                          tooltip: 'Google Maps',
-                          color: Colors.green.shade600,
-                          onTap: () => _openGoogleMaps(event.location),
-                        ),
-                        const SizedBox(width: 8),
-                        // Waze icon button
-                        _buildNavigationIconButton(
-                          icon: Icons.navigation_outlined,
-                          tooltip: 'Waze',
-                          color: Colors.lightBlue.shade500,
-                          onTap: () => _openWaze(event.location),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
+                    // Navigation icons (inline with location) - only show if location was picked using map picker
+                    if (_isLocationPickedFromMap(event.location)) ...[
+                      Row(
+                        children: [
+                          const SizedBox(width: 8),
+                          // Google Maps icon button
+                          _buildNavigationIconButton(
+                            icon: Icons.map_outlined,
+                            tooltip: 'Google Maps',
+                            color: Colors.green.shade600,
+                            onTap: () => _openGoogleMaps(event.location),
+                          ),
+                          const SizedBox(width: 8),
+                          // Waze icon button
+                          _buildNavigationIconButton(
+                            icon: Icons.navigation_outlined,
+                            tooltip: 'Waze',
+                            color: Colors.lightBlue.shade500,
+                            onTap: () => _openWaze(event.location),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                   ],
                   // Assembly time row
                   Row(
@@ -875,6 +877,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     }
 
     launchUrlWithAutoClose(url);
+  }
+
+  /// Check if the location was picked using the map picker
+  /// Map picker locations have coordinates stored after "||" separator
+  bool _isLocationPickedFromMap(String location) {
+    return location.contains('||');
   }
 
   Widget _buildEmptyState() {

@@ -12,6 +12,7 @@ import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/interactive_filter_bar.dart';
+import '../../widgets/map_location_picker.dart';
 import 'widgets/event_form_modal.dart';
 import 'dart:async';
 
@@ -56,6 +57,40 @@ class _EventListScreenState extends State<EventListScreen> {
     setState(() {
       FilterPersistence.eventFilterIndex = newIndex;
     });
+  }
+
+  /// Format location for display based on how it was entered
+  /// - Manual location: show as-is
+  /// - Map picker from search: show name/address only
+  /// - Map picker by pinpoint: show coordinates
+  String _formatLocationForDisplay(String location) {
+    if (location.isEmpty) return '-';
+
+    // Check if location was picked using map picker (contains || separator)
+    if (location.contains('||')) {
+      // This is a map-picked location from search
+      final strippedLocation = MapLocationResult.stripCoordinates(location);
+
+      if (strippedLocation.isNotEmpty) {
+        // Location was picked from search result - show the name/address
+        return strippedLocation;
+      }
+    }
+
+    // Check if this is coordinates-only (pinpointed on map)
+    final (lat, lng) = MapLocationResult.parseCoordinates(location);
+    if (lat != null && lng != null) {
+      // Check if the entire location string is just coordinates
+      // This happens when admin pinpoints directly on map
+      final coordPattern = RegExp(r'^\s*\d+\.\d+\s*,\s*\d+\.\d+\s*$');
+      if (coordPattern.hasMatch(location)) {
+        // This is a pinpointed location - format coordinates nicely
+        return '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}';
+      }
+    }
+
+    // This is a manually entered location - show as-is
+    return location;
   }
 
   @override
@@ -307,7 +342,7 @@ class _EventListScreenState extends State<EventListScreen> {
                     _buildFieldItem('תאריך התחלה', _formatDate(event.startDate)),
                     _buildFieldItem('תאריך סיום', _formatDate(event.endDate)),
                   ],
-                  _buildFieldItem('מיקום', event.location.isEmpty ? '-' : event.location),
+                  _buildFieldItem('מיקום', _formatLocationForDisplay(event.location)),
                   // Time fields
                   _buildFieldItem('שעת התייצבות', event.assemblyTime.isEmpty ? '-' : event.assemblyTime),
                   _buildFieldItem('שעת התחלה', event.startTime.isEmpty ? '-' : event.startTime),
