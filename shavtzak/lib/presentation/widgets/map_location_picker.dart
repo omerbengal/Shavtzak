@@ -5,18 +5,26 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
-/// Result from the map location picker containing latitude and longitude
+/// Result from the map location picker containing latitude, longitude, and optional name
 class MapLocationResult {
   final double latitude;
   final double longitude;
+  final String? locationName; // Name from search, null if manually tapped
 
   const MapLocationResult({
     required this.latitude,
     required this.longitude,
+    this.locationName,
   });
 
   /// Format as a string for display
+  /// Returns location name if available, otherwise coordinates
   String toDisplayString() {
+    return locationName ?? '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+  }
+
+  /// Get coordinates as a string
+  String toCoordinatesString() {
     return '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
   }
 }
@@ -83,6 +91,7 @@ class MapLocationPicker extends StatefulWidget {
 class _MapLocationPickerState extends State<MapLocationPicker> {
   late MapController _mapController;
   LatLng? _selectedLocation;
+  String? _selectedLocationName; // Name of the selected location (from search)
   late LatLng _initialCenter;
 
   // Search functionality
@@ -122,8 +131,91 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   void _onMapTap(TapPosition tapPosition, LatLng point) {
     setState(() {
       _selectedLocation = point;
+      _selectedLocationName = null; // Clear name when tapping manually
       _searchResults = []; // Clear search results when tapping map
     });
+  }
+
+  /// Format the display name from Nominatim to be more readable
+  /// Nominatim format: "Name, Number, Street, Neighborhood, City, District, Country"
+  /// We want: "Name, Street Number, City" or "Street Number, City"
+  String _formatDisplayName(String displayName) {
+    final parts = displayName.split(',').map((p) => p.trim()).toList();
+
+    if (parts.isEmpty) return displayName;
+    if (parts.length == 1) return parts[0];
+
+    final result = <String>[];
+
+    // Check if first part is a place name (not just a number)
+    final firstPart = parts[0];
+    final isFirstPartNumber = RegExp(r'^\d+$').hasMatch(firstPart);
+
+    String? placeName;
+    String? streetWithNumber;
+    String? city;
+
+    int startIndex = 0;
+
+    // If first part is not a number, it's likely a place name
+    if (!isFirstPartNumber) {
+      // Check if it looks like a street name (contains common street words)
+      final streetKeywords = ['רחוב', 'שדרות', 'דרך', 'סמטת', 'משעול', 'כיכר'];
+      final isStreet = streetKeywords.any((keyword) => firstPart.contains(keyword));
+
+      if (!isStreet) {
+        placeName = firstPart;
+        startIndex = 1;
+      }
+    }
+
+    // Find street with number
+    // Look for a number followed by street name, or street name followed by number
+    for (int i = startIndex; i < parts.length && i < startIndex + 3; i++) {
+      final part = parts[i];
+      final hasNumber = RegExp(r'\d').hasMatch(part);
+      final isJustNumber = RegExp(r'^\d+$').hasMatch(part);
+
+      if (isJustNumber && i + 1 < parts.length) {
+        // Number followed by street name: "123, Dizengoff Street"
+        streetWithNumber = '${parts[i + 1]} $part';
+        startIndex = i + 2;
+        break;
+      } else if (hasNumber) {
+        // Street with number included: "Dizengoff Street 123"
+        streetWithNumber = part;
+        startIndex = i + 1;
+        break;
+      }
+    }
+
+    // If no street with number found, take the first available part as street
+    if (streetWithNumber == null && startIndex < parts.length) {
+      streetWithNumber = parts[startIndex];
+      startIndex++;
+    }
+
+    // Find city - skip neighborhoods/districts, look for a city-like part
+    // Cities in Israel usually don't have "רחוב", numbers, or "נפת"
+    for (int i = startIndex; i < parts.length; i++) {
+      final part = parts[i];
+      // Skip if it's a district, country, or has street indicators
+      if (part.contains('נפת') ||
+          part.contains('מחוז') ||
+          part.contains('ישראל') ||
+          part.contains('Israel')) {
+        continue;
+      }
+      city = part;
+      break;
+    }
+
+    // Build result
+    if (placeName != null) result.add(placeName);
+    if (streetWithNumber != null) result.add(streetWithNumber);
+    if (city != null) result.add(city);
+
+    return result.isNotEmpty ? result.join(', ') : displayName;
   }
 
   void _confirmSelection() {
@@ -131,6 +223,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
       Navigator.of(context).pop(MapLocationResult(
         latitude: _selectedLocation!.latitude,
         longitude: _selectedLocation!.longitude,
+        locationName: _selectedLocationName,
       ));
     }
   }
@@ -211,6 +304,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
     final location = LatLng(result.latitude, result.longitude);
     setState(() {
       _selectedLocation = location;
+      _selectedLocationName = _formatDisplayName(result.displayName);
       _searchResults = [];
       _searchController.clear();
     });
@@ -386,6 +480,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                   ),
                                   itemBuilder: (context, index) {
                                     final result = _searchResults[index];
+                                    final formattedName = _formatDisplayName(result.displayName);
                                     return InkWell(
                                       onTap: () => _selectSearchResult(result),
                                       child: Padding(
@@ -403,7 +498,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                             const SizedBox(width: 12),
                                             Expanded(
                                               child: Text(
-                                                result.displayName,
+                                                formattedName,
                                                 maxLines: 2,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: const TextStyle(fontSize: 14),
@@ -420,7 +515,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                         ),
                       ),
 
-                      // Coordinates display (when location selected and no search results)
+                      // Selected location display (when location selected and no search results)
                       if (_selectedLocation != null && _searchResults.isEmpty)
                         Positioned(
                           top: 60,
@@ -445,13 +540,19 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                   size: 18,
                                 ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  '${_selectedLocation!.latitude.toStringAsFixed(6)}, ${_selectedLocation!.longitude.toStringAsFixed(6)}',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.green.shade800,
+                                Flexible(
+                                  child: Text(
+                                    // Show location name if available, otherwise show coordinates
+                                    _selectedLocationName ??
+                                        '${_selectedLocation!.latitude.toStringAsFixed(6)}, ${_selectedLocation!.longitude.toStringAsFixed(6)}',
+                                    textAlign: TextAlign.center,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 2,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.green.shade800,
+                                    ),
                                   ),
                                 ),
                               ],
