@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
 import '../../../core/constants/role_types.dart';
@@ -8,6 +9,7 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
+import '../../widgets/map_location_picker.dart';
 
 /// Screen for non-admin users to view their event assignments
 class UserAssignmentsScreen extends StatefulWidget {
@@ -458,13 +460,43 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            event.location,
+                            MapLocationResult.stripCoordinates(event.location),
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
                               color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
                             ),
                           ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // Navigation buttons row
+                    Row(
+                      children: [
+                        const SizedBox(width: 32), // Align with text above
+                        Text(
+                          'נווט עם:',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: secondaryTextColor,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Google Maps button
+                        _buildNavigationButton(
+                          icon: Icons.map,
+                          label: 'Google Maps',
+                          color: Colors.green.shade600,
+                          onTap: () => _openGoogleMaps(event.location),
+                        ),
+                        const SizedBox(width: 12),
+                        // Waze button
+                        _buildNavigationButton(
+                          icon: Icons.navigation,
+                          label: 'Waze',
+                          color: Colors.blue.shade600,
+                          onTap: () => _openWaze(event.location),
                         ),
                       ],
                     ),
@@ -794,6 +826,79 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     return date1.year == date2.year &&
         date1.month == date2.month &&
         date1.day == date2.day;
+  }
+
+  Widget _buildNavigationButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withAlpha((255 * 0.1).round()),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withAlpha((255 * 0.3).round())),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Open Google Maps with directions to the location
+  Future<void> _openGoogleMaps(String location) async {
+    final (lat, lng) = MapLocationResult.parseCoordinates(location);
+
+    Uri uri;
+    if (lat != null && lng != null) {
+      // Use coordinates for precise navigation
+      uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+    } else {
+      // Fall back to search by location name
+      final query = MapLocationResult.stripCoordinates(location);
+      uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}');
+    }
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  /// Open Waze with directions to the location
+  Future<void> _openWaze(String location) async {
+    final (lat, lng) = MapLocationResult.parseCoordinates(location);
+
+    Uri uri;
+    if (lat != null && lng != null) {
+      // Use coordinates for precise navigation
+      uri = Uri.parse('https://waze.com/ul?ll=$lat,$lng&navigate=yes');
+    } else {
+      // Fall back to search by location name
+      final query = MapLocationResult.stripCoordinates(location);
+      uri = Uri.parse('https://waze.com/ul?q=${Uri.encodeComponent(query)}&navigate=yes');
+    }
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   Widget _buildEmptyState() {
