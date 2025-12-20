@@ -705,11 +705,18 @@ class _EventFormModalState extends State<EventFormModal> {
                                             // Handles: "Name||lat,lng", "Name (lat, lng)", and "lat, lng" formats
                                             double? initialLat;
                                             double? initialLng;
+                                            String? initialName;
                                             final rawLocation = _rawLocationValue ?? _locationController.text.trim();
                                             if (rawLocation.isNotEmpty) {
                                               final (lat, lng) = MapLocationResult.parseCoordinates(rawLocation);
                                               initialLat = lat;
                                               initialLng = lng;
+                                              // Get the display name (stripped of coordinates)
+                                              initialName = MapLocationResult.stripCoordinates(rawLocation);
+                                              // Only use name if it's different from coordinates
+                                              if (initialName == rawLocation && lat != null) {
+                                                initialName = null; // It's just coordinates, no name
+                                              }
                                             }
 
                                             final result = await MapLocationPicker.show(
@@ -717,6 +724,7 @@ class _EventFormModalState extends State<EventFormModal> {
                                               title: 'בחר מיקום לאירוע',
                                               initialLatitude: initialLat,
                                               initialLongitude: initialLng,
+                                              initialLocationName: initialName,
                                             );
                                             if (result != null) {
                                               setState(() {
