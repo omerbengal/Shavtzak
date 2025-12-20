@@ -137,21 +137,85 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   }
 
   /// Format the display name from Nominatim to be more readable
-  /// Reverses the order (Nominatim returns: specific → general, we want: general → specific for Hebrew)
-  /// and takes only the most relevant parts
+  /// Nominatim format: "Name, Number, Street, Neighborhood, City, District, Country"
+  /// We want: "Name, Street Number, City" or "Street Number, City"
   String _formatDisplayName(String displayName) {
     final parts = displayName.split(',').map((p) => p.trim()).toList();
 
-    // Take up to 3-4 most relevant parts and reverse for Hebrew reading
-    // Nominatim format: "Street, Neighborhood, City, District, Country"
-    // We want: "City, Neighborhood, Street" or similar
-    if (parts.length <= 3) {
-      return parts.reversed.join(', ');
+    if (parts.isEmpty) return displayName;
+    if (parts.length == 1) return parts[0];
+
+    final result = <String>[];
+
+    // Check if first part is a place name (not just a number)
+    final firstPart = parts[0];
+    final isFirstPartNumber = RegExp(r'^\d+$').hasMatch(firstPart);
+
+    String? placeName;
+    String? streetWithNumber;
+    String? city;
+
+    int startIndex = 0;
+
+    // If first part is not a number, it's likely a place name
+    if (!isFirstPartNumber) {
+      // Check if it looks like a street name (contains common street words)
+      final streetKeywords = ['רחוב', 'שדרות', 'דרך', 'סמטת', 'משעול', 'כיכר'];
+      final isStreet = streetKeywords.any((keyword) => firstPart.contains(keyword));
+
+      if (!isStreet) {
+        placeName = firstPart;
+        startIndex = 1;
+      }
     }
 
-    // For longer addresses, take the first 3 parts (most specific) and reverse
-    final relevantParts = parts.take(3).toList().reversed.toList();
-    return relevantParts.join(', ');
+    // Find street with number
+    // Look for a number followed by street name, or street name followed by number
+    for (int i = startIndex; i < parts.length && i < startIndex + 3; i++) {
+      final part = parts[i];
+      final hasNumber = RegExp(r'\d').hasMatch(part);
+      final isJustNumber = RegExp(r'^\d+$').hasMatch(part);
+
+      if (isJustNumber && i + 1 < parts.length) {
+        // Number followed by street name: "123, Dizengoff Street"
+        streetWithNumber = '${parts[i + 1]} $part';
+        startIndex = i + 2;
+        break;
+      } else if (hasNumber) {
+        // Street with number included: "Dizengoff Street 123"
+        streetWithNumber = part;
+        startIndex = i + 1;
+        break;
+      }
+    }
+
+    // If no street with number found, take the first available part as street
+    if (streetWithNumber == null && startIndex < parts.length) {
+      streetWithNumber = parts[startIndex];
+      startIndex++;
+    }
+
+    // Find city - skip neighborhoods/districts, look for a city-like part
+    // Cities in Israel usually don't have "רחוב", numbers, or "נפת"
+    for (int i = startIndex; i < parts.length; i++) {
+      final part = parts[i];
+      // Skip if it's a district, country, or has street indicators
+      if (part.contains('נפת') ||
+          part.contains('מחוז') ||
+          part.contains('ישראל') ||
+          part.contains('Israel')) {
+        continue;
+      }
+      city = part;
+      break;
+    }
+
+    // Build result
+    if (placeName != null) result.add(placeName);
+    if (streetWithNumber != null) result.add(streetWithNumber);
+    if (city != null) result.add(city);
+
+    return result.isNotEmpty ? result.join(', ') : displayName;
   }
 
   void _confirmSelection() {
