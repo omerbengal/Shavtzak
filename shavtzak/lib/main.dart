@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'firebase_options.dart';
 import 'dart:developer' as developer;
+import 'dart:ui' as ui;
 
 // Data layer
 import 'data/data_sources/firestore_database.dart';
@@ -101,14 +102,19 @@ Future<void> _initialize() async {
   }
 }
 
-/// Preload custom Rubik font to prevent FOUT
+/// Preload custom Rubik font to prevent FOUT (Flash of Unstyled Text)
 Future<void> _preloadFont() async {
   try {
-    // Preload the font by loading it into memory
-    await rootBundle.load('assets/fonts/Rubik-VariableFont_wght.ttf');
-    // Font is loaded - Flutter engine will register it on next frame
+    // Load font bytes from assets
+    final fontData = await rootBundle.load('assets/fonts/Rubik-VariableFont_wght.ttf');
+    // Register font with Flutter's rendering engine
+    await ui.loadFontFromList(
+      fontData.buffer.asUint8List(),
+      fontFamily: 'Rubik',
+    );
   } catch (e) {
     // Font loading failed, app will fall back to default system font
+    developer.log('Font preload failed: $e', name: 'Main');
   }
 }
 
