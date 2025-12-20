@@ -18,14 +18,13 @@ class MapLocationResult {
   });
 
   /// Format as a string for display and storage
-  /// Format: "Location Name (lat, lng)" or just "lat, lng" if no name
-  /// This format allows re-parsing to extract coordinates later
+  /// - If location has a name (from search): show just the name
+  /// - If manually tapped (no name): show coordinates
   String toDisplayString() {
-    final coords = '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
     if (locationName != null) {
-      return '$locationName ($coords)';
+      return locationName!;
     }
-    return coords;
+    return '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
   }
 
   /// Get coordinates as a string
