@@ -702,21 +702,29 @@ class _EventFormModalState extends State<EventFormModal> {
                                           tooltip: 'בחר מיקום במפה',
                                           onPressed: () async {
                                             // Try to parse existing coordinates from raw location value
-                                            // Handles: "Name||lat,lng", "Name (lat, lng)", and "lat, lng" formats
+                                            // Only use if user hasn't manually edited the field
                                             double? initialLat;
                                             double? initialLng;
                                             String? initialName;
-                                            final rawLocation = _rawLocationValue ?? _locationController.text.trim();
-                                            if (rawLocation.isNotEmpty) {
-                                              final (lat, lng) = MapLocationResult.parseCoordinates(rawLocation);
-                                              initialLat = lat;
-                                              initialLng = lng;
-                                              // Get the display name (stripped of coordinates)
-                                              initialName = MapLocationResult.stripCoordinates(rawLocation);
-                                              // Only use name if it's different from coordinates
-                                              if (initialName == rawLocation && lat != null) {
-                                                initialName = null; // It's just coordinates, no name
+
+                                            final currentText = _locationController.text.trim();
+                                            final rawLocation = _rawLocationValue;
+
+                                            // Check if user manually edited the field
+                                            if (rawLocation != null && currentText.isNotEmpty) {
+                                              final strippedRaw = MapLocationResult.stripCoordinates(rawLocation);
+                                              if (strippedRaw == currentText) {
+                                                // User didn't edit, use saved coordinates
+                                                final (lat, lng) = MapLocationResult.parseCoordinates(rawLocation);
+                                                initialLat = lat;
+                                                initialLng = lng;
+                                                initialName = strippedRaw;
+                                                // Only use name if it's not just coordinates
+                                                if (initialName == rawLocation && lat != null) {
+                                                  initialName = null;
+                                                }
                                               }
+                                              // If user edited, leave initialLat/Lng/Name as null (fresh start)
                                             }
 
                                             final result = await MapLocationPicker.show(
