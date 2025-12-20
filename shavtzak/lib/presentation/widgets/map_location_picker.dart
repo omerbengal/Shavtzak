@@ -18,13 +18,24 @@ class MapLocationResult {
   });
 
   /// Format as a string for display and storage
-  /// - If location has a name (from search): show just the name
-  /// - If manually tapped (no name): show coordinates
+  /// - If location has a name (from search): "Name||lat,lng" (coordinates hidden after ||)
+  /// - If manually tapped (no name): "lat, lng"
+  /// Use stripCoordinates() to get display-only version
   String toDisplayString() {
     if (locationName != null) {
-      return locationName!;
+      // Store coordinates after || separator for later parsing
+      return '$locationName||${latitude.toStringAsFixed(6)},${longitude.toStringAsFixed(6)}';
     }
     return '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+  }
+
+  /// Get the display-friendly version (strips hidden coordinates)
+  static String stripCoordinates(String location) {
+    final separatorIndex = location.indexOf('||');
+    if (separatorIndex != -1) {
+      return location.substring(0, separatorIndex);
+    }
+    return location;
   }
 
   /// Get coordinates as a string
@@ -33,8 +44,22 @@ class MapLocationResult {
   }
 
   /// Parse a location string to extract coordinates
-  /// Handles both "Name (lat, lng)" and "lat, lng" formats
+  /// Handles: "Name||lat,lng", "Name (lat, lng)", and "lat, lng" formats
   static (double?, double?) parseCoordinates(String location) {
+    // Try to extract coordinates after || separator: "Name||lat,lng"
+    final separatorIndex = location.indexOf('||');
+    if (separatorIndex != -1) {
+      final coordsPart = location.substring(separatorIndex + 2);
+      final parts = coordsPart.split(',');
+      if (parts.length == 2) {
+        final lat = double.tryParse(parts[0].trim());
+        final lng = double.tryParse(parts[1].trim());
+        if (lat != null && lng != null) {
+          return (lat, lng);
+        }
+      }
+    }
+
     // Try to extract coordinates from parentheses: "Name (lat, lng)"
     final parenMatch = RegExp(r'\(([^)]+)\)$').firstMatch(location);
     String coordsPart;
