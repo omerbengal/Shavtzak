@@ -29,6 +29,26 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     });
   }
 
+  /// Calculate responsive font size based on screen width
+  /// Returns a value between minSize and maxSize, scaled proportionally
+  double _getResponsiveFontSize(BuildContext context, {double minSize = 14.0, double maxSize = 20.0}) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    // Map screen width range [320, 768] to font size range [minSize, maxSize]
+    final clampedWidth = screenWidth.clamp(320.0, 768.0);
+    final scaleFactor = (clampedWidth - 320.0) / (768.0 - 320.0);
+    return minSize + (maxSize - minSize) * scaleFactor;
+  }
+
+  /// Calculate responsive icon size based on screen width
+  /// Returns a value between minSize and maxSize, scaled proportionally
+  double _getResponsiveIconSize(BuildContext context, {double minSize = 16.0, double maxSize = 24.0}) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    // Map screen width range [320, 768] to icon size range [minSize, maxSize]
+    final clampedWidth = screenWidth.clamp(320.0, 768.0);
+    final scaleFactor = (clampedWidth - 320.0) / (768.0 - 320.0);
+    return minSize + (maxSize - minSize) * scaleFactor;
+  }
+
   void _loadUserAssignments() {
     final userState = context.read<UserSelectionBloc>().state;
     if (userState is UserAuthenticated) {
@@ -340,7 +360,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             Text(
               event.name,
               style: TextStyle(
-                fontSize: 18,
+                fontSize: _getResponsiveFontSize(context, minSize: 16.0, maxSize: 18.0),
                 fontWeight: FontWeight.bold,
                 color: textColor,
               ),
@@ -363,7 +383,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   children: [
                     Icon(
                       Icons.info_outline,
-                      size: 18,
+                      size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
                       color: Colors.amber.shade700,
                     ),
                     const SizedBox(width: 8),
@@ -371,7 +391,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       child: Text(
                         event.comments,
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
                           fontStyle: FontStyle.italic,
                           color: Colors.amber.shade900,
                         ),
@@ -408,75 +428,149 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Date row (always at top)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.calendar_today,
-                        size: 22,
-                        color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        _isSameDay(event.startDate, event.endDate) ? 'תאריך:' : 'תאריכים:',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: secondaryTextColor,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: RichText(
-                          text: _formatDateWithHighlight(
-                            _formatDateDisplay(event, isToday, isTomorrow),
-                            isUpcoming,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Location row (if exists) - now first
-                  if (event.location.isNotEmpty) ...[
+                  // Date section
+                  if (_isSameDay(event.startDate, event.endDate))
+                    // Single day event - one row
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Icon(
-                          Icons.location_on,
-                          size: 22,
+                          Icons.calendar_today,
+                          size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
                           color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          'מיקום:',
+                          'תאריך:',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
                             fontWeight: FontWeight.w500,
                             color: secondaryTextColor,
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            MapLocationResult.stripCoordinates(event.location),
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
+                        Expanded(
+                          child: RichText(
+                            text: _formatDateWithHighlight(
+                              _formatSingleDayDisplay(event.startDate, isToday, isTomorrow),
+                              isUpcoming,
+                              context,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        // Navigation icons (inline with location) - only show if location was picked using map picker
-                        if (_isLocationPickedFromMap(event.location)) ...[
-                          const SizedBox(width: 8),
-                          _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.location)),
-                          const SizedBox(width: 8),
-                          _buildWazeButton(onTap: () => _openWaze(event.location)),
-                        ],
                       ],
+                    )
+                  else
+                    // Multi-day event - two separate rows
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.calendar_today,
+                              size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
+                              color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              'תאריך התחלה:',
+                              style: TextStyle(
+                                fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+                                fontWeight: FontWeight.w500,
+                                color: secondaryTextColor,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: RichText(
+                                text: _formatDateWithHighlight(
+                                  _formatSingleDayDisplay(event.startDate, isToday, isTomorrow),
+                                  isUpcoming,
+                                  context,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            const SizedBox(width: 32), // Align with end date text
+                            Text(
+                              'תאריך סיום:',
+                              style: TextStyle(
+                                fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+                                fontWeight: FontWeight.w500,
+                                color: secondaryTextColor,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: RichText(
+                                text: _formatDateWithHighlight(
+                                  _formatSingleDayDisplay(event.endDate, false, false),
+                                  isUpcoming,
+                                  context,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 12),
+                  // Location section (if exists)
+                  if (event.location.isNotEmpty) ...[
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final locationText = MapLocationResult.stripCoordinates(event.location);
+                        final hasMapIcons = _isLocationPickedFromMap(event.location);
+
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.location_on,
+                              size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
+                              color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'מיקום:',
+                              style: TextStyle(
+                                fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+                                fontWeight: FontWeight.w500,
+                                color: secondaryTextColor,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    locationText,
+                                    style: TextStyle(
+                                      fontSize: _getResponsiveFontSize(context),
+                                      fontWeight: FontWeight.bold,
+                                      color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
+                                    ),
+                                  ),
+                                  if (hasMapIcons) ...[
+                                    _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.location)),
+                                    _buildWazeButton(onTap: () => _openWaze(event.location)),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 10),
                   ],
@@ -486,14 +580,14 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     children: [
                       Icon(
                         Icons.access_time_filled,
-                        size: 22,
+                        size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
                         color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
                       ),
                       const SizedBox(width: 10),
                       Text(
                         'שעת התייצבות:',
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
                           fontWeight: FontWeight.w500,
                           color: secondaryTextColor,
                         ),
@@ -502,7 +596,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       Text(
                         event.assemblyTime.isNotEmpty ? event.assemblyTime : 'טרם נקבעה',
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: _getResponsiveFontSize(context),
                           fontWeight: FontWeight.bold,
                           color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
                         ),
@@ -520,14 +614,14 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               children: [
                 Icon(
                   Icons.access_time,
-                  size: 18,
+                  size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
                   color: iconColor,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   'שעות האירוע:',
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
                     color: secondaryTextColor,
                   ),
                 ),
@@ -535,7 +629,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                 Text(
                   _formatEventTimes(event.startTime, event.endTime),
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
                     fontWeight: FontWeight.w500,
                     color: textColor,
                   ),
@@ -560,14 +654,14 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       children: [
                         Icon(
                           Icons.note_alt_outlined,
-                          size: 18,
+                          size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
                           color: Colors.purple.shade700,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           'הערות לשיבוץ:',
                           style: TextStyle(
-                            fontSize: 13,
+                            fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
                             fontWeight: FontWeight.w600,
                             color: Colors.purple.shade800,
                           ),
@@ -583,7 +677,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                           Text(
                             '• ',
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
                               color: Colors.purple.shade700,
                             ),
                           ),
@@ -591,7 +685,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                             Text(
                               '${entry.key.hebrewName}: ',
                               style: TextStyle(
-                                fontSize: 13,
+                                fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
                                 fontWeight: FontWeight.w500,
                                 color: Colors.purple.shade800,
                               ),
@@ -601,7 +695,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                             child: Text(
                               entry.value,
                               style: TextStyle(
-                                fontSize: 13,
+                                fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
                                 color: Colors.purple.shade900,
                               ),
                             ),
@@ -633,7 +727,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       child: Text(
         roleType.hebrewName,
         style: TextStyle(
-          fontSize: 13,
+          fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
           fontWeight: FontWeight.w600,
           color: isUpcoming ? Colors.white : Colors.grey.shade800,
         ),
@@ -676,6 +770,18 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     return '$startDateStr --> $endDateStr';
   }
 
+  String _formatSingleDayDisplay(DateTime date, bool isToday, bool isTomorrow) {
+    final dateStr = 'יום ${_getFullHebrewDayName(date.weekday)} ${date.day} ב${_getHebrewMonthName(date.month)}';
+
+    if (isToday) {
+      return '$dateStr (היום)';
+    }
+    if (isTomorrow) {
+      return '$dateStr (מחר)';
+    }
+    return dateStr;
+  }
+
   String _formatDayMonth(DateTime date) {
     final day = date.day;
     final month = _getHebrewMonthName(date.month);
@@ -692,8 +798,9 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     return days[weekday == 7 ? 7 : weekday];
   }
 
-  TextSpan _formatDateWithHighlight(String dateText, bool isUpcoming) {
+  TextSpan _formatDateWithHighlight(String dateText, bool isUpcoming, BuildContext context) {
     final color = isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700;
+    final responsiveFontSize = _getResponsiveFontSize(context);
 
     if (dateText.contains('(היום)')) {
       final parts = dateText.split('(היום)');
@@ -702,15 +809,15 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           TextSpan(
             text: parts[0],
             style: TextStyle(
-              fontSize: 20,
+              fontSize: responsiveFontSize,
               fontWeight: FontWeight.bold,
               color: color,
             ),
           ),
           TextSpan(
             text: '(היום)',
-            style: const TextStyle(
-              fontSize: 20,
+            style: TextStyle(
+              fontSize: responsiveFontSize,
               fontWeight: FontWeight.bold,
               color: Colors.red,
             ),
@@ -719,7 +826,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             TextSpan(
               text: parts[1],
               style: TextStyle(
-                fontSize: 20,
+                fontSize: responsiveFontSize,
                 fontWeight: FontWeight.bold,
                 color: color,
               ),
@@ -735,15 +842,15 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           TextSpan(
             text: parts[0],
             style: TextStyle(
-              fontSize: 20,
+              fontSize: responsiveFontSize,
               fontWeight: FontWeight.bold,
               color: color,
             ),
           ),
           TextSpan(
             text: '(מחר)',
-            style: const TextStyle(
-              fontSize: 20,
+            style: TextStyle(
+              fontSize: responsiveFontSize,
               fontWeight: FontWeight.bold,
               color: Colors.red,
             ),
@@ -752,7 +859,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             TextSpan(
               text: parts[1],
               style: TextStyle(
-                fontSize: 20,
+                fontSize: responsiveFontSize,
                 fontWeight: FontWeight.bold,
                 color: color,
               ),
@@ -765,7 +872,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     return TextSpan(
       text: dateText,
       style: TextStyle(
-        fontSize: 20,
+        fontSize: responsiveFontSize,
         fontWeight: FontWeight.bold,
         color: color,
       ),
@@ -813,21 +920,21 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          width: 40,
-          height: 40,
+          width: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
+          height: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
           decoration: BoxDecoration(
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Image.asset(
             'assets/images/google_maps.png',
-            width: 40,
-            height: 40,
+            width: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
+            height: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) {
               return Icon(
                 Icons.map_outlined,
-                size: 40,
+                size: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
                 color: Colors.red.shade600,
               );
             },
@@ -844,21 +951,21 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          width: 40,
-          height: 40,
+          width: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
+          height: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
           decoration: BoxDecoration(
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Image.asset(
             'assets/images/waze.png',
-            width: 40,
-            height: 40,
+            width: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
+            height: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) {
               return Icon(
                 Icons.navigation_outlined,
-                size: 40,
+                size: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
                 color: Colors.blue.shade600,
               );
             },
