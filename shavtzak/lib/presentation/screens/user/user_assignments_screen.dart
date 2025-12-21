@@ -10,6 +10,7 @@ import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../widgets/map_location_picker.dart';
+import '../../widgets/event_team_members_dialog.dart';
 
 /// Screen for non-admin users to view their event assignments
 class UserAssignmentsScreen extends StatefulWidget {
@@ -637,6 +638,36 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               ],
             ),
 
+            // "Who's with me?" button
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _showEventTeamMembers(context, event.id, event.name),
+                icon: Icon(
+                  Icons.groups,
+                  size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
+                ),
+                label: Text(
+                  'מי איתי באירוע?',
+                  style: TextStyle(
+                    fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue.shade100,
+                  foregroundColor: Colors.blue.shade700,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(color: Colors.blue.shade200),
+                  ),
+                ),
+              ),
+            ),
+
             // Assignment notes (at the bottom)
             if (assignmentNotes.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -1089,6 +1120,21 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             label: const Text('נסה שוב'),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Show dialog with all team members assigned to the event
+  void _showEventTeamMembers(BuildContext context, String eventId, String eventName) {
+    final userState = context.read<UserSelectionBloc>().state;
+    if (userState is! UserAuthenticated) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => EventTeamMembersDialog(
+        eventId: eventId,
+        currentUserId: userState.user.id,
+        eventName: eventName,
       ),
     );
   }
