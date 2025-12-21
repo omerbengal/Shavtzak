@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/entities/team_member.dart';
-import '../../../data/repositories/user_selection_repository.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
@@ -36,7 +35,10 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
     final teamState = context.read<TeamBloc>().state;
     if (teamState is TeamLoaded) {
       _isLoading = false;
-      _allTeamMembers = teamState.members;
+      // Filter out "שיבוץ מרובה" members (allowMultipleAssignments = true)
+      _allTeamMembers = teamState.members
+          .where((m) => !m.allowMultipleAssignments)
+          .toList();
       _filteredTeamMembers = List.from(_allTeamMembers);
     } else {
       _isLoading = true;
@@ -146,7 +148,10 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
                   } else if (teamState is TeamLoaded) {
                     _isLoading = false;
                     _errorMessage = null;
-                    _allTeamMembers = teamState.members;
+                    // Filter out "שיבוץ מרובה" members (allowMultipleAssignments = true)
+                    _allTeamMembers = teamState.members
+                        .where((m) => !m.allowMultipleAssignments)
+                        .toList();
                     // Apply search filter if needed
                     if (_searchQuery.isEmpty) {
                       _filteredTeamMembers = List.from(_allTeamMembers);

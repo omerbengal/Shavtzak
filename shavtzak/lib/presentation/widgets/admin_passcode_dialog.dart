@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'passcode_setup_dialog.dart';
 
 /// Dialog for admins to manage team member passcodes
@@ -41,7 +40,7 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.orange, width: 1),
                 ),

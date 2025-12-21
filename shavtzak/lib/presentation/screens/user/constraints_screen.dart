@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:uuid/uuid.dart';
-import 'package:go_router/go_router.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../../core/constants/calendar_constants.dart';
@@ -483,8 +481,8 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
   void _showExpiredConstraintsModal(BuildContext context, TeamMember user) {
     
     for (int i = 0; i < user.constraints.length; i++) {
-      final constraint = user.constraints[i];
-      }
+      // Process constraints if needed
+    }
 
     showDialog(
       context: context,
@@ -641,9 +639,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
         endDate = result['endDate'];
 
         // If only start date selected, set end date to start date (single-day constraint)
-        if (startDate != null && endDate == null) {
-          endDate = startDate;
-        }
+        endDate ??= startDate;
       });
       _onNoteChanged();
     }
@@ -815,9 +811,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
         endDate = result['endDate'];
 
         // If only start date selected, set end date to start date (single-day constraint)
-        if (endDate == null) {
-          endDate = startDate;
-        }
+        endDate ??= startDate;
       });
       _onNoteChanged();
     }
@@ -839,7 +833,6 @@ class _ExpiredConstraintsModal extends StatefulWidget {
 
 class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
   TeamMember? _lastKnownUser;
-  bool _isWaitingForTeamLoaded = false;
 
   // Helper function to check if constraint is past
   bool isPastConstraint(DateConstraint constraint) {
@@ -1005,7 +998,6 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                       }
 
                       _lastKnownUser = currentUser;
-                      _isWaitingForTeamLoaded = false; // Reset waiting flag
                     } else {
 
                       // For success states, expect quick transition to TeamLoaded after stream restart
@@ -1098,7 +1090,7 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                                         vertical: 4,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: _getStatusColor(constraint.status).withOpacity(0.1),
+                                        color: _getStatusColor(constraint.status).withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
                                           color: _getStatusColor(constraint.status),
@@ -1415,9 +1407,7 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
         endDate = result['endDate'];
 
         // If only start date selected, set end date to start date (single-day constraint)
-        if (endDate == null) {
-          endDate = startDate;
-        }
+        endDate ??= startDate;
       });
       _onNoteChanged();
     }

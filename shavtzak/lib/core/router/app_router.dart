@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../services/user_cache_service.dart';
 import '../services/environment_service.dart';
 import '../../presentation/bloc/user_selection/user_selection_bloc.dart';
 import '../../presentation/bloc/user_selection/user_selection_state.dart';
@@ -12,7 +10,6 @@ import '../../presentation/screens/user/user_navigation_shell.dart';
 import '../../presentation/screens/user/constraints_screen.dart';
 import '../../presentation/screens/user/user_assignments_screen.dart';
 import '../../presentation/screens/admin/admin_choice_screen.dart';
-import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/team/team_list_screen.dart';
 import '../../presentation/screens/event/event_list_screen.dart';
 import '../../presentation/screens/assignment/assignment_list_screen.dart';
@@ -88,24 +85,6 @@ class AppRouter {
 
   /// Create the router instance
   static GoRouter _createRouter(UserSelectionRepository userSelectionRepository) {
-    // Determine initial location based on cached user
-    Future<String> getInitialLocation() async {
-      try {
-        final cachedUser = await userSelectionRepository.getCachedUser();
-        if (cachedUser != null) {
-          final isValid = await userSelectionRepository.validateUserSelection(cachedUser.uniqueKey);
-          if (isValid) {
-            // User is cached and valid, start at appropriate location
-            return cachedUser.isAdmin ? '/admin' : '/user/assignments';
-          }
-        }
-      } catch (e) {
-        // Error checking cached user, default to whoami
-      }
-      // No valid cached user, start with whoami
-      return '/whoami';
-    }
-
     return GoRouter(
       // Initial location determined by cached user check
       initialLocation: '/whoami', // Fallback, will be updated by redirect logic

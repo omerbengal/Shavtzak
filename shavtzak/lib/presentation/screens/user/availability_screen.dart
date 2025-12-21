@@ -632,9 +632,7 @@ class _AddAvailabilityDialogState extends State<_AddAvailabilityDialog> {
         endDate = result['endDate'];
 
         // If only start date selected, set end date to start date (single-day availability)
-        if (endDate == null) {
-          endDate = startDate;
-        }
+        endDate ??= startDate;
       });
       _updateCanSubmit();
     }
@@ -802,9 +800,7 @@ class _EditAvailabilityDialogState extends State<_EditAvailabilityDialog> {
         endDate = result['endDate'];
 
         // If only start date selected, set end date to start date (single-day availability)
-        if (endDate == null) {
-          endDate = startDate;
-        }
+        endDate ??= startDate;
       });
       _updateCanSubmit();
     }

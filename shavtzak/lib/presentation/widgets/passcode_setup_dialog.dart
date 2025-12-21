@@ -118,7 +118,7 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
             width: 2,
           ),
           borderRadius: BorderRadius.circular(12),
-          color: isSelected ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
+          color: isSelected ? Theme.of(context).primaryColor.withValues(alpha: 0.1) : null,
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

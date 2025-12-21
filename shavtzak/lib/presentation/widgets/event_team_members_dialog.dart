@@ -9,7 +9,6 @@ import '../bloc/assignment/assignment_state.dart';
 import '../bloc/team/team_bloc.dart';
 import '../bloc/team/team_event.dart';
 import '../bloc/team/team_state.dart';
-import '../../data/repositories/assignment_repository.dart';
 import '../../../core/services/service_locator.dart';
 
 /// Dialog showing all team members assigned to an event

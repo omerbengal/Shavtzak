@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/services.dart';
 
 /// Text input formatter for Israeli phone numbers

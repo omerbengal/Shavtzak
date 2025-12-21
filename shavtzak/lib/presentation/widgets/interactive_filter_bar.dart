@@ -139,8 +139,8 @@ class _InteractiveFilterBarState extends State<InteractiveFilterBar> {
     return InkWell(
       onTap: isSelected ? null : () => widget.onFilterChanged(index),
       borderRadius: BorderRadius.circular(12),
-      splashColor: Colors.green.withOpacity(0.2),
-      highlightColor: Colors.green.withOpacity(0.1),
+      splashColor: Colors.green.withValues(alpha: 0.2),
+      highlightColor: Colors.green.withValues(alpha: 0.1),
       child: Center(
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 150),

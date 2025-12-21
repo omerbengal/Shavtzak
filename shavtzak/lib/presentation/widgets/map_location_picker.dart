@@ -446,7 +446,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                 borderRadius: BorderRadius.circular(8),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.15),
+                                    color: Colors.black.withValues(alpha: 0.15),
                                     blurRadius: 8,
                                     offset: const Offset(0, 2),
                                   ),
@@ -500,7 +500,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                   borderRadius: BorderRadius.circular(8),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.15),
+                                      color: Colors.black.withValues(alpha: 0.15),
                                       blurRadius: 8,
                                       offset: const Offset(0, 2),
                                     ),
@@ -562,7 +562,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.green.shade50.withOpacity(0.95),
+                              color: Colors.green.shade50.withValues(alpha: 0.95),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: Colors.green.shade300),
                             ),
@@ -607,7 +607,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.blue.shade50.withOpacity(0.95),
+                              color: Colors.blue.shade50.withValues(alpha: 0.95),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: Colors.blue.shade200),
                             ),

@@ -63,9 +63,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     on<_TeamMembersUpdated>(_onTeamMembersUpdated);
   }
 
-  // Track whether we're filtering for active members only
-  bool _activeOnly = false;
-
   /// Load all team members with real-time updates
   Future<void> _onLoadTeamMembers(
     LoadTeamMembers event,
@@ -76,7 +73,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     developer.log('TeamBloc._onLoadTeamMembers: Current environment is $currentEnv', name: 'TeamBloc');
 
     emit(const TeamLoading());
-    _activeOnly = false;
 
     try {
       // Cancel previous subscription before starting new one to prevent memory leaks
@@ -105,7 +101,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     Emitter<TeamState> emit,
   ) async {
     emit(const TeamLoading());
-    _activeOnly = true;
 
     try {
       // Cancel previous subscription before starting new one to prevent memory leaks
@@ -271,12 +266,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
                       'TeamBloc: Unavailability constraint approved via UpdateTeamMember, triggering calendar sync',
                       name: 'TeamBloc',
                     );
-                    _calendarSyncBloc!.add(SyncConstraintToCalendar(
+                    _calendarSyncBloc?.add(SyncConstraintToCalendar(
                       constraintId: newConstraint.id,
                       teamMember: event.member,
                       constraint: newConstraint,
                     ));
-                  } else {
                   }
                 } else if (oldConstraint.status == ConstraintStatus.approved) {
                   // Constraint changed from approved - remove from calendar ONLY if it was unavailability
@@ -285,10 +279,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
                       'TeamBloc: Unavailability constraint un-approved via UpdateTeamMember, removing from calendar',
                       name: 'TeamBloc',
                     );
-                    _calendarSyncBloc!.add(RemoveConstraintFromCalendar(
+                    _calendarSyncBloc?.add(RemoveConstraintFromCalendar(
                       constraintId: newConstraint.id,
                     ));
-                  } else {
                   }
                 }
               }
@@ -306,10 +299,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
                   'TeamBloc: Approved unavailability constraint deleted via UpdateTeamMember, removing from calendar',
                   name: 'TeamBloc',
                 );
-                _calendarSyncBloc!.add(RemoveConstraintFromCalendar(
+                _calendarSyncBloc?.add(RemoveConstraintFromCalendar(
                   constraintId: oldConstraint.id,
                 ));
-              } else {
               }
             }
           }
@@ -428,7 +420,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
               teamMember: currentMember,
               constraint: constraint.copyWith(status: ConstraintStatus.approved),
             ));
-          } else {
           }
         } else if (oldStatus == ConstraintStatus.approved) {
           // Status changed from approved - remove from calendar ONLY if it was unavailability
@@ -440,7 +431,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
             _calendarSyncBloc!.add(RemoveConstraintFromCalendar(
               constraintId: constraint.id,
             ));
-          } else {
           }
         }
       } else if (_calendarSyncBloc == null) {

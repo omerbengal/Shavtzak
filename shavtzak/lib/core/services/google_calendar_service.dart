@@ -72,7 +72,7 @@ class GoogleCalendarService {
         'GoogleCalendarService: Initialized successfully with calendar ID: $calendarId${_isTestMode ? ' [TEST MODE - events will be yellow with prefix]' : ''}',
         name: 'GoogleCalendar',
       );
-    } catch (e, stackTrace) {
+    } catch (e) {
       developer.log(
         'GoogleCalendarService: Failed to initialize - $e',
         name: 'GoogleCalendar',
@@ -155,7 +155,7 @@ class GoogleCalendarService {
       );
 
       return createdEvent.id!;
-    } catch (e, stackTrace) {
+    } catch (e) {
       developer.log(
         'GoogleCalendarService: Failed to create event - $e',
         name: 'GoogleCalendar',
@@ -286,10 +286,12 @@ class GoogleCalendarService {
 
 
       if (events.items != null) {
-        for (final event in events.items!) {
+        for (final _ in events.items!) {
+          // Process events if needed
         }
       }
     } catch (e) {
+      // Handle error silently
     }
   }
 

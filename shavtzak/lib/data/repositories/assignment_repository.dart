@@ -148,9 +148,9 @@ class AssignmentRepository {
     // Check availability conflict for entire event duration
     // Skip for members with allowMultipleAssignments
     if (!member.allowMultipleAssignments && !member.isAvailableForDateRange(event.startDate, event.endDate)) {
-      final dateRange = event.endDate != null
-          ? '${_formatDate(event.startDate)} - ${_formatDate(event.endDate!)}'
-          : _formatDate(event.startDate);
+      final dateRange = _isSameDay(event.startDate, event.endDate)
+          ? _formatDate(event.startDate)
+          : '${_formatDate(event.startDate)} - ${_formatDate(event.endDate)}';
 
       if (member.isPermanent) {
         conflicts.add('${member.name} לא זמין/ה בתאריכים $dateRange (יש הגבלה מאושרת)');
@@ -343,6 +343,11 @@ class AssignmentStats {
 /// Helper method to format date for display
 String _formatDate(DateTime date) {
   return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+}
+
+/// Helper method to check if two dates are the same day
+bool _isSameDay(DateTime date1, DateTime date2) {
+  return date1.year == date2.year && date1.month == date2.month && date1.day == date2.day;
 }
 
 /// Exception thrown when assignment has conflicts

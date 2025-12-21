@@ -584,7 +584,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               // Check availability for entire event duration
               // Skip availability check for members with allowMultipleAssignments
               if (!member.allowMultipleAssignments &&
-                  !member.isAvailableForDateRange(event.startDate, event.endDate)) continue;
+                  !member.isAvailableForDateRange(event.startDate, event.endDate)) {
+                continue;
+              }
 
               // Separate based on whether already assigned to this event
               // Members with allowMultipleAssignments always go to available list
@@ -785,7 +787,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               // Check availability for entire event duration
               // Skip availability check for members with allowMultipleAssignments
               if (!member.allowMultipleAssignments &&
-                  !member.isAvailableForDateRange(eventData.startDate, eventData.endDate)) continue;
+                  !member.isAvailableForDateRange(eventData.startDate, eventData.endDate)) {
+                continue;
+              }
 
               // Separate based on whether already assigned to this event
               // Members with allowMultipleAssignments always go to available list

@@ -1012,12 +1012,12 @@ class _EventFormModalState extends State<EventFormModal> {
                                   duration: const Duration(milliseconds: 500),
                                   decoration: BoxDecoration(
                                     color: isHighlighted
-                                        ? Colors.blue.shade100.withOpacity(_highlightOpacity)
+                                        ? Colors.blue.shade100.withValues(alpha: _highlightOpacity)
                                         : null,
                                     borderRadius: BorderRadius.circular(8),
                                     border: isHighlighted
                                         ? Border.all(
-                                            color: Colors.blue.shade700.withOpacity(_highlightOpacity),
+                                            color: Colors.blue.shade700.withValues(alpha: _highlightOpacity),
                                             width: 2,
                                           )
                                         : null,

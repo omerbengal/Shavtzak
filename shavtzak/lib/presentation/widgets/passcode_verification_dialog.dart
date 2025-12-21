@@ -19,10 +19,9 @@ class PasscodeVerificationDialog extends StatefulWidget {
 
 class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog> {
   static const double _iconSize = 20.0;
-  
+
   final List<TextEditingController> _controllers = [];
   final List<FocusNode> _focusNodes = [];
-  int _failedAttempts = 0;
   bool _isError = false;
   bool _obscurePasscode = true;
 
@@ -134,7 +133,6 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
     } else {
       // Failed attempt
       setState(() {
-        _failedAttempts++;
         _isError = true;
       });
 

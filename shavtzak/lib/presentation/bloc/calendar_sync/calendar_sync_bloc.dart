@@ -80,7 +80,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         isTestMode: _calendarService.isTestMode,
         failedSyncs: failedSyncs.length,
       ));
-    } catch (e, stackTrace) {
+    } catch (e) {
       developer.log(
         'CalendarSyncBloc: Initialization failed - $e',
         name: 'CalendarSyncBloc',
@@ -130,7 +130,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
           isRetryable: result.isRetryable,
         ));
       }
-    } catch (e, stackTrace) {
+    } catch (e) {
       developer.log(
         'CalendarSyncBloc: Sync failed - $e',
         name: 'CalendarSyncBloc',
@@ -502,6 +502,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
           } else {
           }
         } catch (e) {
+          // Ignore individual constraint sync errors during batch sync
         }
       }
 

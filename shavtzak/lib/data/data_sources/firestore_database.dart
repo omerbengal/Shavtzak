@@ -8,7 +8,6 @@ import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
 import '../../core/services/environment_service.dart';
-import '../../core/utils/json_utils.dart';
 import '../models/assignment_model.dart';
 import '../models/event_model.dart';
 import '../models/team_member_model.dart';
@@ -1138,7 +1137,6 @@ class FirestoreDatabase implements DatabaseInterface {
     // Firestore will handle the JSON encoding properly when storing as a Map
     // When we retrieve it, the private_key should already have proper newlines
     if (jsonMap.containsKey('private_key') && jsonMap['private_key'] is String) {
-      final privateKey = jsonMap['private_key'] as String;
       // Keep the newlines as-is - they should be stored properly in the Map
     }
 

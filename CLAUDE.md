@@ -393,6 +393,107 @@ The V1 system used Excel/Google Sheets. The codebase includes:
 - Upgrade to factory pattern when complexity increases (multiple environment-specific implementations)
 - Keep both approaches available - they serve different complexity levels
 
+### CRITICAL: Implementing Real-Time Updates
+
+**This is mandatory for ALL new features.** The app uses Firestore streams for real-time updates. If you don't follow this pattern correctly, the UI will NOT update when data changes in the database.
+
+#### How Real-Time Updates Work
+
+1. **Firestore** emits changes via `snapshots()` streams
+2. **Repository** exposes `watchX()` methods that return these streams
+3. **BLoC** subscribes to streams and rebuilds state when data changes
+4. **Equatable** compares old vs new state to determine if UI should update
+5. **UI** rebuilds when state changes
+
+#### The Golden Rule: Equatable Props
+
+**NEVER use just IDs in Equatable props. ALWAYS use the full Equatable object.**
+
+```dart
+// ❌ WRONG - UI will NOT update when event properties change
+@override
+List<Object?> get props => [
+  event.id,           // Only compares ID, not content!
+  assignment?.id,     // Only compares ID!
+];
+
+// ✅ CORRECT - UI WILL update when any property changes
+@override
+List<Object?> get props => [
+  event,              // Full Event object (extends Equatable)
+  assignment,         // Full Assignment object (extends Equatable)
+];
+```
+
+**Why this matters:**
+- When an event's location changes, `event.id` stays the same
+- Equatable sees "same ID" and considers the state unchanged
+- BLoC doesn't emit because it thinks nothing changed
+- UI never updates, even though the database changed
+
+#### Checklist for New Features
+
+When creating any new state class or model that will be used in BLoC states:
+
+1. **Extend Equatable** on all entities and state classes
+2. **Include ALL relevant fields** in the `props` getter
+3. **Use full objects, not IDs** for related entities
+4. **Test real-time updates** by manually changing data in Firebase Console
+
+#### Example: Correct State Implementation
+
+```dart
+// Entity with proper Equatable
+class Event extends Equatable {
+  final String id;
+  final String name;
+  final String location;
+  // ... other fields
+
+  @override
+  List<Object?> get props => [id, name, location, /* ALL fields */];
+}
+
+// State class with proper props
+class MyFeatureLoaded extends MyFeatureState {
+  final List<Event> events;
+  final TeamMember? selectedMember;
+
+  @override
+  List<Object?> get props => [
+    events,          // Full list of Equatable objects
+    selectedMember,  // Full Equatable object, not selectedMember?.id
+  ];
+}
+
+// Custom model with proper props
+class MySlot extends Equatable {
+  final Event event;
+  final Assignment? assignment;
+
+  @override
+  List<Object?> get props => [
+    event,       // ✅ Full object
+    assignment,  // ✅ Full object (nullable is fine)
+  ];
+}
+```
+
+#### BLoC Stream Subscription Pattern
+
+```dart
+// In your BLoC, subscribe to Firestore streams:
+_subscription = _repository.watchItems().listen(
+  (items) {
+    // Emit new state - Equatable will compare with previous
+    add(RebuildFromData(items));
+  },
+);
+
+// The stream will automatically emit when Firestore data changes
+// No manual refresh needed if Equatable is set up correctly
+```
+
 ### Firebase Best Practices
 - Use batch operations for multiple writes (`insertTeamMembersBatch`)
 - Validate foreign keys before creating assignments (see `_validateAssignmentForeignKeys`)
@@ -628,3 +729,4 @@ lib/
 8. **Always use Hebrew in UI**: Keep code comments in English
 9. **Always validate foreign keys**: Check event/member exists before creating assignments
 10. **Always consider conflicts**: Check date constraints when creating assignments
+11. **CRITICAL - Equatable props**: Use FULL objects in props, NEVER just IDs (e.g., `event` not `event.id`). This is required for real-time updates to work.

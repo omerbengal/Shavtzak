@@ -210,7 +210,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'קוד גישה מוגדר (${passcodeLength} ספרות)',
+                          'קוד גישה מוגדר ($passcodeLength ספרות)',
                           style: const TextStyle(fontSize: 16),
                         ),
                         const SizedBox(height: 24),
