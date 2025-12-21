@@ -408,49 +408,20 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Date row (always at top)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.calendar_today,
-                        size: 22,
-                        color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        _isSameDay(event.startDate, event.endDate) ? 'תאריך:' : 'תאריכים:',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: secondaryTextColor,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: RichText(
-                          text: _formatDateWithHighlight(
-                            _formatDateDisplay(event, isToday, isTomorrow),
-                            isUpcoming,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Location row (if exists) - now first
-                  if (event.location.isNotEmpty) ...[
+                  // Date row(s) - single day or multi-day
+                  if (_isSameDay(event.startDate, event.endDate))
+                    // Single day event - one row
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Icon(
-                          Icons.location_on,
+                          Icons.calendar_today,
                           size: 22,
                           color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          'מיקום:',
+                          'תאריך:',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
@@ -458,24 +429,136 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            MapLocationResult.stripCoordinates(event.location),
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
+                        Expanded(
+                          child: RichText(
+                            text: _formatDateWithHighlight(
+                              _formatDateDisplay(event, isToday, isTomorrow),
+                              isUpcoming,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        // Navigation icons (inline with location) - only show if location was picked using map picker
-                        if (_isLocationPickedFromMap(event.location)) ...[
-                          const SizedBox(width: 8),
-                          _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.location)),
-                          const SizedBox(width: 8),
-                          _buildWazeButton(onTap: () => _openWaze(event.location)),
-                        ],
+                      ],
+                    )
+                  else
+                    // Multi-day event - two rows
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.calendar_today,
+                              size: 22,
+                              color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              'תאריך התחלה:',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: secondaryTextColor,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: RichText(
+                                text: _formatDateWithHighlight(
+                                  _formatSingleDate(event.startDate, isToday, isTomorrow),
+                                  isUpcoming,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.calendar_today,
+                              size: 22,
+                              color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              'תאריך סיום:',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: secondaryTextColor,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _formatSingleDate(event.endDate, false, false),
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 12),
+                  // Location row (if exists) - wrappable with icons
+                  if (event.location.isNotEmpty) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.location_on,
+                          size: 22,
+                          color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'מיקום:',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  color: secondaryTextColor,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: [
+                                  Wrap(
+                                    spacing: 0,
+                                    children: [
+                                      Text(
+                                        MapLocationResult.stripCoordinates(event.location),
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                  // Navigation icons - only show if location was picked using map picker
+                                  if (_isLocationPickedFromMap(event.location)) ...[
+                                    _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.location)),
+                                    _buildWazeButton(onTap: () => _openWaze(event.location)),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -674,6 +757,19 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       return '$startDateStr (מחר) --> $endDateStr';
     }
     return '$startDateStr --> $endDateStr';
+  }
+
+  /// Format a single date for multi-day events (start or end date)
+  String _formatSingleDate(DateTime date, bool isToday, bool isTomorrow) {
+    final dateStr = 'יום ${_getFullHebrewDayName(date.weekday)} ${date.day} ב${_getHebrewMonthName(date.month)}';
+
+    if (isToday) {
+      return '$dateStr (היום)';
+    }
+    if (isTomorrow) {
+      return '$dateStr (מחר)';
+    }
+    return dateStr;
   }
 
   String _formatDayMonth(DateTime date) {
