@@ -493,7 +493,15 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                _formatSingleDate(event.endDate, false, false),
+                                _formatSingleDate(
+                                  event.endDate,
+                                  DateTime.now().year == event.endDate.year &&
+                                      DateTime.now().month == event.endDate.month &&
+                                      DateTime.now().day == event.endDate.day,
+                                  DateTime.now().add(const Duration(days: 1)).year == event.endDate.year &&
+                                      DateTime.now().add(const Duration(days: 1)).month == event.endDate.month &&
+                                      DateTime.now().add(const Duration(days: 1)).day == event.endDate.day,
+                                ),
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
