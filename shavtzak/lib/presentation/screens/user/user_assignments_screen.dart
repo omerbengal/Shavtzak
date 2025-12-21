@@ -500,12 +500,10 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                       DateTime.now().day == event.endDate.day,
                                   DateTime.now().add(const Duration(days: 1)).year == event.endDate.year &&
                                       DateTime.now().add(const Duration(days: 1)).month == event.endDate.month &&
-                                      DateTime.now().add(const Duration(days: 1)).day == event.endDate.day,
-                                ),
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
+                              child: RichText(
+                                text: _formatDateWithHighlight(
+                                  _formatSingleDate(event.endDate, false, false),
+                                  isUpcoming,
                                 ),
                               ),
                             ),
