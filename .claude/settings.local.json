@@ -37,7 +37,8 @@
       "Bash(file:*)",
       "Bash(dart analyze:*)",
       "Bash(dart:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(xargs:*)"
     ],
     "deny": [],
     "ask": []

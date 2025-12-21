@@ -136,6 +136,11 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
                   : const Icon(Icons.event_available),
               label: isPermanent ? 'המגבלות שלי' : 'הזמינות שלי',
             ),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.checklist),
+              activeIcon: Icon(Icons.checklist),
+              label: 'צ\'קליסט',
+            ),
           ],
         );
       },
@@ -193,6 +198,9 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
         break;
       case 1:
         widget.navigationShell.goBranch(1);
+        break;
+      case 2:
+        widget.navigationShell.goBranch(2);
         break;
     }
   }

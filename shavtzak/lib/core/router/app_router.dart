@@ -9,7 +9,9 @@ import '../../presentation/screens/whoami/whoami_screen.dart';
 import '../../presentation/screens/user/user_navigation_shell.dart';
 import '../../presentation/screens/user/constraints_screen.dart';
 import '../../presentation/screens/user/user_assignments_screen.dart';
+import '../../presentation/screens/user/user_checklist_screen.dart';
 import '../../presentation/screens/admin/admin_choice_screen.dart';
+import '../../presentation/screens/admin/checklist_screen.dart';
 import '../../presentation/screens/team/team_list_screen.dart';
 import '../../presentation/screens/event/event_list_screen.dart';
 import '../../presentation/screens/assignment/assignment_list_screen.dart';
@@ -224,6 +226,18 @@ class AppRouter {
                 ),
               ],
             ),
+
+            // Admin checklist branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/admin/checklist',
+                  pageBuilder: (context, state) => const NoTransitionPage(
+                    child: AdminChecklistScreen(key: ValueKey('admin_checklist_prod')),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
 
@@ -262,6 +276,18 @@ class AppRouter {
                   path: '/user/constraints',
                   pageBuilder: (context, state) => const NoTransitionPage(
                     child: ConstraintsScreen(key: ValueKey('user_constraints_prod')),
+                  ),
+                ),
+              ],
+            ),
+
+            // User checklist branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/user/checklist',
+                  pageBuilder: (context, state) => const NoTransitionPage(
+                    child: UserChecklistScreen(key: ValueKey('user_checklist_prod')),
                   ),
                 ),
               ],
@@ -343,6 +369,18 @@ class AppRouter {
                 ),
               ],
             ),
+
+            // Test admin checklist branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/test/admin/checklist',
+                  pageBuilder: (context, state) => const NoTransitionPage(
+                    child: AdminChecklistScreen(key: ValueKey('admin_checklist_test')),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
 
@@ -381,6 +419,18 @@ class AppRouter {
                   path: '/test/user/constraints',
                   pageBuilder: (context, state) => const NoTransitionPage(
                     child: ConstraintsScreen(key: ValueKey('user_constraints_test')),
+                  ),
+                ),
+              ],
+            ),
+
+            // Test user checklist branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/test/user/checklist',
+                  pageBuilder: (context, state) => const NoTransitionPage(
+                    child: UserChecklistScreen(key: ValueKey('user_checklist_test')),
                   ),
                 ),
               ],

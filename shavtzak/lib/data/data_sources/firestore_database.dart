@@ -3,12 +3,14 @@ import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../domain/entities/assignment.dart';
+import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
 import '../../core/services/environment_service.dart';
 import '../models/assignment_model.dart';
+import '../models/checklist_item_model.dart';
 import '../models/event_model.dart';
 import '../models/team_member_model.dart';
 import 'database_interface.dart';
@@ -40,6 +42,12 @@ class FirestoreDatabase implements DatabaseInterface {
   String get _calendarSyncCollection {
     final collection = '${EnvironmentService.instance.collectionPrefix}calendar_sync';
     developer.log('FirestoreDatabase._calendarSyncCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
+    return collection;
+  }
+
+  String get _checklistItemsCollection {
+    final collection = '${EnvironmentService.instance.collectionPrefix}checklistItems';
+    developer.log('FirestoreDatabase._checklistItemsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
     return collection;
   }
 
@@ -1142,6 +1150,288 @@ class FirestoreDatabase implements DatabaseInterface {
 
     // Use jsonEncode directly without escaping newlines
     return jsonEncode(jsonMap);
+  }
+
+  // ========== Checklist Items Implementation ==========
+
+  @override
+  Future<List<ChecklistItem>> getChecklistItems() async {
+    try {
+      final snapshot = await _firestore.collection(_checklistItemsCollection).get();
+      final items = <ChecklistItem>[];
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+
+        // Get related data
+        final event = await getEventById(data['eventId'] as String);
+        final responsible = await getTeamMemberById(data['responsibleId'] as String);
+
+        // Get CC members
+        final ccIds = (data['ccIds'] as List?)?.map((e) => e.toString()).toList() ?? [];
+        final ccMembers = <TeamMember>[];
+        for (final ccId in ccIds) {
+          final member = await getTeamMemberById(ccId);
+          if (member != null) ccMembers.add(member);
+        }
+
+        items.add(ChecklistItemModel.fromFirestore(doc, event, responsible, ccMembers));
+      }
+
+      return items;
+    } catch (e) {
+      throw DatabaseException('Failed to fetch checklist items: $e');
+    }
+  }
+
+  @override
+  Future<ChecklistItem?> getChecklistItemById(String id) async {
+    try {
+      final doc = await _firestore.collection(_checklistItemsCollection).doc(id).get();
+      if (!doc.exists) return null;
+
+      final data = doc.data() as Map<String, dynamic>;
+
+      // Get related data
+      final event = await getEventById(data['eventId'] as String);
+      final responsible = await getTeamMemberById(data['responsibleId'] as String);
+
+      // Get CC members
+      final ccIds = (data['ccIds'] as List?)?.map((e) => e.toString()).toList() ?? [];
+      final ccMembers = <TeamMember>[];
+      for (final ccId in ccIds) {
+        final member = await getTeamMemberById(ccId);
+        if (member != null) ccMembers.add(member);
+      }
+
+      return ChecklistItemModel.fromFirestore(doc, event, responsible, ccMembers);
+    } catch (e) {
+      throw DatabaseException('Failed to fetch checklist item by ID: $e');
+    }
+  }
+
+  @override
+  Future<List<ChecklistItem>> getChecklistItemsByEvent(String eventId) async {
+    try {
+      final snapshot = await _firestore
+          .collection(_checklistItemsCollection)
+          .where('eventId', isEqualTo: eventId)
+          .get();
+      final items = <ChecklistItem>[];
+
+      // Get related data once for efficiency
+      final event = await getEventById(eventId);
+      final allTeamMembers = await getTeamMembers();
+      final memberMap = {for (var member in allTeamMembers) member.id: member};
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+
+        final responsibleId = data['responsibleId'] as String;
+        final responsible = memberMap[responsibleId];
+
+        // Get CC members
+        final ccIds = (data['ccIds'] as List?)?.map((e) => e.toString()).toList() ?? [];
+        final ccMembers = ccIds
+            .map((id) => memberMap[id])
+            .where((member) => member != null)
+            .cast<TeamMember>()
+            .toList();
+
+        items.add(ChecklistItemModel.fromFirestore(doc, event, responsible, ccMembers));
+      }
+
+      return items;
+    } catch (e) {
+      throw DatabaseException('Failed to fetch checklist items by event: $e');
+    }
+  }
+
+  @override
+  Future<List<ChecklistItem>> getChecklistItemsForTeamMember(String teamMemberId) async {
+    try {
+      // Query where team member is either responsible or CC'd
+      final responsibleSnapshot = await _firestore
+          .collection(_checklistItemsCollection)
+          .where('responsibleId', isEqualTo: teamMemberId)
+          .get();
+
+      final ccSnapshot = await _firestore
+          .collection(_checklistItemsCollection)
+          .where('ccIds', arrayContains: teamMemberId)
+          .get();
+
+      final items = <ChecklistItem>[];
+      final allDocs = [...responsibleSnapshot.docs, ...ccSnapshot.docs];
+      final seenIds = <String>{};
+
+      // Get all related data once
+      final allTeamMembers = await getTeamMembers();
+      final memberMap = {for (var member in allTeamMembers) member.id: member};
+      final allEvents = await getEvents();
+      final eventMap = {for (var event in allEvents) event.id: event};
+
+      for (final doc in allDocs) {
+        if (seenIds.contains(doc.id)) continue; // Avoid duplicates
+        seenIds.add(doc.id);
+
+        final data = doc.data();
+
+        final eventId = data['eventId'] as String;
+        final event = eventMap[eventId];
+
+        final responsibleId = data['responsibleId'] as String;
+        final responsible = memberMap[responsibleId];
+
+        // Get CC members
+        final ccIds = (data['ccIds'] as List?)?.map((e) => e.toString()).toList() ?? [];
+        final ccMembers = ccIds
+            .map((id) => memberMap[id])
+            .where((member) => member != null)
+            .cast<TeamMember>()
+            .toList();
+
+        items.add(ChecklistItemModel.fromFirestore(doc, event, responsible, ccMembers));
+      }
+
+      return items;
+    } catch (e) {
+      throw DatabaseException('Failed to fetch checklist items for team member: $e');
+    }
+  }
+
+  @override
+  Future<List<ChecklistItem>> getChecklistItemsWhereResponsible(String teamMemberId) async {
+    try {
+      final snapshot = await _firestore
+          .collection(_checklistItemsCollection)
+          .where('responsibleId', isEqualTo: teamMemberId)
+          .get();
+      final items = <ChecklistItem>[];
+
+      // Get all related data once
+      final allTeamMembers = await getTeamMembers();
+      final memberMap = {for (var member in allTeamMembers) member.id: member};
+      final allEvents = await getEvents();
+      final eventMap = {for (var event in allEvents) event.id: event};
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+
+        final eventId = data['eventId'] as String;
+        final event = eventMap[eventId];
+
+        final responsibleId = data['responsibleId'] as String;
+        final responsible = memberMap[responsibleId];
+
+        // Get CC members
+        final ccIds = (data['ccIds'] as List?)?.map((e) => e.toString()).toList() ?? [];
+        final ccMembers = ccIds
+            .map((id) => memberMap[id])
+            .where((member) => member != null)
+            .cast<TeamMember>()
+            .toList();
+
+        items.add(ChecklistItemModel.fromFirestore(doc, event, responsible, ccMembers));
+      }
+
+      return items;
+    } catch (e) {
+      throw DatabaseException('Failed to fetch checklist items where responsible: $e');
+    }
+  }
+
+  @override
+  Future<List<ChecklistItem>> getChecklistItemsWhereCc(String teamMemberId) async {
+    try {
+      final snapshot = await _firestore
+          .collection(_checklistItemsCollection)
+          .where('ccIds', arrayContains: teamMemberId)
+          .get();
+      final items = <ChecklistItem>[];
+
+      // Get all related data once
+      final allTeamMembers = await getTeamMembers();
+      final memberMap = {for (var member in allTeamMembers) member.id: member};
+      final allEvents = await getEvents();
+      final eventMap = {for (var event in allEvents) event.id: event};
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+
+        final eventId = data['eventId'] as String;
+        final event = eventMap[eventId];
+
+        final responsibleId = data['responsibleId'] as String;
+        final responsible = memberMap[responsibleId];
+
+        // Get CC members
+        final ccIds = (data['ccIds'] as List?)?.map((e) => e.toString()).toList() ?? [];
+        final ccMembers = ccIds
+            .map((id) => memberMap[id])
+            .where((member) => member != null)
+            .cast<TeamMember>()
+            .toList();
+
+        items.add(ChecklistItemModel.fromFirestore(doc, event, responsible, ccMembers));
+      }
+
+      return items;
+    } catch (e) {
+      throw DatabaseException('Failed to fetch checklist items where CC: $e');
+    }
+  }
+
+  @override
+  Future<void> insertChecklistItem(ChecklistItem item) async {
+    try {
+      await _firestore
+          .collection(_checklistItemsCollection)
+          .doc(item.id)
+          .set(ChecklistItemModel.toFirestore(item));
+    } catch (e) {
+      throw DatabaseException('Failed to insert checklist item: $e');
+    }
+  }
+
+  @override
+  Future<void> updateChecklistItem(ChecklistItem item) async {
+    try {
+      await _firestore
+          .collection(_checklistItemsCollection)
+          .doc(item.id)
+          .update(ChecklistItemModel.toFirestore(item));
+    } catch (e) {
+      throw DatabaseException('Failed to update checklist item: $e');
+    }
+  }
+
+  @override
+  Future<void> deleteChecklistItem(String id) async {
+    try {
+      await _firestore.collection(_checklistItemsCollection).doc(id).delete();
+    } catch (e) {
+      throw DatabaseException('Failed to delete checklist item: $e');
+    }
+  }
+
+  @override
+  Future<void> deleteChecklistItemsByEvent(String eventId) async {
+    try {
+      final batch = _firestore.batch();
+      final snapshot = await _firestore
+          .collection(_checklistItemsCollection)
+          .where('eventId', isEqualTo: eventId)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit();
+    } catch (e) {
+      throw DatabaseException('Failed to delete checklist items by event: $e');
+    }
   }
 }
 

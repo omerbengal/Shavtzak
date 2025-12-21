@@ -5,7 +5,7 @@ import 'test_environment_indicator.dart';
 /// PageView-based swipeable navigation wrapper
 ///
 /// RTL-friendly: swipe left to advance, swipe right to go back
-/// Order: Home → Team → Events → Assignments
+/// Order: Home → Team → Events → Assignments → Checklist
 class SwipeablePageView extends StatefulWidget {
   final StatefulNavigationShell navigationShell;
 
@@ -31,16 +31,18 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
   }
 
   /// Map page index to bottom nav index
-  /// Page order: Home (0) → Team (1) → Events (2) → Assignments (3)
-  /// Bottom nav order: Assignments (0) → Events (1) → Team (2)
+  /// Page order: Home (0) → Team (1) → Events (2) → Assignments (3) → Checklist (4)
+  /// Bottom nav order: Checklist (0) → Assignments (1) → Events (2) → Team (3)
   int _getBottomNavIndex() {
     switch (widget.navigationShell.currentIndex) {
-      case 3: // Assignments page
+      case 4: // Checklist page
         return 0;
-      case 2: // Events page
+      case 3: // Assignments page
         return 1;
-      case 1: // Team page
+      case 2: // Events page
         return 2;
+      case 1: // Team page
+        return 3;
       default: // Home page or unknown
         return -1; // No selection
     }
@@ -75,6 +77,10 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
               unselectedItemColor: Colors.grey,
               items: const [
                 BottomNavigationBarItem(
+                  icon: Icon(Icons.checklist),
+                  label: 'צ\'קליסט',
+                ),
+                BottomNavigationBarItem(
                   icon: Icon(Icons.assignment),
                   label: 'שיבוצים',
                 ),
@@ -93,9 +99,9 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
   }
 
   /// Handle bottom navigation bar taps
-  /// Maps bottom nav index to page index: 0=Assignments(3), 1=Events(2), 2=Team(1)
+  /// Maps bottom nav index to page index: 0=Checklist(4), 1=Assignments(3), 2=Events(2), 3=Team(1)
   void _onBottomNavTapped(int index) {
-    final pageIndices = [3, 2, 1]; // Map bottom nav to page indices
+    final pageIndices = [4, 3, 2, 1]; // Map bottom nav to page indices
     final pageIndex = pageIndices[index];
     widget.navigationShell.goBranch(pageIndex);
   }

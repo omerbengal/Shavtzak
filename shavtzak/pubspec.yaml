@@ -48,6 +48,8 @@ dependencies:
   intl: ^0.18.1
   device_info_plus: ^9.1.0
   shared_preferences: ^2.2.2
+  collection: ^1.18.0
+  rxdart: ^0.28.0
 
   # Navigation
   go_router: ^14.6.2

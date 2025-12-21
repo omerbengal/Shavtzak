@@ -1,4 +1,5 @@
 import '../../domain/entities/assignment.dart';
+import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
@@ -186,4 +187,36 @@ abstract class DatabaseInterface {
   /// Get Google Drive configuration from Firestore
   /// Returns a map containing scriptUrl and apiKey
   Future<Map<String, String?>?> getDriveConfig();
+
+  // ========== Checklist Items ==========
+
+  /// Get all checklist items
+  Future<List<ChecklistItem>> getChecklistItems();
+
+  /// Get a checklist item by ID
+  Future<ChecklistItem?> getChecklistItemById(String id);
+
+  /// Get checklist items for a specific event
+  Future<List<ChecklistItem>> getChecklistItemsByEvent(String eventId);
+
+  /// Get checklist items for a specific team member (as responsible or CC'd)
+  Future<List<ChecklistItem>> getChecklistItemsForTeamMember(String teamMemberId);
+
+  /// Get checklist items where team member is responsible
+  Future<List<ChecklistItem>> getChecklistItemsWhereResponsible(String teamMemberId);
+
+  /// Get checklist items where team member is CC'd
+  Future<List<ChecklistItem>> getChecklistItemsWhereCc(String teamMemberId);
+
+  /// Insert a new checklist item
+  Future<void> insertChecklistItem(ChecklistItem item);
+
+  /// Update an existing checklist item
+  Future<void> updateChecklistItem(ChecklistItem item);
+
+  /// Delete a checklist item
+  Future<void> deleteChecklistItem(String id);
+
+  /// Delete all checklist items for an event
+  Future<void> deleteChecklistItemsByEvent(String eventId);
 }
