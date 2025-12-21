@@ -535,24 +535,31 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                MapLocationResult.stripCoordinates(event.location),
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
+                              Expanded(
+                                child: Text(
+                                  MapLocationResult.stripCoordinates(event.location),
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                               ),
-                              // Navigation icons - only show if location was picked using map picker
                               if (_isLocationPickedFromMap(event.location)) ...[
-                                _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.location)),
-                                _buildWazeButton(onTap: () => _openWaze(event.location)),
+                                const SizedBox(width: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 4,
+                                  children: [
+                                    _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.location)),
+                                    _buildWazeButton(onTap: () => _openWaze(event.location)),
+                                  ],
+                                ),
                               ],
                             ],
                           ),
