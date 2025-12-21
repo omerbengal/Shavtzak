@@ -26,6 +26,7 @@ import '../../widgets/interactive_filter_bar.dart';
 import 'assignment_filter_modal.dart';
 import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
+import '../../widgets/map_location_picker.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -56,6 +57,40 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     setState(() {
       FilterPersistence.assignmentFilterIndex = newIndex;
     });
+  }
+
+  /// Format location for display based on how it was entered
+  /// - Manual location: show as-is
+  /// - Map picker from search: show name/address only
+  /// - Map picker by pinpoint: show coordinates
+  String _formatLocationForDisplay(String location) {
+    if (location.isEmpty) return '-';
+
+    // Check if location was picked using map picker (contains || separator)
+    if (location.contains('||')) {
+      // This is a map-picked location from search
+      final strippedLocation = MapLocationResult.stripCoordinates(location);
+
+      if (strippedLocation.isNotEmpty) {
+        // Location was picked from search result - show the name/address
+        return strippedLocation;
+      }
+    }
+
+    // Check if this is coordinates-only (pinpointed on map)
+    final (lat, lng) = MapLocationResult.parseCoordinates(location);
+    if (lat != null && lng != null) {
+      // Check if the entire location string is just coordinates
+      // This happens when admin pinpoints directly on map
+      final coordPattern = RegExp(r'^\s*\d+\.\d+\s*,\s*\d+\.\d+\s*$');
+      if (coordPattern.hasMatch(location)) {
+        // This is a pinpointed location - format coordinates nicely
+        return '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}';
+      }
+    }
+
+    // This is a manually entered location - show as-is
+    return location;
   }
 
   /// Filter assignments based on selected filter index
@@ -452,7 +487,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                         // Line 3: Location (only if not empty)
                         if (slot.event.location.isNotEmpty)
                           Text(
-                            slot.event.location,
+                            _formatLocationForDisplay(slot.event.location),
                             style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
                             textAlign: TextAlign.center,
                             maxLines: 1,

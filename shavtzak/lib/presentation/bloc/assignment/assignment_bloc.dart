@@ -693,17 +693,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
-  // Flag to track if we're currently rebuilding to avoid duplicate emissions
-  bool _isRebuilding = false;
-
   /// Internal handler to rebuild slots (triggered by streams or filter changes)
   Future<void> _onRebuildAssignmentSlots(
     RebuildAssignmentSlots event,
     Emitter<AssignmentState> emit,
   ) async {
-    if (_isRebuilding) return; // Skip if already rebuilding
-    _isRebuilding = true;
-
     try {
       // Determine which filter to use:
       // 1. If the event provides a filter (explicit change), use it
@@ -721,8 +715,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       emit(updatedSlots);
     } catch (e) {
       emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
-    } finally {
-      _isRebuilding = false;
     }
   }
 
@@ -731,9 +723,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     RebuildAssignmentSlotsFromData rebuildEvent,
     Emitter<AssignmentState> emit,
   ) async {
-    if (_isRebuilding) return; // Skip if already rebuilding
-    _isRebuilding = true;
-
     try {
       // Update the repository's cached assignments
       _repository.cacheCurrentAssignments(rebuildEvent.assignments);
@@ -888,8 +877,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       ));
     } catch (e) {
       emit(AssignmentError('שגיאה בבניית שיבוצים: $e'));
-    } finally {
-      _isRebuilding = false;
     }
   }
 

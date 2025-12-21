@@ -9,8 +9,11 @@ import '../bloc/assignment/assignment_state.dart';
 import '../bloc/team/team_bloc.dart';
 import '../bloc/team/team_event.dart';
 import '../bloc/team/team_state.dart';
+import '../../data/repositories/assignment_repository.dart';
 import '../../../core/services/service_locator.dart';
 
+/// Dialog showing all team members assigned to an event
+/// Excludes the current user from the list
 /// Dialog showing all team members assigned to an event
 /// Excludes the current user from the list
 class EventTeamMembersDialog extends StatefulWidget {
@@ -29,9 +32,12 @@ class EventTeamMembersDialog extends StatefulWidget {
   State<EventTeamMembersDialog> createState() => _EventTeamMembersDialogState();
 }
 
+
 class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
   late final AssignmentBloc _assignmentBloc;
   late final TeamBloc _teamBloc;
+  List<Assignment>? _cachedAssignments;
+  bool _hasShownData = false;
 
   @override
   void initState() {
@@ -39,6 +45,7 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
     // Create dedicated BLoCs for this dialog
     _assignmentBloc = serviceLocator.createAssignmentBloc();
     _teamBloc = serviceLocator.createTeamBloc();
+
     _loadAssignments();
   }
 
@@ -49,7 +56,20 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
     super.dispose();
   }
 
-  void _loadAssignments() {
+  void _loadAssignments() async {
+    // If we don't have cached data, prefetch it first
+    if (_cachedAssignments == null) {
+      try {
+        final assignmentRepository = serviceLocator.createAssignmentRepository();
+        final assignments = await assignmentRepository.getAssignmentsByEvent(widget.eventId);
+        _cachedAssignments = assignments;
+        // Mark that we have data to prevent showing empty state
+        _hasShownData = assignments.isNotEmpty;
+      } catch (e) {
+        // If prefetch fails, continue with BLoC loading
+      }
+    }
+
     // Use the AssignmentBloc's real-time stream
     _assignmentBloc.add(LoadAssignmentsByEvent(widget.eventId));
     // Also load team members to keep them updated
@@ -127,10 +147,44 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                   Expanded(
                     child: BlocBuilder<AssignmentBloc, AssignmentState>(
                       builder: (context, state) {
-                        if (state is AssignmentLoading) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
+                        // If we have cached data and are still loading, show the cached data
+                        if (state is AssignmentLoading && _cachedAssignments != null) {
+                          // Show cached data while waiting for real-time stream
+                          final filteredAssignments = _cachedAssignments!
+                              .where((a) => a.teamMemberId != widget.currentUserId)
+                              .toList();
+
+                          if (filteredAssignments.isEmpty) {
+                            // If we have shown data before but now it's empty, show loading instead of empty state
+                            return _hasShownData
+                                ? _buildLoadingState()
+                                : _buildEmptyState();
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${filteredAssignments.where((a) => a.teamMember != null).length} חברי צוות נוספים באירוע',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  child: _buildTeamMembersList(filteredAssignments),
+                                ),
+                              ),
+                            ],
                           );
+                        }
+
+                        // Show loading spinner if we don't have cached data
+                        if (state is AssignmentLoading && _cachedAssignments == null) {
+                          return _buildLoadingState();
                         }
 
                         if (state is AssignmentsLoaded) {
@@ -214,6 +268,12 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
       ),
         ),
       ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return const Center(
+      child: CircularProgressIndicator(),
     );
   }
 

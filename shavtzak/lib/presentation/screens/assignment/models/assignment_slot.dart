@@ -41,12 +41,12 @@ class AssignmentSlot extends Equatable {
 
   @override
   List<Object?> get props => [
-        event.id,
+        event, // Full Event object (extends Equatable) - includes location, name, dates, etc.
         roleType,
         slotIndex,
-        currentAssignment?.id,
-        availableMembers.map((m) => m.id).toList(),
-        alreadyAssignedMembers.map((m) => m.id).toList(),
+        currentAssignment, // Full Assignment object for real-time updates
+        availableMembers,
+        alreadyAssignedMembers,
         hasDoubleAssignment,
         otherRoles,
       ];
