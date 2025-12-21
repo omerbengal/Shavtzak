@@ -9,23 +9,15 @@ class PhoneNumberTextInputFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    // Check if user is deleting
-    final isDeleting = newValue.text.length < oldValue.text.length;
-
-    
-    // Special handling for deletion around the dash
-    if (isDeleting && oldValue.text.contains('-') && oldValue.text[3] == '-') {
-      // If we had a dash and now we don't, or if we're deleting from the end
-      if (!newValue.text.contains('-') || newValue.text.length < 4) {
-        // User is deleting the 4th digit or the dash
-        // Return just the first 3 digits
-        String firstThree = oldValue.text.substring(0, 3);
-        return TextEditingValue(
-          text: firstThree,
-          selection: TextSelection.collapsed(offset: 3),
-        );
-      }
+    // Handle selection-based deletion properly
+    if (newValue.text.length < oldValue.text.length &&
+        !oldValue.selection.isCollapsed) {
+      // User has selected and deleted text
+      return _handleSelectionDeletion(oldValue, newValue);
     }
+
+    // Handle regular deletion (from end, backspace, etc.)
+    final isDeleting = newValue.text.length < oldValue.text.length;
 
     // Get only digits from new value
     String digitsOnly = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
@@ -54,12 +46,13 @@ class PhoneNumberTextInputFormatter extends TextInputFormatter {
     // Determine cursor position
     int cursorPos = newValue.selection.baseOffset;
 
-    // If we just auto-added the dash
+    // Adjust cursor position for auto-added dash
     if (!isDeleting &&
         formatted.contains('-') &&
-        !oldValue.text.contains('-')) {
-      // Place cursor at the end
-      cursorPos = formatted.length;
+        !oldValue.text.contains('-') &&
+        cursorPos > 3) {
+      // If we just added a dash and cursor was after position 3, shift it right by 1
+      cursorPos += 1;
     } else if (cursorPos > formatted.length) {
       cursorPos = formatted.length;
     }
@@ -67,6 +60,31 @@ class PhoneNumberTextInputFormatter extends TextInputFormatter {
     return TextEditingValue(
       text: formatted,
       selection: TextSelection.collapsed(offset: cursorPos),
+    );
+  }
+
+  TextEditingValue _handleSelectionDeletion(TextEditingValue oldValue, TextEditingValue newValue) {
+    // Extract remaining digits from the new value
+    String newDigits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+
+    // If no digits left, return empty
+    if (newDigits.isEmpty) {
+      return const TextEditingValue(
+        text: '',
+        selection: TextSelection.collapsed(offset: 0),
+      );
+    }
+
+    // Format the remaining digits
+    String formatted = newDigits;
+    if (newDigits.length >= 4) {
+      formatted = '${newDigits.substring(0, 3)}-${newDigits.substring(3)}';
+    }
+
+    // Position cursor at the end of the formatted string
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }
