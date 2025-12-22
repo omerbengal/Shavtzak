@@ -12,6 +12,8 @@ class EventModel {
   final String endTime;
   final String assemblyTime;
   final String location;
+  final String? parkingLocation;
+  final List<String> parkingEditorIds;
   final bool requiresArmed;
   final String comments;
   final Map<String, int> roleRequirements; // Stored as string keys in Firestore
@@ -32,6 +34,8 @@ class EventModel {
     required this.endTime,
     required this.assemblyTime,
     required this.location,
+    this.parkingLocation,
+    this.parkingEditorIds = const [],
     required this.requiresArmed,
     this.comments = '',
     required this.roleRequirements,
@@ -53,6 +57,8 @@ class EventModel {
       endTime: entity.endTime,
       assemblyTime: entity.assemblyTime,
       location: entity.location,
+      parkingLocation: entity.parkingLocation,
+      parkingEditorIds: entity.parkingEditorIds,
       requiresArmed: entity.requiresArmed,
       comments: entity.comments,
       roleRequirements: Map.fromEntries(
@@ -79,6 +85,8 @@ class EventModel {
       endTime: endTime,
       assemblyTime: assemblyTime,
       location: location,
+      parkingLocation: parkingLocation,
+      parkingEditorIds: parkingEditorIds,
       requiresArmed: requiresArmed,
       comments: comments,
       roleRequirements: Map.fromEntries(
@@ -110,6 +118,8 @@ class EventModel {
       endTime: data['endTime'] as String,
       assemblyTime: data['assemblyTime'] as String,
       location: data['location'] as String? ?? '',
+      parkingLocation: data['parkingLocation'] as String?,
+      parkingEditorIds: List<String>.from(data['parkingEditorIds'] as List? ?? const []),
       requiresArmed: data['requiresArmed'] as bool? ?? false,
       comments: data['comments'] as String? ?? data['notes'] as String? ?? '',
       roleRequirements: Map<String, int>.from(data['roleRequirements'] as Map? ?? {}),
@@ -132,6 +142,8 @@ class EventModel {
       'endTime': endTime,
       'assemblyTime': assemblyTime,
       'location': location,
+      'parkingLocation': parkingLocation,
+      'parkingEditorIds': parkingEditorIds,
       'requiresArmed': requiresArmed,
       'comments': comments,
       'roleRequirements': roleRequirements,
@@ -154,6 +166,8 @@ class EventModel {
       endTime: json['endTime'] as String,
       assemblyTime: json['assemblyTime'] as String,
       location: json['location'] as String? ?? '',
+      parkingLocation: json['parkingLocation'] as String?,
+      parkingEditorIds: List<String>.from(json['parkingEditorIds'] as List? ?? const []),
       requiresArmed: json['requiresArmed'] as bool? ?? false,
       comments: json['comments'] as String? ?? json['notes'] as String? ?? '',
       roleRequirements: Map<String, int>.from(json['roleRequirements'] as Map? ?? {}),
@@ -176,6 +190,8 @@ class EventModel {
       'endTime': endTime,
       'assemblyTime': assemblyTime,
       'location': location,
+      'parkingLocation': parkingLocation,
+      'parkingEditorIds': parkingEditorIds,
       'requiresArmed': requiresArmed,
       'comments': comments,
       'roleRequirements': roleRequirements,

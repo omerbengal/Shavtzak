@@ -11,6 +11,7 @@ import '../../../bloc/event/event_event.dart';
 import '../../../bloc/event/event_state.dart';
 import '../../../widgets/date_picker_dialog.dart';
 import '../../../widgets/map_location_picker.dart';
+import '../../../widgets/parking_location_picker_dialog.dart';
 import '../quota_reduction_analyzer.dart';
 import 'quota_reduction_dialog.dart';
 import 'duplication_conflict_resolution_dialog.dart';
@@ -57,6 +58,8 @@ class _EventFormModalState extends State<EventFormModal> {
   final _nameFocusNode = FocusNode(); // For name field blur detection
   bool _duplicateAssignments = false; // For duplication mode checkbox
   String? _rawLocationValue; // Stores location with hidden coordinates (Name||lat,lng)
+  String? _rawParkingLocationValue; // Stores parking location with hidden coordinates
+  List<String> _parkingEditorIds = const []; // IDs of team members who can edit parking
 
   // For highlighting selected role
   ScrollController? _scrollController; // Will be set from DraggableScrollableSheet
@@ -80,6 +83,8 @@ class _EventFormModalState extends State<EventFormModal> {
       // Store raw location value and display stripped version
       _rawLocationValue = widget.event!.location;
       _locationController.text = MapLocationResult.stripCoordinates(widget.event!.location);
+      _rawParkingLocationValue = widget.event!.parkingLocation;
+      _parkingEditorIds = widget.event!.parkingEditorIds;
       _commentsController.text = widget.event!.comments;
       _startTimeController.text = widget.event!.startTime;
       _endTimeController.text = widget.event!.endTime;
@@ -390,6 +395,8 @@ class _EventFormModalState extends State<EventFormModal> {
       endTime: _endTimeController.text.trim(),
       assemblyTime: _assemblyTimeController.text.trim(),
       location: locationValue,
+      parkingLocation: _rawParkingLocationValue,
+      parkingEditorIds: _parkingEditorIds,
       requiresArmed: _requiresArmed,
       comments: _commentsController.text.trim(),
       roleRequirements: _roleRequirements,
@@ -694,54 +701,81 @@ class _EventFormModalState extends State<EventFormModal> {
                                   hintText: 'לדוגמה: אולמי ורסאי',
                                   prefixIcon: const Icon(Icons.location_on),
                                   border: const OutlineInputBorder(),
-                                  // Map picker button
-                                  suffixIcon: IconButton(
-                                    icon: const Icon(Icons.map, color: Colors.blue),
-                                    tooltip: 'בחר מיקום במפה',
-                                    onPressed: () async {
-                                      // Try to parse existing coordinates from raw location value
-                                      // Only use if user hasn't manually edited the field
-                                      double? initialLat;
-                                      double? initialLng;
-                                      String? initialName;
+                                  // Map and parking picker buttons
+                                  suffixIcon: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // Map picker button
+                                      IconButton(
+                                        icon: const Icon(Icons.map, color: Colors.blue),
+                                        tooltip: 'בחר מיקום במפה',
+                                        onPressed: () async {
+                                          // Try to parse existing coordinates from raw location value
+                                          // Only use if user hasn't manually edited the field
+                                          double? initialLat;
+                                          double? initialLng;
+                                          String? initialName;
 
-                                      final currentText = _locationController.text.trim();
-                                      final rawLocation = _rawLocationValue;
+                                          final currentText = _locationController.text.trim();
+                                          final rawLocation = _rawLocationValue;
 
-                                      // Check if user manually edited the field
-                                      if (rawLocation != null && currentText.isNotEmpty) {
-                                        final strippedRaw = MapLocationResult.stripCoordinates(rawLocation);
-                                        if (strippedRaw == currentText) {
-                                          // User didn't edit, use saved coordinates
-                                          final (lat, lng) = MapLocationResult.parseCoordinates(rawLocation);
-                                          initialLat = lat;
-                                          initialLng = lng;
-                                          initialName = strippedRaw;
-                                          // Only use name if it's not just coordinates
-                                          if (initialName == rawLocation && lat != null) {
-                                            initialName = null;
+                                          // Check if user manually edited the field
+                                          if (rawLocation != null && currentText.isNotEmpty) {
+                                            final strippedRaw = MapLocationResult.stripCoordinates(rawLocation);
+                                            if (strippedRaw == currentText) {
+                                              // User didn't edit, use saved coordinates
+                                              final (lat, lng) = MapLocationResult.parseCoordinates(rawLocation);
+                                              initialLat = lat;
+                                              initialLng = lng;
+                                              initialName = strippedRaw;
+                                              // Only use name if it's not just coordinates
+                                              if (initialName == rawLocation && lat != null) {
+                                                initialName = null;
+                                              }
+                                            }
+                                            // If user edited, leave initialLat/Lng/Name as null (fresh start)
                                           }
-                                        }
-                                        // If user edited, leave initialLat/Lng/Name as null (fresh start)
-                                      }
 
-                                      final result = await MapLocationPicker.show(
-                                        context,
-                                        title: 'בחר מיקום לאירוע',
-                                        initialLatitude: initialLat,
-                                        initialLongitude: initialLng,
-                                        initialLocationName: initialName,
-                                      );
-                                      if (result != null) {
-                                        setState(() {
-                                          // Store raw value with coordinates for later use
-                                          _rawLocationValue = result.toDisplayString();
-                                          // Display stripped version (name only, no coordinates)
-                                          _locationController.text = MapLocationResult.stripCoordinates(result.toDisplayString());
-                                          _isDirty = true;
-                                        });
-                                      }
-                                    },
+                                          final result = await MapLocationPicker.show(
+                                            context,
+                                            title: 'בחר מיקום לאירוע',
+                                            initialLatitude: initialLat,
+                                            initialLongitude: initialLng,
+                                            initialLocationName: initialName,
+                                          );
+                                          if (result != null) {
+                                            setState(() {
+                                              // Store raw value with coordinates for later use
+                                              _rawLocationValue = result.toDisplayString();
+                                              // Display stripped version (name only, no coordinates)
+                                              _locationController.text = MapLocationResult.stripCoordinates(result.toDisplayString());
+                                              _isDirty = true;
+                                            });
+                                          }
+                                        },
+                                      ),
+                                      // Parking picker button
+                                      IconButton(
+                                        icon: const Icon(Icons.local_parking, color: Colors.purple),
+                                        tooltip: 'בחר מיקום חנייה',
+                                        onPressed: () async {
+                                          final result = await ParkingLocationPickerDialog.show(
+                                            context,
+                                            eventLocation: _rawLocationValue ?? _locationController.text,
+                                            initialParkingLocation: _rawParkingLocationValue,
+                                            initialEditorIds: _parkingEditorIds,
+                                            isAdmin: true, // Admin can edit team members
+                                          );
+
+                                          if (result != null) {
+                                            setState(() {
+                                              _rawParkingLocationValue = result.parkingLocation;
+                                              _parkingEditorIds = result.editorIds;
+                                            });
+                                          }
+                                        },
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 validator: (value) {

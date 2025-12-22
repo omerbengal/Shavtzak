@@ -11,6 +11,8 @@ class Event extends Equatable {
   final String endTime; // Format: "HH:mm"
   final String assemblyTime; // Format: "HH:mm"
   final String location;
+  final String? parkingLocation; // Parking location in "Name||lat,lng" format
+  final List<String> parkingEditorIds; // IDs of team members who can edit parking
   final bool requiresArmed;
   final String comments; // Comments about the event
   final Map<RoleType, int> roleRequirements; // How many people needed per role
@@ -31,6 +33,8 @@ class Event extends Equatable {
     required this.endTime,
     required this.assemblyTime,
     this.location = '',
+    this.parkingLocation,
+    this.parkingEditorIds = const [],
     required this.requiresArmed,
     this.comments = '',
     required this.roleRequirements,
@@ -117,6 +121,8 @@ class Event extends Equatable {
     String? endTime,
     String? assemblyTime,
     String? location,
+    String? parkingLocation,
+    List<String>? parkingEditorIds,
     bool? requiresArmed,
     String? comments,
     Map<RoleType, int>? roleRequirements,
@@ -135,6 +141,8 @@ class Event extends Equatable {
       endTime: endTime ?? this.endTime,
       assemblyTime: assemblyTime ?? this.assemblyTime,
       location: location ?? this.location,
+      parkingLocation: parkingLocation ?? this.parkingLocation,
+      parkingEditorIds: parkingEditorIds ?? this.parkingEditorIds,
       requiresArmed: requiresArmed ?? this.requiresArmed,
       comments: comments ?? this.comments,
       roleRequirements: roleRequirements ?? this.roleRequirements,
@@ -156,6 +164,8 @@ class Event extends Equatable {
         endTime,
         assemblyTime,
         location,
+        parkingLocation,
+        parkingEditorIds,
         requiresArmed,
         comments,
         roleRequirements,

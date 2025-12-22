@@ -9,7 +9,10 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
+import '../../bloc/event/event_bloc.dart';
+import '../../bloc/event/event_event.dart';
 import '../../widgets/map_location_picker.dart';
+import '../../widgets/parking_location_picker_dialog.dart';
 import '../../widgets/event_team_members_dialog.dart';
 
 /// Screen for non-admin users to view their event assignments
@@ -499,7 +502,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            const SizedBox(width: 32), // Align with end date text
+                            Icon(
+                              Icons.calendar_today,
+                              size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
+                              color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                            ),
+                            const SizedBox(width: 10),
                             Text(
                               'תאריך סיום:',
                               style: TextStyle(
@@ -531,7 +539,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                         final hasMapIcons = _isLocationPickedFromMap(event.location);
 
                         return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Icon(
                               Icons.location_on,
@@ -566,6 +574,70 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                     _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.location)),
                                     _buildWazeButton(onTap: () => _openWaze(event.location)),
                                   ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  // Parking location section (if exists)
+                  if (event.parkingLocation != null && event.parkingLocation!.isNotEmpty) ...[
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final userState = context.watch<UserSelectionBloc>().state;
+                        final canEditParking = userState is UserAuthenticated &&
+                            _canUserEditParking(event, userState);
+
+                        final parkingText = MapLocationResult.stripCoordinates(event.parkingLocation!);
+                        final hasMapIcons = _isLocationPickedFromMap(event.parkingLocation!);
+
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.local_parking,
+                              size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
+                              color: isUpcoming ? Colors.purple.shade800 : Colors.grey.shade600,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'חנייה:',
+                              style: TextStyle(
+                                fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+                                fontWeight: FontWeight.w500,
+                                color: secondaryTextColor,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    parkingText,
+                                    style: TextStyle(
+                                      fontSize: _getResponsiveFontSize(context),
+                                      fontWeight: FontWeight.bold,
+                                      color: isUpcoming ? Colors.purple.shade900 : Colors.grey.shade700,
+                                    ),
+                                  ),
+                                  if (hasMapIcons) ...[
+                                    _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.parkingLocation!)),
+                                    _buildWazeButton(onTap: () => _openWaze(event.parkingLocation!)),
+                                  ],
+                                  if (canEditParking)
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, size: 18),
+                                      tooltip: 'ערוך מיקום חנייה',
+                                      onPressed: () => _editParkingLocation(context, event),
+                                      constraints: const BoxConstraints(),
+                                      padding: EdgeInsets.zero,
+                                    ),
                                 ],
                               ),
                             ),
@@ -1041,9 +1113,72 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   }
 
   /// Check if the location was picked using the map picker
-  /// Map picker locations have coordinates stored after "||" separator
+  /// Map picker locations have coordinates (either with "||" separator or as raw "lat, lng")
   bool _isLocationPickedFromMap(String location) {
-    return location.contains('||');
+    // Check for the "||" separator format
+    if (location.contains('||')) {
+      return true;
+    }
+
+    // Try to parse coordinates directly (format: "lat, lng")
+    final coords = MapLocationResult.parseCoordinates(location);
+    return coords.$1 != null && coords.$2 != null;
+  }
+
+  /// Check if the current user can edit the parking location for an event
+  bool _canUserEditParking(Event event, UserAuthenticated userState) {
+    return event.parkingEditorIds.contains(userState.user.id) ||
+        userState.user.isAdmin;
+  }
+
+  /// Update parking location for an event
+  Future<void> _updateParkingLocation(
+    BuildContext context,
+    Event event,
+    String newParkingLocation,
+    List<String> newEditorIds,
+  ) async {
+    final updatedEvent = event.copyWith(
+      parkingLocation: newParkingLocation,
+      parkingEditorIds: newEditorIds,
+      updatedAt: DateTime.now(),
+    );
+
+    context.read<EventBloc>().add(UpdateEvent(updatedEvent));
+  }
+
+  /// Edit parking location for an event
+  void _editParkingLocation(BuildContext context, Event event) async {
+    final userState = context.read<UserSelectionBloc>().state;
+    final isAdmin = userState is UserAuthenticated && userState.user.isAdmin;
+
+    final result = await ParkingLocationPickerDialog.show(
+      context,
+      eventLocation: event.location,
+      initialParkingLocation: event.parkingLocation,
+      initialEditorIds: event.parkingEditorIds,
+      isAdmin: isAdmin, // Only admins can edit team members
+    );
+
+    if (result != null && mounted) {
+      await _updateParkingLocation(
+        context,
+        event,
+        result.parkingLocation,
+        result.editorIds,
+      );
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('מיקום החנייה עודכן בהצלחה'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildEmptyState() {
