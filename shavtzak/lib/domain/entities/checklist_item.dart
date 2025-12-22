@@ -157,13 +157,14 @@ class ChecklistItem extends Equatable {
   }
 
   /// Remove a CC'd team member
+  /// Note: Does NOT remove the CC's note from ccNotes - this is intentional.
+  /// The note remains temporarily so toFirestore() can detect it as orphaned
+  /// and add FieldValue.delete() markers to properly delete it from Firestore.
   ChecklistItem withRemovedCc(String teamMemberId) {
     if (!ccIds.contains(teamMemberId)) return this;
-    final updatedNotes = Map<String, CcNoteEntry>.from(ccNotes);
-    updatedNotes.remove(teamMemberId);
     return copyWith(
       ccIds: ccIds.where((id) => id != teamMemberId).toList(),
-      ccNotes: updatedNotes,
+      // ccNotes is intentionally NOT modified here
       updatedAt: DateTime.now(),
     );
   }

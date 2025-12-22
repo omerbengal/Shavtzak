@@ -7,7 +7,14 @@ import '../../../domain/entities/event.dart';
 import '../../bloc/checklist/checklist_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../bloc/team/team_bloc.dart';
+import '../../bloc/team/team_state.dart';
+import '../../bloc/team/team_event.dart';
+import '../../bloc/event/event_bloc.dart';
+import '../../bloc/event/event_state.dart';
+import '../../bloc/event/event_event.dart';
 import '../../widgets/checklist/user_checklist_item_card.dart';
+import '../../widgets/checklist/checklist_form_modal.dart';
 
 /// User screen for viewing and editing their checklist items
 class UserChecklistScreen extends StatefulWidget {
@@ -25,6 +32,10 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
+    // Load events and team members for dialog
+    context.read<EventBloc>().add(LoadEvents());
+    context.read<TeamBloc>().add(LoadTeamMembers());
 
     // Load checklist items after widget is initialized
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -48,76 +59,90 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('הערה עבור ${item.name}'),
-        content: TextFormField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'הערה שלך',
-            border: OutlineInputBorder(),
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text('הערה עבור ${item.name}'),
+          content: TextFormField(
+            controller: controller,
+            textAlign: TextAlign.right,
+            textDirection: TextDirection.rtl,
+            decoration: const InputDecoration(
+              labelText: 'הערה שלך',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 3,
+            autofocus: true,
           ),
-          maxLines: 3,
-          autofocus: true,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('ביטול'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                context.read<ChecklistBloc>().add(
+                  UpdateCcNote(
+                    itemId: item.id,
+                    ccMemberId: currentUser.id,
+                    note: controller.text.trim(),
+                  ),
+                );
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('שמור'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('ביטול'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              context.read<ChecklistBloc>().add(
-                UpdateCcNote(
-                  itemId: item.id,
-                  ccMemberId: currentUser.id,
-                  note: controller.text.trim(),
-                ),
-              );
-              Navigator.pop(context);
-            },
-            child: const Text('שמור'),
-          ),
-        ],
       ),
     );
   }
 
-  void _showEditResponsibleNoteDialog(ChecklistItem item) {
-    final controller = TextEditingController(text: item.responsibleNote);
-
+  void _deleteItem(ChecklistItem item) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('ערוך פירוט אחראי עבור ${item.name}'),
-        content: TextFormField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'פירוט אחראי',
-            border: OutlineInputBorder(),
-          ),
-          maxLines: 3,
-          autofocus: true,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('מחיקת פריט מהצ\'קליסט'),
+          content: Text('האם אתה בטוח שברצונך למחוק את "${item.name}"?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('ביטול'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                context.read<ChecklistBloc>().add(DeleteChecklistItem(item.id));
+                Navigator.pop(context); // Close confirmation dialog
+                Navigator.pop(context); // Close edit dialog
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('מחק'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('ביטול'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (controller.text.trim() != item.responsibleNote) {
-                context.read<ChecklistBloc>().add(
-                  UpdateResponsibleNote(
-                    itemId: item.id,
-                    note: controller.text.trim(),
-                  ),
-                );
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('שמור'),
-          ),
-        ],
+      ),
+    );
+  }
+
+  void _showEditItemDialog(ChecklistItem item, TeamMember currentUser) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (modalContext) => ChecklistFormModal(
+        item: item,
+        currentUserId: currentUser.id, // For tracking who edited it
+        isResponsibleUser: true, // This is a responsible user, not an admin
+        onSave: (updatedItem) {
+          // Update the checklist item
+          context.read<ChecklistBloc>().add(UpdateChecklistItem(updatedItem));
+          Navigator.pop(modalContext);
+        },
+        onDelete: () => _deleteItem(item),
       ),
     );
   }
@@ -252,6 +277,14 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
       );
     }
 
+    // Get all team members from TeamBloc
+    final teamState = context.read<TeamBloc>().state;
+    final allTeamMembers = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
+
+    // Get all events from EventBloc
+    final eventState = context.read<EventBloc>().state;
+    final allEvents = eventState is EventsLoaded ? eventState.events : <Event>[];
+
     // Group by event
     final grouped = _groupByEvent(items);
 
@@ -274,6 +307,7 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
           children: eventItems.map((item) => UserChecklistItemCard(
             item: item,
             user: currentUser,
+            allTeamMembers: allTeamMembers,
             onStatusChanged: (newStatus) {
               context.read<ChecklistBloc>().add(
                 UpdateChecklistItemStatus(
@@ -282,7 +316,7 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
                 ),
               );
             },
-            onEditNote: () => _showEditResponsibleNoteDialog(item),
+            onEditItem: () => _showEditItemDialog(item, currentUser),
           )).toList(),
         );
       },
@@ -328,7 +362,7 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
           children: eventItems.map((item) => UserChecklistItemCard(
             item: item,
             user: currentUser,
-            onEditNote: () => _showCcNoteDialog(item),
+            onEditItem: () => _showCcNoteDialog(item),
           )).toList(),
         );
       },

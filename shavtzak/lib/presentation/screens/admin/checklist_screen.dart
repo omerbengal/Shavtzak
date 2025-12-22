@@ -144,10 +144,6 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
   }
 
   void _showAddModal() {
-    // Reload team members and events to ensure fresh data
-    context.read<TeamBloc>().add(LoadTeamMembers());
-    context.read<EventBloc>().add(LoadEvents());
-
     // Get current user ID for tracking creator
     final userState = context.read<UserSelectionBloc>().state;
     final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
@@ -155,23 +151,12 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (modalContext) => BlocBuilder<TeamBloc, TeamState>(
-        builder: (context, teamState) => BlocBuilder<EventBloc, EventState>(
-          builder: (context, eventState) {
-            final events = eventState is EventsLoaded ? eventState.events : <Event>[];
-            final teamMembers = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
-
-            return ChecklistFormModal(
-              events: events,
-              teamMembers: teamMembers,
-              currentUserId: currentUserId,
-              onSave: (item) {
-                context.read<ChecklistBloc>().add(AddChecklistItem(item));
-                Navigator.pop(modalContext);
-              },
-            );
-          },
-        ),
+      builder: (modalContext) => ChecklistFormModal(
+        currentUserId: currentUserId,
+        onSave: (item) {
+          context.read<ChecklistBloc>().add(AddChecklistItem(item));
+          Navigator.pop(modalContext);
+        },
       ),
     );
   }
@@ -355,7 +340,6 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                           ),
                         );
                       },
-                      onDelete: () => _deleteItem(item),
                     );
                   },
                 );
@@ -423,7 +407,6 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                       ),
                     );
                   },
-                  onDelete: () => _deleteItem(item),
                 )).toList(),
               );
             },
@@ -580,58 +563,52 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
   }
 
   void _showEditModal(ChecklistItem item) {
-    // Reload team members and events to ensure fresh data
-    context.read<TeamBloc>().add(LoadTeamMembers());
-    context.read<EventBloc>().add(LoadEvents());
-
-    // Get current user ID for tracking creator (in case it wasn't set before)
+    // Get current user ID for tracking creator
     final userState = context.read<UserSelectionBloc>().state;
     final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (modalContext) => BlocBuilder<TeamBloc, TeamState>(
-        builder: (context, teamState) => BlocBuilder<EventBloc, EventState>(
-          builder: (context, eventState) {
-            final events = eventState is EventsLoaded ? eventState.events : <Event>[];
-            final teamMembers = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
-
-            return ChecklistFormModal(
-              item: item,
-              events: events,
-              teamMembers: teamMembers,
-              currentUserId: currentUserId,
-              onSave: (updatedItem) {
-                context.read<ChecklistBloc>().add(UpdateChecklistItem(updatedItem));
-                Navigator.pop(modalContext);
-              },
-            );
-          },
-        ),
+      builder: (modalContext) => ChecklistFormModal(
+        item: item,
+        currentUserId: currentUserId,
+        onSave: (updatedItem) {
+          context.read<ChecklistBloc>().add(UpdateChecklistItem(updatedItem));
+          Navigator.pop(modalContext);
+        },
+        onDelete: () => _deleteItem(item, modalContext),
       ),
     );
   }
 
-  void _deleteItem(ChecklistItem item) {
+  void _deleteItem(ChecklistItem item, BuildContext modalContext) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('מחיקת פריט מהצ\'קליסט'),
-        content: Text('האם אתה בטוח שברצונך למחוק את "${item.name}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('ביטול'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              context.read<ChecklistBloc>().add(DeleteChecklistItem(item.id));
-              Navigator.pop(context);
-            },
-            child: const Text('מחק'),
-          ),
-        ],
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('מחיקת פריט מהצ\'קליסט'),
+          content: Text('האם אתה בטוח שברצונך למחוק את "${item.name}"?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('ביטול'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                context.read<ChecklistBloc>().add(DeleteChecklistItem(item.id));
+                Navigator.pop(context); // Close confirmation dialog
+                Navigator.pop(modalContext); // Close edit dialog
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('מחק'),
+            ),
+          ],
+        ),
       ),
     );
   }

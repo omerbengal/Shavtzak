@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/services/checklist_permission_service.dart';
+import 'chat_bubble.dart';
 
 /// Helper function to get CC notes sorted by timestamp
 /// Notes with timestamps are sorted ascending, notes without timestamp come last
@@ -38,14 +40,16 @@ class UserChecklistItemCard extends StatelessWidget {
   final ChecklistItem item;
   final TeamMember user;
   final ValueChanged<bool>? onStatusChanged;
-  final VoidCallback? onEditNote;
+  final VoidCallback? onEditItem;
+  final List<TeamMember>? allTeamMembers;
 
   const UserChecklistItemCard({
     super.key,
     required this.item,
     required this.user,
     this.onStatusChanged,
-    this.onEditNote,
+    this.onEditItem,
+    this.allTeamMembers,
   });
 
   Color _getBackgroundColor() {
@@ -69,9 +73,7 @@ class UserChecklistItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final userRole = _getUserRole();
-    final canEditItem = ChecklistPermissionService.canEditItem(item, user);
     final canUpdateStatus = ChecklistPermissionService.canUpdateStatus(item, user);
-    final canEditCcNote = ChecklistPermissionService.canEditCcNote(item, user, user.id);
     final userNote = _getUserNote();
 
     return Container(
@@ -82,6 +84,7 @@ class UserChecklistItemCard extends StatelessWidget {
         border: Border.all(color: Colors.grey.shade300),
       ),
       child: ListTile(
+        onTap: onEditItem,
         title: Text(
           item.name,
           style: const TextStyle(fontWeight: FontWeight.bold),
@@ -101,25 +104,47 @@ class UserChecklistItemCard extends StatelessWidget {
                 'מיקום: ${item.event!.location}',
                 style: const TextStyle(fontSize: 12),
               ),
-            // Notes display in precedence order: Admin > Responsible > CCs
-            // 1. Admin notes (visible to everyone)
+            const SizedBox(height: 8),
+            // Notes displayed as chat bubbles
+            // 1. Admin note (purple bubble, never own in user view)
             if (item.adminNote.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(
-                'הערת מנהל: ${item.adminNote}',
-                style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.purple, fontWeight: FontWeight.w500),
+              ChatBubble(
+                authorName: 'הערת מנהל',
+                message: item.adminNote,
+                bubbleColor: Colors.purple.withValues(alpha: 0.3),
+                isOwnMessage: false,
+                alignRight: false,
+                showAuthorLabel: true,
               ),
-            ],
-            // 2. Responsible note (don't show if user is the responsible)
-            if (item.responsibleNote.isNotEmpty && userRole != ChecklistUserRole.responsible) ...[
               const SizedBox(height: 2),
-              Text(
-                'הערת אחראי (${item.responsible?.name ?? "לא ידוע"}): ${item.responsibleNote}',
-                style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey),
-              ),
             ],
-            // 3. CC notes (don't show user's own CC note if they are CC)
-            // Sort by timestamp: notes with timestamp ascending, then notes without timestamp
+            // 2. Responsible note (yellow bubble)
+            if (item.responsibleNote.isNotEmpty) ...[
+              if (userRole == ChecklistUserRole.responsible) ...[
+                // User IS the responsible - show as own note
+                ChatBubble(
+                  authorName: 'הערה אישית שלך (אחראי)',
+                  message: item.responsibleNote,
+                  bubbleColor: Colors.amber.withValues(alpha: 0.3),
+                  isOwnMessage: true,
+                  alignRight: true,
+                  showAuthorLabel: true,
+                ),
+                const SizedBox(height: 2),
+              ] else if (userRole == ChecklistUserRole.cc) ...[
+                // User is CC - show responsible's note as other's message
+                ChatBubble(
+                  authorName: 'אחראי: ${item.responsible?.name ?? "לא ידוע"}',
+                  message: item.responsibleNote,
+                  bubbleColor: Colors.amber.withValues(alpha: 0.3),
+                  isOwnMessage: false,
+                  alignRight: false,
+                  showAuthorLabel: true,
+                ),
+                const SizedBox(height: 2),
+              ],
+            ],
+            // 3. CC notes from others (gray bubbles, exclude own)
             ..._getSortedCcNotes(item, user.id).map((entry) {
               final ccMember = item.ccMembers.firstWhere(
                 (m) => m.id == entry.key,
@@ -139,40 +164,35 @@ class UserChecklistItemCard extends StatelessWidget {
                   );
                 },
               );
+              final timestamp = entry.value.updatedAt != null
+                  ? DateFormat('HH:mm').format(entry.value.updatedAt!)
+                  : null;
+
               return Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  'הערת ${ccMember.name}: ${entry.value.note}',
-                  style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey),
+                padding: const EdgeInsets.only(bottom: 2),
+                child: ChatBubble(
+                authorName: 'מיודע: ${ccMember.name}',
+                message: entry.value.note,
+                bubbleColor: Colors.grey.withValues(alpha: 0.3),
+                isOwnMessage: false,
+                alignRight: false,
+                timestamp: timestamp,
+                showAuthorLabel: true,
                 ),
               );
             }),
-            // Show user's note if they have one
-            if (userNote.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      userRole == ChecklistUserRole.responsible ? 'הערה אישית שלך (כאחראי):' : 'הערה אישית שלך (כמיודע):',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.blue,
-                      ),
-                    ),
-                    Text(
-                      userNote,
-                      style: const TextStyle(fontSize: 12, color: Colors.blue),
-                    ),
-                  ],
-                ),
+            // 4. User's own CC note (if they are CC and have a note)
+            if (userRole == ChecklistUserRole.cc && userNote.isNotEmpty) ...[
+              ChatBubble(
+                authorName: 'הערה אישית שלך (מיודע)',
+                message: userNote,
+                bubbleColor: Colors.grey.withValues(alpha: 0.3),
+                isOwnMessage: true,
+                alignRight: true,
+                timestamp: item.getCcNoteEntry(user.id)?.updatedAt != null
+                    ? DateFormat('HH:mm').format(item.getCcNoteEntry(user.id)!.updatedAt!)
+                    : null,
+                showAuthorLabel: true,
               ),
             ],
           ],
@@ -218,18 +238,6 @@ class UserChecklistItemCard extends StatelessWidget {
                   ),
                 ),
               ),
-            // Edit note button
-            if ((canEditItem || canEditCcNote) && onEditNote != null) ...[
-              const SizedBox(width: 8),
-              IconButton(
-                icon: Icon(
-                  userNote.isEmpty ? Icons.note_add : Icons.edit_note,
-                  size: 20,
-                ),
-                onPressed: onEditNote,
-                tooltip: userNote.isEmpty ? 'הוסף הערה' : 'ערוך הערה',
-              ),
-            ],
           ],
         ),
       ),

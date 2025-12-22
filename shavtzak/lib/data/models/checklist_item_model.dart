@@ -60,26 +60,55 @@ class ChecklistItemModel {
 
   /// Converts a ChecklistItem entity to a Firestore document
   static Map<String, dynamic> toFirestore(ChecklistItem item) {
-    // Convert ccNotes to Firestore format with timestamps
-    final ccNotesFirestore = item.ccNotes.map((key, entry) => MapEntry(key, {
-      'note': entry.note,
-      'updatedAt': entry.updatedAt != null ? Timestamp.fromDate(entry.updatedAt!) : null,
-    }));
+    // Find CC IDs that have notes but are NOT in ccIds (orphaned notes)
+    final orphanedNoteKeys = item.ccNotes.keys.where((noteKey) =>
+      !item.ccIds.contains(noteKey)
+    ).toList();
 
-    return {
+    // Build update data with standard fields
+    final updateData = <String, dynamic>{
       'eventId': item.eventId,
       'name': item.name,
       'responsibleId': item.responsibleId,
       'responsibleNote': item.responsibleNote,
       'adminNote': item.adminNote,
       'ccIds': item.ccIds,
-      'ccNotes': ccNotesFirestore,
       'status': item.status,
       'createdAt': Timestamp.fromDate(item.createdAt),
       'updatedAt': Timestamp.fromDate(item.updatedAt),
       'statusLastUpdatedAt': Timestamp.fromDate(item.statusLastUpdatedAt),
       'createdByAdminId': item.createdByAdminId,
     };
+
+    // Handle ccNotes based on whether there are orphaned notes
+    if (orphanedNoteKeys.isEmpty) {
+      // No orphaned notes - send the full ccNotes map (standard update)
+      final ccNotesFirestore = item.ccNotes.map((key, entry) => MapEntry(key, {
+        'note': entry.note,
+        'updatedAt': entry.updatedAt != null ? Timestamp.fromDate(entry.updatedAt!) : null,
+      }));
+      updateData['ccNotes'] = ccNotesFirestore;
+    } else {
+      // There are orphaned notes - use individual field updates/deletions
+      // This ensures Firestore properly deletes the orphaned nested fields
+      for (final entry in item.ccNotes.entries) {
+        final ccId = entry.key;
+        final noteEntry = entry.value;
+
+        if (orphanedNoteKeys.contains(ccId)) {
+          // This note is orphaned - delete it from Firestore
+          updateData["ccNotes.$ccId"] = FieldValue.delete();
+        } else {
+          // This note should remain - update it individually
+          updateData["ccNotes.$ccId"] = {
+            'note': noteEntry.note,
+            'updatedAt': noteEntry.updatedAt != null ? Timestamp.fromDate(noteEntry.updatedAt!) : null,
+          };
+        }
+      }
+    }
+
+    return updateData;
   }
 
   /// Creates a ChecklistItem from an entity (for creating new documents)
