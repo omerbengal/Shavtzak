@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Result from the map location picker containing latitude, longitude, and optional name
 class MapLocationResult {
@@ -221,6 +223,10 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   bool _isSearching = false;
   Timer? _debounceTimer;
 
+  // Current location functionality
+  bool _isGettingLocation = false;
+  String? _locationError;
+
   // Default to Tel Aviv if no initial location provided
   static const _defaultLatitude = 32.0853;
   static const _defaultLongitude = 34.7818;
@@ -342,10 +348,150 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
       _selectedLocation = location;
       _selectedLocationName = result.formattedName;
       _searchResults = [];
+      _locationError = null; // Clear any previous errors
       // Keep search text so admin can see what they searched for
     });
     _searchFocusNode.unfocus();
     _mapController.move(location, 16.0); // Zoom in to selected location
+  }
+
+  /// Get current user location using browser geolocation API
+  Future<void> _getCurrentLocation() async {
+    if (!kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('אפשרות המיקום הנוכחי זמינה רק בגרסת האינטרנט'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final geolocation = html.window.navigator.geolocation;
+    if (geolocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Geolocation is not supported by your browser'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isGettingLocation = true;
+      _locationError = null;
+    });
+
+    try {
+      // Get current position using the browser's geolocation API
+      final position = await geolocation.getCurrentPosition();
+
+      final coords = position.coords!;
+      final location = LatLng(
+        coords.latitude!.toDouble(),
+        coords.longitude!.toDouble(),
+      );
+
+      setState(() {
+        _selectedLocation = location;
+        _selectedLocationName = null; // No name for current location - coordinates only
+        _searchResults = [];
+        _isGettingLocation = false;
+      });
+
+      // Move map to current location
+      _mapController.move(location, 15.0);
+
+      // Clear any search text when using current location
+      _searchController.clear();
+      _searchFocusNode.unfocus();
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('המיקום הנוכחי זוהה בהצלחה'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isGettingLocation = false;
+        _locationError = _getGeolocationErrorMessage(e);
+      });
+
+      // Show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_locationError!),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'הסבר',
+              textColor: Colors.white,
+              onPressed: () {
+                _showLocationPermissionDialog();
+              },
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Get user-friendly error message for geolocation errors
+  String _getGeolocationErrorMessage(dynamic error) {
+    // Handle common geolocation error codes
+    final errorString = error.toString().toLowerCase();
+
+    if (errorString.contains('permission denied') || errorString.contains('user denied')) {
+      return 'הגישה למיקום נדחתה. אנא אפשר גישה למיקום בהגדרות הדפדפן.';
+    } else if (errorString.contains('position unavailable')) {
+      return 'לא ניתן לקבוע את המיקום הנוכחי. אנא נסה שוב מאוחר יותר.';
+    } else if (errorString.contains('timeout')) {
+      return 'פג תום הזמן לקבלת המיקום. אנא נסה שוב.';
+    } else {
+      return 'לא הצלחתי לקבל את המיקום הנוכחי. אנא ודא שהרשאת המיקום מופעלת.';
+    }
+  }
+
+  /// Show dialog with instructions for enabling location permissions
+  void _showLocationPermissionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('הפעלת הרשאות מיקום'),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('כדי להשתמש במיקום הנוכחי, יש להפעיל את הרשאות המיקום:'),
+              SizedBox(height: 16),
+              Text('ב-Chrome:'),
+              Text('1. לחץ על סמל המנעול 🔒 בשורת הכתובת'),
+              Text('2. בסעיף "מיקום", בחר "אפשר"'),
+              SizedBox(height: 16),
+              Text('ב-Safari:'),
+              Text('1. לחץ על סמל ההגדרות ⚙️'),
+              Text('2. בחר "אתר" > "מיקום"'),
+              Text('3. בחר "בעת הביקור"'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('הבנתי'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -440,55 +586,90 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                         right: 8,
                         child: Column(
                           children: [
-                            Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.15),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
+                            Row(
+                              children: [
+                                // Search field
+                                Expanded(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.15),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: TextField(
+                                      controller: _searchController,
+                                      focusNode: _searchFocusNode,
+                                      textDirection: TextDirection.rtl,
+                                      decoration: InputDecoration(
+                                        hintText: 'חיפוש מיקום...',
+                                        prefixIcon: _isSearching
+                                            ? const Padding(
+                                                padding: EdgeInsets.all(12),
+                                                child: SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                  ),
+                                                ),
+                                              )
+                                            : const Icon(Icons.search),
+                                        suffixIcon: _searchController.text.isNotEmpty
+                                            ? IconButton(
+                                                icon: const Icon(Icons.clear),
+                                                onPressed: () {
+                                                  _searchController.clear();
+                                                  setState(() {
+                                                    _searchResults = [];
+                                                  });
+                                                },
+                                              )
+                                            : null,
+                                        border: InputBorder.none,
+                                        contentPadding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 14,
+                                        ),
+                                      ),
+                                      onChanged: _onSearchChanged,
+                                    ),
                                   ),
-                                ],
-                              ),
-                              child: TextField(
-                                controller: _searchController,
-                                focusNode: _searchFocusNode,
-                                textDirection: TextDirection.rtl,
-                                decoration: InputDecoration(
-                                  hintText: 'חיפוש מיקום...',
-                                  prefixIcon: _isSearching
-                                      ? const Padding(
-                                          padding: EdgeInsets.all(12),
-                                          child: SizedBox(
+                                ),
+                                const SizedBox(width: 8),
+                                // Current location button
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.15),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: IconButton(
+                                    onPressed: _isGettingLocation ? null : _getCurrentLocation,
+                                    icon: _isGettingLocation
+                                        ? const SizedBox(
                                             width: 20,
                                             height: 20,
                                             child: CircularProgressIndicator(
                                               strokeWidth: 2,
                                             ),
-                                          ),
-                                        )
-                                      : const Icon(Icons.search),
-                                  suffixIcon: _searchController.text.isNotEmpty
-                                      ? IconButton(
-                                          icon: const Icon(Icons.clear),
-                                          onPressed: () {
-                                            _searchController.clear();
-                                            setState(() {
-                                              _searchResults = [];
-                                            });
-                                          },
-                                        )
-                                      : null,
-                                  border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 14,
+                                          )
+                                        : const Icon(Icons.my_location),
+                                    tooltip: 'המיקום הנוכחי שלי',
                                   ),
                                 ),
-                                onChanged: _onSearchChanged,
-                              ),
+                              ],
                             ),
                             // Search results dropdown
                             if (_searchResults.isNotEmpty)
