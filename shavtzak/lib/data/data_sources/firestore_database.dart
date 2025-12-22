@@ -369,7 +369,21 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteEvent(String id) async {
     try {
-      await _firestore.collection(_eventsCollection).doc(id).delete();
+      // Cascade delete: first delete all checklist items for this event
+      final checklistItemsSnapshot = await _firestore
+          .collection(_checklistItemsCollection)
+          .where('eventId', isEqualTo: id)
+          .get();
+
+      final batch = _firestore.batch();
+      for (var doc in checklistItemsSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // Delete the event itself
+      batch.delete(_firestore.collection(_eventsCollection).doc(id));
+
+      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete event: $e');
     }
