@@ -114,18 +114,8 @@ class _ParkingLocationPickerDialogState extends State<ParkingLocationPickerDialo
   }
 
   void _save() {
-    if (_selectedParkingLocation == null || _selectedParkingLocation!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('יש לבחור מיקום חנייה'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
     Navigator.of(context).pop(ParkingLocationResult(
-      parkingLocation: _selectedParkingLocation!,
+      parkingLocation: _selectedParkingLocation ?? '',
       editorIds: List.from(_selectedEditorIds),
     ));
   }
