@@ -43,6 +43,7 @@ class _EventFormModalState extends State<EventFormModal> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _locationController = TextEditingController();
+  final _parkingLocationController = TextEditingController();
   final _commentsController = TextEditingController();
   final _startTimeController = TextEditingController();
   final _endTimeController = TextEditingController();
@@ -84,6 +85,9 @@ class _EventFormModalState extends State<EventFormModal> {
       _rawLocationValue = widget.event!.location;
       _locationController.text = MapLocationResult.stripCoordinates(widget.event!.location);
       _rawParkingLocationValue = widget.event!.parkingLocation;
+      _parkingLocationController.text = widget.event!.parkingLocation != null
+          ? MapLocationResult.stripCoordinates(widget.event!.parkingLocation!)
+          : '';
       _parkingEditorIds = widget.event!.parkingEditorIds;
       _commentsController.text = widget.event!.comments;
       _startTimeController.text = widget.event!.startTime;
@@ -106,6 +110,7 @@ class _EventFormModalState extends State<EventFormModal> {
 
     _nameController.addListener(() => _isDirty = true);
     _locationController.addListener(() => _isDirty = true);
+    _parkingLocationController.addListener(() => _isDirty = true);
     _commentsController.addListener(() => _isDirty = true);
 
     // Enable validation when name field loses focus
@@ -130,6 +135,7 @@ class _EventFormModalState extends State<EventFormModal> {
   void dispose() {
     _nameController.dispose();
     _locationController.dispose();
+    _parkingLocationController.dispose();
     _commentsController.dispose();
     _startTimeController.dispose();
     _endTimeController.dispose();
@@ -671,7 +677,7 @@ class _EventFormModalState extends State<EventFormModal> {
                                 decoration: InputDecoration(
                                   labelText: 'שם האירוע',
                                   hintText: 'לדוגמה: חתונת כהן',
-                                  prefixIcon: const Icon(Icons.event),
+                                  prefixIcon: const Icon(Icons.abc_rounded),
                                   border: const OutlineInputBorder(),
                                   helperText: widget.isDuplication && _nameController.text.isNotEmpty && !_validateName
                                       ? '↑ ניתן לערוך את שם האירוע המשוכפל ↑'
@@ -701,7 +707,7 @@ class _EventFormModalState extends State<EventFormModal> {
                                   hintText: 'לדוגמה: אולמי ורסאי',
                                   prefixIcon: const Icon(Icons.location_on),
                                   border: const OutlineInputBorder(),
-                                  // Map and parking picker buttons
+                                  // Map picker button and clear button
                                   suffixIcon: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -754,29 +760,19 @@ class _EventFormModalState extends State<EventFormModal> {
                                           }
                                         },
                                       ),
-                                      // Parking picker button
-                                      IconButton(
-                                        icon: const Icon(Icons.local_parking, color: Colors.purple),
-                                        tooltip: 'בחר מיקום חנייה',
-                                        onPressed: () async {
-                                          final result = await ParkingLocationPickerDialog.show(
-                                            context,
-                                            eventLocation: _rawLocationValue ?? _locationController.text,
-                                            initialParkingLocation: _rawParkingLocationValue,
-                                            initialEditorIds: _parkingEditorIds,
-                                            isAdmin: true, // Admin can edit team members
-                                          );
-
-                                          if (result != null) {
-                                            // Convert empty string to null (user clicked "Clear")
-                                            final parkingLocation = result.parkingLocation.isEmpty ? null : result.parkingLocation;
+                                      // Clear button (only show if there's a value)
+                                      if (_locationController.text.isNotEmpty)
+                                        IconButton(
+                                          icon: const Icon(Icons.clear, color: Colors.grey),
+                                          tooltip: 'נקה מיקום',
+                                          onPressed: () {
                                             setState(() {
-                                              _rawParkingLocationValue = parkingLocation;
-                                              _parkingEditorIds = result.editorIds;
+                                              _rawLocationValue = null;
+                                              _locationController.clear();
+                                              _isDirty = true;
                                             });
-                                          }
-                                        },
-                                      ),
+                                          },
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -791,130 +787,222 @@ class _EventFormModalState extends State<EventFormModal> {
 
                               const SizedBox(height: 16),
 
+                              // Parking Location field
+                              TextFormField(
+                                controller: _parkingLocationController,
+                                textDirection: TextDirection.rtl,
+                                decoration: InputDecoration(
+                                  labelText: 'מיקום חנייה',
+                                  hintText: 'לדוגמה: חניון יקב',
+                                  prefixIcon: const Icon(Icons.local_parking, color: Colors.purple),
+                                  border: const OutlineInputBorder(),
+                                  // Parking picker button and clear button
+                                  suffixIcon: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // Parking picker button
+                                      IconButton(
+                                        icon: const Icon(Icons.map, color: Colors.blue),
+                                        tooltip: 'בחר מיקום חנייה במפה',
+                                        onPressed: () async {
+                                          final result = await ParkingLocationPickerDialog.show(
+                                            context,
+                                            eventLocation: _rawLocationValue ?? _locationController.text,
+                                            initialParkingLocation: _rawParkingLocationValue,
+                                            initialEditorIds: _parkingEditorIds,
+                                            isAdmin: true, // Admin can edit team members
+                                          );
+
+                                          if (result != null) {
+                                            // Convert empty string to null (user clicked "Clear")
+                                            final parkingLocation = result.parkingLocation.isEmpty ? null : result.parkingLocation;
+                                            setState(() {
+                                              _rawParkingLocationValue = parkingLocation;
+                                              _parkingLocationController.text = parkingLocation != null
+                                                  ? MapLocationResult.stripCoordinates(parkingLocation)
+                                                  : '';
+                                              _parkingEditorIds = result.editorIds;
+                                              _isDirty = true;
+                                            });
+                                          }
+                                        },
+                                      ),
+                                      // Clear button (only show if there's a value)
+                                      if (_parkingLocationController.text.isNotEmpty)
+                                        IconButton(
+                                          icon: const Icon(Icons.clear, color: Colors.grey),
+                                          tooltip: 'נקה מיקום חנייה',
+                                          onPressed: () {
+                                            setState(() {
+                                              _rawParkingLocationValue = null;
+                                              _parkingLocationController.clear();
+                                              _parkingEditorIds = const [];
+                                              _isDirty = true;
+                                            });
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                onChanged: (_) => setState(() => _isDirty = true),
+                              ),
+
+                              const SizedBox(height: 16),
+
                               // Date Selection (Dual Calendar)
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  OutlinedButton.icon(
-                                    onPressed: () async {
-                                      final result = await showDialog<Map<String, DateTime?>>(
-                                        context: context,
-                                        builder: (context) => DualCalendarDatePicker(
-                                          isSingleDate: false,
-                                          initialStartDate: _startDate,
-                                          initialEndDate: _endDate,
-                                          title: 'בחר תאריכי אירוע',
-                                        ),
-                                      );
-
-                                      if (result != null) {
-                                        final selectedStartDate = result['startDate'];
-                                        final selectedEndDate = result['endDate'];
-
-                                        // Check if only start date was selected
-                                        if (selectedStartDate != null && selectedEndDate == null) {
-                                          // Show confirmation dialog for single-day event
-                                          final confirmed = await showDialog<bool>(
-                                            context: context,
-                                            builder: (dialogContext) => Directionality(
-                                              textDirection: TextDirection.rtl,
-                                              child: AlertDialog(
-                                                title: const Text('אישור אירוע ליום בודד'),
-                                                content: Text(
-                                                  'האם זה אירוע ליום בודד (${_formatDate(selectedStartDate!)})?',
-                                                ),
-                                                actions: [
-                                                  TextButton(
-                                                    child: const Text('ביטול'),
-                                                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                                                  ),
-                                                  ElevatedButton(
-                                                    child: const Text('כן, אירוע ליום בודד'),
-                                                    onPressed: () => Navigator.of(dialogContext).pop(true),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-
-                                          if (confirmed == true) {
-                                            setState(() {
-                                              _startDate = selectedStartDate;
-                                              _endDate = selectedStartDate; // For single day event
-                                              _dateError = null;
-                                              _isDirty = true;
-                                            });
-                                          }
-                                        } else if (selectedStartDate != null && selectedEndDate != null) {
-                                          // Check if start and end dates are the same
-                                          final isSameDate = selectedStartDate.year == selectedEndDate.year &&
-                                              selectedStartDate.month == selectedEndDate.month &&
-                                              selectedStartDate.day == selectedEndDate.day;
-
-                                          if (isSameDate) {
-                                            // Show confirmation dialog for single-day event
-                                            final confirmed = await showDialog<bool>(
+                                  // Label for dates field
+                                  const Text(
+                                    'תאריכי האירוע',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      // Date picker button
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          onPressed: () async {
+                                            final result = await showDialog<Map<String, DateTime?>>(
                                               context: context,
-                                              builder: (dialogContext) => Directionality(
-                                                textDirection: TextDirection.rtl,
-                                                child: AlertDialog(
-                                                  title: const Text('אישור אירוע ליום בודד'),
-                                                  content: Text(
-                                                    'האם זה אירוע ליום בודד (${_formatDate(selectedStartDate)})?',
-                                                  ),
-                                                  actions: [
-                                                    TextButton(
-                                                      child: const Text('ביטול'),
-                                                      onPressed: () => Navigator.of(dialogContext).pop(false),
-                                                    ),
-                                                    ElevatedButton(
-                                                      child: const Text('כן, אירוע ליום בודד'),
-                                                      onPressed: () => Navigator.of(dialogContext).pop(true),
-                                                    ),
-                                                  ],
-                                                ),
+                                              builder: (context) => DualCalendarDatePicker(
+                                                isSingleDate: false,
+                                                initialStartDate: _startDate,
+                                                initialEndDate: _endDate,
+                                                title: 'בחר תאריכי אירוע',
                                               ),
                                             );
 
-                                            if (confirmed == true) {
-                                              setState(() {
-                                                _startDate = selectedStartDate;
-                                                _endDate = selectedStartDate; // For single day event
-                                                _dateError = null;
-                                                _isDirty = true;
-                                              });
+                                            if (result != null) {
+                                              final selectedStartDate = result['startDate'];
+                                              final selectedEndDate = result['endDate'];
+
+                                              // Check if only start date was selected
+                                              if (selectedStartDate != null && selectedEndDate == null) {
+                                                // Show confirmation dialog for single-day event
+                                                final confirmed = await showDialog<bool>(
+                                                  context: context,
+                                                  builder: (dialogContext) => Directionality(
+                                                    textDirection: TextDirection.rtl,
+                                                    child: AlertDialog(
+                                                      title: const Text('אישור אירוע ליום בודד'),
+                                                      content: Text(
+                                                        'האם זה אירוע ליום בודד (${_formatDate(selectedStartDate!)})?',
+                                                      ),
+                                                      actions: [
+                                                        TextButton(
+                                                          child: const Text('ביטול'),
+                                                          onPressed: () => Navigator.of(dialogContext).pop(false),
+                                                        ),
+                                                        ElevatedButton(
+                                                          child: const Text('כן, אירוע ליום בודד'),
+                                                          onPressed: () => Navigator.of(dialogContext).pop(true),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                );
+
+                                                if (confirmed == true) {
+                                                  setState(() {
+                                                    _startDate = selectedStartDate;
+                                                    _endDate = selectedStartDate; // For single day event
+                                                    _dateError = null;
+                                                    _isDirty = true;
+                                                  });
+                                                }
+                                              } else if (selectedStartDate != null && selectedEndDate != null) {
+                                                // Check if start and end dates are the same
+                                                final isSameDate = selectedStartDate.year == selectedEndDate.year &&
+                                                    selectedStartDate.month == selectedEndDate.month &&
+                                                    selectedStartDate.day == selectedEndDate.day;
+
+                                                if (isSameDate) {
+                                                  // Show confirmation dialog for single-day event
+                                                  final confirmed = await showDialog<bool>(
+                                                    context: context,
+                                                    builder: (dialogContext) => Directionality(
+                                                      textDirection: TextDirection.rtl,
+                                                      child: AlertDialog(
+                                                        title: const Text('אישור אירוע ליום בודד'),
+                                                        content: Text(
+                                                          'האם זה אירוע ליום בודד (${_formatDate(selectedStartDate)})?',
+                                                        ),
+                                                        actions: [
+                                                          TextButton(
+                                                            child: const Text('ביטול'),
+                                                            onPressed: () => Navigator.of(dialogContext).pop(false),
+                                                          ),
+                                                          ElevatedButton(
+                                                            child: const Text('כן, אירוע ליום בודד'),
+                                                            onPressed: () => Navigator.of(dialogContext).pop(true),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  );
+
+                                                  if (confirmed == true) {
+                                                    setState(() {
+                                                      _startDate = selectedStartDate;
+                                                      _endDate = selectedStartDate; // For single day event
+                                                      _dateError = null;
+                                                      _isDirty = true;
+                                                    });
+                                                  }
+                                                } else {
+                                                  // Multi-day event
+                                                  setState(() {
+                                                    _startDate = selectedStartDate;
+                                                    _endDate = selectedEndDate;
+                                                    _dateError = null;
+                                                    _isDirty = true;
+                                                  });
+                                                }
+                                              }
                                             }
-                                          } else {
-                                            // Multi-day event
-                                            setState(() {
-                                              _startDate = selectedStartDate;
-                                              _endDate = selectedEndDate;
-                                              _dateError = null;
-                                              _isDirty = true;
-                                            });
-                                          }
-                                        }
-                                      }
-                                    },
-                                    icon: const Icon(Icons.calendar_month),
-                                    label: Text(
-                                      _startDate == null
-                                          ? 'בחר תאריכי אירוע'
-                                          : (_endDate != null && _isSameDay(_startDate!, _endDate!))
-                                              ? _formatDate(_startDate!)
-                                              : _endDate == null
-                                                  ? 'מ-${_formatDate(_startDate!)}'
-                                                  : '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}',
-                                    ),
-                                    style: OutlinedButton.styleFrom(
-                                      padding: const EdgeInsets.all(16),
-                                      alignment: Alignment.centerRight,
-                                      side: BorderSide(
-                                        color: _dateError != null ? Colors.red.shade700 : Colors.grey,
-                                        width: _dateError != null ? 2 : 1,
+                                          },
+                                          icon: const Icon(Icons.calendar_month),
+                                          label: Text(
+                                            _startDate == null
+                                                ? 'בחר תאריכי אירוע'
+                                                : (_endDate != null && _isSameDay(_startDate!, _endDate!))
+                                                    ? _formatDate(_startDate!)
+                                                    : _endDate == null
+                                                        ? 'מ-${_formatDate(_startDate!)}'
+                                                        : '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}',
+                                          ),
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.all(16),
+                                            alignment: Alignment.centerRight,
+                                            side: BorderSide(
+                                              color: _dateError != null ? Colors.red.shade700 : Colors.grey,
+                                              width: _dateError != null ? 2 : 1,
+                                            ),
+                                            backgroundColor: _dateError != null ? Colors.red.shade50 : null,
+                                          ),
+                                        ),
                                       ),
-                                      backgroundColor: _dateError != null ? Colors.red.shade50 : null,
-                                    ),
+                                      // Clear button (only show if dates are selected)
+                                      if (_startDate != null)
+                                        Padding(
+                                          padding: const EdgeInsets.only(right: 8),
+                                          child: IconButton(
+                                            onPressed: () => setState(() {
+                                              _startDate = null;
+                                              _endDate = null;
+                                              _isDirty = true;
+                                            }),
+                                            icon: const Icon(Icons.clear, color: Colors.red),
+                                            tooltip: 'נקה תאריכים',
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                   if (widget.isDuplication && _startDate == null)
                                     Padding(
@@ -935,25 +1023,6 @@ class _EventFormModalState extends State<EventFormModal> {
                                         style: TextStyle(
                                           color: Colors.red.shade700,
                                           fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                  if (_startDate != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8),
-                                      child: Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: TextButton.icon(
-                                          onPressed: () => setState(() {
-                                            _startDate = null;
-                                            _endDate = null;
-                                            _isDirty = true;
-                                          }),
-                                          icon: const Icon(Icons.clear, size: 16),
-                                          label: const Text('נקה'),
-                                          style: TextButton.styleFrom(
-                                            foregroundColor: Colors.red,
-                                          ),
                                         ),
                                       ),
                                     ),

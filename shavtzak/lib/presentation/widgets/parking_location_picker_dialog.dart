@@ -174,8 +174,8 @@ class _ParkingLocationPickerDialogState extends State<ParkingLocationPickerDialo
                 label: const Text('מיקום האירוע'),
               ),
 
-              // Clear button (show if there's currently a selected parking location)
-              if (_selectedParkingLocation != null && _selectedParkingLocation!.isNotEmpty) ...[
+              // Clear button (show if there's currently a selected parking location and NOT admin)
+              if (_selectedParkingLocation != null && _selectedParkingLocation!.isNotEmpty && !widget.isAdmin) ...[
                 const SizedBox(height: 8),
                 TextButton.icon(
                   onPressed: _clear,
