@@ -88,11 +88,16 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
   void _save() {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedEvent == null || _selectedResponsible == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('אנא בחר אירוע ואחראי')),
-      );
+      // Validation will be handled by the dropdown validators
       return;
     }
+
+    // Determine createdByAdminId:
+    // - For NEW items (widget.item?.id is empty): use currentUserId
+    // - For EXISTING items: ALWAYS preserve createdByAdminId from widget.item, NEVER overwrite it
+    final createdByAdminId = (widget.item?.id ?? '').isEmpty
+        ? widget.currentUserId  // New item - set to current admin
+        : widget.item?.createdByAdminId;  // Existing item - preserve original creator
 
     final checklistItem = ChecklistItem(
       id: widget.item?.id ?? '',
@@ -107,8 +112,7 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
       createdAt: widget.item?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
       statusLastUpdatedAt: widget.item?.statusLastUpdatedAt ?? DateTime.now(),
-      // Set createdByAdminId only when creating a new item
-      createdByAdminId: widget.item?.createdByAdminId ?? widget.currentUserId,
+      createdByAdminId: createdByAdminId,
     );
 
     widget.onSave(checklistItem);
@@ -248,7 +252,13 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                                 labelText: 'אירוע *',
                                 border: OutlineInputBorder(),
                               ),
-                              items: events.map((event) {
+                              validator: (value) {
+                                if (value == null) {
+                                  return 'אנא בחר אירוע';
+                                }
+                                return null;
+                              },
+                              items: events.where((event) => event.endDate.isAfter(DateTime.now())).map((event) {
                                 return DropdownMenuItem(
                                   value: event,
                                   child: Text(
@@ -281,6 +291,12 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                                 labelText: 'אחראי *',
                                 border: OutlineInputBorder(),
                               ),
+                              validator: (value) {
+                                if (value == null) {
+                                  return 'אנא בחר אחראי';
+                                }
+                                return null;
+                              },
                               items: teamMembers.map((member) => DropdownMenuItem(
                                 value: member,
                                 child: Text(member.name),

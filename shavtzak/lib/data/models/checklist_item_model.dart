@@ -77,7 +77,8 @@ class ChecklistItemModel {
       'createdAt': Timestamp.fromDate(item.createdAt),
       'updatedAt': Timestamp.fromDate(item.updatedAt),
       'statusLastUpdatedAt': Timestamp.fromDate(item.statusLastUpdatedAt),
-      'createdByAdminId': item.createdByAdminId,
+      // Only include createdByAdminId if it's not null (preserves existing values)
+      if (item.createdByAdminId != null) 'createdByAdminId': item.createdByAdminId,
     };
 
     // Handle ccNotes based on whether there are orphaned notes

@@ -72,7 +72,6 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
               border: OutlineInputBorder(),
             ),
             maxLines: 3,
-            autofocus: true,
           ),
           actions: [
             TextButton(

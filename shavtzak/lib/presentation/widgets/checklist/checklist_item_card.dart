@@ -102,13 +102,13 @@ class ChecklistItemCard extends StatelessWidget {
             // 1. Admin note (purple bubble)
             if (item.adminNote.isNotEmpty) ...[
               ChatBubble(
-                authorName: (currentUserId != null && item.createdByAdminId == currentUserId)
+                authorName: (isAdmin && currentUserId != null && item.createdByAdminId == currentUserId)
                     ? 'הערה אישית שלך (מנהל)'
                     : 'הערת מנהל',
                 message: item.adminNote,
                 bubbleColor: Colors.purple.withValues(alpha: 0.3),
-                isOwnMessage: currentUserId != null && item.createdByAdminId == currentUserId,
-                alignRight: currentUserId != null && item.createdByAdminId == currentUserId,
+                isOwnMessage: isAdmin && currentUserId != null && item.createdByAdminId == currentUserId,
+                alignRight: isAdmin && currentUserId != null && item.createdByAdminId == currentUserId,
                 showAuthorLabel: true,
               ),
               const SizedBox(height: 2),
