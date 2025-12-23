@@ -44,7 +44,7 @@ Test mode now creates real calendar events with visual differentiation:
 
 ## 🟡 MISSING FEATURES (High Value)
 
-### 1. Event Duplication
+### 1. ✅ IMPLEMENTED - Event Duplication
 
 **What's needed:**
 Ability to duplicate an existing event with a new date/time, optionally copying all assignments. This is explicitly listed in CLAUDE.md under "Features To Be Implemented".
@@ -166,43 +166,7 @@ ScaffoldMessenger.of(context).showSnackBar(
 
 ---
 
-### 4. Bulk Operations
-
-**What's needed:**
-Ability to select multiple items and perform batch operations instead of one-at-a-time.
-
-**Use cases:**
-1. **Bulk approve/reject constraints** - Admin has 10 pending constraint requests, wants to approve all at once
-2. **Bulk delete assignments** - Clear all assignments for a cancelled event
-3. **Bulk deactivate members** - End of season, deactivate multiple members
-4. **Bulk assign** - Assign same team member to multiple events
-
-**Implementation:**
-1. Add selection mode to list screens (long-press or checkbox toggle)
-2. Show selection count and bulk action bar at bottom
-3. Implement batch operations in repositories (some already exist like `deleteAssignmentsBatch`)
-
-**UI pattern:**
-```
-┌─────────────────────────────────────┐
-│ [x] יוסי כהן                        │
-│ [x] דני לוי                         │
-│ [ ] שרה אברהם                       │
-│ [x] משה גולן                        │
-└─────────────────────────────────────┘
-┌─────────────────────────────────────┐
-│  3 נבחרו  │  [אשר הכל]  [דחה הכל]  │
-└─────────────────────────────────────┘
-```
-
-**Files to modify:**
-- List screens need selection state management
-- BLoCs need bulk operation events
-- Repositories already have some batch methods, may need more
-
----
-
-### 5. Sorting Options in Lists
+### 4. Sorting Options in Lists
 
 **What's needed:**
 Allow users to sort lists by different criteria, not just filter them.
@@ -257,7 +221,7 @@ Row(
 
 ---
 
-### 6. Pagination for Scalability
+### 5. Pagination for Scalability
 
 **What's needed:**
 Currently, all queries fetch entire collections. This works fine for small teams (10-50 members) but will cause performance issues and increased Firestore costs as data grows.
@@ -352,54 +316,7 @@ ElevatedButton(
 
 ---
 
-### 2. Accessibility Improvements
-
-**What's missing:**
-
-**Semantic Labels:**
-- FAB buttons have icons but no text labels for screen readers
-- Some icon buttons lack tooltips
-- Images/avatars lack alt text
-
-**Keyboard Navigation:**
-- Tab order not explicitly defined
-- Modal focus management could trap focus properly
-- No visible focus indicators on custom widgets
-
-**Color Contrast:**
-- Some grey text (`Colors.grey[600]`) may not meet WCAG AA contrast ratio
-- Error state colors should be verified for contrast
-
-**Implementation:**
-```dart
-// Add semantics to FAB
-FloatingActionButton(
-  onPressed: _addMember,
-  tooltip: 'הוסף חבר צוות חדש',  // Already good for tooltip
-  child: Semantics(
-    label: 'הוסף חבר צוות חדש',
-    child: Icon(Icons.add),
-  ),
-)
-
-// Improve focus management in modals
-showModalBottomSheet(
-  // ...
-  builder: (context) => FocusScope(
-    autofocus: true,
-    child: YourModal(),
-  ),
-)
-```
-
-**Testing:**
-- Use Flutter's accessibility inspector
-- Test with screen reader (TalkBack/VoiceOver via web)
-- Verify color contrast ratios with online tools
-
----
-
-### 3. Better Error Messages
+### 2. Better Error Messages
 
 **Current state:**
 Error messages are often generic like "שגיאה בטעינת נתונים" (Error loading data) without helpful context.
@@ -449,7 +366,7 @@ String getErrorMessage(AppErrorType type, {String? details}) {
 
 ---
 
-### 4. Offline Read-Only Mode
+### 3. Offline Read-Only Mode
 
 **Current behavior:**
 When the app detects no internet connection, it shows a blocking overlay that prevents all interaction. The user cannot view any cached data.
@@ -499,49 +416,7 @@ ElevatedButton(
 
 ---
 
-### 5. Dark Mode
-
-**Current state:**
-Only light theme is implemented. No support for system dark mode preference or manual toggle.
-
-**Implementation:**
-1. Define dark theme colors in `app_theme.dart`
-2. Add theme mode setting (system/light/dark)
-3. Store preference in SharedPreferences
-4. Update MaterialApp to use selected theme
-
-**Files to modify:**
-- `shavtzak/lib/core/theme/app_theme.dart` - Add dark theme definition
-- `shavtzak/lib/main.dart` - Add theme mode switching
-- Settings screen or user profile - Add theme toggle
-
-**Example:**
-```dart
-// In app_theme.dart
-static ThemeData get darkTheme => ThemeData(
-  brightness: Brightness.dark,
-  primarySwatch: Colors.blue,
-  scaffoldBackgroundColor: Color(0xFF121212),
-  cardColor: Color(0xFF1E1E1E),
-  // ... define all dark colors
-);
-
-// In main.dart
-MaterialApp(
-  theme: AppTheme.lightTheme,
-  darkTheme: AppTheme.darkTheme,
-  themeMode: _themeMode, // ThemeMode.system, .light, or .dark
-)
-```
-
-**Considerations:**
-- Status colors (red/orange/green) need dark mode variants
-- Test all screens in dark mode for readability
-- Environment indicator colors should remain visible
-
----
-
-### 6. Responsive Tablet/Desktop Layouts
+### 4. Responsive Tablet/Desktop Layouts
 
 **Current state:**
 The app uses mobile-first layouts that stretch to fill wide screens. On tablets and desktops, this results in:
@@ -694,23 +569,22 @@ This document provides context for implementing improvements to the Shavtzak app
 | 🟠 Medium | UX Polish | Improves user experience and accessibility |
 | 🔵 Low | Code Quality | Improves maintainability long-term |
 
-### Quick Reference - Files Most Likely to Change
+### Completed Items ✅
+- Stream subscription memory leaks in BLoCs
+- Calendar sync in test mode
+- Event duplication
+
+### Quick Reference - Remaining TODO Items
 
 | Feature/Fix | Primary Files |
 |-------------|---------------|
-| Stream subscription fixes | `team_bloc.dart`, `event_bloc.dart`, `assignment_bloc.dart` |
-| Calendar config isolation | `firestore_database.dart` |
-| Event duplication | `event_bloc.dart`, `event_event.dart`, `event_list_screen.dart` |
-| Data export | New `export_service.dart`, list screens |
+| Data export/reports | New `export_service.dart`, list screens |
 | Undo delete | BLoC files, list screens |
-| Bulk operations | List screens, BLoC files |
-| Sorting | List screens |
+| Sorting options | List screens |
 | Pagination | Repository files, list screens |
 | Loading states | Form modal files |
-| Accessibility | All screen files |
 | Error messages | BLoC files, new error utility |
 | Offline mode | `offline_blocking_overlay.dart`, `connectivity_service.dart` |
-| Dark mode | `app_theme.dart`, `main.dart` |
 | Responsive layouts | Screen files |
 | BLoC splitting | `team_bloc.dart`, `assignment_bloc.dart` |
-| Debouncing | `assignment_bloc.dart` |
+| Request debouncing | `assignment_bloc.dart` |
