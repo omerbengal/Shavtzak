@@ -768,8 +768,10 @@ class _EventFormModalState extends State<EventFormModal> {
                                           );
 
                                           if (result != null) {
+                                            // Convert empty string to null (user clicked "Clear")
+                                            final parkingLocation = result.parkingLocation.isEmpty ? null : result.parkingLocation;
                                             setState(() {
-                                              _rawParkingLocationValue = result.parkingLocation;
+                                              _rawParkingLocationValue = parkingLocation;
                                               _parkingEditorIds = result.editorIds;
                                             });
                                           }

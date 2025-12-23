@@ -106,6 +106,13 @@ class _ParkingLocationPickerDialogState extends State<ParkingLocationPickerDialo
     });
   }
 
+  void _clear() {
+    Navigator.of(context).pop(ParkingLocationResult(
+      parkingLocation: '',
+      editorIds: List.from(_selectedEditorIds),
+    ));
+  }
+
   void _save() {
     if (_selectedParkingLocation == null || _selectedParkingLocation!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -176,6 +183,22 @@ class _ParkingLocationPickerDialogState extends State<ParkingLocationPickerDialo
                 icon: const Icon(Icons.content_copy),
                 label: const Text('מיקום האירוע'),
               ),
+
+              // Clear button (show if there's currently a selected parking location)
+              if (_selectedParkingLocation != null && _selectedParkingLocation!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: _clear,
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  label: const Text(
+                    'נקה',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.red.shade50,
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 24),
 

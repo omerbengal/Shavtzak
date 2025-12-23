@@ -45,6 +45,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   final Set<String> _pendingCreates = {};
   // Track pending creates that should be deleted immediately after creation completes
   final Set<String> _pendingCreatesToDelete = {};
+  // Track if initial data load is complete (to show loading until both assignments and team members are loaded)
+  bool _isInitialLoadComplete = false;
 
   @override
   void initState() {
@@ -252,6 +254,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             }
 
             if (state is AssignmentSlotsLoaded) {
+              // Check if team members have loaded (slots should have non-empty availableMembers lists)
+              // If this is the initial load and team members aren't loaded yet, show loading
+              final hasTeamMembers = state.slots.any((slot) => slot.availableMembers.isNotEmpty);
+              if (!_isInitialLoadComplete && !hasTeamMembers) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              // Mark initial load as complete
+              if (!_isInitialLoadComplete) {
+                _isInitialLoadComplete = true;
+              }
 
               // Filter out slots with assignments pending deletion to prevent race conditions
               final filteredSlots = state.slots.map((slot) {

@@ -131,6 +131,7 @@ class Event extends Equatable {
     String? driveFolderId,
     String? driveFolderLink,
     bool? isArchived,
+    bool clearParkingLocation = false, // Flag to explicitly clear nullable fields
   }) {
     return Event(
       id: id ?? this.id,
@@ -141,7 +142,7 @@ class Event extends Equatable {
       endTime: endTime ?? this.endTime,
       assemblyTime: assemblyTime ?? this.assemblyTime,
       location: location ?? this.location,
-      parkingLocation: parkingLocation ?? this.parkingLocation,
+      parkingLocation: clearParkingLocation ? null : (parkingLocation ?? this.parkingLocation),
       parkingEditorIds: parkingEditorIds ?? this.parkingEditorIds,
       requiresArmed: requiresArmed ?? this.requiresArmed,
       comments: comments ?? this.comments,

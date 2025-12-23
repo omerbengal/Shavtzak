@@ -539,7 +539,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                         final hasMapIcons = _isLocationPickedFromMap(event.location);
 
                         return Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Icon(
                               Icons.location_on,
@@ -583,70 +583,85 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     ),
                     const SizedBox(height: 10),
                   ],
-                  // Parking location section (if exists)
-                  if (event.parkingLocation != null && event.parkingLocation!.isNotEmpty) ...[
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final userState = context.watch<UserSelectionBloc>().state;
-                        final canEditParking = userState is UserAuthenticated &&
-                            _canUserEditParking(event, userState);
+                  // Parking location section
+                  // Show if: (1) parking location exists, OR (2) user can edit parking (show "לא מוגדרת")
+                  Builder(
+                    builder: (context) {
+                      final userState = context.watch<UserSelectionBloc>().state;
+                      final canEditParking = userState is UserAuthenticated &&
+                          _canUserEditParking(event, userState);
 
-                        final parkingText = MapLocationResult.stripCoordinates(event.parkingLocation!);
-                        final hasMapIcons = _isLocationPickedFromMap(event.parkingLocation!);
+                      final hasParkingLocation = event.parkingLocation != null && event.parkingLocation!.isNotEmpty;
 
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.local_parking,
-                              size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
-                              color: isUpcoming ? Colors.purple.shade800 : Colors.grey.shade600,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'חנייה:',
-                              style: TextStyle(
-                                fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
-                                fontWeight: FontWeight.w500,
-                                color: secondaryTextColor,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Wrap(
-                                spacing: 8,
-                                runSpacing: 4,
-                                crossAxisAlignment: WrapCrossAlignment.center,
+                      // Only show if there's a parking location OR user can edit
+                      if (!hasParkingLocation && !canEditParking) {
+                        return const SizedBox.shrink();
+                      }
+
+                      final parkingText = hasParkingLocation
+                          ? MapLocationResult.stripCoordinates(event.parkingLocation!)
+                          : 'לא מוגדרת';
+                      final hasMapIcons = hasParkingLocation && _isLocationPickedFromMap(event.parkingLocation!);
+
+                      return Column(
+                        children: [
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  Icon(
+                                    Icons.local_parking,
+                                    size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
+                                    color: isUpcoming ? Colors.purple.shade800 : Colors.grey.shade600,
+                                  ),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    parkingText,
+                                    'חנייה:',
                                     style: TextStyle(
-                                      fontSize: _getResponsiveFontSize(context),
-                                      fontWeight: FontWeight.bold,
-                                      color: isUpcoming ? Colors.purple.shade900 : Colors.grey.shade700,
+                                      fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+                                      fontWeight: FontWeight.w500,
+                                      color: secondaryTextColor,
                                     ),
                                   ),
-                                  if (hasMapIcons) ...[
-                                    _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.parkingLocation!)),
-                                    _buildWazeButton(onTap: () => _openWaze(event.parkingLocation!)),
-                                  ],
-                                  if (canEditParking)
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, size: 18),
-                                      tooltip: 'ערוך מיקום חנייה',
-                                      onPressed: () => _editParkingLocation(context, event),
-                                      constraints: const BoxConstraints(),
-                                      padding: EdgeInsets.zero,
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      children: [
+                                        GestureDetector(
+                                          onTap: canEditParking ? () => _editParkingLocation(context, event) : null,
+                                          child: Text(
+                                            parkingText,
+                                            style: TextStyle(
+                                              fontSize: _getResponsiveFontSize(context),
+                                              fontWeight: FontWeight.bold,
+                                              color: hasParkingLocation
+                                                  ? (isUpcoming ? Colors.purple.shade900 : Colors.grey.shade700)
+                                                  : (isUpcoming ? Colors.grey.shade600 : Colors.grey.shade400),
+                                              fontStyle: hasParkingLocation ? FontStyle.normal : FontStyle.italic,
+                                              decoration: canEditParking ? TextDecoration.underline : null,
+                                            ),
+                                          ),
+                                        ),
+                                        if (hasMapIcons) ...[
+                                          _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.parkingLocation!)),
+                                          _buildWazeButton(onTap: () => _openWaze(event.parkingLocation!)),
+                                        ],
+                                      ],
                                     ),
+                                  ),
                                 ],
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                  ],
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                      );
+                    },
+                  ),
                   // Assembly time row
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -1021,23 +1036,23 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       message: 'Google Maps',
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
         child: Container(
-          width: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
-          height: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
+          width: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
+          height: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
           decoration: BoxDecoration(
             color: Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(6),
           ),
           child: Image.asset(
             'assets/images/google_maps.png',
-            width: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
-            height: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
+            width: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
+            height: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) {
               return Icon(
                 Icons.map_outlined,
-                size: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
+                size: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
                 color: Colors.red.shade600,
               );
             },
@@ -1052,23 +1067,23 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       message: 'Waze',
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
         child: Container(
-          width: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
-          height: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
+          width: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
+          height: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
           decoration: BoxDecoration(
             color: Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(6),
           ),
           child: Image.asset(
             'assets/images/waze.png',
-            width: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
-            height: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
+            width: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
+            height: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) {
               return Icon(
                 Icons.navigation_outlined,
-                size: _getResponsiveIconSize(context, minSize: 32.0, maxSize: 40.0),
+                size: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
                 color: Colors.blue.shade600,
               );
             },
@@ -1135,13 +1150,14 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   Future<void> _updateParkingLocation(
     BuildContext context,
     Event event,
-    String newParkingLocation,
+    String? newParkingLocation,
     List<String> newEditorIds,
   ) async {
     final updatedEvent = event.copyWith(
       parkingLocation: newParkingLocation,
       parkingEditorIds: newEditorIds,
       updatedAt: DateTime.now(),
+      clearParkingLocation: newParkingLocation == null, // Explicitly clear when null
     );
 
     context.read<EventBloc>().add(UpdateEvent(updatedEvent));
@@ -1161,20 +1177,25 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     );
 
     if (result != null && mounted) {
+      // Handle empty parking location (user clicked "Clear")
+      final newLocation = result.parkingLocation.isEmpty ? null : result.parkingLocation;
+
       await _updateParkingLocation(
         context,
         event,
-        result.parkingLocation,
+        newLocation,
         result.editorIds,
       );
 
       // Show success message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('מיקום החנייה עודכן בהצלחה'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(newLocation == null
+                ? 'מיקום החנייה נמחק בהצלחה'
+                : 'מיקום החנייה עודכן בהצלחה'),
+            backgroundColor: newLocation == null ? Colors.orange : Colors.green,
+            duration: const Duration(seconds: 2),
           ),
         );
       }

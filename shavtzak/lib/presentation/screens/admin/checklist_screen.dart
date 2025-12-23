@@ -428,134 +428,156 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.5,
-          maxChildSize: 0.95,
-          builder: (context, scrollController) => Container(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                const Text(
-                  'סינון צ\'קליסט',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 16),
-                // Event filter
-                BlocBuilder<EventBloc, EventState>(
-                  builder: (context, state) {
-                    if (state is EventsLoaded) {
-                      return DropdownButtonFormField<String>(
-                        value: _selectedEventId,
-                        decoration: const InputDecoration(
-                          labelText: 'אירוע',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          const DropdownMenuItem(
-                            value: null,
-                            child: Text('כל האירועים'),
-                          ),
-                          ...state.events.map((event) => DropdownMenuItem(
-                            value: event.id,
-                            child: Text(event.name),
-                          )),
-                        ],
-                        onChanged: (value) {
-                          setModalState(() => _selectedEventId = value);
-                          setState(() => _selectedEventId = value);
-                        },
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  },
-                ),
-                const SizedBox(height: 16),
-                // Responsible filter
-                BlocBuilder<TeamBloc, TeamState>(
-                  builder: (context, state) {
-                    if (state is TeamLoaded) {
-                      return DropdownButtonFormField<String>(
-                        value: _selectedResponsibleId,
-                        decoration: const InputDecoration(
-                          labelText: 'אחראי',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          const DropdownMenuItem(
-                            value: null,
-                            child: Text('כל האחראים'),
-                          ),
-                          ...state.members.map((member) => DropdownMenuItem(
-                            value: member.id,
-                            child: Text(member.name),
-                          )),
-                        ],
-                        onChanged: (value) {
-                          setModalState(() => _selectedResponsibleId = value);
-                          setState(() => _selectedResponsibleId = value);
-                        },
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  },
-                ),
-                const SizedBox(height: 16),
-                // Status filter
-                DropdownButtonFormField<bool>(
-                  value: _statusFilter,
-                  decoration: const InputDecoration(
-                    labelText: 'סטטוס',
-                    border: OutlineInputBorder(),
+        builder: (context, setModalState) => Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: null,
-                      child: Text('הכל'),
-                    ),
-                    DropdownMenuItem(
-                      value: true,
-                      child: Text('קיים (כן)'),
-                    ),
-                    DropdownMenuItem(
-                      value: false,
-                      child: Text('לא קיים (לא)'),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    setModalState(() => _statusFilter = value);
-                    setState(() => _statusFilter = value);
-                  },
                 ),
-                const Spacer(),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextButton(
-                      onPressed: () {
-                        setModalState(() {
-                          _selectedEventId = null;
-                          _selectedResponsibleId = null;
-                          _statusFilter = null;
-                        });
-                        setState(() {
-                          _selectedEventId = null;
-                          _selectedResponsibleId = null;
-                          _statusFilter = null;
-                        });
-                      },
-                      child: const Text('נקה'),
+                    const Text(
+                      'סינון צ\'קליסט',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('סגור'),
+                    const SizedBox(height: 16),
+                    // Event filter
+                    BlocBuilder<EventBloc, EventState>(
+                      builder: (context, state) {
+                        if (state is EventsLoaded) {
+                          return DropdownButtonFormField<String>(
+                            value: _selectedEventId,
+                            decoration: const InputDecoration(
+                              labelText: 'אירוע',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text('כל האירועים'),
+                              ),
+                              ...state.events.map((event) => DropdownMenuItem(
+                                value: event.id,
+                                child: Text(event.name),
+                              )),
+                            ],
+                            onChanged: (value) {
+                              setModalState(() => _selectedEventId = value);
+                              setState(() => _selectedEventId = value);
+                            },
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    // Responsible filter
+                    BlocBuilder<TeamBloc, TeamState>(
+                      builder: (context, state) {
+                        if (state is TeamLoaded) {
+                          return DropdownButtonFormField<String>(
+                            value: _selectedResponsibleId,
+                            decoration: const InputDecoration(
+                              labelText: 'אחראי',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text('כל האחראים'),
+                              ),
+                              ...state.members.map((member) => DropdownMenuItem(
+                                value: member.id,
+                                child: Text(member.name),
+                              )),
+                            ],
+                            onChanged: (value) {
+                              setModalState(() => _selectedResponsibleId = value);
+                              setState(() => _selectedResponsibleId = value);
+                            },
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    // Status filter
+                    DropdownButtonFormField<bool>(
+                      value: _statusFilter,
+                      decoration: const InputDecoration(
+                        labelText: 'סטטוס',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: null,
+                          child: Text('הכל'),
+                        ),
+                        DropdownMenuItem(
+                          value: true,
+                          child: Text('קיים (כן)'),
+                        ),
+                        DropdownMenuItem(
+                          value: false,
+                          child: Text('לא קיים (לא)'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        setModalState(() => _statusFilter = value);
+                        setState(() => _statusFilter = value);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setModalState(() {
+                              _selectedEventId = null;
+                              _selectedResponsibleId = null;
+                              _statusFilter = null;
+                            });
+                            setState(() {
+                              _selectedEventId = null;
+                              _selectedResponsibleId = null;
+                              _statusFilter = null;
+                            });
+                          },
+                          child: const Text('נקה'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('סגור'),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
