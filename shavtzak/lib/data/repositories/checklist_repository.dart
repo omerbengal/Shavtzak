@@ -57,8 +57,8 @@ class ChecklistRepository {
             eventId: eventId,
             name: data['name'] as String,
             responsibleId: responsibleId,
-            responsibleNote: data['responsibleNote'] as String? ?? '',
-            adminNote: data['adminNote'] as String? ?? '',
+            responsibleNote: _convertResponsibleNote(data['responsibleNote']),
+            adminNote: _convertAdminNote(data['adminNote']),
             ccIds: ccIds,
             ccNotes: _convertCcNotes(data['ccNotes']),
             status: data['status'] as bool,
@@ -118,8 +118,8 @@ class ChecklistRepository {
             eventId: eventId,
             name: data['name'] as String,
             responsibleId: responsibleId,
-            responsibleNote: data['responsibleNote'] as String? ?? '',
-            adminNote: data['adminNote'] as String? ?? '',
+            responsibleNote: _convertResponsibleNote(data['responsibleNote']),
+            adminNote: _convertAdminNote(data['adminNote']),
             ccIds: ccIds,
             ccNotes: _convertCcNotes(data['ccNotes']),
             status: data['status'] as bool,
@@ -190,8 +190,8 @@ class ChecklistRepository {
               eventId: eventId,
               name: data['name'] as String,
               responsibleId: responsibleId,
-              responsibleNote: data['responsibleNote'] as String? ?? '',
-              adminNote: data['adminNote'] as String? ?? '',
+              responsibleNote: _convertResponsibleNote(data['responsibleNote']),
+              adminNote: _convertAdminNote(data['adminNote']),
               ccIds: ccIds,
               ccNotes: _convertCcNotes(data['ccNotes']),
               status: data['status'] as bool,
@@ -279,6 +279,32 @@ class ChecklistRepository {
       // Handle old format: just a string
       return MapEntry(key.toString(), CcNoteEntry(note: value.toString(), updatedAt: null));
     });
+  }
+
+  /// Convert Firestore adminNote to AdminNoteEntry
+  AdminNoteEntry _convertAdminNote(dynamic adminNote) {
+    if (adminNote != null && adminNote is Map) {
+      return AdminNoteEntry(
+        note: adminNote['note']?.toString() ?? '',
+        updatedAt: adminNote['updatedAt'] is Timestamp
+            ? (adminNote['updatedAt'] as Timestamp).toDate()
+            : null,
+      );
+    }
+    return AdminNoteEntry(note: adminNote?.toString() ?? '', updatedAt: null);
+  }
+
+  /// Convert Firestore responsibleNote to ResponsibleNoteEntry
+  ResponsibleNoteEntry _convertResponsibleNote(dynamic responsibleNote) {
+    if (responsibleNote != null && responsibleNote is Map) {
+      return ResponsibleNoteEntry(
+        note: responsibleNote['note']?.toString() ?? '',
+        updatedAt: responsibleNote['updatedAt'] is Timestamp
+            ? (responsibleNote['updatedAt'] as Timestamp).toDate()
+            : null,
+      );
+    }
+    return ResponsibleNoteEntry(note: responsibleNote?.toString() ?? '', updatedAt: null);
   }
 
   /// Get environment prefix for collection names

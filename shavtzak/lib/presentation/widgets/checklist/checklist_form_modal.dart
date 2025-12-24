@@ -51,8 +51,8 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
 
   void _initializeFromItem(ChecklistItem item, List<Event> events, List<TeamMember> teamMembers) {
     _nameController.text = item.name;
-    _adminNoteController.text = item.adminNote;
-    _responsibleNoteController.text = item.responsibleNote;
+    _adminNoteController.text = item.adminNote.note;
+    _responsibleNoteController.text = item.responsibleNote.note;
 
     // Safely find the event using try-catch
     try {
@@ -99,13 +99,35 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
         ? widget.currentUserId  // New item - set to current admin
         : widget.item?.createdByAdminId;  // Existing item - preserve original creator
 
+    // Determine adminNote entry - preserve timestamp if note hasn't changed
+    final adminNoteText = _adminNoteController.text.trim();
+    final AdminNoteEntry adminNote;
+    if (widget.item?.adminNote.note == adminNoteText) {
+      // Note hasn't changed - preserve existing entry
+      adminNote = widget.item!.adminNote;
+    } else {
+      // Note has changed or is new - create new entry with timestamp
+      adminNote = AdminNoteEntry(note: adminNoteText, updatedAt: DateTime.now());
+    }
+
+    // Determine responsibleNote entry - preserve timestamp if note hasn't changed
+    final responsibleNoteText = _responsibleNoteController.text.trim();
+    final ResponsibleNoteEntry responsibleNote;
+    if (widget.item?.responsibleNote.note == responsibleNoteText) {
+      // Note hasn't changed - preserve existing entry
+      responsibleNote = widget.item!.responsibleNote;
+    } else {
+      // Note has changed or is new - create new entry with timestamp
+      responsibleNote = ResponsibleNoteEntry(note: responsibleNoteText, updatedAt: DateTime.now());
+    }
+
     final checklistItem = ChecklistItem(
       id: widget.item?.id ?? '',
       eventId: _selectedEvent!.id,
       name: _nameController.text.trim(),
       responsibleId: _selectedResponsible!.id,
-      responsibleNote: _responsibleNoteController.text.trim(),
-      adminNote: _adminNoteController.text.trim(),
+      responsibleNote: responsibleNote,
+      adminNote: adminNote,
       ccIds: _selectedCcMembers.map((m) => m.id).toList(),
       ccNotes: widget.item?.ccNotes ?? {},
       status: _status,

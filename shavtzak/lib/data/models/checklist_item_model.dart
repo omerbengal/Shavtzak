@@ -38,13 +38,43 @@ class ChecklistItemModel {
       });
     }
 
+    // Handle adminNote field
+    AdminNoteEntry adminNote;
+    if (data['adminNote'] != null && data['adminNote'] is Map) {
+      final adminNoteData = data['adminNote'] as Map;
+      adminNote = AdminNoteEntry(
+        note: adminNoteData['note']?.toString() ?? '',
+        updatedAt: adminNoteData['updatedAt'] is Timestamp
+            ? (adminNoteData['updatedAt'] as Timestamp).toDate()
+            : null,
+      );
+    } else {
+      // Fallback for missing or old format
+      adminNote = AdminNoteEntry(note: data['adminNote']?.toString() ?? '', updatedAt: null);
+    }
+
+    // Handle responsibleNote field
+    ResponsibleNoteEntry responsibleNote;
+    if (data['responsibleNote'] != null && data['responsibleNote'] is Map) {
+      final responsibleNoteData = data['responsibleNote'] as Map;
+      responsibleNote = ResponsibleNoteEntry(
+        note: responsibleNoteData['note']?.toString() ?? '',
+        updatedAt: responsibleNoteData['updatedAt'] is Timestamp
+            ? (responsibleNoteData['updatedAt'] as Timestamp).toDate()
+            : null,
+      );
+    } else {
+      // Fallback for missing or old format
+      responsibleNote = ResponsibleNoteEntry(note: data['responsibleNote']?.toString() ?? '', updatedAt: null);
+    }
+
     return ChecklistItem(
       id: doc.id,
       eventId: data['eventId'] as String,
       name: data['name'] as String,
       responsibleId: data['responsibleId'] as String,
-      responsibleNote: data['responsibleNote'] as String? ?? '',
-      adminNote: data['adminNote'] as String? ?? '',
+      responsibleNote: responsibleNote,
+      adminNote: adminNote,
       ccIds: ccIds,
       ccNotes: ccNotes,
       status: data['status'] as bool,
@@ -70,8 +100,18 @@ class ChecklistItemModel {
       'eventId': item.eventId,
       'name': item.name,
       'responsibleId': item.responsibleId,
-      'responsibleNote': item.responsibleNote,
-      'adminNote': item.adminNote,
+      'responsibleNote': {
+        'note': item.responsibleNote.note,
+        'updatedAt': item.responsibleNote.updatedAt != null
+            ? Timestamp.fromDate(item.responsibleNote.updatedAt!)
+            : null,
+      },
+      'adminNote': {
+        'note': item.adminNote.note,
+        'updatedAt': item.adminNote.updatedAt != null
+            ? Timestamp.fromDate(item.adminNote.updatedAt!)
+            : null,
+      },
       'ccIds': item.ccIds,
       'status': item.status,
       'createdAt': Timestamp.fromDate(item.createdAt),

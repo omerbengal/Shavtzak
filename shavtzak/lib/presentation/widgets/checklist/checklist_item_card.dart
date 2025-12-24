@@ -4,34 +4,94 @@ import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
 import 'chat_bubble.dart';
 
-/// Helper function to get CC notes sorted by timestamp (for admin view)
+/// Class to hold unified note data for sorting
+class _NoteData {
+  final String type; // 'admin', 'responsible', 'cc'
+  final String? ccMemberId; // Only for CC notes
+  final String note;
+  final DateTime? timestamp;
+  final TeamMember? member; // For responsible and CC notes
+  final bool isOwn;
+
+  _NoteData({
+    required this.type,
+    this.ccMemberId,
+    required this.note,
+    this.timestamp,
+    this.member,
+    required this.isOwn,
+  });
+}
+
+/// Get all notes sorted chronologically by timestamp
 /// Notes with timestamps are sorted ascending, notes without timestamp come last
-List<MapEntry<String, CcNoteEntry>> _getSortedCcNotesForAdmin(ChecklistItem item) {
-  final entries = item.ccNotes.entries
-      .where((entry) => entry.value.note.isNotEmpty)
-      .toList();
+List<_NoteData> _getAllNotesSorted(ChecklistItem item, String? currentUserId) {
+  final notes = <_NoteData>[];
 
-  entries.sort((a, b) {
-    final aTime = a.value.updatedAt;
-    final bTime = b.value.updatedAt;
+  // Add admin note
+  if (item.adminNote.note.isNotEmpty) {
+    notes.add(_NoteData(
+      type: 'admin',
+      note: item.adminNote.note,
+      timestamp: item.adminNote.updatedAt,
+      isOwn: currentUserId != null && item.createdByAdminId == currentUserId,
+    ));
+  }
 
-    // Both have timestamps - sort ascending
-    if (aTime != null && bTime != null) {
-      return aTime.compareTo(bTime);
+  // Add responsible note
+  if (item.responsibleNote.note.isNotEmpty) {
+    notes.add(_NoteData(
+      type: 'responsible',
+      note: item.responsibleNote.note,
+      timestamp: item.responsibleNote.updatedAt,
+      member: item.responsible,
+      isOwn: currentUserId != null && item.responsibleId == currentUserId,
+    ));
+  }
+
+  // Add CC notes
+  for (final entry in item.ccNotes.entries) {
+    if (entry.value.note.isNotEmpty) {
+      final ccMember = item.ccMembers.firstWhere(
+        (m) => m.id == entry.key,
+        orElse: () {
+          final now = DateTime.now();
+          return TeamMember(
+            id: entry.key,
+            name: 'משתמש לא ידוע',
+            isActive: true,
+            isPermanent: false,
+            constraints: [],
+            roleCapabilities: {},
+            createdAt: now,
+            updatedAt: now,
+            uniqueKey: '',
+            isAdmin: false,
+          );
+        },
+      );
+      notes.add(_NoteData(
+        type: 'cc',
+        ccMemberId: entry.key,
+        note: entry.value.note,
+        timestamp: entry.value.updatedAt,
+        member: ccMember,
+        isOwn: currentUserId != null && entry.key == currentUserId,
+      ));
     }
-    // a has timestamp, b doesn't - a comes first
-    if (aTime != null && bTime == null) {
-      return -1;
-    }
-    // a doesn't have timestamp, b does - b comes first
-    if (aTime == null && bTime != null) {
-      return 1;
-    }
-    // Neither has timestamp - maintain order
+  }
+
+  // Sort by timestamp (notes with timestamps first, then legacy notes)
+  notes.sort((a, b) {
+    final aTime = a.timestamp;
+    final bTime = b.timestamp;
+    if (aTime != null && bTime != null) return aTime.compareTo(bTime);
+    if (aTime != null && bTime == null) return -1;
+    if (aTime == null && bTime != null) return 1;
     return 0;
   });
 
-  return entries;
+  return notes;
 }
 
 /// Card widget for displaying a checklist item
@@ -39,17 +99,28 @@ class ChecklistItemCard extends StatelessWidget {
   final ChecklistItem item;
   final bool isAdmin;
   final String? currentUserId; // Current admin's ID for personal note display
+  final List<TeamMember> allTeamMembers; // All team members for admin name lookup
   final VoidCallback? onTap;
   final ValueChanged<bool>? onStatusChanged;
 
   const ChecklistItemCard({
     super.key,
     required this.item,
+    required this.allTeamMembers,
     this.isAdmin = false,
     this.currentUserId,
     this.onTap,
     this.onStatusChanged,
   });
+
+  /// Get the admin member who created this item
+  TeamMember? _getAdminMember() {
+    if (item.createdByAdminId == null) return null;
+    return allTeamMembers.firstWhere(
+      (m) => m.id == item.createdByAdminId,
+      orElse: () => item.responsible!,
+    );
+  }
 
   Color _getBackgroundColor() {
     // Use same colors as EventListScreen
@@ -62,6 +133,9 @@ class ChecklistItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // For now, we don't pass the user, so we use isAdmin to determine permissions
     final canUpdateStatus = isAdmin;
+
+    // Get all notes sorted chronologically
+    final sortedNotes = _getAllNotesSorted(item, currentUserId);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -98,72 +172,47 @@ class ChecklistItemCard extends StatelessWidget {
                 style: const TextStyle(fontSize: 12),
               ),
             const SizedBox(height: 8),
-            // Notes displayed as chat bubbles
-            // 1. Admin note (purple bubble)
-            if (item.adminNote.isNotEmpty) ...[
-              ChatBubble(
-                authorName: (isAdmin && currentUserId != null && item.createdByAdminId == currentUserId)
-                    ? 'הערה אישית שלך (מנהל)'
-                    : 'הערת מנהל',
-                message: item.adminNote,
-                bubbleColor: Colors.purple.withValues(alpha: 0.3),
-                isOwnMessage: isAdmin && currentUserId != null && item.createdByAdminId == currentUserId,
-                alignRight: isAdmin && currentUserId != null && item.createdByAdminId == currentUserId,
-                showAuthorLabel: true,
-              ),
-              const SizedBox(height: 2),
-            ],
-            // 2. Responsible note (yellow bubble)
-            if (item.responsibleNote.isNotEmpty) ...[
-              ChatBubble(
-                authorName: (currentUserId != null && item.responsibleId == currentUserId)
-                    ? 'הערה אישית שלך (אחראי)'
-                    : 'אחראי: ${item.responsible?.name ?? "לא ידוע"}',
-                message: item.responsibleNote,
-                bubbleColor: Colors.amber.withValues(alpha: 0.3),
-                isOwnMessage: currentUserId != null && item.responsibleId == currentUserId,
-                alignRight: currentUserId != null && item.responsibleId == currentUserId,
-                showAuthorLabel: true,
-              ),
-              const SizedBox(height: 2),
-            ],
-            // 3. CC notes (gray bubbles, sorted by timestamp)
-            ..._getSortedCcNotesForAdmin(item).map((entry) {
-              final ccMember = item.ccMembers.firstWhere(
-                (m) => m.id == entry.key,
-                orElse: () {
-                  final now = DateTime.now();
-                  return TeamMember(
-                    id: entry.key,
-                    name: 'משתמש לא ידוע',
-                    isActive: true,
-                    isPermanent: false,
-                    constraints: [],
-                    roleCapabilities: {},
-                    createdAt: now,
-                    updatedAt: now,
-                    uniqueKey: '',
-                    isAdmin: false,
-                  );
-                },
-              );
-              final isOwn = currentUserId != null && entry.key == currentUserId;
-              final timestamp = entry.value.updatedAt != null
-                  ? DateFormat('HH:mm').format(entry.value.updatedAt!)
+            // Notes displayed as chat bubbles in chronological order
+            ...sortedNotes.map((noteData) {
+              // Determine color and author label based on note type
+              final bubbleColor = switch (noteData.type) {
+                'admin' => Colors.purple.withValues(alpha: 0.3),
+                'responsible' => Colors.amber.withValues(alpha: 0.3),
+                'cc' => Colors.grey.withValues(alpha: 0.3),
+                _ => Colors.grey.withValues(alpha: 0.3),
+              };
+
+              // Get admin member for admin notes
+              final adminMember = _getAdminMember();
+
+              final authorName = switch (noteData.type) {
+                'admin' => noteData.isOwn
+                    ? 'אני'
+                    : '${adminMember?.name ?? 'מנהל'} (מנהל)',
+                'responsible' => noteData.isOwn
+                    ? 'אני'
+                    : '${noteData.member?.name ?? "לא ידוע"} (אחראי)',
+                'cc' => noteData.isOwn
+                    ? 'אני'
+                    : '${noteData.member?.name ?? "לא ידוע"} (מיודע)',
+                _ => 'הערה',
+              };
+
+              // Format timestamp as HH:mm, DD/MM (removed seconds)
+              final timestamp = noteData.timestamp != null
+                  ? DateFormat('HH:mm, dd/M').format(noteData.timestamp!)
                   : null;
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 2),
                 child: ChatBubble(
-                authorName: isOwn
-                    ? 'הערה אישית שלך (מיודע)'
-                    : 'מיודע: ${ccMember.name}',
-                message: entry.value.note,
-                bubbleColor: Colors.grey.withValues(alpha: 0.3),
-                isOwnMessage: isOwn,
-                alignRight: isOwn,
-                timestamp: timestamp,
-                showAuthorLabel: true,
+                  authorName: authorName,
+                  message: noteData.note,
+                  bubbleColor: bubbleColor,
+                  isOwnMessage: noteData.isOwn,
+                  alignRight: noteData.isOwn,
+                  timestamp: timestamp,
+                  showAuthorLabel: true,
                 ),
               );
             }),

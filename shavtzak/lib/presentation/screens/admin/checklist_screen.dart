@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:collection/collection.dart';
 import 'package:go_router/go_router.dart';
 import '../../../domain/entities/checklist_item.dart';
-import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../bloc/checklist/checklist_bloc.dart';
 import '../../bloc/event/event_bloc.dart';
@@ -284,51 +283,130 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
           ),
         // Items list
         Expanded(
-          child: BlocBuilder<ChecklistBloc, ChecklistState>(
-            builder: (context, state) {
-              if (state is ChecklistLoading) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (state is ChecklistError) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(state.message),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => context.read<ChecklistBloc>().add(LoadChecklistItems()),
-                        child: const Text('נסה שוב'),
+          child: BlocBuilder<TeamBloc, TeamState>(
+            builder: (context, teamState) {
+              final allTeamMembers = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
+
+              return BlocBuilder<ChecklistBloc, ChecklistState>(
+                builder: (context, state) {
+                  if (state is ChecklistLoading) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (state is ChecklistError) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(state.message),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () => context.read<ChecklistBloc>().add(LoadChecklistItems()),
+                            child: const Text('נסה שוב'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                );
+                    );
+                  }
+                  if (state is ChecklistLoaded) {
+                    final filteredItems = _filterItems(state.items);
+                    if (filteredItems.isEmpty) {
+                      return const Center(
+                        child: Text('לא נמצאו פריטים בצ\'קליסט'),
+                      );
+                    }
+
+                    // Sort by date (most recent first)
+                    final sortedItems = filteredItems.sorted((a, b) {
+                      final aDate = a.event?.startDate ?? DateTime(0);
+                      final bDate = b.event?.startDate ?? DateTime(0);
+                      return bDate.compareTo(aDate);
+                    });
+
+                    // Get current user ID for personal note display
+                    final userState = context.read<UserSelectionBloc>().state;
+                    final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
+
+                    return ListView.builder(
+                      itemCount: sortedItems.length,
+                      itemBuilder: (context, index) {
+                        final item = sortedItems[index];
+                        return ChecklistItemCard(
+                          item: item,
+                          allTeamMembers: allTeamMembers,
+                          isAdmin: true,
+                          currentUserId: currentUserId,
+                          onTap: () => _showEditModal(item),
+                          onStatusChanged: (newStatus) {
+                            context.read<ChecklistBloc>().add(
+                              UpdateChecklistItemStatus(
+                                itemId: item.id,
+                                newStatus: newStatus,
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildByEventTab() {
+    return BlocBuilder<TeamBloc, TeamState>(
+      builder: (context, teamState) {
+        final allTeamMembers = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
+
+        return BlocBuilder<ChecklistBloc, ChecklistState>(
+          builder: (context, state) {
+            if (state is ChecklistLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (state is ChecklistError) {
+              return Center(child: Text(state.message));
+            }
+            if (state is ChecklistLoaded) {
+              final filteredItems = _filterItems(state.items);
+              final groupedItems = _groupByEvent(filteredItems);
+
+              // Sort events by date
+              final sortedEventIds = groupedItems.keys.toList();
+              sortedEventIds.sort((a, b) {
+                final aItems = groupedItems[a]!;
+                final bItems = groupedItems[b]!;
+                if (aItems.isEmpty || bItems.isEmpty) return 0;
+                final aDate = aItems.first.event?.startDate ?? DateTime(0);
+                final bDate = bItems.first.event?.startDate ?? DateTime(0);
+                return bDate.compareTo(aDate);
+              });
+
+              if (sortedEventIds.isEmpty) {
+                return const Center(child: Text('לא נמצאו פריטים בצ\'קליסט'));
               }
-              if (state is ChecklistLoaded) {
-                final filteredItems = _filterItems(state.items);
-                if (filteredItems.isEmpty) {
-                  return const Center(
-                    child: Text('לא נמצאו פריטים בצ\'קליסט'),
-                  );
-                }
 
-                // Sort by date (most recent first)
-                final sortedItems = filteredItems.sorted((a, b) {
-                  final aDate = a.event?.startDate ?? DateTime(0);
-                  final bDate = b.event?.startDate ?? DateTime(0);
-                  return bDate.compareTo(aDate);
-                });
+              // Get current user ID for personal note display
+              final userState = context.read<UserSelectionBloc>().state;
+              final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
 
-                // Get current user ID for personal note display
-                final userState = context.read<UserSelectionBloc>().state;
-                final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
+              return ListView.builder(
+                itemCount: sortedEventIds.length,
+                itemBuilder: (context, index) {
+                  final eventId = sortedEventIds[index];
+                  final items = groupedItems[eventId]!;
+                  final event = items.first.event;
 
-                return ListView.builder(
-                  itemCount: sortedItems.length,
-                  itemBuilder: (context, index) {
-                    final item = sortedItems[index];
-                    return ChecklistItemCard(
+                  return ExpansionTile(
+                    title: Text(event?.name ?? 'אירוע לא ידוע'),
+                    subtitle: Text('${items.length} פריטים'),
+                    children: items.map((item) => ChecklistItemCard(
                       item: item,
+                      allTeamMembers: allTeamMembers,
                       isAdmin: true,
                       currentUserId: currentUserId,
                       onTap: () => _showEditModal(item),
@@ -340,79 +418,14 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                           ),
                         );
                       },
-                    );
-                  },
-                );
-              }
-              return const SizedBox.shrink();
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildByEventTab() {
-    return BlocBuilder<ChecklistBloc, ChecklistState>(
-      builder: (context, state) {
-        if (state is ChecklistLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (state is ChecklistError) {
-          return Center(child: Text(state.message));
-        }
-        if (state is ChecklistLoaded) {
-          final filteredItems = _filterItems(state.items);
-          final groupedItems = _groupByEvent(filteredItems);
-
-          // Sort events by date
-          final sortedEventIds = groupedItems.keys.toList();
-          sortedEventIds.sort((a, b) {
-            final aItems = groupedItems[a]!;
-            final bItems = groupedItems[b]!;
-            if (aItems.isEmpty || bItems.isEmpty) return 0;
-            final aDate = aItems.first.event?.startDate ?? DateTime(0);
-            final bDate = bItems.first.event?.startDate ?? DateTime(0);
-            return bDate.compareTo(aDate);
-          });
-
-          if (sortedEventIds.isEmpty) {
-            return const Center(child: Text('לא נמצאו פריטים בצ\'קליסט'));
-          }
-
-          // Get current user ID for personal note display
-          final userState = context.read<UserSelectionBloc>().state;
-          final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
-
-          return ListView.builder(
-            itemCount: sortedEventIds.length,
-            itemBuilder: (context, index) {
-              final eventId = sortedEventIds[index];
-              final items = groupedItems[eventId]!;
-              final event = items.first.event;
-
-              return ExpansionTile(
-                title: Text(event?.name ?? 'אירוע לא ידוע'),
-                subtitle: Text('${items.length} פריטים'),
-                children: items.map((item) => ChecklistItemCard(
-                  item: item,
-                  isAdmin: true,
-                  currentUserId: currentUserId,
-                  onTap: () => _showEditModal(item),
-                  onStatusChanged: (newStatus) {
-                    context.read<ChecklistBloc>().add(
-                      UpdateChecklistItemStatus(
-                        itemId: item.id,
-                        newStatus: newStatus,
-                      ),
-                    );
-                  },
-                )).toList(),
+                    )).toList(),
+                  );
+                },
               );
-            },
-          );
-        }
-        return const SizedBox.shrink();
+            }
+            return const SizedBox.shrink();
+          },
+        );
       },
     );
   }

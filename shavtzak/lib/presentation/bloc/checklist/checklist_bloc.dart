@@ -244,10 +244,7 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
         return;
       }
 
-      final updatedItem = item.copyWith(
-        responsibleNote: event.note,
-        updatedAt: DateTime.now(),
-      );
+      final updatedItem = item.withUpdatedResponsibleNote(event.note);
 
       await _repository.updateChecklistItem(updatedItem);
       developer.log('ChecklistBloc: Updated responsible note for item ${event.itemId}', name: 'Checklist');

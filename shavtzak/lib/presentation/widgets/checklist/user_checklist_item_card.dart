@@ -5,34 +5,108 @@ import '../../../domain/entities/team_member.dart';
 import '../../../core/services/checklist_permission_service.dart';
 import 'chat_bubble.dart';
 
-/// Helper function to get CC notes sorted by timestamp
+/// Class to hold unified note data for sorting
+class _NoteData {
+  final String type; // 'admin', 'responsible', 'cc'
+  final String? ccMemberId; // Only for CC notes
+  final String note;
+  final DateTime? timestamp;
+  final TeamMember? member; // For responsible and CC notes
+  final bool isOwn;
+
+  _NoteData({
+    required this.type,
+    this.ccMemberId,
+    required this.note,
+    this.timestamp,
+    this.member,
+    required this.isOwn,
+  });
+}
+
+/// Get all notes sorted chronologically by timestamp (for user view)
 /// Notes with timestamps are sorted ascending, notes without timestamp come last
-List<MapEntry<String, CcNoteEntry>> _getSortedCcNotes(ChecklistItem item, String excludeUserId) {
-  final entries = item.ccNotes.entries
-      .where((entry) => entry.value.note.isNotEmpty && entry.key != excludeUserId)
-      .toList();
+List<_NoteData> _getAllNotesSortedForUser(ChecklistItem item, TeamMember user, ChecklistUserRole userRole) {
+  final notes = <_NoteData>[];
 
-  entries.sort((a, b) {
-    final aTime = a.value.updatedAt;
-    final bTime = b.value.updatedAt;
+  // Add admin note (always shown, never own in user view)
+  if (item.adminNote.note.isNotEmpty) {
+    notes.add(_NoteData(
+      type: 'admin',
+      note: item.adminNote.note,
+      timestamp: item.adminNote.updatedAt,
+      isOwn: false,
+    ));
+  }
 
-    // Both have timestamps - sort ascending
-    if (aTime != null && bTime != null) {
-      return aTime.compareTo(bTime);
+  // Add responsible note
+  if (item.responsibleNote.note.isNotEmpty) {
+    if (userRole == ChecklistUserRole.responsible) {
+      // User IS the responsible - show as own note
+      notes.add(_NoteData(
+        type: 'responsible',
+        note: item.responsibleNote.note,
+        timestamp: item.responsibleNote.updatedAt,
+        member: item.responsible,
+        isOwn: true,
+      ));
+    } else if (userRole == ChecklistUserRole.cc) {
+      // User is CC - show responsible's note as other's message
+      notes.add(_NoteData(
+        type: 'responsible',
+        note: item.responsibleNote.note,
+        timestamp: item.responsibleNote.updatedAt,
+        member: item.responsible,
+        isOwn: false,
+      ));
     }
-    // a has timestamp, b doesn't - a comes first
-    if (aTime != null && bTime == null) {
-      return -1;
-    }
-    // a doesn't have timestamp, b does - b comes first
-    if (aTime == null && bTime != null) {
-      return 1;
-    }
-    // Neither has timestamp - maintain order
+  }
+
+  // Add all CC notes (including user's own - sorted chronologically)
+  for (final entry in item.ccNotes.entries) {
+    if (entry.value.note.isEmpty) continue;
+
+    final ccMember = item.ccMembers.firstWhere(
+      (m) => m.id == entry.key,
+      orElse: () {
+        final now = DateTime.now();
+        return TeamMember(
+          id: entry.key,
+          name: 'משתמש לא ידוע',
+          isActive: true,
+          isPermanent: false,
+          constraints: [],
+          roleCapabilities: {},
+          createdAt: now,
+          updatedAt: now,
+          uniqueKey: '',
+          isAdmin: false,
+        );
+      },
+    );
+
+    final isOwn = entry.key == user.id;
+    notes.add(_NoteData(
+      type: 'cc',
+      ccMemberId: entry.key,
+      note: entry.value.note,
+      timestamp: entry.value.updatedAt,
+      member: ccMember,
+      isOwn: isOwn,
+    ));
+  }
+
+  // Sort by timestamp (notes with timestamps first, then legacy notes)
+  notes.sort((a, b) {
+    final aTime = a.timestamp;
+    final bTime = b.timestamp;
+    if (aTime != null && bTime != null) return aTime.compareTo(bTime);
+    if (aTime != null && bTime == null) return -1;
+    if (aTime == null && bTime != null) return 1;
     return 0;
   });
 
-  return entries;
+  return notes;
 }
 
 /// Card widget for displaying a checklist item in the user view
@@ -52,6 +126,19 @@ class UserChecklistItemCard extends StatelessWidget {
     this.allTeamMembers,
   });
 
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
+  /// Get the admin member who created this item
+  TeamMember? _getAdminMember() {
+    if (item.createdByAdminId == null) return null;
+    return allTeamMembers?.firstWhere(
+      (m) => m.id == item.createdByAdminId,
+      orElse: () => item.responsible!,
+    );
+  }
+
   Color _getBackgroundColor() {
     // Use same colors as EventListScreen
     return item.status
@@ -63,18 +150,13 @@ class UserChecklistItemCard extends StatelessWidget {
     return ChecklistPermissionService.getUserRole(item, user);
   }
 
-  String _getUserNote() {
-    if (user.id == item.responsibleId) {
-      return item.responsibleNote;
-    }
-    return item.getCcNote(user.id) ?? '';
-  }
-
   @override
   Widget build(BuildContext context) {
     final userRole = _getUserRole();
     final canUpdateStatus = ChecklistPermissionService.canUpdateStatus(item, user);
-    final userNote = _getUserNote();
+
+    // Get all notes sorted chronologically (including user's own CC note)
+    final sortedNotes = _getAllNotesSortedForUser(item, user, userRole);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -92,109 +174,85 @@ class UserChecklistItemCard extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Show responsible person if user is CC'd
-            if (userRole == ChecklistUserRole.cc && item.responsible != null)
+            // Event info (ALWAYS shown)
+            if (item.event != null) ...[
+              Text(
+                'אירוע: ${item.event!.name}',
+                style: const TextStyle(fontSize: 12),
+              ),
+              Text(
+                'תאריך: ${_formatDate(item.event!.startDate)}',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ],
+            // Responsible (shown appropriately)
+            if (userRole == ChecklistUserRole.responsible)
+              Text(
+                'אחראי: את/ה',
+                style: const TextStyle(fontSize: 12),
+              )
+            else if (item.responsible != null)
               Text(
                 'אחראי: ${item.responsible!.name}',
                 style: const TextStyle(fontSize: 12),
               ),
             // Show location if available
-            if (item.event?.location?.isNotEmpty == true)
+            if (item.event?.location.isNotEmpty == true)
               Text(
                 'מיקום: ${item.event!.location}',
                 style: const TextStyle(fontSize: 12),
               ),
-            const SizedBox(height: 8),
-            // Notes displayed as chat bubbles
-            // 1. Admin note (purple bubble, never own in user view)
-            if (item.adminNote.isNotEmpty) ...[
-              ChatBubble(
-                authorName: 'הערת מנהל',
-                message: item.adminNote,
-                bubbleColor: Colors.purple.withValues(alpha: 0.3),
-                isOwnMessage: false,
-                alignRight: false,
-                showAuthorLabel: true,
+            // CC names (if any)
+            if (item.ccMembers.isNotEmpty)
+              Text(
+                'מיודעים: ${item.ccMembers.map((m) => m.name).join(", ")}',
+                style: const TextStyle(fontSize: 12),
               ),
-              const SizedBox(height: 2),
-            ],
-            // 2. Responsible note (yellow bubble)
-            if (item.responsibleNote.isNotEmpty) ...[
-              if (userRole == ChecklistUserRole.responsible) ...[
-                // User IS the responsible - show as own note
-                ChatBubble(
-                  authorName: 'הערה אישית שלך (אחראי)',
-                  message: item.responsibleNote,
-                  bubbleColor: Colors.amber.withValues(alpha: 0.3),
-                  isOwnMessage: true,
-                  alignRight: true,
-                  showAuthorLabel: true,
-                ),
-                const SizedBox(height: 2),
-              ] else if (userRole == ChecklistUserRole.cc) ...[
-                // User is CC - show responsible's note as other's message
-                ChatBubble(
-                  authorName: 'אחראי: ${item.responsible?.name ?? "לא ידוע"}',
-                  message: item.responsibleNote,
-                  bubbleColor: Colors.amber.withValues(alpha: 0.3),
-                  isOwnMessage: false,
-                  alignRight: false,
-                  showAuthorLabel: true,
-                ),
-                const SizedBox(height: 2),
-              ],
-            ],
-            // 3. CC notes from others (gray bubbles, exclude own)
-            ..._getSortedCcNotes(item, user.id).map((entry) {
-              final ccMember = item.ccMembers.firstWhere(
-                (m) => m.id == entry.key,
-                orElse: () {
-                  final now = DateTime.now();
-                  return TeamMember(
-                    id: entry.key,
-                    name: 'משתמש לא ידוע',
-                    isActive: true,
-                    isPermanent: false,
-                    constraints: [],
-                    roleCapabilities: {},
-                    createdAt: now,
-                    updatedAt: now,
-                    uniqueKey: '',
-                    isAdmin: false,
-                  );
-                },
-              );
-              final timestamp = entry.value.updatedAt != null
-                  ? DateFormat('HH:mm').format(entry.value.updatedAt!)
+            const SizedBox(height: 8),
+            // Notes displayed as chat bubbles in chronological order
+            ...sortedNotes.map((noteData) {
+              // Determine color and author label based on note type
+              final bubbleColor = switch (noteData.type) {
+                'admin' => Colors.purple.withValues(alpha: 0.3),
+                'responsible' => Colors.amber.withValues(alpha: 0.3),
+                'cc' => Colors.grey.withValues(alpha: 0.3),
+                _ => Colors.grey.withValues(alpha: 0.3),
+              };
+
+              // Get admin member for admin notes
+              final adminMember = _getAdminMember();
+
+              final authorName = switch (noteData.type) {
+                'admin' => noteData.isOwn
+                    ? 'אני'
+                    : '${adminMember?.name ?? 'מנהל'} (מנהל)',
+                'responsible' => noteData.isOwn
+                    ? 'אני'
+                    : '${noteData.member?.name ?? "לא ידוע"} (אחראי)',
+                'cc' => noteData.isOwn
+                    ? 'אני'
+                    : '${noteData.member?.name ?? "לא ידוע"} (מיודע)',
+                _ => 'הערה',
+              };
+
+              // Format timestamp as HH:mm, DD/MM (removed seconds)
+              final timestamp = noteData.timestamp != null
+                  ? DateFormat('HH:mm, dd/M').format(noteData.timestamp!)
                   : null;
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 2),
                 child: ChatBubble(
-                authorName: 'מיודע: ${ccMember.name}',
-                message: entry.value.note,
-                bubbleColor: Colors.grey.withValues(alpha: 0.3),
-                isOwnMessage: false,
-                alignRight: false,
-                timestamp: timestamp,
-                showAuthorLabel: true,
+                  authorName: authorName,
+                  message: noteData.note,
+                  bubbleColor: bubbleColor,
+                  isOwnMessage: noteData.isOwn,
+                  alignRight: noteData.isOwn,
+                  timestamp: timestamp,
+                  showAuthorLabel: true,
                 ),
               );
             }),
-            // 4. User's own CC note (if they are CC and have a note)
-            if (userRole == ChecklistUserRole.cc && userNote.isNotEmpty) ...[
-              ChatBubble(
-                authorName: 'הערה אישית שלך (מיודע)',
-                message: userNote,
-                bubbleColor: Colors.grey.withValues(alpha: 0.3),
-                isOwnMessage: true,
-                alignRight: true,
-                timestamp: item.getCcNoteEntry(user.id)?.updatedAt != null
-                    ? DateFormat('HH:mm').format(item.getCcNoteEntry(user.id)!.updatedAt!)
-                    : null,
-                showAuthorLabel: true,
-              ),
-            ],
           ],
         ),
         trailing: Row(

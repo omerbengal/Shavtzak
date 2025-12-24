@@ -2,6 +2,54 @@ import 'package:equatable/equatable.dart';
 import 'event.dart';
 import 'team_member.dart';
 
+/// Entry for an admin note with timestamp for ordering
+class AdminNoteEntry extends Equatable {
+  final String note;
+  final DateTime? updatedAt;
+
+  const AdminNoteEntry({
+    required this.note,
+    this.updatedAt,
+  });
+
+  AdminNoteEntry copyWith({
+    String? note,
+    DateTime? updatedAt,
+  }) {
+    return AdminNoteEntry(
+      note: note ?? this.note,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  List<Object?> get props => [note, updatedAt];
+}
+
+/// Entry for a responsible note with timestamp for ordering
+class ResponsibleNoteEntry extends Equatable {
+  final String note;
+  final DateTime? updatedAt;
+
+  const ResponsibleNoteEntry({
+    required this.note,
+    this.updatedAt,
+  });
+
+  ResponsibleNoteEntry copyWith({
+    String? note,
+    DateTime? updatedAt,
+  }) {
+    return ResponsibleNoteEntry(
+      note: note ?? this.note,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  List<Object?> get props => [note, updatedAt];
+}
+
 /// Entry for a CC note with timestamp for ordering
 class CcNoteEntry extends Equatable {
   final String note;
@@ -32,8 +80,8 @@ class ChecklistItem extends Equatable {
   final String eventId; // Foreign key to Event
   final String name; // Title of the checklist item
   final String responsibleId; // Foreign key to TeamMember (אחראי)
-  final String responsibleNote; // פירוט אחראי
-  final String adminNote; // הערת מנהל
+  final ResponsibleNoteEntry responsibleNote; // פירוט אחראי
+  final AdminNoteEntry adminNote; // הערת מנהל
   final List<String> ccIds; // List of team member IDs (מיודעים)
   final Map<String, CcNoteEntry> ccNotes; // Map of teamMemberId → CcNoteEntry (פירוט מיודעים)
   final bool status; // true = כן, false = לא
@@ -52,8 +100,8 @@ class ChecklistItem extends Equatable {
     required this.eventId,
     required this.name,
     required this.responsibleId,
-    this.responsibleNote = '',
-    this.adminNote = '',
+    this.responsibleNote = const ResponsibleNoteEntry(note: ''),
+    this.adminNote = const AdminNoteEntry(note: ''),
     this.ccIds = const [],
     this.ccNotes = const {},
     required this.status,
@@ -72,8 +120,8 @@ class ChecklistItem extends Equatable {
     String? eventId,
     String? name,
     String? responsibleId,
-    String? responsibleNote,
-    String? adminNote,
+    ResponsibleNoteEntry? responsibleNote,
+    AdminNoteEntry? adminNote,
     List<String>? ccIds,
     Map<String, CcNoteEntry>? ccNotes,
     bool? status,
@@ -145,6 +193,22 @@ class ChecklistItem extends Equatable {
       updatedNotes.remove(teamMemberId);
     }
     return copyWith(ccNotes: updatedNotes, updatedAt: DateTime.now());
+  }
+
+  /// Update the admin note with timestamp
+  ChecklistItem withUpdatedAdminNote(String note) {
+    return copyWith(
+      adminNote: AdminNoteEntry(note: note, updatedAt: DateTime.now()),
+      updatedAt: DateTime.now(),
+    );
+  }
+
+  /// Update the responsible note with timestamp
+  ChecklistItem withUpdatedResponsibleNote(String note) {
+    return copyWith(
+      responsibleNote: ResponsibleNoteEntry(note: note, updatedAt: DateTime.now()),
+      updatedAt: DateTime.now(),
+    );
   }
 
   /// Add a CC'd team member

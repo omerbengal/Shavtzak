@@ -130,21 +130,22 @@ class ChatBubble extends StatelessWidget {
                           softWrap: true,
                           overflow: TextOverflow.visible,
                         ),
-                        // Timestamp (if provided)
+                        // Timestamp (if provided) - LTR, centered at bottom
                         if (timestamp != null) ...[
                           const SizedBox(height: 4),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Text(
+                          SizedBox(
+                            width: double.infinity,
+                            child: Directionality(
+                              textDirection: TextDirection.ltr,
+                              child: Text(
                                 timestamp!,
                                 style: TextStyle(
                                   fontSize: 10,
                                   color: Colors.grey[600],
                                 ),
+                                textAlign: TextAlign.center,
                               ),
-                            ],
+                            ),
                           ),
                         ],
                       ],
