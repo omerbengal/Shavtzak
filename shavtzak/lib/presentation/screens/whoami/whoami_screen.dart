@@ -111,11 +111,12 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
+          automaticallyImplyLeading: false,
           title: const Text('בחירת משתמש'),
           centerTitle: true,
           actions: [
             IconButton(
-              icon: const Icon(Icons.logout),
+              icon: const Icon(Icons.cleaning_services),
               tooltip: 'ניקוי מטמון',
               onPressed: () => _showClearCacheDialog(context),
               iconSize: 24,
