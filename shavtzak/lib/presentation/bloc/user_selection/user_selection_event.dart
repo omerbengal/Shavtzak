@@ -57,3 +57,13 @@ class UpdatePhoneNumber extends UserSelectionEvent {
   @override
   List<Object?> get props => [phoneNumber];
 }
+
+/// Update user's birthday
+class UpdateBirthday extends UserSelectionEvent {
+  final DateTime? birthday;
+
+  const UpdateBirthday(this.birthday);
+
+  @override
+  List<Object?> get props => [birthday];
+}

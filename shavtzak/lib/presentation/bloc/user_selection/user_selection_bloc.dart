@@ -22,6 +22,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     on<SignOut>(_onSignOut);
     on<RefreshUserData>(_onRefreshUserData);
     on<UpdatePhoneNumber>(_onUpdatePhoneNumber);
+    on<UpdateBirthday>(_onUpdateBirthday);
 
     // Listen to team member changes and refresh current user if needed
     _teamStreamSubscription = _teamRepository.watchTeamMembers().listen((teamMembers) {
@@ -191,6 +192,28 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
         add(const RefreshUserData());
       } catch (e) {
         emit(UserSelectionError('שגיאה בעדכון מספר טלפון: $e'));
+      }
+    }
+  }
+
+  /// Update user's birthday
+  Future<void> _onUpdateBirthday(
+    UpdateBirthday event,
+    Emitter<UserSelectionState> emit,
+  ) async {
+    final currentState = state;
+
+    if (currentState is UserAuthenticated) {
+      try {
+        await _userSelectionRepository.updateTeamMemberBirthday(
+          currentState.user.uniqueKey,
+          event.birthday,
+        );
+
+        // Refresh user data to get the updated birthday
+        add(const RefreshUserData());
+      } catch (e) {
+        emit(UserSelectionError('שגיאה בעדכון תאריך לידה: $e'));
       }
     }
   }

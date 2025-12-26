@@ -30,6 +30,9 @@ class TeamMemberModel {
   // Phone number field
   final String? phoneNumber; // Optional Israeli phone number
 
+  // Birthday field
+  final DateTime? birthday; // Optional birthday date
+
   const TeamMemberModel({
     required this.id,
     required this.name,
@@ -46,6 +49,7 @@ class TeamMemberModel {
     this.passcodeLength,
     this.allowMultipleAssignments = false,
     this.phoneNumber,
+    this.birthday,
   });
 
   /// Generate a UUID for team members
@@ -77,6 +81,7 @@ class TeamMemberModel {
       passcodeLength: entity.passcodeLength,
       allowMultipleAssignments: entity.allowMultipleAssignments,
       phoneNumber: entity.phoneNumber,
+      birthday: entity.birthday,
     );
   }
 
@@ -103,6 +108,7 @@ class TeamMemberModel {
       passcodeLength: passcodeLength,
       allowMultipleAssignments: allowMultipleAssignments,
       phoneNumber: phoneNumber,
+      birthday: birthday,
     );
   }
 
@@ -127,6 +133,11 @@ class TeamMemberModel {
     // Handle migration - phone number is optional, default to null for existing members
     final phoneNumber = data['phoneNumber'] as String?;
 
+    // Handle migration - birthday is optional, default to null for existing members
+    final birthday = data['birthday'] != null
+        ? (data['birthday'] as Timestamp).toDate()
+        : null;
+
     final model = TeamMemberModel(
       id: doc.id,
       name: data['name'] as String,
@@ -150,6 +161,7 @@ class TeamMemberModel {
       passcodeLength: passcodeLength,
       allowMultipleAssignments: allowMultipleAssignments,
       phoneNumber: phoneNumber,
+      birthday: birthday,
     );
 
     // If migration was needed (UUID was generated), update the document
@@ -190,6 +202,7 @@ class TeamMemberModel {
       'passcodeLength': passcodeLength,
       'allowMultipleAssignments': allowMultipleAssignments,
       'phoneNumber': phoneNumber,
+      'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
     };
   }
 
@@ -212,6 +225,11 @@ class TeamMemberModel {
     // Handle migration - phone number is optional, default to null for existing members
     final phoneNumber = json['phoneNumber'] as String?;
 
+    // Handle migration - birthday is optional, default to null for existing members
+    final birthday = json['birthday'] != null
+        ? DateTime.parse(json['birthday'] as String)
+        : null;
+
     return TeamMemberModel(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -231,6 +249,7 @@ class TeamMemberModel {
       passcodeLength: passcodeLength,
       allowMultipleAssignments: allowMultipleAssignments,
       phoneNumber: phoneNumber,
+      birthday: birthday,
     );
   }
 
@@ -252,6 +271,7 @@ class TeamMemberModel {
       'passcodeLength': passcodeLength,
       'allowMultipleAssignments': allowMultipleAssignments,
       'phoneNumber': phoneNumber,
+      'birthday': birthday?.toIso8601String(),
     };
   }
 }

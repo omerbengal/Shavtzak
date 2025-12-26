@@ -209,6 +209,27 @@ class UserSelectionRepository {
       throw UserSelectionException('Failed to update phone number: $e');
     }
   }
+
+  /// Update birthday for a team member
+  Future<void> updateTeamMemberBirthday(String uniqueKey, DateTime? birthday) async {
+    try {
+      final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
+      if (teamMember == null) {
+        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+      }
+
+      final updatedMember = teamMember.copyWith(
+        birthday: birthday,
+        clearBirthday: birthday == null,
+        updatedAt: DateTime.now(),
+      );
+
+      await _database.updateTeamMember(updatedMember);
+    } catch (e) {
+      if (e is UserSelectionException) rethrow;
+      throw UserSelectionException('Failed to update birthday: $e');
+    }
+  }
 }
 
 /// Custom exception for user selection errors
