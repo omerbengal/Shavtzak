@@ -13,43 +13,54 @@ class BirthdayEditDialog extends StatefulWidget {
 }
 
 class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
-  DateTime? _selectedDate;
+  int? _selectedDay;
+  int? _selectedMonth;
+  int? _selectedYear;
   bool _isDirty = false;
+
+  // Hebrew month names
+  static const List<String> _hebrewMonths = [
+    'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+    'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+  ];
+
+  int get _maxYear => DateTime.now().year - 20;
+  int get _minYear => 1900;
 
   @override
   void initState() {
     super.initState();
     final state = context.read<UserSelectionBloc>().state;
-    if (state is UserAuthenticated) {
-      _selectedDate = state.user.birthday;
+    if (state is UserAuthenticated && state.user.birthday != null) {
+      final birthday = state.user.birthday!;
+      _selectedDay = birthday.day;
+      _selectedMonth = birthday.month;
+      _selectedYear = birthday.year;
     }
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  int _getDaysInMonth(int? month, int? year) {
+    if (month == null) return 31;
+    final y = year ?? 2000; // Use leap year if year not selected
+    return DateTime(y, month + 1, 0).day;
   }
 
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final initialDate = _selectedDate ?? DateTime(now.year - 20, now.month, now.day);
-
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initialDate,
-      firstDate: DateTime(1900),
-      lastDate: now,
-    );
-
-    if (picked != null) {
-      setState(() {
-        _selectedDate = picked;
-        _isDirty = true;
-      });
+  DateTime? _getSelectedDate() {
+    if (_selectedDay != null && _selectedMonth != null && _selectedYear != null) {
+      return DateTime(_selectedYear!, _selectedMonth!, _selectedDay!);
     }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
+    final daysInMonth = _getDaysInMonth(_selectedMonth, _selectedYear);
+
+    // Adjust day if it exceeds days in selected month
+    if (_selectedDay != null && _selectedDay! > daysInMonth) {
+      _selectedDay = daysInMonth;
+    }
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: AlertDialog(
@@ -61,7 +72,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
           ],
         ),
         content: SizedBox(
-          width: 300,
+          width: 350,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -70,25 +81,95 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
                 style: TextStyle(fontSize: 16),
               ),
               const SizedBox(height: 20),
-              OutlinedButton.icon(
-                onPressed: _pickDate,
-                icon: const Icon(Icons.calendar_today),
-                label: Text(
-                  _selectedDate != null
-                      ? _formatDate(_selectedDate!)
-                      : 'בחר תאריך',
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  minimumSize: const Size(double.infinity, 50),
-                ),
+              Row(
+                children: [
+                  // Day dropdown
+                  Expanded(
+                    flex: 2,
+                    child: DropdownButtonFormField<int>(
+                      value: _selectedDay,
+                      decoration: const InputDecoration(
+                        labelText: 'יום',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      items: List.generate(daysInMonth, (index) {
+                        final day = index + 1;
+                        return DropdownMenuItem(
+                          value: day,
+                          child: Text(day.toString()),
+                        );
+                      }),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedDay = value;
+                          _isDirty = true;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Month dropdown
+                  Expanded(
+                    flex: 3,
+                    child: DropdownButtonFormField<int>(
+                      value: _selectedMonth,
+                      decoration: const InputDecoration(
+                        labelText: 'חודש',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      items: List.generate(12, (index) {
+                        final month = index + 1;
+                        return DropdownMenuItem(
+                          value: month,
+                          child: Text(_hebrewMonths[index]),
+                        );
+                      }),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedMonth = value;
+                          _isDirty = true;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Year dropdown
+                  Expanded(
+                    flex: 2,
+                    child: DropdownButtonFormField<int>(
+                      value: _selectedYear,
+                      decoration: const InputDecoration(
+                        labelText: 'שנה',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      items: List.generate(_maxYear - _minYear + 1, (index) {
+                        final year = _maxYear - index;
+                        return DropdownMenuItem(
+                          value: year,
+                          child: Text(year.toString()),
+                        );
+                      }),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedYear = value;
+                          _isDirty = true;
+                        });
+                      },
+                    ),
+                  ),
+                ],
               ),
-              if (_selectedDate != null) ...[
+              if (_selectedDay != null || _selectedMonth != null || _selectedYear != null) ...[
                 const SizedBox(height: 12),
                 TextButton.icon(
                   onPressed: () {
                     setState(() {
-                      _selectedDate = null;
+                      _selectedDay = null;
+                      _selectedMonth = null;
+                      _selectedYear = null;
                       _isDirty = true;
                     });
                   },
@@ -121,15 +202,17 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
       return;
     }
 
+    final selectedDate = _getSelectedDate();
+
     try {
       // Use the UpdateBirthday event to update the birthday
-      bloc.add(UpdateBirthday(_selectedDate));
+      bloc.add(UpdateBirthday(selectedDate));
 
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_selectedDate == null ? 'תאריך לידה הוסר' : 'תאריך לידה עודכן'),
+            content: Text(selectedDate == null ? 'תאריך לידה הוסר' : 'תאריך לידה עודכן'),
             backgroundColor: Colors.green,
           ),
         );
