@@ -38,13 +38,6 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
       initialDate: initialDate,
       firstDate: DateTime(1900),
       lastDate: now,
-      locale: const Locale('he', 'IL'),
-      builder: (context, child) {
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: child!,
-        );
-      },
     );
 
     if (picked != null) {
