@@ -754,7 +754,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   ];
 
   int get _maxBirthdayYear => DateTime.now().year - 20;
-  int get _minBirthdayYear => 1900;
+  int get _minBirthdayYear => DateTime.now().year - 100;
 
   bool _isActive = true;
   bool _isPermanent = false;
@@ -1308,130 +1308,41 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
                               const SizedBox(height: 16),
 
-                              // Birthday field
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              // Birthday field - button that opens a dialog
+                              Row(
                                 children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.cake, size: 20, color: Colors.pink),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        'תאריך לידה (אופציונלי)',
-                                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => _showBirthdayPickerDialog(),
+                                      icon: const Icon(Icons.cake, color: Colors.pink),
+                                      label: Text(
+                                        (_birthdayDay != null && _birthdayMonth != null && _birthdayYear != null)
+                                            ? '${_birthdayDay.toString().padLeft(2, '0')}/${_birthdayMonth.toString().padLeft(2, '0')}/$_birthdayYear'
+                                            : 'תאריך לידה (אופציונלי)',
+                                        style: TextStyle(
+                                          color: (_birthdayDay != null && _birthdayMonth != null && _birthdayYear != null)
+                                              ? Colors.pink
+                                              : null,
+                                        ),
                                       ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Builder(
-                                    builder: (context) {
-                                      final daysInMonth = _birthdayMonth != null
-                                          ? DateTime(_birthdayYear ?? 2000, _birthdayMonth! + 1, 0).day
-                                          : 31;
-                                      // Adjust day if needed
-                                      if (_birthdayDay != null && _birthdayDay! > daysInMonth) {
-                                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                                          setState(() => _birthdayDay = daysInMonth);
-                                        });
-                                      }
-                                      return Row(
-                                        children: [
-                                          // Day dropdown
-                                          Expanded(
-                                            flex: 2,
-                                            child: DropdownButtonFormField<int>(
-                                              value: _birthdayDay,
-                                              decoration: const InputDecoration(
-                                                labelText: 'יום',
-                                                border: OutlineInputBorder(),
-                                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                              ),
-                                              items: List.generate(daysInMonth, (index) {
-                                                final day = index + 1;
-                                                return DropdownMenuItem(
-                                                  value: day,
-                                                  child: Text(day.toString()),
-                                                );
-                                              }),
-                                              onChanged: (value) {
-                                                setState(() {
-                                                  _birthdayDay = value;
-                                                  _isDirty = true;
-                                                });
-                                              },
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          // Month dropdown
-                                          Expanded(
-                                            flex: 3,
-                                            child: DropdownButtonFormField<int>(
-                                              value: _birthdayMonth,
-                                              decoration: const InputDecoration(
-                                                labelText: 'חודש',
-                                                border: OutlineInputBorder(),
-                                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                              ),
-                                              items: List.generate(12, (index) {
-                                                final month = index + 1;
-                                                return DropdownMenuItem(
-                                                  value: month,
-                                                  child: Text(_hebrewMonths[index]),
-                                                );
-                                              }),
-                                              onChanged: (value) {
-                                                setState(() {
-                                                  _birthdayMonth = value;
-                                                  _isDirty = true;
-                                                });
-                                              },
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          // Year dropdown
-                                          Expanded(
-                                            flex: 2,
-                                            child: DropdownButtonFormField<int>(
-                                              value: _birthdayYear,
-                                              decoration: const InputDecoration(
-                                                labelText: 'שנה',
-                                                border: OutlineInputBorder(),
-                                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                              ),
-                                              items: List.generate(_maxBirthdayYear - _minBirthdayYear + 1, (index) {
-                                                final year = _maxBirthdayYear - index;
-                                                return DropdownMenuItem(
-                                                  value: year,
-                                                  child: Text(year.toString()),
-                                                );
-                                              }),
-                                              onChanged: (value) {
-                                                setState(() {
-                                                  _birthdayYear = value;
-                                                  _isDirty = true;
-                                                });
-                                              },
-                                            ),
-                                          ),
-                                        ],
-                                      );
-                                    },
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                        alignment: Alignment.centerRight,
+                                      ),
+                                    ),
                                   ),
                                   if (_birthdayDay != null || _birthdayMonth != null || _birthdayYear != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8),
-                                      child: TextButton.icon(
-                                        onPressed: () {
-                                          setState(() {
-                                            _birthdayDay = null;
-                                            _birthdayMonth = null;
-                                            _birthdayYear = null;
-                                            _isDirty = true;
-                                          });
-                                        },
-                                        icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                                        label: const Text('נקה תאריך', style: TextStyle(color: Colors.red)),
-                                      ),
+                                    IconButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _birthdayDay = null;
+                                          _birthdayMonth = null;
+                                          _birthdayYear = null;
+                                          _isDirty = true;
+                                        });
+                                      },
+                                      icon: const Icon(Icons.clear, color: Colors.red),
+                                      tooltip: 'נקה תאריך',
                                     ),
                                 ],
                               ),
@@ -2153,6 +2064,29 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     );
   }
 
+  void _showBirthdayPickerDialog() async {
+    final result = await showDialog<Map<String, int?>>(
+      context: context,
+      builder: (dialogContext) => _BirthdayPickerDialog(
+        initialDay: _birthdayDay,
+        initialMonth: _birthdayMonth,
+        initialYear: _birthdayYear,
+        maxYear: _maxBirthdayYear,
+        minYear: _minBirthdayYear,
+        hebrewMonths: _hebrewMonths,
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        _birthdayDay = result['day'];
+        _birthdayMonth = result['month'];
+        _birthdayYear = result['year'];
+        _isDirty = true;
+      });
+    }
+  }
+
   // Admins cannot add or edit constraints - only approve/reject
   // void _addConstraint() async {
   //   final result = await showDialog<DateConstraint>(
@@ -2663,5 +2597,186 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+}
+
+// Birthday Picker Dialog Widget
+class _BirthdayPickerDialog extends StatefulWidget {
+  final int? initialDay;
+  final int? initialMonth;
+  final int? initialYear;
+  final int maxYear;
+  final int minYear;
+  final List<String> hebrewMonths;
+
+  const _BirthdayPickerDialog({
+    required this.initialDay,
+    required this.initialMonth,
+    required this.initialYear,
+    required this.maxYear,
+    required this.minYear,
+    required this.hebrewMonths,
+  });
+
+  @override
+  State<_BirthdayPickerDialog> createState() => _BirthdayPickerDialogState();
+}
+
+class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
+  int? _selectedDay;
+  int? _selectedMonth;
+  int? _selectedYear;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDay = widget.initialDay;
+    _selectedMonth = widget.initialMonth;
+    _selectedYear = widget.initialYear;
+  }
+
+  int _getDaysInMonth(int? month, int? year) {
+    if (month == null) return 31;
+    final y = year ?? 2000; // Use leap year if year not selected
+    return DateTime(y, month + 1, 0).day;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final daysInMonth = _getDaysInMonth(_selectedMonth, _selectedYear);
+
+    // Adjust day if it exceeds days in selected month
+    if (_selectedDay != null && _selectedDay! > daysInMonth) {
+      _selectedDay = daysInMonth;
+    }
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.cake, color: Colors.pink),
+            const SizedBox(width: 8),
+            const Text('בחירת תאריך לידה'),
+          ],
+        ),
+        content: SizedBox(
+          width: 350,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  // Day dropdown
+                  Expanded(
+                    flex: 2,
+                    child: DropdownButtonFormField<int>(
+                      value: _selectedDay,
+                      decoration: const InputDecoration(
+                        labelText: 'יום',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      items: List.generate(daysInMonth, (index) {
+                        final day = index + 1;
+                        return DropdownMenuItem(
+                          value: day,
+                          child: Text(day.toString()),
+                        );
+                      }),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedDay = value;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Month dropdown
+                  Expanded(
+                    flex: 3,
+                    child: DropdownButtonFormField<int>(
+                      value: _selectedMonth,
+                      decoration: const InputDecoration(
+                        labelText: 'חודש',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      items: List.generate(12, (index) {
+                        final month = index + 1;
+                        return DropdownMenuItem(
+                          value: month,
+                          child: Text(widget.hebrewMonths[index]),
+                        );
+                      }),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedMonth = value;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Year dropdown
+                  Expanded(
+                    flex: 2,
+                    child: DropdownButtonFormField<int>(
+                      value: _selectedYear,
+                      decoration: const InputDecoration(
+                        labelText: 'שנה',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      items: List.generate(widget.maxYear - widget.minYear + 1, (index) {
+                        final year = widget.maxYear - index;
+                        return DropdownMenuItem(
+                          value: year,
+                          child: Text(year.toString()),
+                        );
+                      }),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedYear = value;
+                        });
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              if (_selectedDay != null || _selectedMonth != null || _selectedYear != null) ...[
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _selectedDay = null;
+                      _selectedMonth = null;
+                      _selectedYear = null;
+                    });
+                  },
+                  icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                  label: const Text('נקה תאריך', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('ביטול'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop({
+                'day': _selectedDay,
+                'month': _selectedMonth,
+                'year': _selectedYear,
+              });
+            },
+            child: const Text('שמור'),
+          ),
+        ],
+      ),
+    );
   }
 }
