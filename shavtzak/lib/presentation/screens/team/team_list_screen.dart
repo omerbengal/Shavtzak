@@ -1302,13 +1302,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                           initialDate: initialDate,
                                           firstDate: DateTime(1900),
                                           lastDate: now,
-                                          locale: const Locale('he', 'IL'),
-                                          builder: (context, child) {
-                                            return Directionality(
-                                              textDirection: TextDirection.rtl,
-                                              child: child!,
-                                            );
-                                          },
                                         );
 
                                         if (picked != null) {
