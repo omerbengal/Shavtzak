@@ -107,11 +107,62 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       counts[assignment.eventId] = (counts[assignment.eventId] ?? 0) + 1;
     }
 
+    // Calculate birthdays per event
+    final birthdays = _calculateEventBirthdays();
+
     add(_EventsDataUpdated(
       events: _latestEvents,
       assignmentCounts: counts,
+      eventBirthdays: birthdays,
       upcomingOnly: _upcomingOnly,
     ));
+  }
+
+  /// Calculate which team members have birthdays during each event
+  Map<String, List<String>> _calculateEventBirthdays() {
+    final result = <String, List<String>>{};
+
+    for (final event in _latestEvents) {
+      final birthdayNames = <String>[];
+
+      // Find all assignments for this event
+      final eventAssignments = _latestAssignments.where((a) => a.eventId == event.id);
+
+      for (final assignment in eventAssignments) {
+        final teamMember = assignment.teamMember;
+        if (teamMember != null && teamMember.birthday != null) {
+          if (_isBirthdayDuringEvent(teamMember.birthday!, event.startDate, event.endDate)) {
+            birthdayNames.add(teamMember.name);
+          }
+        }
+      }
+
+      if (birthdayNames.isNotEmpty) {
+        // Sort names alphabetically
+        birthdayNames.sort();
+        result[event.id] = birthdayNames;
+      }
+    }
+
+    return result;
+  }
+
+  /// Check if a birthday falls within an event's date range
+  bool _isBirthdayDuringEvent(DateTime birthday, DateTime eventStart, DateTime eventEnd) {
+    // Normalize to date-only (remove time component)
+    final start = DateTime(eventStart.year, eventStart.month, eventStart.day);
+    final end = DateTime(eventEnd.year, eventEnd.month, eventEnd.day);
+
+    // Check each day in the event range
+    DateTime currentDay = start;
+    while (!currentDay.isAfter(end)) {
+      if (currentDay.month == birthday.month && currentDay.day == birthday.day) {
+        return true;
+      }
+      currentDay = currentDay.add(const Duration(days: 1));
+    }
+
+    return false;
   }
 
   /// Handle combined events and assignments data update
@@ -140,6 +191,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         emit(EventsLoaded.withCounts(
           futureEvents,
           assignmentCounts: event.assignmentCounts,
+          eventBirthdays: event.eventBirthdays,
         ));
       }
     } else {
@@ -149,6 +201,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         emit(EventsLoaded.withCounts(
           events,
           assignmentCounts: event.assignmentCounts,
+          eventBirthdays: event.eventBirthdays,
         ));
       }
     }
@@ -183,7 +236,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       if (events.isEmpty) {
         emit(const EventsEmpty('לא נמצאו אירועים'));
       } else {
-        emit(EventsLoaded.withCounts(events, searchQuery: event.query));
+        emit(EventsLoaded.withCounts(
+          events,
+          searchQuery: event.query,
+          eventBirthdays: const {}, // Search doesn't include assignments, so no birthdays
+        ));
       }
     } catch (e) {
       emit(EventError('שגיאה בחיפוש: $e'));
@@ -506,14 +563,16 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 class _EventsDataUpdated extends EventEvent {
   final List<Event> events;
   final Map<String, int> assignmentCounts;
+  final Map<String, List<String>> eventBirthdays;
   final bool upcomingOnly;
 
   const _EventsDataUpdated({
     required this.events,
     required this.assignmentCounts,
+    this.eventBirthdays = const {},
     this.upcomingOnly = false,
   });
 
   @override
-  List<Object?> get props => [events, assignmentCounts, upcomingOnly];
+  List<Object?> get props => [events, assignmentCounts, eventBirthdays, upcomingOnly];
 }

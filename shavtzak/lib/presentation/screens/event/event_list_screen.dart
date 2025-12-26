@@ -239,7 +239,11 @@ class _EventListScreenState extends State<EventListScreen> {
               padding: const EdgeInsets.only(bottom: 16),
               itemCount: filteredEvents.length,
               itemBuilder: (context, index) {
-                return _buildEventCard(filteredEvents[index], state.assignmentCounts);
+                return _buildEventCard(
+                  filteredEvents[index],
+                  state.assignmentCounts,
+                  state.eventBirthdays,
+                );
               },
             ),
           ),
@@ -299,7 +303,11 @@ class _EventListScreenState extends State<EventListScreen> {
     }
   }
 
-  Widget _buildEventCard(Event event, Map<String, int> assignmentCounts) {
+  Widget _buildEventCard(
+    Event event,
+    Map<String, int> assignmentCounts,
+    Map<String, List<String>> eventBirthdays,
+  ) {
     // Check if start and end dates are the same
     final isSameDate = event.startDate.year == event.endDate.year &&
         event.startDate.month == event.endDate.month &&
@@ -353,6 +361,34 @@ class _EventListScreenState extends State<EventListScreen> {
               if (event.comments.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 _buildFieldItem('הערות', event.comments),
+              ],
+              // Birthday indicators (if any team member has birthday during event)
+              if (eventBirthdays[event.id] != null && eventBirthdays[event.id]!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ...eventBirthdays[event.id]!.map((name) => Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '🎂 ',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF6A1B9A), // Dark purple
+                              ),
+                            ),
+                            TextSpan(
+                              text: name,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF6A1B9A), // Dark purple
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )),
               ],
             ],
           ),

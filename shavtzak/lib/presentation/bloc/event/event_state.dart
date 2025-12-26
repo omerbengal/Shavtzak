@@ -30,11 +30,13 @@ class EventsLoaded extends EventState {
   final int pastCount;
   final int activeCount;
   final Map<String, int> assignmentCounts; // Event ID -> count of assignments
+  final Map<String, List<String>> eventBirthdays; // Event ID -> list of team member names with birthdays during event
 
   const EventsLoaded(
     this.events, {
     this.searchQuery,
     this.assignmentCounts = const {},
+    this.eventBirthdays = const {},
   })  : totalCount = events.length,
         upcomingCount = 0,
         pastCount = 0,
@@ -44,6 +46,7 @@ class EventsLoaded extends EventState {
     List<Event> events, {
     this.searchQuery,
     this.assignmentCounts = const {},
+    this.eventBirthdays = const {},
   })  : events = (events..sort((a, b) => a.startDate.compareTo(b.startDate))),
         totalCount = events.length,
         upcomingCount = events.where((e) => e.isUpcoming).length,
@@ -59,6 +62,7 @@ class EventsLoaded extends EventState {
         pastCount,
         activeCount,
         assignmentCounts,
+        eventBirthdays,
       ];
 }
 
