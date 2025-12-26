@@ -434,12 +434,19 @@ class _TeamListScreenState extends State<TeamListScreen> {
                       borderRadius: BorderRadius.circular(4),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Text(
-                          Validators.formatPhoneNumber(member.phoneNumber),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.blue,
-                          ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.phone, size: 14, color: Colors.blue),
+                            const SizedBox(width: 4),
+                            Text(
+                              Validators.formatPhoneNumber(member.phoneNumber),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -741,6 +748,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _commentsController = TextEditingController();
+  final _birthdayController = TextEditingController();
 
   // Birthday fields
   int? _birthdayDay;
@@ -791,6 +799,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         _birthdayDay = widget.member!.birthday!.day;
         _birthdayMonth = widget.member!.birthday!.month;
         _birthdayYear = widget.member!.birthday!.year;
+        _updateBirthdayController();
       }
     }
 
@@ -798,6 +807,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     _nameController.addListener(() => _isDirty = true);
     _phoneController.addListener(() => _isDirty = true);
     _commentsController.addListener(() => _isDirty = true);
+  }
+
+  void _updateBirthdayController() {
+    if (_birthdayDay != null && _birthdayMonth != null && _birthdayYear != null) {
+      _birthdayController.text = '${_birthdayDay.toString().padLeft(2, '0')}/${_birthdayMonth.toString().padLeft(2, '0')}/$_birthdayYear';
+    } else {
+      _birthdayController.clear();
+    }
   }
 
   @override
@@ -811,6 +828,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     _nameController.dispose();
     _phoneController.dispose();
     _commentsController.dispose();
+    _birthdayController.dispose();
     super.dispose();
   }
 
@@ -1308,43 +1326,35 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
                               const SizedBox(height: 16),
 
-                              // Birthday field - button that opens a dialog
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => _showBirthdayPickerDialog(),
-                                      icon: const Icon(Icons.cake, color: Colors.pink),
-                                      label: Text(
-                                        (_birthdayDay != null && _birthdayMonth != null && _birthdayYear != null)
-                                            ? '${_birthdayDay.toString().padLeft(2, '0')}/${_birthdayMonth.toString().padLeft(2, '0')}/$_birthdayYear'
-                                            : 'תאריך לידה (אופציונלי)',
-                                        style: TextStyle(
-                                          color: (_birthdayDay != null && _birthdayMonth != null && _birthdayYear != null)
-                                              ? Colors.pink
-                                              : null,
-                                        ),
-                                      ),
-                                      style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                                        alignment: Alignment.centerRight,
-                                      ),
+                              // Birthday field - read-only text field with floating label
+                              TextFormField(
+                                readOnly: true,
+                                onTap: () => _showBirthdayPickerDialog(),
+                                decoration: InputDecoration(
+                                  labelText: 'תאריך לידה',
+                                  prefixIcon: Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Icon(
+                                      Icons.cake,
+                                      color: (_birthdayDay != null && _birthdayMonth != null && _birthdayYear != null)
+                                          ? Colors.black87
+                                          : Colors.grey,
                                     ),
                                   ),
-                                  if (_birthdayDay != null || _birthdayMonth != null || _birthdayYear != null)
-                                    IconButton(
-                                      onPressed: () {
-                                        setState(() {
-                                          _birthdayDay = null;
-                                          _birthdayMonth = null;
-                                          _birthdayYear = null;
-                                          _isDirty = true;
-                                        });
-                                      },
-                                      icon: const Icon(Icons.clear, color: Colors.red),
-                                      tooltip: 'נקה תאריך',
-                                    ),
-                                ],
+                                  border: const OutlineInputBorder(
+                                    borderSide: BorderSide(color: Colors.grey, width: 0.5),
+                                  ),
+                                  enabledBorder: const OutlineInputBorder(
+                                    borderSide: BorderSide(color: Colors.grey, width: 0.5),
+                                  ),
+                                ),
+                                controller: _birthdayController,
+                                style: TextStyle(
+                                  color: (_birthdayDay != null && _birthdayMonth != null && _birthdayYear != null)
+                                      ? Colors.black87
+                                      : Colors.grey,
+                                  ),
+                                textAlign: TextAlign.right,
                               ),
 
                               const SizedBox(height: 16),
@@ -2083,6 +2093,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         _birthdayMonth = result['month'];
         _birthdayYear = result['year'];
         _isDirty = true;
+        _updateBirthdayController();
       });
     }
   }
@@ -2626,6 +2637,8 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
   int? _selectedDay;
   int? _selectedMonth;
   int? _selectedYear;
+  bool _isDirty = false;
+  bool _showValidationErrors = false;
 
   @override
   void initState() {
@@ -2639,6 +2652,41 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
     if (month == null) return 31;
     final y = year ?? 2000; // Use leap year if year not selected
     return DateTime(y, month + 1, 0).day;
+  }
+
+  /// Returns true if there's a partial selection (some fields filled, some not)
+  bool get _hasPartialSelection {
+    final filledCount = [_selectedDay, _selectedMonth, _selectedYear]
+        .where((v) => v != null)
+        .length;
+    return filledCount > 0 && filledCount < 3;
+  }
+
+  /// Returns true if this specific field should show an error
+  bool _fieldHasError(int? fieldValue) {
+    return _showValidationErrors && _hasPartialSelection && fieldValue == null;
+  }
+
+  /// Builds InputDecoration with proper error styling
+  InputDecoration _buildFieldDecoration(String label, int? fieldValue) {
+    final hasError = _fieldHasError(fieldValue);
+    return InputDecoration(
+      labelText: label,
+      labelStyle: hasError ? const TextStyle(color: Colors.red) : null,
+      enabledBorder: OutlineInputBorder(
+        borderSide: BorderSide(
+          color: hasError ? Colors.red : Colors.grey,
+          width: hasError ? 2 : 1,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderSide: BorderSide(
+          color: hasError ? Colors.red : Colors.blue,
+          width: 2,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    );
   }
 
   @override
@@ -2665,84 +2713,69 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  // Day dropdown
-                  Expanded(
-                    flex: 2,
-                    child: DropdownButtonFormField<int>(
-                      value: _selectedDay,
-                      decoration: const InputDecoration(
-                        labelText: 'יום',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      items: List.generate(daysInMonth, (index) {
-                        final day = index + 1;
-                        return DropdownMenuItem(
-                          value: day,
-                          child: Text(day.toString()),
-                        );
-                      }),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedDay = value;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Month dropdown
-                  Expanded(
-                    flex: 3,
-                    child: DropdownButtonFormField<int>(
-                      value: _selectedMonth,
-                      decoration: const InputDecoration(
-                        labelText: 'חודש',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      items: List.generate(12, (index) {
-                        final month = index + 1;
-                        return DropdownMenuItem(
-                          value: month,
-                          child: Text(widget.hebrewMonths[index]),
-                        );
-                      }),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedMonth = value;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Year dropdown
-                  Expanded(
-                    flex: 2,
-                    child: DropdownButtonFormField<int>(
-                      value: _selectedYear,
-                      decoration: const InputDecoration(
-                        labelText: 'שנה',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      items: List.generate(widget.maxYear - widget.minYear + 1, (index) {
-                        final year = widget.maxYear - index;
-                        return DropdownMenuItem(
-                          value: year,
-                          child: Text(year.toString()),
-                        );
-                      }),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedYear = value;
-                        });
-                      },
-                    ),
-                  ),
-                ],
+              // Day dropdown
+              DropdownButtonFormField<int>(
+                value: _selectedDay,
+                decoration: _buildFieldDecoration('יום', _selectedDay),
+                items: List.generate(daysInMonth, (index) {
+                  final day = index + 1;
+                  return DropdownMenuItem(
+                    value: day,
+                    child: Text(day.toString()),
+                  );
+                }),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedDay = value;
+                    _isDirty = true;
+                  });
+                },
               ),
+              const SizedBox(height: 12),
+              // Month dropdown
+              DropdownButtonFormField<int>(
+                value: _selectedMonth,
+                decoration: _buildFieldDecoration('חודש', _selectedMonth),
+                items: List.generate(12, (index) {
+                  final month = index + 1;
+                  return DropdownMenuItem(
+                    value: month,
+                    child: Text(widget.hebrewMonths[index]),
+                  );
+                }),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedMonth = value;
+                    _isDirty = true;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              // Year dropdown
+              DropdownButtonFormField<int>(
+                value: _selectedYear,
+                decoration: _buildFieldDecoration('שנה', _selectedYear),
+                items: List.generate(widget.maxYear - widget.minYear + 1, (index) {
+                  final year = widget.maxYear - index;
+                  return DropdownMenuItem(
+                    value: year,
+                    child: Text(year.toString()),
+                  );
+                }),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedYear = value;
+                    _isDirty = true;
+                  });
+                },
+              ),
+              if (_showValidationErrors && _hasPartialSelection) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'יש למלא את כל השדות',
+                  style: TextStyle(color: Colors.red, fontSize: 13),
+                ),
+              ],
               if (_selectedDay != null || _selectedMonth != null || _selectedYear != null) ...[
                 const SizedBox(height: 12),
                 TextButton.icon(
@@ -2751,6 +2784,8 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
                       _selectedDay = null;
                       _selectedMonth = null;
                       _selectedYear = null;
+                      _isDirty = true;
+                      _showValidationErrors = false;
                     });
                   },
                   icon: const Icon(Icons.clear, size: 18, color: Colors.red),
@@ -2766,13 +2801,20 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: _isDirty ? () {
+              // Validate: either all fields filled or all empty
+              if (_hasPartialSelection) {
+                setState(() {
+                  _showValidationErrors = true;
+                });
+                return;
+              }
               Navigator.of(context).pop({
                 'day': _selectedDay,
                 'month': _selectedMonth,
                 'year': _selectedYear,
               });
-            },
+            } : null,
             child: const Text('שמור'),
           ),
         ],

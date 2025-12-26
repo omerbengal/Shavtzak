@@ -79,7 +79,7 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
                   smartQuotesType: SmartQuotesType.disabled,
                   smartDashesType: SmartDashesType.disabled,
                   textAlign: TextAlign.end, // Right-aligned like the team member modal
-                  autofocus: true,
+                  autofocus: false,
                   inputFormatters: [
                     PhoneNumberTextInputFormatter(),
                   ],

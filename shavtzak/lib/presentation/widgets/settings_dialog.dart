@@ -62,125 +62,127 @@ class _SettingsDialogState extends State<SettingsDialog> {
         },
         child: AlertDialog(
           title: const Text('הגדרות'),
-          content: SizedBox(
-            width: 350,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 350,
+              maxHeight: MediaQuery.of(context).size.height * 0.7,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
               // Phone number section
               Card(
                 elevation: 2,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.phone,
-                            color: Theme.of(context).primaryColor,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'מספר טלפון',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      BlocBuilder<UserSelectionBloc, UserSelectionState>(
-                        builder: (context, state) {
-                          if (state is! UserAuthenticated) {
-                            return const SizedBox.shrink();
-                          }
+                  child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
+                    builder: (context, state) {
+                      if (state is! UserAuthenticated) {
+                        return const SizedBox.shrink();
+                      }
 
-                          final phone = state.user.phoneNumber;
-                          final formattedPhone = Validators.formatPhoneNumber(phone);
+                      final phone = state.user.phoneNumber;
+                      final hasPhone = phone != null && phone.isNotEmpty;
+                      final formattedPhone = Validators.formatPhoneNumber(phone);
 
-                          if (phone != null && phone.isNotEmpty) {
-                            return Column(
-                              children: [
-                                Text(
-                                  formattedPhone,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.blue,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Column(
-                                  children: [
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: ElevatedButton.icon(
-                                        onPressed: () => _showPhoneEditDialog(context),
-                                        icon: const Icon(Icons.edit, size: 18),
-                                        label: const Text(
-                                          'ערוך מספר טלפון',
-                                          style: TextStyle(fontSize: 14),
-                                        ),
-                                        style: ElevatedButton.styleFrom(
-                                          minimumSize: const Size(0, 36),
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: OutlinedButton.icon(
-                                        onPressed: _isDeleting ? null : () => _deletePhoneNumber(context),
-                                        icon: _isDeleting
-                                            ? const SizedBox(
-                                                width: 18,
-                                                height: 18,
-                                                child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.red)),
-                                              )
-                                            : const Icon(Icons.delete, size: 18, color: Colors.red),
-                                        label: Text(
-                                          _isDeleting ? 'מוחק...' : 'מחק טלפון',
-                                          style: TextStyle(fontSize: 14, color: Colors.red),
-                                        ),
-                                        style: OutlinedButton.styleFrom(
-                                          minimumSize: const Size(0, 36),
-                                          side: const BorderSide(color: Colors.red),
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            );
-                          } else {
-                            return Column(
+                      if (hasPhone) {
+                        return Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
-                                  Icons.phone_disabled,
-                                  size: 48,
-                                  color: Colors.grey[400],
+                                  Icons.phone,
+                                  color: Theme.of(context).primaryColor,
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(width: 8),
                                 const Text(
-                                  'לא הוגדר מספר טלפון',
-                                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                                  'מספר טלפון',
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                 ),
-                                const SizedBox(height: 12),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              formattedPhone,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Colors.blue,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
                                 ElevatedButton.icon(
                                   onPressed: () => _showPhoneEditDialog(context),
-                                  icon: const Icon(Icons.add),
-                                  label: const Text('הוסף מספר טלפון'),
+                                  icon: const Icon(Icons.edit, size: 18, color: Colors.white),
+                                  label: const Text('ערוך'),
                                   style: ElevatedButton.styleFrom(
+                                    minimumSize: const Size(0, 36),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                OutlinedButton.icon(
+                                  onPressed: _isDeleting ? null : () => _deletePhoneNumber(context),
+                                  icon: _isDeleting
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.red)),
+                                        )
+                                      : const Icon(Icons.delete, size: 18, color: Colors.red),
+                                  label: Text(
+                                    _isDeleting ? 'מוחק...' : 'מחק',
+                                    style: const TextStyle(color: Colors.red),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size(0, 36),
+                                    side: const BorderSide(color: Colors.red),
                                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                   ),
                                 ),
                               ],
-                            );
-                          }
-                        },
-                      ),
-                    ],
+                            ),
+                          ],
+                        );
+                      } else {
+                        return Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.phone_disabled,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'מספר טלפון',
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'לא הוגדר מספר טלפון',
+                              style: TextStyle(fontSize: 16, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: () => _showPhoneEditDialog(context),
+                              icon: const Icon(Icons.add),
+                              label: const Text('הוסף מספר טלפון'),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                    },
                   ),
                 ),
               ),
@@ -190,203 +192,218 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 elevation: 2,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.cake,
-                            color: Colors.pink,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'תאריך לידה',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      BlocBuilder<UserSelectionBloc, UserSelectionState>(
-                        builder: (context, state) {
-                          if (state is! UserAuthenticated) {
-                            return const SizedBox.shrink();
-                          }
+                  child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
+                    builder: (context, state) {
+                      if (state is! UserAuthenticated) {
+                        return const SizedBox.shrink();
+                      }
 
-                          final birthday = state.user.birthday;
+                      final birthday = state.user.birthday;
+                      final hasBirthday = birthday != null;
 
-                          if (birthday != null) {
-                            final formattedBirthday = '${birthday.day.toString().padLeft(2, '0')}/${birthday.month.toString().padLeft(2, '0')}/${birthday.year}';
-                            return Column(
+                      if (hasBirthday) {
+                        final formattedBirthday = '${birthday.day.toString().padLeft(2, '0')}/${birthday.month.toString().padLeft(2, '0')}/${birthday.year}';
+                        return Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Text(
-                                  formattedBirthday,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.pink,
-                                  ),
+                                const Icon(
+                                  Icons.cake,
+                                  color: Colors.pink,
                                 ),
-                                const SizedBox(height: 12),
-                                Column(
-                                  children: [
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: ElevatedButton.icon(
-                                        onPressed: () => _showBirthdayEditDialog(context),
-                                        icon: const Icon(Icons.edit, size: 18),
-                                        label: const Text(
-                                          'ערוך תאריך לידה',
-                                          style: TextStyle(fontSize: 14),
-                                        ),
-                                        style: ElevatedButton.styleFrom(
-                                          minimumSize: const Size(0, 36),
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: OutlinedButton.icon(
-                                        onPressed: () => _deleteBirthday(context),
-                                        icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                        label: const Text(
-                                          'מחק תאריך לידה',
-                                          style: TextStyle(fontSize: 14, color: Colors.red),
-                                        ),
-                                        style: OutlinedButton.styleFrom(
-                                          minimumSize: const Size(0, 36),
-                                          side: const BorderSide(color: Colors.red),
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'יום הולדת',
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                 ),
                               ],
-                            );
-                          } else {
-                            return Column(
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              formattedBirthday,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Colors.pink,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
-                                  Icons.cake_outlined,
-                                  size: 48,
-                                  color: Colors.grey[400],
-                                ),
-                                const SizedBox(height: 8),
-                                const Text(
-                                  'לא הוגדר תאריך לידה',
-                                  style: TextStyle(fontSize: 16, color: Colors.grey),
-                                ),
-                                const SizedBox(height: 12),
                                 ElevatedButton.icon(
                                   onPressed: () => _showBirthdayEditDialog(context),
-                                  icon: const Icon(Icons.add),
-                                  label: const Text('הוסף תאריך לידה'),
+                                  icon: const Icon(Icons.edit, size: 18, color: Colors.white),
+                                  label: const Text('ערוך'),
                                   style: ElevatedButton.styleFrom(
+                                    minimumSize: const Size(0, 36),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                OutlinedButton.icon(
+                                  onPressed: () => _deleteBirthday(context),
+                                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                  label: const Text(
+                                    'מחק',
+                                    style: TextStyle(color: Colors.red),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size(0, 36),
+                                    side: const BorderSide(color: Colors.red),
                                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                   ),
                                 ),
                               ],
-                            );
-                          }
-                        },
-                      ),
-                    ],
+                            ),
+                          ],
+                        );
+                      } else {
+                        return Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.cake_outlined,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'יום הולדת',
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'לא הוגדר יום הולדת',
+                              style: TextStyle(fontSize: 16, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: () => _showBirthdayEditDialog(context),
+                              icon: const Icon(Icons.add),
+                              label: const Text('הוסף יום הולדת'),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                    },
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
-              const Divider(),
-              const SizedBox(height: 24),
-              const Text(
-                'ניהול קוד גישה',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 24),
-              BlocBuilder<UserSelectionBloc, UserSelectionState>(
-                builder: (context, state) {
-                  if (state is! UserAuthenticated) {
-                    return const SizedBox.shrink();
-                  }
+              const SizedBox(height: 16),
+              // Passcode section
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
+                    builder: (context, state) {
+                      if (state is! UserAuthenticated) {
+                        return const SizedBox.shrink();
+                      }
 
-                  final hasPasscode = state.user.passcode != null;
-                  final passcodeLength = state.user.passcodeLength ?? 0;
+                      final hasPasscode = state.user.passcode != null;
+                      final passcodeLength = state.user.passcodeLength ?? 0;
 
-                  if (hasPasscode) {
-                    return Column(
-                      children: [
-                        Icon(
-                          Icons.lock,
-                          size: 64,
-                          color: Theme.of(context).primaryColor,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'קוד גישה מוגדר ($passcodeLength ספרות)',
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                        const SizedBox(height: 24),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      if (hasPasscode) {
+                        return Column(
                           children: [
-                            ElevatedButton(
-                              onPressed: () => _showChangePasscodeDialog(context),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              ),
-                              child: const Text('שנה קוד'),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.lock,
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'קוד גישה',
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                ),
+                              ],
                             ),
-                            ElevatedButton(
-                              onPressed: () => _showRemovePasscodeDialog(context),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              ),
-                              child: const Text('הסר קוד'),
+                            const SizedBox(height: 16),
+                            Text(
+                              'קוד גישה מוגדר ($passcodeLength ספרות)',
+                              style: const TextStyle(fontSize: 16),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: () => _showChangePasscodeDialog(context),
+                                  icon: const Icon(Icons.edit, size: 18, color: Colors.white),
+                                  label: const Text('ערוך'),
+                                  style: ElevatedButton.styleFrom(
+                                    minimumSize: const Size(0, 36),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                OutlinedButton.icon(
+                                  onPressed: () => _showRemovePasscodeDialog(context),
+                                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                  label: const Text(
+                                    'מחק',
+                                    style: TextStyle(color: Colors.red),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size(0, 36),
+                                    side: const BorderSide(color: Colors.red),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
-                        ),
-                      ],
-                    );
-                  } else {
-                    return Column(
-                      children: [
-                        Icon(
-                          Icons.lock_open,
-                          size: 64,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'לא הוגדר קוד גישה',
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'הגדרת קוד גישה תאבטח את החשבון שלך',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: () => _showSetupPasscodeDialog(context),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                            textStyle: const TextStyle(fontSize: 16),
-                          ),
-                          child: const Text('הגדר קוד גישה'),
-                        ),
-                      ],
-                    );
-                  }
-                },
+                        );
+                      } else {
+                        return Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.lock_open,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'קוד גישה',
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'לא הוגדר קוד גישה',
+                              style: TextStyle(fontSize: 16, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 24),
+                            ElevatedButton(
+                              onPressed: () => _showSetupPasscodeDialog(context),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                textStyle: const TextStyle(fontSize: 16),
+                              ),
+                              child: const Text('הגדר קוד גישה'),
+                            ),
+                          ],
+                        );
+                      }
+                    },
+                  ),
+                ),
               ),
-            ],
+              ],
+            ),
           ),
         ),
         actions: [
@@ -426,7 +443,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
           bloc.add(const RefreshUserData());
 
           if (context.mounted) {
-            Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('קוד גישה הוגדר בהצלחה'),
@@ -483,7 +499,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
         bloc.add(const CheckCachedUser());
 
         if (context.mounted) {
-          Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('קוד גישה שונה בהצלחה'),
@@ -545,7 +560,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
           bloc.add(const RefreshUserData());
 
           if (context.mounted) {
-            Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('קוד גישה הוסר בהצלחה'),

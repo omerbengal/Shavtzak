@@ -17,6 +17,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
   int? _selectedMonth;
   int? _selectedYear;
   bool _isDirty = false;
+  bool _showValidationErrors = false;
 
   // Hebrew month names
   static const List<String> _hebrewMonths = [
@@ -52,6 +53,41 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
     return null;
   }
 
+  /// Returns true if there's a partial selection (some fields filled, some not)
+  bool get _hasPartialSelection {
+    final filledCount = [_selectedDay, _selectedMonth, _selectedYear]
+        .where((v) => v != null)
+        .length;
+    return filledCount > 0 && filledCount < 3;
+  }
+
+  /// Returns true if this specific field should show an error
+  bool _fieldHasError(int? fieldValue) {
+    return _showValidationErrors && _hasPartialSelection && fieldValue == null;
+  }
+
+  /// Builds InputDecoration with proper error styling
+  InputDecoration _buildFieldDecoration(String label, int? fieldValue) {
+    final hasError = _fieldHasError(fieldValue);
+    return InputDecoration(
+      labelText: label,
+      labelStyle: hasError ? const TextStyle(color: Colors.red) : null,
+      enabledBorder: OutlineInputBorder(
+        borderSide: BorderSide(
+          color: hasError ? Colors.red : Colors.grey,
+          width: hasError ? 2 : 1,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderSide: BorderSide(
+          color: hasError ? Colors.red : Colors.blue,
+          width: 2,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final daysInMonth = _getDaysInMonth(_selectedMonth, _selectedYear);
@@ -71,8 +107,8 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
             const Text('עריכת תאריך לידה'),
           ],
         ),
-        content: SizedBox(
-          width: 350,
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 350),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -81,87 +117,69 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
                 style: TextStyle(fontSize: 16),
               ),
               const SizedBox(height: 20),
-              Row(
-                children: [
-                  // Day dropdown
-                  Expanded(
-                    flex: 2,
-                    child: DropdownButtonFormField<int>(
-                      value: _selectedDay,
-                      decoration: const InputDecoration(
-                        labelText: 'יום',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      items: List.generate(daysInMonth, (index) {
-                        final day = index + 1;
-                        return DropdownMenuItem(
-                          value: day,
-                          child: Text(day.toString()),
-                        );
-                      }),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedDay = value;
-                          _isDirty = true;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Month dropdown
-                  Expanded(
-                    flex: 3,
-                    child: DropdownButtonFormField<int>(
-                      value: _selectedMonth,
-                      decoration: const InputDecoration(
-                        labelText: 'חודש',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      items: List.generate(12, (index) {
-                        final month = index + 1;
-                        return DropdownMenuItem(
-                          value: month,
-                          child: Text(_hebrewMonths[index]),
-                        );
-                      }),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedMonth = value;
-                          _isDirty = true;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Year dropdown
-                  Expanded(
-                    flex: 2,
-                    child: DropdownButtonFormField<int>(
-                      value: _selectedYear,
-                      decoration: const InputDecoration(
-                        labelText: 'שנה',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      items: List.generate(_maxYear - _minYear + 1, (index) {
-                        final year = _maxYear - index;
-                        return DropdownMenuItem(
-                          value: year,
-                          child: Text(year.toString()),
-                        );
-                      }),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedYear = value;
-                          _isDirty = true;
-                        });
-                      },
-                    ),
-                  ),
-                ],
+              // Day dropdown
+              DropdownButtonFormField<int>(
+                value: _selectedDay,
+                decoration: _buildFieldDecoration('יום', _selectedDay),
+                items: List.generate(daysInMonth, (index) {
+                  final day = index + 1;
+                  return DropdownMenuItem(
+                    value: day,
+                    child: Text(day.toString()),
+                  );
+                }),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedDay = value;
+                    _isDirty = true;
+                  });
+                },
               ),
+              const SizedBox(height: 12),
+              // Month dropdown
+              DropdownButtonFormField<int>(
+                value: _selectedMonth,
+                decoration: _buildFieldDecoration('חודש', _selectedMonth),
+                items: List.generate(12, (index) {
+                  final month = index + 1;
+                  return DropdownMenuItem(
+                    value: month,
+                    child: Text(_hebrewMonths[index]),
+                  );
+                }),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedMonth = value;
+                    _isDirty = true;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              // Year dropdown
+              DropdownButtonFormField<int>(
+                value: _selectedYear,
+                decoration: _buildFieldDecoration('שנה', _selectedYear),
+                items: List.generate(_maxYear - _minYear + 1, (index) {
+                  final year = _maxYear - index;
+                  return DropdownMenuItem(
+                    value: year,
+                    child: Text(year.toString()),
+                  );
+                }),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedYear = value;
+                    _isDirty = true;
+                  });
+                },
+              ),
+              if (_showValidationErrors && _hasPartialSelection) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'יש למלא את כל השדות',
+                  style: TextStyle(color: Colors.red, fontSize: 13),
+                ),
+              ],
               if (_selectedDay != null || _selectedMonth != null || _selectedYear != null) ...[
                 const SizedBox(height: 12),
                 TextButton.icon(
@@ -171,6 +189,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
                       _selectedMonth = null;
                       _selectedYear = null;
                       _isDirty = true;
+                      _showValidationErrors = false;
                     });
                   },
                   icon: const Icon(Icons.clear, size: 18, color: Colors.red),
@@ -195,6 +214,14 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
   }
 
   void _saveBirthday() async {
+    // Check if selection is valid before saving
+    if (_hasPartialSelection) {
+      setState(() {
+        _showValidationErrors = true;
+      });
+      return;
+    }
+
     final bloc = context.read<UserSelectionBloc>();
     final currentState = bloc.state;
 

@@ -82,15 +82,15 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
               overflow: TextOverflow.ellipsis,
             ),
             centerTitle: true,
-            leading: state.user.isAdmin ? null : IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'הגדרות',
-            onPressed: () => _showSettingsDialog(context),
-            iconSize: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-          ),
-          actions: [
+            leading: IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'הגדרות',
+              onPressed: () => _showSettingsDialog(context),
+              iconSize: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+            ),
+            actions: [
               // Show navigation menu (home + logout) only for admin users
               if (state.user.isAdmin)
                 const NavigationMenu()
