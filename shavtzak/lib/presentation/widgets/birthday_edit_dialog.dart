@@ -25,7 +25,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
   ];
 
   int get _maxYear => DateTime.now().year - 20;
-  int get _minYear => 1900;
+  int get _minYear => DateTime.now().year - 100;
 
   @override
   void initState() {
