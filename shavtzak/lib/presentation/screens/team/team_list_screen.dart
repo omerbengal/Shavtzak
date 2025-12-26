@@ -443,6 +443,25 @@ class _TeamListScreenState extends State<TeamListScreen> {
                         ),
                       ),
                     ),
+                  // Birthday if available
+                  if (member.birthday != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.cake, size: 14, color: Colors.pink),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${member.birthday!.day.toString().padLeft(2, '0')}/${member.birthday!.month.toString().padLeft(2, '0')}/${member.birthday!.year}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.pink,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 2),
                   Text(
                     '$activeRoles תפקידים',
@@ -722,6 +741,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _commentsController = TextEditingController();
+  DateTime? _birthday;
 
   bool _isActive = true;
   bool _isPermanent = false;
@@ -754,6 +774,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       _allowMultipleAssignments = widget.member!.allowMultipleAssignments;
       _roleCapabilities = Map.from(widget.member!.roleCapabilities);
       _constraints = List.from(widget.member!.constraints);
+      _birthday = widget.member!.birthday;
     }
 
     // Track dirty state
@@ -800,6 +821,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       phoneNumber: _phoneController.text.trim().isEmpty
         ? null
         : _phoneController.text.trim(),
+      birthday: _birthday,
       isActive: _isActive,
       isPermanent: _isPermanent,
       allowMultipleAssignments: _allowMultipleAssignments,
@@ -1262,6 +1284,64 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                   PhoneNumberTextInputFormatter(),
                                 ],
                                 onChanged: (_) => setState(() => _isDirty = true),
+                              ),
+
+                              const SizedBox(height: 16),
+
+                              // Birthday field
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () async {
+                                        final now = DateTime.now();
+                                        final initialDate = _birthday ?? DateTime(now.year - 20, now.month, now.day);
+
+                                        final picked = await showDatePicker(
+                                          context: context,
+                                          initialDate: initialDate,
+                                          firstDate: DateTime(1900),
+                                          lastDate: now,
+                                          locale: const Locale('he', 'IL'),
+                                          builder: (context, child) {
+                                            return Directionality(
+                                              textDirection: TextDirection.rtl,
+                                              child: child!,
+                                            );
+                                          },
+                                        );
+
+                                        if (picked != null) {
+                                          setState(() {
+                                            _birthday = picked;
+                                            _isDirty = true;
+                                          });
+                                        }
+                                      },
+                                      icon: const Icon(Icons.cake),
+                                      label: Text(
+                                        _birthday != null
+                                            ? '${_birthday!.day.toString().padLeft(2, '0')}/${_birthday!.month.toString().padLeft(2, '0')}/${_birthday!.year}'
+                                            : 'תאריך לידה (אופציונלי)',
+                                      ),
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                        alignment: Alignment.centerRight,
+                                      ),
+                                    ),
+                                  ),
+                                  if (_birthday != null)
+                                    IconButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _birthday = null;
+                                          _isDirty = true;
+                                        });
+                                      },
+                                      icon: const Icon(Icons.clear, color: Colors.red),
+                                      tooltip: 'נקה תאריך',
+                                    ),
+                                ],
                               ),
 
                               const SizedBox(height: 16),

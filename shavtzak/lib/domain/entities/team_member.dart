@@ -114,6 +114,9 @@ class TeamMember extends Equatable {
   // Phone number field
   final String? phoneNumber; // Optional Israeli phone number
 
+  // Birthday field
+  final DateTime? birthday; // Optional birthday date
+
   const TeamMember({
     required this.id,
     required this.name,
@@ -130,6 +133,7 @@ class TeamMember extends Equatable {
     this.passcodeLength,
     this.allowMultipleAssignments = false,
     this.phoneNumber,
+    this.birthday,
   });
 
   /// Check if team member is available on a given date
@@ -221,6 +225,8 @@ class TeamMember extends Equatable {
     bool? allowMultipleAssignments,
     String? phoneNumber,
     bool clearPhone = false,
+    DateTime? birthday,
+    bool clearBirthday = false,
   }) {
     return TeamMember(
       id: id ?? this.id,
@@ -238,6 +244,7 @@ class TeamMember extends Equatable {
       passcodeLength: clearPasscode ? null : (passcodeLength ?? this.passcodeLength),
       allowMultipleAssignments: allowMultipleAssignments ?? this.allowMultipleAssignments,
       phoneNumber: clearPhone ? null : (phoneNumber ?? this.phoneNumber),
+      birthday: clearBirthday ? null : (birthday ?? this.birthday),
     );
   }
 
@@ -258,6 +265,7 @@ class TeamMember extends Equatable {
         passcodeLength,
         allowMultipleAssignments,
         phoneNumber,
+        birthday,
       ];
 
   @override

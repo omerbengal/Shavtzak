@@ -8,6 +8,7 @@ import '../../core/utils/validators.dart';
 import 'passcode_setup_dialog.dart';
 import 'passcode_change_dialog.dart';
 import 'phone_edit_dialog.dart';
+import 'birthday_edit_dialog.dart';
 
 /// Settings dialog with passcode management
 class SettingsDialog extends StatefulWidget {
@@ -170,6 +171,118 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                   onPressed: () => _showPhoneEditDialog(context),
                                   icon: const Icon(Icons.add),
                                   label: const Text('הוסף מספר טלפון'),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Birthday section
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.cake,
+                            color: Colors.pink,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'תאריך לידה',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      BlocBuilder<UserSelectionBloc, UserSelectionState>(
+                        builder: (context, state) {
+                          if (state is! UserAuthenticated) {
+                            return const SizedBox.shrink();
+                          }
+
+                          final birthday = state.user.birthday;
+
+                          if (birthday != null) {
+                            final formattedBirthday = '${birthday.day.toString().padLeft(2, '0')}/${birthday.month.toString().padLeft(2, '0')}/${birthday.year}';
+                            return Column(
+                              children: [
+                                Text(
+                                  formattedBirthday,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.pink,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Column(
+                                  children: [
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => _showBirthdayEditDialog(context),
+                                        icon: const Icon(Icons.edit, size: 18),
+                                        label: const Text(
+                                          'ערוך תאריך לידה',
+                                          style: TextStyle(fontSize: 14),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          minimumSize: const Size(0, 36),
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => _deleteBirthday(context),
+                                        icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                        label: const Text(
+                                          'מחק תאריך לידה',
+                                          style: TextStyle(fontSize: 14, color: Colors.red),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          minimumSize: const Size(0, 36),
+                                          side: const BorderSide(color: Colors.red),
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            );
+                          } else {
+                            return Column(
+                              children: [
+                                Icon(
+                                  Icons.cake_outlined,
+                                  size: 48,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'לא הוגדר תאריך לידה',
+                                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                                ),
+                                const SizedBox(height: 12),
+                                ElevatedButton.icon(
+                                  onPressed: () => _showBirthdayEditDialog(context),
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('הוסף תאריך לידה'),
                                   style: ElevatedButton.styleFrom(
                                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                   ),
@@ -497,6 +610,56 @@ class _SettingsDialogState extends State<SettingsDialog> {
       if (currentState is UserAuthenticated) {
         // Add the update event to delete the phone number
         bloc.add(const UpdatePhoneNumber(null));
+      }
+    }
+  }
+
+  void _showBirthdayEditDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => const BirthdayEditDialog(),
+    );
+  }
+
+  void _deleteBirthday(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('מחיקת תאריך לידה'),
+          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את תאריך הלידה?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('ביטול'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+              ),
+              child: const Text('מחק'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      final bloc = context.read<UserSelectionBloc>();
+      final currentState = bloc.state;
+
+      if (currentState is UserAuthenticated) {
+        // Add the update event to delete the birthday
+        bloc.add(const UpdateBirthday(null));
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('תאריך לידה נמחק בהצלחה'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
     }
   }
