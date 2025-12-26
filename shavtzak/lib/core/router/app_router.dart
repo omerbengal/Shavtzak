@@ -15,6 +15,7 @@ import '../../presentation/screens/admin/checklist_screen.dart';
 import '../../presentation/screens/team/team_list_screen.dart';
 import '../../presentation/screens/event/event_list_screen.dart';
 import '../../presentation/screens/assignment/assignment_list_screen.dart';
+import '../../presentation/screens/summary/summary_screen.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 
 /// Global navigator key for showing snackbars from outside widget tree
@@ -163,6 +164,14 @@ class AppRouter {
           ),
         ),
 
+        // Summary screen - isolated admin screen
+        GoRoute(
+          path: '/summary',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: SummaryScreen(key: ValueKey('summary_prod')),
+          ),
+        ),
+
         // Admin routes shell - uses existing SwipeablePageView
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
@@ -303,6 +312,14 @@ class AppRouter {
           path: '/test/whoami',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: WhoamiScreen(key: ValueKey('whoami_test')),
+          ),
+        ),
+
+        // Test summary screen
+        GoRoute(
+          path: '/test/summary',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: SummaryScreen(key: ValueKey('summary_test')),
           ),
         ),
 
