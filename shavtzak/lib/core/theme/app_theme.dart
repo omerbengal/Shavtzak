@@ -87,6 +87,7 @@ class AppTheme {
             borderRadius: BorderRadius.circular(8),
           ),
           textStyle: const TextStyle(
+            fontFamily: 'Rubik',
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -99,6 +100,7 @@ class AppTheme {
           foregroundColor: primary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           textStyle: const TextStyle(
+            fontFamily: 'Rubik',
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -115,6 +117,7 @@ class AppTheme {
             borderRadius: BorderRadius.circular(8),
           ),
           textStyle: const TextStyle(
+            fontFamily: 'Rubik',
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -146,10 +149,12 @@ class AppTheme {
           borderSide: const BorderSide(color: error, width: 2),
         ),
         labelStyle: const TextStyle(
+          fontFamily: 'Rubik',
           color: textSecondary,
           fontSize: 16,
         ),
         hintStyle: const TextStyle(
+          fontFamily: 'Rubik',
           color: textDisabled,
           fontSize: 16,
         ),
@@ -160,6 +165,7 @@ class AppTheme {
         backgroundColor: primaryLight,
         deleteIconColor: textSecondary,
         labelStyle: const TextStyle(
+          fontFamily: 'Rubik',
           color: textPrimary,
           fontSize: 14,
         ),
@@ -188,11 +194,13 @@ class AppTheme {
           borderRadius: BorderRadius.circular(16),
         ),
         titleTextStyle: const TextStyle(
+          fontFamily: 'Rubik',
           color: textPrimary,
           fontSize: 20,
           fontWeight: FontWeight.w600,
         ),
         contentTextStyle: const TextStyle(
+          fontFamily: 'Rubik',
           color: textSecondary,
           fontSize: 16,
         ),
@@ -214,73 +222,88 @@ class AppTheme {
       // Text theme
       textTheme: const TextTheme(
         displayLarge: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 32,
           fontWeight: FontWeight.bold,
           color: textPrimary,
         ),
         displayMedium: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 28,
           fontWeight: FontWeight.bold,
           color: textPrimary,
         ),
         displaySmall: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 24,
           fontWeight: FontWeight.bold,
           color: textPrimary,
         ),
         headlineLarge: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 22,
           fontWeight: FontWeight.w600,
           color: textPrimary,
         ),
         headlineMedium: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: textPrimary,
         ),
         headlineSmall: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: textPrimary,
         ),
         titleLarge: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: textPrimary,
         ),
         titleMedium: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 16,
           fontWeight: FontWeight.w500,
           color: textPrimary,
         ),
         titleSmall: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 14,
           fontWeight: FontWeight.w500,
           color: textPrimary,
         ),
         bodyLarge: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 16,
           color: textPrimary,
         ),
         bodyMedium: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 14,
           color: textPrimary,
         ),
         bodySmall: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 12,
           color: textSecondary,
         ),
         labelLarge: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 14,
           fontWeight: FontWeight.w600,
           color: textPrimary,
         ),
         labelMedium: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: textSecondary,
         ),
         labelSmall: TextStyle(
+          fontFamily: 'Rubik',
           fontSize: 10,
           fontWeight: FontWeight.w600,
           color: textDisabled,
