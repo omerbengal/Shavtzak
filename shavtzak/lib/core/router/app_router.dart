@@ -68,6 +68,8 @@ class AppRouter {
             if (strippedRoute.startsWith('/whoami') || strippedRoute.isEmpty || strippedRoute == '/') {
               if (state.isAdmin) {
                 _instance?.go('$envPrefix/admin');
+              } else if (state.user.canAccessSummaryScreen) {
+                _instance?.go('$envPrefix/choice');
               } else {
                 _instance?.go('$envPrefix/user/assignments');
               }
@@ -136,13 +138,23 @@ class AppRouter {
             }
             // Admins can access both user and admin routes, no restriction
           } else {
-            // Non-admin user - only redirect from whoami to user routes
+            // Non-admin user - redirect based on summary screen access
             if (strippedRoute.startsWith('/whoami')) {
+              // Check if user has summary screen access - show choice screen
+              if (currentState.user.canAccessSummaryScreen) {
+                return '$envPrefix/choice'; // Redirect to choice screen
+              }
               return '$envPrefix/user/assignments'; // Redirect to user assignments
             }
             // If non-admin tries to access admin routes, redirect to user
-            if (strippedRoute.startsWith('/admin/')) {
+            if (strippedRoute.startsWith('/admin')) {
               return '$envPrefix/user/assignments'; // Redirect to user assignments
+            }
+            // Protect summary route - only allow if has canAccessSummaryScreen
+            if (strippedRoute.startsWith('/summary')) {
+              if (!currentState.user.canAccessSummaryScreen) {
+                return '$envPrefix/user/assignments'; // Redirect unauthorized users
+              }
             }
           }
         } else {
@@ -169,6 +181,14 @@ class AppRouter {
           path: '/summary',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: SummaryScreen(key: ValueKey('summary_prod')),
+          ),
+        ),
+
+        // Choice route for non-admin users with summary access
+        GoRoute(
+          path: '/choice',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: AdminChoiceScreen(key: ValueKey('choice_prod')),
           ),
         ),
 
@@ -320,6 +340,14 @@ class AppRouter {
           path: '/test/summary',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: SummaryScreen(key: ValueKey('summary_test')),
+          ),
+        ),
+
+        // Test choice route for non-admin users with summary access
+        GoRoute(
+          path: '/test/choice',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: AdminChoiceScreen(key: ValueKey('choice_test')),
           ),
         ),
 

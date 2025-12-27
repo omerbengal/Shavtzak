@@ -767,6 +767,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   bool _isActive = true;
   bool _isPermanent = false;
   bool _allowMultipleAssignments = false;
+  bool _canAccessSummaryScreen = false;
   Map<RoleType, bool> _roleCapabilities = {};
 
   late TeamBloc _teamBloc;
@@ -793,6 +794,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       _isActive = widget.member!.isActive;
       _isPermanent = widget.member!.isPermanent;
       _allowMultipleAssignments = widget.member!.allowMultipleAssignments;
+      _canAccessSummaryScreen = widget.member!.canAccessSummaryScreen;
       _roleCapabilities = Map.from(widget.member!.roleCapabilities);
       _constraints = List.from(widget.member!.constraints);
       if (widget.member!.birthday != null) {
@@ -863,6 +865,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       isActive: _isActive,
       isPermanent: _isPermanent,
       allowMultipleAssignments: _allowMultipleAssignments,
+      canAccessSummaryScreen: _canAccessSummaryScreen,
       constraints: finalConstraints,
       roleCapabilities: _roleCapabilities,
       comments: _commentsController.text.trim(),
@@ -1398,6 +1401,21 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                 onChanged: (value) {
                                   setState(() {
                                     _allowMultipleAssignments = value;
+                                    _isDirty = true;
+                                  });
+                                },
+                              ),
+
+                              // Summary screen access switch
+                              SwitchListTile(
+                                title: const Text('גישה למסך מנהלים'),
+                                subtitle: const Text(
+                                  'מאפשר לחבר צוות שאינו מנהל לצפות במסך מנהלים',
+                                ),
+                                value: _canAccessSummaryScreen,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _canAccessSummaryScreen = value;
                                     _isDirty = true;
                                   });
                                 },

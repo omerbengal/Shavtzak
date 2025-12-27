@@ -6,7 +6,9 @@ import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../../core/services/environment_service.dart';
 
-/// Admin choice screen - allows admin users to choose between personal area and management
+/// Choice screen - allows users to choose between available areas
+/// For admins: Personal area, Management, and Summary screen
+/// For non-admins with summary access: Personal area and Summary screen
 class AdminChoiceScreen extends StatelessWidget {
   const AdminChoiceScreen({super.key});
 
@@ -17,94 +19,155 @@ class AdminChoiceScreen extends StatelessWidget {
       child: Scaffold(
         appBar: _buildAppBar(context),
         body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                  const Text(
-                    'ברוכים הבאים לשבצק',
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'באיזה כובע תרצה/י להיכנס? 🎩',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 40),
-                // Personal Area Card
-                SizedBox(
-                  width: 350,
-                  child: Card(
-                    elevation: 4,
-                    child: InkWell(
-                      onTap: () {
-                        final envPrefix = EnvironmentService.instance.routePrefix;
-                        context.go('$envPrefix/user/assignments');
-                      },
+          child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
+            builder: (context, state) {
+              if (state is! UserAuthenticated) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final isAdmin = state.isAdmin;
+              final showManagementCard = isAdmin;
+              final showSummaryCard = isAdmin || state.user.canAccessSummaryScreen;
+              final cardCount = 1 + (showManagementCard ? 1 : 0) + (showSummaryCard ? 1 : 0);
+
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  final envPrefix = EnvironmentService.instance.routePrefix;
+                  final screenWidth = constraints.maxWidth;
+                  final screenHeight = constraints.maxHeight;
+
+                  // Responsive card width
+                  final cardWidth = screenWidth > 400 ? 350.0 : screenWidth * 0.85;
+
+                  // Determine if we need compact mode based on available height
+                  final isCompact = cardCount > 2 && screenHeight < 600;
+                  final cardSpacing = isCompact ? 12.0 : (cardCount > 2 ? 16.0 : 24.0);
+
+                  return Center(
+                    child: SingleChildScrollView(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: isCompact ? 16 : 24,
+                        ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.person, size: 56, color: Colors.blue),
-                            SizedBox(height: 10),
+                          children: [
                             Text(
-                              'איזור אישי',
-                              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                              'ברוכים הבאים לשבצק',
+                              style: TextStyle(
+                                fontSize: isCompact ? 26 : 32,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                            SizedBox(height: 4),
+                            SizedBox(height: isCompact ? 8 : 16),
                             Text(
-                              'צפה בשיבוצים ובקשות מגבלות',
-                              style: TextStyle(fontSize: 13, color: Colors.grey),
+                              'באיזה כובע תרצה/י להיכנס?',
+                              style: TextStyle(
+                                fontSize: isCompact ? 16 : 18,
+                                color: Colors.grey,
+                              ),
                             ),
+                            SizedBox(height: isCompact ? 16 : 32),
+
+                            // Personal Area Card (always shown)
+                            _buildChoiceCard(
+                              width: cardWidth,
+                              icon: Icons.person,
+                              iconColor: Colors.blue,
+                              title: 'איזור אישי',
+                              subtitle: 'צפה בשיבוצים ובקשות מגבלות',
+                              isCompact: isCompact,
+                              onTap: () => context.go('$envPrefix/user/assignments'),
+                            ),
+
+                            SizedBox(height: cardSpacing),
+
+                            // Management Card (admin only)
+                            if (showManagementCard) ...[
+                              _buildChoiceCard(
+                                width: cardWidth,
+                                icon: Icons.admin_panel_settings,
+                                iconColor: Colors.green,
+                                title: 'ניהול שבצק',
+                                subtitle: 'ניהול צוות, אירועים ושיבוצים',
+                                isCompact: isCompact,
+                                onTap: () => context.go('$envPrefix/admin/team-members'),
+                              ),
+                              SizedBox(height: cardSpacing),
+                            ],
+
+                            // Summary/Manager Screen Card
+                            if (showSummaryCard)
+                              _buildChoiceCard(
+                                width: cardWidth,
+                                icon: Icons.dashboard,
+                                iconColor: Colors.purple,
+                                title: 'מסך מנהלים',
+                                subtitle: 'צפה בסיכום כללי',
+                                isCompact: isCompact,
+                                onTap: () => context.go('$envPrefix/summary'),
+                              ),
                           ],
                         ),
                       ),
                     ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build a choice card - no fixed height, content-sized
+  Widget _buildChoiceCard({
+    required double width,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required bool isCompact,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      width: width,
+      child: Card(
+        elevation: 4,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              vertical: isCompact ? 12 : 20,
+              horizontal: 16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: isCompact ? 32 : 48, color: iconColor),
+                SizedBox(height: isCompact ? 4 : 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: isCompact ? 18 : 24,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 32),
-                // Management Card
-                SizedBox(
-                  width: 350,
-                  child: Card(
-                    elevation: 4,
-                    child: InkWell(
-                      onTap: () {
-                        final envPrefix = EnvironmentService.instance.routePrefix;
-                        context.go('$envPrefix/admin/team-members');
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.admin_panel_settings, size: 56, color: Colors.green),
-                            SizedBox(height: 10),
-                            Text(
-                              'ניהול שבצק',
-                              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'ניהול צוות, אירועים ושיבוצים',
-                              style: TextStyle(fontSize: 13, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                SizedBox(height: isCompact ? 2 : 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: isCompact ? 12 : 13,
+                    color: Colors.grey,
                   ),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
           ),
         ),
-      ),
-      ),
       ),
     );
   }
@@ -159,13 +222,13 @@ class AdminChoiceScreen extends StatelessWidget {
             actions: [
               TextButton(
                 onPressed: () {
-                  Navigator.of(context).pop(); // Close dialog
+                  Navigator.of(context).pop();
                 },
                 child: const Text('ביטול'),
               ),
               TextButton(
                 onPressed: () {
-                  Navigator.of(context).pop(); // Close dialog
+                  Navigator.of(context).pop();
                   context.read<UserSelectionBloc>().add(const SignOut());
                 },
                 child: const Text(

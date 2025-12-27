@@ -117,6 +117,9 @@ class TeamMember extends Equatable {
   // Birthday field
   final DateTime? birthday; // Optional birthday date
 
+  // Summary screen access field
+  final bool canAccessSummaryScreen; // Whether non-admin can access summary screen
+
   const TeamMember({
     required this.id,
     required this.name,
@@ -134,6 +137,7 @@ class TeamMember extends Equatable {
     this.allowMultipleAssignments = false,
     this.phoneNumber,
     this.birthday,
+    this.canAccessSummaryScreen = false,
   });
 
   /// Check if team member is available on a given date
@@ -227,6 +231,7 @@ class TeamMember extends Equatable {
     bool clearPhone = false,
     DateTime? birthday,
     bool clearBirthday = false,
+    bool? canAccessSummaryScreen,
   }) {
     return TeamMember(
       id: id ?? this.id,
@@ -245,6 +250,7 @@ class TeamMember extends Equatable {
       allowMultipleAssignments: allowMultipleAssignments ?? this.allowMultipleAssignments,
       phoneNumber: clearPhone ? null : (phoneNumber ?? this.phoneNumber),
       birthday: clearBirthday ? null : (birthday ?? this.birthday),
+      canAccessSummaryScreen: canAccessSummaryScreen ?? this.canAccessSummaryScreen,
     );
   }
 
@@ -266,6 +272,7 @@ class TeamMember extends Equatable {
         allowMultipleAssignments,
         phoneNumber,
         birthday,
+        canAccessSummaryScreen,
       ];
 
   @override

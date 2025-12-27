@@ -33,6 +33,9 @@ class TeamMemberModel {
   // Birthday field
   final DateTime? birthday; // Optional birthday date
 
+  // Summary screen access field
+  final bool canAccessSummaryScreen; // Whether non-admin can access summary screen
+
   const TeamMemberModel({
     required this.id,
     required this.name,
@@ -50,6 +53,7 @@ class TeamMemberModel {
     this.allowMultipleAssignments = false,
     this.phoneNumber,
     this.birthday,
+    this.canAccessSummaryScreen = false,
   });
 
   /// Generate a UUID for team members
@@ -82,6 +86,7 @@ class TeamMemberModel {
       allowMultipleAssignments: entity.allowMultipleAssignments,
       phoneNumber: entity.phoneNumber,
       birthday: entity.birthday,
+      canAccessSummaryScreen: entity.canAccessSummaryScreen,
     );
   }
 
@@ -109,6 +114,7 @@ class TeamMemberModel {
       allowMultipleAssignments: allowMultipleAssignments,
       phoneNumber: phoneNumber,
       birthday: birthday,
+      canAccessSummaryScreen: canAccessSummaryScreen,
     );
   }
 
@@ -138,6 +144,9 @@ class TeamMemberModel {
         ? (data['birthday'] as Timestamp).toDate()
         : null;
 
+    // Handle migration - default to false for existing members missing canAccessSummaryScreen
+    final canAccessSummaryScreen = data['canAccessSummaryScreen'] as bool? ?? false;
+
     final model = TeamMemberModel(
       id: doc.id,
       name: data['name'] as String,
@@ -162,6 +171,7 @@ class TeamMemberModel {
       allowMultipleAssignments: allowMultipleAssignments,
       phoneNumber: phoneNumber,
       birthday: birthday,
+      canAccessSummaryScreen: canAccessSummaryScreen,
     );
 
     // If migration was needed (UUID was generated), update the document
@@ -203,6 +213,7 @@ class TeamMemberModel {
       'allowMultipleAssignments': allowMultipleAssignments,
       'phoneNumber': phoneNumber,
       'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
+      'canAccessSummaryScreen': canAccessSummaryScreen,
     };
   }
 
@@ -230,6 +241,9 @@ class TeamMemberModel {
         ? DateTime.parse(json['birthday'] as String)
         : null;
 
+    // Handle migration - default to false for existing members missing canAccessSummaryScreen
+    final canAccessSummaryScreen = json['canAccessSummaryScreen'] as bool? ?? false;
+
     return TeamMemberModel(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -250,6 +264,7 @@ class TeamMemberModel {
       allowMultipleAssignments: allowMultipleAssignments,
       phoneNumber: phoneNumber,
       birthday: birthday,
+      canAccessSummaryScreen: canAccessSummaryScreen,
     );
   }
 
@@ -272,6 +287,7 @@ class TeamMemberModel {
       'allowMultipleAssignments': allowMultipleAssignments,
       'phoneNumber': phoneNumber,
       'birthday': birthday?.toIso8601String(),
+      'canAccessSummaryScreen': canAccessSummaryScreen,
     };
   }
 }
