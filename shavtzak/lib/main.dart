@@ -308,14 +308,14 @@ class LoadingApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: MaterialApp(
-        navigatorKey: navigatorKey, // Global navigator key for snackbars
-        title: 'שבצק - ניהול צוות',
-        theme: AppTheme.lightTheme,
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
+    return MaterialApp(
+      navigatorKey: navigatorKey, // Global navigator key for snackbars
+      title: 'שבצק - ניהול צוות',
+      theme: AppTheme.lightTheme,
+      debugShowCheckedModeBanner: false,
+      home: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
           backgroundColor: Colors.white,
           body: Center(
             child: Column(
