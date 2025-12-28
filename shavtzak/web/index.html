@@ -32,6 +32,87 @@
   <title>שבצק - ניהול צוות</title>
   <link rel="manifest" href="manifest.json">
 
+  <!-- Splash Screen Styles (inline for instant display) -->
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #ffffff;
+    }
+
+    #splash-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background-color: #ffffff;
+      z-index: 9999;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      direction: rtl;
+    }
+
+    .splash-icon {
+      width: 120px;
+      height: 120px;
+      background-color: #e3f2fd;
+      border-radius: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 32px;
+    }
+
+    .splash-icon svg {
+      width: 60px;
+      height: 60px;
+      fill: #1e88e5;
+    }
+
+    .splash-title {
+      font-size: 32px;
+      font-weight: bold;
+      color: rgba(0, 0, 0, 0.87);
+      margin-bottom: 8px;
+    }
+
+    .splash-subtitle {
+      font-size: 18px;
+      color: #9e9e9e;
+      margin-bottom: 48px;
+    }
+
+    .splash-spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #e0e0e0;
+      border-top-color: #2196f3;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .splash-loading-text {
+      font-size: 16px;
+      color: #9e9e9e;
+    }
+
+    /* Hide splash when Flutter is ready */
+    .splash-hidden {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease-out;
+    }
+  </style>
+
   <!-- GitHub Pages Hash Routing Fix -->
   <script>
     // Redirect to hash route if no hash is present
@@ -45,28 +126,47 @@
     }
   </script>
 
-  <!-- Firebase Configuration -->
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+  <!-- Firebase Configuration (defer to not block splash) -->
+  <script defer src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
 
-  <script>
-    // Your web app's Firebase configuration
-    const firebaseConfig = {
-      apiKey: "AIzaSyBumNcnFydJm__1E_WMIc3R3pmoVF2ABqU",
-      authDomain: "tsevet-shir-shavtzak.firebaseapp.com",
-      projectId: "tsevet-shir-shavtzak",
-      storageBucket: "tsevet-shir-shavtzak.firebasestorage.app",
-      messagingSenderId: "89053885327",
-      appId: "1:89053885327:web:8e66ba1ffe27dc0f154c8f",
-      measurementId: "G-JK2M1RXGGK"
-    };
-
-    // Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
+  <script defer>
+    // Wait for Firebase scripts to load, then initialize
+    window.addEventListener('DOMContentLoaded', function() {
+      // Small delay to ensure Firebase scripts are executed
+      setTimeout(function() {
+        if (typeof firebase !== 'undefined') {
+          const firebaseConfig = {
+            apiKey: "AIzaSyBumNcnFydJm__1E_WMIc3R3pmoVF2ABqU",
+            authDomain: "tsevet-shir-shavtzak.firebaseapp.com",
+            projectId: "tsevet-shir-shavtzak",
+            storageBucket: "tsevet-shir-shavtzak.firebasestorage.app",
+            messagingSenderId: "89053885327",
+            appId: "1:89053885327:web:8e66ba1ffe27dc0f154c8f",
+            measurementId: "G-JK2M1RXGGK"
+          };
+          firebase.initializeApp(firebaseConfig);
+        }
+      }, 50);
+    });
   </script>
 </head>
 <body>
+  <!-- Splash Screen (shows immediately) -->
+  <div id="splash-screen">
+    <div class="splash-icon">
+      <!-- Material Icons "group" icon as inline SVG -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+        <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+      </svg>
+    </div>
+    <div class="splash-title">שבצק</div>
+    <div class="splash-subtitle">מערכת ניהול צוות</div>
+    <div class="splash-spinner"></div>
+    <div class="splash-loading-text">טוען...</div>
+  </div>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

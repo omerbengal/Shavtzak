@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'firebase_options.dart';
 import 'dart:developer' as developer;
 import 'dart:ui' as ui;
+import 'package:web/web.dart' as web;
 
 // Data layer
 import 'data/data_sources/firestore_database.dart';
@@ -18,6 +19,7 @@ import 'core/services/user_cache_service.dart';
 import 'core/services/environment_service.dart';
 import 'core/services/connectivity_service.dart';
 import 'core/services/drive_service.dart';
+import 'core/services/config_cache_service.dart';
 import 'presentation/widgets/offline_blocking_overlay.dart';
 
 // Presentation layer
@@ -56,6 +58,9 @@ Future<void> _initialize() async {
     // Initialize connectivity service (for offline detection in test mode)
     ConnectivityService.instance.initialize();
 
+    // Initialize config cache service
+    final configCache = ConfigCacheService();
+
     // Start font preloading in parallel (don't await yet)
     final fontFuture = _preloadFont();
 
@@ -71,17 +76,61 @@ Future<void> _initialize() async {
     // Initialize services
     final userCacheService = UserCacheService();
 
-    // Run parallel initialization tasks:
-    // 1. DriveService config loading
-    // 2. CalendarSyncBloc config loading
-    // 3. Font preloading (already started)
-    final results = await Future.wait([
-      _initializeDriveService(database),
-      _createCalendarSyncBloc(database),
-      fontFuture,
-    ]);
+    // Try to get configs from cache first (instant)
+    final cachedDriveConfig = await configCache.getDriveConfig();
+    final cachedCalendarConfig = await configCache.getCalendarConfig();
 
-    final calendarSyncBloc = results[1] as CalendarSyncBloc;
+    // Determine if we need to fetch from Firestore
+    final needsDriveFetch = cachedDriveConfig == null;
+    final needsCalendarFetch = cachedCalendarConfig == null;
+
+    // Initialize DriveService with cached or fetched config
+    if (!needsDriveFetch) {
+      _initializeDriveServiceWithConfig(cachedDriveConfig!);
+      developer.log('main.dart: DriveService initialized from cache', name: 'Main');
+    }
+
+    // Initialize CalendarSyncBloc with cached or fetched config
+    final bloc = CalendarSyncBloc(database: database);
+    if (!needsCalendarFetch && cachedCalendarConfig != null) {
+      _initializeCalendarBlocWithConfig(bloc, cachedCalendarConfig);
+      developer.log('main.dart: CalendarSyncBloc initialized from cache', name: 'Main');
+    }
+
+    // If any config was missing, fetch from Firestore (blocking, only on first visit)
+    if (needsDriveFetch || needsCalendarFetch) {
+      developer.log('main.dart: Fetching missing configs from Firestore', name: 'Main');
+
+      // Fetch only what's missing
+      final results = await Future.wait([
+        if (needsDriveFetch) _fetchDriveConfigFromFirestore(database),
+        if (needsCalendarFetch) _fetchCalendarConfigFromFirestore(database),
+        fontFuture,
+      ]);
+
+      int resultIndex = 0;
+
+      if (needsDriveFetch) {
+        final driveConfig = results[resultIndex++] as Map<String, String?>?;
+        if (driveConfig != null) {
+          _initializeDriveServiceWithConfig(driveConfig);
+          await configCache.saveDriveConfig(driveConfig);
+          developer.log('main.dart: DriveService initialized from Firestore, cached', name: 'Main');
+        }
+      }
+
+      if (needsCalendarFetch) {
+        final calendarConfig = results[resultIndex] as Map<String, String?>?;
+        if (calendarConfig != null) {
+          _initializeCalendarBlocWithConfig(bloc, calendarConfig);
+          await configCache.saveCalendarConfig(calendarConfig);
+          developer.log('main.dart: CalendarSyncBloc initialized from Firestore, cached', name: 'Main');
+        }
+      }
+    } else {
+      // Just await font preload if configs were cached
+      await fontFuture;
+    }
 
     // Initialize repositories
     final teamRepository = TeamRepository(database);
@@ -102,11 +151,34 @@ Future<void> _initialize() async {
       checklistRepository: checklistRepository,
       presetRepository: presetRepository,
       userSelectionRepository: userSelectionRepository,
-      calendarSyncBloc: calendarSyncBloc,
+      calendarSyncBloc: bloc,
     ));
+
+    // Hide the HTML splash screen after Flutter renders
+    _hideSplashScreen();
+
+    // Refresh cache in background (non-blocking)
+    _refreshConfigCacheInBackground(database, configCache);
   } catch (e) {
     // Show error screen
     runApp(ErrorApp(error: e.toString()));
+  }
+}
+
+/// Hide the HTML splash screen with a fade-out animation
+void _hideSplashScreen() {
+  try {
+    final splash = web.document.getElementById('splash-screen');
+    if (splash != null) {
+      // Add hidden class for fade-out transition
+      splash.classList.add('splash-hidden');
+      // Remove from DOM after transition completes
+      Future.delayed(const Duration(milliseconds: 300), () {
+        splash.remove();
+      });
+    }
+  } catch (e) {
+    developer.log('Failed to hide splash screen: $e', name: 'Main');
   }
 }
 
@@ -265,24 +337,13 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Initialize DriveService with config from Firestore
-Future<void> _initializeDriveService(FirestoreDatabase database) async {
+/// Initialize DriveService with a pre-fetched config
+void _initializeDriveServiceWithConfig(Map<String, String?> config) {
   try {
-    final config = await database.getDriveConfig();
-
-    if (config != null && config['scriptUrl'] != null && config['apiKey'] != null) {
+    if (config['scriptUrl'] != null && config['apiKey'] != null) {
       DriveService.instance.initialize(
         scriptUrl: config['scriptUrl']!,
         apiKey: config['apiKey']!,
-      );
-      developer.log(
-        'main.dart: DriveService initialized successfully',
-        name: 'Main',
-      );
-    } else {
-      developer.log(
-        'main.dart: DriveService not initialized - missing config in Firestore (keys/googleDrive)',
-        name: 'Main',
       );
     }
   } catch (e) {
@@ -291,32 +352,100 @@ Future<void> _initializeDriveService(FirestoreDatabase database) async {
       name: 'Main',
       error: e,
     );
-    // Don't throw - app can work without Drive integration
   }
 }
 
-/// Create and initialize CalendarSyncBloc with config from Firestore
-Future<CalendarSyncBloc> _createCalendarSyncBloc(FirestoreDatabase database) async {
-  final env = EnvironmentService.instance.isTestMode ? 'TEST' : 'PROD';
-  developer.log('main.dart: Creating CalendarSyncBloc for $env environment', name: 'Main');
-  final bloc = CalendarSyncBloc(database: database);
-
-  // Initialize with credentials from Firestore
-  final config = await database.getGoogleCalendarConfig();
-
-  if (config != null && config['serviceAccountJson'] != null && config['calendarId'] != null) {
-    bloc.add(InitializeCalendarSync(
-      serviceAccountJson: config['serviceAccountJson']!,
-      calendarId: config['calendarId']!,
-    ));
-  } else {
-    bloc.add(const InitializeCalendarSync(
-      serviceAccountJson: null,
-      calendarId: null,
-    ));
+/// Initialize CalendarSyncBloc with a pre-fetched config
+void _initializeCalendarBlocWithConfig(
+  CalendarSyncBloc bloc,
+  Map<String, String?> config,
+) {
+  try {
+    if (config['serviceAccountJson'] != null && config['calendarId'] != null) {
+      bloc.add(InitializeCalendarSync(
+        serviceAccountJson: config['serviceAccountJson']!,
+        calendarId: config['calendarId']!,
+      ));
+    } else {
+      bloc.add(const InitializeCalendarSync(
+        serviceAccountJson: null,
+        calendarId: null,
+      ));
+    }
+  } catch (e) {
+    developer.log(
+      'main.dart: Failed to initialize CalendarSyncBloc: $e',
+      name: 'Main',
+      error: e,
+    );
   }
+}
 
-  return bloc;
+/// Fetch Drive config from Firestore
+Future<Map<String, String?>?> _fetchDriveConfigFromFirestore(
+  FirestoreDatabase database,
+) async {
+  try {
+    return await database.getDriveConfig();
+  } catch (e) {
+    developer.log(
+      'main.dart: Failed to fetch Drive config: $e',
+      name: 'Main',
+      error: e,
+    );
+    return null;
+  }
+}
+
+/// Fetch Calendar config from Firestore
+Future<Map<String, String?>?> _fetchCalendarConfigFromFirestore(
+  FirestoreDatabase database,
+) async {
+  try {
+    return await database.getGoogleCalendarConfig();
+  } catch (e) {
+    developer.log(
+      'main.dart: Failed to fetch Calendar config: $e',
+      name: 'Main',
+      error: e,
+    );
+    return null;
+  }
+}
+
+/// Refresh config cache in background after app renders
+void _refreshConfigCacheInBackground(
+  FirestoreDatabase database,
+  ConfigCacheService configCache,
+) {
+  // Run after a short delay to not interfere with initial render
+  Future.delayed(const Duration(seconds: 2), () async {
+    try {
+      final results = await Future.wait([
+        database.getDriveConfig(),
+        database.getGoogleCalendarConfig(),
+      ]);
+
+      final driveConfig = results[0] as Map<String, String?>?;
+      final calendarConfig = results[1] as Map<String, String?>?;
+
+      if (driveConfig != null) {
+        await configCache.saveDriveConfig(driveConfig);
+        developer.log('main.dart: Background: Drive config cached', name: 'Main');
+      }
+
+      if (calendarConfig != null) {
+        await configCache.saveCalendarConfig(calendarConfig);
+        developer.log('main.dart: Background: Calendar config cached', name: 'Main');
+      }
+    } catch (e) {
+      developer.log(
+        'main.dart: Background config refresh failed: $e',
+        name: 'Main',
+        error: e,
+      );
+    }
+  });
 }
 
 /// Loading screen shown during app initialization

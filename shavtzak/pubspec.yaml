@@ -68,6 +68,9 @@ dependencies:
   # URL Launcher for phone calls
   url_launcher: ^6.3.0
 
+  # Web platform interop
+  web: ^1.1.0
+
   # Map (for location picking)
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
