@@ -38,7 +38,8 @@
       "Bash(dart analyze:*)",
       "Bash(dart:*)",
       "Bash(echo:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Skill(glm-plan-usage:usage-query-skill)"
     ],
     "deny": [],
     "ask": []
