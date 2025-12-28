@@ -172,9 +172,21 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                           : (widget.item == null ? 'הוסף פריט לצ\'קליסט' : 'ערוך פריט בצ\'קליסט'),
                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Delete button (only when editing an existing item)
+                        if (widget.item != null && widget.onDelete != null)
+                          IconButton(
+                            onPressed: _delete,
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            tooltip: 'מחק פריט',
+                          ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -430,28 +442,10 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                   ),
                 ),
 
-          // Action buttons
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Save button
-              ElevatedButton(
-                onPressed: _save,
-                child: Text(widget.item == null ? 'צור פריט' : 'שמור שינויים'),
-              ),
-              // Delete button (only when editing an existing item and delete callback is provided)
-              if (widget.item != null && widget.onDelete != null) ...[
-                const SizedBox(height: 8),
-                ElevatedButton(
-                  onPressed: _delete,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('מחק פריט'),
-                ),
-              ],
-            ],
+          // Save button
+          ElevatedButton(
+            onPressed: _save,
+            child: Text(widget.item == null ? 'צור פריט' : 'שמור שינויים'),
           ),
         ],
       ),

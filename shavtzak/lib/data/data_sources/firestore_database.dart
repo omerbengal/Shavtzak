@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:uuid/uuid.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
+import '../../domain/entities/preset.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
@@ -12,6 +14,7 @@ import '../../core/services/environment_service.dart';
 import '../models/assignment_model.dart';
 import '../models/checklist_item_model.dart';
 import '../models/event_model.dart';
+import '../models/preset_model.dart';
 import '../models/team_member_model.dart';
 import 'database_interface.dart';
 
@@ -46,8 +49,14 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   String get _checklistItemsCollection {
-    final collection = '${EnvironmentService.instance.collectionPrefix}checklistItems';
+    final collection = '${EnvironmentService.instance.collectionPrefix}checklist_items';
     developer.log('FirestoreDatabase._checklistItemsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
+    return collection;
+  }
+
+  String get _presetsCollection {
+    final collection = '${EnvironmentService.instance.collectionPrefix}checklist_presets';
+    developer.log('FirestoreDatabase._presetsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
     return collection;
   }
 
@@ -1445,6 +1454,114 @@ class FirestoreDatabase implements DatabaseInterface {
       await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete checklist items by event: $e');
+    }
+  }
+
+  // ========== Checklist Presets ==========
+
+  @override
+  Future<List<Preset>> getPresets() async {
+    try {
+      final snapshot = await _firestore
+          .collection(_presetsCollection)
+          .orderBy('name')
+          .get();
+
+      return snapshot.docs
+          .map((doc) => PresetModel.fromFirestore(doc))
+          .toList();
+    } catch (e) {
+      throw DatabaseException('Failed to get presets: $e');
+    }
+  }
+
+  @override
+  Future<Preset?> getPresetById(String id) async {
+    try {
+      final doc = await _firestore.collection(_presetsCollection).doc(id).get();
+      if (!doc.exists) return null;
+      return PresetModel.fromFirestore(doc);
+    } catch (e) {
+      throw DatabaseException('Failed to get preset by ID: $e');
+    }
+  }
+
+  @override
+  Future<void> insertPreset(Preset preset) async {
+    try {
+      await _firestore
+          .collection(_presetsCollection)
+          .doc(preset.id)
+          .set(PresetModel.toFirestore(preset));
+    } catch (e) {
+      throw DatabaseException('Failed to insert preset: $e');
+    }
+  }
+
+  @override
+  Future<void> updatePreset(Preset preset) async {
+    try {
+      await _firestore
+          .collection(_presetsCollection)
+          .doc(preset.id)
+          .update(PresetModel.toFirestore(preset));
+    } catch (e) {
+      throw DatabaseException('Failed to update preset: $e');
+    }
+  }
+
+  @override
+  Future<void> deletePreset(String id) async {
+    try {
+      await _firestore.collection(_presetsCollection).doc(id).delete();
+    } catch (e) {
+      throw DatabaseException('Failed to delete preset: $e');
+    }
+  }
+
+  @override
+  Future<void> loadPresetIntoEvent(String presetId, String eventId, String creatorAdminId) async {
+    try {
+      // Get the preset
+      final preset = await getPresetById(presetId);
+      if (preset == null) {
+        throw DatabaseException('Preset not found: $presetId');
+      }
+
+      // Create checklist items from preset templates
+      final now = DateTime.now();
+      final batch = _firestore.batch();
+
+      for (final templateItem in preset.items) {
+        final checklistItemId = const Uuid().v4();
+        final checklistItem = ChecklistItem(
+          id: checklistItemId,
+          eventId: eventId,
+          name: templateItem.name,
+          responsibleId: templateItem.responsibleId,
+          ccIds: templateItem.ccIds,
+          ccNotes: const {},
+          responsibleNote: const ResponsibleNoteEntry(note: ''),
+          adminNote: templateItem.adminNote.isNotEmpty
+              ? AdminNoteEntry(note: templateItem.adminNote, updatedAt: now)
+              : const AdminNoteEntry(note: ''),
+          status: false,
+          createdAt: now,
+          updatedAt: now,
+          statusLastUpdatedAt: now,
+          createdByAdminId: creatorAdminId,
+        );
+
+        final docRef = _firestore
+            .collection(_checklistItemsCollection)
+            .doc(checklistItemId);
+        batch.set(docRef, ChecklistItemModel.toFirestore(checklistItem));
+      }
+
+      await batch.commit();
+      developer.log('FirestoreDatabase.loadPresetIntoEvent: Loaded ${preset.items.length} items from preset "${preset.name}" into event $eventId', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to load preset into event: $e');
     }
   }
 }

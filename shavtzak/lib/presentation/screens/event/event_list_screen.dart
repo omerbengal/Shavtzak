@@ -236,7 +236,7 @@ class _EventListScreenState extends State<EventListScreen> {
           ),
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.only(bottom: 80),
               itemCount: filteredEvents.length,
               itemBuilder: (context, index) {
                 return _buildEventCard(

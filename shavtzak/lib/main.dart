@@ -13,6 +13,7 @@ import 'data/repositories/event_repository.dart';
 import 'data/repositories/assignment_repository.dart';
 import 'data/repositories/user_selection_repository.dart';
 import 'data/repositories/checklist_repository.dart';
+import 'data/repositories/preset_repository.dart';
 import 'core/services/user_cache_service.dart';
 import 'core/services/environment_service.dart';
 import 'core/services/connectivity_service.dart';
@@ -29,6 +30,7 @@ import 'presentation/bloc/user_selection/user_selection_state.dart';
 import 'presentation/bloc/calendar_sync/calendar_sync_bloc.dart';
 import 'presentation/bloc/calendar_sync/calendar_sync_event.dart';
 import 'presentation/bloc/checklist/checklist_bloc.dart';
+import 'presentation/bloc/preset/preset_bloc.dart';
 
 // Router
 import 'core/router/app_router.dart';
@@ -86,6 +88,7 @@ Future<void> _initialize() async {
     final eventRepository = EventRepository(database);
     final assignmentRepository = AssignmentRepository(database);
     final checklistRepository = ChecklistRepository(database);
+    final presetRepository = PresetRepository(database);
     final userSelectionRepository = UserSelectionRepository(
       database: database,
       userCacheService: userCacheService,
@@ -97,6 +100,7 @@ Future<void> _initialize() async {
       eventRepository: eventRepository,
       assignmentRepository: assignmentRepository,
       checklistRepository: checklistRepository,
+      presetRepository: presetRepository,
       userSelectionRepository: userSelectionRepository,
       calendarSyncBloc: calendarSyncBloc,
     ));
@@ -129,6 +133,7 @@ class MyApp extends StatelessWidget {
   final EventRepository eventRepository;
   final AssignmentRepository assignmentRepository;
   final ChecklistRepository checklistRepository;
+  final PresetRepository presetRepository;
   final UserSelectionRepository userSelectionRepository;
   final CalendarSyncBloc calendarSyncBloc;
 
@@ -138,6 +143,7 @@ class MyApp extends StatelessWidget {
     required this.eventRepository,
     required this.assignmentRepository,
     required this.checklistRepository,
+    required this.presetRepository,
     required this.userSelectionRepository,
     required this.calendarSyncBloc,
   });
@@ -150,6 +156,7 @@ class MyApp extends StatelessWidget {
         RepositoryProvider.value(value: eventRepository),
         RepositoryProvider.value(value: assignmentRepository),
         RepositoryProvider.value(value: checklistRepository),
+        RepositoryProvider.value(value: presetRepository),
         RepositoryProvider.value(value: userSelectionRepository),
       ],
       child: ListenableBuilder(
@@ -208,6 +215,16 @@ class MyApp extends StatelessWidget {
                   developer.log('main.dart: Creating ChecklistBloc for $env environment', name: 'Main');
                   return ChecklistBloc(
                     repository: context.read<ChecklistRepository>(),
+                    userSelectionBloc: context.read<UserSelectionBloc>(),
+                  );
+                },
+              ),
+              BlocProvider(
+                create: (context) {
+                  developer.log('main.dart: Creating PresetBloc for $env environment', name: 'Main');
+                  return PresetBloc(
+                    repository: context.read<PresetRepository>(),
+                    eventRepository: context.read<EventRepository>(),
                     userSelectionBloc: context.read<UserSelectionBloc>(),
                   );
                 },

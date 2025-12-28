@@ -16,6 +16,7 @@ import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/checklist/checklist_form_modal.dart';
 import '../../widgets/checklist/checklist_item_card.dart';
+import '../../widgets/checklist/presets_dialog.dart';
 import '../../../core/services/environment_service.dart';
 
 /// Admin screen for managing all checklist items
@@ -243,7 +244,37 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
           ],
         ),
         floatingActionButton: FloatingActionButton(
-          onPressed: _showAddModal,
+          onPressed: () {
+            showModalBottomSheet(
+              context: context,
+              builder: (bottomSheetContext) => Directionality(
+                textDirection: TextDirection.rtl,
+                child: SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.add),
+                        title: const Text('הוסף פריט'),
+                        onTap: () {
+                          Navigator.pop(bottomSheetContext);
+                          _showAddModal();
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.bookmark),
+                        title: const Text('פריסטים'),
+                        onTap: () {
+                          Navigator.pop(bottomSheetContext);
+                          PresetsDialog.show(context);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
           child: const Icon(Icons.add),
         ),
       ),
@@ -327,6 +358,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                     final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
 
                     return ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 80),
                       itemCount: sortedItems.length,
                       itemBuilder: (context, index) {
                         final item = sortedItems[index];
@@ -395,6 +427,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
               final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
 
               return ListView.builder(
+                padding: const EdgeInsets.only(bottom: 80),
                 itemCount: sortedEventIds.length,
                 itemBuilder: (context, index) {
                   final eventId = sortedEventIds[index];

@@ -337,7 +337,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
           // Team list
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.only(bottom: 80),
               itemCount: filteredMembers.length,
               itemBuilder: (context, index) {
                 final member = filteredMembers[index];

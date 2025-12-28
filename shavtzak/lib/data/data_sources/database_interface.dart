@@ -1,6 +1,7 @@
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
+import '../../domain/entities/preset.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
@@ -219,4 +220,24 @@ abstract class DatabaseInterface {
 
   /// Delete all checklist items for an event
   Future<void> deleteChecklistItemsByEvent(String eventId);
+
+  // ========== Checklist Presets ==========
+
+  /// Get all presets
+  Future<List<Preset>> getPresets();
+
+  /// Get a preset by ID
+  Future<Preset?> getPresetById(String id);
+
+  /// Insert a new preset
+  Future<void> insertPreset(Preset preset);
+
+  /// Update an existing preset
+  Future<void> updatePreset(Preset preset);
+
+  /// Delete a preset
+  Future<void> deletePreset(String id);
+
+  /// Load a preset into an event (creates checklist items from template)
+  Future<void> loadPresetIntoEvent(String presetId, String eventId, String creatorAdminId);
 }

@@ -21,7 +21,7 @@ class ChecklistRepository {
   /// Watch all checklist items for real-time updates
   Stream<List<ChecklistItem>> watchChecklistItems() {
     return FirebaseFirestore.instance
-          .collection('${_getEnvironmentPrefix()}checklistItems')
+          .collection('${_getEnvironmentPrefix()}checklist_items')
           .orderBy('updatedAt', descending: true)
           .snapshots()
           .asyncMap((snapshot) async {
@@ -85,7 +85,7 @@ class ChecklistRepository {
   /// Watch checklist items for a specific event
   Stream<List<ChecklistItem>> watchChecklistItemsByEvent(String eventId) {
     return FirebaseFirestore.instance
-          .collection('${_getEnvironmentPrefix()}checklistItems')
+          .collection('${_getEnvironmentPrefix()}checklist_items')
           .where('eventId', isEqualTo: eventId)
           .orderBy('name')
           .snapshots()
@@ -145,7 +145,7 @@ class ChecklistRepository {
 
   /// Watch checklist items for a specific team member (both responsible and CC'd)
   Stream<Map<String, List<ChecklistItem>>> watchChecklistItemsForUser(String teamMemberId) {
-    final collectionName = '${_getEnvironmentPrefix()}checklistItems';
+    final collectionName = '${_getEnvironmentPrefix()}checklist_items';
     developer.log('ChecklistRepository: Starting watchChecklistItemsForUser for $teamMemberId from collection $collectionName', name: 'Checklist');
 
     // Get all checklist items and filter on client side (more reliable than Filter.or)
