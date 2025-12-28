@@ -12,8 +12,13 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
   final TeamRepository _teamRepository;
   StreamSubscription? _teamStreamSubscription;
 
-  UserSelectionBloc(this._userSelectionRepository, this._teamRepository)
-      : super(const UserSelectionInitial()) {
+  UserSelectionBloc(
+    this._userSelectionRepository,
+    this._teamRepository, [
+    TeamMember? preAuthenticatedUser,
+  ]) : super(preAuthenticatedUser != null
+      ? UserAuthenticated(preAuthenticatedUser)
+      : const UserSelectionInitial()) {
 
     on<CheckCachedUser>(_onCheckCachedUser);
     on<SelectUser>(_onSelectUser);

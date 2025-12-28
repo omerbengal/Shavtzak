@@ -15,6 +15,7 @@ import 'data/repositories/assignment_repository.dart';
 import 'data/repositories/user_selection_repository.dart';
 import 'data/repositories/checklist_repository.dart';
 import 'data/repositories/preset_repository.dart';
+import 'domain/entities/team_member.dart';
 import 'core/services/user_cache_service.dart';
 import 'core/services/environment_service.dart';
 import 'core/services/connectivity_service.dart';
@@ -50,109 +51,188 @@ void main() {
   _initialize();
 }
 
+/// Helper to time operations
+T _timed<T>(String name, T Function() fn) {
+  final sw = Stopwatch()..start();
+  try {
+    final result = fn();
+    sw.stop();
+    print('⏱️ $name: ${sw.elapsedMilliseconds}ms');
+    return result;
+  } catch (e) {
+    sw.stop();
+    print('⏱️ $name: ${sw.elapsedMilliseconds}ms (FAILED: $e)');
+    rethrow;
+  }
+}
+
+/// Helper to time async operations
+Future<T> _timedAsync<T>(String name, Future<T> Function() fn) async {
+  final sw = Stopwatch()..start();
+  try {
+    final result = await fn();
+    sw.stop();
+    print('⏱️ $name: ${sw.elapsedMilliseconds}ms');
+    return result;
+  } catch (e) {
+    sw.stop();
+    print('⏱️ $name: ${sw.elapsedMilliseconds}ms (FAILED: $e)');
+    rethrow;
+  }
+}
+
 Future<void> _initialize() async {
+  final totalSw = Stopwatch()..start();
+  print('🚀 Initialization started');
+
   try {
     // Initialize environment service (detects test vs production from URL)
-    EnvironmentService.instance.initialize();
+    _timed('EnvironmentService.init', () => EnvironmentService.instance.initialize());
 
     // Initialize connectivity service (for offline detection in test mode)
-    ConnectivityService.instance.initialize();
+    _timed('ConnectivityService.init', () => ConnectivityService.instance.initialize());
 
     // Initialize config cache service
-    final configCache = ConfigCacheService();
-
-    // Start font preloading in parallel (don't await yet)
-    final fontFuture = _preloadFont();
-
-    // Initialize Firebase
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-
-    // Initialize database
-    final database = FirestoreDatabase();
-    await database.initialize();
+    final configCache = _timed('ConfigCacheService.init', () => ConfigCacheService());
 
     // Initialize services
-    final userCacheService = UserCacheService();
+    final userCacheService = _timed('UserCacheService creation', () => UserCacheService());
 
-    // Try to get configs from cache first (instant)
-    final cachedDriveConfig = await configCache.getDriveConfig();
-    final cachedCalendarConfig = await configCache.getCalendarConfig();
+    // OPTIMIZATION 1: Check cache FIRST (synchronous, instant)
+    // If no cached user, we can show whoami immediately without waiting for Firebase
+    final cachedUserKey = _timed('UserCacheService.getSelectedUserKeySync', () {
+      return userCacheService.getSelectedUserKeySync();
+    });
 
-    // Determine if we need to fetch from Firestore
-    final needsDriveFetch = cachedDriveConfig == null;
-    final needsCalendarFetch = cachedCalendarConfig == null;
+    final hasCachedUser = cachedUserKey != null && cachedUserKey.isNotEmpty;
+    print('🔑 Cached user exists: $hasCachedUser');
 
-    // Initialize DriveService with cached or fetched config
-    if (!needsDriveFetch) {
-      _initializeDriveServiceWithConfig(cachedDriveConfig!);
-      developer.log('main.dart: DriveService initialized from cache', name: 'Main');
-    }
+    // OPTIMIZATION 2: Run independent operations in parallel with Firebase/DB
+    final fontFuture = _preloadFont();
 
-    // Initialize CalendarSyncBloc with cached or fetched config
-    final bloc = CalendarSyncBloc(database: database);
-    if (!needsCalendarFetch && cachedCalendarConfig != null) {
-      _initializeCalendarBlocWithConfig(bloc, cachedCalendarConfig);
-      developer.log('main.dart: CalendarSyncBloc initialized from cache', name: 'Main');
-    }
+    // Firebase and DB must be sequential (DB depends on Firebase)
+    await _timedAsync('Firebase.initializeApp', () async {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    });
 
-    // If any config was missing, fetch from Firestore (blocking, only on first visit)
-    if (needsDriveFetch || needsCalendarFetch) {
-      developer.log('main.dart: Fetching missing configs from Firestore', name: 'Main');
+    final database = _timed('FirestoreDatabase creation', () => FirestoreDatabase());
+    await _timedAsync('FirestoreDatabase.initialize', () => database.initialize());
 
-      // Fetch only what's missing
-      final results = await Future.wait([
-        if (needsDriveFetch) _fetchDriveConfigFromFirestore(database),
-        if (needsCalendarFetch) _fetchCalendarConfigFromFirestore(database),
-        fontFuture,
+    // Config cache checks (instant) - run in parallel with font completion
+    final cacheResults = await _timedAsync('ConfigCacheService.getBoth', () async {
+      return await Future.wait([
+        configCache.getDriveConfig(),
+        configCache.getCalendarConfig(),
       ]);
+    });
+    final cachedDriveConfig = cacheResults[0] as Map<String, String?>?;
+    final cachedCalendarConfig = cacheResults[1] as Map<String, String?>?;
+
+    // Ensure font is loaded
+    await _timedAsync('Font preload (await)', () => fontFuture);
+
+    print('📦 Cache hit - Drive: ${cachedDriveConfig != null}, Calendar: ${cachedCalendarConfig != null}');
+
+    // Initialize services with cached configs
+    if (cachedDriveConfig != null) {
+      _timed('DriveService.init (from cache)', () {
+        _initializeDriveServiceWithConfig(cachedDriveConfig);
+      });
+    }
+
+    final bloc = _timed('CalendarSyncBloc creation', () => CalendarSyncBloc(database: database));
+    if (cachedCalendarConfig != null) {
+      _timed('CalendarSyncBloc.init (from cache)', () {
+        _initializeCalendarBlocWithConfig(bloc, cachedCalendarConfig);
+      });
+    }
+
+    // Fetch missing configs from Firestore if needed (blocking)
+    if (cachedDriveConfig == null || cachedCalendarConfig == null) {
+      print('📡 Fetching missing configs from Firestore...');
+
+      final configResults = await _timedAsync('Firestore.configFetch', () async {
+        return await Future.wait([
+          if (cachedDriveConfig == null) _fetchDriveConfigFromFirestore(database),
+          if (cachedCalendarConfig == null) _fetchCalendarConfigFromFirestore(database),
+        ]);
+      });
 
       int resultIndex = 0;
 
-      if (needsDriveFetch) {
-        final driveConfig = results[resultIndex++] as Map<String, String?>?;
+      if (cachedDriveConfig == null) {
+        final driveConfig = configResults[resultIndex++] as Map<String, String?>?;
         if (driveConfig != null) {
           _initializeDriveServiceWithConfig(driveConfig);
           await configCache.saveDriveConfig(driveConfig);
-          developer.log('main.dart: DriveService initialized from Firestore, cached', name: 'Main');
         }
       }
 
-      if (needsCalendarFetch) {
-        final calendarConfig = results[resultIndex] as Map<String, String?>?;
+      if (cachedCalendarConfig == null) {
+        final calendarConfig = configResults[resultIndex++] as Map<String, String?>?;
         if (calendarConfig != null) {
           _initializeCalendarBlocWithConfig(bloc, calendarConfig);
           await configCache.saveCalendarConfig(calendarConfig);
-          developer.log('main.dart: CalendarSyncBloc initialized from Firestore, cached', name: 'Main');
         }
       }
-    } else {
-      // Just await font preload if configs were cached
-      await fontFuture;
     }
 
     // Initialize repositories
-    final teamRepository = TeamRepository(database);
-    final eventRepository = EventRepository(database);
-    final assignmentRepository = AssignmentRepository(database);
-    final checklistRepository = ChecklistRepository(database);
-    final presetRepository = PresetRepository(database);
-    final userSelectionRepository = UserSelectionRepository(
-      database: database,
-      userCacheService: userCacheService,
-    );
+    final repositories = _timed('Repositories creation', () {
+      return (
+        team: TeamRepository(database),
+        event: EventRepository(database),
+        assignment: AssignmentRepository(database),
+        checklist: ChecklistRepository(database),
+        preset: PresetRepository(database),
+        userSelection: UserSelectionRepository(
+          database: database,
+          userCacheService: userCacheService,
+        ),
+      );
+    });
+
+    // Validate cached user if exists (requires Firebase to be ready)
+    TeamMember? preAuthenticatedUser;
+    if (hasCachedUser) {
+      print('🔑 Validating cached user...');
+      try {
+        final validatedUser = await _timedAsync('Database.getTeamMemberByUniqueKey', () async {
+          return await database.getTeamMemberByUniqueKey(cachedUserKey);
+        });
+        if (validatedUser != null) {
+          preAuthenticatedUser = validatedUser;
+          print('✅ Cached user validated: ${validatedUser.name}, isAdmin: ${validatedUser.isAdmin}');
+        } else {
+          print('❌ Cached user not found in database');
+          await userCacheService.clearSelection();
+        }
+      } catch (e) {
+        print('❌ Error validating cached user: $e');
+        await userCacheService.clearSelection();
+      }
+    } else {
+      print('📭 No cached user, showing whoami');
+    }
 
     // Replace loading app with main app
-    runApp(MyApp(
-      teamRepository: teamRepository,
-      eventRepository: eventRepository,
-      assignmentRepository: assignmentRepository,
-      checklistRepository: checklistRepository,
-      presetRepository: presetRepository,
-      userSelectionRepository: userSelectionRepository,
-      calendarSyncBloc: bloc,
-    ));
+    _timed('runApp(MyApp)', () {
+      runApp(MyApp(
+        teamRepository: repositories.team,
+        eventRepository: repositories.event,
+        assignmentRepository: repositories.assignment,
+        checklistRepository: repositories.checklist,
+        presetRepository: repositories.preset,
+        userSelectionRepository: repositories.userSelection,
+        calendarSyncBloc: bloc,
+        preAuthenticatedUser: preAuthenticatedUser,
+      ));
+    });
+
+    totalSw.stop();
+    print('🎉 Initialization completed in ${totalSw.elapsedMilliseconds}ms');
 
     // Hide the HTML splash screen after Flutter renders
     _hideSplashScreen();
@@ -160,6 +240,8 @@ Future<void> _initialize() async {
     // Refresh cache in background (non-blocking)
     _refreshConfigCacheInBackground(database, configCache);
   } catch (e) {
+    totalSw.stop();
+    print('💥 Initialization failed after ${totalSw.elapsedMilliseconds}ms: $e');
     // Show error screen
     runApp(ErrorApp(error: e.toString()));
   }
@@ -208,6 +290,7 @@ class MyApp extends StatelessWidget {
   final PresetRepository presetRepository;
   final UserSelectionRepository userSelectionRepository;
   final CalendarSyncBloc calendarSyncBloc;
+  final TeamMember? preAuthenticatedUser;
 
   const MyApp({
     super.key,
@@ -218,6 +301,7 @@ class MyApp extends StatelessWidget {
     required this.presetRepository,
     required this.userSelectionRepository,
     required this.calendarSyncBloc,
+    this.preAuthenticatedUser,
   });
 
   @override
@@ -279,6 +363,7 @@ class MyApp extends StatelessWidget {
                   return UserSelectionBloc(
                     userSelectionRepository,
                     context.read<TeamRepository>(),
+                    preAuthenticatedUser,
                   );
                 },
               ),

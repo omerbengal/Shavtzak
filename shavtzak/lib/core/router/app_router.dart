@@ -90,9 +90,26 @@ class AppRouter {
 
   /// Create the router instance
   static GoRouter _createRouter(UserSelectionRepository userSelectionRepository) {
+    // Determine initial location based on BLoC state
+    String initialLocation = '/whoami';
+    if (_userSelectionBloc != null) {
+      final currentState = _userSelectionBloc!.state;
+      if (currentState is UserAuthenticated) {
+        // User is already authenticated, determine where to go
+        final envPrefix = EnvironmentService.instance.isTestMode ? '/test' : '';
+        if (currentState.isAdmin) {
+          initialLocation = '$envPrefix/admin';
+        } else if (currentState.user.canAccessSummaryScreen) {
+          initialLocation = '$envPrefix/choice';
+        } else {
+          initialLocation = '$envPrefix/user/assignments';
+        }
+      }
+    }
+
     return GoRouter(
       // Initial location determined by cached user check
-      initialLocation: '/whoami', // Fallback, will be updated by redirect logic
+      initialLocation: initialLocation,
 
       // Set the global navigator key
       navigatorKey: navigatorKey,

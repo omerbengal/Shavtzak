@@ -47,6 +47,17 @@ class UserCacheService {
       return false;
     }
   }
+
+  /// Get the selected user's unique key synchronously from localStorage
+  /// This is safe on web since localStorage access is synchronous
+  String? getSelectedUserKeySync() {
+    try {
+      return html.window.localStorage[_selectedUserKey];
+    } catch (e) {
+      // If there's an error accessing localStorage, return null
+      return null;
+    }
+  }
 }
 
 /// Custom exception for user cache errors
