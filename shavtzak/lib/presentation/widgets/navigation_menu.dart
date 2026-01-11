@@ -14,6 +14,13 @@ class NavigationMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Get user state to determine correct home route
+    final userState = context.watch<UserSelectionBloc>().state;
+    final isAdmin = userState is UserAuthenticated && userState.user.isAdmin;
+
+    // Determine home route: /admin for admins, /choice for non-admins with summary access
+    final homeRoute = isAdmin ? 'admin' : 'choice';
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -25,7 +32,7 @@ class NavigationMenu extends StatelessWidget {
           tooltip: 'בית',
           onPressed: () {
             final envPrefix = EnvironmentService.instance.routePrefix;
-            context.go('$envPrefix/admin');
+            context.go('$envPrefix/$homeRoute');
           },
           iconSize: 24, // Slightly smaller icon size
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

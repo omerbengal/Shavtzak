@@ -23,7 +23,6 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
   })  : _repository = repository,
         _userSelectionBloc = userSelectionBloc,
         super(ChecklistInitial()) {
-    print('ChecklistBloc: Constructor called - registering event handlers');
     on<LoadChecklistItems>(_onLoadChecklistItems);
     on<LoadChecklistItemsByEvent>(_onLoadChecklistItemsByEvent);
     on<LoadUserChecklistItems>(_onLoadUserChecklistItems);
@@ -36,7 +35,6 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
     on<RemoveCcMember>(_onRemoveCcMember);
     on<DeleteChecklistItem>(_onDeleteChecklistItem);
     on<RefreshChecklistItems>(_onRefreshChecklistItems);
-    print('ChecklistBloc: Constructor completed');
   }
 
   Future<void> _onLoadChecklistItems(

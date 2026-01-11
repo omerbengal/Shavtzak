@@ -193,6 +193,7 @@ class AdminChoiceScreen extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
             centerTitle: true,
+            leading: const SizedBox.shrink(), // Prevent automatic back arrow
             actions: [
               IconButton(
                 icon: const Icon(Icons.logout),

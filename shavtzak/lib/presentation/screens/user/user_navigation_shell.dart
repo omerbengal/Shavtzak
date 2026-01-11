@@ -91,8 +91,8 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
               constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
             ),
             actions: [
-              // Show navigation menu (home + logout) only for admin users
-              if (state.user.isAdmin)
+              // Show navigation menu (home + logout) for admin users or users with summary access
+              if (state.user.isAdmin || state.user.canAccessSummaryScreen)
                 const NavigationMenu()
               else
                 // Regular users get logout button

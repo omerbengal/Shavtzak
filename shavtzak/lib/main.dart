@@ -57,11 +57,9 @@ T _timed<T>(String name, T Function() fn) {
   try {
     final result = fn();
     sw.stop();
-    print('⏱️ $name: ${sw.elapsedMilliseconds}ms');
     return result;
   } catch (e) {
     sw.stop();
-    print('⏱️ $name: ${sw.elapsedMilliseconds}ms (FAILED: $e)');
     rethrow;
   }
 }
@@ -72,18 +70,15 @@ Future<T> _timedAsync<T>(String name, Future<T> Function() fn) async {
   try {
     final result = await fn();
     sw.stop();
-    print('⏱️ $name: ${sw.elapsedMilliseconds}ms');
     return result;
   } catch (e) {
     sw.stop();
-    print('⏱️ $name: ${sw.elapsedMilliseconds}ms (FAILED: $e)');
     rethrow;
   }
 }
 
 Future<void> _initialize() async {
   final totalSw = Stopwatch()..start();
-  print('🚀 Initialization started');
 
   try {
     // Initialize environment service (detects test vs production from URL)
@@ -105,7 +100,6 @@ Future<void> _initialize() async {
     });
 
     final hasCachedUser = cachedUserKey != null && cachedUserKey.isNotEmpty;
-    print('🔑 Cached user exists: $hasCachedUser');
 
     // OPTIMIZATION 2: Run independent operations in parallel with Firebase/DB
     final fontFuture = _preloadFont();
@@ -133,8 +127,6 @@ Future<void> _initialize() async {
     // Ensure font is loaded
     await _timedAsync('Font preload (await)', () => fontFuture);
 
-    print('📦 Cache hit - Drive: ${cachedDriveConfig != null}, Calendar: ${cachedCalendarConfig != null}');
-
     // Initialize services with cached configs
     if (cachedDriveConfig != null) {
       _timed('DriveService.init (from cache)', () {
@@ -151,8 +143,6 @@ Future<void> _initialize() async {
 
     // Fetch missing configs from Firestore if needed (blocking)
     if (cachedDriveConfig == null || cachedCalendarConfig == null) {
-      print('📡 Fetching missing configs from Firestore...');
-
       final configResults = await _timedAsync('Firestore.configFetch', () async {
         return await Future.wait([
           if (cachedDriveConfig == null) _fetchDriveConfigFromFirestore(database),
@@ -197,24 +187,18 @@ Future<void> _initialize() async {
     // Validate cached user if exists (requires Firebase to be ready)
     TeamMember? preAuthenticatedUser;
     if (hasCachedUser) {
-      print('🔑 Validating cached user...');
       try {
         final validatedUser = await _timedAsync('Database.getTeamMemberByUniqueKey', () async {
           return await database.getTeamMemberByUniqueKey(cachedUserKey);
         });
         if (validatedUser != null) {
           preAuthenticatedUser = validatedUser;
-          print('✅ Cached user validated: ${validatedUser.name}, isAdmin: ${validatedUser.isAdmin}');
         } else {
-          print('❌ Cached user not found in database');
           await userCacheService.clearSelection();
         }
       } catch (e) {
-        print('❌ Error validating cached user: $e');
         await userCacheService.clearSelection();
       }
-    } else {
-      print('📭 No cached user, showing whoami');
     }
 
     // Replace loading app with main app
@@ -232,7 +216,6 @@ Future<void> _initialize() async {
     });
 
     totalSw.stop();
-    print('🎉 Initialization completed in ${totalSw.elapsedMilliseconds}ms');
 
     // Hide the HTML splash screen after Flutter renders
     _hideSplashScreen();
@@ -241,7 +224,6 @@ Future<void> _initialize() async {
     _refreshConfigCacheInBackground(database, configCache);
   } catch (e) {
     totalSw.stop();
-    print('💥 Initialization failed after ${totalSw.elapsedMilliseconds}ms: $e');
     // Show error screen
     runApp(ErrorApp(error: e.toString()));
   }
