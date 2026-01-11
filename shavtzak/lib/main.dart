@@ -534,6 +534,7 @@ void _refreshConfigCacheInBackground(
 }
 
 /// Loading screen shown during app initialization
+/// Sizes match the HTML splash screen in index.html for seamless transition
 class LoadingApp extends StatelessWidget {
   const LoadingApp({super.key});
 
@@ -544,59 +545,138 @@ class LoadingApp extends StatelessWidget {
       title: 'שבצק - ניהול צוות',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
-      home: Directionality(
-        textDirection: TextDirection.rtl,
-        child: Scaffold(
-          backgroundColor: Colors.white,
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // App Logo/Icon
-                Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    color: Colors.blue[50],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Icon(
-                    Icons.group,
-                    size: 60,
-                    color: Colors.blue[600],
-                  ),
+      home: const _LoadingScreen(),
+    );
+  }
+}
+
+class _LoadingScreen extends StatelessWidget {
+  const _LoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    // Match HTML splash screen responsive breakpoints exactly
+    final double iconSize;
+    final double iconContainerSize;
+    final double iconBorderRadius;
+    final double titleFontSize;
+    final double subtitleFontSize;
+    final double loadingTextFontSize;
+    final double spinnerSize;
+    final double iconMarginBottom;
+    final double subtitleMarginBottom;
+    final double spinnerMarginBottom;
+
+    if (screenWidth <= 360) {
+      // Small mobile phones
+      iconContainerSize = 70;
+      iconSize = 35;
+      iconBorderRadius = 14;
+      iconMarginBottom = 20;
+      titleFontSize = 20;
+      subtitleFontSize = 13;
+      subtitleMarginBottom = 28;
+      spinnerSize = 28;
+      spinnerMarginBottom = 12;
+      loadingTextFontSize = 13;
+    } else if (screenWidth <= 480) {
+      // Mobile phones
+      iconContainerSize = 80;
+      iconSize = 40;
+      iconBorderRadius = 14;
+      iconMarginBottom = 20;
+      titleFontSize = 24;
+      subtitleFontSize = 14;
+      subtitleMarginBottom = 28;
+      spinnerSize = 28;
+      spinnerMarginBottom = 12;
+      loadingTextFontSize = 13;
+    } else if (screenWidth <= 768) {
+      // Tablets / large phones
+      iconContainerSize = 100;
+      iconSize = 50;
+      iconBorderRadius = 16;
+      iconMarginBottom = 24;
+      titleFontSize = 28;
+      subtitleFontSize = 16;
+      subtitleMarginBottom = 36;
+      spinnerSize = 32;
+      spinnerMarginBottom = 14;
+      loadingTextFontSize = 14;
+    } else {
+      // Desktop / large screens
+      iconContainerSize = 120;
+      iconSize = 60;
+      iconBorderRadius = 20;
+      iconMarginBottom = 32;
+      titleFontSize = 32;
+      subtitleFontSize = 18;
+      subtitleMarginBottom = 48;
+      spinnerSize = 36;
+      spinnerMarginBottom = 16;
+      loadingTextFontSize = 16;
+    }
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // App Logo/Icon
+              Container(
+                width: iconContainerSize,
+                height: iconContainerSize,
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(iconBorderRadius),
                 ),
-                const SizedBox(height: 32),
-                // App Name
-                const Text(
-                  'שבצק',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
+                child: Icon(
+                  Icons.group,
+                  size: iconSize,
+                  color: Colors.blue[600],
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'מערכת ניהול צוות',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.grey,
-                  ),
+              ),
+              SizedBox(height: iconMarginBottom),
+              // App Name
+              Text(
+                'שבצק',
+                style: TextStyle(
+                  fontSize: titleFontSize,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
                 ),
-                const SizedBox(height: 48),
-                // Loading Indicator
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                const Text(
-                  'טוען...',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                  ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'מערכת ניהול צוות',
+                style: TextStyle(
+                  fontSize: subtitleFontSize,
+                  color: Colors.grey,
                 ),
-              ],
-            ),
+              ),
+              SizedBox(height: subtitleMarginBottom),
+              // Loading Indicator
+              SizedBox(
+                width: spinnerSize,
+                height: spinnerSize,
+                child: CircularProgressIndicator(
+                  strokeWidth: screenWidth <= 480 ? 2.5 : 3.0,
+                ),
+              ),
+              SizedBox(height: spinnerMarginBottom),
+              Text(
+                'טוען...',
+                style: TextStyle(
+                  fontSize: loadingTextFontSize,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
           ),
         ),
       ),
