@@ -618,4 +618,17 @@ class EventRepository {
       _showDriveErrorSnackBar('שגיאה בארכוב תיקיות דרייב ישנות: $e');
     }
   }
+
+  /// Public method to run archive check (called from main.dart on app startup)
+  /// Runs the archive check if Drive service is initialized
+  Future<void> runArchiveCheckIfReady() async {
+    if (!_driveService.isInitialized) {
+      developer.log(
+        'EventRepository.runArchiveCheckIfReady: Drive service not initialized, skipping',
+        name: 'EventRepository',
+      );
+      return;
+    }
+    await _runArchiveCheck();
+  }
 }

@@ -502,6 +502,10 @@ class FirestoreDatabase implements DatabaseInterface {
   Future<List<Event>> getEventsToArchive() async {
     try {
       final now = Timestamp.fromDate(DateTime.now());
+      developer.log(
+        'FirestoreDatabase.getEventsToArchive: Querying for events with endDate < $now (${now.toDate().toLocal()})',
+        name: 'FirestoreDatabase',
+      );
 
       // Get events where endDate < now, isArchived = false, and driveFolderId is not null
       // Note: Firestore doesn't support != null queries directly, so we filter in memory
@@ -511,10 +515,33 @@ class FirestoreDatabase implements DatabaseInterface {
           .where('isArchived', isEqualTo: false)
           .get();
 
-      return snapshot.docs
+      developer.log(
+        'FirestoreDatabase.getEventsToArchive: Found ${snapshot.docs.length} events from Firestore query',
+        name: 'FirestoreDatabase',
+      );
+
+      final allEvents = snapshot.docs
           .map((doc) => EventModel.fromFirestore(doc).toEntity())
+          .toList();
+
+      // Log all events for debugging
+      for (final event in allEvents) {
+        developer.log(
+          'FirestoreDatabase.getEventsToArchive: Event - ${event.name}, endDate: ${event.endDate.toLocal()}, isArchived: ${event.isArchived}, driveFolderId: ${event.driveFolderId}',
+          name: 'FirestoreDatabase',
+        );
+      }
+
+      final withFolder = allEvents
           .where((event) => event.driveFolderId != null && event.driveFolderId!.isNotEmpty)
           .toList();
+
+      developer.log(
+        'FirestoreDatabase.getEventsToArchive: Returning ${withFolder.length} events with drive folders',
+        name: 'FirestoreDatabase',
+      );
+
+      return withFolder;
     } catch (e) {
       throw DatabaseException('Failed to get events to archive: $e');
     }
