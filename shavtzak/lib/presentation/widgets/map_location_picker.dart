@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:html' as html;
+import 'dart:js_interop';
+import 'package:web/web.dart' as web;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
@@ -367,16 +368,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
       return;
     }
 
-    final geolocation = html.window.navigator.geolocation;
-    if (geolocation == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Geolocation is not supported by your browser'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
+    final geolocation = web.window.navigator.geolocation;
 
     setState(() {
       _isGettingLocation = true;
@@ -384,13 +376,24 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
     });
 
     try {
-      // Get current position using the browser's geolocation API
-      final position = await geolocation.getCurrentPosition();
+      // Get current position using the browser's geolocation API with package:web
+      final completer = Completer<web.GeolocationPosition>();
 
-      final coords = position.coords!;
+      geolocation.getCurrentPosition(
+        ((web.GeolocationPosition position) {
+          completer.complete(position);
+        }).toJS,
+        ((web.GeolocationPositionError error) {
+          completer.completeError(error.message);
+        }).toJS,
+      );
+
+      final position = await completer.future;
+
+      final coords = position.coords;
       final location = LatLng(
-        coords.latitude!.toDouble(),
-        coords.longitude!.toDouble(),
+        coords.latitude,
+        coords.longitude,
       );
 
       setState(() {
@@ -474,11 +477,11 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
               Text('כדי להשתמש במיקום הנוכחי, יש להפעיל את הרשאות המיקום:'),
               SizedBox(height: 16),
               Text('ב-Chrome:'),
-              Text('1. לחץ על סמל המנעול 🔒 בשורת הכתובת'),
+              Text('1. לחץ על סמל המנעול בשורת הכתובת'),
               Text('2. בסעיף "מיקום", בחר "אפשר"'),
               SizedBox(height: 16),
               Text('ב-Safari:'),
-              Text('1. לחץ על סמל ההגדרות ⚙️'),
+              Text('1. לחץ על סמל ההגדרות'),
               Text('2. בחר "אתר" > "מיקום"'),
               Text('3. בחר "בעת הביקור"'),
             ],

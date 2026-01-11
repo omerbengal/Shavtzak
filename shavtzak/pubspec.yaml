@@ -46,7 +46,7 @@ dependencies:
   # Utilities
   uuid: ^4.1.0
   intl: ^0.18.1
-  device_info_plus: ^9.1.0
+  device_info_plus: ^11.0.0
   shared_preferences: ^2.2.2
   collection: ^1.18.0
   rxdart: ^0.28.0

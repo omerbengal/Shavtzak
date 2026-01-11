@@ -1,5 +1,4 @@
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 import 'package:flutter/foundation.dart';
 import 'dart:developer' as developer;
 
@@ -20,7 +19,7 @@ class EnvironmentService extends ChangeNotifier {
 
   /// Initialize the environment service by detecting the current URL
   void initialize() {
-    final hash = html.window.location.hash;
+    final hash = web.window.location.hash;
     // Remove '#' prefix if it exists, otherwise use empty string
     final currentPath = hash.isNotEmpty ? hash.substring(1) : '';
     final newTestMode = currentPath.startsWith('/test/') || currentPath == '/test';

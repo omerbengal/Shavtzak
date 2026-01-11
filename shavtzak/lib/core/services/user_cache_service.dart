@@ -1,5 +1,4 @@
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 import 'environment_service.dart';
 
 /// Service for managing user selection cache in browser localStorage
@@ -12,7 +11,7 @@ class UserCacheService {
   /// Save the selected user's unique key to localStorage
   Future<void> saveSelectedUser(String uniqueKey) async {
     try {
-      html.window.localStorage[_selectedUserKey] = uniqueKey;
+      web.window.localStorage.setItem(_selectedUserKey, uniqueKey);
     } catch (e) {
       throw UserCacheException('Failed to save selected user: $e');
     }
@@ -22,7 +21,7 @@ class UserCacheService {
   /// Returns null if no user is cached
   Future<String?> getSelectedUser() async {
     try {
-      return html.window.localStorage[_selectedUserKey];
+      return web.window.localStorage.getItem(_selectedUserKey);
     } catch (e) {
       throw UserCacheException('Failed to get selected user: $e');
     }
@@ -31,7 +30,7 @@ class UserCacheService {
   /// Clear the selected user from localStorage
   Future<void> clearSelection() async {
     try {
-      html.window.localStorage.remove(_selectedUserKey);
+      web.window.localStorage.removeItem(_selectedUserKey);
     } catch (e) {
       throw UserCacheException('Failed to clear user selection: $e');
     }
@@ -52,7 +51,7 @@ class UserCacheService {
   /// This is safe on web since localStorage access is synchronous
   String? getSelectedUserKeySync() {
     try {
-      return html.window.localStorage[_selectedUserKey];
+      return web.window.localStorage.getItem(_selectedUserKey);
     } catch (e) {
       // If there's an error accessing localStorage, return null
       return null;
