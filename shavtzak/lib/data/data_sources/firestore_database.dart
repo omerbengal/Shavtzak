@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 
@@ -439,6 +440,22 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Stream<List<Event>> watchEventsByDateRange(DateTime start, DateTime end) {
+    final startTimestamp = Timestamp.fromDate(start);
+    final endTimestamp = Timestamp.fromDate(end);
+
+    return _firestore
+        .collection(_eventsCollection)
+        .where('startDate', isGreaterThanOrEqualTo: startTimestamp)
+        .where('startDate', isLessThanOrEqualTo: endTimestamp)
+        .orderBy('startDate')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => EventModel.fromFirestore(doc).toEntity())
+            .toList());
+  }
+
+  @override
   Future<void> insertEventsBatch(List<Event> events) async {
     try {
       final batch = _firestore.batch();
@@ -665,6 +682,125 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<List<Assignment>> getAssignmentsInTimeWindow(
+    DateTime windowStart,
+    DateTime windowEnd,
+  ) async {
+    try {
+      // Step 1: Get events in the time window
+      final events = await getEventsByDateRange(windowStart, windowEnd);
+      if (events.isEmpty) return [];
+
+      final eventIds = events.map((e) => e.id).toList();
+
+      // Step 2: Batch fetch assignments (Firestore limits whereIn to 30 items)
+      final assignments = <Assignment>[];
+      for (int i = 0; i < eventIds.length; i += 30) {
+        final chunk = eventIds.skip(i).take(30).toList();
+        final snapshot = await _firestore
+            .collection(_assignmentsCollection)
+            .where('eventId', whereIn: chunk)
+            .get();
+
+        final chunkAssignments = snapshot.docs
+            .map((doc) => AssignmentModel.fromFirestore(doc).toEntity())
+            .toList();
+
+        assignments.addAll(chunkAssignments);
+      }
+
+      // Step 3: Populate relations using optimized batch method
+      return await _populateAssignmentRelations(assignments);
+    } catch (e) {
+      throw DatabaseException('Failed to get assignments in time window: $e');
+    }
+  }
+
+  @override
+  Stream<List<Assignment>> watchAssignmentsInTimeWindow(
+    DateTime windowStart,
+    DateTime windowEnd,
+  ) async* {
+    try {
+      // Step 1: Get initial event IDs in the time window
+      final events = await getEventsByDateRange(windowStart, windowEnd);
+      if (events.isEmpty) {
+        yield [];
+        return;
+      }
+
+      final eventIds = events.map((e) => e.id).toList();
+
+      // Step 2: Create streams for each chunk of event IDs
+      final allStreams = <Stream<List<Assignment>>>[];
+      for (int i = 0; i < eventIds.length; i += 30) {
+        final chunk = eventIds.skip(i).take(30).toList();
+
+        final stream = _firestore
+            .collection(_assignmentsCollection)
+            .where('eventId', whereIn: chunk)
+            .snapshots()
+            .asyncMap((snapshot) async {
+          final assignments = snapshot.docs
+              .map((doc) => AssignmentModel.fromFirestore(doc).toEntity())
+              .toList();
+          final populated = await _populateAssignmentRelations(assignments);
+          return populated;
+        });
+
+        allStreams.add(stream);
+      }
+
+      // Step 3: Merge all streams and emit combined results
+      // Using StreamGroup.merge instead of CombineLatestStream because:
+      // - CombineLatestStream waits for ALL streams to emit before emitting
+      // - With merge, we get updates as soon as any chunk has data
+      // - We emit initial empty list first, then merge all stream emissions
+      if (allStreams.isEmpty) {
+        yield [];
+        return;
+      }
+
+      // Create a controller that will emit combined results
+      final controller = StreamController<List<Assignment>>();
+
+      // Track latest values from each stream
+      final latestValues = <List<Assignment>>[];
+      final receivedCount = <int>{};
+
+      // Subscribe to each stream
+      for (int i = 0; i < allStreams.length; i++) {
+        final stream = allStreams[i];
+        stream.listen(
+          (data) {
+            latestValues.add(data);
+            receivedCount.add(i);
+
+            // When we have data from all streams, emit combined result
+            if (receivedCount.length == allStreams.length) {
+              final combined = latestValues.expand((list) => list).toList();
+              controller.add(combined);
+            }
+          },
+          onError: (error) {
+            controller.addError(error);
+          },
+        );
+      }
+
+      // Close controller and cancel subscriptions when done
+      controller.onCancel = () async {
+        await controller.close();
+      };
+
+      // Emit the merged stream
+      yield* controller.stream;
+    } catch (e) {
+      throw DatabaseException('Failed to watch assignments in time window: $e');
+    }
+  }
+
+  @override
   Future<void> insertAssignment(Assignment assignment) async {
     try {
       // Validate foreign keys exist
@@ -820,29 +956,47 @@ class FirestoreDatabase implements DatabaseInterface {
   // ========== Private Helper Methods ==========
 
   /// Populate assignment relations (event and team member)
+  /// OPTIMIZED: Uses batch queries (whereIn) instead of N+1 sequential queries
+  /// Firestore allows up to 30 items in a single whereIn clause
   Future<List<Assignment>> _populateAssignmentRelations(
       List<Assignment> assignments) async {
     if (assignments.isEmpty) return assignments;
 
     // Get unique event IDs and team member IDs
-    final eventIds = assignments.map((a) => a.eventId).toSet();
-    final memberIds = assignments.map((a) => a.teamMemberId).toSet();
+    final eventIds = assignments.map((a) => a.eventId).toSet().toList();
+    final memberIds = assignments.map((a) => a.teamMemberId).toSet().toList();
 
-    // Fetch all events and team members
+    // Batch fetch events (Firestore allows 30 items per whereIn query)
     final events = <String, Event>{};
+    for (int i = 0; i < eventIds.length; i += 30) {
+      final chunk = eventIds.skip(i).take(30).toList();
+      final snapshot = await _firestore
+          .collection(_eventsCollection)
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        final event = EventModel.fromFirestore(doc).toEntity();
+        events[event.id] = event;
+      }
+    }
+
+    // Batch fetch team members (same pattern)
     final members = <String, TeamMember>{};
+    for (int i = 0; i < memberIds.length; i += 30) {
+      final chunk = memberIds.skip(i).take(30).toList();
+      final snapshot = await _firestore
+          .collection(_teamMembersCollection)
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
 
-    for (final eventId in eventIds) {
-      final event = await getEventById(eventId);
-      if (event != null) events[eventId] = event;
+      for (final doc in snapshot.docs) {
+        final member = TeamMemberModel.fromFirestore(doc).toEntity();
+        members[member.id] = member;
+      }
     }
 
-    for (final memberId in memberIds) {
-      final member = await getTeamMemberById(memberId);
-      if (member != null) members[memberId] = member;
-    }
-
-    // Populate relations
+    // Populate relations using cached data
     return assignments.map((assignment) {
       return assignment.withRelations(
         event: events[assignment.eventId],

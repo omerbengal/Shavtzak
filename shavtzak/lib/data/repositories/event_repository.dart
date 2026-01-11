@@ -37,6 +37,17 @@ class EventRepository {
     return Stream.fromFuture(_database.getEvents());
   }
 
+  /// Watch events within a date range in real-time
+  /// Optimized for pagination - only loads events within the specified window
+  Stream<List<Event>> watchEventsByDateRange(DateTime start, DateTime end) {
+    // Cast to FirestoreDatabase to access stream methods
+    if (_database is FirestoreDatabase) {
+      return (_database as FirestoreDatabase).watchEventsByDateRange(start, end);
+    }
+    // Fallback: convert Future to Stream for non-Firestore databases
+    return Stream.fromFuture(_database.getEventsByDateRange(start, end));
+  }
+
   /// Get all events
   Future<List<Event>> getAllEvents() async {
     return await _database.getEvents();

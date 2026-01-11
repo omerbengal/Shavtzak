@@ -54,6 +54,10 @@ abstract class DatabaseInterface {
   /// Get events by date range
   Future<List<Event>> getEventsByDateRange(DateTime start, DateTime end);
 
+  /// Watch events within a date range in real-time
+  /// Optimized for pagination - only loads events within the specified window
+  Stream<List<Event>> watchEventsByDateRange(DateTime start, DateTime end);
+
   /// Check if an event with the same name and start date already exists
   /// If excludeEventId is provided, that event is excluded from the check (for updates)
   Future<bool> isDuplicateEvent(String name, DateTime startDate, {String? excludeEventId});
@@ -84,6 +88,22 @@ abstract class DatabaseInterface {
   Future<List<Assignment>> getAssignmentsByDateRange(
     DateTime start,
     DateTime end,
+  );
+
+  /// Get assignments for events within a time window (optimized for pagination)
+  /// First fetches events in the window, then fetches matching assignments
+  /// This is more efficient than fetching all assignments when you only need a subset
+  Future<List<Assignment>> getAssignmentsInTimeWindow(
+    DateTime windowStart,
+    DateTime windowEnd,
+  );
+
+  /// Watch assignments within a time window in real-time (optimized for pagination)
+  /// Returns a stream that emits updated assignment lists for events in the time window
+  /// This is more efficient than watching all assignments when you only need a subset
+  Stream<List<Assignment>> watchAssignmentsInTimeWindow(
+    DateTime windowStart,
+    DateTime windowEnd,
   );
 
   /// Insert a new assignment

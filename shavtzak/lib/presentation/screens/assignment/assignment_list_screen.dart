@@ -254,11 +254,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             }
 
             if (state is AssignmentSlotsLoaded) {
-              // Check if team members have loaded (slots should have non-empty availableMembers lists)
-              // If this is the initial load and team members aren't loaded yet, show loading
-              final hasTeamMembers = state.slots.any((slot) => slot.availableMembers.isNotEmpty);
-              if (!_isInitialLoadComplete && !hasTeamMembers) {
-                return const Center(child: CircularProgressIndicator());
+              // If slots are empty, the load is complete (no events in time window)
+              // Only check for team members if there are actual slots
+              if (!_isInitialLoadComplete && state.slots.isNotEmpty) {
+                final hasTeamMembers = state.slots.any((slot) => slot.availableMembers.isNotEmpty);
+                if (!hasTeamMembers) {
+                  return const Center(child: CircularProgressIndicator());
+                }
               }
 
               // Mark initial load as complete

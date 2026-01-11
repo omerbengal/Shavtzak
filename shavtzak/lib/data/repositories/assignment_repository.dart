@@ -70,6 +70,35 @@ class AssignmentRepository {
     return await _database.getAssignmentsByDateRange(start, end);
   }
 
+  /// Get assignments within a time window (optimized for pagination)
+  /// First fetches events in the window, then fetches matching assignments
+  /// This is more efficient than fetching all assignments when you only need a subset
+  Future<List<Assignment>> getAssignmentsInTimeWindow({
+    required DateTime windowStart,
+    required DateTime windowEnd,
+  }) async {
+    return await _database.getAssignmentsInTimeWindow(windowStart, windowEnd);
+  }
+
+  /// Watch assignments within a time window in real-time (optimized for pagination)
+  /// Returns a stream that emits updated assignment lists for events in the time window
+  /// This is more efficient than watching all assignments when you only need a subset
+  Stream<List<Assignment>> watchAssignmentsInTimeWindow({
+    required DateTime windowStart,
+    required DateTime windowEnd,
+  }) {
+    if (_database is FirestoreDatabase) {
+      return (_database as FirestoreDatabase).watchAssignmentsInTimeWindow(
+        windowStart,
+        windowEnd,
+      );
+    }
+    // Fallback: convert Future to Stream for non-Firestore databases
+    return Stream.fromFuture(
+      _database.getAssignmentsInTimeWindow(windowStart, windowEnd),
+    );
+  }
+
   /// Create a new assignment
   /// Validates FK relationships and checks for conflicts
   Future<void> createAssignment(Assignment assignment) async {
