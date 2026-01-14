@@ -163,33 +163,38 @@ class _SummaryScreenState extends State<SummaryScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isWideScreen = screenWidth >= 600;
 
-    return Column(
-      children: [
+    return CustomScrollView(
+      slivers: [
         // Section 1: Charts
-        SizedBox(
-          height: isWideScreen ? 280 : 580,
+        SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: isWideScreen
-                ? _buildHorizontalCharts(metrics)
-                : _buildVerticalCharts(metrics),
+            child: SizedBox(
+              height: isWideScreen ? 220 : 580,
+              child: isWideScreen
+                  ? _buildHorizontalCharts(metrics)
+                  : _buildVerticalCharts(metrics),
+            ),
           ),
         ),
         // Section 2: Event Tiles
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: metrics.eventSummaries.length + 1, // +1 for bottom padding
-            itemBuilder: (context, index) {
-              if (index == metrics.eventSummaries.length) {
-                return const SizedBox(height: 16); // Bottom padding
-              }
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: EventSummaryTile(data: metrics.eventSummaries[index]),
-              );
-            },
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: EventSummaryTile(data: metrics.eventSummaries[index]),
+                );
+              },
+              childCount: metrics.eventSummaries.length,
+            ),
           ),
+        ),
+        // Bottom padding
+        const SliverToBoxAdapter(
+          child: SizedBox(height: 16),
         ),
       ],
     );

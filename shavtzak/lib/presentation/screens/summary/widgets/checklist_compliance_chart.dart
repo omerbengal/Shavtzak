@@ -44,14 +44,13 @@ class ChecklistComplianceChart extends StatelessWidget {
 
     return Column(
       children: [
-        const Text(
+        Text(
           'צ\'קליסט',
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 10),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -86,7 +85,6 @@ class ChecklistComplianceChart extends StatelessWidget {
             },
           ),
         ),
-        const SizedBox(height: 10),
         _buildLegend(),
       ],
     );
