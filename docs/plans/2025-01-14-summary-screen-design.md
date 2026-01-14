@@ -15,7 +15,7 @@ High-level dashboard for the person overseeing all events. Shows macro-level met
 ## Layout Structure
 
 Two sections stacked vertically:
-1. **Top:** High-level overview with 3 pie charts (fits in viewport)
+1. **Top:** High-level overview with 3 pie/donut charts (fits in viewport)
 2. **Bottom:** Expandable detail tiles for deeper information
 
 ---
@@ -25,75 +25,94 @@ Two sections stacked vertically:
 All 3 charts visible at once, responsive layout that fits within viewport.
 
 ### Layout Behavior
-- **Desktop/tablet:** 3 charts in a single row
-- **Mobile:** 3 charts stacked vertically, each ~1/3 of screen height
+- **Desktop/tablet (≥600px):** 3 charts in a single row
+- **Mobile (<600px):** 3 charts stacked vertically, each ~30% of screen height
 - Charts resize responsively to fit without scrolling
 
-### Chart 1: Events Overview
-- **Type:** Pie chart
-- **Data:** Upcoming events by staffing status
-  - Fully staffed (green)
-  - Partially staffed (orange)
+### Chart 1: Events Overview (Pie Chart)
+- **Data:** Upcoming events by staffing status (3 categories)
+  - Fully staffed (green) - all role slots filled
+  - Not fully staffed (orange) - includes both partial AND zero assignments
   - No quotas defined (gray)
 - **Legend:** Small legend below chart
 
-### Chart 2: Staffing Status
-- **Type:** Donut chart
+### Chart 2: Staffing Status (Donut Chart)
 - **Data:** All role slots across upcoming events
   - Filled (green)
-  - Empty / Unfilled (red)
-- **Center:** Percentage filled shown in center
+  - Unfilled (red)
+- **Center:** Percentage filled shown in center (e.g., "78%")
+- **Donut hole:** ~60% of radius for readability
 
-### Chart 3: Checklist Compliance
-- **Type:** Pie chart
+### Chart 3: Checklist Compliance (Donut Chart)
 - **Data:** Checklist items for upcoming events
   - Completed (green)
   - Pending / Not completed (orange)
 - **Center:** Percentage completed shown in center
 
----
-
-## Section 2: Expandable Detail Tiles (Bottom)
-
-### Tile 1: Upcoming Events Breakdown
-- **Collapsed state:**
-  - Count of upcoming events
-  - List of next 3-5 events with brief status
-
-- **Expanded state:**
-  - Full list of upcoming events
-  - Each row shows:
-    - Event name
-    - Date and location
-    - Color-coded background (green/orange based on staffing)
-    - Small progress bar showing % staffed
-
-### Tile 2: Staffing Gaps
-- **Collapsed state:**
-  - Total number of unfilled roles across all upcoming events
-
-- **Expanded state:**
-  - List of unfilled roles, grouped by either:
-    - Role type (paramedic, commander, etc.) OR
-    - By event (Event A needs 2 medics, Event B needs 1 commander)
-
-### Tile 3: Checklist Status
-- **Collapsed state:**
-  - Overall checklist completion percentage
-  - Count of pending items
-
-- **Expanded state:**
-  - List of upcoming events with:
-    - Event name
-    - Checklist progress (X/Y items completed)
-    - Color-coded row (green = all done, orange = in progress)
+### Empty State
+If no upcoming events exist, show centered message "אין אירועים קרובים" instead of charts.
 
 ---
 
-## Technical Notes
+## Section 2: Event Summary Tiles (Bottom)
 
-- Uses existing BLoCs: `EventBloc`, `TeamBloc`, `ChecklistBloc`
-- All data from real-time Firestore streams
-- Charts use `fl_chart` package (already in dependencies for other screens)
-- RTL layout (Hebrew)
-- Existing placeholder screen: `lib/presentation/screens/summary/summary_screen.dart`
+Scrollable ListView below charts. **Each event is its own expandable tile** showing combined staffing and checklist status.
+
+### Per-Event Tile Design
+
+**Collapsed state:**
+- **Title:** Event name
+- **Subtitle line 1:** Date range (or single date) | Location
+- **Subtitle line 2:** Two status indicators:
+  - Staffing: "מאויש במלואו" (green) or "X תפקידים חסרים" (orange)
+  - Checklist: "צ'קליסט הושלם" (green) or "X פריטים ממתינים" (orange)
+- **Background color:** Green if fully staffed + no pending checklist, orange otherwise
+
+**Expanded state:**
+- **Missing roles section** (if not fully staffed):
+  - Header: "תפקידים חסרים"
+  - Role chips showing missing roles: "חובש (2)", "מפקד (1)"
+- **Checklist section** (if event has checklist items):
+  - Header: "צ'קליסט (X/Y)"
+  - List of checklist items with checkboxes (pending first, then completed)
+- **All good state** (if fully staffed + checklist complete):
+  - Green checkmark icon with "הכל מוכן!"
+
+### Date Range Formatting
+- Single day events: "15/1/2025"
+- Same month range: "15-17/1/2025"
+- Cross-month range: "15/1 - 2/2/2025"
+- Cross-year range: "30/12/2024 - 2/1/2025"
+
+---
+
+## Technical Implementation
+
+### Architecture
+- **No new BLoC needed** - uses MultiBlocListener with existing BLoCs
+- Consumes: `EventBloc`, `AssignmentBloc`, `ChecklistBloc`
+- Computed metrics calculated on each rebuild using helper methods
+
+### File Structure
+```
+lib/presentation/screens/summary/
+├── summary_screen.dart              # Main screen
+├── widgets/
+│   ├── events_overview_chart.dart       # Chart 1: Events by status
+│   ├── staffing_status_chart.dart       # Chart 2: Filled vs unfilled slots
+│   ├── checklist_compliance_chart.dart  # Chart 3: Checklist completion
+│   └── event_summary_tile.dart          # Per-event expandable tile
+```
+
+### Dependencies
+- `fl_chart: ^0.69.0` - for pie/donut charts
+
+### Color Constants
+- Green: `Colors.green.shade400`
+- Orange: `Colors.orange.shade400`
+- Red: `Colors.red.shade400`
+- Gray: `Colors.grey.shade400`
+
+### Responsive Breakpoint
+- `MediaQuery.of(context).size.width >= 600` → horizontal chart layout
+- Below 600 → vertical stacked layout

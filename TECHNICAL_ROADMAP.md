@@ -221,7 +221,7 @@ Row(
 
 ---
 
-### 5. Pagination for Scalability
+### 5. ✅ FIXED - Pagination for Scalability
 
 **What's needed:**
 Currently, all queries fetch entire collections. This works fine for small teams (10-50 members) but will cause performance issues and increased Firestore costs as data grows.
@@ -413,68 +413,6 @@ ElevatedButton(
   child: Text('שמור'),
 )
 ```
-
----
-
-### 4. Responsive Tablet/Desktop Layouts
-
-**Current state:**
-The app uses mobile-first layouts that stretch to fill wide screens. On tablets and desktops, this results in:
-- Very wide cards and list items
-- Wasted horizontal space
-- Content that's harder to scan
-
-**Desired layouts:**
-
-**Tablet (768px - 1024px):**
-- Two-column layout for list + detail
-- Side-by-side event list and assignment list
-- Wider modals instead of full-screen bottom sheets
-
-**Desktop (1024px+):**
-- Three-column layout where appropriate
-- Fixed-width content area with margins
-- Modal dialogs instead of bottom sheets
-
-**Implementation approach:**
-```dart
-Widget build(BuildContext context) {
-  final screenWidth = MediaQuery.of(context).size.width;
-
-  if (screenWidth >= 1024) {
-    return _buildDesktopLayout();
-  } else if (screenWidth >= 768) {
-    return _buildTabletLayout();
-  } else {
-    return _buildMobileLayout();
-  }
-}
-
-Widget _buildDesktopLayout() {
-  return Row(
-    children: [
-      SizedBox(
-        width: 300,
-        child: TeamMemberList(),
-      ),
-      Expanded(
-        child: EventList(),
-      ),
-      SizedBox(
-        width: 400,
-        child: AssignmentDetail(),
-      ),
-    ],
-  );
-}
-```
-
-**Consider using:**
-- `LayoutBuilder` for responsive widgets
-- `Wrap` instead of `Row` for flowing content
-- Max-width constraints on cards and forms
-- `flutter_adaptive_scaffold` package for complex layouts
-
 ---
 
 ## 🔵 CODE QUALITY
@@ -573,6 +511,7 @@ This document provides context for implementing improvements to the Shavtzak app
 - Stream subscription memory leaks in BLoCs
 - Calendar sync in test mode
 - Event duplication
+- Pagination
 
 ### Quick Reference - Remaining TODO Items
 
@@ -581,10 +520,8 @@ This document provides context for implementing improvements to the Shavtzak app
 | Data export/reports | New `export_service.dart`, list screens |
 | Undo delete | BLoC files, list screens |
 | Sorting options | List screens |
-| Pagination | Repository files, list screens |
 | Loading states | Form modal files |
 | Error messages | BLoC files, new error utility |
 | Offline mode | `offline_blocking_overlay.dart`, `connectivity_service.dart` |
-| Responsive layouts | Screen files |
 | BLoC splitting | `team_bloc.dart`, `assignment_bloc.dart` |
 | Request debouncing | `assignment_bloc.dart` |
