@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import '../../core/constants/role_types.dart';
 import '../../core/constants/constraint_status.dart';
+import 'vehicle_info.dart';
 
 /// Date constraint representing when a team member is unavailable or available
 class DateConstraint extends Equatable {
@@ -120,6 +121,9 @@ class TeamMember extends Equatable {
   // Summary screen access field
   final bool canAccessSummaryScreen; // Whether non-admin can access summary screen
 
+  // Vehicle info field
+  final VehicleInfo? vehicleInfo; // Optional vehicle information
+
   const TeamMember({
     required this.id,
     required this.name,
@@ -138,6 +142,7 @@ class TeamMember extends Equatable {
     this.phoneNumber,
     this.birthday,
     this.canAccessSummaryScreen = false,
+    this.vehicleInfo,
   });
 
   /// Check if team member is available on a given date
@@ -232,6 +237,8 @@ class TeamMember extends Equatable {
     DateTime? birthday,
     bool clearBirthday = false,
     bool? canAccessSummaryScreen,
+    VehicleInfo? vehicleInfo,
+    bool clearVehicleInfo = false,
   }) {
     return TeamMember(
       id: id ?? this.id,
@@ -251,6 +258,7 @@ class TeamMember extends Equatable {
       phoneNumber: clearPhone ? null : (phoneNumber ?? this.phoneNumber),
       birthday: clearBirthday ? null : (birthday ?? this.birthday),
       canAccessSummaryScreen: canAccessSummaryScreen ?? this.canAccessSummaryScreen,
+      vehicleInfo: clearVehicleInfo ? null : (vehicleInfo ?? this.vehicleInfo),
     );
   }
 
@@ -273,6 +281,7 @@ class TeamMember extends Equatable {
         phoneNumber,
         birthday,
         canAccessSummaryScreen,
+        vehicleInfo,
       ];
 
   @override

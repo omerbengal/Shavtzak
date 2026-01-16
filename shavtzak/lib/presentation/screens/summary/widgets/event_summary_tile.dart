@@ -68,6 +68,18 @@ class EventSummaryTile extends StatelessWidget {
                 color: Colors.grey.shade700,
               ),
             ),
+            // Show actual show start time if available
+            if (data.event.actualShowStartTime.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'תחילת המופע: ${data.event.actualShowStartTime}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.blue.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             // Status indicators
             _buildStatusRow(),
@@ -269,7 +281,6 @@ class EventSummaryTile extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 color: isCompleted ? Colors.grey.shade600 : Colors.grey.shade800,
-                decoration: isCompleted ? TextDecoration.lineThrough : null,
               ),
             ),
           ),

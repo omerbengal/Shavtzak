@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/constants/role_types.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../domain/entities/team_member.dart';
+import '../../domain/entities/vehicle_info.dart';
 
 /// Data model for TeamMember with JSON serialization
 class TeamMemberModel {
@@ -36,6 +37,9 @@ class TeamMemberModel {
   // Summary screen access field
   final bool canAccessSummaryScreen; // Whether non-admin can access summary screen
 
+  // Vehicle info field
+  final VehicleInfoModel? vehicleInfo; // Optional vehicle information
+
   const TeamMemberModel({
     required this.id,
     required this.name,
@@ -54,6 +58,7 @@ class TeamMemberModel {
     this.phoneNumber,
     this.birthday,
     this.canAccessSummaryScreen = false,
+    this.vehicleInfo,
   });
 
   /// Generate a UUID for team members
@@ -87,6 +92,9 @@ class TeamMemberModel {
       phoneNumber: entity.phoneNumber,
       birthday: entity.birthday,
       canAccessSummaryScreen: entity.canAccessSummaryScreen,
+      vehicleInfo: entity.vehicleInfo != null
+          ? VehicleInfoModel.fromEntity(entity.vehicleInfo!)
+          : null,
     );
   }
 
@@ -115,6 +123,7 @@ class TeamMemberModel {
       phoneNumber: phoneNumber,
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
+      vehicleInfo: vehicleInfo?.toEntity(),
     );
   }
 
@@ -147,6 +156,12 @@ class TeamMemberModel {
     // Handle migration - default to false for existing members missing canAccessSummaryScreen
     final canAccessSummaryScreen = data['canAccessSummaryScreen'] as bool? ?? false;
 
+    // Handle migration - vehicleInfo is optional, default to null for existing members
+    final vehicleInfoData = data['vehicleInfo'] as Map<String, dynamic>?;
+    final vehicleInfo = vehicleInfoData != null
+        ? VehicleInfoModel.fromJson(vehicleInfoData)
+        : null;
+
     final model = TeamMemberModel(
       id: doc.id,
       name: data['name'] as String,
@@ -172,6 +187,7 @@ class TeamMemberModel {
       phoneNumber: phoneNumber,
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
+      vehicleInfo: vehicleInfo,
     );
 
     // If migration was needed (UUID was generated), update the document
@@ -214,6 +230,7 @@ class TeamMemberModel {
       'phoneNumber': phoneNumber,
       'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
       'canAccessSummaryScreen': canAccessSummaryScreen,
+      'vehicleInfo': vehicleInfo?.toJson(),
     };
   }
 
@@ -244,6 +261,12 @@ class TeamMemberModel {
     // Handle migration - default to false for existing members missing canAccessSummaryScreen
     final canAccessSummaryScreen = json['canAccessSummaryScreen'] as bool? ?? false;
 
+    // Handle migration - vehicleInfo is optional, default to null for existing members
+    final vehicleInfoData = json['vehicleInfo'] as Map<String, dynamic>?;
+    final vehicleInfo = vehicleInfoData != null
+        ? VehicleInfoModel.fromJson(vehicleInfoData)
+        : null;
+
     return TeamMemberModel(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -265,6 +288,7 @@ class TeamMemberModel {
       phoneNumber: phoneNumber,
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
+      vehicleInfo: vehicleInfo,
     );
   }
 
@@ -288,6 +312,58 @@ class TeamMemberModel {
       'phoneNumber': phoneNumber,
       'birthday': birthday?.toIso8601String(),
       'canAccessSummaryScreen': canAccessSummaryScreen,
+      'vehicleInfo': vehicleInfo?.toJson(),
+    };
+  }
+}
+
+/// Data model for VehicleInfo
+class VehicleInfoModel {
+  final String vehicleNumber;
+  final String manufacturer;
+  final String model;
+  final String color;
+
+  const VehicleInfoModel({
+    required this.vehicleNumber,
+    required this.manufacturer,
+    required this.model,
+    required this.color,
+  });
+
+  factory VehicleInfoModel.fromEntity(VehicleInfo entity) {
+    return VehicleInfoModel(
+      vehicleNumber: entity.vehicleNumber,
+      manufacturer: entity.manufacturer,
+      model: entity.model,
+      color: entity.color,
+    );
+  }
+
+  VehicleInfo toEntity() {
+    return VehicleInfo(
+      vehicleNumber: vehicleNumber,
+      manufacturer: manufacturer,
+      model: model,
+      color: color,
+    );
+  }
+
+  factory VehicleInfoModel.fromJson(Map<String, dynamic> json) {
+    return VehicleInfoModel(
+      vehicleNumber: json['vehicleNumber'] as String? ?? '',
+      manufacturer: json['manufacturer'] as String? ?? '',
+      model: json['model'] as String? ?? '',
+      color: json['color'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'vehicleNumber': vehicleNumber,
+      'manufacturer': manufacturer,
+      'model': model,
+      'color': color,
     };
   }
 }

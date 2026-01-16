@@ -353,7 +353,9 @@ class _EventListScreenState extends State<EventListScreen> {
                   _buildFieldItem('מיקום', _formatLocationForDisplay(event.location)),
                   // Time fields
                   _buildFieldItem('שעת התייצבות', event.assemblyTime.isEmpty ? '-' : event.assemblyTime),
-                  _buildFieldItem('שעת התחלה', event.startTime.isEmpty ? '-' : event.startTime),
+                  _buildFieldItem('שעת התכנסות קהל', event.startTime.isEmpty ? '-' : event.startTime),
+                  if (event.actualShowStartTime.isNotEmpty)
+                    _buildFieldItem('שעת תחילת המופע', event.actualShowStartTime),
                   _buildFieldItem('שעת סיום', event.endTime.isEmpty ? '-' : event.endTime),
                 ],
               ),

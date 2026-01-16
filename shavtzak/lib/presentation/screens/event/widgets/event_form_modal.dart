@@ -48,6 +48,7 @@ class _EventFormModalState extends State<EventFormModal> {
   final _startTimeController = TextEditingController();
   final _endTimeController = TextEditingController();
   final _assemblyTimeController = TextEditingController();
+  final _actualShowStartTimeController = TextEditingController();
 
   DateTime? _startDate;
   DateTime? _endDate;
@@ -93,6 +94,7 @@ class _EventFormModalState extends State<EventFormModal> {
       _startTimeController.text = widget.event!.startTime;
       _endTimeController.text = widget.event!.endTime;
       _assemblyTimeController.text = widget.event!.assemblyTime;
+      _actualShowStartTimeController.text = widget.event!.actualShowStartTime;
 
       if (widget.isDuplication) {
         // For duplication mode, reset dates to allow user to select new ones
@@ -140,6 +142,7 @@ class _EventFormModalState extends State<EventFormModal> {
     _startTimeController.dispose();
     _endTimeController.dispose();
     _assemblyTimeController.dispose();
+    _actualShowStartTimeController.dispose();
     _nameFocusNode.dispose();
     _sheetController.dispose();
     super.dispose();
@@ -243,6 +246,7 @@ class _EventFormModalState extends State<EventFormModal> {
         newStartTime: _startTimeController.text,
         newEndTime: _endTimeController.text,
         newAssemblyTime: _assemblyTimeController.text,
+        newActualShowStartTime: _actualShowStartTimeController.text,
         newRequiresArmed: _requiresArmed,
         newRoleRequirements: Map.from(_roleRequirements),
         duplicateAssignments: _duplicateAssignments,
@@ -400,6 +404,7 @@ class _EventFormModalState extends State<EventFormModal> {
       startTime: _startTimeController.text.trim(),
       endTime: _endTimeController.text.trim(),
       assemblyTime: _assemblyTimeController.text.trim(),
+      actualShowStartTime: _actualShowStartTimeController.text.trim(),
       location: locationValue,
       parkingLocation: _rawParkingLocationValue,
       parkingEditorIds: _parkingEditorIds,
@@ -1031,11 +1036,11 @@ class _EventFormModalState extends State<EventFormModal> {
 
                               const SizedBox(height: 16),
 
-                              // Start Time
+                              // Start Time (Audience Gathering Time)
                               TextFormField(
                                 controller: _startTimeController,
                                 decoration: const InputDecoration(
-                                  labelText: 'שעת התחלה (אופציונלי)',
+                                  labelText: 'שעת התכנסות קהל (אופציונלי)',
                                   hintText: 'לדוגמה: 18:00',
                                   prefixIcon: Icon(Icons.access_time),
                                   border: OutlineInputBorder(),
@@ -1066,6 +1071,20 @@ class _EventFormModalState extends State<EventFormModal> {
                                   labelText: 'שעת התייצבות (אופציונלי)',
                                   hintText: 'לדוגמה: 17:00',
                                   prefixIcon: Icon(Icons.access_time),
+                                  border: OutlineInputBorder(),
+                                ),
+                                onChanged: (_) => setState(() => _isDirty = true),
+                              ),
+
+                              const SizedBox(height: 16),
+
+                              // Actual Show Start Time
+                              TextFormField(
+                                controller: _actualShowStartTimeController,
+                                decoration: const InputDecoration(
+                                  labelText: 'שעת תחילת המופע בפועל (אופציונלי)',
+                                  hintText: 'לדוגמה: 19:00',
+                                  prefixIcon: Icon(Icons.play_circle_outline),
                                   border: OutlineInputBorder(),
                                 ),
                                 onChanged: (_) => setState(() => _isDirty = true),

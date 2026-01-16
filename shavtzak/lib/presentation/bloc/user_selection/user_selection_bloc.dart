@@ -28,6 +28,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     on<RefreshUserData>(_onRefreshUserData);
     on<UpdatePhoneNumber>(_onUpdatePhoneNumber);
     on<UpdateBirthday>(_onUpdateBirthday);
+    on<UpdateVehicleInfo>(_onUpdateVehicleInfo);
 
     // Listen to team member changes and refresh current user if needed
     _teamStreamSubscription = _teamRepository.watchTeamMembers().listen((teamMembers) {
@@ -219,6 +220,28 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
         add(const RefreshUserData());
       } catch (e) {
         emit(UserSelectionError('שגיאה בעדכון תאריך לידה: $e'));
+      }
+    }
+  }
+
+  /// Update user's vehicle information
+  Future<void> _onUpdateVehicleInfo(
+    UpdateVehicleInfo event,
+    Emitter<UserSelectionState> emit,
+  ) async {
+    final currentState = state;
+
+    if (currentState is UserAuthenticated) {
+      try {
+        await _userSelectionRepository.updateTeamMemberVehicleInfo(
+          currentState.user.uniqueKey,
+          event.vehicleInfo,
+        );
+
+        // Refresh user data to get the updated vehicle info
+        add(const RefreshUserData());
+      } catch (e) {
+        emit(UserSelectionError('שגיאה בעדכון פרטי רכב: $e'));
       }
     }
   }

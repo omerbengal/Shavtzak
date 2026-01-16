@@ -1,4 +1,5 @@
 import '../../domain/entities/team_member.dart';
+import '../../domain/entities/vehicle_info.dart';
 import '../../core/services/user_cache_service.dart';
 import '../data_sources/database_interface.dart';
 
@@ -228,6 +229,27 @@ class UserSelectionRepository {
     } catch (e) {
       if (e is UserSelectionException) rethrow;
       throw UserSelectionException('Failed to update birthday: $e');
+    }
+  }
+
+  /// Update vehicle info for a team member
+  Future<void> updateTeamMemberVehicleInfo(String uniqueKey, VehicleInfo? vehicleInfo) async {
+    try {
+      final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
+      if (teamMember == null) {
+        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+      }
+
+      final updatedMember = teamMember.copyWith(
+        vehicleInfo: vehicleInfo,
+        clearVehicleInfo: vehicleInfo == null,
+        updatedAt: DateTime.now(),
+      );
+
+      await _database.updateTeamMember(updatedMember);
+    } catch (e) {
+      if (e is UserSelectionException) rethrow;
+      throw UserSelectionException('Failed to update vehicle info: $e');
     }
   }
 }

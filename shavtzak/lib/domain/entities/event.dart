@@ -7,9 +7,10 @@ class Event extends Equatable {
   final String name;
   final DateTime startDate;
   final DateTime endDate;
-  final String startTime; // Format: "HH:mm"
+  final String startTime; // Format: "HH:mm" - Audience gathering time (שעת התכנסות קהל)
   final String endTime; // Format: "HH:mm"
   final String assemblyTime; // Format: "HH:mm"
+  final String actualShowStartTime; // Format: "HH:mm" - Actual show start time (שעת תחילת המופע בפועל)
   final String location;
   final String? parkingLocation; // Parking location in "Name||lat,lng" format
   final List<String> parkingEditorIds; // IDs of team members who can edit parking
@@ -32,6 +33,7 @@ class Event extends Equatable {
     required this.startTime,
     required this.endTime,
     required this.assemblyTime,
+    this.actualShowStartTime = '',
     this.location = '',
     this.parkingLocation,
     this.parkingEditorIds = const [],
@@ -120,6 +122,7 @@ class Event extends Equatable {
     String? startTime,
     String? endTime,
     String? assemblyTime,
+    String? actualShowStartTime,
     String? location,
     String? parkingLocation,
     List<String>? parkingEditorIds,
@@ -141,6 +144,7 @@ class Event extends Equatable {
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
       assemblyTime: assemblyTime ?? this.assemblyTime,
+      actualShowStartTime: actualShowStartTime ?? this.actualShowStartTime,
       location: location ?? this.location,
       parkingLocation: clearParkingLocation ? null : (parkingLocation ?? this.parkingLocation),
       parkingEditorIds: parkingEditorIds ?? this.parkingEditorIds,
@@ -164,6 +168,7 @@ class Event extends Equatable {
         startTime,
         endTime,
         assemblyTime,
+        actualShowStartTime,
         location,
         parkingLocation,
         parkingEditorIds,

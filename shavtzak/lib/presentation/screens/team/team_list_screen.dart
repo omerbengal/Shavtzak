@@ -11,10 +11,12 @@ import '../../../core/constants/calendar_constants.dart';
 import '../../../core/state/constraint_manager.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/assignment.dart';
+import '../../../domain/entities/vehicle_info.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/services/environment_service.dart';
+import '../../../core/services/utilities_service.dart';
 import 'package:uuid/uuid.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart' as team;
@@ -749,11 +751,15 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   final _phoneController = TextEditingController();
   final _commentsController = TextEditingController();
   final _birthdayController = TextEditingController();
+  final _vehicleInfoController = TextEditingController();
 
   // Birthday fields
   int? _birthdayDay;
   int? _birthdayMonth;
   int? _birthdayYear;
+
+  // Vehicle info fields
+  VehicleInfo? _vehicleInfo;
 
   // Hebrew month names
   static const List<String> _hebrewMonths = [
@@ -803,6 +809,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         _birthdayYear = widget.member!.birthday!.year;
         _updateBirthdayController();
       }
+      _vehicleInfo = widget.member!.vehicleInfo;
+      _updateVehicleInfoController();
     }
 
     // Track dirty state
@@ -819,6 +827,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     }
   }
 
+  void _updateVehicleInfoController() {
+    if (_vehicleInfo != null && _vehicleInfo!.isComplete) {
+      _vehicleInfoController.text = _vehicleInfo!.displayString;
+    } else {
+      _vehicleInfoController.clear();
+    }
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -831,6 +847,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     _phoneController.dispose();
     _commentsController.dispose();
     _birthdayController.dispose();
+    _vehicleInfoController.dispose();
     super.dispose();
   }
 
@@ -862,6 +879,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         ? null
         : _phoneController.text.trim(),
       birthday: birthday,
+      vehicleInfo: _vehicleInfo,
       isActive: _isActive,
       isPermanent: _isPermanent,
       allowMultipleAssignments: _allowMultipleAssignments,
@@ -1357,6 +1375,53 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                       ? Colors.black87
                                       : Colors.grey,
                                   ),
+                                textAlign: TextAlign.right,
+                              ),
+
+                              const SizedBox(height: 16),
+
+                              // Vehicle info field - read-only text field with floating label
+                              TextFormField(
+                                readOnly: true,
+                                onTap: () => _showVehicleInfoDialog(),
+                                decoration: InputDecoration(
+                                  labelText: 'פרטי רכב',
+                                  prefixIcon: Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Icon(
+                                      _vehicleInfo != null && _vehicleInfo!.isComplete
+                                          ? Icons.directions_car
+                                          : Icons.directions_car_outlined,
+                                      color: _vehicleInfo != null && _vehicleInfo!.isComplete
+                                          ? Colors.black87
+                                          : Colors.grey,
+                                    ),
+                                  ),
+                                  border: const OutlineInputBorder(
+                                    borderSide: BorderSide(color: Colors.grey, width: 0.5),
+                                  ),
+                                  enabledBorder: const OutlineInputBorder(
+                                    borderSide: BorderSide(color: Colors.grey, width: 0.5),
+                                  ),
+                                  suffixIcon: _vehicleInfo != null && _vehicleInfo!.isComplete
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, size: 20),
+                                          onPressed: () {
+                                            setState(() {
+                                              _vehicleInfo = null;
+                                              _updateVehicleInfoController();
+                                              _isDirty = true;
+                                            });
+                                          },
+                                        )
+                                      : null,
+                                ),
+                                controller: _vehicleInfoController,
+                                style: TextStyle(
+                                  color: _vehicleInfo != null && _vehicleInfo!.isComplete
+                                      ? Colors.black87
+                                      : Colors.grey,
+                                ),
                                 textAlign: TextAlign.right,
                               ),
 
@@ -2116,6 +2181,23 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     }
   }
 
+  void _showVehicleInfoDialog() async {
+    final result = await showDialog<VehicleInfo?>(
+      context: context,
+      builder: (dialogContext) => _VehicleInfoDialog(
+        initialVehicleInfo: _vehicleInfo,
+      ),
+    );
+
+    if (result != null || (result == null && _vehicleInfo != null)) {
+      setState(() {
+        _vehicleInfo = result;
+        _isDirty = true;
+        _updateVehicleInfoController();
+      });
+    }
+  }
+
   // Admins cannot add or edit constraints - only approve/reject
   // void _addConstraint() async {
   //   final result = await showDialog<DateConstraint>(
@@ -2838,5 +2920,292 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
         ],
       ),
     );
+  }
+}
+
+/// Dialog for editing vehicle information in team member form
+class _VehicleInfoDialog extends StatefulWidget {
+  final VehicleInfo? initialVehicleInfo;
+
+  const _VehicleInfoDialog({
+    required this.initialVehicleInfo,
+  });
+
+  @override
+  State<_VehicleInfoDialog> createState() => _VehicleInfoDialogState();
+}
+
+class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
+  final TextEditingController _vehicleNumberController = TextEditingController();
+  final TextEditingController _colorController = TextEditingController();
+  final TextEditingController _modelController = TextEditingController();
+  String? _selectedManufacturer;
+  bool _isDirty = false;
+
+  // Error states
+  bool _showValidationErrors = false;
+  String? _vehicleNumberError;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize real-time updates
+    UtilitiesService.instance.initialize();
+    _initializeFields();
+  }
+
+  void _initializeFields() {
+    if (widget.initialVehicleInfo != null && widget.initialVehicleInfo!.isComplete) {
+      _vehicleNumberController.text = widget.initialVehicleInfo!.vehicleNumber;
+      _selectedManufacturer = widget.initialVehicleInfo!.manufacturer;
+      _modelController.text = widget.initialVehicleInfo!.model;
+      _colorController.text = widget.initialVehicleInfo!.color;
+    }
+  }
+
+  @override
+  void dispose() {
+    _vehicleNumberController.dispose();
+    _colorController.dispose();
+    _modelController.dispose();
+    super.dispose();
+  }
+
+  bool get _hasPartialSelection {
+    final filledCount = [
+      _vehicleNumberController.text.isNotEmpty,
+      _selectedManufacturer != null && _selectedManufacturer!.isNotEmpty,
+      _modelController.text.isNotEmpty,
+      _colorController.text.isNotEmpty,
+    ].where((v) => v).length;
+    return filledCount > 0 && filledCount < 4;
+  }
+
+  bool get _isVehicleNumberValid {
+    final number = _vehicleNumberController.text.trim();
+    return VehicleInfo.isValidVehicleNumber(number);
+  }
+
+  VehicleInfo? _getVehicleInfo() {
+    final number = _vehicleNumberController.text.trim();
+    final manufacturer = _selectedManufacturer;
+    final model = _modelController.text.trim();
+    final color = _colorController.text.trim();
+
+    // If all empty, return null (clear vehicle info)
+    if (number.isEmpty && (manufacturer == null || manufacturer.isEmpty) &&
+        model.isEmpty && color.isEmpty) {
+      return null;
+    }
+
+    // All fields must be filled
+    if (number.isEmpty || manufacturer == null || manufacturer.isEmpty ||
+        model.isEmpty || color.isEmpty) {
+      return null;
+    }
+
+    // Validate vehicle number
+    if (!_isVehicleNumberValid) {
+      return null;
+    }
+
+    return VehicleInfo(
+      vehicleNumber: number,
+      manufacturer: manufacturer,
+      model: model,
+      color: color,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.directions_car, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('פרטי רכב'),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 350),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'מלא את פרטי הרכב',
+                style: TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 20),
+              // Vehicle number field
+              TextField(
+                controller: _vehicleNumberController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(8),
+                ],
+                decoration: InputDecoration(
+                  labelText: 'מספר רכב',
+                  hintText: '7-8 ספרות',
+                  prefixIcon: const Icon(Icons.numbers),
+                  errorText: _showValidationErrors && _vehicleNumberError != null
+                      ? _vehicleNumberError
+                      : null,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _isDirty = true;
+                    if (_showValidationErrors) {
+                      _validateVehicleNumber(value);
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              // Manufacturer dropdown - StreamBuilder for real-time updates
+              StreamBuilder<List<String>>(
+                stream: UtilitiesService.instance.watchCarManufacturers(),
+                builder: (context, snapshot) {
+                  final manufacturers = snapshot.data ?? [];
+
+                  return DropdownButtonFormField<String>(
+                    value: _selectedManufacturer,
+                    decoration: const InputDecoration(
+                      labelText: 'יצרן',
+                      prefixIcon: Icon(Icons.factory),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: manufacturers.map((manufacturer) {
+                      return DropdownMenuItem(
+                        value: manufacturer,
+                        child: Text(manufacturer),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedManufacturer = value;
+                        _modelController.clear();
+                        _isDirty = true;
+                      });
+                    },
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              // Model field - free text input
+              TextField(
+                controller: _modelController,
+                decoration: const InputDecoration(
+                  labelText: 'דגם',
+                  hintText: 'למשל: יונדאי אקונט X, סונטה סדאן',
+                  prefixIcon: Icon(Icons.directions_car),
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _isDirty = true;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              // Color field
+              TextField(
+                controller: _colorController,
+                decoration: const InputDecoration(
+                  labelText: 'צבע',
+                  hintText: 'למשל: לבן, שחור, כסף',
+                  prefixIcon: Icon(Icons.palette),
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _isDirty = true;
+                  });
+                },
+              ),
+              if (_showValidationErrors && _hasPartialSelection) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'יש למלא את כל השדות או להשאיר ריק',
+                  style: TextStyle(color: Colors.red, fontSize: 13),
+                ),
+              ],
+              // Clear button when has data
+              if (_vehicleNumberController.text.isNotEmpty ||
+                  _selectedManufacturer != null ||
+                  _modelController.text.isNotEmpty ||
+                  _colorController.text.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _vehicleNumberController.clear();
+                      _selectedManufacturer = null;
+                      _modelController.clear();
+                      _colorController.clear();
+                      _vehicleNumberError = null;
+                      _isDirty = true;
+                      _showValidationErrors = false;
+                    });
+                  },
+                  icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                  label: const Text('נקה פרטים', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('ביטול'),
+          ),
+          ElevatedButton(
+            onPressed: _isDirty ? _saveVehicleInfo : null,
+            child: const Text('שמור'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _validateVehicleNumber(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      _vehicleNumberError = null;
+    } else if (!VehicleInfo.isValidVehicleNumber(trimmed)) {
+      _vehicleNumberError = 'מספר רכב חייב להכיל 7-8 ספרות';
+    } else {
+      _vehicleNumberError = null;
+    }
+  }
+
+  void _saveVehicleInfo() {
+    // Check if selection is valid before saving
+    final vehicleInfo = _getVehicleInfo();
+
+    // Validate partial selection
+    if (_hasPartialSelection) {
+      setState(() {
+        _showValidationErrors = true;
+        _validateVehicleNumber(_vehicleNumberController.text);
+      });
+      return;
+    }
+
+    // Validate vehicle number format if provided
+    if (_vehicleNumberController.text.isNotEmpty && !_isVehicleNumberValid) {
+      setState(() {
+        _showValidationErrors = true;
+        _validateVehicleNumber(_vehicleNumberController.text);
+      });
+      return;
+    }
+
+    Navigator.of(context).pop(vehicleInfo);
   }
 }

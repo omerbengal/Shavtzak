@@ -725,6 +725,37 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               ],
             ),
 
+            // Actual show start time (if available)
+            if (event.actualShowStartTime.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(
+                    Icons.play_circle_outline,
+                    size: _getResponsiveIconSize(context, minSize: 14.0, maxSize: 16.0),
+                    color: Colors.blue.shade600,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'תחילת המופע:',
+                    style: TextStyle(
+                      fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                      color: secondaryTextColor,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    event.actualShowStartTime,
+                    style: TextStyle(
+                      fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
+                      fontWeight: FontWeight.w500,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
             // "Who's with me?" button
             const SizedBox(height: 8),
             SizedBox(

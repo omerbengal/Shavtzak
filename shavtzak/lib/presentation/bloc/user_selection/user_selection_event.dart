@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../../domain/entities/vehicle_info.dart';
 
 /// Events for User Selection BLoC
 abstract class UserSelectionEvent extends Equatable {
@@ -66,4 +67,14 @@ class UpdateBirthday extends UserSelectionEvent {
 
   @override
   List<Object?> get props => [birthday];
+}
+
+/// Update user's vehicle information
+class UpdateVehicleInfo extends UserSelectionEvent {
+  final VehicleInfo? vehicleInfo;
+
+  const UpdateVehicleInfo(this.vehicleInfo);
+
+  @override
+  List<Object?> get props => [vehicleInfo];
 }

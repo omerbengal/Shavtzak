@@ -11,6 +11,7 @@ class EventModel {
   final String startTime;
   final String endTime;
   final String assemblyTime;
+  final String actualShowStartTime;
   final String location;
   final String? parkingLocation;
   final List<String> parkingEditorIds;
@@ -33,6 +34,7 @@ class EventModel {
     required this.startTime,
     required this.endTime,
     required this.assemblyTime,
+    this.actualShowStartTime = '',
     required this.location,
     this.parkingLocation,
     this.parkingEditorIds = const [],
@@ -56,6 +58,7 @@ class EventModel {
       startTime: entity.startTime,
       endTime: entity.endTime,
       assemblyTime: entity.assemblyTime,
+      actualShowStartTime: entity.actualShowStartTime,
       location: entity.location,
       parkingLocation: entity.parkingLocation,
       parkingEditorIds: entity.parkingEditorIds,
@@ -84,6 +87,7 @@ class EventModel {
       startTime: startTime,
       endTime: endTime,
       assemblyTime: assemblyTime,
+      actualShowStartTime: actualShowStartTime,
       location: location,
       parkingLocation: parkingLocation,
       parkingEditorIds: parkingEditorIds,
@@ -117,6 +121,7 @@ class EventModel {
       startTime: data['startTime'] as String,
       endTime: data['endTime'] as String,
       assemblyTime: data['assemblyTime'] as String,
+      actualShowStartTime: data['actualShowStartTime'] as String? ?? '',
       location: data['location'] as String? ?? '',
       parkingLocation: data['parkingLocation'] as String?,
       parkingEditorIds: List<String>.from(data['parkingEditorIds'] as List? ?? const []),
@@ -141,6 +146,7 @@ class EventModel {
       'startTime': startTime,
       'endTime': endTime,
       'assemblyTime': assemblyTime,
+      'actualShowStartTime': actualShowStartTime,
       'location': location,
       'parkingLocation': parkingLocation,
       'parkingEditorIds': parkingEditorIds,
@@ -165,6 +171,7 @@ class EventModel {
       startTime: json['startTime'] as String,
       endTime: json['endTime'] as String,
       assemblyTime: json['assemblyTime'] as String,
+      actualShowStartTime: json['actualShowStartTime'] as String? ?? '',
       location: json['location'] as String? ?? '',
       parkingLocation: json['parkingLocation'] as String?,
       parkingEditorIds: List<String>.from(json['parkingEditorIds'] as List? ?? const []),
@@ -189,6 +196,7 @@ class EventModel {
       'startTime': startTime,
       'endTime': endTime,
       'assemblyTime': assemblyTime,
+      'actualShowStartTime': actualShowStartTime,
       'location': location,
       'parkingLocation': parkingLocation,
       'parkingEditorIds': parkingEditorIds,

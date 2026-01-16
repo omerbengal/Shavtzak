@@ -496,8 +496,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         (assignments) {
           // Cache current assignments for rebuild purposes
           _repository.cacheCurrentAssignments(assignments);
-          // Rebuild slots using cached data
-          add(RebuildAssignmentSlotsFromData(assignments, cachedEventsMap, cachedMembersMap, currentFilter));
+          // Rebuild slots using cached data - use _currentEventFilter to preserve user's filter
+          add(RebuildAssignmentSlotsFromData(assignments, cachedEventsMap, cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
           emit(AssignmentError('שגיאה בהאזנה לשיבוצים: $e'));
@@ -510,9 +510,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Update member cache
           cachedMembersMap.clear();
           cachedMembersMap.addAll({for (var tm in updatedMembers) tm.id: tm});
-          // Trigger rebuild with updated cache
+          // Trigger rebuild with updated cache - use _currentEventFilter to preserve user's filter
           final currentAssignments = _repository.getCurrentAssignments();
-          add(RebuildAssignmentSlotsFromData(currentAssignments, cachedEventsMap, cachedMembersMap, currentFilter));
+          add(RebuildAssignmentSlotsFromData(currentAssignments, cachedEventsMap, cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
           emit(AssignmentError('שגיאה בהאזנה לחברי צוות: $e'));
@@ -528,9 +528,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Update event cache
           cachedEventsMap.clear();
           cachedEventsMap.addAll({for (var e in updatedEvents) e.id: e});
-          // Trigger rebuild with updated cache
+          // Trigger rebuild with updated cache - use _currentEventFilter to preserve user's filter
           final currentAssignments = _repository.getCurrentAssignments();
-          add(RebuildAssignmentSlotsFromData(currentAssignments, cachedEventsMap, cachedMembersMap, currentFilter));
+          add(RebuildAssignmentSlotsFromData(currentAssignments, cachedEventsMap, cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
           emit(AssignmentError('שגיאה בהאזנה לאירועים: $e'));
