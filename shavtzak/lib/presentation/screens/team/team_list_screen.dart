@@ -31,6 +31,7 @@ import '../../widgets/date_picker_dialog.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/swipeable_page_view.dart';
 import '../../widgets/admin_passcode_dialog.dart';
+import '../../widgets/vehicle_info_copy_dialog.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
@@ -125,12 +126,25 @@ class _TeamListScreenState extends State<TeamListScreen> {
     });
   }
 
+  /// Build a compact icon button for the leading AppBar section
+  Widget _buildCompactIcon({required IconData icon, required VoidCallback onPressed}) {
+    return InkWell(
+      onTap: onPressed,
+      customBorder: const CircleBorder(),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Icon(icon, size: 22),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
+          leadingWidth: 160,
           title: _showSearch
               ? TextField(
                   controller: _searchController,
@@ -144,84 +158,106 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   onChanged: _onSearchChanged,
                 )
               : const Text(AppStrings.team),
-          leading: IconButton(
-          icon: Icon(_showSearch ? Icons.close : Icons.search),
-          onPressed: () {
-            setState(() {
-              _showSearch = !_showSearch;
-              if (!_showSearch) {
-                _searchController.clear();
-                context.read<TeamBloc>().add(const team.LoadTeamMembers());
-              }
-            });
-          },
-        ),
-        actions: [
-          // Sync button (appears closest to title in RTL)
-          BlocListener<CalendarSyncBloc, CalendarSyncState>(
-            listener: (context, state) {
-              if (state is CalendarSyncBidirectionalComplete) {
-                ScaffoldMessenger.of(context)
-                  ..clearSnackBars()
-                  ..showSnackBar(
-                    SnackBar(
-                      content: Directionality(
-                        textDirection: TextDirection.rtl,
-                        child: Text(state.message),
-                      ),
-                      backgroundColor: Colors.green,
-                      duration: const Duration(seconds: 3),
-                    ),
-                  );
-              } else if (state is CalendarSyncFailure && state.constraintId == 'bidirectional') {
-                ScaffoldMessenger.of(context)
-                  ..clearSnackBars()
-                  ..showSnackBar(
-                    SnackBar(
-                      content: Directionality(
-                        textDirection: TextDirection.rtl,
-                        child: Text(state.errorMessage),
-                      ),
-                      backgroundColor: Colors.red,
-                      duration: const Duration(seconds: 3),
-                      action: SnackBarAction(
-                        label: 'נסה שוב',
-                        textColor: Colors.white,
-                        onPressed: () {
-                          context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
-                        },
-                      ),
-                    ),
-                  );
-              }
-            },
-            child: BlocBuilder<CalendarSyncBloc, CalendarSyncState>(
-              builder: (context, state) {
-                final isInProgress = state is CalendarSyncInProgress && state.constraintId == 'bidirectional';
-                return IconButton(
-                  icon: isInProgress
-                      ? const SizedBox(
+          leading: Padding(
+            padding: const EdgeInsetsDirectional.only(start: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Search/Close button
+              _buildCompactIcon(
+                icon: _showSearch ? Icons.close : Icons.search,
+                onPressed: () {
+                  setState(() {
+                    _showSearch = !_showSearch;
+                    if (!_showSearch) {
+                      _searchController.clear();
+                      context.read<TeamBloc>().add(const team.LoadTeamMembers());
+                    }
+                  });
+                },
+              ),
+              const SizedBox(width: 4),
+              // Sync button
+              BlocListener<CalendarSyncBloc, CalendarSyncState>(
+                listener: (context, state) {
+                  if (state is CalendarSyncBidirectionalComplete) {
+                    ScaffoldMessenger.of(context)
+                      ..clearSnackBars()
+                      ..showSnackBar(
+                        SnackBar(
+                          content: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Text(state.message),
+                          ),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
+                  } else if (state is CalendarSyncFailure && state.constraintId == 'bidirectional') {
+                    ScaffoldMessenger.of(context)
+                      ..clearSnackBars()
+                      ..showSnackBar(
+                        SnackBar(
+                          content: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Text(state.errorMessage),
+                          ),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 3),
+                          action: SnackBarAction(
+                            label: 'נסה שוב',
+                            textColor: Colors.white,
+                            onPressed: () {
+                              context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
+                            },
+                          ),
+                        ),
+                      );
+                  }
+                },
+                child: BlocBuilder<CalendarSyncBloc, CalendarSyncState>(
+                  builder: (context, state) {
+                    final isInProgress = state is CalendarSyncInProgress && state.constraintId == 'bidirectional';
+                    if (isInProgress) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             color: Colors.white,
                           ),
-                        )
-                      : const Icon(Icons.sync),
-                  onPressed: isInProgress
-                      ? null
-                      : () {
-                          context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
-                        },
-                  tooltip: 'סנכרון עם יומן גוגל',
-                  iconSize: 24,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-                );
-              },
-            ),
+                        ),
+                      );
+                    }
+                    return _buildCompactIcon(
+                      icon: Icons.sync,
+                      onPressed: () {
+                        context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 4),
+              // Vehicle info copy button
+              _buildCompactIcon(
+                icon: Icons.directions_car,
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => const Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: VehicleInfoCopyDialog(),
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
+          ),
+        actions: [
           // Home button (appears middle from left in RTL)
           IconButton(
             icon: const Icon(Icons.home),
