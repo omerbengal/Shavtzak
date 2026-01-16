@@ -286,16 +286,28 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                       child: Opacity(
                         opacity: isDisabled ? 0.5 : 1.0,
                         child: ListTile(
-                          title: Text(
-                            teamMember.name,
-                            style: TextStyle(
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                              color: isSelected
-                                  ? Colors.blue.shade700
-                                  : isDisabled
-                                      ? Colors.grey.shade500
-                                      : Colors.black,
-                            ),
+                          title: Row(
+                            children: [
+                              Text(
+                                teamMember.name,
+                                style: TextStyle(
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  color: isSelected
+                                      ? Colors.blue.shade700
+                                      : isDisabled
+                                          ? Colors.grey.shade500
+                                          : Colors.black,
+                                ),
+                              ),
+                              if (teamMember.isPermanent) ...[
+                                const SizedBox(width: 6),
+                                Icon(
+                                  Icons.verified_user,
+                                  size: 16,
+                                  color: Colors.blue.shade700,
+                                ),
+                              ],
+                            ],
                           ),
                           subtitle: isDisabled
                               ? Text(

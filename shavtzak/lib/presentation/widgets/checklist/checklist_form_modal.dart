@@ -325,6 +325,12 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                                 labelText: 'אחראי *',
                                 border: OutlineInputBorder(),
                               ),
+                              selectedItemBuilder: (context) {
+                                return teamMembers.map((member) => DropdownMenuItem<TeamMember>(
+                                  value: member,
+                                  child: Text(member.name),
+                                )).toList();
+                              },
                               validator: (value) {
                                 if (value == null) {
                                   return 'אנא בחר אחראי';
@@ -333,7 +339,19 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                               },
                               items: teamMembers.map((member) => DropdownMenuItem(
                                 value: member,
-                                child: Text(member.name),
+                                child: Row(
+                                  children: [
+                                    Text(member.name),
+                                    if (member.isPermanent) ...[
+                                      const SizedBox(width: 6),
+                                      Icon(
+                                        Icons.verified_user,
+                                        size: 14,
+                                        color: Colors.blue.shade700,
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               )).toList(),
                               onChanged: (value) {
                                 setState(() {
@@ -411,7 +429,20 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                         }).map((member) {
                           final isSelected = _selectedCcMembers.contains(member);
                           return FilterChip(
-                            label: Text(member.name),
+                            label: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(member.name),
+                                if (member.isPermanent) ...[
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    Icons.verified_user,
+                                    size: 12,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ],
+                              ],
+                            ),
                             selected: isSelected,
                             onSelected: (selected) {
                               setState(() {

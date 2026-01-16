@@ -198,12 +198,34 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
                               hintText: 'בחר חבר צוות',
                               prefixIcon: Icon(Icons.person),
                             ),
+                            selectedItemBuilder: (context) {
+                              return teamState.members
+                                  .where((m) => m.isActive)
+                                  .map((member) {
+                                return DropdownMenuItem<TeamMember>(
+                                  value: member,
+                                  child: Text(member.name),
+                                );
+                              }).toList();
+                            },
                             items: teamState.members
                                 .where((m) => m.isActive)
                                 .map((member) {
                               return DropdownMenuItem(
                                 value: member,
-                                child: Text(member.name),
+                                child: Row(
+                                  children: [
+                                    Text(member.name),
+                                    if (member.isPermanent) ...[
+                                      const SizedBox(width: 6),
+                                      Icon(
+                                        Icons.verified_user,
+                                        size: 14,
+                                        color: Colors.blue.shade700,
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               );
                             }).toList(),
                             onChanged: (member) {

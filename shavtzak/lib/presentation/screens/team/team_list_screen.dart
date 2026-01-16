@@ -429,13 +429,27 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      member.name,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                        color: member.isActive ? Colors.black : Colors.grey,
-                      ),
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            member.name,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                              color: member.isActive ? Colors.black : Colors.grey,
+                            ),
+                          ),
+                        ),
+                        if (member.isPermanent) ...[
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.verified_user,
+                            size: 16,
+                            color: Colors.blue.shade700,
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   // Activate/Deactivate button

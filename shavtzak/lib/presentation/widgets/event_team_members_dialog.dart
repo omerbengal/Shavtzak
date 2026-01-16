@@ -374,13 +374,27 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        member.name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              member.name,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                          if (member.isPermanent) ...[
+                            const SizedBox(width: 6),
+                            Icon(
+                              Icons.verified_user,
+                              size: 16,
+                              color: Colors.blue.shade700,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                     if (member.phoneNumber?.isNotEmpty == true) ...[

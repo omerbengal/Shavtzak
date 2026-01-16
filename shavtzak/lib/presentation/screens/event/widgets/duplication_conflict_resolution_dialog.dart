@@ -517,14 +517,28 @@ class _DuplicationConflictResolutionDialogState
 
                       // Member name as title
                       Expanded(
-                        child: Text(
-                          memberName,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            decoration: isMarkedForRemoval ? TextDecoration.lineThrough : null,
-                            color: isMarkedForRemoval ? Colors.grey.shade500 : Colors.black87,
-                          ),
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                memberName,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  decoration: isMarkedForRemoval ? TextDecoration.lineThrough : null,
+                                  color: isMarkedForRemoval ? Colors.grey.shade500 : Colors.black87,
+                                ),
+                              ),
+                            ),
+                            if (info.assignment.teamMember?.isPermanent == true) ...[
+                              const SizedBox(width: 6),
+                              Icon(
+                                Icons.verified_user,
+                                size: 14,
+                                color: Colors.blue.shade700,
+                              ),
+                            ],
+                          ],
                         ),
                       ),
 
@@ -712,13 +726,27 @@ class _DuplicationConflictResolutionDialogState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    memberName,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      decoration: isMarkedForRemoval ? TextDecoration.lineThrough : null,
-                      color: isMarkedForRemoval ? Colors.grey.shade500 : null,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          memberName,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            decoration: isMarkedForRemoval ? TextDecoration.lineThrough : null,
+                            color: isMarkedForRemoval ? Colors.grey.shade500 : null,
+                          ),
+                        ),
+                      ),
+                      if (info.assignment.teamMember?.isPermanent == true) ...[
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.verified_user,
+                          size: 14,
+                          color: Colors.blue.shade700,
+                        ),
+                      ],
+                    ],
                   ),
                   // Only show availability conflicts in the availability section
                   if (isAvailabilitySection && info.hasAvailabilityConflict && info.availabilityReason != null) ...[

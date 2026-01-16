@@ -890,17 +890,32 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           textDirection: TextDirection.rtl,
           child: SizedBox(
             width: double.infinity,
-            child: Text(
-              member.name,
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 4,
-              style: isCurrentlyAssigned
-                  ? const TextStyle(
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                    )
-                  : null,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    member.name,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 4,
+                    style: isCurrentlyAssigned
+                        ? const TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                          )
+                        : null,
+                  ),
+                ),
+                if (member.isPermanent) ...[
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.verified_user,
+                    size: 12,
+                    color: Colors.blue.shade700,
+                  ),
+                ],
+              ],
             ),
           ),
         ),
@@ -916,15 +931,30 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           textDirection: TextDirection.rtl,
           child: SizedBox(
             width: double.infinity,
-            child: Text(
-              currentMember.name,
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 4,
-              style: const TextStyle(
-                color: Colors.green,
-                fontWeight: FontWeight.bold,
-              ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    currentMember.name,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 4,
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (currentMember.isPermanent) ...[
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.verified_user,
+                    size: 12,
+                    color: Colors.blue.shade700,
+                  ),
+                ],
+              ],
             ),
           ),
         ),
