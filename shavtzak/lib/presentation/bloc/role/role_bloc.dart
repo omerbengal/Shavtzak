@@ -22,6 +22,7 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
     on<ToggleRoleVisibility>(_onToggleVisibility);
     on<ArchiveRole>(_onArchiveRole);
     on<RestoreRole>(_onRestoreRole);
+    on<DeleteRole>(_onDeleteRole);
     on<ReorderRoles>(_onReorderRoles);
     on<SeedRolesFromEnum>(_onSeedRolesFromEnum);
   }
@@ -163,6 +164,21 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
     } catch (e) {
       developer.log('RoleBloc._onRestoreRole: Error restoring role: $e', name: 'RoleBloc');
       emit(RoleError('שגיאה בשחזור תפקיד מהארכיון: $e'));
+    }
+  }
+
+  /// Permanently delete a role
+  Future<void> _onDeleteRole(
+    DeleteRole event,
+    Emitter<RoleState> emit,
+  ) async {
+    try {
+      await _repository.deleteRole(event.roleId);
+      developer.log('RoleBloc._onDeleteRole: Permanently deleted role ${event.roleId}', name: 'RoleBloc');
+      // Real-time stream will trigger UI update
+    } catch (e) {
+      developer.log('RoleBloc._onDeleteRole: Error deleting role: $e', name: 'RoleBloc');
+      emit(RoleError('שגיאה במחיקת תפקיד: $e'));
     }
   }
 

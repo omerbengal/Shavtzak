@@ -82,6 +82,16 @@ class RestoreRole extends RoleEvent {
   List<Object?> get props => [roleId];
 }
 
+/// Permanently delete a role
+class DeleteRole extends RoleEvent {
+  final String roleId;
+
+  const DeleteRole(this.roleId);
+
+  @override
+  List<Object?> get props => [roleId];
+}
+
 /// Reorder roles
 class ReorderRoles extends RoleEvent {
   final List<Role> reorderedRoles;

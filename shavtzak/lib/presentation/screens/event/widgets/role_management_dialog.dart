@@ -137,42 +137,27 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
         // Update sort order and dispatch to BLoC
         context.read<RoleBloc>().add(ReorderRoles(roles));
       },
-      itemBuilder: (context, index) {
-        final role = activeRoles[index];
-        return Dismissible(
-          key: ValueKey(role.id),
-          direction: DismissDirection.endToStart,
-          background: Container(
-            color: Colors.red,
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.only(left: 20),
-            child: const Icon(Icons.archive, color: Colors.white),
-          ),
-          confirmDismiss: (direction) async {
-            return await showDialog<bool>(
-              context: context,
-              builder: (context) => Directionality(
-                textDirection: TextDirection.rtl,
-                child: AlertDialog(
-                  title: const Text('העבר לארכיון?'),
-                  content: Text('האם להעביר את התפקיד "${role.hebrewName}" לארכיון?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('ביטול'),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('העבר לארכיון'),
-                    ),
-                  ],
-                ),
+      proxyDecorator: (child, index, animation) {
+        return AnimatedBuilder(
+          animation: animation,
+          builder: (context, child) {
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: Transform(
+                transform: Matrix4.identity()
+                  ..scale(1.0, 1.0), // Prevent any transformation
+                alignment: Alignment.center,
+                child: child,
               ),
             );
           },
-          onDismissed: (direction) {
-            context.read<RoleBloc>().add(ArchiveRole(role.id));
-          },
+          child: child,
+        );
+      },
+      itemBuilder: (context, index) {
+        final role = activeRoles[index];
+        return Container(
+          key: ValueKey(role.id),
           child: _buildRoleListTile(role, isArchived: false),
         );
       },
@@ -205,9 +190,17 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
       child: ListTile(
         leading: isArchived
             ? const Icon(Icons.archive, color: Colors.grey)
-            : Icon(
-                role.isVisible ? Icons.visibility : Icons.visibility_off,
-                color: role.isVisible ? Colors.green : Colors.grey,
+            : IconButton(
+                icon: Icon(
+                  role.isVisible ? Icons.visibility : Icons.visibility_off,
+                  color: role.isVisible ? Colors.green : Colors.grey,
+                ),
+                tooltip: role.isVisible ? 'הסתר' : 'הצג',
+                onPressed: () {
+                  context.read<RoleBloc>().add(ToggleRoleVisibility(role.id));
+                },
+                splashColor: Colors.transparent,
+                hoverColor: Colors.transparent,
               ),
         title: Text(
           role.hebrewName,
@@ -230,39 +223,116 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                     : Colors.orange,
           ),
         ),
-        trailing: isArchived
-            ? ElevatedButton.icon(
-                onPressed: () {
-                  context.read<RoleBloc>().add(RestoreRole(role.id));
-                },
-                icon: const Icon(Icons.restore, size: 16),
-                label: const Text('שחזר'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Toggle visibility button
-                  IconButton(
-                    icon: Icon(
-                      role.isVisible ? Icons.visibility_off : Icons.visibility,
-                    ),
-                    tooltip: role.isVisible ? 'הסתר' : 'הצג',
+        trailing: Padding(
+          padding: const EdgeInsets.only(left: 32, right: 8),
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isArchived) ...[
+                  // Restore button
+                  ElevatedButton.icon(
                     onPressed: () {
-                      context.read<RoleBloc>().add(ToggleRoleVisibility(role.id));
+                      context.read<RoleBloc>().add(RestoreRole(role.id));
                     },
+                    icon: const Icon(Icons.restore, size: 16),
+                    label: const Text('שחזר'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
                   ),
-                  // Reorder handle (this is implicit with ReorderableListView)
-                  const Icon(Icons.drag_handle, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  // Permanently delete button (only for archived roles)
+                  IconButton(
+                    icon: const Icon(Icons.delete_forever, color: Colors.red),
+                    tooltip: 'מחק לצמיתות',
+                    onPressed: () => _confirmDeleteRole(context, role),
+                  ),
+                ] else ...[
+                  // Archive button
+                  IconButton(
+                    icon: const Icon(Icons.archive, color: Colors.orange),
+                    tooltip: 'העבר לארכיון',
+                    onPressed: () => _confirmArchiveRole(context, role),
+                  ),
+                  const SizedBox(width: 4),
+                  // Delete button
+                  IconButton(
+                    icon: const Icon(Icons.delete_forever, color: Colors.red),
+                    tooltip: 'מחק לצמיתות',
+                    onPressed: () => _confirmDeleteRole(context, role),
+                  ),
                 ],
-              ),
+              ],
+            ),
+          ),
+        ),
         onTap: isArchived
             ? null
             : () => _showRenameDialog(context, role),
       ),
     );
+  }
+
+  /// Show confirmation dialog for archiving a role
+  Future<void> _confirmArchiveRole(BuildContext context, Role role) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('העבר לארכיון?'),
+          content: Text('האם להעביר את התפקיד "${role.hebrewName}" לארכיון?\n\nניתן יהיה לשחזר את התפקיד מהארכיון לאחר מכן.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('ביטול'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('העבר לארכיון'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      context.read<RoleBloc>().add(ArchiveRole(role.id));
+    }
+  }
+
+  /// Show confirmation dialog for deleting a role
+  Future<void> _confirmDeleteRole(BuildContext context, Role role) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('מחק תפקיד?', style: TextStyle(color: Colors.red)),
+          content: Text('האם למחוק את התפקיד "${role.hebrewName}" לצמיתות?\n\nלא ניתן יהיה לשחזר את התפקיד לאחר מחיקה!'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('ביטול'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('מחק לצמיתות'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      context.read<RoleBloc>().add(DeleteRole(role.id));
+    }
   }
 
   /// Show dialog to add a new role

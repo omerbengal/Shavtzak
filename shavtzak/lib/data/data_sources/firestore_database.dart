@@ -1908,6 +1908,43 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<void> deleteRole(String id) async {
+    try {
+      // Get the current list of roles
+      final docRef = _firestore.collection('utilities').doc('Lists');
+      final doc = await docRef.get();
+
+      if (!doc.exists || doc.data() == null) {
+        throw DatabaseException('Roles document not found');
+      }
+
+      final data = doc.data()!;
+      final List<dynamic> rolesData = data['Roles'] ?? [];
+
+      // Convert to Role entities
+      final roles = rolesData
+          .map((json) => RoleModel.fromJson(json as Map<String, dynamic>))
+          .map((model) => model.toEntity())
+          .toList();
+
+      // Remove the role with the matching id
+      final updatedRoles = roles.where((role) => role.id != id).toList();
+
+      // Convert back to JSON
+      final updatedRolesData = updatedRoles
+          .map((r) => RoleModel.fromEntity(r).toJson())
+          .toList();
+
+      // Update the entire array
+      await docRef.update({'Roles': updatedRolesData});
+
+      developer.log('FirestoreDatabase.deleteRole: Permanently deleted role $id', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to delete role: $e');
+    }
+  }
+
+  @override
   Stream<List<Role>> watchRoles() {
     try {
       return _firestore

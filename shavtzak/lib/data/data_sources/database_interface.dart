@@ -285,6 +285,9 @@ abstract class DatabaseInterface {
   /// Restore an archived role
   Future<void> restoreRole(String id);
 
+  /// Permanently delete a role
+  Future<void> deleteRole(String id);
+
   /// Watch all roles in real-time
   Stream<List<Role>> watchRoles();
 

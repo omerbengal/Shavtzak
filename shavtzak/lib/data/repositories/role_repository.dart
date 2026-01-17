@@ -165,6 +165,17 @@ class RoleRepository {
     }
   }
 
+  /// Permanently delete a role
+  Future<void> deleteRole(String roleId) async {
+    try {
+      await _database.deleteRole(roleId);
+      developer.log('RoleRepository.deleteRole: Permanently deleted role $roleId', name: 'RoleRepository');
+    } catch (e) {
+      developer.log('RoleRepository.deleteRole: Error deleting role: $e', name: 'RoleRepository');
+      rethrow;
+    }
+  }
+
   /// Reorder roles (update sort order)
   Future<void> reorderRoles(List<Role> reorderedRoles) async {
     try {

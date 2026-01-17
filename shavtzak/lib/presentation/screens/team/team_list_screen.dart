@@ -455,26 +455,6 @@ class _TeamListScreenState extends State<TeamListScreen> {
                       ],
                     ),
                   ),
-                  // Activate/Deactivate button
-                  IconButton(
-                    icon: Icon(
-                      member.isActive ? Icons.check_circle : Icons.cancel,
-                      color: member.isActive ? Colors.green : Colors.grey,
-                    ),
-                    onPressed: () {
-                      final bloc = context.read<TeamBloc>();
-                      if (member.isActive) {
-                        bloc.add(team.DeactivateTeamMember(member.id));
-                      } else {
-                        bloc.add(team.ReactivateTeamMember(member.id));
-                      }
-                      // Reload all members after operation completes
-                      Future.delayed(const Duration(milliseconds: 100), () {
-                        bloc.add(const team.LoadTeamMembers());
-                      });
-                    },
-                    tooltip: member.isActive ? 'השבת' : 'הפעל',
-                  ),
                 ],
               ),
               const SizedBox(height: 8),
