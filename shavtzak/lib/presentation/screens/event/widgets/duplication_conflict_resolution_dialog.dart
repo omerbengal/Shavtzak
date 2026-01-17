@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../bloc/event/event_state.dart';
+import '../../../bloc/role/role_bloc.dart';
+import '../../../bloc/role/role_state.dart';
 
 /// Dialog for resolving conflicts during event duplication
 /// Two sections: Availability Conflicts + Quota Overages
@@ -50,22 +53,22 @@ class _DuplicationConflictResolutionDialogState
   }
 
   /// Get quota info for a role
-  int _getQuotaForRole(RoleType role) {
-    return widget.conflictState.roleQuotas[role.name] ?? 0;
+  int _getQuotaForRole(String roleKey) {
+    return widget.conflictState.roleQuotas[roleKey] ?? 0;
   }
 
   /// Get current KEPT count for a role (not marked for removal)
-  int _getKeptCountForRole(RoleType role) {
+  int _getKeptCountForRole(String roleKey) {
     return widget.conflictState.assignmentInfos
         .where((info) =>
-            info.assignment.roleType == role &&
+            info.assignment.roleType == roleKey &&
             !_markedForRemoval.contains(info.assignment.id))
         .length;
   }
 
   /// Check if a role has too many kept assignments (exceeds quota)
-  bool _isRoleOverQuota(RoleType role) {
-    return _getKeptCountForRole(role) > _getQuotaForRole(role);
+  bool _isRoleOverQuota(String roleKey) {
+    return _getKeptCountForRole(roleKey) > _getQuotaForRole(roleKey);
   }
 
   /// Check if all constraints are satisfied
@@ -75,8 +78,8 @@ class _DuplicationConflictResolutionDialogState
   }
 
   /// Get assignments with availability conflicts grouped by role
-  Map<RoleType, List<AssignmentDuplicationInfo>> _getAvailabilityConflictsByRole() {
-    final result = <RoleType, List<AssignmentDuplicationInfo>>{};
+  Map<String, List<AssignmentDuplicationInfo>> _getAvailabilityConflictsByRole() {
+    final result = <String, List<AssignmentDuplicationInfo>>{};
     for (final info in widget.conflictState.assignmentInfos) {
       if (info.hasAvailabilityConflict) {
         result.putIfAbsent(info.assignment.roleType, () => []).add(info);
@@ -86,11 +89,11 @@ class _DuplicationConflictResolutionDialogState
   }
 
   /// Get roles with quota overages and their assignments
-  Map<RoleType, List<AssignmentDuplicationInfo>> _getQuotaOveragesByRole() {
-    final result = <RoleType, List<AssignmentDuplicationInfo>>{};
+  Map<String, List<AssignmentDuplicationInfo>> _getQuotaOveragesByRole() {
+    final result = <String, List<AssignmentDuplicationInfo>>{};
 
     // Group all assignments by role
-    final byRole = <RoleType, List<AssignmentDuplicationInfo>>{};
+    final byRole = <String, List<AssignmentDuplicationInfo>>{};
     for (final info in widget.conflictState.assignmentInfos) {
       byRole.putIfAbsent(info.assignment.roleType, () => []).add(info);
     }
@@ -128,10 +131,12 @@ class _DuplicationConflictResolutionDialogState
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: Container(
+      child: BlocBuilder<RoleBloc, RoleState>(
+        builder: (context, roleState) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: Container(
           constraints: BoxConstraints(
             maxWidth: 600,
             maxHeight: MediaQuery.of(context).size.height * 0.85,
@@ -179,6 +184,8 @@ class _DuplicationConflictResolutionDialogState
             ],
           ),
         ),
+          );
+        },
       ),
     );
   }
@@ -252,7 +259,7 @@ class _DuplicationConflictResolutionDialogState
     );
   }
 
-  Widget _buildAvailabilitySection(Map<RoleType, List<AssignmentDuplicationInfo>> conflicts) {
+  Widget _buildAvailabilitySection(Map<String, List<AssignmentDuplicationInfo>> conflicts) {
     final hasConflicts = conflicts.isNotEmpty;
     final conflictCount = conflicts.values.fold<int>(0, (sum, list) => sum + list.length);
 
@@ -337,7 +344,7 @@ class _DuplicationConflictResolutionDialogState
           // Content
           if (hasConflicts)
             ...conflicts.entries.map((entry) => _buildAvailabilityConflictCards(
-              role: entry.key,
+              roleKey: entry.key,
               assignments: entry.value,
             ))
           else
@@ -363,7 +370,7 @@ class _DuplicationConflictResolutionDialogState
     );
   }
 
-  Widget _buildQuotaSection(Map<RoleType, List<AssignmentDuplicationInfo>> overages) {
+  Widget _buildQuotaSection(Map<String, List<AssignmentDuplicationInfo>> overages) {
     final hasOverages = overages.isNotEmpty;
     final overageCount = overages.length;
 
@@ -448,7 +455,7 @@ class _DuplicationConflictResolutionDialogState
           // Content
           if (hasOverages)
             ...overages.entries.map((entry) => _buildQuotaOverageCard(
-              role: entry.key,
+              roleKey: entry.key,
               assignments: entry.value,
             ))
           else
@@ -475,7 +482,7 @@ class _DuplicationConflictResolutionDialogState
   }
 
   Widget _buildAvailabilityConflictCards({
-    required RoleType role,
+    required String roleKey,
     required List<AssignmentDuplicationInfo> assignments,
   }) {
     // In availability section, each assignment is its own card with team member name as title
@@ -570,13 +577,20 @@ class _DuplicationConflictResolutionDialogState
                       color: Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: Text(
-                      role.hebrewName,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    child: BlocBuilder<RoleBloc, RoleState>(
+                      builder: (context, roleState) {
+                        final roleHebrewName = roleState is RolesLoaded
+                            ? roleState.getRoleHebrewName(roleKey)
+                            : roleKey;
+                        return Text(
+                          roleHebrewName,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        );
+                      },
                     ),
                   ),
 
@@ -609,17 +623,17 @@ class _DuplicationConflictResolutionDialogState
   }
 
   Widget _buildQuotaOverageCard({
-    required RoleType role,
+    required String roleKey,
     required List<AssignmentDuplicationInfo> assignments,
   }) {
-    final newQuota = _getQuotaForRole(role);
+    final newQuota = _getQuotaForRole(roleKey);
     final totalAssignments = assignments.length;
     final assignmentsToRemove = totalAssignments - newQuota;
     final currentlyMarkedForRemoval = assignments
         .where((info) => _markedForRemoval.contains(info.assignment.id))
         .length;
     final remainingToRemove = assignmentsToRemove - currentlyMarkedForRemoval;
-    final isExpanded = _expandedRoles.contains(role.name);
+    final isExpanded = _expandedRoles.contains(roleKey);
 
     return Container(
       margin: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
@@ -638,9 +652,9 @@ class _DuplicationConflictResolutionDialogState
             onTap: () {
               setState(() {
                 if (isExpanded) {
-                  _expandedRoles.remove(role.name);
+                  _expandedRoles.remove(roleKey);
                 } else {
-                  _expandedRoles.add(role.name);
+                  _expandedRoles.add(roleKey);
                 }
               });
             },
@@ -661,12 +675,32 @@ class _DuplicationConflictResolutionDialogState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          role.hebrewName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
+                        // Role display name from RoleBloc
+                        BlocBuilder<RoleBloc, RoleState>(
+                          builder: (context, roleState) {
+                            String roleHebrewName = roleKey;
+                            if (roleState is RolesLoaded) {
+                              final role = roleState.getRoleByKey(roleKey);
+                              if (role != null) {
+                                roleHebrewName = role.hebrewName;
+                              }
+                            } else {
+                              // Fallback to RoleType enum
+                              try {
+                                final roleType = RoleType.values.firstWhere((rt) => rt.key == roleKey);
+                                roleHebrewName = roleType.hebrewName;
+                              } catch (e) {
+                                // Keep roleKey as fallback
+                              }
+                            }
+                            return Text(
+                              roleHebrewName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            );
+                          },
                         ),
                         const SizedBox(height: 2),
                         Text(

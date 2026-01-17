@@ -227,7 +227,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
           final newValue = event.member.roleCapabilities[entry.key] ?? false;
 
           if (oldValue && !newValue) {
-            removedRoles.add(entry.key.name);
+            removedRoles.add(entry.key);
           }
         }
 
@@ -236,7 +236,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
           final assignments = await _assignmentRepository.getAssignmentsByPerson(event.member.id);
 
           for (final assignment in assignments) {
-            if (removedRoles.contains(assignment.roleType.name)) {
+            if (removedRoles.contains(assignment.roleType)) {
               await _assignmentRepository.deleteAssignment(assignment.id);
             }
           }

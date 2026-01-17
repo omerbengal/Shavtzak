@@ -1,5 +1,4 @@
 import 'package:equatable/equatable.dart';
-import '../../core/constants/role_types.dart';
 
 /// Event domain entity
 class Event extends Equatable {
@@ -16,7 +15,7 @@ class Event extends Equatable {
   final List<String> parkingEditorIds; // IDs of team members who can edit parking
   final bool requiresArmed;
   final String comments; // Comments about the event
-  final Map<RoleType, int> roleRequirements; // How many people needed per role
+  final Map<String, int> roleRequirements; // How many people needed per role (role key -> count)
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -78,8 +77,8 @@ class Event extends Equatable {
     return roleRequirements.values.fold(0, (sum, count) => sum + count);
   }
 
-  /// Get list of roles required for this event
-  List<RoleType> get requiredRoles {
+  /// Get list of role keys required for this event
+  List<String> get requiredRoleKeys {
     return roleRequirements.entries
         .where((entry) => entry.value > 0)
         .map((entry) => entry.key)
@@ -87,13 +86,13 @@ class Event extends Equatable {
   }
 
   /// Get number of people required for a specific role
-  int getRequiredCountForRole(RoleType role) {
-    return roleRequirements[role] ?? 0;
+  int getRequiredCountForRole(String roleKey) {
+    return roleRequirements[roleKey] ?? 0;
   }
 
   /// Check if a role is required for this event
-  bool requiresRole(RoleType role) {
-    return getRequiredCountForRole(role) > 0;
+  bool requiresRole(String roleKey) {
+    return getRequiredCountForRole(roleKey) > 0;
   }
 
   /// Get formatted date range string
@@ -128,7 +127,7 @@ class Event extends Equatable {
     List<String>? parkingEditorIds,
     bool? requiresArmed,
     String? comments,
-    Map<RoleType, int>? roleRequirements,
+    Map<String, int>? roleRequirements,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? driveFolderId,

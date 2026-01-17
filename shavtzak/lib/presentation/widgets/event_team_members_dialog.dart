@@ -9,6 +9,8 @@ import '../bloc/assignment/assignment_state.dart';
 import '../bloc/team/team_bloc.dart';
 import '../bloc/team/team_event.dart';
 import '../bloc/team/team_state.dart';
+import '../bloc/role/role_bloc.dart';
+import '../bloc/role/role_state.dart';
 import '../../../core/services/service_locator.dart';
 
 /// Dialog showing all team members assigned to an event
@@ -338,7 +340,7 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
     final member = memberEntry.value.first.teamMember;
     final assignments = memberEntry.value;
     final roles = assignments.map((a) => a.roleType).toList()
-      ..sort((a, b) => a.index.compareTo(b.index));
+      ..sort((a, b) => a.compareTo(b));
 
     // Skip if no team member data
     if (member == null) {
@@ -438,7 +440,7 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                 Wrap(
                   spacing: 6,
                   runSpacing: 4,
-                  children: roles.map((role) => _buildRoleBadge(role)).toList(),
+                  children: roles.map((roleKey) => _buildRoleBadge(roleKey)).toList(),
                 ),
               ],
             ),
@@ -462,25 +464,32 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
     }
   }
 
-  Widget _buildRoleBadge(RoleType roleType) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: _getRoleColor(roleType),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        roleType.hebrewName,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w500,
-          color: Colors.white,
-        ),
-      ),
+  Widget _buildRoleBadge(String roleKey) {
+    return BlocBuilder<RoleBloc, RoleState>(
+      builder: (context, roleState) {
+        final roleHebrewName = roleState is RolesLoaded
+            ? roleState.getRoleHebrewName(roleKey)
+            : roleKey;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: _getRoleColor(),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            roleHebrewName,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+            ),
+          ),
+        );
+      },
     );
   }
 
-  Color _getRoleColor(RoleType roleType) {
+  Color _getRoleColor() {
     // Use green color for all roles for consistency
     return Colors.green.shade600;
   }

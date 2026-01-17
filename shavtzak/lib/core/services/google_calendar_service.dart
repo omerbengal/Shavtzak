@@ -110,7 +110,7 @@ class GoogleCalendarService {
 
     final description = CalendarEventDescriptions.constraint(
       memberName: teamMember.name,
-      roles: teamMember.availableRoles.map((r) => r.hebrewName).toList(),
+      roles: teamMember.availableRoleKeys, // Pass role keys instead of Hebrew names
       note: constraint.note,
       isUnavailability: isUnavailability,
     );
@@ -183,7 +183,7 @@ class GoogleCalendarService {
 
     final description = CalendarEventDescriptions.constraint(
       memberName: teamMember.name,
-      roles: teamMember.availableRoles.map((r) => r.hebrewName).toList(),
+      roles: teamMember.availableRoleKeys, // Pass role keys instead of Hebrew names
       note: constraint.note,
       isUnavailability: isUnavailability,
     );

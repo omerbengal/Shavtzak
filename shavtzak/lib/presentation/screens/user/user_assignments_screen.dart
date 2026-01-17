@@ -11,6 +11,8 @@ import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
+import '../../bloc/role/role_bloc.dart';
+import '../../bloc/role/role_state.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/parking_location_picker_dialog.dart';
 import '../../widgets/event_team_members_dialog.dart';
@@ -140,8 +142,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     // Convert to list of grouped assignments (using first assignment as representative)
     final groupedAssignments = assignmentsByEvent.entries.map((entry) {
       final eventAssignments = entry.value;
-      // Sort roles by enum order for consistent display
-      eventAssignments.sort((a, b) => a.roleType.index.compareTo(b.roleType.index));
+      // Sort roles by key for consistent display
+      eventAssignments.sort((a, b) => a.roleType.compareTo(b.roleType));
       return eventAssignments;
     }).toList();
 
@@ -311,7 +313,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       return const SizedBox.shrink();
     }
 
-    // Get all role types for this event
+    // Get all role types for this event (as String keys)
     final roles = assignmentGroup.map((a) => a.roleType).toList();
 
     // Collect assignment notes (filter out empty ones)
@@ -412,7 +414,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             Wrap(
               spacing: 8,
               runSpacing: 6,
-              children: roles.map((role) => _buildRoleBadge(role, isUpcoming)).toList(),
+              children: roles.map((roleKey) => _buildRoleBadge(roleKey, isUpcoming)).toList(),
             ),
 
             const SizedBox(height: 12),
@@ -831,13 +833,20 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                             ),
                           ),
                           if (assignmentNotes.length > 1) ...[
-                            Text(
-                              '${entry.key.hebrewName}: ',
-                              style: TextStyle(
-                                fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
-                                fontWeight: FontWeight.w500,
-                                color: Colors.purple.shade800,
-                              ),
+                            BlocBuilder<RoleBloc, RoleState>(
+                              builder: (context, roleState) {
+                                final roleHebrewName = roleState is RolesLoaded
+                                    ? roleState.getRoleHebrewName(entry.key)
+                                    : entry.key;
+                                return Text(
+                                  '$roleHebrewName: ',
+                                  style: TextStyle(
+                                    fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.purple.shade800,
+                                  ),
+                                );
+                              },
                             ),
                           ],
                           Expanded(
@@ -862,29 +871,36 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     );
   }
 
-  Widget _buildRoleBadge(RoleType roleType, bool isUpcoming) {
-    final backgroundColor = isUpcoming
-        ? _getRoleColor(roleType)
-        : Colors.grey.shade400;
+  Widget _buildRoleBadge(String roleKey, bool isUpcoming) {
+    return BlocBuilder<RoleBloc, RoleState>(
+      builder: (context, roleState) {
+        final roleHebrewName = roleState is RolesLoaded
+            ? roleState.getRoleHebrewName(roleKey)
+            : roleKey;
+        final backgroundColor = isUpcoming
+            ? _getRoleColor()
+            : Colors.grey.shade400;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Text(
-        roleType.hebrewName,
-        style: TextStyle(
-          fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
-          fontWeight: FontWeight.w600,
-          color: isUpcoming ? Colors.white : Colors.grey.shade800,
-        ),
-      ),
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            roleHebrewName,
+            style: TextStyle(
+              fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+              fontWeight: FontWeight.w600,
+              color: isUpcoming ? Colors.white : Colors.grey.shade800,
+            ),
+          ),
+        );
+      },
     );
   }
 
-  Color _getRoleColor(RoleType roleType) {
+  Color _getRoleColor() {
     // All roles use green color for consistency
     return Colors.green.shade700;
   }

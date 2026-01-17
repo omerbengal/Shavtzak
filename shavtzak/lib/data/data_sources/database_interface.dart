@@ -2,6 +2,7 @@ import '../../domain/entities/assignment.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
+import '../../domain/entities/role.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
@@ -260,4 +261,36 @@ abstract class DatabaseInterface {
 
   /// Load a preset into an event (creates checklist items from template)
   Future<void> loadPresetIntoEvent(String presetId, String eventId, String creatorAdminId);
+
+  // ========== Roles ==========
+
+  /// Get all roles
+  Future<List<Role>> getRoles();
+
+  /// Get a role by ID (which is the same as key)
+  Future<Role?> getRoleById(String id);
+
+  /// Get a role by key
+  Future<Role?> getRoleByKey(String key);
+
+  /// Insert a new role
+  Future<void> insertRole(Role role);
+
+  /// Update an existing role
+  Future<void> updateRole(Role role);
+
+  /// Delete a role (soft delete - set isArchived to true)
+  Future<void> archiveRole(String id);
+
+  /// Restore an archived role
+  Future<void> restoreRole(String id);
+
+  /// Watch all roles in real-time
+  Stream<List<Role>> watchRoles();
+
+  /// Seed roles collection from RoleType enum (migration helper)
+  Future<void> seedRolesFromEnum();
+
+  /// Update sort order for multiple roles in batch
+  Future<void> updateRolesSortOrder(Map<String, int> roleIdToSortOrder);
 }

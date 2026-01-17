@@ -17,7 +17,8 @@ import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
-import '../../bloc/team/team_bloc.dart';
+import '../../bloc/role/role_bloc.dart';
+import '../../bloc/role/role_state.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
@@ -711,10 +712,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       }
 
       // Step 4: Reduce the event's quota for this role by 1
-      final updatedRoleRequirements = Map<RoleType, int>.from(slot.event.roleRequirements);
-      final currentQuota = updatedRoleRequirements[slot.roleType] ?? 0;
+      final updatedRoleRequirements = Map<String, int>.from(slot.event.roleRequirements);
+      final currentQuota = updatedRoleRequirements[slot.roleType.key] ?? 0;
       if (currentQuota > 0) {
-        updatedRoleRequirements[slot.roleType] = currentQuota - 1;
+        updatedRoleRequirements[slot.roleType.key] = currentQuota - 1;
       }
 
       final updatedEvent = slot.event.copyWith(
@@ -1346,7 +1347,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         id: const Uuid().v4(),
         eventId: slot.event.id,
         teamMemberId: selectedMember.id,
-        roleType: slot.roleType,
+        roleType: slot.roleType.key,
         slotIndex: slot.slotIndex,
         status: AssignmentStatus.confirmed,
         notes: '',
@@ -1585,7 +1586,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       // Extract data from the flow
       final Event event = result['event'];
       final TeamMember teamMember = result['teamMember'];
-      final RoleType roleType = result['roleType'];
+      final String roleType = result['roleType'];
 
       // Create assignment and increase quota
       await _createAssignmentAndQuota(event, teamMember, roleType);
@@ -1593,7 +1594,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   }
 
   /// Create assignment and increase event quota for the selected role
-  Future<void> _createAssignmentAndQuota(Event event, TeamMember teamMember, RoleType roleType) async {
+  Future<void> _createAssignmentAndQuota(Event event, TeamMember teamMember, String roleType) async {
     try {
       final assignmentRepo = context.read<AssignmentRepository>();
       final eventBloc = context.read<EventBloc>();
@@ -1631,7 +1632,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       );
 
       // Step 4: Update event's role requirements (increase quota by 1)
-      final updatedRoleRequirements = Map<RoleType, int>.from(event.roleRequirements);
+      final updatedRoleRequirements = Map<String, int>.from(event.roleRequirements);
       final currentQuota = updatedRoleRequirements[roleType] ?? 0;
       updatedRoleRequirements[roleType] = currentQuota + 1;
 
@@ -1649,13 +1650,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
       // Show success message
       if (mounted) {
+        final roleState = context.read<RoleBloc>().state;
+        final roleHebrewName = roleState is RolesLoaded
+            ? roleState.getRoleHebrewName(roleType)
+            : roleType;
         ScaffoldMessenger.of(context)
           ..clearSnackBars()
           ..showSnackBar(
             SnackBar(
               content: Directionality(
                 textDirection: TextDirection.rtl,
-                child: Text('שיבוץ חדש נוצר בהצלחה: ${teamMember.name} → ${roleType.hebrewName} באירוע "${event.name}"'),
+                child: Text('שיבוץ חדש נוצר בהצלחה: ${teamMember.name} → $roleHebrewName באירוע "${event.name}"'),
               ),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 2),

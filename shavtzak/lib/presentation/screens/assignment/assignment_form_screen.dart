@@ -5,6 +5,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/role.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
@@ -15,6 +16,8 @@ import '../../bloc/event/event_state.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
+import '../../bloc/role/role_bloc.dart';
+import '../../bloc/role/role_state.dart';
 
 class AssignmentFormScreen extends StatefulWidget {
   final Assignment? assignment;
@@ -36,7 +39,7 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
 
   Event? _selectedEvent;
   TeamMember? _selectedTeamMember;
-  RoleType? _selectedRole;
+  String? _selectedRole; // Role key string
   AssignmentStatus _status = AssignmentStatus.pending;
   String? _eventError;
   String? _memberError;
@@ -248,26 +251,62 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    DropdownButtonFormField<RoleType>(
-                      value: _selectedRole,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        hintText: 'בחר תפקיד',
-                        prefixIcon: Icon(Icons.work),
-                      ),
-                      items: RoleType.values.map((role) {
-                        return DropdownMenuItem(
-                          value: role,
-                          child: Text(role.hebrewName),
+                    BlocBuilder<RoleBloc, RoleState>(
+                      builder: (context, roleState) {
+                        // Get available roles from member's capabilities
+                        final memberCapabilities = _selectedTeamMember?.roleCapabilities ?? {};
+                        final availableRoleKeys = memberCapabilities.entries
+                            .where((e) => e.value)
+                            .map((e) => e.key)
+                            .toList();
+
+                        // Get role names from RoleBloc
+                        List<Role> roles;
+                        if (roleState is RolesLoaded) {
+                          roles = roleState.allNonArchivedRoles
+                              .where((r) => availableRoleKeys.contains(r.key))
+                              .toList()
+                            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+                        } else {
+                          // Fallback to RoleType enum
+                          roles = RoleType.values
+                              .where((rt) => availableRoleKeys.contains(rt.key))
+                              .map((rt) => Role(
+                                    id: rt.key,
+                                    key: rt.key,
+                                    hebrewName: rt.hebrewName,
+                                    isVisible: true,
+                                    isArchived: false,
+                                    sortOrder: RoleType.values.indexOf(rt),
+                                    createdAt: DateTime.now(),
+                                    updatedAt: DateTime.now(),
+                                  ))
+                              .toList()
+                            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+                        }
+
+                        return DropdownButtonFormField<String>(
+                          value: _selectedRole,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            hintText: 'בחר תפקיד',
+                            prefixIcon: Icon(Icons.work),
+                          ),
+                          items: roles.map((roleObj) {
+                            return DropdownMenuItem(
+                              value: roleObj.key,
+                              child: Text(roleObj.hebrewName),
+                            );
+                          }).toList(),
+                          onChanged: (roleKey) {
+                            setState(() {
+                              _selectedRole = roleKey;
+                              _roleError = null;
+                            });
+                          },
+                          validator: (v) => v == null ? 'יש לבחור תפקיד' : null,
                         );
-                      }).toList(),
-                      onChanged: (role) {
-                        setState(() {
-                          _selectedRole = role;
-                          _roleError = null;
-                        });
                       },
-                      validator: (v) => v == null ? 'יש לבחור תפקיד' : null,
                     ),
                     const SizedBox(height: 16),
 
@@ -390,7 +429,7 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
   }
 
   /// Find the next available slot index for the given event and role
-  int _getNextAvailableSlotIndex(String eventId, RoleType roleType) {
+  int _getNextAvailableSlotIndex(String eventId, String roleType) {
     final state = context.read<AssignmentBloc>().state;
     if (state is! AssignmentsLoaded) {
       return 0; // Default to first slot if assignments not loaded

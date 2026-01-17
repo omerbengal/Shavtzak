@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../../domain/entities/role.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../bloc/event/event_bloc.dart';
@@ -10,6 +11,8 @@ import '../../bloc/event/event_state.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
+import '../../bloc/role/role_bloc.dart';
+import '../../bloc/role/role_state.dart';
 
 class ManualAssignmentFlowDialog extends StatefulWidget {
   const ManualAssignmentFlowDialog({super.key});
@@ -36,6 +39,17 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     // Load events and team members
     context.read<EventBloc>().add(const LoadEvents());
     context.read<TeamBloc>().add(const LoadActiveTeamMembers());
+  }
+
+  /// Safely parse a role key string to RoleType enum
+  /// Returns null if the key doesn't match any RoleType value
+  RoleType? _tryParseRoleType(String key) {
+    try {
+      return RoleType.values.firstWhere((role) => role.key == key);
+    } catch (e) {
+      // Role key not found in RoleType enum
+      return null;
+    }
   }
 
   @override
@@ -355,82 +369,113 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
   Widget _buildRoleSelectionStep() {
     if (_selectedTeamMember == null) return const SizedBox.shrink();
 
-    final availableRoles = _selectedTeamMember!.roleCapabilities.entries
+    final availableRoleTypes = _selectedTeamMember!.roleCapabilities.entries
         .where((entry) => entry.value)
         .map((entry) => entry.key)
-        .toList()
-      ..sort((a, b) => a.hebrewName.compareTo(b.hebrewName));
+        .toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'שלב 3 מתוך 3: בחירת תפקיד',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.blue.shade700,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'בחר תפקיד עבור ${_selectedTeamMember!.name} באירוע "${_selectedEvent?.name}":',
-          style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
-        ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: availableRoles.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.work_off, size: 48, color: Colors.grey.shade400),
-                      const SizedBox(height: 16),
-                      Text(
-                        'לאיש צוות זה אין תפקידים זמינים',
-                        style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+    return BlocBuilder<RoleBloc, RoleState>(
+      builder: (context, roleState) {
+        // Get role display names from RoleBloc
+        List<Role> roles;
+        if (roleState is RolesLoaded) {
+          roles = roleState.allNonArchivedRoles;
+        } else {
+          // Fallback to RoleType.values during initial load
+          roles = RoleType.values.map((rt) => Role(
+            id: rt.key,
+            key: rt.key,
+            hebrewName: rt.hebrewName,
+            isVisible: true,
+            isArchived: false,
+            sortOrder: RoleType.values.indexOf(rt),
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          )).toList();
+        }
+
+        // Filter roles to only those that match available RoleTypes
+        final filteredRoles = roles.where((roleObj) {
+          final roleType = _tryParseRoleType(roleObj.key);
+          return roleType != null && availableRoleTypes.contains(roleType);
+        }).toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'שלב 3 מתוך 3: בחירת תפקיד',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue.shade700,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'בחר תפקיד עבור ${_selectedTeamMember!.name} באירוע "${_selectedEvent?.name}":',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: filteredRoles.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.work_off, size: 48, color: Colors.grey.shade400),
+                          const SizedBox(height: 16),
+                          Text(
+                            'לאיש צוות זה אין תפקידים זמינים',
+                            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: availableRoles.length,
-                  itemBuilder: (context, index) {
-                    final role = availableRoles[index];
-                    final isSelected = _selectedRole == role;
+                    )
+                  : ListView.builder(
+                      itemCount: filteredRoles.length,
+                      itemBuilder: (context, index) {
+                        final roleObj = filteredRoles[index];
+                        final roleType = _tryParseRoleType(roleObj.key);
+                        if (roleType == null) return const SizedBox.shrink();
 
-                    return Card(
-                      elevation: isSelected ? 4 : 1,
-                      color: isSelected ? Colors.blue.shade50 : Colors.white,
-                      child: InkWell(
-                        onTap: () {
-                          // Auto-complete assignment when role is selected
-                          if (!isSelected) {
-                            setState(() {
-                              _selectedRole = role;
-                            });
-                            _finish();
-                          }
-                        },
-                        borderRadius: BorderRadius.circular(8),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          child: Text(
-                            role.hebrewName,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                              color: isSelected ? Colors.blue.shade700 : Colors.black,
-                              fontSize: 14,
+                        final isSelected = _selectedRole == roleType;
+
+                        return Card(
+                          elevation: isSelected ? 4 : 1,
+                          color: isSelected ? Colors.blue.shade50 : Colors.white,
+                          child: InkWell(
+                            onTap: () {
+                              // Auto-complete assignment when role is selected
+                              if (!isSelected) {
+                                setState(() {
+                                  _selectedRole = roleType;
+                                });
+                                _finish();
+                              }
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              child: Text(
+                                roleObj.hebrewName,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  color: isSelected ? Colors.blue.shade700 : Colors.black,
+                                  fontSize: 14,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
     );
   }
 

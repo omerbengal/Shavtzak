@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../core/constants/role_types.dart';
 import '../../domain/entities/event.dart';
 
 /// Data model for Event with JSON serialization
@@ -64,11 +63,7 @@ class EventModel {
       parkingEditorIds: entity.parkingEditorIds,
       requiresArmed: entity.requiresArmed,
       comments: entity.comments,
-      roleRequirements: Map.fromEntries(
-        entity.roleRequirements.entries.map(
-          (e) => MapEntry(e.key.key, e.value),
-        ),
-      ),
+      roleRequirements: Map<String, int>.from(entity.roleRequirements),
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       driveFolderId: entity.driveFolderId,
@@ -93,14 +88,7 @@ class EventModel {
       parkingEditorIds: parkingEditorIds,
       requiresArmed: requiresArmed,
       comments: comments,
-      roleRequirements: Map.fromEntries(
-        roleRequirements.entries.map(
-          (e) => MapEntry(
-            RoleType.values.firstWhere((r) => r.key == e.key),
-            e.value,
-          ),
-        ),
-      ),
+      roleRequirements: Map<String, int>.from(roleRequirements),
       createdAt: createdAt,
       updatedAt: updatedAt,
       driveFolderId: driveFolderId,

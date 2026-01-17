@@ -105,9 +105,9 @@ class TeamRepository {
   }
 
   /// Get team members who can perform a specific role
-  Future<List<TeamMember>> getTeamMembersByRole(RoleType role) async {
+  Future<List<TeamMember>> getTeamMembersByRole(String roleKey) async {
     final all = await getActiveTeamMembers();
-    return all.where((member) => member.canPerformRole(role)).toList();
+    return all.where((member) => member.canPerformRole(roleKey)).toList();
   }
 
   /// Get team members available on a specific date
@@ -118,12 +118,12 @@ class TeamRepository {
 
   /// Get team members qualified and available for a role on a date
   Future<List<TeamMember>> getQualifiedAvailableMembers(
-    RoleType role,
+    String roleKey,
     DateTime date,
   ) async {
     final all = await getActiveTeamMembers();
     return all
-        .where((member) => member.isQualifiedAndAvailableFor(role, date))
+        .where((member) => member.isQualifiedAndAvailableFor(roleKey, date))
         .toList();
   }
 

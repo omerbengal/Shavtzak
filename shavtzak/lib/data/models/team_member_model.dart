@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
-import '../../core/constants/role_types.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../domain/entities/team_member.dart';
 import '../../domain/entities/vehicle_info.dart';
@@ -76,11 +75,7 @@ class TeamMemberModel {
       constraints: entity.constraints
           .map((c) => DateConstraintModel.fromEntity(c))
           .toList(),
-      roleCapabilities: Map.fromEntries(
-        entity.roleCapabilities.entries.map(
-          (e) => MapEntry(e.key.key, e.value),
-        ),
-      ),
+      roleCapabilities: Map<String, bool>.from(entity.roleCapabilities),
       comments: entity.comments,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
@@ -106,12 +101,7 @@ class TeamMemberModel {
       isActive: isActive,
       isPermanent: isPermanent,
       constraints: constraints.map((c) => c.toEntity()).toList(),
-      roleCapabilities: Map.fromEntries(
-        roleCapabilities.entries.map((e) {
-          final roleType = RoleType.values.where((r) => r.key == e.key).firstOrNull;
-          return roleType != null ? MapEntry(roleType, e.value) : null;
-        }).whereType<MapEntry<RoleType, bool>>(),
-      ),
+      roleCapabilities: Map<String, bool>.from(roleCapabilities),
       comments: comments,
       createdAt: createdAt,
       updatedAt: updatedAt,

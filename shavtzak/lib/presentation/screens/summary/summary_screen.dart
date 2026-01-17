@@ -336,7 +336,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
       if (status == EventAssignmentStatus.partial ||
           status == EventAssignmentStatus.none) {
         // Count assignments by role
-        final filledByRole = <RoleType, int>{};
+        final filledByRole = <String, int>{};
         for (final assignment in eventAssignments) {
           filledByRole[assignment.roleType] =
               (filledByRole[assignment.roleType] ?? 0) + 1;
@@ -348,7 +348,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
           final filled = filledByRole[entry.key] ?? 0;
           final missing = required - filled;
           if (missing > 0) {
-            missingRoles[entry.key] = missing;
+            // Try to parse role key to RoleType enum
+            final roleType = RoleType.values.firstWhere(
+              (rt) => rt.key == entry.key,
+              orElse: () => RoleType.medic, // Fallback
+            );
+            missingRoles[roleType] = missing;
           }
         }
       }

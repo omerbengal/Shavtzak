@@ -14,6 +14,7 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/map_location_picker.dart';
 import 'widgets/event_form_modal.dart';
+import 'widgets/role_management_dialog.dart';
 import 'dart:async';
 
 // Filter enum for events (0=all, 1=future, 2=past)
@@ -125,6 +126,19 @@ class _EventListScreenState extends State<EventListScreen> {
             },
           ),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'ניהול תפקידים',
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => const RoleManagementDialog(),
+                );
+              },
+              iconSize: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+            ),
             IconButton(
               icon: const Icon(Icons.home),
               tooltip: 'בית',

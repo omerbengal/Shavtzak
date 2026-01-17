@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/checklist_item.dart';
+import '../../../../domain/entities/role.dart';
+import '../../../bloc/role/role_bloc.dart';
+import '../../../bloc/role/role_state.dart';
 
 /// Combined data for a single event's summary
 class EventSummaryData {
@@ -207,18 +211,65 @@ class EventSummaryTile extends StatelessWidget {
   }
 
   Widget _buildMissingRolesSection() {
-    // Iterate over RoleType.values to maintain consistent order (same as event form)
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: RoleType.values
-          .where((role) => (data.missingRoles[role] ?? 0) > 0)
-          .map((role) => _buildRoleChip(role, data.missingRoles[role]!))
-          .toList(),
+    return BlocBuilder<RoleBloc, RoleState>(
+      builder: (context, roleState) {
+        // Get role display names from RoleBloc
+        List<Role> roles;
+        if (roleState is RolesLoaded) {
+          roles = roleState.allNonArchivedRoles;
+        } else {
+          // Fallback to RoleType.values during initial load
+          roles = RoleType.values.map((rt) => Role(
+            id: rt.key,
+            key: rt.key,
+            hebrewName: rt.hebrewName,
+            isVisible: true,
+            isArchived: false,
+            sortOrder: RoleType.values.indexOf(rt),
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          )).toList();
+        }
+
+        // Filter to only show roles that are missing
+        final missingRoleEntries = roles.where((roleObj) {
+          final roleType = _tryParseRoleType(roleObj.key);
+          if (roleType == null) return false;
+          final count = data.missingRoles[roleType] ?? 0;
+          return count > 0;
+        }).toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+        if (missingRoleEntries.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: missingRoleEntries.map((roleObj) {
+            final roleType = _tryParseRoleType(roleObj.key);
+            if (roleType == null) return const SizedBox.shrink();
+            final count = data.missingRoles[roleType] ?? 0;
+            return _buildRoleChip(roleObj.hebrewName, count);
+          }).toList(),
+        );
+      },
     );
   }
 
-  Widget _buildRoleChip(RoleType role, int count) {
+  /// Safely parse a role key string to RoleType enum
+  /// Returns null if the key doesn't match any RoleType value
+  RoleType? _tryParseRoleType(String key) {
+    try {
+      return RoleType.values.firstWhere((role) => role.key == key);
+    } catch (e) {
+      // Role key not found in RoleType enum
+      return null;
+    }
+  }
+
+  Widget _buildRoleChip(String hebrewName, int count) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -232,7 +283,7 @@ class EventSummaryTile extends StatelessWidget {
           Icon(Icons.person_outline, size: 16, color: Colors.red.shade600),
           const SizedBox(width: 4),
           Text(
-            '${role.hebrewName} ($count)',
+            '$hebrewName ($count)',
             style: TextStyle(
               fontSize: 13,
               color: Colors.red.shade700,

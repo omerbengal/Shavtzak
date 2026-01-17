@@ -13,7 +13,7 @@ class Assignment extends Equatable {
   final String id;
   final String eventId; // FK → Event
   final String teamMemberId; // FK → TeamMember
-  final RoleType roleType;
+  final String roleType; // Role key (e.g., "eventCommander", "medic", or custom role)
   final int slotIndex; // Which slot (0, 1, 2...) for this role in the event
   final AssignmentStatus status;
   final String notes;
@@ -52,9 +52,6 @@ class Assignment extends Equatable {
 
   /// Get the team member name (from populated teamMember)
   String? get teamMemberName => teamMember?.name;
-
-  /// Get the role Hebrew name
-  String get roleHebrewName => roleType.hebrewName;
 
   /// Check if this assignment conflicts with team member availability
   /// Returns true if team member is unavailable on ANY of the event dates
@@ -118,7 +115,7 @@ class Assignment extends Equatable {
     String? id,
     String? eventId,
     String? teamMemberId,
-    RoleType? roleType,
+    String? roleType,
     int? slotIndex,
     AssignmentStatus? status,
     String? notes,
@@ -161,5 +158,5 @@ class Assignment extends Equatable {
 
   @override
   String toString() =>
-      'Assignment($id, event: ${eventName ?? eventId}, member: ${teamMemberName ?? teamMemberId}, role: ${roleType.hebrewName})';
+      'Assignment($id, event: ${eventName ?? eventId}, member: ${teamMemberName ?? teamMemberId}, role: $roleType)';
 }

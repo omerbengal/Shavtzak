@@ -184,7 +184,7 @@ class DuplicationRequiresConflictResolution extends EventState {
   Map<String, List<AssignmentDuplicationInfo>> get assignmentsByRole {
     final grouped = <String, List<AssignmentDuplicationInfo>>{};
     for (final info in assignmentInfos) {
-      final roleKey = info.assignment.roleType.name;
+      final roleKey = info.assignment.roleType;
       grouped.putIfAbsent(roleKey, () => []);
       grouped[roleKey]!.add(info);
     }

@@ -577,12 +577,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       for (final event in events) {
         // For each role requirement in the event (in enum order)
         for (final role in RoleType.values) {
-          final requiredCount = event.roleRequirements[role] ?? 0;
+          final requiredCount = event.roleRequirements[role.name] ?? 0;
           if (requiredCount == 0) continue; // Skip roles with 0 requirement
 
           // Get assignments for this event+role
           final roleAssignments = assignments
-              .where((a) => a.eventId == event.id && a.roleType == role)
+              .where((a) => a.eventId == event.id && a.roleType == role.name)
               .toList();
 
           // Create slots (one per required count)
@@ -608,7 +608,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
             for (final member in allMembers) {
               // Check capability
-              if (!member.canPerformRole(role)) continue;
+              if (!member.canPerformRole(role.name)) continue;
 
               // Check availability for entire event duration
               // Skip availability check for members with allowMultipleAssignments
@@ -776,12 +776,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       for (final eventData in filteredEvents) {
         // For each role requirement in the event (in enum order)
         for (final role in RoleType.values) {
-          final requiredCount = eventData.roleRequirements[role] ?? 0;
+          final requiredCount = eventData.roleRequirements[role.name] ?? 0;
           if (requiredCount == 0) continue; // Skip roles with 0 requirement
 
           // Get assignments for this event+role from the assignments list
           final roleAssignments = rebuildEvent.assignments
-              .where((a) => a.eventId == eventData.id && a.roleType == role)
+              .where((a) => a.eventId == eventData.id && a.roleType == role.name)
               .map((a) => a.withRelations(
                 event: eventData,
                 teamMember: teamMembersMap[a.teamMemberId],
@@ -811,7 +811,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
             for (final member in teamMembers) {
               // Check capability
-              if (!member.canPerformRole(role)) continue;
+              if (!member.canPerformRole(role.name)) continue;
 
               // Check availability for entire event duration
               // Skip availability check for members with allowMultipleAssignments

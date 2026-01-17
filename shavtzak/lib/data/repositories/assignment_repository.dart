@@ -191,7 +191,7 @@ class AssignmentRepository {
     // Check qualification conflict
     if (!member.canPerformRole(assignment.roleType)) {
       conflicts.add(
-        '${member.name} לא מוסמך/ת לתפקיד ${assignment.roleType.hebrewName}',
+        '${member.name} לא מוסמך/ת לתפקיד ${assignment.roleType}', // Use role key instead of Hebrew name
       );
     }
 
@@ -213,7 +213,7 @@ class AssignmentRepository {
 
       if (duplicate) {
         conflicts.add(
-          '${member.name} כבר משובץ/ת לתפקיד ${assignment.roleType.hebrewName} באירוע זה',
+          '${member.name} כבר משובץ/ת לתפקיד ${assignment.roleType} באירוע זה', // Use role key instead of Hebrew name
         );
       }
     }
@@ -222,7 +222,7 @@ class AssignmentRepository {
   }
 
   /// Get assignment statistics for an event
-  Future<Map<RoleType, AssignmentStats>> getEventAssignmentStats(
+  Future<Map<String, AssignmentStats>> getEventAssignmentStats(
     String eventId,
   ) async {
     final event = await _database.getEventById(eventId);
@@ -231,15 +231,15 @@ class AssignmentRepository {
     }
 
     final assignments = await getAssignmentsByEvent(eventId);
-    final stats = <RoleType, AssignmentStats>{};
+    final stats = <String, AssignmentStats>{};
 
-    for (final role in event.requiredRoles) {
-      final required = event.roleRequirements[role] ?? 0;
+    for (final roleKey in event.requiredRoleKeys) {
+      final required = event.roleRequirements[roleKey] ?? 0;
       final assigned = assignments
-          .where((a) => a.roleType == role && a.status != AssignmentStatus.declined)
+          .where((a) => a.roleType == roleKey && a.status != AssignmentStatus.declined)
           .length;
 
-      stats[role] = AssignmentStats(
+      stats[roleKey] = AssignmentStats(
         required: required,
         assigned: assigned,
         remaining: required - assigned,

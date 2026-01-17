@@ -8,14 +8,17 @@ import '../../domain/entities/assignment.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
+import '../../domain/entities/role.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
+import '../../core/constants/role_types.dart';
 import '../../core/services/environment_service.dart';
 import '../models/assignment_model.dart';
 import '../models/checklist_item_model.dart';
 import '../models/event_model.dart';
 import '../models/preset_model.dart';
+import '../models/role_model.dart';
 import '../models/team_member_model.dart';
 import 'database_interface.dart';
 
@@ -1743,6 +1746,275 @@ class FirestoreDatabase implements DatabaseInterface {
       developer.log('FirestoreDatabase.loadPresetIntoEvent: Loaded ${preset.items.length} items from preset "${preset.name}" into event $eventId', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to load preset into event: $e');
+    }
+  }
+
+  // ========== Roles ==========
+  // Roles are stored in utilities/Lists document, Roles field (array)
+
+  @override
+  Future<List<Role>> getRoles() async {
+    try {
+      final doc = await _firestore.collection('utilities').doc('Lists').get();
+
+      if (!doc.exists || doc.data() == null) {
+        developer.log('FirestoreDatabase.getRoles: utilities/Lists document does not exist', name: 'Firestore');
+        return [];
+      }
+
+      final data = doc.data()!;
+      final rolesArray = data['Roles'] as List<dynamic>?;
+
+      if (rolesArray == null || rolesArray.isEmpty) {
+        developer.log('FirestoreDatabase.getRoles: Roles array is empty or null', name: 'Firestore');
+        return [];
+      }
+
+      final roles = rolesArray
+          .map((roleData) => RoleModel.fromJson(roleData as Map<String, dynamic>).toEntity())
+          .toList();
+
+      // Sort by sortOrder
+      roles.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+      developer.log('FirestoreDatabase.getRoles: Retrieved ${roles.length} roles', name: 'Firestore');
+      return roles;
+    } catch (e) {
+      throw DatabaseException('Failed to get roles: $e');
+    }
+  }
+
+  @override
+  Future<Role?> getRoleById(String id) async {
+    try {
+      final roles = await getRoles();
+      try {
+        return roles.firstWhere((role) => role.id == id);
+      } catch (e) {
+        return null;
+      }
+    } catch (e) {
+      throw DatabaseException('Failed to get role by ID: $e');
+    }
+  }
+
+  @override
+  Future<Role?> getRoleByKey(String key) async {
+    try {
+      final roles = await getRoles();
+      try {
+        return roles.firstWhere((role) => role.key == key);
+      } catch (e) {
+        return null;
+      }
+    } catch (e) {
+      throw DatabaseException('Failed to get role by key: $e');
+    }
+  }
+
+  @override
+  Future<void> insertRole(Role role) async {
+    try {
+      final docRef = _firestore.collection('utilities').doc('Lists');
+      final doc = await docRef.get();
+
+      final model = RoleModel.fromEntity(role);
+      final roleData = model.toJson();
+
+      if (!doc.exists) {
+        // Create the document with the role
+        await docRef.set({
+          'Roles': [roleData],
+        });
+      } else {
+        // Append to existing array
+        await docRef.update({
+          'Roles': FieldValue.arrayUnion([roleData]),
+        });
+      }
+
+      developer.log('FirestoreDatabase.insertRole: Inserted role "${role.hebrewName}" (${role.key})', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to insert role: $e');
+    }
+  }
+
+  @override
+  Future<void> updateRole(Role role) async {
+    try {
+      final roles = await getRoles();
+      final index = roles.indexWhere((r) => r.id == role.id);
+
+      if (index == -1) {
+        throw DatabaseException('Role not found: ${role.id}');
+      }
+
+      // Replace the role at the index
+      roles[index] = role;
+
+      // Convert all roles to JSON
+      final rolesData = roles.map((r) => RoleModel.fromEntity(r).toJson()).toList();
+
+      // Update the entire array
+      await _firestore.collection('utilities').doc('Lists').update({
+        'Roles': rolesData,
+      });
+
+      developer.log('FirestoreDatabase.updateRole: Updated role "${role.hebrewName}" (${role.key})', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to update role: $e');
+    }
+  }
+
+  @override
+  Future<void> archiveRole(String id) async {
+    try {
+      final role = await getRoleById(id);
+      if (role == null) {
+        throw DatabaseException('Role not found: $id');
+      }
+
+      final updatedRole = role.copyWith(
+        isArchived: true,
+        updatedAt: DateTime.now(),
+      );
+
+      await updateRole(updatedRole);
+      developer.log('FirestoreDatabase.archiveRole: Archived role $id', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to archive role: $e');
+    }
+  }
+
+  @override
+  Future<void> restoreRole(String id) async {
+    try {
+      final role = await getRoleById(id);
+      if (role == null) {
+        throw DatabaseException('Role not found: $id');
+      }
+
+      final updatedRole = role.copyWith(
+        isArchived: false,
+        isVisible: true, // When restoring, also set visible to true
+        updatedAt: DateTime.now(),
+      );
+
+      await updateRole(updatedRole);
+      developer.log('FirestoreDatabase.restoreRole: Restored role $id', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to restore role: $e');
+    }
+  }
+
+  @override
+  Stream<List<Role>> watchRoles() {
+    try {
+      return _firestore
+          .collection('utilities')
+          .doc('Lists')
+          .snapshots()
+          .map((doc) {
+        if (!doc.exists || doc.data() == null) {
+          return <Role>[];
+        }
+
+        final data = doc.data()!;
+        final rolesArray = data['Roles'] as List<dynamic>?;
+
+        if (rolesArray == null || rolesArray.isEmpty) {
+          return <Role>[];
+        }
+
+        final roles = rolesArray
+            .map((roleData) => RoleModel.fromJson(roleData as Map<String, dynamic>).toEntity())
+            .toList();
+
+        // Sort by sortOrder
+        roles.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+        return roles;
+      });
+    } catch (e) {
+      throw DatabaseException('Failed to watch roles: $e');
+    }
+  }
+
+  @override
+  Future<void> seedRolesFromEnum() async {
+    try {
+      final doc = await _firestore.collection('utilities').doc('Lists').get();
+
+      // Check if Roles array already exists and has data
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        final rolesArray = data['Roles'] as List<dynamic>?;
+        if (rolesArray != null && rolesArray.isNotEmpty) {
+          developer.log('FirestoreDatabase.seedRolesFromEnum: Roles array already has data, skipping seed', name: 'Firestore');
+          return;
+        }
+      }
+
+      developer.log('FirestoreDatabase.seedRolesFromEnum: Seeding roles from RoleType enum', name: 'Firestore');
+
+      final now = DateTime.now();
+      int sortOrder = 0;
+      final rolesData = <Map<String, dynamic>>[];
+
+      for (final roleType in RoleType.values) {
+        final role = Role(
+          id: roleType.key,
+          key: roleType.key,
+          hebrewName: roleType.hebrewName,
+          isVisible: true,
+          isArchived: false,
+          sortOrder: sortOrder++,
+          createdAt: now,
+          updatedAt: now,
+        );
+
+        final model = RoleModel.fromEntity(role);
+        rolesData.add(model.toJson());
+      }
+
+      // Set or update the document
+      await _firestore.collection('utilities').doc('Lists').set({
+        'Roles': rolesData,
+      }, SetOptions(merge: true));
+
+      developer.log('FirestoreDatabase.seedRolesFromEnum: Seeded ${RoleType.values.length} roles', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to seed roles from enum: $e');
+    }
+  }
+
+  @override
+  Future<void> updateRolesSortOrder(Map<String, int> roleIdToSortOrder) async {
+    try {
+      final roles = await getRoles();
+
+      // Update sort order for each role
+      for (final role in roles) {
+        if (roleIdToSortOrder.containsKey(role.id)) {
+          final index = roles.indexOf(role);
+          roles[index] = role.copyWith(
+            sortOrder: roleIdToSortOrder[role.id]!,
+            updatedAt: DateTime.now(),
+          );
+        }
+      }
+
+      // Convert all roles to JSON
+      final rolesData = roles.map((r) => RoleModel.fromEntity(r).toJson()).toList();
+
+      // Update the entire array
+      await _firestore.collection('utilities').doc('Lists').update({
+        'Roles': rolesData,
+      });
+
+      developer.log('FirestoreDatabase.updateRolesSortOrder: Updated sort order for ${roleIdToSortOrder.length} roles', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to update roles sort order: $e');
     }
   }
 }

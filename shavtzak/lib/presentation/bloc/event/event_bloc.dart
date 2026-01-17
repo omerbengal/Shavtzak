@@ -394,12 +394,12 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       }
 
       // Calculate role quotas that would be over-filled
-      final overQuotaRoles = <RoleType>{};
+      final overQuotaRoles = <String>{};
       for (final roleType in RoleType.values) {
-        final newQuota = event.newRoleRequirements[roleType] ?? 0;
-        final assignmentCount = assignments.where((a) => a.roleType == roleType).length;
+        final newQuota = event.newRoleRequirements[roleType.name] ?? 0;
+        final assignmentCount = assignments.where((a) => a.roleType == roleType.name).length;
         if (assignmentCount > newQuota) {
-          overQuotaRoles.add(roleType);
+          overQuotaRoles.add(roleType.name);
         }
       }
 
@@ -515,13 +515,13 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   /// This ensures the event's quotas are consistent with what will be created
   Event _adjustQuotasToMatchAssignments(Event proposedEvent, List<Assignment> assignmentsToInclude) {
     // Count assignments by role
-    final roleCounts = <RoleType, int>{};
+    final roleCounts = <String, int>{};
     for (final assignment in assignmentsToInclude) {
       roleCounts[assignment.roleType] = (roleCounts[assignment.roleType] ?? 0) + 1;
     }
 
     // Update the proposed event's role requirements to match the kept assignments
-    final updatedRoleRequirements = Map<RoleType, int>.from(proposedEvent.roleRequirements);
+    final updatedRoleRequirements = Map<String, int>.from(proposedEvent.roleRequirements);
 
     // Set each role's quota to match the number of kept assignments
     for (final entry in roleCounts.entries) {

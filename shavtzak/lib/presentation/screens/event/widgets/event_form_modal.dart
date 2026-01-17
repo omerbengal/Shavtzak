@@ -9,6 +9,8 @@ import '../../../../data/repositories/event_repository.dart';
 import '../../../bloc/event/event_bloc.dart';
 import '../../../bloc/event/event_event.dart';
 import '../../../bloc/event/event_state.dart';
+import '../../../bloc/role/role_bloc.dart';
+import '../../../bloc/role/role_state.dart';
 import '../../../widgets/date_picker_dialog.dart';
 import '../../../widgets/map_location_picker.dart';
 import '../../../widgets/parking_location_picker_dialog.dart';
@@ -53,7 +55,7 @@ class _EventFormModalState extends State<EventFormModal> {
   DateTime? _startDate;
   DateTime? _endDate;
   bool _requiresArmed = false;
-  Map<RoleType, int> _roleRequirements = {};
+  Map<String, int> _roleRequirements = {};
   bool _isDirty = false;
   bool _validateName = false; // Enable name validation after blur or submit
   String? _dateError; // Track date validation error
@@ -72,12 +74,24 @@ class _EventFormModalState extends State<EventFormModal> {
 
   bool get _isEditMode => widget.event != null || widget.isDuplication;
 
+  /// Safely parse a role key string to RoleType enum
+  /// Returns null if the key doesn't match any RoleType value
+  RoleType? _tryParseRoleType(String key) {
+    try {
+      return RoleType.values.firstWhere((role) => role.key == key);
+    } catch (e) {
+      // Role key not found in RoleType enum
+      return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    // Initialize role requirements and keys
+    // Initialize role requirements with all roles set to 0
+    // Will be populated from RoleBloc when state is loaded
+    // Initialize role keys mapping
     for (final role in RoleType.values) {
-      _roleRequirements[role] = 0;
       _roleKeys[role] = GlobalKey();
     }
     if (_isEditMode) {
@@ -107,6 +121,7 @@ class _EventFormModalState extends State<EventFormModal> {
       }
 
       _requiresArmed = widget.event!.requiresArmed;
+      // Load role requirements from event (already String keys)
       _roleRequirements = Map.from(widget.event!.roleRequirements);
     }
 
@@ -266,9 +281,19 @@ class _EventFormModalState extends State<EventFormModal> {
     // NEW: Quota reduction analysis (edit mode only)
     if (_isEditMode) {
       try {
+        // Convert String keys to RoleType keys for QuotaReductionAnalyzer
+        final roleRequirementsAsRoleType = <RoleType, int>{};
+        for (final entry in _roleRequirements.entries) {
+          final roleType = RoleType.values.firstWhere(
+            (rt) => rt.key == entry.key,
+            orElse: () => RoleType.medic, // Fallback
+          );
+          roleRequirementsAsRoleType[roleType] = entry.value;
+        }
+
         final conflicts = await QuotaReductionAnalyzer.analyzeQuotaReductions(
           originalEvent: widget.event!,
-          newRoleRequirements: _roleRequirements,
+          newRoleRequirements: roleRequirementsAsRoleType,
           assignmentRepo: context.read<AssignmentRepository>(),
         );
 
@@ -336,16 +361,22 @@ class _EventFormModalState extends State<EventFormModal> {
           );
 
           // Check each role where quota was reduced
-          for (final roleType in RoleType.values) {
-            final oldQuota = widget.event!.roleRequirements[roleType] ?? 0;
-            final newQuota = _roleRequirements[roleType] ?? 0;
+          // Get all unique role keys from both old and new requirements
+          final allRoleKeys = {
+            ...widget.event!.roleRequirements.keys,
+            ..._roleRequirements.keys,
+          };
+
+          for (final roleKey in allRoleKeys) {
+            final oldQuota = widget.event!.roleRequirements[roleKey] ?? 0;
+            final newQuota = _roleRequirements[roleKey] ?? 0;
 
             // Only process roles where quota was reduced
             if (newQuota >= oldQuota) continue;
 
             // Get all assignments for this role
             final roleAssignments = allAssignments
-                .where((a) => a.roleType == roleType)
+                .where((a) => a.roleType == roleKey)
                 .toList();
 
             // Sort by current slotIndex to maintain relative order
@@ -1129,67 +1160,152 @@ class _EventFormModalState extends State<EventFormModal> {
                                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                               ),
                               const SizedBox(height: 8),
-                              ...RoleType.values.map((role) {
-                                final isHighlighted = _highlightedRole == role;
-                                return AnimatedContainer(
-                                  key: _roleKeys[role],
-                                  duration: const Duration(milliseconds: 500),
-                                  decoration: BoxDecoration(
-                                    color: isHighlighted
-                                        ? Colors.blue.shade100.withValues(alpha: _highlightOpacity)
-                                        : null,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: isHighlighted
-                                        ? Border.all(
-                                            color: Colors.blue.shade700.withValues(alpha: _highlightOpacity),
-                                            width: 2,
-                                          )
-                                        : null,
-                                  ),
-                                  child: ListTile(
-                                    title: Text(
-                                      role.hebrewName,
-                                      style: TextStyle(
-                                        fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
-                                        color: isHighlighted ? Colors.blue.shade900 : null,
-                                      ),
-                                    ),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          icon: const Icon(Icons.remove_circle_outline),
-                                          onPressed: () {
-                                            if (_roleRequirements[role]! > 0) {
-                                              setState(() {
-                                                _roleRequirements[role] = _roleRequirements[role]! - 1;
-                                                _isDirty = true;
-                                              });
-                                            }
-                                          },
+                              BlocBuilder<RoleBloc, RoleState>(
+                                builder: (context, roleState) {
+                                  // Handle different states
+                                  if (roleState is! RolesLoaded) {
+                                    // Show loading or fallback to RoleType.values during initial load
+                                    return Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: RoleType.values.map((role) {
+                                        final isHighlighted = _highlightedRole == role;
+                                        return AnimatedContainer(
+                                          key: _roleKeys[role],
+                                          duration: const Duration(milliseconds: 500),
+                                          decoration: BoxDecoration(
+                                            color: isHighlighted
+                                                ? Colors.blue.shade100.withValues(alpha: _highlightOpacity)
+                                                : null,
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: isHighlighted
+                                                ? Border.all(
+                                                    color: Colors.blue.shade700.withValues(alpha: _highlightOpacity),
+                                                    width: 2,
+                                                  )
+                                                : null,
+                                          ),
+                                          child: ListTile(
+                                            title: Text(
+                                              role.hebrewName,
+                                              style: TextStyle(
+                                                fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                                                color: isHighlighted ? Colors.blue.shade900 : null,
+                                              ),
+                                            ),
+                                            trailing: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                IconButton(
+                                                  icon: const Icon(Icons.remove_circle_outline),
+                                                  onPressed: () {
+                                                    if ((_roleRequirements[role.key] ?? 0) > 0) {
+                                                      setState(() {
+                                                        _roleRequirements[role.key] = (_roleRequirements[role.key] ?? 0) - 1;
+                                                        _isDirty = true;
+                                                      });
+                                                    }
+                                                  },
+                                                ),
+                                                SizedBox(
+                                                  width: 40,
+                                                  child: Text(
+                                                    (_roleRequirements[role.key] ?? 0).toString(),
+                                                    textAlign: TextAlign.center,
+                                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  icon: const Icon(Icons.add_circle_outline),
+                                                  onPressed: () {
+                                                    setState(() {
+                                                      _roleRequirements[role.key] = (_roleRequirements[role.key] ?? 0) + 1;
+                                                      _isDirty = true;
+                                                    });
+                                                  },
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    );
+                                  }
+
+                                  // Use roles from RoleBloc
+                                  final roles = (roleState as RolesLoaded).visibleRoles;
+
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: roles.map((roleObj) {
+                                      // Use role key (String) directly as the map key
+                                      final roleKey = roleObj.key;
+
+                                      // Map role.key to RoleType enum for highlighting (legacy support)
+                                      final RoleType? roleType = _tryParseRoleType(roleKey);
+                                      final isHighlighted = roleType != null && _highlightedRole == roleType;
+
+                                      return AnimatedContainer(
+                                        key: roleType != null ? _roleKeys[roleType] : null,
+                                        duration: const Duration(milliseconds: 500),
+                                        decoration: BoxDecoration(
+                                          color: isHighlighted
+                                              ? Colors.blue.shade100.withValues(alpha: _highlightOpacity)
+                                              : null,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: isHighlighted
+                                              ? Border.all(
+                                                  color: Colors.blue.shade700.withValues(alpha: _highlightOpacity),
+                                                  width: 2,
+                                                )
+                                              : null,
                                         ),
-                                        SizedBox(
-                                          width: 40,
-                                          child: Text(
-                                            _roleRequirements[role].toString(),
-                                            textAlign: TextAlign.center,
-                                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                        child: ListTile(
+                                          title: Text(
+                                            roleObj.hebrewName,
+                                            style: TextStyle(
+                                              fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                                              color: isHighlighted ? Colors.blue.shade900 : null,
+                                            ),
+                                          ),
+                                          trailing: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                icon: const Icon(Icons.remove_circle_outline),
+                                                onPressed: () {
+                                                  if (_roleRequirements[roleKey]! > 0) {
+                                                    setState(() {
+                                                      _roleRequirements[roleKey] = _roleRequirements[roleKey]! - 1;
+                                                      _isDirty = true;
+                                                    });
+                                                  }
+                                                },
+                                              ),
+                                              SizedBox(
+                                                width: 40,
+                                                child: Text(
+                                                  (_roleRequirements[roleKey] ?? 0).toString(),
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                                ),
+                                              ),
+                                              IconButton(
+                                                icon: const Icon(Icons.add_circle_outline),
+                                                onPressed: () {
+                                                  setState(() {
+                                                    _roleRequirements[roleKey] = (_roleRequirements[roleKey] ?? 0) + 1;
+                                                    _isDirty = true;
+                                                  });
+                                                },
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                        IconButton(
-                                          icon: const Icon(Icons.add_circle_outline),
-                                          onPressed: () {
-                                            setState(() {
-                                              _roleRequirements[role] = _roleRequirements[role]! + 1;
-                                              _isDirty = true;
-                                            });
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }),
+                                      );
+                                    }).toList(),
+                                  );
+                                },
+                              ),
 
                               // Drive Files Section (only in edit mode, not duplication)
                               // Show immediately even if drive folder doesn't exist yet - section handles pending state

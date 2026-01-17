@@ -12,6 +12,7 @@ import '../../../core/state/constraint_manager.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/vehicle_info.dart';
+import '../../../domain/entities/role.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/filter_persistence.dart';
@@ -26,6 +27,8 @@ import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../bloc/role/role_bloc.dart';
+import '../../bloc/role/role_state.dart';
 import '../../widgets/navigation_menu.dart';
 import '../../widgets/date_picker_dialog.dart';
 import '../../widgets/interactive_filter_bar.dart';
@@ -824,7 +827,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   bool _isPermanent = false;
   bool _allowMultipleAssignments = false;
   bool _canAccessSummaryScreen = false;
-  Map<RoleType, bool> _roleCapabilities = {};
+  Map<String, bool> _roleCapabilities = {};
 
   late TeamBloc _teamBloc;
   List<DateConstraint> _constraints = [];
@@ -838,9 +841,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     super.initState();
 
     // Initialize role capabilities with all roles set to false
-    for (final role in RoleType.values) {
-      _roleCapabilities[role] = false;
-    }
+    // Will be populated from RoleBloc when state is loaded
 
     // Load existing member data if editing
     if (_isEditMode) {
@@ -1041,41 +1042,45 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   Future<bool?> _showConflictWarningDialog(List<Assignment> conflictingAssignments) {
     return showDialog<bool>(
       context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('אזהרה - שיבוצים קיימים'),
-          content: SizedBox(
-            width: 500,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'נמצאו שיבוצים קיימים שמתנגשים עם המגבלות החדשות:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 16),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: conflictingAssignments.map((assignment) {
-                        final eventName = assignment.event?.name ?? 'אירוע לא ידוע';
-                        final startDate = assignment.event?.startDate;
-                        final endDate = assignment.event?.endDate;
-                        String dateStr = '';
-                        if (startDate != null) {
-                          dateStr = '${startDate.day}/${startDate.month}/${startDate.year}';
-                          // Add end date if it exists and is different from start date
-                          if (endDate != null &&
-                              (endDate.day != startDate.day ||
-                               endDate.month != startDate.month ||
-                               endDate.year != startDate.year)) {
-                            dateStr += ' - ${endDate.day}/${endDate.month}/${endDate.year}';
-                          }
-                        }
-                        final roleName = assignment.roleType.hebrewName;
+      builder: (dialogContext) => BlocBuilder<RoleBloc, RoleState>(
+        builder: (context, roleState) {
+          return Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: const Text('אזהרה - שיבוצים קיימים'),
+              content: SizedBox(
+                width: 500,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'נמצאו שיבוצים קיימים שמתנגשים עם המגבלות החדשות:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 16),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: conflictingAssignments.map((assignment) {
+                            final eventName = assignment.event?.name ?? 'אירוע לא ידוע';
+                            final startDate = assignment.event?.startDate;
+                            final endDate = assignment.event?.endDate;
+                            String dateStr = '';
+                            if (startDate != null) {
+                              dateStr = '${startDate.day}/${startDate.month}/${startDate.year}';
+                              // Add end date if it exists and is different from start date
+                              if (endDate != null &&
+                                  (endDate.day != startDate.day ||
+                                   endDate.month != startDate.month ||
+                                   endDate.year != startDate.year)) {
+                                dateStr += ' - ${endDate.day}/${endDate.month}/${endDate.year}';
+                              }
+                            }
+                            final roleName = roleState is RolesLoaded
+                                ? roleState.getRoleHebrewName(assignment.roleType)
+                                : assignment.roleType;
 
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1127,6 +1132,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
             ),
           ],
         ),
+          );
+        },
       ),
     );
   }
@@ -1538,83 +1545,120 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
                               const Divider(height: 32),
 
-                              // Role capabilities section
-                              Row(
-                                children: [
-                                  const Text(
-                                    'תפקידים',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
+                              // Role capabilities section - wrapped with BlocBuilder
+                              BlocBuilder<RoleBloc, RoleState>(
+                                builder: (context, roleState) {
+                                  return Column(
+                                    children: [
+                                      // Role capabilities header with buttons
+                                      Row(
+                                        children: [
+                                          const Text(
+                                            'תפקידים',
+                                            style: TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          TextButton(
+                                            onPressed: () {
+                                              setState(() {
+                                                // Select all roles from RoleBloc
+                                                if (roleState is RolesLoaded) {
+                                                  for (final role in roleState.allNonArchivedRoles) {
+                                                    _roleCapabilities[role.key] = true;
+                                                  }
+                                                }
+                                                _roleError = null; // Clear error
+                                                _isDirty = true;
+                                              });
+                                            },
+                                            child: const Text('בחר הכל'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () {
+                                              setState(() {
+                                                // Deselect all roles from RoleBloc
+                                                if (roleState is RolesLoaded) {
+                                                  for (final role in roleState.allNonArchivedRoles) {
+                                                    _roleCapabilities[role.key] = false;
+                                                  }
+                                                }
+                                                _isDirty = true;
+                                              });
+                                            },
+                                            child: const Text('נקה הכל'),
+                                          ),
+                                        ],
+                                      ),
+
+                                      const SizedBox(height: 8),
+
+                                      // Role validation error
+                                      if (_roleError != null)
+                                        Padding(
+                                          padding: const EdgeInsets.only(right: 16, bottom: 8),
+                                          child: Text(
+                                            _roleError!,
+                                            style: TextStyle(
+                                              color: Colors.red.shade700,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+
+                                      // Role checkboxes
+                                      Builder(
+                                        builder: (context) {
+                                          // Get all non-archived roles
+                                          List<Role> roles;
+                                          if (roleState is RolesLoaded) {
+                                            roles = roleState.allNonArchivedRoles;
+                                          } else {
+                                            // Fallback to RoleType.values during initial load
+                                            roles = RoleType.values.map((rt) => Role(
+                                              id: rt.key,
+                                              key: rt.key,
+                                              hebrewName: rt.hebrewName,
+                                              isVisible: true,
+                                              isArchived: false,
+                                              sortOrder: RoleType.values.indexOf(rt),
+                                              createdAt: DateTime.now(),
+                                              updatedAt: DateTime.now(),
+                                            )).toList();
+                                          }
+
+                                          return Container(
+                                    decoration: _roleError != null
+                                        ? BoxDecoration(
+                                            border: Border.all(color: Colors.red.shade700),
+                                            borderRadius: BorderRadius.circular(4),
+                                            color: Colors.red.shade50,
+                                          )
+                                        : null,
+                                    child: Column(
+                                      children: roles.map((roleObj) {
+                                        return CheckboxListTile(
+                                          title: Text(roleObj.hebrewName),
+                                          value: _roleCapabilities[roleObj.key] ?? false,
+                                          onChanged: (value) {
+                                            setState(() {
+                                              _roleCapabilities[roleObj.key] = value ?? false;
+                                              _roleError = null; // Clear error when user interacts
+                                              _isDirty = true;
+                                            });
+                                          },
+                                          controlAffinity: ListTileControlAffinity.leading,
+                                        );
+                                      }).toList(),
                                     ),
-                                  ),
-                                  const Spacer(),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        for (final role in RoleType.values) {
-                                          _roleCapabilities[role] = true;
-                                        }
-                                        _roleError = null; // Clear error
-                                        _isDirty = true;
-                                      });
-                                    },
-                                    child: const Text('בחר הכל'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        for (final role in RoleType.values) {
-                                          _roleCapabilities[role] = false;
-                                        }
-                                        _isDirty = true;
-                                      });
-                                    },
-                                    child: const Text('נקה הכל'),
-                                  ),
-                                ],
-                              ),
-
-                              const SizedBox(height: 8),
-
-                              // Role validation error
-                              if (_roleError != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 16, bottom: 8),
-                                  child: Text(
-                                    _roleError!,
-                                    style: TextStyle(
-                                      color: Colors.red.shade700,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-
-                              // Role checkboxes
-                              Container(
-                                decoration: _roleError != null
-                                    ? BoxDecoration(
-                                        border: Border.all(color: Colors.red.shade700),
-                                        borderRadius: BorderRadius.circular(4),
-                                        color: Colors.red.shade50,
-                                      )
-                                    : null,
-                                child: Column(
-                                  children: RoleType.values.map((role) {
-                                    return CheckboxListTile(
-                                      title: Text(role.hebrewName),
-                                      value: _roleCapabilities[role] ?? false,
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _roleCapabilities[role] = value ?? false;
-                                          _roleError = null; // Clear error when user interacts
-                                          _isDirty = true;
-                                        });
-                                      },
-                                      controlAffinity: ListTileControlAffinity.leading,
-                                    );
-                                  }).toList(),
-                                ),
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  );
+                                },
                               ),
 
                               const Divider(height: 32),

@@ -1,5 +1,4 @@
 import 'package:equatable/equatable.dart';
-import '../../core/constants/role_types.dart';
 import '../../core/constants/constraint_status.dart';
 import 'vehicle_info.dart';
 
@@ -96,7 +95,7 @@ class TeamMember extends Equatable {
   final bool isActive;
   final bool isPermanent; // Whether this is a permanent team member
   final List<DateConstraint> constraints; // When unavailable
-  final Map<RoleType, bool> roleCapabilities; // Which roles can they perform
+  final Map<String, bool> roleCapabilities; // Which roles can they perform (role key -> bool)
   final String comments; // Comments about the team member
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -192,13 +191,13 @@ class TeamMember extends Equatable {
   }
 
   /// Check if team member can perform a given role
-  bool canPerformRole(RoleType role) {
-    return roleCapabilities[role] == true;
+  bool canPerformRole(String roleKey) {
+    return roleCapabilities[roleKey] == true;
   }
 
   /// Check if team member is qualified and available for a role on a date
-  bool isQualifiedAndAvailableFor(RoleType role, DateTime date) {
-    return canPerformRole(role) && isAvailableOn(date);
+  bool isQualifiedAndAvailableFor(String roleKey, DateTime date) {
+    return canPerformRole(roleKey) && isAvailableOn(date);
   }
 
   /// Check if this team member can have constraints (permanent members only)
@@ -207,8 +206,8 @@ class TeamMember extends Equatable {
   /// Check if this team member can have availability (non-permanent members only)
   bool get canHaveAvailability => !isPermanent;
 
-  /// Get list of all roles this team member can perform
-  List<RoleType> get availableRoles {
+  /// Get list of all role keys this team member can perform
+  List<String> get availableRoleKeys {
     return roleCapabilities.entries
         .where((entry) => entry.value)
         .map((entry) => entry.key)
@@ -222,7 +221,7 @@ class TeamMember extends Equatable {
     bool? isActive,
     bool? isPermanent,
     List<DateConstraint>? constraints,
-    Map<RoleType, bool>? roleCapabilities,
+    Map<String, bool>? roleCapabilities,
     String? comments,
     DateTime? createdAt,
     DateTime? updatedAt,

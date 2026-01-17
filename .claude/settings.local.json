@@ -43,7 +43,8 @@
       "WebFetch(domain:pub.dev)",
       "Skill(superpowers:brainstorming)",
       "Skill(superpowers:using-git-worktrees)",
-      "Skill(superpowers:writing-plans)"
+      "Skill(superpowers:writing-plans)",
+      "Bash(awk:*)"
     ],
     "deny": [],
     "ask": []
