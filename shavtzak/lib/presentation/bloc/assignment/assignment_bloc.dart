@@ -647,16 +647,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       return databaseSlots;
     }
 
-    debugPrint('🔀 [MERGE] Merging ${databaseSlots.length} slots with ${pendingOperations.length} pending ops');
-
     // Remove expired operations (older than 5 seconds)
     final activeOperations = Map<String, PendingOperation>.fromEntries(
       pendingOperations.entries.where((entry) => !entry.value.isExpired),
     );
-
-    if (activeOperations.length != pendingOperations.length) {
-      debugPrint('   → Removed ${pendingOperations.length - activeOperations.length} expired ops');
-    }
 
     // CRITICAL FIX: Track slots with delete operations (including expired ones)
     // This ensures deleted slots stay empty even after operations expire
@@ -687,9 +681,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       operationsByEvent.putIfAbsent(eventId, () => []); // Add empty list if not present
     }
 
-    debugPrint('   → Events with pending ops: ${operationsByEvent.keys.toList()}');
-    debugPrint('   → Deleted slots (cleared): ${deletedSlots.toList()}');
-
     // Build a map of slots by event for efficient updates
     final slotsByEvent = <String, List<AssignmentSlot>>{};
     for (final slot in databaseSlots) {
@@ -704,8 +695,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       if (eventSlots.isEmpty) continue;
 
-      debugPrint('   → Processing event $eventId with ${operations.length} ops');
-
       // CRITICAL FIX: Rebuild effectiveAssignedMemberIds from scratch to avoid cross-slot interference
       // Instead of modifying a set incrementally (which can remove members from wrong slots),
       // we build a fresh map of which member is assigned to which slot.
@@ -719,20 +708,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         slotAssignments[slotKey] = slot.currentAssignment?.teamMemberId;
       }
 
-      debugPrint('      → DB assigned: ${slotAssignments.entries.where((e) => e.value != null).map((e) => '${e.key}:${e.value}').toList()}');
-
       // Apply pending operations (this overrides DB state for specific slots)
       for (final operation in operations) {
         final slotKey = operation.slotKey;
 
         if (operation.type == PendingOperationType.deleteAssignment) {
           slotAssignments[slotKey] = null; // Slot is now empty
-          debugPrint('      → DELETE on $slotKey → empty');
         } else if (operation.type == PendingOperationType.createAssignment ||
                    operation.type == PendingOperationType.updateAssignment) {
           if (operation.optimisticAssignment != null) {
             slotAssignments[slotKey] = operation.optimisticAssignment!.teamMemberId;
-            debugPrint('      → CREATE/UPDATE on $slotKey → ${operation.optimisticAssignment!.teamMemberId}');
           }
         }
       }
@@ -742,8 +727,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           .where((id) => id != null)
           .cast<String>()
           .toSet();
-
-      debugPrint('      → Final effective assigned IDs: ${effectiveAssignedMemberIds.toList()}');
 
       // Recalculate member availability for all slots in this event
       for (final slot in eventSlots) {
@@ -931,11 +914,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     final currentState = state as AssignmentSlotsLoaded;
 
-    debugPrint('🟢 [OPTIMISTIC CREATE] Slot: ${event.slotKey}');
-    debugPrint('   Member: ${event.assignment.teamMember?.name ?? event.assignment.teamMemberId}');
-    debugPrint('   Role: ${event.assignment.roleType}');
-    debugPrint('   Event: ${event.assignment.eventId}');
-
     // Create pending operation
     final operation = PendingOperation(
       id: event.operationId,
@@ -948,9 +926,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // Add to BLoC-level pending operations map
     _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations);
     _pendingOperations[event.slotKey] = operation;
-
-    debugPrint('   → Pending ops count: ${_pendingOperations.length}');
-    debugPrint('   → Pending ops keys: ${_pendingOperations.keys.toList()}');
 
     // Apply optimistic update
     final updatedSlots = _applyOptimisticUpdate(
@@ -968,12 +943,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     // Execute database operation
     try {
-      debugPrint('   → Sending to DB...');
       await _repository.createAssignment(event.assignment);
-      debugPrint('   → DB create succeeded (awaiting Firestore stream)');
       // Firestore stream will emit fresh state automatically
     } catch (e) {
-      debugPrint('   ❌ DB create failed: $e');
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
       emit(AssignmentSlotsLoaded(
@@ -993,11 +965,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     final currentState = state as AssignmentSlotsLoaded;
 
-    debugPrint('🟡 [OPTIMISTIC UPDATE] Slot: ${event.slotKey}');
-    debugPrint('   Member: ${event.assignment.teamMember?.name ?? event.assignment.teamMemberId}');
-    debugPrint('   Role: ${event.assignment.roleType}');
-    debugPrint('   Event: ${event.assignment.eventId}');
-
     // Create pending operation
     final operation = PendingOperation(
       id: event.operationId,
@@ -1010,9 +977,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // Add to BLoC-level pending operations map
     _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations);
     _pendingOperations[event.slotKey] = operation;
-
-    debugPrint('   → Pending ops count: ${_pendingOperations.length}');
-    debugPrint('   → Pending ops keys: ${_pendingOperations.keys.toList()}');
 
     // Apply optimistic update
     final updatedSlots = _applyOptimisticUpdate(
@@ -1030,12 +994,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     // Execute database operation
     try {
-      debugPrint('   → Sending to DB...');
       await _repository.updateAssignment(event.assignment);
-      debugPrint('   → DB update succeeded (awaiting Firestore stream)');
       // Firestore stream will emit fresh state automatically
     } catch (e) {
-      debugPrint('   ❌ DB update failed: $e');
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
       emit(AssignmentSlotsLoaded(
@@ -1055,9 +1016,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     final currentState = state as AssignmentSlotsLoaded;
 
-    debugPrint('🔴 [OPTIMISTIC DELETE] Slot: ${event.slotKey}');
-    debugPrint('   Assignment ID: ${event.assignmentId}');
-
     // Create pending operation
     final operation = PendingOperation(
       id: event.operationId,
@@ -1070,9 +1028,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // Add to BLoC-level pending operations map
     _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations);
     _pendingOperations[event.slotKey] = operation;
-
-    debugPrint('   → Pending ops count: ${_pendingOperations.length}');
-    debugPrint('   → Pending ops keys: ${_pendingOperations.keys.toList()}');
 
     // Apply optimistic update (clear slot)
     final updatedSlots = _applyOptimisticUpdate(
@@ -1090,12 +1045,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     // Execute database operation
     try {
-      debugPrint('   → Sending to DB...');
       await _repository.deleteAssignment(event.assignmentId);
-      debugPrint('   → DB delete succeeded (awaiting Firestore stream)');
       // Firestore stream will emit fresh state automatically
     } catch (e) {
-      debugPrint('   ❌ DB delete failed: $e');
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
       emit(AssignmentSlotsLoaded(
@@ -1344,9 +1296,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     Emitter<AssignmentState> emit,
   ) async {
     try {
-      debugPrint('📡 [FIRESTORE STREAM] Assignments count: ${rebuildEvent.assignments.length}');
-      debugPrint('   → Pending ops count: ${_pendingOperations.length}');
-
       // Update the repository's cached assignments
       _repository.cacheCurrentAssignments(rebuildEvent.assignments);
 

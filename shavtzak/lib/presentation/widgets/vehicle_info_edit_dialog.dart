@@ -267,21 +267,10 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
   }
 
   void _saveVehicleInfo() async {
-    // Debug: print current state
-    print('=== DEBUG _saveVehicleInfo ===');
-    print('Vehicle number: "${_vehicleNumberController.text}"');
-    print('Selected manufacturer: $_selectedManufacturer');
-    print('Model: "${_modelController.text}"');
-    print('Color: "${_colorController.text}"');
-    print('Is vehicle number valid: $_isVehicleNumberValid');
-    print('Has partial selection: $_hasPartialSelection');
-    print('==========================');
-
     // Check if selection is valid before saving
     final vehicleInfo = _getVehicleInfo();
 
     if (vehicleInfo == null) {
-      print('ERROR: VehicleInfo is null - validation failed');
       setState(() {
         _showValidationErrors = true;
       });

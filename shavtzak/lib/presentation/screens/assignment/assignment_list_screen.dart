@@ -472,60 +472,66 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   // Role column
                   Expanded(
                     flex: 2,
-                    child: Row(
+                    child: Stack(
+                      alignment: Alignment.center,
                       children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => _showEventFormModal(slot.event, selectedRole: slot.roleType),
-                            child: Text(
-                              slot.roleType.hebrewName,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue,
-                                decoration: TextDecoration.none,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+                        // Role name text (always centered)
+                        GestureDetector(
+                          onTap: () => _showEventFormModal(slot.event, selectedRole: slot.roleType),
+                          child: Text(
+                            slot.roleType.hebrewName,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue,
+                              decoration: TextDecoration.none,
                             ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        // Warning icon overlaid on the left edge (doesn't push text)
                         if (slot.hasDoubleAssignment)
-                          Tooltip(
-                            message: 'משובץ גם ל: ${slot.otherRoles.join(", ")}',
-                            child: InkWell(
-                              onTap: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (dialogContext) => Directionality(
-                                    textDirection: TextDirection.rtl,
-                                    child: AlertDialog(
-                                      title: Row(
-                                        children: const [
-                                          Icon(Icons.warning, color: Colors.orange),
-                                          SizedBox(width: 8),
-                                          Text('שיבוץ כפול'),
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            child: Tooltip(
+                              message: 'משובץ גם ל: ${slot.otherRoles.join(", ")}',
+                              child: InkWell(
+                                onTap: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (dialogContext) => Directionality(
+                                      textDirection: TextDirection.rtl,
+                                      child: AlertDialog(
+                                        title: Row(
+                                          children: const [
+                                            Icon(Icons.warning, color: Colors.orange),
+                                            SizedBox(width: 8),
+                                            Text('שיבוץ כפול'),
+                                          ],
+                                        ),
+                                        content: Text(
+                                          'משובץ גם לתפקידים: ${slot.otherRoles.join(", ")}',
+                                          style: const TextStyle(fontSize: 16),
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.of(dialogContext).pop(),
+                                            child: const Text('סגור'),
+                                          ),
                                         ],
                                       ),
-                                      content: Text(
-                                        'משובץ גם לתפקידים: ${slot.otherRoles.join(", ")}',
-                                        style: const TextStyle(fontSize: 16),
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () => Navigator.of(dialogContext).pop(),
-                                          child: const Text('סגור'),
-                                        ),
-                                      ],
                                     ),
-                                  ),
-                                );
-                              },
-                              child: const Icon(
-                                Icons.warning,
-                                color: Colors.orange,
-                                size: 20,
+                                  );
+                                },
+                                child: const Icon(
+                                  Icons.warning,
+                                  color: Colors.orange,
+                                  size: 20,
+                                ),
                               ),
                             ),
                           ),
