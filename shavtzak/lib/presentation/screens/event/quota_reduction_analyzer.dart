@@ -6,14 +6,16 @@ import '../../../data/repositories/assignment_repository.dart';
 /// Represents a conflict when reducing role quotas
 /// Contains information about which assignments need to be removed
 class RoleQuotaConflict {
-  final RoleType roleType;
+  final String roleKey; // String key (e.g., "medic") - matches Event.roleRequirements keys
+  final RoleType? roleType; // Optional RoleType enum for legacy dialog support
   final int oldQuota;
   final int newQuota;
   final List<Assignment> assignmentCandidates; // ALL assignments for this role
   final int countToRemove; // How many the user must select to delete
 
   const RoleQuotaConflict({
-    required this.roleType,
+    required this.roleKey,
+    this.roleType,
     required this.oldQuota,
     required this.newQuota,
     required this.assignmentCandidates,
@@ -33,11 +35,9 @@ class QuotaReductionAnalyzer {
   /// Returns list of roles that have filled slots needing removal
   static Future<List<RoleQuotaConflict>> analyzeQuotaReductions({
     required Event originalEvent,
-    required Map<RoleType, int> newRoleRequirements,
+    required Map<String, int> newRoleRequirements,
     required AssignmentRepository assignmentRepo,
   }) async {
-    final conflicts = <RoleQuotaConflict>[];
-
     // Get all assignments for this event
     final allAssignments = await assignmentRepo.getAssignmentsByEvent(
       originalEvent.id,
@@ -54,7 +54,7 @@ class QuotaReductionAnalyzer {
   /// Returns list of roles that have filled slots needing removal
   static List<RoleQuotaConflict> analyzeQuotaReductionsWithAssignments({
     required Event originalEvent,
-    required Map<RoleType, int> newRoleRequirements,
+    required Map<String, int> newRoleRequirements,
     required List<Assignment> assignments,
   }) {
     return _analyzeQuotaReductionsWithAssignments(
@@ -67,22 +67,28 @@ class QuotaReductionAnalyzer {
   /// Internal implementation that works with assignments list
   static List<RoleQuotaConflict> _analyzeQuotaReductionsWithAssignments({
     required Event originalEvent,
-    required Map<RoleType, int> newRoleRequirements,
+    required Map<String, int> newRoleRequirements,
     required List<Assignment> allAssignments,
   }) {
     final conflicts = <RoleQuotaConflict>[];
 
+    // Get all unique role keys from both old and new requirements
+    final allRoleKeys = {
+      ...originalEvent.roleRequirements.keys,
+      ...newRoleRequirements.keys,
+    };
+
     // Check each role for quota reduction
-    for (final roleType in RoleType.values) {
-      final oldQuota = originalEvent.roleRequirements[roleType] ?? 0;
-      final newQuota = newRoleRequirements[roleType] ?? 0;
+    for (final roleKey in allRoleKeys) {
+      final oldQuota = originalEvent.roleRequirements[roleKey] ?? 0;
+      final newQuota = newRoleRequirements[roleKey] ?? 0;
 
       // Only process roles where quota was reduced
       if (newQuota >= oldQuota) continue;
 
       // Find all assignments for this role
       final roleAssignments = allAssignments
-          .where((a) => a.roleType == roleType)
+          .where((a) => a.roleType == roleKey)
           .toList();
 
       // If there are more assignments than the new quota allows,
@@ -91,9 +97,18 @@ class QuotaReductionAnalyzer {
         // Sort by slotIndex for predictable ordering
         roleAssignments.sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
 
+        // Try to parse roleKey to RoleType enum for dialog support (legacy)
+        RoleType? roleTypeEnum;
+        try {
+          roleTypeEnum = RoleType.values.firstWhere((rt) => rt.key == roleKey);
+        } catch (_) {
+          // Role key not found in enum - that's okay, it's a custom role
+        }
+
         conflicts.add(
           RoleQuotaConflict(
-            roleType: roleType,
+            roleKey: roleKey,
+            roleType: roleTypeEnum,
             oldQuota: oldQuota,
             newQuota: newQuota,
             assignmentCandidates: roleAssignments, // Show ALL assignments as candidates

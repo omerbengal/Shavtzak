@@ -29,15 +29,15 @@ class QuotaReductionDialog extends StatefulWidget {
 }
 
 class _QuotaReductionDialogState extends State<QuotaReductionDialog> {
-  // Map<roleType, Set<assignmentId>>
-  final Map<RoleType, Set<String>> _selectedAssignments = {};
+  // Map<roleKey, Set<assignmentId>>
+  final Map<String, Set<String>> _selectedAssignments = {};
 
   @override
   void initState() {
     super.initState();
     // Initialize selection state for each role
     for (final conflict in widget.conflicts) {
-      _selectedAssignments[conflict.roleType] = {};
+      _selectedAssignments[conflict.roleKey] = {};
     }
   }
 
@@ -45,7 +45,7 @@ class _QuotaReductionDialogState extends State<QuotaReductionDialog> {
   /// User must select exactly the number of assignments that need to be removed per role
   bool _isValidSelection() {
     for (final conflict in widget.conflicts) {
-      final selected = _selectedAssignments[conflict.roleType]?.length ?? 0;
+      final selected = _selectedAssignments[conflict.roleKey]?.length ?? 0;
       final required = conflict.removalCount;
       if (selected != required) return false;
     }
@@ -58,7 +58,7 @@ class _QuotaReductionDialogState extends State<QuotaReductionDialog> {
     int totalRequired = 0;
 
     for (final conflict in widget.conflicts) {
-      final selected = _selectedAssignments[conflict.roleType]?.length ?? 0;
+      final selected = _selectedAssignments[conflict.roleKey]?.length ?? 0;
       totalSelected += selected;
       totalRequired += conflict.removalCount;
     }
@@ -211,12 +211,16 @@ class _QuotaReductionDialogState extends State<QuotaReductionDialog> {
 
   /// Build section for one role's conflicts
   Widget _buildRoleSection(RoleQuotaConflict conflict) {
+    // Get the Hebrew name for the role
+    // Try to use RoleType enum if available, otherwise use roleKey directly
+    final String roleHebrewName = conflict.roleType?.hebrewName ?? conflict.roleKey;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Role header
         Text(
-          conflict.roleType.hebrewName,
+          roleHebrewName,
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -247,7 +251,7 @@ class _QuotaReductionDialogState extends State<QuotaReductionDialog> {
 
         // Assignment checkboxes
         ...conflict.assignmentCandidates.map((assignment) {
-          final isSelected = _selectedAssignments[conflict.roleType]
+          final isSelected = _selectedAssignments[conflict.roleKey]
                   ?.contains(assignment.id) ??
               false;
 
@@ -256,9 +260,9 @@ class _QuotaReductionDialogState extends State<QuotaReductionDialog> {
             onChanged: (bool? value) {
               setState(() {
                 if (value == true) {
-                  _selectedAssignments[conflict.roleType]!.add(assignment.id);
+                  _selectedAssignments[conflict.roleKey]!.add(assignment.id);
                 } else {
-                  _selectedAssignments[conflict.roleType]!
+                  _selectedAssignments[conflict.roleKey]!
                       .remove(assignment.id);
                 }
               });

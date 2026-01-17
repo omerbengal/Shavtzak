@@ -281,19 +281,9 @@ class _EventFormModalState extends State<EventFormModal> {
     // NEW: Quota reduction analysis (edit mode only)
     if (_isEditMode) {
       try {
-        // Convert String keys to RoleType keys for QuotaReductionAnalyzer
-        final roleRequirementsAsRoleType = <RoleType, int>{};
-        for (final entry in _roleRequirements.entries) {
-          final roleType = RoleType.values.firstWhere(
-            (rt) => rt.key == entry.key,
-            orElse: () => RoleType.medic, // Fallback
-          );
-          roleRequirementsAsRoleType[roleType] = entry.value;
-        }
-
         final conflicts = await QuotaReductionAnalyzer.analyzeQuotaReductions(
           originalEvent: widget.event!,
-          newRoleRequirements: roleRequirementsAsRoleType,
+          newRoleRequirements: _roleRequirements, // Directly pass String-keyed map
           assignmentRepo: context.read<AssignmentRepository>(),
         );
 
@@ -327,7 +317,7 @@ class _EventFormModalState extends State<EventFormModal> {
               );
               final remainingAssignments = allAssignments
                   .where((a) =>
-                      a.roleType == conflict.roleType &&
+                      a.roleType == conflict.roleKey &&
                       !selectedIds.contains(a.id))
                   .toList();
 
