@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/role_types.dart';
@@ -9,7 +10,6 @@ import '../../../data/repositories/team_repository.dart';
 import '../../../data/repositories/role_repository.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
-import '../../../domain/entities/role.dart';
 import '../../../domain/entities/team_member.dart';
 import 'assignment_event.dart';
 import 'assignment_state.dart';
@@ -35,6 +35,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
   // Keep the current event filter independent of state
   Set<String> _currentEventFilter = <String>{};
+
+  // Keep pending operations independent of state (survives error states)
+  Map<String, PendingOperation> _pendingOperations = {};
 
   AssignmentBloc(
     this._repository,
@@ -66,6 +69,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<LoadUserAssignments>(_onLoadUserAssignments);
     on<RebuildUserAssignments>(_onRebuildUserAssignments);
     on<UpdateAssignmentNotes>(_onUpdateAssignmentNotes);
+    on<OptimisticCreateAssignment>(_onOptimisticCreateAssignment);
+    on<OptimisticUpdateAssignment>(_onOptimisticUpdateAssignment);
+    on<OptimisticDeleteAssignment>(_onOptimisticDeleteAssignment);
   }
 
   /// Load all assignments with real-time updates
@@ -241,9 +247,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         } else {
           add(const LoadAssignments());
         }
-      } else {
+      } else if (previousState is! AssignmentSlotsLoaded) {
+        // Only reload if not in slots view (real-time stream handles slots view)
         add(const LoadAssignments());
       }
+      // If previousState is AssignmentSlotsLoaded, do nothing - real-time stream will handle it
     } catch (e) {
       if (e is AssignmentConflictException) {
         emit(AssignmentConflictWarning(e.conflicts, event.assignment));
@@ -289,9 +297,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         } else {
           add(const LoadAssignments());
         }
-      } else {
+      } else if (previousState is! AssignmentSlotsLoaded) {
+        // Only reload if not in slots view (real-time stream handles slots view)
         add(const LoadAssignments());
       }
+      // If previousState is AssignmentSlotsLoaded, do nothing - real-time stream will handle it
     } catch (e) {
       if (e is AssignmentConflictException) {
         emit(AssignmentConflictWarning(e.conflicts, event.assignment));
@@ -329,9 +339,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         } else {
           add(const LoadAssignments());
         }
-      } else {
+      } else if (previousState is! AssignmentSlotsLoaded) {
+        // Only reload if not in slots view (real-time stream handles slots view)
         add(const LoadAssignments());
       }
+      // If previousState is AssignmentSlotsLoaded, do nothing - real-time stream will handle it
     } catch (e) {
       emit(AssignmentError('שגיאה במחיקת שיבוץ: $e'));
     }
@@ -590,6 +602,510 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return super.close();
   }
 
+  /// Get slot key for AssignmentSlot
+  String _getSlotKey(AssignmentSlot slot) {
+    return '${slot.event.id}_${slot.roleType.key}_${slot.slotIndex}';
+  }
+
+  /// Apply optimistic update to a specific slot only
+  List<AssignmentSlot> _applyOptimisticUpdate(
+    List<AssignmentSlot> slots,
+    String targetSlotKey,
+    Assignment? optimisticAssignment, {
+    required bool isDelete,
+  }) {
+    return slots.map((slot) {
+      final slotKey = _getSlotKey(slot);
+
+      if (slotKey == targetSlotKey) {
+        // This is the target slot - apply the optimistic change
+        return AssignmentSlot(
+          event: slot.event,
+          roleType: slot.roleType,
+          slotIndex: slot.slotIndex,
+          currentAssignment: isDelete ? null : optimisticAssignment,
+          // CRITICAL: Keep database member lists unchanged
+          availableMembers: slot.availableMembers,
+          alreadyAssignedMembers: slot.alreadyAssignedMembers,
+          hasDoubleAssignment: isDelete ? false : slot.hasDoubleAssignment,
+          otherRoles: isDelete ? const [] : slot.otherRoles,
+        );
+      }
+
+      // For all other slots, keep database state as-is
+      return slot;
+    }).toList();
+  }
+
+  /// Merge slots from database with pending optimistic operations
+  /// Also recalculates member availability for affected events
+  List<AssignmentSlot> _mergeSlotsWithOptimisticUpdates(
+    List<AssignmentSlot> databaseSlots,
+    Map<String, PendingOperation> pendingOperations,
+  ) {
+    if (pendingOperations.isEmpty) {
+      return databaseSlots;
+    }
+
+    debugPrint('🔀 [MERGE] Merging ${databaseSlots.length} slots with ${pendingOperations.length} pending ops');
+
+    // Remove expired operations (older than 5 seconds)
+    final activeOperations = Map<String, PendingOperation>.fromEntries(
+      pendingOperations.entries.where((entry) => !entry.value.isExpired),
+    );
+
+    if (activeOperations.length != pendingOperations.length) {
+      debugPrint('   → Removed ${pendingOperations.length - activeOperations.length} expired ops');
+    }
+
+    // CRITICAL FIX: Track slots with delete operations (including expired ones)
+    // This ensures deleted slots stay empty even after operations expire
+    // IMPORTANT: Only include a slot in deletedSlots if the CURRENT operation is DELETE
+    // If a slot has CREATE/UPDATE, it's not deleted even if there was an old DELETE op
+    final deletedSlots = <String>{}; // Set of slotKeys that were deleted
+    for (final operation in pendingOperations.values) {
+      if (operation.type == PendingOperationType.deleteAssignment) {
+        deletedSlots.add(operation.slotKey);
+      } else if (operation.type == PendingOperationType.createAssignment ||
+                 operation.type == PendingOperationType.updateAssignment) {
+        // Slot has CREATE/UPDATE, so it's NOT deleted (remove from set if present)
+        deletedSlots.remove(operation.slotKey);
+      }
+    }
+
+    // Group pending operations by event ID (only active ones for processing)
+    final operationsByEvent = <String, List<PendingOperation>>{};
+    for (final operation in activeOperations.values) {
+      final eventId = operation.slotKey.split('_')[0];
+      operationsByEvent.putIfAbsent(eventId, () => []).add(operation);
+    }
+
+    // CRITICAL FIX: Also add events that have deleted slots, even if no active ops
+    // This ensures member lists are recalculated even after operations expire
+    for (final slotKey in deletedSlots) {
+      final eventId = slotKey.split('_')[0];
+      operationsByEvent.putIfAbsent(eventId, () => []); // Add empty list if not present
+    }
+
+    debugPrint('   → Events with pending ops: ${operationsByEvent.keys.toList()}');
+    debugPrint('   → Deleted slots (cleared): ${deletedSlots.toList()}');
+
+    // Build a map of slots by event for efficient updates
+    final slotsByEvent = <String, List<AssignmentSlot>>{};
+    for (final slot in databaseSlots) {
+      slotsByEvent.putIfAbsent(slot.event.id, () => []).add(slot);
+    }
+
+    // Process each event that has pending operations
+    for (final entry in operationsByEvent.entries) {
+      final eventId = entry.key;
+      final operations = entry.value;
+      final eventSlots = slotsByEvent[eventId] ?? [];
+
+      if (eventSlots.isEmpty) continue;
+
+      debugPrint('   → Processing event $eventId with ${operations.length} ops');
+
+      // CRITICAL FIX: Rebuild effectiveAssignedMemberIds from scratch to avoid cross-slot interference
+      // Instead of modifying a set incrementally (which can remove members from wrong slots),
+      // we build a fresh map of which member is assigned to which slot.
+
+      // Map: slotKey -> member ID (null if empty)
+      final slotAssignments = <String, String?>{};
+
+      // Start with database assignments
+      for (final slot in eventSlots) {
+        final slotKey = _getSlotKey(slot);
+        slotAssignments[slotKey] = slot.currentAssignment?.teamMemberId;
+      }
+
+      debugPrint('      → DB assigned: ${slotAssignments.entries.where((e) => e.value != null).map((e) => '${e.key}:${e.value}').toList()}');
+
+      // Apply pending operations (this overrides DB state for specific slots)
+      for (final operation in operations) {
+        final slotKey = operation.slotKey;
+
+        if (operation.type == PendingOperationType.deleteAssignment) {
+          slotAssignments[slotKey] = null; // Slot is now empty
+          debugPrint('      → DELETE on $slotKey → empty');
+        } else if (operation.type == PendingOperationType.createAssignment ||
+                   operation.type == PendingOperationType.updateAssignment) {
+          if (operation.optimisticAssignment != null) {
+            slotAssignments[slotKey] = operation.optimisticAssignment!.teamMemberId;
+            debugPrint('      → CREATE/UPDATE on $slotKey → ${operation.optimisticAssignment!.teamMemberId}');
+          }
+        }
+      }
+
+      // Collect all non-null member IDs
+      final effectiveAssignedMemberIds = slotAssignments.values
+          .where((id) => id != null)
+          .cast<String>()
+          .toSet();
+
+      debugPrint('      → Final effective assigned IDs: ${effectiveAssignedMemberIds.toList()}');
+
+      // Recalculate member availability for all slots in this event
+      for (final slot in eventSlots) {
+        final slotKey = _getSlotKey(slot);
+        final operation = activeOperations[slotKey];
+
+        // Build new member lists based on effective assigned IDs
+        final availableMembersMap = <String, TeamMember>{};
+        final alreadyAssignedMembersMap = <String, TeamMember>{};
+
+        // Combine all members from both lists
+        final allMembers = [
+          ...slot.availableMembers,
+          ...slot.alreadyAssignedMembers,
+        ];
+
+        for (final member in allMembers) {
+          // Check capability
+          if (!member.canPerformRole(slot.roleType.key)) continue;
+
+          // Check availability for entire event duration
+          if (!member.allowMultipleAssignments &&
+              !member.isAvailableForDateRange(slot.event.startDate, slot.event.endDate)) {
+            continue;
+          }
+
+          // Separate based on effective assignment status
+          if (member.allowMultipleAssignments) {
+            availableMembersMap[member.id] = member;
+          } else if (effectiveAssignedMemberIds.contains(member.id)) {
+            alreadyAssignedMembersMap[member.id] = member;
+          } else {
+            availableMembersMap[member.id] = member;
+          }
+        }
+
+        // Update the slot with recalculated member lists
+        // Reset double assignment flags - will be recomputed after all updates
+        final slotIndex = eventSlots.indexOf(slot);
+        eventSlots[slotIndex] = AssignmentSlot(
+          event: slot.event,
+          roleType: slot.roleType,
+          slotIndex: slot.slotIndex,
+          currentAssignment: slot.currentAssignment,
+          availableMembers: availableMembersMap.values.toList(),
+          alreadyAssignedMembers: alreadyAssignedMembersMap.values.toList(),
+          hasDoubleAssignment: false,  // Will be recomputed
+          otherRoles: const [],  // Will be recomputed
+        );
+      }
+    }
+
+    // Now apply the optimistic currentAssignment changes
+    // After this, we need to re-run double assignment detection for affected events
+    final resultSlots = databaseSlots.map((dbSlot) {
+      final slotKey = _getSlotKey(dbSlot);
+      final operation = activeOperations[slotKey];
+
+      // CRITICAL FIX: Check if this slot was deleted (even if operation expired)
+      if (deletedSlots.contains(slotKey)) {
+        // This slot was deleted - keep it empty even if DB has old data
+        final eventSlots = slotsByEvent[dbSlot.event.id];
+        final baseSlot = eventSlots != null
+            ? eventSlots.firstWhere(
+                (s) => s.roleType == dbSlot.roleType && s.slotIndex == dbSlot.slotIndex,
+                orElse: () => dbSlot,
+              )
+            : dbSlot;
+        return AssignmentSlot(
+          event: baseSlot.event,
+          roleType: baseSlot.roleType,
+          slotIndex: baseSlot.slotIndex,
+          currentAssignment: null,
+          availableMembers: baseSlot.availableMembers,
+          alreadyAssignedMembers: baseSlot.alreadyAssignedMembers,
+          hasDoubleAssignment: false,
+          otherRoles: const [],
+        );
+      }
+
+      if (operation == null) {
+        // No pending operation - use updated slot (if it was recalculated) or original
+        final eventSlots = slotsByEvent[dbSlot.event.id];
+        if (eventSlots != null) {
+          final updatedSlot = eventSlots.firstWhere(
+            (s) => s.roleType == dbSlot.roleType && s.slotIndex == dbSlot.slotIndex,
+            orElse: () => dbSlot,
+          );
+          return updatedSlot;
+        }
+        return dbSlot;
+      }
+
+      // Apply optimistic operation to this slot
+      if (operation.type == PendingOperationType.deleteAssignment) {
+        final eventSlots = slotsByEvent[dbSlot.event.id];
+        final baseSlot = eventSlots != null
+            ? eventSlots.firstWhere(
+                (s) => s.roleType == dbSlot.roleType && s.slotIndex == dbSlot.slotIndex,
+                orElse: () => dbSlot,
+              )
+            : dbSlot;
+        return AssignmentSlot(
+          event: baseSlot.event,
+          roleType: baseSlot.roleType,
+          slotIndex: baseSlot.slotIndex,
+          currentAssignment: null,
+          availableMembers: baseSlot.availableMembers,
+          alreadyAssignedMembers: baseSlot.alreadyAssignedMembers,
+          hasDoubleAssignment: false,
+          otherRoles: const [],
+        );
+      } else {
+        // Create or Update
+        final eventSlots = slotsByEvent[dbSlot.event.id];
+        final baseSlot = eventSlots != null
+            ? eventSlots.firstWhere(
+                (s) => s.roleType == dbSlot.roleType && s.slotIndex == dbSlot.slotIndex,
+                orElse: () => dbSlot,
+              )
+            : dbSlot;
+        return AssignmentSlot(
+          event: baseSlot.event,
+          roleType: baseSlot.roleType,
+          slotIndex: baseSlot.slotIndex,
+          currentAssignment: operation.optimisticAssignment,
+          availableMembers: baseSlot.availableMembers,
+          alreadyAssignedMembers: baseSlot.alreadyAssignedMembers,
+          hasDoubleAssignment: baseSlot.hasDoubleAssignment ?? false,
+          otherRoles: baseSlot.otherRoles ?? const [],
+        );
+      }
+    }).toList();
+
+    // Re-run double assignment detection for affected events
+    // This ensures hasDoubleAssignment and otherRoles are correct after optimistic updates
+    for (final eventId in operationsByEvent.keys) {
+      final eventResultSlots = resultSlots.where((s) => s.event.id == eventId).toList();
+
+      for (final slot in eventResultSlots) {
+        if (slot.isFilled) {
+          // Check if member has allowMultipleAssignments - skip double assignment warning
+          final teamMember = slot.currentAssignment!.teamMember;
+          final skipDoubleAssignmentWarning = teamMember?.allowMultipleAssignments ?? false;
+
+          // Check if this person has other assignments in the same event
+          final otherAssignments = eventResultSlots.where((s) =>
+              s.event.id == slot.event.id &&
+              s.isFilled &&
+              s.currentAssignment!.teamMemberId ==
+                  slot.currentAssignment!.teamMemberId &&
+              s.roleType != slot.roleType).toList();
+
+          if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
+            // This person has multiple roles in this event
+            final otherRoleNames =
+                otherAssignments.map((s) => s.roleType.hebrewName).toList();
+
+            // Find and update this slot in resultSlots
+            final slotIndex = resultSlots.indexOf(slot);
+            resultSlots[slotIndex] = AssignmentSlot(
+              event: slot.event,
+              roleType: slot.roleType,
+              slotIndex: slot.slotIndex,
+              currentAssignment: slot.currentAssignment,
+              availableMembers: slot.availableMembers,
+              alreadyAssignedMembers: slot.alreadyAssignedMembers,
+              hasDoubleAssignment: true,
+              otherRoles: otherRoleNames,
+            );
+          }
+        }
+      }
+    }
+
+    return resultSlots;
+  }
+
+  /// Optimistic create assignment handler
+  Future<void> _onOptimisticCreateAssignment(
+    OptimisticCreateAssignment event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    if (state is! AssignmentSlotsLoaded) return;
+
+    final currentState = state as AssignmentSlotsLoaded;
+
+    debugPrint('🟢 [OPTIMISTIC CREATE] Slot: ${event.slotKey}');
+    debugPrint('   Member: ${event.assignment.teamMember?.name ?? event.assignment.teamMemberId}');
+    debugPrint('   Role: ${event.assignment.roleType}');
+    debugPrint('   Event: ${event.assignment.eventId}');
+
+    // Create pending operation
+    final operation = PendingOperation(
+      id: event.operationId,
+      type: PendingOperationType.createAssignment,
+      slotKey: event.slotKey,
+      optimisticAssignment: event.assignment,
+      timestamp: DateTime.now(),
+    );
+
+    // Add to BLoC-level pending operations map
+    _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations);
+    _pendingOperations[event.slotKey] = operation;
+
+    debugPrint('   → Pending ops count: ${_pendingOperations.length}');
+    debugPrint('   → Pending ops keys: ${_pendingOperations.keys.toList()}');
+
+    // Apply optimistic update
+    final updatedSlots = _applyOptimisticUpdate(
+      currentState.slots,
+      event.slotKey,
+      event.assignment,
+      isDelete: false,
+    );
+
+    emit(AssignmentSlotsLoaded(
+      updatedSlots,
+      selectedEventIds: currentState.selectedEventIds,
+      pendingOperations: _pendingOperations,
+    ));
+
+    // Execute database operation
+    try {
+      debugPrint('   → Sending to DB...');
+      await _repository.createAssignment(event.assignment);
+      debugPrint('   → DB create succeeded (awaiting Firestore stream)');
+      // Firestore stream will emit fresh state automatically
+    } catch (e) {
+      debugPrint('   ❌ DB create failed: $e');
+      // On error: remove operation, revert to database state
+      _pendingOperations.remove(event.slotKey);
+      emit(AssignmentSlotsLoaded(
+        currentState.slots,
+        selectedEventIds: currentState.selectedEventIds,
+        pendingOperations: _pendingOperations,
+      ));
+    }
+  }
+
+  /// Optimistic update assignment handler
+  Future<void> _onOptimisticUpdateAssignment(
+    OptimisticUpdateAssignment event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    if (state is! AssignmentSlotsLoaded) return;
+
+    final currentState = state as AssignmentSlotsLoaded;
+
+    debugPrint('🟡 [OPTIMISTIC UPDATE] Slot: ${event.slotKey}');
+    debugPrint('   Member: ${event.assignment.teamMember?.name ?? event.assignment.teamMemberId}');
+    debugPrint('   Role: ${event.assignment.roleType}');
+    debugPrint('   Event: ${event.assignment.eventId}');
+
+    // Create pending operation
+    final operation = PendingOperation(
+      id: event.operationId,
+      type: PendingOperationType.updateAssignment,
+      slotKey: event.slotKey,
+      optimisticAssignment: event.assignment,
+      timestamp: DateTime.now(),
+    );
+
+    // Add to BLoC-level pending operations map
+    _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations);
+    _pendingOperations[event.slotKey] = operation;
+
+    debugPrint('   → Pending ops count: ${_pendingOperations.length}');
+    debugPrint('   → Pending ops keys: ${_pendingOperations.keys.toList()}');
+
+    // Apply optimistic update
+    final updatedSlots = _applyOptimisticUpdate(
+      currentState.slots,
+      event.slotKey,
+      event.assignment,
+      isDelete: false,
+    );
+
+    emit(AssignmentSlotsLoaded(
+      updatedSlots,
+      selectedEventIds: currentState.selectedEventIds,
+      pendingOperations: _pendingOperations,
+    ));
+
+    // Execute database operation
+    try {
+      debugPrint('   → Sending to DB...');
+      await _repository.updateAssignment(event.assignment);
+      debugPrint('   → DB update succeeded (awaiting Firestore stream)');
+      // Firestore stream will emit fresh state automatically
+    } catch (e) {
+      debugPrint('   ❌ DB update failed: $e');
+      // On error: remove operation, revert to database state
+      _pendingOperations.remove(event.slotKey);
+      emit(AssignmentSlotsLoaded(
+        currentState.slots,
+        selectedEventIds: currentState.selectedEventIds,
+        pendingOperations: _pendingOperations,
+      ));
+    }
+  }
+
+  /// Optimistic delete assignment handler
+  Future<void> _onOptimisticDeleteAssignment(
+    OptimisticDeleteAssignment event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    if (state is! AssignmentSlotsLoaded) return;
+
+    final currentState = state as AssignmentSlotsLoaded;
+
+    debugPrint('🔴 [OPTIMISTIC DELETE] Slot: ${event.slotKey}');
+    debugPrint('   Assignment ID: ${event.assignmentId}');
+
+    // Create pending operation
+    final operation = PendingOperation(
+      id: event.operationId,
+      type: PendingOperationType.deleteAssignment,
+      slotKey: event.slotKey,
+      optimisticAssignment: null,
+      timestamp: DateTime.now(),
+    );
+
+    // Add to BLoC-level pending operations map
+    _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations);
+    _pendingOperations[event.slotKey] = operation;
+
+    debugPrint('   → Pending ops count: ${_pendingOperations.length}');
+    debugPrint('   → Pending ops keys: ${_pendingOperations.keys.toList()}');
+
+    // Apply optimistic update (clear slot)
+    final updatedSlots = _applyOptimisticUpdate(
+      currentState.slots,
+      event.slotKey,
+      null,
+      isDelete: true,
+    );
+
+    emit(AssignmentSlotsLoaded(
+      updatedSlots,
+      selectedEventIds: currentState.selectedEventIds,
+      pendingOperations: _pendingOperations,
+    ));
+
+    // Execute database operation
+    try {
+      debugPrint('   → Sending to DB...');
+      await _repository.deleteAssignment(event.assignmentId);
+      debugPrint('   → DB delete succeeded (awaiting Firestore stream)');
+      // Firestore stream will emit fresh state automatically
+    } catch (e) {
+      debugPrint('   ❌ DB delete failed: $e');
+      // On error: remove operation, revert to database state
+      _pendingOperations.remove(event.slotKey);
+      emit(AssignmentSlotsLoaded(
+        currentState.slots,
+        selectedEventIds: currentState.selectedEventIds,
+        pendingOperations: _pendingOperations,
+      ));
+    }
+  }
+
   /// Build complete slots state from assignments
   /// Fetches latest events and team members, then builds slot grid
   Future<AssignmentSlotsLoaded> _buildSlotsFromAssignments(
@@ -800,12 +1316,23 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Keep the internal field in sync
       _currentEventFilter = filterToUse;
 
-      final assignments = await _repository.getAllAssignments();
-      final updatedSlots = await _buildSlotsFromAssignments(
-        assignments,
+      // Build slots from database data (base state)
+      final databaseSlots = await _buildSlotsFromAssignments(
+        await _repository.getAllAssignments(),
         selectedEventIds: filterToUse,
       );
-      emit(updatedSlots);
+
+      // Merge optimistic updates on top of database state using BLoC-level pending operations
+      final mergedSlots = _mergeSlotsWithOptimisticUpdates(
+        databaseSlots.slots,
+        _pendingOperations,
+      );
+
+      emit(AssignmentSlotsLoaded(
+        mergedSlots,
+        selectedEventIds: filterToUse,
+        pendingOperations: _pendingOperations,
+      ));
     } catch (e) {
       emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
     }
@@ -817,6 +1344,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     Emitter<AssignmentState> emit,
   ) async {
     try {
+      debugPrint('📡 [FIRESTORE STREAM] Assignments count: ${rebuildEvent.assignments.length}');
+      debugPrint('   → Pending ops count: ${_pendingOperations.length}');
+
       // Update the repository's cached assignments
       _repository.cacheCurrentAssignments(rebuildEvent.assignments);
 
@@ -989,9 +1519,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Remember the filter
       _currentEventFilter = rebuildEvent.selectedEventIds;
 
-      emit(AssignmentSlotsLoaded(
+      // Merge optimistic updates on top of database state using BLoC-level pending operations
+      final mergedSlots = _mergeSlotsWithOptimisticUpdates(
         filteredSlots,
+        _pendingOperations,
+      );
+
+      emit(AssignmentSlotsLoaded(
+        mergedSlots,
         selectedEventIds: rebuildEvent.selectedEventIds,
+        pendingOperations: _pendingOperations,
       ));
     } catch (e) {
       emit(AssignmentError('שגיאה בבניית שיבוצים: $e'));

@@ -40,12 +40,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   AssignmentSlotsLoaded? _lastSlotsState;
   // Track when dropdowns need to be reset (forces new widget instance)
   final Map<String, int> _dropdownResetCounters = {};
-  // Track assignment IDs that are pending deletion to prevent race conditions
-  final Set<String> _pendingDeletions = {};
-  // Track assignment IDs that are pending creation (not yet in DB)
-  final Set<String> _pendingCreates = {};
-  // Track pending creates that should be deleted immediately after creation completes
-  final Set<String> _pendingCreatesToDelete = {};
   // Track if initial data load is complete (to show loading until both assignments and team members are loaded)
   bool _isInitialLoadComplete = false;
 
@@ -204,23 +198,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       backgroundColor: Colors.red),
                 );
             } else if (state is AssignmentOperationSuccess) {
-              // Check if any completed creates need immediate deletion
-              if (_pendingCreatesToDelete.isNotEmpty) {
-                // Delete all assignments that were cleared during their creation
-                for (final id in _pendingCreatesToDelete) {
-                  context.read<AssignmentBloc>().add(DeleteAssignment(id));
-                }
-                setState(() {
-                  _pendingCreatesToDelete.clear();
-                });
-              }
-
-              // Clear pending creates when operation succeeds
-              // (operation could be create, update, or delete - clear all tracking)
-              setState(() {
-                _pendingCreates.clear();
-              });
-
               // BLoC will automatically reload slots without showing loading
               ScaffoldMessenger.of(context)
                 ..clearSnackBars()
@@ -269,30 +246,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 _isInitialLoadComplete = true;
               }
 
-              // Filter out slots with assignments pending deletion to prevent race conditions
-              final filteredSlots = state.slots.map((slot) {
-                // If this slot has an assignment that's pending deletion, clear it
-                if (slot.currentAssignment != null &&
-                    _pendingDeletions.contains(slot.currentAssignment!.id)) {
-                  return AssignmentSlot(
-                    event: slot.event,
-                    roleType: slot.roleType,
-                    slotIndex: slot.slotIndex,
-                    currentAssignment: null, // Clear the assignment
-                    availableMembers: slot.availableMembers,
-                    alreadyAssignedMembers: slot.alreadyAssignedMembers,
-                    hasDoubleAssignment: false,
-                    otherRoles: const [],
-                  );
-                }
-                return slot;
-              }).toList();
-
-              _lastSlotsState = AssignmentSlotsLoaded(
-                filteredSlots,
-                selectedEventIds: state.selectedEventIds,
-              ); // Store the filtered state
-                            return _buildSlotGrid(_lastSlotsState!);
+              // Update _lastSlotsState with current state
+              _lastSlotsState = state;
+              return _buildSlotGrid(state);
             }
 
             // For any other state (Operating, Success, Error), keep showing last state if available
@@ -580,7 +536,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   // Assignment cell with dropdown and buttons
                   Expanded(
                     flex: 3,
-                    child: _buildAssignmentCell(slot),
+                    child: Padding(
+                      padding: const EdgeInsetsDirectional.only(start: 8.0),
+                      child: _buildAssignmentCell(slot),
+                    ),
                   ),
                 ],
               ),
@@ -1116,97 +1075,15 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   void _handleClearAssignment(AssignmentSlot slot) {
     if (slot.currentAssignment != null) {
-      final clearedMemberId = slot.currentAssignment!.teamMemberId;
-      final clearedMember = slot.currentAssignment!.teamMember;
-      final assignmentId = slot.currentAssignment!.id;
+      final slotKey = _getSlotKey(slot);
 
-      // Add to pending deletions to prevent race conditions
-      _pendingDeletions.add(assignmentId);
-
-      // Remove from pending deletions after 5 seconds (cleanup timeout)
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) {
-          setState(() {
-            _pendingDeletions.remove(assignmentId);
-          });
-        }
-      });
-
-      // Optimistic update: clear the assignment in local state immediately
-      if (_lastSlotsState != null) {
-        final updatedSlots = _lastSlotsState!.slots.map((s) {
-          if (s.event.id == slot.event.id &&
-              s.roleType == slot.roleType &&
-              s.slotIndex == slot.slotIndex) {
-            // This is the slot being cleared
-            return AssignmentSlot(
-              event: s.event,
-              roleType: s.roleType,
-              slotIndex: s.slotIndex,
-              currentAssignment: null, // Clear the assignment
-              availableMembers: s.availableMembers,
-              alreadyAssignedMembers: s.alreadyAssignedMembers,
-              hasDoubleAssignment: false,
-              otherRoles: const [],
-            );
-          } else if (s.event.id == slot.event.id) {
-            // For ALL other slots in the same event, check if member is still assigned elsewhere
-            // If not, move them back to availableMembers
-            final stillAssignedElsewhere = _lastSlotsState!.slots.any((otherSlot) =>
-                otherSlot.event.id == slot.event.id &&
-                otherSlot.isFilled &&
-                otherSlot.currentAssignment!.teamMemberId == clearedMemberId &&
-                !(otherSlot.event.id == slot.event.id &&
-                  otherSlot.roleType == slot.roleType &&
-                  otherSlot.slotIndex == slot.slotIndex)); // Exclude the slot being cleared
-
-            if (!stillAssignedElsewhere && clearedMember != null) {
-              // Member is no longer assigned to this event - add back to available
-              final updatedAvailable = s.availableMembers.any((m) => m.id == clearedMemberId)
-                  ? s.availableMembers
-                  : [...s.availableMembers, clearedMember];
-
-              // Remove from alreadyAssigned
-              final updatedAlreadyAssigned = s.alreadyAssignedMembers
-                  .where((m) => m.id != clearedMemberId)
-                  .toList();
-
-              return AssignmentSlot(
-                event: s.event,
-                roleType: s.roleType,
-                slotIndex: s.slotIndex,
-                currentAssignment: s.currentAssignment,
-                availableMembers: updatedAvailable,
-                alreadyAssignedMembers: updatedAlreadyAssigned,
-                hasDoubleAssignment: s.hasDoubleAssignment,
-                otherRoles: s.otherRoles,
-              );
-            }
-          }
-          return s;
-        }).toList();
-
-        setState(() {
-          _lastSlotsState = AssignmentSlotsLoaded(
-            updatedSlots,
-            selectedEventIds: _lastSlotsState!.selectedEventIds, // Preserve the filter!
-          );
-        });
-      }
-
-      // Then proceed with actual database deletion
-      // BUT: if this assignment is pending creation (not yet in DB), schedule deletion for after creation
-      if (_pendingCreates.contains(assignmentId)) {
-        // Assignment is still being created - mark it for deletion after creation completes
-        _pendingCreatesToDelete.add(assignmentId);
-        // Don't dispatch DeleteAssignment yet - the assignment doesn't exist in DB yet
-        // It will be deleted immediately after the create completes (see listener)
-      } else {
-        // Assignment exists in DB - dispatch delete immediately
-        context.read<AssignmentBloc>().add(
-              DeleteAssignment(slot.currentAssignment!.id),
-            );
-      }
+      // Dispatch to BLoC - no local state manipulation!
+      context.read<AssignmentBloc>().add(
+        OptimisticDeleteAssignment(
+          assignmentId: slot.currentAssignment!.id,
+          slotKey: slotKey,
+        ),
+      );
     }
   }
 
@@ -1326,96 +1203,41 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   Future<void> _handleAssignmentChange(
       AssignmentSlot slot, TeamMember selectedMember) async {
-    // Check if the selected member is already assigned to this slot
+    // Check if already assigned (no-op)
     if (slot.currentAssignment?.teamMemberId == selectedMember.id) {
-      // Already assigned - do nothing, no DB write, no Snackbar
       return;
     }
 
-    // Prepare the assignment for DB operation (create it once with a single UUID)
-    final Assignment assignmentForDB;
+    // Create assignment object
+    final assignment = slot.currentAssignment != null
+        ? slot.currentAssignment!.copyWith(
+            teamMemberId: selectedMember.id,
+            teamMember: selectedMember,
+            updatedAt: DateTime.now(),
+          )
+        : Assignment(
+            id: const Uuid().v4(),
+            eventId: slot.event.id,
+            teamMemberId: selectedMember.id,
+            roleType: slot.roleType.key,
+            slotIndex: slot.slotIndex,
+            status: AssignmentStatus.confirmed,
+            notes: '',
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            event: slot.event,
+            teamMember: selectedMember,
+          );
+
+    // Dispatch to BLoC - no local state manipulation!
     if (slot.currentAssignment != null) {
-      // Update existing
-      assignmentForDB = slot.currentAssignment!.copyWith(
-        teamMemberId: selectedMember.id,
-        teamMember: selectedMember,
-        updatedAt: DateTime.now(),
+      context.read<AssignmentBloc>().add(
+        OptimisticUpdateAssignment(assignment),
       );
     } else {
-      // Create new - generate UUID ONCE here
-      assignmentForDB = Assignment(
-        id: const Uuid().v4(),
-        eventId: slot.event.id,
-        teamMemberId: selectedMember.id,
-        roleType: slot.roleType.key,
-        slotIndex: slot.slotIndex,
-        status: AssignmentStatus.confirmed,
-        notes: '',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        event: slot.event,
-        teamMember: selectedMember,
+      context.read<AssignmentBloc>().add(
+        OptimisticCreateAssignment(assignment),
       );
-    }
-
-    // Optimistic update: update local state immediately using the SAME assignment
-    if (_lastSlotsState != null) {
-      final updatedSlots = _lastSlotsState!.slots.map((s) {
-        if (s.event.id == slot.event.id &&
-            s.roleType == slot.roleType &&
-            s.slotIndex == slot.slotIndex) {
-          // This is the slot being updated - use the assignmentForDB
-          return AssignmentSlot(
-            event: s.event,
-            roleType: s.roleType,
-            slotIndex: s.slotIndex,
-            currentAssignment: assignmentForDB,
-            availableMembers: s.availableMembers,
-            alreadyAssignedMembers: s.alreadyAssignedMembers,
-            hasDoubleAssignment: s.hasDoubleAssignment,
-            otherRoles: s.otherRoles,
-          );
-        } else if (s.event.id == slot.event.id) {
-          // For ALL other slots in the same event, update their available/alreadyAssigned lists
-          // Remove selectedMember from availableMembers
-          final updatedAvailable = s.availableMembers
-              .where((m) => m.id != selectedMember.id)
-              .toList();
-
-          // Add selectedMember to alreadyAssignedMembers if not already there
-          final updatedAlreadyAssigned = s.alreadyAssignedMembers.any((m) => m.id == selectedMember.id)
-              ? s.alreadyAssignedMembers
-              : [...s.alreadyAssignedMembers, selectedMember];
-
-          return AssignmentSlot(
-            event: s.event,
-            roleType: s.roleType,
-            slotIndex: s.slotIndex,
-            currentAssignment: s.currentAssignment,
-            availableMembers: updatedAvailable,
-            alreadyAssignedMembers: updatedAlreadyAssigned,
-            hasDoubleAssignment: s.hasDoubleAssignment,
-            otherRoles: s.otherRoles,
-          );
-        }
-        return s;
-      }).toList();
-
-      setState(() {
-        _lastSlotsState = AssignmentSlotsLoaded(
-          updatedSlots,
-          selectedEventIds: _lastSlotsState!.selectedEventIds, // Preserve the filter!
-        );
-      });
-    }
-
-    // Then proceed with actual database update using the SAME assignment
-    if (slot.currentAssignment != null) {
-      context.read<AssignmentBloc>().add(UpdateAssignment(assignmentForDB));
-    } else {
-      // Track this as a pending create
-      _pendingCreates.add(assignmentForDB.id);
-      context.read<AssignmentBloc>().add(CreateAssignment(assignmentForDB));
     }
   }
 

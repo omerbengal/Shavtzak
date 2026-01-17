@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:uuid/uuid.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
@@ -229,5 +230,57 @@ class UpdateAssignmentNotes extends AssignmentEvent {
 
   @override
   List<Object?> get props => [id, notes];
+}
+
+/// Base class for optimistic assignment operations
+abstract class OptimisticAssignmentEvent extends AssignmentEvent {
+  final String operationId;
+  final String slotKey;
+  final Assignment assignment;
+
+  const OptimisticAssignmentEvent({
+    required this.operationId,
+    required this.slotKey,
+    required this.assignment,
+  });
+
+  @override
+  List<Object?> get props => [operationId, slotKey, assignment];
+}
+
+/// Optimistically create a new assignment
+class OptimisticCreateAssignment extends OptimisticAssignmentEvent {
+  OptimisticCreateAssignment(Assignment assignment)
+      : super(
+          operationId: Uuid().v4(),
+          slotKey: '${assignment.eventId}_${assignment.roleType}_${assignment.slotIndex}',
+          assignment: assignment,
+        );
+}
+
+/// Optimistically update an existing assignment
+class OptimisticUpdateAssignment extends OptimisticAssignmentEvent {
+  OptimisticUpdateAssignment(Assignment assignment)
+      : super(
+          operationId: Uuid().v4(),
+          slotKey: '${assignment.eventId}_${assignment.roleType}_${assignment.slotIndex}',
+          assignment: assignment,
+        );
+}
+
+/// Optimistically delete an assignment
+class OptimisticDeleteAssignment extends AssignmentEvent {
+  final String assignmentId;
+  final String slotKey;
+  final String operationId;
+
+  OptimisticDeleteAssignment({
+    required this.assignmentId,
+    required this.slotKey,
+    String? operationId,
+  }) : operationId = operationId ?? Uuid().v4();
+
+  @override
+  List<Object?> get props => [assignmentId, slotKey, operationId];
 }
 

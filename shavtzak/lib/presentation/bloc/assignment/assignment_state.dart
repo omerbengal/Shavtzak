@@ -72,22 +72,28 @@ class AssignmentSlotsLoaded extends AssignmentState {
   final int filledSlots;
   final int unfilledSlots;
   final Set<String> selectedEventIds; // Event IDs to filter by (empty = no filter)
+  final Map<String, PendingOperation> pendingOperations; // Tracks pending optimistic updates
 
   AssignmentSlotsLoaded(
     this.slots, {
     this.selectedEventIds = const {},
+    this.pendingOperations = const {},
   })  : totalSlots = slots.length,
         filledSlots = slots.where((s) => s.isFilled).length,
         unfilledSlots = slots.where((s) => !s.isFilled).length;
 
   @override
-  List<Object?> get props => [slots, totalSlots, filledSlots, unfilledSlots, selectedEventIds];
+  List<Object?> get props => [slots, totalSlots, filledSlots, unfilledSlots, selectedEventIds, pendingOperations];
 
-  /// Create a copy with new filter
-  AssignmentSlotsLoaded copyWith({Set<String>? selectedEventIds}) {
+  /// Create a copy with new filter or pending operations
+  AssignmentSlotsLoaded copyWith({
+    Set<String>? selectedEventIds,
+    Map<String, PendingOperation>? pendingOperations,
+  }) {
     return AssignmentSlotsLoaded(
       slots,
       selectedEventIds: selectedEventIds ?? this.selectedEventIds,
+      pendingOperations: pendingOperations ?? this.pendingOperations,
     );
   }
 }
@@ -162,6 +168,40 @@ class AssignmentConflictWarning extends AssignmentState {
 
   @override
   List<Object?> get props => [conflicts, assignment];
+}
+
+/// Pending operation type for optimistic updates
+enum PendingOperationType {
+  createAssignment,
+  updateAssignment,
+  deleteAssignment,
+}
+
+/// Tracks a pending optimistic operation
+class PendingOperation extends Equatable {
+  final String id;
+  final PendingOperationType type;
+  final String slotKey; // "${eventId}_${roleType}_${slotIndex}"
+  final Assignment? optimisticAssignment;
+  final DateTime timestamp;
+
+  const PendingOperation({
+    required this.id,
+    required this.type,
+    required this.slotKey,
+    this.optimisticAssignment,
+    required this.timestamp,
+  });
+
+  /// Expire operations after 5 minutes
+  /// This is a safety net for truly failed operations (network error, DB error, etc.)
+  /// Normally, Firestore stream will confirm the operation long before this expires.
+  /// The optimistic state persists until the database confirms it, regardless of network speed.
+  bool get isExpired =>
+      DateTime.now().difference(timestamp).inMinutes > 5;
+
+  @override
+  List<Object?> get props => [id, type, slotKey, optimisticAssignment, timestamp];
 }
 
 /// Error state
