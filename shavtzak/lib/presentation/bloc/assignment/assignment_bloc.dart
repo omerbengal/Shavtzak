@@ -6,8 +6,10 @@ import '../../../core/utils/filter_persistence.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/team_repository.dart';
+import '../../../data/repositories/role_repository.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/role.dart';
 import '../../../domain/entities/team_member.dart';
 import 'assignment_event.dart';
 import 'assignment_state.dart';
@@ -19,11 +21,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   final AssignmentRepository _repository;
   final EventRepository _eventRepository;
   final TeamRepository _teamRepository;
+  final RoleRepository _roleRepository;
 
   // Stream subscriptions for manual control
   StreamSubscription? _assignmentSubscription;
   StreamSubscription? _teamMemberSubscription;
   StreamSubscription? _eventSubscription;
+  StreamSubscription? _roleSubscription;
 
   // Stream subscriptions for user assignments view
   StreamSubscription? _userAssignmentSubscription;
@@ -36,6 +40,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     this._repository,
     this._eventRepository,
     this._teamRepository,
+    this._roleRepository,
   ) : super(const AssignmentInitial()) {
     // Register event handlers
     on<LoadAssignments>(_onLoadAssignments);
@@ -453,6 +458,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _assignmentSubscription?.cancel();
       await _teamMemberSubscription?.cancel();
       await _eventSubscription?.cancel();
+      await _roleSubscription?.cancel();
 
       // OPTIMIZATION: Use time window instead of loading all events/assignments
       // This reduces initial load from 5000+ assignments to ~500 (90% reduction)
@@ -550,6 +556,24 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           emit(AssignmentError('שגיאה בהאזנה לאירועים: $e'));
         },
       );
+
+      // Also listen for role changes
+      _roleSubscription = _roleRepository.watchRoles().listen(
+        (updatedRoles) async {
+          // When roles change (e.g., reordering), rebuild slots with fresh assignments
+          final freshAssignments = await _repository.getAssignmentsInTimeWindow(
+            windowStart: windowStart,
+            windowEnd: windowEnd,
+          );
+          // Update cache with fresh data
+          _repository.cacheCurrentAssignments(freshAssignments);
+          // Trigger rebuild with fresh data - use _currentEventFilter to preserve user's filter
+          add(RebuildAssignmentSlotsFromData(freshAssignments, cachedEventsMap, cachedMembersMap, _currentEventFilter));
+        },
+        onError: (e) {
+          emit(AssignmentError('שגיאה בהאזנה לתפקידים: $e'));
+        },
+      );
     } catch (e) {
       emit(AssignmentError('שגיאה בטעינת שיבוצים: $e'));
     }
@@ -560,6 +584,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     await _assignmentSubscription?.cancel();
     await _teamMemberSubscription?.cancel();
     await _eventSubscription?.cancel();
+    await _roleSubscription?.cancel();
     await _userAssignmentSubscription?.cancel();
     await _userEventSubscription?.cancel();
     return super.close();
@@ -585,18 +610,39 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // 3. Load all active team members
     final allMembers = await _teamRepository.getActiveTeamMembers();
 
-    // 4. Build slots
+    // 4. Load roles and sort by sortOrder
+    final allRoles = await _roleRepository.getAllRoles();
+    final sortedRoles = allRoles
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+    // Create a mapping from role key to RoleType enum for compatibility
+    final roleKeyToRoleType = <String, RoleType>{};
+    for (final roleType in RoleType.values) {
+      roleKeyToRoleType[roleType.key] = roleType;
+    }
+
+    // Create a mapping from role key to sortOrder for sorting
+    final roleKeyToSortOrder = <String, int>{};
+    for (final role in sortedRoles) {
+      roleKeyToSortOrder[role.key] = role.sortOrder;
+    }
+
+    // 5. Build slots
     final slots = <AssignmentSlot>[];
 
       for (final event in events) {
-        // For each role requirement in the event (in enum order)
-        for (final role in RoleType.values) {
-          final requiredCount = event.roleRequirements[role.name] ?? 0;
+        // Iterate through roles in sortOrder (not enum order)
+        for (final role in sortedRoles) {
+          // Skip if this role key doesn't map to a RoleType (legacy compatibility)
+          if (!roleKeyToRoleType.containsKey(role.key)) continue;
+
+          final roleType = roleKeyToRoleType[role.key]!;
+          final requiredCount = event.roleRequirements[role.key] ?? 0;
           if (requiredCount == 0) continue; // Skip roles with 0 requirement
 
           // Get assignments for this event+role
           final roleAssignments = assignments
-              .where((a) => a.eventId == event.id && a.roleType == role.name)
+              .where((a) => a.eventId == event.id && a.roleType == role.key)
               .toList();
 
           // Create slots (one per required count)
@@ -622,7 +668,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
             for (final member in allMembers) {
               // Check capability
-              if (!member.canPerformRole(role.name)) continue;
+              if (!member.canPerformRole(role.key)) continue;
 
               // Check availability for entire event duration
               // Skip availability check for members with allowMultipleAssignments
@@ -647,7 +693,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
             slots.add(AssignmentSlot(
               event: event,
-              roleType: role,
+              roleType: roleType,
               slotIndex: i,
               currentAssignment: assignment,
               availableMembers: availableMembers,
@@ -657,7 +703,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         }
       }
 
-      // 5. Detect double assignments (person assigned to multiple roles in same event)
+      // 6. Detect double assignments (person assigned to multiple roles in same event)
       // Skip for members with allowMultipleAssignments since it's expected behavior
       final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
       for (final slot in slots) {
@@ -696,7 +742,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         }
       }
 
-    // 6. Sort slots by event date, then event name, then role
+    // 7. Sort slots by event date, then event name, then role sortOrder
     slotsWithDoubleAssignmentDetection.sort((a, b) {
       final dateCompare = a.event.startDate.compareTo(b.event.startDate);
       if (dateCompare != 0) return dateCompare;
@@ -704,8 +750,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final nameCompare = a.event.name.compareTo(b.event.name);
       if (nameCompare != 0) return nameCompare;
 
-      // Sort by enum order (not alphabetically)
-      return a.roleType.index.compareTo(b.roleType.index);
+      // Sort by role sortOrder (not enum order)
+      final aSortOrder = roleKeyToSortOrder[a.roleType.key] ?? 0;
+      final bSortOrder = roleKeyToSortOrder[b.roleType.key] ?? 0;
+      return aSortOrder.compareTo(bSortOrder);
     });
 
     return AssignmentSlotsLoaded(
@@ -777,6 +825,23 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final teamMembersMap = rebuildEvent.teamMembers;
       final teamMembers = rebuildEvent.teamMembers.values.toList();
 
+      // Load roles and sort by sortOrder
+      final allRoles = await _roleRepository.getAllRoles();
+      final sortedRoles = allRoles
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+      // Create a mapping from role key to RoleType enum for compatibility
+      final roleKeyToRoleType = <String, RoleType>{};
+      for (final roleType in RoleType.values) {
+        roleKeyToRoleType[roleType.key] = roleType;
+      }
+
+      // Create a mapping from role key to sortOrder for sorting
+      final roleKeyToSortOrder = <String, int>{};
+      for (final role in sortedRoles) {
+        roleKeyToSortOrder[role.key] = role.sortOrder;
+      }
+
       // Filter events based on showPastEvents flag
       var filteredEvents = eventsList;
       if (!FilterPersistence.showPastEvents) {
@@ -788,14 +853,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Build slots using the existing method
       final slots = <AssignmentSlot>[];
       for (final eventData in filteredEvents) {
-        // For each role requirement in the event (in enum order)
-        for (final role in RoleType.values) {
-          final requiredCount = eventData.roleRequirements[role.name] ?? 0;
+        // Iterate through roles in sortOrder (not enum order)
+        for (final role in sortedRoles) {
+          // Skip if this role key doesn't map to a RoleType (legacy compatibility)
+          if (!roleKeyToRoleType.containsKey(role.key)) continue;
+
+          final roleType = roleKeyToRoleType[role.key]!;
+          final requiredCount = eventData.roleRequirements[role.key] ?? 0;
           if (requiredCount == 0) continue; // Skip roles with 0 requirement
 
           // Get assignments for this event+role from the assignments list
           final roleAssignments = rebuildEvent.assignments
-              .where((a) => a.eventId == eventData.id && a.roleType == role.name)
+              .where((a) => a.eventId == eventData.id && a.roleType == role.key)
               .map((a) => a.withRelations(
                 event: eventData,
                 teamMember: teamMembersMap[a.teamMemberId],
@@ -825,7 +894,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
             for (final member in teamMembers) {
               // Check capability
-              if (!member.canPerformRole(role.name)) continue;
+              if (!member.canPerformRole(role.key)) continue;
 
               // Check availability for entire event duration
               // Skip availability check for members with allowMultipleAssignments
@@ -850,7 +919,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
             slots.add(AssignmentSlot(
               event: eventData,
-              roleType: role,
+              roleType: roleType,
               slotIndex: i,
               currentAssignment: assignment,
               availableMembers: availableMembers,
@@ -898,7 +967,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         }
       }
 
-      // Sort slots by event date, then event name, then role
+      // Sort slots by event date, then event name, then role sortOrder
       slotsWithDoubleAssignmentDetection.sort((a, b) {
         final dateCompare = a.event.startDate.compareTo(b.event.startDate);
         if (dateCompare != 0) return dateCompare;
@@ -906,8 +975,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final nameCompare = a.event.name.compareTo(b.event.name);
         if (nameCompare != 0) return nameCompare;
 
-        // Sort by enum order (not alphabetically)
-        return a.roleType.index.compareTo(b.roleType.index);
+        // Sort by role sortOrder (not enum order)
+        final aSortOrder = roleKeyToSortOrder[a.roleType.key] ?? 0;
+        final bSortOrder = roleKeyToSortOrder[b.roleType.key] ?? 0;
+        return aSortOrder.compareTo(bSortOrder);
       });
 
       // Apply filter if needed

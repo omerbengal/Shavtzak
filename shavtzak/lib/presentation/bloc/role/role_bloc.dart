@@ -188,12 +188,39 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
     Emitter<RoleState> emit,
   ) async {
     try {
+      // Optimistic update: update sortOrder field for each role to match new positions
+      final currentState = state;
+      if (currentState is RolesLoaded) {
+        // Update sortOrder for reordered roles to match their new index
+        final updatedRoles = event.reorderedRoles
+            .asMap()
+            .entries
+            .map((entry) => entry.value.copyWith(sortOrder: entry.key))
+            .toList();
+
+        // Replace reordered roles in the full roles list (preserving archived roles)
+        final allRoles = currentState.roles.map((role) {
+          if (role.isArchived) return role; // Keep archived roles unchanged
+
+          // Find the role in updatedRoles by id
+          final updatedRole = updatedRoles.firstWhere(
+            (r) => r.id == role.id,
+            orElse: () => role,
+          );
+          return updatedRole;
+        }).toList();
+
+        emit(RolesLoaded(allRoles));
+        developer.log('RoleBloc._onReorderRoles: Optimistically updated UI with new sortOrder', name: 'RoleBloc');
+      }
+
+      // Then update Firestore (stream will eventually emit the same order)
       await _repository.reorderRoles(event.reorderedRoles);
-      developer.log('RoleBloc._onReorderRoles: Reordered ${event.reorderedRoles.length} roles', name: 'RoleBloc');
-      // Real-time stream will trigger UI update
+      developer.log('RoleBloc._onReorderRoles: Reordered ${event.reorderedRoles.length} roles in Firestore', name: 'RoleBloc');
     } catch (e) {
       developer.log('RoleBloc._onReorderRoles: Error reordering roles: $e', name: 'RoleBloc');
       emit(RoleError('שגיאה בעדכון סדר תפקידים: $e'));
+      // Note: On error, the real-time stream will revert to the correct order from Firestore
     }
   }
 

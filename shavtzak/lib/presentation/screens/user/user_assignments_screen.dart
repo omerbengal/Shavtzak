@@ -109,7 +109,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   }
 
                   if (state is AssignmentsLoaded) {
-                    return _buildAssignmentsContent(context, state.assignments);
+                    // Wrap with BlocBuilder to rebuild when role order changes
+                    return BlocBuilder<RoleBloc, RoleState>(
+                      builder: (context, roleState) {
+                        return _buildAssignmentsContent(context, state.assignments);
+                      },
+                    );
                   }
 
                   if (state is AssignmentError) {
@@ -139,11 +144,31 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       assignmentsByEvent[eventId]!.add(assignment);
     }
 
+    // Get role order from RoleBloc
+    final roleState = context.read<RoleBloc>().state;
+    final roleKeyToSortOrder = <String, int>{};
+
+    if (roleState is RolesLoaded) {
+      // Build a map of role key to sortOrder from RoleBloc
+      for (final role in roleState.activeRoles) {
+        roleKeyToSortOrder[role.key] = role.sortOrder;
+      }
+    } else {
+      // Fallback: use RoleType enum index as sortOrder
+      for (final roleType in RoleType.values) {
+        roleKeyToSortOrder[roleType.key] = RoleType.values.indexOf(roleType);
+      }
+    }
+
     // Convert to list of grouped assignments (using first assignment as representative)
     final groupedAssignments = assignmentsByEvent.entries.map((entry) {
       final eventAssignments = entry.value;
-      // Sort roles by key for consistent display
-      eventAssignments.sort((a, b) => a.roleType.compareTo(b.roleType));
+      // Sort roles by sortOrder (from RoleBloc) for consistent display
+      eventAssignments.sort((a, b) {
+        final aSortOrder = roleKeyToSortOrder[a.roleType] ?? 0;
+        final bSortOrder = roleKeyToSortOrder[b.roleType] ?? 0;
+        return aSortOrder.compareTo(bSortOrder);
+      });
       return eventAssignments;
     }).toList();
 

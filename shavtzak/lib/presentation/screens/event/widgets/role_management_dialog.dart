@@ -16,6 +16,10 @@ class RoleManagementDialog extends StatefulWidget {
 class _RoleManagementDialogState extends State<RoleManagementDialog> {
   bool _showArchive = false;
 
+  /// Local optimistic state for reordering - updates immediately via setState
+  /// before BLoC/Firestore responds. Cleared when BLoC state updates.
+  List<Role>? _pendingReorderedRoles;
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -67,6 +71,13 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
               Expanded(
                 child: BlocConsumer<RoleBloc, RoleState>(
                   listener: (context, state) {
+                    // Clear pending reorder state when BLoC updates (Firestore caught up)
+                    if (state is RolesLoaded && _pendingReorderedRoles != null) {
+                      setState(() {
+                        _pendingReorderedRoles = null;
+                      });
+                    }
+
                     if (state is RoleError) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -116,7 +127,8 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
 
   /// Build main view (non-archived roles)
   Widget _buildMainView(RolesLoaded state) {
-    final activeRoles = state.activeRoles;
+    // Use pending reordered roles if available (optimistic UI), otherwise use BLoC state
+    final activeRoles = _pendingReorderedRoles ?? state.activeRoles;
 
     if (activeRoles.isEmpty) {
       return const Center(
@@ -134,7 +146,12 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
         final role = roles.removeAt(oldIndex);
         roles.insert(newIndex, role);
 
-        // Update sort order and dispatch to BLoC
+        // Optimistic UI update: setState is synchronous, prevents jump-back
+        setState(() {
+          _pendingReorderedRoles = roles;
+        });
+
+        // Dispatch to BLoC for persistence (async)
         context.read<RoleBloc>().add(ReorderRoles(roles));
       },
       proxyDecorator: (child, index, animation) {

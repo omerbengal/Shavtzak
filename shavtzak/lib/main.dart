@@ -347,6 +347,7 @@ class MyApp extends StatelessWidget {
                     context.read<AssignmentRepository>(),
                     context.read<EventRepository>(),
                     context.read<TeamRepository>(),
+                    context.read<RoleRepository>(),
                   );
                 },
               ),

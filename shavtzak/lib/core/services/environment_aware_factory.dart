@@ -2,6 +2,7 @@ import '../../../data/repositories/team_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/user_selection_repository.dart';
+import '../../../data/repositories/role_repository.dart';
 import '../../../data/data_sources/firestore_database.dart';
 import '../../../data/data_sources/database_interface.dart';
 import '../../../presentation/bloc/team/team_bloc.dart';
@@ -42,6 +43,12 @@ class EnvironmentAwareFactory {
     return AssignmentRepository(db);
   }
 
+  /// Create role repository based on environment
+  static RoleRepository createRoleRepository() {
+    final db = database;
+    return RoleRepository(db);
+  }
+
   /// Create user selection repository (same for both environments)
   static UserSelectionRepository createUserSelectionRepository() {
     return UserSelectionRepository(
@@ -65,7 +72,12 @@ class EnvironmentAwareFactory {
   /// Create assignment BLoC based on environment
   static AssignmentBloc createAssignmentBloc() {
     // For now, return standard bloc. Test blocs can be added later.
-    return AssignmentBloc(createAssignmentRepository(), createEventRepository(), createTeamRepository());
+    return AssignmentBloc(
+      createAssignmentRepository(),
+      createEventRepository(),
+      createTeamRepository(),
+      createRoleRepository(),
+    );
   }
 
   /// Create user selection BLoC (same for both environments)
