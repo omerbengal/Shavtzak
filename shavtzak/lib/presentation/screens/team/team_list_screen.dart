@@ -504,6 +504,25 @@ class _TeamListScreenState extends State<TeamListScreen> {
                         ],
                       ),
                     ),
+                  // Vehicle info if available
+                  if (member.vehicleInfo != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.directions_car, size: 14, color: Colors.brown),
+                          const SizedBox(width: 4),
+                          Text(
+                            member.vehicleInfo!.displayString,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.brown,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 2),
                   Text(
                     '$activeRoles תפקידים',
