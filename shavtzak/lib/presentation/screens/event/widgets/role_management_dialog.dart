@@ -240,52 +240,55 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                     : Colors.orange,
           ),
         ),
-        trailing: Padding(
-          padding: const EdgeInsets.only(left: 32, right: 8),
-          child: Directionality(
-            textDirection: TextDirection.ltr,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isArchived) ...[
-                  // Restore button
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      context.read<RoleBloc>().add(RestoreRole(role.id));
-                    },
-                    icon: const Icon(Icons.restore, size: 16),
-                    label: const Text('שחזר'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
+        trailing: Directionality(
+          textDirection: TextDirection.ltr,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isArchived) ...[
+                // Restore button
+                ElevatedButton.icon(
+                  onPressed: () {
+                    context.read<RoleBloc>().add(RestoreRole(role.id));
+                  },
+                  icon: const Icon(Icons.restore, size: 16),
+                  label: const Text('שחזר'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   ),
-                  const SizedBox(width: 4),
-                  // Permanently delete button (only for archived roles)
-                  IconButton(
-                    icon: const Icon(Icons.delete_forever, color: Colors.red),
-                    tooltip: 'מחק לצמיתות',
-                    onPressed: () => _confirmDeleteRole(context, role),
-                  ),
-                ] else ...[
-                  // Reorder handle icon
-                  const Icon(Icons.drag_handle, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  // Archive button
-                  IconButton(
-                    icon: const Icon(Icons.archive, color: Colors.orange),
-                    tooltip: 'העבר לארכיון',
-                    onPressed: () => _confirmArchiveRole(context, role),
-                  ),
-                  const SizedBox(width: 4),
-                  // Delete button
-                  IconButton(
-                    icon: const Icon(Icons.delete_forever, color: Colors.red),
-                    tooltip: 'מחק לצמיתות',
-                    onPressed: () => _confirmDeleteRole(context, role),
-                  ),
-                ],
+                ),
+                const SizedBox(width: 4),
+                // Permanently delete button (only for archived roles)
+                IconButton(
+                  icon: const Icon(Icons.delete_forever, color: Colors.red),
+                  tooltip: 'מחק לצמיתות',
+                  onPressed: () => _confirmDeleteRole(context, role),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ] else ...[
+                // Reorder handle icon
+                const Icon(Icons.drag_handle, color: Colors.grey, size: 20),
+                const SizedBox(width: 4),
+                // Archive button
+                IconButton(
+                  icon: const Icon(Icons.archive, color: Colors.orange, size: 20),
+                  tooltip: 'העבר לארכיון',
+                  onPressed: () => _confirmArchiveRole(context, role),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 4),
+                // Delete button
+                IconButton(
+                  icon: const Icon(Icons.delete_forever, color: Colors.red, size: 20),
+                  tooltip: 'מחק לצמיתות',
+                  onPressed: () => _confirmDeleteRole(context, role),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
               ],
-            ),
+            ],
           ),
         ),
         onTap: isArchived
