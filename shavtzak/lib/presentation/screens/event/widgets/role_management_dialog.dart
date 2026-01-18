@@ -267,6 +267,9 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                     onPressed: () => _confirmDeleteRole(context, role),
                   ),
                 ] else ...[
+                  // Reorder handle icon
+                  const Icon(Icons.drag_handle, color: Colors.grey),
+                  const SizedBox(width: 8),
                   // Archive button
                   IconButton(
                     icon: const Icon(Icons.archive, color: Colors.orange),
