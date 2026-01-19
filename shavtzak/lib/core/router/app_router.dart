@@ -66,6 +66,10 @@ class AppRouter {
           final currentPath = _instance!.routeInformationProvider.value.uri.path;
           if (currentPath != '/db' && currentPath != '/test/db') {
             final envPath = capturedInitialHash!.contains('/test/') ? '/test/db' : '/db';
+
+            // Update environment service BEFORE navigation
+            EnvironmentService.instance.updateFromPath(envPath);
+
             _instance!.go(envPath);
             capturedInitialHash = null; // Clear after use
           }

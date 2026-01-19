@@ -37,42 +37,47 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isTestMode = EnvironmentService.instance.isTestMode;
+    return ListenableBuilder(
+      listenable: EnvironmentService.instance,
+      builder: (context, _) {
+        final isTestMode = EnvironmentService.instance.isTestMode;
 
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          title: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildEnvironmentBadge(isTestMode),
-              const SizedBox(width: 8),
-              const Text('DB Preview'),
-            ],
-          ),
-        ),
-        body: Column(
-          children: [
-            // Search bar
-            _buildSearchBar(),
-            // Collections list
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: _collections.length,
-                itemBuilder: (context, index) {
-                  final config = _collections[index];
-                  final isExpanded = _expandedCollection == config.name;
-
-                  return _buildCollectionCard(config, isExpanded);
-                },
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            appBar: AppBar(
+              automaticallyImplyLeading: false,
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildEnvironmentBadge(isTestMode),
+                  const SizedBox(width: 8),
+                  const Text('DB Preview'),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
+            body: Column(
+              children: [
+                // Search bar
+                _buildSearchBar(),
+                // Collections list
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: _collections.length,
+                    itemBuilder: (context, index) {
+                      final config = _collections[index];
+                      final isExpanded = _expandedCollection == config.name;
+
+                      return _buildCollectionCard(config, isExpanded);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
