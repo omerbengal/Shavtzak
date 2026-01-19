@@ -28,7 +28,12 @@ class DocumentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      color: Colors.green.shade50,
       elevation: isExpanded ? 3 : 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade400, width: 1),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -114,9 +119,9 @@ class DocumentCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(color: Colors.grey.shade200),
+          top: BorderSide(color: Colors.grey.shade400, width: 1),
         ),
-        color: Colors.grey.shade50,
+        color: Colors.red.shade50,
       ),
       padding: const EdgeInsets.all(12),
       child: Directionality(

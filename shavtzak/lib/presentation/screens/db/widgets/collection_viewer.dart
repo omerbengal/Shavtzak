@@ -13,6 +13,8 @@ class CollectionViewer extends StatefulWidget {
   final String searchQuery;
   final Map<String, Map<String, Map<String, dynamic>>>? collectionsData; // Data from other collections for lookups
   final ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>? documentsNotifier; // Receive sorted documents from parent
+  final Set<String> expandedDocIds; // Expanded document IDs (managed by parent)
+  final Function(String documentId) onToggleDocument; // Callback to toggle document expansion
 
   const CollectionViewer({
     super.key,
@@ -21,14 +23,18 @@ class CollectionViewer extends StatefulWidget {
     this.searchQuery = '',
     this.collectionsData,
     this.documentsNotifier,
+    required this.expandedDocIds,
+    required this.onToggleDocument,
   });
 
   @override
   State<CollectionViewer> createState() => _CollectionViewerState();
 }
 
-class _CollectionViewerState extends State<CollectionViewer> {
-  final Set<String> _expandedDocIds = {};
+class _CollectionViewerState extends State<CollectionViewer> with AutomaticKeepAliveClientMixin {
+
+  @override
+  bool get wantKeepAlive => true;
 
   String get _fullCollectionName {
     if (widget.useEnvironmentPrefix) {
@@ -159,6 +165,7 @@ class _CollectionViewerState extends State<CollectionViewer> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     // If a documentsNotifier is provided (from parent with sorting), use it
     // Otherwise, fall back to our own Firestore query
     if (widget.documentsNotifier != null) {
@@ -268,23 +275,16 @@ class _CollectionViewerState extends State<CollectionViewer> {
         // All documents as a Column
         ...filteredDocs.map((doc) {
           final data = doc.data();
-          final isExpanded = _expandedDocIds.contains(doc.id);
+          final isExpanded = widget.expandedDocIds.contains(doc.id);
 
           return DocumentCard(
+            key: ValueKey('${widget.collectionName}_${doc.id}'),
             documentId: doc.id,
             data: data,
             isExpanded: isExpanded,
             collectionName: widget.collectionName,
             collectionsData: widget.collectionsData?.cast<String, Map<String, Map<String, dynamic>>>(),
-            onToggle: () {
-              setState(() {
-                if (isExpanded) {
-                  _expandedDocIds.remove(doc.id);
-                } else {
-                  _expandedDocIds.add(doc.id);
-                }
-              });
-            },
+            onToggle: () => widget.onToggleDocument(doc.id),
           );
         }).toList(),
       ],

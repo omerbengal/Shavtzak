@@ -18,7 +18,11 @@ class DbPreviewScreen extends StatefulWidget {
 class _DbPreviewScreenState extends State<DbPreviewScreen> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
-  String? _expandedCollection;
+  final Set<String> _expandedCollections = {};
+  final ScrollController _scrollController = ScrollController();
+
+  // Track expanded document IDs per collection (moved from CollectionViewer to prevent state loss on scroll)
+  final Map<String, Set<String>> _expandedDocIdsByCollection = {};
 
   // Track document counts per collection using ValueNotifier
   final Map<String, ValueNotifier<int>> _docCountNotifiers = {};
@@ -67,6 +71,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     // Cancel all stream subscriptions
     for (final sub in _streamSubscriptions.values) {
       sub.cancel();
@@ -467,11 +472,12 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
                 // Collections list
                 Expanded(
                   child: ListView.builder(
+                    controller: _scrollController,
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     itemCount: _collections.length,
                     itemBuilder: (context, index) {
                       final config = _collections[index];
-                      final isExpanded = _expandedCollection == config.name;
+                      final isExpanded = _expandedCollections.contains(config.name);
                       final filteredCountNotifier = _filteredCountNotifiers[config.name]!;
 
                       // Hide collection if searching and has no matching documents (but never hide expanded collections)
@@ -482,7 +488,11 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
                           if (_searchQuery.isNotEmpty && filteredCount == 0 && !isExpanded) {
                             return const SizedBox.shrink();
                           }
-                          return _buildCollectionCard(config, isExpanded);
+                                          return _buildCollectionCard(
+                            key: ValueKey(config.name),
+                            config: config,
+                            isExpanded: isExpanded,
+                          );
                         },
                       );
                     },
@@ -555,7 +565,28 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     );
   }
 
-  Widget _buildCollectionCard(_CollectionConfig config, bool isExpanded) {
+  /// Get expanded document IDs for a specific collection
+  Set<String> _getExpandedDocIds(String collectionName) {
+    return _expandedDocIdsByCollection.putIfAbsent(collectionName, () => {});
+  }
+
+  /// Toggle document expansion for a specific collection
+  void _toggleDocumentExpansion(String collectionName, String documentId) {
+    setState(() {
+      final expandedIds = _getExpandedDocIds(collectionName);
+      if (expandedIds.contains(documentId)) {
+        expandedIds.remove(documentId);
+      } else {
+        expandedIds.add(documentId);
+      }
+    });
+  }
+
+  Widget _buildCollectionCard({
+    Key? key,
+    required _CollectionConfig config,
+    required bool isExpanded,
+  }) {
     final fullName = config.useEnvironmentPrefix
         ? '${EnvironmentService.instance.collectionPrefix}${config.name}'
         : config.name;
@@ -575,7 +606,13 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     }
 
     return Card(
+      key: key,
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      color: Colors.blue.shade50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade400, width: 1),
+      ),
       child: Column(
         children: [
           // Collection header
@@ -607,19 +644,27 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
             ),
             onTap: () {
               setState(() {
-                _expandedCollection = isExpanded ? null : config.name;
+                if (isExpanded) {
+                  _expandedCollections.remove(config.name);
+                } else {
+                  _expandedCollections.add(config.name);
+                }
               });
             },
           ),
           // Expanded content - no height constraint, let it be part of main scroll
           if (isExpanded)
-            CollectionViewer(
-              key: ValueKey('${config.name}_$_searchQuery'),
-              collectionName: config.name,
-              useEnvironmentPrefix: config.useEnvironmentPrefix,
-              searchQuery: _searchQuery,
-              collectionsData: collectionsData,
-              documentsNotifier: _getSortedNotifier(config.name),
+            RepaintBoundary(
+              child: CollectionViewer(
+                key: ValueKey('${config.name}_$_searchQuery'),
+                collectionName: config.name,
+                useEnvironmentPrefix: config.useEnvironmentPrefix,
+                searchQuery: _searchQuery,
+                collectionsData: collectionsData,
+                documentsNotifier: _getSortedNotifier(config.name),
+                expandedDocIds: _getExpandedDocIds(config.name),
+                onToggleDocument: (docId) => _toggleDocumentExpansion(config.name, docId),
+              ),
             ),
         ],
       ),
