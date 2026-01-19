@@ -45,6 +45,10 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 
 void main() {
+  // CRITICAL: Capture the initial URL hash BEFORE any Flutter code runs
+  // This is needed for the /db route to work correctly
+  AppRouter.capturedInitialHash = web.window.location.hash;
+
   WidgetsFlutterBinding.ensureInitialized();
 
   // Show loading screen immediately

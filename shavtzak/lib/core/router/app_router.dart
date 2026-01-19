@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -16,6 +17,7 @@ import '../../presentation/screens/team/team_list_screen.dart';
 import '../../presentation/screens/event/event_list_screen.dart';
 import '../../presentation/screens/assignment/assignment_list_screen.dart';
 import '../../presentation/screens/summary/summary_screen.dart';
+import '../../presentation/screens/db/db_preview_screen.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 
 /// Global navigator key for showing snackbars from outside widget tree
@@ -26,6 +28,10 @@ class AppRouter {
   static GoRouter? _instance;
   static UserSelectionBloc? _userSelectionBloc;
   static UserSelectionRepository? _userSelectionRepository;
+
+  /// Capture the initial URL hash BEFORE any Flutter code runs
+  /// This is set by main.dart at the very start
+  static String? capturedInitialHash;
 
   /// Helper function to check if a path is in test environment
   static bool _isTestPath(String path) {
@@ -45,18 +51,43 @@ class AppRouter {
     return _isTestPath(path) ? '/test' : '';
   }
 
+  static StreamSubscription? _blocSubscription;
+
   /// Get the router singleton instance
   static GoRouter router({UserSelectionBloc? userSelectionBloc, required UserSelectionRepository userSelectionRepository}) {
     _userSelectionBloc = userSelectionBloc;
     _userSelectionRepository = userSelectionRepository;
     _instance ??= _createRouter(userSelectionRepository);
 
+    // If /db was captured in initial URL, navigate there after first frame
+    if (capturedInitialHash != null && capturedInitialHash!.contains('/db')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_instance != null) {
+          final currentPath = _instance!.routeInformationProvider.value.uri.path;
+          if (currentPath != '/db' && currentPath != '/test/db') {
+            final envPath = capturedInitialHash!.contains('/test/') ? '/test/db' : '/db';
+            _instance!.go(envPath);
+            capturedInitialHash = null; // Clear after use
+          }
+        }
+      });
+    }
+
+    // Cancel previous subscription to prevent multiple listeners
+    _blocSubscription?.cancel();
+
     // Listen to BLoC state changes and trigger navigation when authenticated or signed out
-    _userSelectionBloc?.stream.listen((state) {
+    _blocSubscription = _userSelectionBloc?.stream.listen((state) {
       if (_instance != null) {
-        // Trigger a navigation check after state changes
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final currentRoute = _instance!.routeInformationProvider.value.uri.path;
+          final strippedRoute = _stripTestPrefix(currentRoute);
+
+          // /db route is unauthenticated - never redirect away from it
+          if (strippedRoute.startsWith('/db')) {
+            return;
+          }
+
           final envPrefix = _getEnvPrefix(currentRoute);
 
           // Update environment service based on current path
@@ -64,7 +95,6 @@ class AppRouter {
 
           if (state is UserAuthenticated) {
             // User became authenticated, navigate to appropriate home
-            final strippedRoute = _stripTestPrefix(currentRoute);
             if (strippedRoute.startsWith('/whoami') || strippedRoute.isEmpty || strippedRoute == '/') {
               if (state.isAdmin) {
                 _instance?.go('$envPrefix/admin');
@@ -75,8 +105,7 @@ class AppRouter {
               }
             }
           } else if (state is UserSignedOut) {
-            // User signed out, always go to whoami (with environment prefix)
-            final strippedRoute = _stripTestPrefix(currentRoute);
+            // User signed out, go to whoami
             if (!strippedRoute.startsWith('/whoami')) {
               _instance?.go('$envPrefix/whoami');
             }
@@ -90,25 +119,12 @@ class AppRouter {
 
   /// Create the router instance
   static GoRouter _createRouter(UserSelectionRepository userSelectionRepository) {
-    // Determine initial location based on BLoC state
-    String initialLocation = '/whoami';
-    if (_userSelectionBloc != null) {
-      final currentState = _userSelectionBloc!.state;
-      if (currentState is UserAuthenticated) {
-        // User is already authenticated, determine where to go
-        final envPrefix = EnvironmentService.instance.isTestMode ? '/test' : '';
-        if (currentState.isAdmin) {
-          initialLocation = '$envPrefix/admin';
-        } else if (currentState.user.canAccessSummaryScreen) {
-          initialLocation = '$envPrefix/choice';
-        } else {
-          initialLocation = '$envPrefix/user/assignments';
-        }
-      }
-    }
+    // IMPORTANT: Always use '/' as initialLocation to avoid early navigation errors
+    // We'll manually navigate to the correct route (like /db) after the router is built
+    const String initialLocation = '/';
 
     return GoRouter(
-      // Initial location determined by cached user check
+      // Start at root to avoid "route not found" errors during initialization
       initialLocation: initialLocation,
 
       // Set the global navigator key
@@ -117,71 +133,61 @@ class AppRouter {
       // Redirect based on authentication state
       redirect: (context, state) {
         final currentRoute = state.uri.path;
+        final strippedRoute = _stripTestPrefix(currentRoute);
+
+        // /db route is unauthenticated - bypass ALL checks
+        if (strippedRoute == '/db' || strippedRoute.startsWith('/db')) {
+          return null;
+        }
 
         // Update environment service based on current path
         EnvironmentService.instance.updateFromPath(currentRoute);
         final envPrefix = _getEnvPrefix(currentRoute);
-        final strippedRoute = _stripTestPrefix(currentRoute);
 
-        // Handle empty path (root URL without hash)
+        // Handle empty path (root URL)
         if (currentRoute.isEmpty || currentRoute == '/') {
           return '$envPrefix/whoami';
         }
 
         if (_userSelectionBloc == null || _userSelectionRepository == null) {
-          return '$envPrefix/whoami'; // Default to whoami if no BLoC provided
+          return '$envPrefix/whoami';
         }
 
         final currentState = _userSelectionBloc!.state;
 
-        // If user is not authenticated yet, check cache first before showing whoami
-        if (currentState is! UserAuthenticated) {
-          // Check cache asynchronously, but for now allow whoami to load
-          // The BLoC will handle cache check and navigation
-        }
-
         // Handle authentication redirects
         if (currentState is UserSignedOut) {
-          // User signed out, always redirect to whoami
           if (!strippedRoute.startsWith('/whoami')) {
             return '$envPrefix/whoami';
           }
         } else if (currentState is UserAuthenticated) {
-          // User is authenticated, redirect based on admin status
           if (currentState.isAdmin) {
-            // Admin user - only redirect from whoami to admin choice
             if (strippedRoute.startsWith('/whoami')) {
-              return '$envPrefix/admin'; // Redirect to admin choice screen
+              return '$envPrefix/admin';
             }
-            // Admins can access both user and admin routes, no restriction
           } else {
-            // Non-admin user - redirect based on summary screen access
             if (strippedRoute.startsWith('/whoami')) {
-              // Check if user has summary screen access - show choice screen
               if (currentState.user.canAccessSummaryScreen) {
-                return '$envPrefix/choice'; // Redirect to choice screen
+                return '$envPrefix/choice';
               }
-              return '$envPrefix/user/assignments'; // Redirect to user assignments
+              return '$envPrefix/user/assignments';
             }
-            // If non-admin tries to access admin routes, redirect to user
             if (strippedRoute.startsWith('/admin')) {
-              return '$envPrefix/user/assignments'; // Redirect to user assignments
+              return '$envPrefix/user/assignments';
             }
-            // Protect summary route - only allow if has canAccessSummaryScreen
             if (strippedRoute.startsWith('/summary')) {
               if (!currentState.user.canAccessSummaryScreen) {
-                return '$envPrefix/user/assignments'; // Redirect unauthorized users
+                return '$envPrefix/user/assignments';
               }
             }
           }
         } else {
-          // User not authenticated, redirect to whoami unless already there
           if (!strippedRoute.startsWith('/whoami')) {
             return '$envPrefix/whoami';
           }
         }
 
-        return null; // No redirect needed
+        return null;
       },
 
       routes: [
@@ -190,6 +196,14 @@ class AppRouter {
           path: '/whoami',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: WhoamiScreen(key: ValueKey('whoami_prod')),
+          ),
+        ),
+
+        // DB Preview route - hidden, unauthenticated diagnostic screen
+        GoRoute(
+          path: '/db',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: DbPreviewScreen(key: ValueKey('db_prod')),
           ),
         ),
 
@@ -212,301 +226,84 @@ class AppRouter {
         // Admin routes shell - uses existing SwipeablePageView
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
-            // Only allow admin users to access this shell
             final userSelectionState = context.watch<UserSelectionBloc>().state;
             if (userSelectionState is! UserAuthenticated || !userSelectionState.isAdmin) {
               return const Scaffold(
-                body: Center(
-                  child: Text('גישה לא מורשית - דרוש הרשאות מנהל'),
-                ),
+                body: Center(child: Text('גישה לא מורשית - דרוש הרשאות מנהל')),
               );
             }
-
             return SwipeablePageView(navigationShell: navigationShell);
           },
           branches: [
-            // Admin choice branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/admin',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: AdminChoiceScreen(key: ValueKey('admin_choice_prod')),
-                  ),
-                ),
-              ],
-            ),
-
-            // Admin team members branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/admin/team-members',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: TeamListScreen(key: ValueKey('team_members_prod')),
-                  ),
-                ),
-              ],
-            ),
-
-            // Admin events branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/admin/events',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: EventListScreen(key: ValueKey('events_prod')),
-                  ),
-                ),
-              ],
-            ),
-
-            // Admin assignments branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/admin/assignments',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: AssignmentListScreen(key: ValueKey('assignments_prod')),
-                  ),
-                ),
-              ],
-            ),
-
-            // Admin checklist branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/admin/checklist',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: AdminChecklistScreen(key: ValueKey('admin_checklist_prod')),
-                  ),
-                ),
-              ],
-            ),
+            StatefulShellBranch(routes: [GoRoute(path: '/admin', pageBuilder: (context, state) => const NoTransitionPage(child: AdminChoiceScreen(key: ValueKey('admin_choice_prod'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/admin/team-members', pageBuilder: (context, state) => const NoTransitionPage(child: TeamListScreen(key: ValueKey('team_members_prod'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/admin/events', pageBuilder: (context, state) => const NoTransitionPage(child: EventListScreen(key: ValueKey('events_prod'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/admin/assignments', pageBuilder: (context, state) => const NoTransitionPage(child: AssignmentListScreen(key: ValueKey('assignments_prod'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/admin/checklist', pageBuilder: (context, state) => const NoTransitionPage(child: AdminChecklistScreen(key: ValueKey('admin_checklist_prod'))))]),
           ],
         ),
 
-        // User routes shell - uses UserNavigationShell
+        // User routes shell
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
-            // Allow both regular users and admins to access this shell
             final userSelectionState = context.watch<UserSelectionBloc>().state;
             if (userSelectionState is! UserAuthenticated) {
-              return const Scaffold(
-                body: Center(
-                  child: Text('גישה לא מורשית - דרוש אימות'),
-                ),
-              );
+              return const Scaffold(body: Center(child: Text('גישה לא מורשית - דרוש אימות')));
             }
-
             return UserNavigationShell(navigationShell: navigationShell);
           },
           branches: [
-            // User assignments branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/user/assignments',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: UserAssignmentsScreen(key: ValueKey('user_assignments_prod')),
-                  ),
-                ),
-              ],
-            ),
-
-            // User constraints branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/user/constraints',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: ConstraintsScreen(key: ValueKey('user_constraints_prod')),
-                  ),
-                ),
-              ],
-            ),
-
-            // User checklist branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/user/checklist',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: UserChecklistScreen(key: ValueKey('user_checklist_prod')),
-                  ),
-                ),
-              ],
-            ),
+            StatefulShellBranch(routes: [GoRoute(path: '/user/assignments', pageBuilder: (context, state) => const NoTransitionPage(child: UserAssignmentsScreen(key: ValueKey('user_assignments_prod'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/user/constraints', pageBuilder: (context, state) => const NoTransitionPage(child: ConstraintsScreen(key: ValueKey('user_constraints_prod'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/user/checklist', pageBuilder: (context, state) => const NoTransitionPage(child: UserChecklistScreen(key: ValueKey('user_checklist_prod'))))]),
           ],
         ),
 
         // ========== TEST ENVIRONMENT ROUTES ==========
-        // These mirror the production routes but with /test prefix
 
-        // Test authentication route
-        GoRoute(
-          path: '/test/whoami',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: WhoamiScreen(key: ValueKey('whoami_test')),
-          ),
-        ),
+        GoRoute(path: '/test/whoami', pageBuilder: (context, state) => const NoTransitionPage(child: WhoamiScreen(key: ValueKey('whoami_test')))),
+        GoRoute(path: '/test/db', pageBuilder: (context, state) => const NoTransitionPage(child: DbPreviewScreen(key: ValueKey('db_test')))),
+        GoRoute(path: '/test/summary', pageBuilder: (context, state) => const NoTransitionPage(child: SummaryScreen(key: ValueKey('summary_test')))),
+        GoRoute(path: '/test/choice', pageBuilder: (context, state) => const NoTransitionPage(child: AdminChoiceScreen(key: ValueKey('choice_test')))),
 
-        // Test summary screen
-        GoRoute(
-          path: '/test/summary',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: SummaryScreen(key: ValueKey('summary_test')),
-          ),
-        ),
-
-        // Test choice route for non-admin users with summary access
-        GoRoute(
-          path: '/test/choice',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: AdminChoiceScreen(key: ValueKey('choice_test')),
-          ),
-        ),
-
-        // Test admin routes shell
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
-            // Only allow admin users to access this shell
             final userSelectionState = context.watch<UserSelectionBloc>().state;
             if (userSelectionState is! UserAuthenticated || !userSelectionState.isAdmin) {
-              return const Scaffold(
-                body: Center(
-                  child: Text('גישה לא מורשית - דרוש הרשאות מנהל'),
-                ),
-              );
+              return const Scaffold(body: Center(child: Text('גישה לא מורשית - דרוש הרשאות מנהל')));
             }
-
             return SwipeablePageView(navigationShell: navigationShell);
           },
           branches: [
-            // Test admin choice branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/test/admin',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: AdminChoiceScreen(key: ValueKey('admin_choice_test')),
-                  ),
-                ),
-              ],
-            ),
-
-            // Test admin team members branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/test/admin/team-members',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: TeamListScreen(key: ValueKey('team_members_test')),
-                  ),
-                ),
-              ],
-            ),
-
-            // Test admin events branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/test/admin/events',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: EventListScreen(key: ValueKey('events_test')),
-                  ),
-                ),
-              ],
-            ),
-
-            // Test admin assignments branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/test/admin/assignments',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: AssignmentListScreen(key: ValueKey('assignments_test')),
-                  ),
-                ),
-              ],
-            ),
-
-            // Test admin checklist branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/test/admin/checklist',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: AdminChecklistScreen(key: ValueKey('admin_checklist_test')),
-                  ),
-                ),
-              ],
-            ),
+            StatefulShellBranch(routes: [GoRoute(path: '/test/admin', pageBuilder: (context, state) => const NoTransitionPage(child: AdminChoiceScreen(key: ValueKey('admin_choice_test'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/test/admin/team-members', pageBuilder: (context, state) => const NoTransitionPage(child: TeamListScreen(key: ValueKey('team_members_test'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/test/admin/events', pageBuilder: (context, state) => const NoTransitionPage(child: EventListScreen(key: ValueKey('events_test'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/test/admin/assignments', pageBuilder: (context, state) => const NoTransitionPage(child: AssignmentListScreen(key: ValueKey('assignments_test'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/test/admin/checklist', pageBuilder: (context, state) => const NoTransitionPage(child: AdminChecklistScreen(key: ValueKey('admin_checklist_test'))))]),
           ],
         ),
 
-        // Test user routes shell
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
-            // Allow both regular users and admins to access this shell
             final userSelectionState = context.watch<UserSelectionBloc>().state;
             if (userSelectionState is! UserAuthenticated) {
-              return const Scaffold(
-                body: Center(
-                  child: Text('גישה לא מורשית - דרוש אימות'),
-                ),
-              );
+              return const Scaffold(body: Center(child: Text('גישה לא מורשית - דרוש אימות')));
             }
-
             return UserNavigationShell(navigationShell: navigationShell);
           },
           branches: [
-            // Test user assignments branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/test/user/assignments',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: UserAssignmentsScreen(key: ValueKey('user_assignments_test')),
-                  ),
-                ),
-              ],
-            ),
-
-            // Test user constraints branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/test/user/constraints',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: ConstraintsScreen(key: ValueKey('user_constraints_test')),
-                  ),
-                ),
-              ],
-            ),
-
-            // Test user checklist branch
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/test/user/checklist',
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: UserChecklistScreen(key: ValueKey('user_checklist_test')),
-                  ),
-                ),
-              ],
-            ),
+            StatefulShellBranch(routes: [GoRoute(path: '/test/user/assignments', pageBuilder: (context, state) => const NoTransitionPage(child: UserAssignmentsScreen(key: ValueKey('user_assignments_test'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/test/user/constraints', pageBuilder: (context, state) => const NoTransitionPage(child: ConstraintsScreen(key: ValueKey('user_constraints_test'))))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/test/user/checklist', pageBuilder: (context, state) => const NoTransitionPage(child: UserChecklistScreen(key: ValueKey('user_checklist_test'))))]),
           ],
         ),
       ],
 
-      // Error handling - redirect to whoami for navigation errors
       errorBuilder: (context, state) => const WhoamiScreen(),
     );
   }
 
-  /// Reset router singleton (useful for testing or hot reload issues)
+  /// Reset router singleton
   static void reset() {
     _instance = null;
     _userSelectionBloc = null;
