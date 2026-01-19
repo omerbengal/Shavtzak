@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'json_tree_view.dart';
+import '../../../../core/constants/role_types.dart';
+import 'assignment_preview.dart';
 
 /// An expandable card that displays a Firestore document.
 /// Shows document ID and primary field when collapsed, full JSON when expanded.
@@ -9,6 +11,8 @@ class DocumentCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final bool isExpanded;
   final VoidCallback onToggle;
+  final String? collectionName; // Added for collection-specific hints
+  final Map<String, Map<String, Map<String, dynamic>>>? collectionsData; // For looking up related data
 
   const DocumentCard({
     super.key,
@@ -16,6 +20,8 @@ class DocumentCard extends StatelessWidget {
     required this.data,
     required this.isExpanded,
     required this.onToggle,
+    this.collectionName,
+    this.collectionsData,
   });
 
   @override
@@ -37,6 +43,7 @@ class DocumentCard extends StatelessWidget {
 
   Widget _buildHeader(BuildContext context) {
     final primaryField = _getPrimaryFieldValue();
+    final isAssignment = collectionName != null && collectionName!.contains('assignment');
 
     return InkWell(
       onTap: onToggle,
@@ -73,7 +80,13 @@ class DocumentCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (primaryField != null) ...[
+                  if (isAssignment) ...[
+                    const SizedBox(height: 4),
+                    AssignmentPreview(
+                      data: data,
+                      collectionsData: collectionsData,
+                    ),
+                  ] else if (primaryField != null) ...[
                     const SizedBox(height: 4),
                     Text(
                       primaryField,
@@ -117,8 +130,69 @@ class DocumentCard extends StatelessWidget {
   }
 
   String? _getPrimaryFieldValue() {
-    // Try common primary field names
-    final primaryKeys = ['name', 'title', 'firstName', 'displayName', 'label'];
+    // Collection-specific hints
+    if (collectionName != null) {
+      // Assignments: Show role in Hebrew (no status - it's just pending/confirmed/declined)
+      if (collectionName!.contains('assignment')) {
+        final roleType = data['roleType'] as String?;
+        if (roleType != null) {
+          try {
+            final role = RoleTypeExtension.fromString(roleType);
+            return role.hebrewName;
+          } catch (_) {
+            // If roleType is invalid, fall through to default
+          }
+        }
+      }
+
+      // Roles collection: Show just the Hebrew name
+      if (collectionName == 'roles') {
+        return data['hebrewName'] as String?;
+      }
+
+      // Team members: Show name + capability count
+      if (collectionName!.contains('teamMember')) {
+        final name = data['name'] as String?;
+        final roleCapabilities = data['roleCapabilities'] as Map<String, dynamic>?;
+        if (name != null && roleCapabilities != null) {
+          final enabledCount = roleCapabilities.values.where((v) => v == true).length;
+          return '$name ($enabledCount תפקידים)';
+        }
+        if (name != null) {
+          return name;
+        }
+      }
+
+      // Checklist items: Show "EventName | ItemName"
+      if (collectionName!.contains('checklist_item')) {
+        final name = data['name'] as String?;
+        final eventId = data['eventId'] as String?;
+
+        if (name != null && eventId != null && collectionsData != null) {
+          // Try to get event name from collectionsData
+          final eventData = collectionsData!['events'];
+          if (eventData != null) {
+            final event = eventData[eventId];
+            if (event != null && event['name'] != null) {
+              final eventName = event['name'] as String;
+              return '$eventName | $name';
+            }
+          }
+        }
+        if (name != null) return name;
+      }
+
+      // Utilities, Keys, and others: Show field names
+      if (collectionName!.contains('utilit') || collectionName!.contains('key')) {
+        final fieldNames = data.keys.where((k) => k != 'id').toList();
+        if (fieldNames.isNotEmpty) {
+          return fieldNames.join(', ');
+        }
+      }
+    }
+
+    // Default: Try common primary field names
+    final primaryKeys = ['name', 'title', 'firstName', 'displayName', 'label', 'hebrewName'];
     for (final key in primaryKeys) {
       if (data.containsKey(key) && data[key] != null) {
         return data[key].toString();
