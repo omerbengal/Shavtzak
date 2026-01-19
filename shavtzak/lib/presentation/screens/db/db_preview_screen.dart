@@ -474,6 +474,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
                   child: ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.symmetric(vertical: 8),
+                    cacheExtent: 2000, // Keep more widgets cached to prevent scroll jumping
                     itemCount: _collections.length,
                     itemBuilder: (context, index) {
                       final config = _collections[index];
@@ -533,8 +534,25 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
         decoration: InputDecoration(
           hintText: 'חיפוש לפי ID או תוכן...',
           prefixIcon: const Icon(Icons.search),
-          suffixIcon: _searchQuery.isNotEmpty
-              ? IconButton(
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Collapse all button (always visible on the left in RTL)
+              IconButton(
+                icon: const Icon(Icons.unfold_less),
+                onPressed: () {
+                  setState(() {
+                    // Collapse all collections
+                    _expandedCollections.clear();
+                    // Collapse all documents within all collections
+                    _expandedDocIdsByCollection.clear();
+                  });
+                },
+                tooltip: 'כווץ הכל',
+              ),
+              // Clear button (only show when there's search text)
+              if (_searchQuery.isNotEmpty)
+                IconButton(
                   icon: const Icon(Icons.clear),
                   onPressed: () {
                     _searchController.clear();
@@ -544,8 +562,9 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
                     // Update filtered counts when clearing search
                     _updateAllFilteredCounts();
                   },
-                )
-              : null,
+                ),
+            ],
+          ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide.none,

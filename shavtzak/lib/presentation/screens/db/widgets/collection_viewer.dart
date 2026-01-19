@@ -31,10 +31,7 @@ class CollectionViewer extends StatefulWidget {
   State<CollectionViewer> createState() => _CollectionViewerState();
 }
 
-class _CollectionViewerState extends State<CollectionViewer> with AutomaticKeepAliveClientMixin {
-
-  @override
-  bool get wantKeepAlive => true;
+class _CollectionViewerState extends State<CollectionViewer> {
 
   String get _fullCollectionName {
     if (widget.useEnvironmentPrefix) {
@@ -165,7 +162,6 @@ class _CollectionViewerState extends State<CollectionViewer> with AutomaticKeepA
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Required for AutomaticKeepAliveClientMixin
     // If a documentsNotifier is provided (from parent with sorting), use it
     // Otherwise, fall back to our own Firestore query
     if (widget.documentsNotifier != null) {
