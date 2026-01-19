@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -55,20 +56,27 @@ class AppRouter {
 
   /// Get the router singleton instance
   static GoRouter router({UserSelectionBloc? userSelectionBloc, required UserSelectionRepository userSelectionRepository}) {
+    developer.log('[DB-DEBUG] router() called - capturedInitialHash: "$capturedInitialHash"', name: 'DB');
+
     _userSelectionBloc = userSelectionBloc;
     _userSelectionRepository = userSelectionRepository;
     _instance ??= _createRouter(userSelectionRepository);
 
     // If /db was captured in initial URL, navigate there after first frame
     if (capturedInitialHash != null && capturedInitialHash!.contains('/db')) {
+      developer.log('[DB-DEBUG] /db found in hash, will navigate after frame', name: 'DB');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_instance != null) {
           final currentPath = _instance!.routeInformationProvider.value.uri.path;
+          developer.log('[DB-DEBUG] PostFrameCallback - currentPath: "$currentPath"', name: 'DB');
           if (currentPath != '/db' && currentPath != '/test/db') {
             final envPath = capturedInitialHash!.contains('/test/') ? '/test/db' : '/db';
+            developer.log('[DB-DEBUG] Navigating to: "$envPath"', name: 'DB');
 
             // Update environment service BEFORE navigation
             EnvironmentService.instance.updateFromPath(envPath);
+            developer.log('[DB-DEBUG] EnvironmentService.isTestMode after update: ${EnvironmentService.instance.isTestMode}', name: 'DB');
+            developer.log('[DB-DEBUG] EnvironmentService.collectionPrefix: "${EnvironmentService.instance.collectionPrefix}"', name: 'DB');
 
             _instance!.go(envPath);
             capturedInitialHash = null; // Clear after use
@@ -150,6 +158,9 @@ class AppRouter {
 
         // Handle empty path (root URL)
         if (currentRoute.isEmpty || currentRoute == '/') {
+          // Check if we should be in test environment based on captured initial hash
+          final isTestFromHash = capturedInitialHash != null && capturedInitialHash!.contains('/test/');
+          final envPrefix = isTestFromHash ? '/test' : '';
           return '$envPrefix/whoami';
         }
 
