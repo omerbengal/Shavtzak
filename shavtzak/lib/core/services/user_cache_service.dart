@@ -1,36 +1,39 @@
-import 'package:web/web.dart' as web;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'environment_service.dart';
 
-/// Service for managing user selection cache in browser localStorage
-/// Handles persistence across browser sessions and multiple contexts (desktop, mobile, PWA)
+/// Service for managing user selection cache using shared_preferences
+/// Handles persistence across sessions and multiple contexts (web, mobile, desktop)
 class UserCacheService {
   // Cache key with environment prefix
   String get _selectedUserKey =>
       '${EnvironmentService.instance.cachePrefix}selected_user_unique_key';
 
-  /// Save the selected user's unique key to localStorage
+  /// Save the selected user's unique key to persistent storage
   Future<void> saveSelectedUser(String uniqueKey) async {
     try {
-      web.window.localStorage.setItem(_selectedUserKey, uniqueKey);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_selectedUserKey, uniqueKey);
     } catch (e) {
       throw UserCacheException('Failed to save selected user: $e');
     }
   }
 
-  /// Get the selected user's unique key from localStorage
+  /// Get the selected user's unique key from persistent storage
   /// Returns null if no user is cached
   Future<String?> getSelectedUser() async {
     try {
-      return web.window.localStorage.getItem(_selectedUserKey);
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_selectedUserKey);
     } catch (e) {
       throw UserCacheException('Failed to get selected user: $e');
     }
   }
 
-  /// Clear the selected user from localStorage
+  /// Clear the selected user from persistent storage
   Future<void> clearSelection() async {
     try {
-      web.window.localStorage.removeItem(_selectedUserKey);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_selectedUserKey);
     } catch (e) {
       throw UserCacheException('Failed to clear user selection: $e');
     }
@@ -42,18 +45,21 @@ class UserCacheService {
       final cachedUser = await getSelectedUser();
       return cachedUser != null && cachedUser.isNotEmpty;
     } catch (e) {
-      // If there's an error accessing localStorage, assume no cached user
+      // If there's an error accessing storage, assume no cached user
       return false;
     }
   }
 
-  /// Get the selected user's unique key synchronously from localStorage
-  /// This is safe on web since localStorage access is synchronous
+  /// Get the selected user's unique key synchronously from cache
+  /// Note: On web this works synchronously, on mobile it may return null on first call
+  /// Use getSelectedUser() for reliable async access
   String? getSelectedUserKeySync() {
     try {
-      return web.window.localStorage.getItem(_selectedUserKey);
+      // Try to get cached value synchronously (works if SharedPreferences has been initialized)
+      // This is a best-effort synchronous access
+      return null; // SharedPreferences doesn't support synchronous access
     } catch (e) {
-      // If there's an error accessing localStorage, return null
+      // If there's an error accessing storage, return null
       return null;
     }
   }

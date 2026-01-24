@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:js_interop';
-import 'package:web/web.dart' as web;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+
+// Conditional imports for web-specific geolocation API
+import 'web/geolocation_stub.dart'
+    if (dart.library.js) 'web/geolocation_web.dart';
 
 /// Result from the map location picker containing latitude, longitude, and optional name
 class MapLocationResult {
@@ -356,7 +358,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
     _mapController.move(location, 16.0); // Zoom in to selected location
   }
 
-  /// Get current user location using browser geolocation API
+  /// Get current user location using browser geolocation API (web only)
   Future<void> _getCurrentLocation() async {
     if (!kIsWeb) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -368,32 +370,17 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
       return;
     }
 
-    final geolocation = web.window.navigator.geolocation;
-
     setState(() {
       _isGettingLocation = true;
       _locationError = null;
     });
 
     try {
-      // Get current position using the browser's geolocation API with package:web
-      final completer = Completer<web.GeolocationPosition>();
-
-      geolocation.getCurrentPosition(
-        ((web.GeolocationPosition position) {
-          completer.complete(position);
-        }).toJS,
-        ((web.GeolocationPositionError error) {
-          completer.completeError(error.message);
-        }).toJS,
-      );
-
-      final position = await completer.future;
-
-      final coords = position.coords;
+      // Get current position using the browser's geolocation API
+      final result = await GeolocationService.getCurrentPosition();
       final location = LatLng(
-        coords.latitude,
-        coords.longitude,
+        result['latitude'] as double,
+        result['longitude'] as double,
       );
 
       setState(() {

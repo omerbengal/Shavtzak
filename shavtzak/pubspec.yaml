@@ -71,7 +71,7 @@ dependencies:
   # URL Launcher for phone calls
   url_launcher: ^6.3.0
 
-  # Web platform interop
+  # Web platform interop (only used on web platform, conditional compilation)
   web: ^1.1.0
 
   # Map (for location picking)

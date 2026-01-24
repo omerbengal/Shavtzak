@@ -1,9 +1,13 @@
-import 'package:web/web.dart' as web;
 import 'package:flutter/foundation.dart';
 import 'dart:developer' as developer;
 
+// Conditional imports for web-specific functionality
+import 'environment_service_stub.dart'
+    if (dart.library.js) 'environment_service_web.dart';
+
 /// Service to detect and manage the current environment (test vs production)
-/// based on the URL path. Notifies listeners when environment changes.
+/// On web: detects from URL path
+/// On mobile/desktop: defaults to production, can be manually set
 class EnvironmentService extends ChangeNotifier {
   static EnvironmentService? _instance;
 
@@ -17,17 +21,18 @@ class EnvironmentService extends ChangeNotifier {
 
   bool _isTestMode = false;
 
-  /// Initialize the environment service by detecting the current URL
+  /// Initialize the environment service by detecting the current environment
+  /// On web: detects from URL hash
+  /// On mobile/desktop: defaults to production mode
   void initialize() {
-    final hash = web.window.location.hash;
-    // Remove '#' prefix if it exists, otherwise use empty string
-    final currentPath = hash.isNotEmpty ? hash.substring(1) : '';
-    final newTestMode = currentPath.startsWith('/test/') || currentPath == '/test';
-    developer.log('EnvironmentService.initialize(): hash=$hash, path=$currentPath, newTestMode=$newTestMode', name: 'Environment');
-    if (_isTestMode != newTestMode) {
-      developer.log('EnvironmentService.initialize(): CHANGING from $_isTestMode to $newTestMode', name: 'Environment');
-      _isTestMode = newTestMode;
-      notifyListeners();
+    if (kIsWeb) {
+      final hash = EnvironmentServiceWeb.getWindowLocationHash();
+      EnvironmentServiceWeb.detectFromUrlHash(this, hash);
+    } else {
+      // On mobile/desktop, default to production mode
+      // User can toggle via UI if needed
+      developer.log('EnvironmentService.initialize(): Mobile/Desktop platform - defaulting to production mode', name: 'Environment');
+      _isTestMode = false;
     }
   }
 

@@ -5,7 +5,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'firebase_options.dart';
 import 'dart:developer' as developer;
 import 'dart:ui' as ui;
-import 'package:web/web.dart' as web;
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+// Conditional imports for web-specific functionality
+import 'core/web/web_stub.dart'
+    if (dart.library.js) 'core/web/web_helper.dart';
 
 // Data layer
 import 'data/data_sources/firestore_database.dart';
@@ -45,9 +49,11 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 
 void main() {
-  // CRITICAL: Capture the initial URL hash BEFORE any Flutter code runs
+  // CRITICAL: Capture the initial URL hash BEFORE any Flutter code runs (web only)
   // This is needed for the /db route to work correctly
-  AppRouter.capturedInitialHash = web.window.location.hash;
+  if (kIsWeb) {
+    AppRouter.capturedInitialHash = WebHelper.getWindowLocationHash();
+  }
 
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -91,6 +97,14 @@ Future<void> _initialize() async {
     // Initialize environment service (detects test vs production from URL)
     _timed('EnvironmentService.init', () => EnvironmentService.instance.initialize());
 
+    // For web, capture initial URL hash for environment detection
+    if (kIsWeb) {
+      _timed('EnvironmentServiceWeb.detectFromUrlHash', () {
+        final hash = WebHelper.getWindowLocationHash();
+        EnvironmentService.instance.updateFromPath(hash.isNotEmpty ? hash.substring(1) : '');
+      });
+    }
+
     // Initialize connectivity service (for offline detection in test mode)
     _timed('ConnectivityService.init', () => ConnectivityService.instance.initialize());
 
@@ -100,10 +114,10 @@ Future<void> _initialize() async {
     // Initialize services
     final userCacheService = _timed('UserCacheService creation', () => UserCacheService());
 
-    // OPTIMIZATION 1: Check cache FIRST (synchronous, instant)
+    // OPTIMIZATION: Check cache FIRST (async, but fast)
     // If no cached user, we can show whoami immediately without waiting for Firebase
-    final cachedUserKey = _timed('UserCacheService.getSelectedUserKeySync', () {
-      return userCacheService.getSelectedUserKeySync();
+    final cachedUserKey = await _timedAsync('UserCacheService.getSelectedUser', () async {
+      return await userCacheService.getSelectedUser();
     });
 
     final hasCachedUser = cachedUserKey != null && cachedUserKey.isNotEmpty;
@@ -226,8 +240,10 @@ Future<void> _initialize() async {
 
     totalSw.stop();
 
-    // Hide the HTML splash screen after Flutter renders
-    _hideSplashScreen();
+    // Hide the HTML splash screen after Flutter renders (web only)
+    if (kIsWeb) {
+      _hideSplashScreen();
+    }
 
     // Refresh cache in background (non-blocking)
     _refreshConfigCacheInBackground(database, configCache);
@@ -241,21 +257,10 @@ Future<void> _initialize() async {
   }
 }
 
-/// Hide the HTML splash screen with a fade-out animation
+/// Hide the HTML splash screen with a fade-out animation (web only)
 void _hideSplashScreen() {
-  try {
-    final splash = web.document.getElementById('splash-screen');
-    if (splash != null) {
-      // Add hidden class for fade-out transition
-      splash.classList.add('splash-hidden');
-      // Remove from DOM after transition completes
-      Future.delayed(const Duration(milliseconds: 300), () {
-        splash.remove();
-      });
-    }
-  } catch (e) {
-    developer.log('Failed to hide splash screen: $e', name: 'Main');
-  }
+  if (!kIsWeb) return;
+  WebHelper.hideSplashScreen();
 }
 
 /// Preload custom Rubik font to prevent FOUT (Flash of Unstyled Text)
