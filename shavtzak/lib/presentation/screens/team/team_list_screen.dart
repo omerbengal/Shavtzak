@@ -1286,42 +1286,52 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                           ),
                         ),
                         if (_isEditMode)
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () {
-                              showDialog(
-                                context: context,
-                                builder: (dialogContext) => Directionality(
-                                  textDirection: TextDirection.rtl,
-                                  child: AlertDialog(
-                                    title: const Text('מחיקת חבר צוות'),
-                                    content: Text(
-                                      'האם אתה בטוח שברצונך למחוק את ${widget.member!.name}?\nפעולה זו תמחק גם את כל השיבוצים שלו.',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        child: const Text('ביטול'),
-                                        onPressed: () => Navigator.of(dialogContext).pop(),
-                                      ),
-                                      TextButton(
-                                        child: const Text('מחק', style: TextStyle(color: Colors.red)),
-                                        onPressed: () {
-                                          final bloc = context.read<TeamBloc>();
-                                          bloc.add(team.DeleteTeamMember(widget.member!.id));
-                                          // Reload all team members after operation completes (filtering happens in UI)
-                                          Future.delayed(const Duration(milliseconds: 100), () {
-                                            bloc.add(const team.LoadTeamMembers());
-                                          });
-                                          Navigator.of(dialogContext).pop(); // Close dialog
-                                          widget.onSuccess(); // Close modal
-                                        },
-                                      ),
-                                    ],
-                                  ),
+                          BlocBuilder<UserSelectionBloc, UserSelectionState>(
+                            builder: (context, userState) {
+                              final bool isOwnProfile = userState is UserAuthenticated &&
+                                  widget.member!.id == userState.user.id;
+
+                              return IconButton(
+                                icon: Icon(
+                                  Icons.delete,
+                                  color: isOwnProfile ? Colors.grey.shade400 : Colors.red,
                                 ),
+                                onPressed: isOwnProfile ? null : () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (dialogContext) => Directionality(
+                                      textDirection: TextDirection.rtl,
+                                      child: AlertDialog(
+                                        title: const Text('מחיקת חבר צוות'),
+                                        content: Text(
+                                          'האם אתה בטוח שברצונך למחוק את ${widget.member!.name}?\nפעולה זו תמחק גם את כל השיבוצים שלו.',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            child: const Text('ביטול'),
+                                            onPressed: () => Navigator.of(dialogContext).pop(),
+                                          ),
+                                          TextButton(
+                                            child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                                            onPressed: () {
+                                              final bloc = context.read<TeamBloc>();
+                                              bloc.add(team.DeleteTeamMember(widget.member!.id));
+                                              // Reload all team members after operation completes (filtering happens in UI)
+                                              Future.delayed(const Duration(milliseconds: 100), () {
+                                                bloc.add(const team.LoadTeamMembers());
+                                              });
+                                              Navigator.of(dialogContext).pop(); // Close dialog
+                                              widget.onSuccess(); // Close modal
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                                tooltip: isOwnProfile ? 'לא ניתן למחוק את עצמך' : 'מחק',
                               );
                             },
-                            tooltip: 'מחק',
                           ),
                         IconButton(
                           icon: const Icon(Icons.close),
