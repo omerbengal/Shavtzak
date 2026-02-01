@@ -273,7 +273,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   // Get unique key for a slot's dropdown
   String _getSlotKey(AssignmentSlot slot) {
-    return '${slot.event.id}_${slot.roleType.name}_${slot.slotIndex}';
+    return '${slot.event.id}_${slot.role.key}_${slot.slotIndex}';
   }
 
   // Reset a dropdown by incrementing its counter (forces new widget with fresh state)
@@ -477,9 +477,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       children: [
                         // Role name text (always centered)
                         GestureDetector(
-                          onTap: () => _showEventFormModal(slot.event, selectedRole: slot.roleType),
+                          onTap: () => _showEventFormModal(slot.event, selectedRoleKey: slot.role.key),
                           child: Text(
-                            slot.roleType.hebrewName,
+                            slot.role.hebrewName,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: 12,
@@ -579,7 +579,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     // - Swipe left (endToStart): Delete slot
     // - Swipe right (startToEnd): Edit notes (only for filled slots)
     return Dismissible(
-      key: Key('slot_${slot.event.id}_${slot.roleType.name}_${slot.slotIndex}'),
+      key: Key('slot_${slot.event.id}_${slot.role.key}_${slot.slotIndex}'),
       direction: slot.isFilled
           ? DismissDirection.horizontal  // Both directions for filled slots
           : DismissDirection.endToStart, // Only delete for empty slots
@@ -661,7 +661,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       // Step 2: Get all remaining assignments for this event and role
       final allAssignments = await assignmentRepo.getAssignmentsByEvent(slot.event.id);
       final roleAssignments = allAssignments
-          .where((a) => a.roleType == slot.roleType)
+          .where((a) => a.roleType == slot.role.key)
           .toList()
         ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
 
@@ -678,9 +678,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
       // Step 4: Reduce the event's quota for this role by 1
       final updatedRoleRequirements = Map<String, int>.from(slot.event.roleRequirements);
-      final currentQuota = updatedRoleRequirements[slot.roleType.key] ?? 0;
+      final currentQuota = updatedRoleRequirements[slot.role.key] ?? 0;
       if (currentQuota > 0) {
-        updatedRoleRequirements[slot.roleType.key] = currentQuota - 1;
+        updatedRoleRequirements[slot.role.key] = currentQuota - 1;
       }
 
       final updatedEvent = slot.event.copyWith(
@@ -758,7 +758,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             children: [
               // Show assignment info
               Text(
-                '${slot.currentAssignment?.teamMember?.name ?? ""} - ${slot.roleType.hebrewName}',
+                '${slot.currentAssignment?.teamMember?.name ?? ""} - ${slot.role.hebrewName}',
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
@@ -1098,7 +1098,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     final filteredMembers = slot.alreadyAssignedMembers.where((member) {
       final hasThisRole = _allSlots.any((s) =>
           s.event.id == slot.event.id &&
-          s.roleType == slot.roleType &&  // Same role type
+          s.role.key == slot.role.key &&  // Same role type
           s.isFilled &&
           s.currentAssignment!.teamMemberId == member.id);
       return !hasThisRole;
@@ -1137,7 +1137,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                         Text(
                           slot.alreadyAssignedMembers.isEmpty
                               ? 'אין אנשים שכבר שובצו לאירוע זה'
-                              : 'כל האנשים שכבר שובצו לאירוע זה כבר משובצים לתפקיד ${slot.roleType.hebrewName}',
+                              : 'כל האנשים שכבר שובצו לאירוע זה כבר משובצים לתפקיד ${slot.role.hebrewName}',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
@@ -1150,7 +1150,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 else ...[
                   // Show list of members
                   Text(
-                    'האנשים הבאים כבר משובצים לאירוע זה בתפקידים אחרים (לא ${slot.roleType.hebrewName}):',
+                    'האנשים הבאים כבר משובצים לאירוע זה בתפקידים אחרים (לא ${slot.role.hebrewName}):',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
@@ -1170,8 +1170,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                 s.event.id == slot.event.id &&
                                 s.isFilled &&
                                 s.currentAssignment!.teamMemberId == member.id &&
-                                s.roleType != slot.roleType)  // Exclude current role
-                            .map((s) => s.roleType.hebrewName)
+                                s.role.key != slot.role.key)  // Exclude current role
+                            .map((s) => s.role.hebrewName)
                             .toList();
 
                         return ListTile(
@@ -1225,7 +1225,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             id: const Uuid().v4(),
             eventId: slot.event.id,
             teamMemberId: selectedMember.id,
-            roleType: slot.roleType.key,
+            roleType: slot.role.key,
             slotIndex: slot.slotIndex,
             status: AssignmentStatus.confirmed,
             notes: '',
@@ -1380,7 +1380,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   }
 
   /// Show event form modal for editing an event
-  void _showEventFormModal(Event event, {RoleType? selectedRole}) {
+  void _showEventFormModal(Event event, {String? selectedRoleKey}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1389,7 +1389,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       backgroundColor: Colors.transparent,
       builder: (modalContext) => EventFormModal(
         event: event,
-        selectedRole: selectedRole,
+        selectedRoleKey: selectedRoleKey,
         filterIndex: 1, // Default to future for assignments screen
         onSuccess: () {
           Navigator.of(modalContext).pop();

@@ -10,6 +10,7 @@ import '../../../data/repositories/team_repository.dart';
 import '../../../data/repositories/role_repository.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/role.dart';
 import '../../../domain/entities/team_member.dart';
 import 'assignment_event.dart';
 import 'assignment_state.dart';
@@ -604,7 +605,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
   /// Get slot key for AssignmentSlot
   String _getSlotKey(AssignmentSlot slot) {
-    return '${slot.event.id}_${slot.roleType.key}_${slot.slotIndex}';
+    return '${slot.event.id}_${slot.role.key}_${slot.slotIndex}';
   }
 
   /// Apply optimistic update to a specific slot only
@@ -621,7 +622,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // This is the target slot - apply the optimistic change
         return AssignmentSlot(
           event: slot.event,
-          roleType: slot.roleType,
+          role: slot.role,
           slotIndex: slot.slotIndex,
           currentAssignment: isDelete ? null : optimisticAssignment,
           // CRITICAL: Keep database member lists unchanged
@@ -745,7 +746,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
         for (final member in allMembers) {
           // Check capability
-          if (!member.canPerformRole(slot.roleType.key)) continue;
+          if (!member.canPerformRole(slot.role.key)) continue;
 
           // Check availability for entire event duration
           if (!member.allowMultipleAssignments &&
@@ -768,7 +769,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final slotIndex = eventSlots.indexOf(slot);
         eventSlots[slotIndex] = AssignmentSlot(
           event: slot.event,
-          roleType: slot.roleType,
+          role: slot.role,
           slotIndex: slot.slotIndex,
           currentAssignment: slot.currentAssignment,
           availableMembers: availableMembersMap.values.toList(),
@@ -791,13 +792,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final eventSlots = slotsByEvent[dbSlot.event.id];
         final baseSlot = eventSlots != null
             ? eventSlots.firstWhere(
-                (s) => s.roleType == dbSlot.roleType && s.slotIndex == dbSlot.slotIndex,
+                (s) => s.role.key == dbSlot.role.key && s.slotIndex == dbSlot.slotIndex,
                 orElse: () => dbSlot,
               )
             : dbSlot;
         return AssignmentSlot(
           event: baseSlot.event,
-          roleType: baseSlot.roleType,
+          role: baseSlot.role,
           slotIndex: baseSlot.slotIndex,
           currentAssignment: null,
           availableMembers: baseSlot.availableMembers,
@@ -812,7 +813,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final eventSlots = slotsByEvent[dbSlot.event.id];
         if (eventSlots != null) {
           final updatedSlot = eventSlots.firstWhere(
-            (s) => s.roleType == dbSlot.roleType && s.slotIndex == dbSlot.slotIndex,
+            (s) => s.role.key == dbSlot.role.key && s.slotIndex == dbSlot.slotIndex,
             orElse: () => dbSlot,
           );
           return updatedSlot;
@@ -825,13 +826,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final eventSlots = slotsByEvent[dbSlot.event.id];
         final baseSlot = eventSlots != null
             ? eventSlots.firstWhere(
-                (s) => s.roleType == dbSlot.roleType && s.slotIndex == dbSlot.slotIndex,
+                (s) => s.role.key == dbSlot.role.key && s.slotIndex == dbSlot.slotIndex,
                 orElse: () => dbSlot,
               )
             : dbSlot;
         return AssignmentSlot(
           event: baseSlot.event,
-          roleType: baseSlot.roleType,
+          role: baseSlot.role,
           slotIndex: baseSlot.slotIndex,
           currentAssignment: null,
           availableMembers: baseSlot.availableMembers,
@@ -844,13 +845,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final eventSlots = slotsByEvent[dbSlot.event.id];
         final baseSlot = eventSlots != null
             ? eventSlots.firstWhere(
-                (s) => s.roleType == dbSlot.roleType && s.slotIndex == dbSlot.slotIndex,
+                (s) => s.role.key == dbSlot.role.key && s.slotIndex == dbSlot.slotIndex,
                 orElse: () => dbSlot,
               )
             : dbSlot;
         return AssignmentSlot(
           event: baseSlot.event,
-          roleType: baseSlot.roleType,
+          role: baseSlot.role,
           slotIndex: baseSlot.slotIndex,
           currentAssignment: operation.optimisticAssignment,
           availableMembers: baseSlot.availableMembers,
@@ -878,18 +879,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               s.isFilled &&
               s.currentAssignment!.teamMemberId ==
                   slot.currentAssignment!.teamMemberId &&
-              s.roleType != slot.roleType).toList();
+              s.role.key != slot.role.key).toList();
 
           if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
             // This person has multiple roles in this event
             final otherRoleNames =
-                otherAssignments.map((s) => s.roleType.hebrewName).toList();
+                otherAssignments.map((s) => s.role.hebrewName).toList();
 
             // Find and update this slot in resultSlots
             final slotIndex = resultSlots.indexOf(slot);
             resultSlots[slotIndex] = AssignmentSlot(
               event: slot.event,
-              roleType: slot.roleType,
+              role: slot.role,
               slotIndex: slot.slotIndex,
               currentAssignment: slot.currentAssignment,
               availableMembers: slot.availableMembers,
@@ -1083,16 +1084,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final sortedRoles = allRoles
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
-    // Create a mapping from role key to RoleType enum for compatibility
-    final roleKeyToRoleType = <String, RoleType>{};
-    for (final roleType in RoleType.values) {
-      roleKeyToRoleType[roleType.key] = roleType;
-    }
-
-    // Create a mapping from role key to sortOrder for sorting
-    final roleKeyToSortOrder = <String, int>{};
+    // Create a mapping from role key to Role for easy lookup
+    final roleKeyToRole = <String, Role>{};
     for (final role in sortedRoles) {
-      roleKeyToSortOrder[role.key] = role.sortOrder;
+      roleKeyToRole[role.key] = role;
     }
 
     // 5. Build slots
@@ -1101,10 +1096,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       for (final event in events) {
         // Iterate through roles in sortOrder (not enum order)
         for (final role in sortedRoles) {
-          // Skip if this role key doesn't map to a RoleType (legacy compatibility)
-          if (!roleKeyToRoleType.containsKey(role.key)) continue;
-
-          final roleType = roleKeyToRoleType[role.key]!;
           final requiredCount = event.roleRequirements[role.key] ?? 0;
           if (requiredCount == 0) continue; // Skip roles with 0 requirement
 
@@ -1161,7 +1152,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
             slots.add(AssignmentSlot(
               event: event,
-              roleType: roleType,
+              role: role,
               slotIndex: i,
               currentAssignment: assignment,
               availableMembers: availableMembers,
@@ -1186,15 +1177,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               s.isFilled &&
               s.currentAssignment!.teamMemberId ==
                   slot.currentAssignment!.teamMemberId &&
-              s.roleType != slot.roleType).toList();
+              s.role.key != slot.role.key).toList();
 
           if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
             // This person has multiple roles in this event
             final otherRoleNames =
-                otherAssignments.map((s) => s.roleType.hebrewName).toList();
+                otherAssignments.map((s) => s.role.hebrewName).toList();
             slotsWithDoubleAssignmentDetection.add(AssignmentSlot(
               event: slot.event,
-              roleType: slot.roleType,
+              role: slot.role,
               slotIndex: slot.slotIndex,
               currentAssignment: slot.currentAssignment,
               availableMembers: slot.availableMembers,
@@ -1219,9 +1210,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       if (nameCompare != 0) return nameCompare;
 
       // Sort by role sortOrder (not enum order)
-      final aSortOrder = roleKeyToSortOrder[a.roleType.key] ?? 0;
-      final bSortOrder = roleKeyToSortOrder[b.roleType.key] ?? 0;
-      return aSortOrder.compareTo(bSortOrder);
+      return a.role.sortOrder.compareTo(b.role.sortOrder);
     });
 
     return AssignmentSlotsLoaded(
@@ -1309,16 +1298,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final sortedRoles = allRoles
         ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
-      // Create a mapping from role key to RoleType enum for compatibility
-      final roleKeyToRoleType = <String, RoleType>{};
-      for (final roleType in RoleType.values) {
-        roleKeyToRoleType[roleType.key] = roleType;
-      }
-
-      // Create a mapping from role key to sortOrder for sorting
-      final roleKeyToSortOrder = <String, int>{};
+      // Create a mapping from role key to Role for easy lookup
+      final roleKeyToRole = <String, Role>{};
       for (final role in sortedRoles) {
-        roleKeyToSortOrder[role.key] = role.sortOrder;
+        roleKeyToRole[role.key] = role;
       }
 
       // Filter events based on showPastEvents flag
@@ -1334,10 +1317,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       for (final eventData in filteredEvents) {
         // Iterate through roles in sortOrder (not enum order)
         for (final role in sortedRoles) {
-          // Skip if this role key doesn't map to a RoleType (legacy compatibility)
-          if (!roleKeyToRoleType.containsKey(role.key)) continue;
-
-          final roleType = roleKeyToRoleType[role.key]!;
           final requiredCount = eventData.roleRequirements[role.key] ?? 0;
           if (requiredCount == 0) continue; // Skip roles with 0 requirement
 
@@ -1398,7 +1377,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
             slots.add(AssignmentSlot(
               event: eventData,
-              roleType: roleType,
+              role: role,
               slotIndex: i,
               currentAssignment: assignment,
               availableMembers: availableMembers,
@@ -1422,15 +1401,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               s.isFilled &&
               s.currentAssignment!.teamMemberId ==
                   slot.currentAssignment!.teamMemberId &&
-              s.roleType != slot.roleType).toList();
+              s.role.key != slot.role.key).toList();
 
           if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
             // This person has multiple roles in this event
             final otherRoleNames =
-                otherAssignments.map((s) => s.roleType.hebrewName).toList();
+                otherAssignments.map((s) => s.role.hebrewName).toList();
             slotsWithDoubleAssignmentDetection.add(AssignmentSlot(
               event: slot.event,
-              roleType: slot.roleType,
+              role: slot.role,
               slotIndex: slot.slotIndex,
               currentAssignment: slot.currentAssignment,
               availableMembers: slot.availableMembers,
@@ -1455,9 +1434,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         if (nameCompare != 0) return nameCompare;
 
         // Sort by role sortOrder (not enum order)
-        final aSortOrder = roleKeyToSortOrder[a.roleType.key] ?? 0;
-        final bSortOrder = roleKeyToSortOrder[b.roleType.key] ?? 0;
-        return aSortOrder.compareTo(bSortOrder);
+        return a.role.sortOrder.compareTo(b.role.sortOrder);
       });
 
       // Apply filter if needed

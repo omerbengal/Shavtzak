@@ -1,14 +1,14 @@
 import 'package:equatable/equatable.dart';
-import '../../../../core/constants/role_types.dart';
 import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/event.dart';
+import '../../../../domain/entities/role.dart';
 import '../../../../domain/entities/team_member.dart';
 
 /// Represents a single assignable slot in the assignment grid
 /// Each slot represents one role requirement from an event
 class AssignmentSlot extends Equatable {
   final Event event;
-  final RoleType roleType;
+  final Role role;
   final int slotIndex; // 0, 1, 2... for multiple slots of same role
   final Assignment? currentAssignment;
   final List<TeamMember> availableMembers; // Members not assigned to this event
@@ -18,7 +18,7 @@ class AssignmentSlot extends Equatable {
 
   const AssignmentSlot({
     required this.event,
-    required this.roleType,
+    required this.role,
     required this.slotIndex,
     this.currentAssignment,
     required this.availableMembers,
@@ -34,7 +34,10 @@ class AssignmentSlot extends Equatable {
   String get eventDisplay => event.name;
 
   /// Display text for the role column
-  String get roleDisplay => roleType.hebrewName;
+  String get roleDisplay => role.hebrewName;
+
+  /// Role key (for compatibility with roleType.key)
+  String get roleKey => role.key;
 
   /// Name of the assigned person (if any)
   String? get assignedPersonName => currentAssignment?.teamMemberName;
@@ -42,7 +45,7 @@ class AssignmentSlot extends Equatable {
   @override
   List<Object?> get props => [
         event, // Full Event object (extends Equatable) - includes location, name, dates, etc.
-        roleType,
+        role, // Full Role object (extends Equatable)
         slotIndex,
         currentAssignment, // Full Assignment object for real-time updates
         availableMembers,
@@ -53,7 +56,7 @@ class AssignmentSlot extends Equatable {
 
   @override
   String toString() {
-    return 'AssignmentSlot(event: ${event.name}, role: ${roleType.hebrewName}, '
+    return 'AssignmentSlot(event: ${event.name}, role: ${role.hebrewName}, '
         'slotIndex: $slotIndex, filled: $isFilled, '
         'availableMembers: ${availableMembers.length})';
   }

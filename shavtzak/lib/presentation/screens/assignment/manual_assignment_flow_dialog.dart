@@ -25,7 +25,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
   int _currentStep = 0;
   Event? _selectedEvent;
   TeamMember? _selectedTeamMember;
-  RoleType? _selectedRole;
+  Role? _selectedRole;
   List<Event> _futureEvents = [];
   List<TeamMember> _teamMembers = [];
 
@@ -39,17 +39,6 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     // Load events and team members
     context.read<EventBloc>().add(const LoadEvents());
     context.read<TeamBloc>().add(const LoadActiveTeamMembers());
-  }
-
-  /// Safely parse a role key string to RoleType enum
-  /// Returns null if the key doesn't match any RoleType value
-  RoleType? _tryParseRoleType(String key) {
-    try {
-      return RoleType.values.firstWhere((role) => role.key == key);
-    } catch (e) {
-      // Role key not found in RoleType enum
-      return null;
-    }
   }
 
   @override
@@ -369,10 +358,10 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
   Widget _buildRoleSelectionStep() {
     if (_selectedTeamMember == null) return const SizedBox.shrink();
 
-    final availableRoleTypes = _selectedTeamMember!.roleCapabilities.entries
+    final availableRoleKeys = _selectedTeamMember!.roleCapabilities.entries
         .where((entry) => entry.value)
         .map((entry) => entry.key)
-        .toList();
+        .toSet();
 
     return BlocBuilder<RoleBloc, RoleState>(
       builder: (context, roleState) {
@@ -394,10 +383,9 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
           )).toList();
         }
 
-        // Filter roles to only those that match available RoleTypes
+        // Filter roles to only those that match available role keys
         final filteredRoles = roles.where((roleObj) {
-          final roleType = _tryParseRoleType(roleObj.key);
-          return roleType != null && availableRoleTypes.contains(roleType);
+          return availableRoleKeys.contains(roleObj.key);
         }).toList()
           ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
@@ -436,11 +424,8 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                   : ListView.builder(
                       itemCount: filteredRoles.length,
                       itemBuilder: (context, index) {
-                        final roleObj = filteredRoles[index];
-                        final roleType = _tryParseRoleType(roleObj.key);
-                        if (roleType == null) return const SizedBox.shrink();
-
-                        final isSelected = _selectedRole == roleType;
+                        final role = filteredRoles[index];
+                        final isSelected = _selectedRole?.key == role.key;
 
                         return Card(
                           elevation: isSelected ? 4 : 1,
@@ -450,7 +435,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                               // Auto-complete assignment when role is selected
                               if (!isSelected) {
                                 setState(() {
-                                  _selectedRole = roleType;
+                                  _selectedRole = role;
                                 });
                                 _finish();
                               }
@@ -459,7 +444,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                             child: Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               child: Text(
-                                roleObj.hebrewName,
+                                role.hebrewName,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -681,7 +666,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
       Navigator.of(context).pop({
         'event': _selectedEvent!,
         'teamMember': _selectedTeamMember!,
-        'roleType': _selectedRole!,
+        'roleType': _selectedRole!.key,
       });
     }
   }

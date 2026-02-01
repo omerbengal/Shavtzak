@@ -24,7 +24,7 @@ import 'event_drive_files_section.dart';
 class EventFormModal extends StatefulWidget {
   final Event? event; // null for create, non-null for edit
   final VoidCallback onSuccess;
-  final RoleType? selectedRole; // Optional role to highlight/scroll to
+  final String? selectedRoleKey; // Optional role key to highlight/scroll to
   final int filterIndex; // Filter index to reload with after operations (0=all, 1=future, 2=past)
   final bool isDuplication; // true if this is a duplication modal
 
@@ -32,7 +32,7 @@ class EventFormModal extends StatefulWidget {
     super.key,
     this.event,
     required this.onSuccess,
-    this.selectedRole,
+    this.selectedRoleKey,
     this.filterIndex = 1, // Default to future
     this.isDuplication = false, // Default to false
   });
@@ -140,11 +140,14 @@ class _EventFormModalState extends State<EventFormModal> {
     });
 
     // If a role was selected, scroll to it and highlight after build
-    if (widget.selectedRole != null) {
-      _highlightedRole = widget.selectedRole;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToRole(widget.selectedRole!);
-      });
+    if (widget.selectedRoleKey != null) {
+      final RoleType? roleType = _tryParseRoleType(widget.selectedRoleKey!);
+      if (roleType != null) {
+        _highlightedRole = roleType;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToRole(roleType);
+        });
+      }
     }
   }
 
