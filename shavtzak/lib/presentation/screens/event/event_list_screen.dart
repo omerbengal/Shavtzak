@@ -349,7 +349,7 @@ class _EventListScreenState extends State<EventListScreen> {
                   Expanded(
                     child: Text(event.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
                   ),
-                  ],
+                ],
               ),
               const SizedBox(height: 12),
               // All fields in a single Wrap for horizontal flow
@@ -368,8 +368,7 @@ class _EventListScreenState extends State<EventListScreen> {
                   // Time fields
                   _buildFieldItem('שעת התייצבות', event.assemblyTime.isEmpty ? '-' : event.assemblyTime),
                   _buildFieldItem('שעת התכנסות קהל', event.startTime.isEmpty ? '-' : event.startTime),
-                  if (event.actualShowStartTime.isNotEmpty)
-                    _buildFieldItem('שעת תחילת המופע', event.actualShowStartTime),
+                  _buildFieldItem('שעת תחילת המופע', event.actualShowStartTime.isEmpty ? '-' : event.actualShowStartTime),
                   _buildFieldItem('שעת סיום', event.endTime.isEmpty ? '-' : event.endTime),
                 ],
               ),
@@ -430,8 +429,6 @@ class _EventListScreenState extends State<EventListScreen> {
     );
   }
 
-  
-  
   void _showDeleteConfirmation(Event event) {
     showDialog(
       context: context,

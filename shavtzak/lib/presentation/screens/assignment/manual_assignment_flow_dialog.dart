@@ -13,6 +13,7 @@ import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
 import '../../bloc/role/role_bloc.dart';
 import '../../bloc/role/role_state.dart';
+import '../../widgets/map_location_picker.dart';
 
 class ManualAssignmentFlowDialog extends StatefulWidget {
   const ManualAssignmentFlowDialog({super.key});
@@ -184,16 +185,27 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                         title: Text(
                           event.name,
                           style: TextStyle(
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: FontWeight.bold,
                             color: isSelected ? Colors.blue.shade700 : Colors.black,
                           ),
                         ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(event.dateRangeString),
-                            if (event.location.isNotEmpty) Text('מיקום: ${event.location}'),
-                            Text('${event.startTime} - ${event.endTime}'),
+                            // Dates formatted in Hebrew
+                            Text(_formatEventDates(event)),
+                            // Time fields with labels
+                            if (event.assemblyTime.isNotEmpty)
+                              Text('שעת התייצבות: ${event.assemblyTime}'),
+                            if (event.startTime.isNotEmpty)
+                              Text('שעת התכנסות קהל: ${event.startTime}'),
+                            if (event.actualShowStartTime.isNotEmpty)
+                              Text('שעת תחילת המופע בפועל: ${event.actualShowStartTime}'),
+                            if (event.endTime.isNotEmpty)
+                              Text('שעת סיום: ${event.endTime}'),
+                            // Location (without coordinates)
+                            if (event.location.isNotEmpty)
+                              Text('מיקום: ${_formatLocationForDisplay(event.location)}'),
                           ],
                         ),
                         onTap: () {
@@ -669,5 +681,42 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
         'roleType': _selectedRole!.key,
       });
     }
+  }
+
+  /// Format event dates in Hebrew (like user/assignments screen)
+  String _formatEventDates(Event event) {
+    final isSameDay = event.startDate.year == event.endDate.year &&
+        event.startDate.month == event.endDate.month &&
+        event.startDate.day == event.endDate.day;
+
+    if (isSameDay) {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)}';
+    } else {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)} - יום ${_getFullHebrewDayName(event.endDate.weekday)} ${event.endDate.day} ב${_getHebrewMonthName(event.endDate.month)}';
+    }
+  }
+
+  /// Get full Hebrew day name (e.g., "ראשון", "שני")
+  String _getFullHebrewDayName(int weekday) {
+    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    return days[weekday == 7 ? 7 : weekday];
+  }
+
+  /// Get Hebrew month name (e.g., "פברואר")
+  String _getHebrewMonthName(int month) {
+    const months = [
+      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    ];
+    return months[month];
+  }
+
+  /// Format location for display - remove coordinates
+  String _formatLocationForDisplay(String location) {
+    if (location.contains('||')) {
+      final strippedLocation = MapLocationResult.stripCoordinates(location);
+      return strippedLocation.isNotEmpty ? strippedLocation : location;
+    }
+    return location;
   }
 }

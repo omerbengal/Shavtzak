@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../core/constants/role_types.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/event_assignment_status.dart';
 import '../../../domain/entities/event.dart';
@@ -150,7 +149,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   checklistItems,
                 );
 
-                return _buildContent(metrics);
+                return _buildContent(metrics, assignments);
               },
             );
           },
@@ -159,7 +158,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
-  Widget _buildContent(_SummaryMetrics metrics) {
+  Widget _buildContent(_SummaryMetrics metrics, List<Assignment> assignments) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isWideScreen = screenWidth >= 600;
 
@@ -185,7 +184,10 @@ class _SummaryScreenState extends State<SummaryScreen> {
               (context, index) {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: EventSummaryTile(data: metrics.eventSummaries[index]),
+                  child: EventSummaryTile(
+                    data: metrics.eventSummaries[index],
+                    allAssignments: assignments,
+                  ),
                 );
               },
               childCount: metrics.eventSummaries.length,
@@ -332,7 +334,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
       }
 
       // Calculate missing roles
-      final missingRoles = <RoleType, int>{};
+      final missingRoles = <String, int>{};
       if (status == EventAssignmentStatus.partial ||
           status == EventAssignmentStatus.none) {
         // Count assignments by role
@@ -348,12 +350,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
           final filled = filledByRole[entry.key] ?? 0;
           final missing = required - filled;
           if (missing > 0) {
-            // Try to parse role key to RoleType enum
-            final roleType = RoleType.values.firstWhere(
-              (rt) => rt.key == entry.key,
-              orElse: () => RoleType.medic, // Fallback
-            );
-            missingRoles[roleType] = missing;
+            // Use role key directly (string) instead of RoleType enum
+            missingRoles[entry.key] = missing;
           }
         }
       }

@@ -913,38 +913,13 @@ class _EventFormModalState extends State<EventFormModal> {
 
                                               // Check if only start date was selected
                                               if (selectedStartDate != null && selectedEndDate == null) {
-                                                // Show confirmation dialog for single-day event
-                                                final confirmed = await showDialog<bool>(
-                                                  context: context,
-                                                  builder: (dialogContext) => Directionality(
-                                                    textDirection: TextDirection.rtl,
-                                                    child: AlertDialog(
-                                                      title: const Text('אישור אירוע ליום בודד'),
-                                                      content: Text(
-                                                        'האם זה אירוע ליום בודד (${_formatDate(selectedStartDate!)})?',
-                                                      ),
-                                                      actions: [
-                                                        TextButton(
-                                                          child: const Text('ביטול'),
-                                                          onPressed: () => Navigator.of(dialogContext).pop(false),
-                                                        ),
-                                                        ElevatedButton(
-                                                          child: const Text('כן, אירוע ליום בודד'),
-                                                          onPressed: () => Navigator.of(dialogContext).pop(true),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                );
-
-                                                if (confirmed == true) {
-                                                  setState(() {
-                                                    _startDate = selectedStartDate;
-                                                    _endDate = selectedStartDate; // For single day event
-                                                    _dateError = null;
-                                                    _isDirty = true;
-                                                  });
-                                                }
+                                                // Single day event - no confirmation needed
+                                                setState(() {
+                                                  _startDate = selectedStartDate;
+                                                  _endDate = selectedStartDate; // For single day event
+                                                  _dateError = null;
+                                                  _isDirty = true;
+                                                });
                                               } else if (selectedStartDate != null && selectedEndDate != null) {
                                                 // Check if start and end dates are the same
                                                 final isSameDate = selectedStartDate.year == selectedEndDate.year &&
@@ -952,38 +927,13 @@ class _EventFormModalState extends State<EventFormModal> {
                                                     selectedStartDate.day == selectedEndDate.day;
 
                                                 if (isSameDate) {
-                                                  // Show confirmation dialog for single-day event
-                                                  final confirmed = await showDialog<bool>(
-                                                    context: context,
-                                                    builder: (dialogContext) => Directionality(
-                                                      textDirection: TextDirection.rtl,
-                                                      child: AlertDialog(
-                                                        title: const Text('אישור אירוע ליום בודד'),
-                                                        content: Text(
-                                                          'האם זה אירוע ליום בודד (${_formatDate(selectedStartDate)})?',
-                                                        ),
-                                                        actions: [
-                                                          TextButton(
-                                                            child: const Text('ביטול'),
-                                                            onPressed: () => Navigator.of(dialogContext).pop(false),
-                                                          ),
-                                                          ElevatedButton(
-                                                            child: const Text('כן, אירוע ליום בודד'),
-                                                            onPressed: () => Navigator.of(dialogContext).pop(true),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  );
-
-                                                  if (confirmed == true) {
-                                                    setState(() {
-                                                      _startDate = selectedStartDate;
-                                                      _endDate = selectedStartDate; // For single day event
-                                                      _dateError = null;
-                                                      _isDirty = true;
-                                                    });
-                                                  }
+                                                  // Single day event - no confirmation needed
+                                                  setState(() {
+                                                    _startDate = selectedStartDate;
+                                                    _endDate = selectedStartDate; // For single day event
+                                                    _dateError = null;
+                                                    _isDirty = true;
+                                                  });
                                                 } else {
                                                   // Multi-day event
                                                   setState(() {
@@ -1060,40 +1010,26 @@ class _EventFormModalState extends State<EventFormModal> {
 
                               const SizedBox(height: 16),
 
-                              // Start Time (Audience Gathering Time)
-                              TextFormField(
-                                controller: _startTimeController,
-                                decoration: const InputDecoration(
-                                  labelText: 'שעת התכנסות קהל (אופציונלי)',
-                                  hintText: 'לדוגמה: 18:00',
-                                  prefixIcon: Icon(Icons.access_time),
-                                  border: OutlineInputBorder(),
-                                ),
-                                onChanged: (_) => setState(() => _isDirty = true),
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // End Time
-                              TextFormField(
-                                controller: _endTimeController,
-                                decoration: const InputDecoration(
-                                  labelText: 'שעת סיום (אופציונלי)',
-                                  hintText: 'לדוגמה: 23:00',
-                                  prefixIcon: Icon(Icons.access_time),
-                                  border: OutlineInputBorder(),
-                                ),
-                                onChanged: (_) => setState(() => _isDirty = true),
-                              ),
-
-                              const SizedBox(height: 16),
-
                               // Assembly Time
                               TextFormField(
                                 controller: _assemblyTimeController,
                                 decoration: const InputDecoration(
                                   labelText: 'שעת התייצבות (אופציונלי)',
                                   hintText: 'לדוגמה: 17:00',
+                                  prefixIcon: Icon(Icons.access_time),
+                                  border: OutlineInputBorder(),
+                                ),
+                                onChanged: (_) => setState(() => _isDirty = true),
+                              ),
+
+                              const SizedBox(height: 16),
+
+                              // Start Time (Audience Gathering Time)
+                              TextFormField(
+                                controller: _startTimeController,
+                                decoration: const InputDecoration(
+                                  labelText: 'שעת התכנסות קהל (אופציונלי)',
+                                  hintText: 'לדוגמה: 18:00',
                                   prefixIcon: Icon(Icons.access_time),
                                   border: OutlineInputBorder(),
                                 ),
@@ -1109,6 +1045,20 @@ class _EventFormModalState extends State<EventFormModal> {
                                   labelText: 'שעת תחילת המופע בפועל (אופציונלי)',
                                   hintText: 'לדוגמה: 19:00',
                                   prefixIcon: Icon(Icons.play_circle_outline),
+                                  border: OutlineInputBorder(),
+                                ),
+                                onChanged: (_) => setState(() => _isDirty = true),
+                              ),
+
+                              const SizedBox(height: 16),
+
+                              // End Time
+                              TextFormField(
+                                controller: _endTimeController,
+                                decoration: const InputDecoration(
+                                  labelText: 'שעת סיום (אופציונלי)',
+                                  hintText: 'לדוגמה: 23:00',
+                                  prefixIcon: Icon(Icons.access_time),
                                   border: OutlineInputBorder(),
                                 ),
                                 onChanged: (_) => setState(() => _isDirty = true),

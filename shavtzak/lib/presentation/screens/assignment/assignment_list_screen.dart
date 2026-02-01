@@ -437,25 +437,22 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                             textAlign: TextAlign.center,
                           ),
                         ),
-                        // Line 1: Dates (single date if same, or date range)
+                        // Line 1: Dates formatted in Hebrew
                         Text(
-                          _isSameDay(slot.event.startDate, slot.event.endDate)
-                              ? _formatDate(slot.event.startDate)
-                              : '${_formatDate(slot.event.startDate)} - ${_formatDate(slot.event.endDate)}',
+                          _formatEventDatesHebrew(slot.event),
                           style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                           textAlign: TextAlign.center,
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        // Line 2: Times (show if at least one time is filled)
-                        if (slot.event.startTime.isNotEmpty || slot.event.endTime.isNotEmpty)
-                          Text(
-                            '${slot.event.startTime.isNotEmpty ? slot.event.startTime : "?"} - ${slot.event.endTime.isNotEmpty ? slot.event.endTime : "?"}',
-                            style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                        // Line 2: Times formatted with labels
+                        Text(
+                          _formatTimeFields(slot.event),
+                          style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         // Line 3: Location (only if not empty)
                         if (slot.event.location.isNotEmpty)
                           Text(
@@ -1530,5 +1527,53 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         context.go('$envPrefix/whoami');
       }
     });
+  }
+
+  /// Format event dates in Hebrew (like user/assignments screen)
+  String _formatEventDatesHebrew(Event event) {
+    final isSameDay = event.startDate.year == event.endDate.year &&
+        event.startDate.month == event.endDate.month &&
+        event.startDate.day == event.endDate.day;
+
+    if (isSameDay) {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)}';
+    } else {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)} - יום ${_getFullHebrewDayName(event.endDate.weekday)} ${event.endDate.day} ב${_getHebrewMonthName(event.endDate.month)}';
+    }
+  }
+
+  /// Format time fields with labels: "התייצבות - <HH:mm> | התכנסות - <HH:mm> | תחילת מופע - <HH:mm> | סיום - <HH:mm>"
+  String _formatTimeFields(Event event) {
+    final parts = <String>[];
+
+    if (event.assemblyTime.isNotEmpty) {
+      parts.add('התייצבות - ${event.assemblyTime}');
+    }
+    if (event.startTime.isNotEmpty) {
+      parts.add('התכנסות - ${event.startTime}');
+    }
+    if (event.actualShowStartTime.isNotEmpty) {
+      parts.add('תחילת מופע - ${event.actualShowStartTime}');
+    }
+    if (event.endTime.isNotEmpty) {
+      parts.add('סיום - ${event.endTime}');
+    }
+
+    return parts.join(' | ');
+  }
+
+  /// Get full Hebrew day name (e.g., "ראשון", "שני")
+  String _getFullHebrewDayName(int weekday) {
+    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    return days[weekday == 7 ? 7 : weekday];
+  }
+
+  /// Get Hebrew month name (e.g., "פברואר")
+  String _getHebrewMonthName(int month) {
+    const months = [
+      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    ];
+    return months[month];
   }
 }

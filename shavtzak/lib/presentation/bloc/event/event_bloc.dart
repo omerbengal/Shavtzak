@@ -396,10 +396,10 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // Calculate role quotas that would be over-filled
       final overQuotaRoles = <String>{};
       for (final roleType in RoleType.values) {
-        final newQuota = event.newRoleRequirements[roleType.name] ?? 0;
-        final assignmentCount = assignments.where((a) => a.roleType == roleType.name).length;
+        final newQuota = event.newRoleRequirements[roleType.key] ?? 0;
+        final assignmentCount = assignments.where((a) => a.roleType == roleType.key).length;
         if (assignmentCount > newQuota) {
-          overQuotaRoles.add(roleType.name);
+          overQuotaRoles.add(roleType.key);
         }
       }
 
@@ -437,11 +437,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // If there are ANY conflicts, emit state for user resolution
       // DO NOT create anything yet!
       if (hasAnyConflict) {
-        // Convert role requirements to Map<String, int> for the state
-        final roleQuotas = <String, int>{};
-        for (final entry in event.newRoleRequirements.entries) {
-          roleQuotas[entry.key.name] = entry.value;
-        }
+        // Role requirements are already Map<String, int>, use them directly
+        final roleQuotas = Map<String, int>.from(event.newRoleRequirements);
 
         emit(DuplicationRequiresConflictResolution(
           originalEvent: originalEvent,

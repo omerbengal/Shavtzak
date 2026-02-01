@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/role_types.dart';
+import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/checklist_item.dart';
 import '../../../../domain/entities/role.dart';
 import '../../../bloc/role/role_bloc.dart';
 import '../../../bloc/role/role_state.dart';
+import '../../../widgets/map_location_picker.dart';
+import '../../event/widgets/event_assignments_dialog.dart';
 
 /// Combined data for a single event's summary
 class EventSummaryData {
   final Event event;
   final int filledSlots;
   final int totalSlots;
-  final Map<RoleType, int> missingRoles; // role -> count needed
+  final Map<String, int> missingRoles; // role key -> count needed
   final List<ChecklistItem> checklistItems;
 
   const EventSummaryData({
@@ -40,10 +43,12 @@ class EventSummaryData {
 /// Expandable tile for a single event showing staffing and checklist status
 class EventSummaryTile extends StatelessWidget {
   final EventSummaryData data;
+  final List<Assignment> allAssignments;
 
   const EventSummaryTile({
     super.key,
     required this.data,
+    required this.allAssignments,
   });
 
   @override
@@ -60,30 +65,63 @@ class EventSummaryTile extends StatelessWidget {
             fontSize: 16,
           ),
         ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // People icon button to show assignments
+            IconButton(
+              icon: const Icon(Icons.people_outline),
+              tooltip: 'צפה בשיבוצים',
+              onPressed: () {
+                // Filter assignments for this event from the already-loaded list
+                final eventAssignments = allAssignments
+                    .where((a) => a.eventId == data.event.id)
+                    .toList();
+                showDialog(
+                  context: context,
+                  builder: (context) => EventAssignmentsDialog.withAssignments(
+                    eventId: data.event.id,
+                    eventName: data.event.name,
+                    assignments: eventAssignments,
+                  ),
+                );
+              },
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            ),
+            // Default expansion arrow
+            const Icon(Icons.expand_more),
+          ],
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
-            // Date and location row
+            // Date in Hebrew
             Text(
-              '${_formatDateRange(data.event)} | ${data.event.location}',
+              _formatEventDatesHebrew(data.event),
               style: TextStyle(
                 fontSize: 13,
                 color: Colors.grey.shade700,
               ),
             ),
-            // Show actual show start time if available
-            if (data.event.actualShowStartTime.isNotEmpty) ...[
-              const SizedBox(height: 4),
+            // Time fields
+            Text(
+              _formatTimeFields(data.event),
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            // Location (stripped of coordinates)
+            if (data.event.location.isNotEmpty)
               Text(
-                'תחילת המופע: ${data.event.actualShowStartTime}',
+                _formatLocationForDisplay(data.event.location),
                 style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.blue.shade700,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 13,
+                  color: Colors.grey.shade700,
                 ),
               ),
-            ],
             const SizedBox(height: 8),
             // Status indicators
             _buildStatusRow(),
@@ -233,9 +271,7 @@ class EventSummaryTile extends StatelessWidget {
 
         // Filter to only show roles that are missing
         final missingRoleEntries = roles.where((roleObj) {
-          final roleType = _tryParseRoleType(roleObj.key);
-          if (roleType == null) return false;
-          final count = data.missingRoles[roleType] ?? 0;
+          final count = data.missingRoles[roleObj.key] ?? 0;
           return count > 0;
         }).toList()
           ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
@@ -248,25 +284,12 @@ class EventSummaryTile extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: missingRoleEntries.map((roleObj) {
-            final roleType = _tryParseRoleType(roleObj.key);
-            if (roleType == null) return const SizedBox.shrink();
-            final count = data.missingRoles[roleType] ?? 0;
+            final count = data.missingRoles[roleObj.key] ?? 0;
             return _buildRoleChip(roleObj.hebrewName, count);
           }).toList(),
         );
       },
     );
-  }
-
-  /// Safely parse a role key string to RoleType enum
-  /// Returns null if the key doesn't match any RoleType value
-  RoleType? _tryParseRoleType(String key) {
-    try {
-      return RoleType.values.firstWhere((role) => role.key == key);
-    } catch (e) {
-      // Role key not found in RoleType enum
-      return null;
-    }
   }
 
   Widget _buildRoleChip(String hebrewName, int count) {
@@ -340,34 +363,60 @@ class EventSummaryTile extends StatelessWidget {
     );
   }
 
-  /// Format date range - shows single date if same day, range otherwise
-  /// Uses 2-digit padding for days and months
-  String _formatDateRange(Event event) {
-    final start = event.startDate;
-    final end = event.endDate;
+  /// Format event dates in Hebrew (like user/assignments screen)
+  String _formatEventDatesHebrew(Event event) {
+    final isSameDay = event.startDate.year == event.endDate.year &&
+        event.startDate.month == event.endDate.month &&
+        event.startDate.day == event.endDate.day;
 
-    // Helper for 2-digit padding
-    String pad(int n) => n.toString().padLeft(2, '0');
+    if (isSameDay) {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)}';
+    } else {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)} - יום ${_getFullHebrewDayName(event.endDate.weekday)} ${event.endDate.day} ב${_getHebrewMonthName(event.endDate.month)}';
+    }
+  }
 
-    // Check if same day
-    if (start.year == end.year &&
-        start.month == end.month &&
-        start.day == end.day) {
-      return '${pad(start.day)}/${pad(start.month)}/${start.year}';
+  /// Format time fields with labels: "התייצבות - <HH:mm> | התכנסות - <HH:mm> | תחילת מופע - <HH:mm> | סיום - <HH:mm>"
+  String _formatTimeFields(Event event) {
+    final parts = <String>[];
+
+    if (event.assemblyTime.isNotEmpty) {
+      parts.add('התייצבות - ${event.assemblyTime}');
+    }
+    if (event.startTime.isNotEmpty) {
+      parts.add('התכנסות - ${event.startTime}');
+    }
+    if (event.actualShowStartTime.isNotEmpty) {
+      parts.add('תחילת מופע - ${event.actualShowStartTime}');
+    }
+    if (event.endTime.isNotEmpty) {
+      parts.add('סיום - ${event.endTime}');
     }
 
-    // Different days - show range
-    if (start.year == end.year) {
-      // Same year
-      if (start.month == end.month) {
-        // Same month: "15-17/01/2025"
-        return '${pad(start.day)}-${pad(end.day)}/${pad(start.month)}/${start.year}';
-      }
-      // Different months, same year: "30/01/2025 - 04/02/2025"
-      return '${pad(start.day)}/${pad(start.month)}/${start.year} - ${pad(end.day)}/${pad(end.month)}/${end.year}';
-    }
+    return parts.join(' | ');
+  }
 
-    // Different years: "30/12/2024 - 02/01/2025"
-    return '${pad(start.day)}/${pad(start.month)}/${start.year} - ${pad(end.day)}/${pad(end.month)}/${end.year}';
+  /// Get full Hebrew day name (e.g., "ראשון", "שני")
+  String _getFullHebrewDayName(int weekday) {
+    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    return days[weekday == 7 ? 7 : weekday];
+  }
+
+  /// Get Hebrew month name (e.g., "פברואר")
+  String _getHebrewMonthName(int month) {
+    const months = [
+      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    ];
+    return months[month];
+  }
+
+  /// Format location for display - remove coordinates
+  String _formatLocationForDisplay(String location) {
+    if (location.contains('||')) {
+      final strippedLocation = MapLocationResult.stripCoordinates(location);
+      return strippedLocation.isNotEmpty ? strippedLocation : location;
+    }
+    return location;
   }
 }

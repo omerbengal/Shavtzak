@@ -1,6 +1,5 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/event.dart';
-import '../../../core/constants/role_types.dart';
 
 /// Base event class for EventBloc
 abstract class EventEvent extends Equatable {
@@ -88,7 +87,7 @@ class DuplicateEvent extends EventEvent {
   final String newAssemblyTime;
   final String newActualShowStartTime;
   final bool newRequiresArmed;
-  final Map<RoleType, int> newRoleRequirements;
+  final Map<String, int> newRoleRequirements;
   final bool duplicateAssignments;
 
   const DuplicateEvent({
