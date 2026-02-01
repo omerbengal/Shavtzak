@@ -555,7 +555,7 @@ class _AddAvailabilityDialogState extends State<_AddAvailabilityDialog> {
                             ? (endDate != null && !_isSameDay(startDate!, endDate!)
                                 ? '${_formatDate(startDate!)} - ${_formatDate(endDate!)}'
                                 : _formatDate(startDate!))
-                            : 'בחר תאריך התחלה (וסיום אם רלוונטי)',
+                            : 'בחר תאריכים',
                       ),
                     ],
                   ),

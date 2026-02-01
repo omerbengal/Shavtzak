@@ -567,14 +567,14 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                           ? (endDate != null && !_isSameDay(startDate!, endDate!)
                               ? '${_formatDate(startDate!)} - ${_formatDate(endDate!)}'
                               : _formatDate(startDate!))
-                          : 'בחר תאריך התחלה (וסיום אם רלוונטי)',
+                          : 'בחר תאריכים',
                     ),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 16),
-            const Text('הערה (חובה):'),
+            const Text('סיבה (חובה):'),
             const SizedBox(height: 8),
             TextField(
               controller: noteController,
@@ -582,7 +582,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
               textAlignVertical: TextAlignVertical.top,
               textDirection: TextDirection.rtl,
               decoration: InputDecoration(
-                hintText: 'יש להזין הערה לבקשה...',
+                hintText: 'יש להזין סיבה לבקשה...',
                 border: const OutlineInputBorder(),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                 hintStyle: TextStyle(
@@ -746,7 +746,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text('הערה (חובה):'),
+            const Text('סיבה (חובה):'),
             const SizedBox(height: 8),
             TextField(
               controller: noteController,
@@ -754,7 +754,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
               textAlignVertical: TextAlignVertical.top,
               textDirection: TextDirection.rtl,
               decoration: InputDecoration(
-                hintText: 'יש להזין הערה לבקשה...',
+                hintText: 'יש להזין סיבה לבקשה...',
                 border: const OutlineInputBorder(),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                 hintStyle: TextStyle(

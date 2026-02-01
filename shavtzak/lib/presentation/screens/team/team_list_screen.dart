@@ -1674,6 +1674,15 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                     ),
                                   ),
                                   const Spacer(),
+                                  // Add constraint/availability button for admin
+                                  IconButton(
+                                    onPressed: () => _addConstraintOrAvailability(),
+                                    icon: Icon(
+                                      Icons.add_circle_outline,
+                                      color: _isPermanent ? Colors.orange : Colors.green,
+                                    ),
+                                    tooltip: _isPermanent ? 'הוסף מגבלה' : 'הוסף זמינות',
+                                  ),
                                   // Show rejected constraints button only for permanent members with unavailability constraints
                                   if (_isPermanent && _constraints.any((c) => c.isUnavailability && c.status == ConstraintStatus.rejected))
                                     TextButton.icon(
@@ -1872,8 +1881,22 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                     style: const TextStyle(fontStyle: FontStyle.italic),
                   )
                 : null,
-            trailing: null, // Admins cannot delete constraints
-            onTap: null, // Admins cannot edit constraints
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
+                  onPressed: () => _editConstraintOrAvailability(constraint),
+                  tooltip: 'ערוך',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                  onPressed: () => _deleteConstraintOrAvailability(constraint),
+                  tooltip: 'מחק',
+                ),
+              ],
+            ),
+            onTap: null,
           ),
           // Status change controls for all constraints
           Container(
@@ -2030,11 +2053,29 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                   size: 20,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  availability.endDate != null && !_isSameDay(availability.startDate, availability.endDate!)
-                      ? '${_formatDate(availability.startDate)} - ${_formatDate(availability.endDate!)}'
-                      : _formatDate(availability.startDate),
-                  style: Theme.of(context).textTheme.titleMedium,
+                Expanded(
+                  child: Text(
+                    availability.endDate != null && !_isSameDay(availability.startDate, availability.endDate!)
+                        ? '${_formatDate(availability.startDate)} - ${_formatDate(availability.endDate!)}'
+                        : _formatDate(availability.startDate),
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                // Edit and delete buttons for availability
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
+                  onPressed: () => _editConstraintOrAvailability(availability),
+                  tooltip: 'ערוך',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                  onPressed: () => _deleteConstraintOrAvailability(availability),
+                  tooltip: 'מחק',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
@@ -2175,17 +2216,12 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     }).toList()
       ..sort((a, b) => a.startDate.compareTo(b.startDate));
 
-    final rejectedConstraints = _constraints.where((constraint) {
-      // Only show constraints that are rejected AND match the constraint type for this member
-      if (_isPermanent && constraint.isAvailability) return false; // Permanent members only see unavailability
-      if (!_isPermanent && constraint.isUnavailability) return false; // Non-permanent members only see availability
+    final widgets = <Widget>[];
 
-      return constraint.status == ConstraintStatus.rejected;
-    }).toList()
-      ..sort((a, b) => a.startDate.compareTo(b.startDate));
-
-    if (visibleConstraints.isEmpty && rejectedConstraints.isEmpty) {
-      return [
+    // Show "no constraints" message if there are no visible (approved/pending) constraints
+    // Even if there are rejected constraints, we show this message
+    if (visibleConstraints.isEmpty) {
+      widgets.add(
         Padding(
           padding: const EdgeInsets.all(16),
           child: Text(
@@ -2196,39 +2232,13 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
             ),
             textAlign: TextAlign.center,
           ),
-        )
-      ];
-    }
-
-    final widgets = <Widget>[];
-
-    // Add visible constraints
-    if (visibleConstraints.isNotEmpty) {
+        ),
+      );
+    } else {
+      // Add visible constraints
       widgets.addAll(visibleConstraints.map((constraint) {
         return _buildConstraintCard(constraint);
       }).toList());
-    }
-
-    // Add rejected constraints button if any exist
-    if (rejectedConstraints.isNotEmpty) {
-      widgets.add(
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: OutlinedButton.icon(
-            onPressed: () => _showRejectedConstraints(rejectedConstraints),
-            icon: const Icon(Icons.visibility_off, size: 18),
-            label: Text(
-              'הצג מגבלות שנדחו (${rejectedConstraints.length})',
-              style: const TextStyle(fontSize: 14),
-            ),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.grey[600],
-              side: BorderSide(color: Colors.grey[300]!),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            ),
-          ),
-        ),
-      );
     }
 
     return widgets;
@@ -2291,34 +2301,77 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     }
   }
 
-  // Admins cannot add or edit constraints - only approve/reject
-  // void _addConstraint() async {
-  //   final result = await showDialog<DateConstraint>(
-  //     context: context,
-  //     builder: (context) => const _ConstraintDialog(),
-  //   );
+  /// Add a new constraint or availability for admin
+  void _addConstraintOrAvailability() async {
+    final result = await showDialog<DateConstraint>(
+      context: context,
+      builder: (context) => _AdminConstraintDialog(
+        isPermanent: _isPermanent,
+      ),
+    );
 
-  //   if (result != null) {
-  //     setState(() {
-  //       _constraints.add(result);
-  //       _isDirty = true;
-  //     });
-  //   }
-  // }
+    if (result != null) {
+      setState(() {
+        _constraints.add(result);
+        _isDirty = true;
+      });
+    }
+  }
 
-  // void _editConstraint(DateConstraint constraint, int index) async {
-  //   final result = await showDialog<DateConstraint>(
-  //     context: context,
-  //     builder: (context) => _ConstraintDialog(constraint: constraint),
-  //   );
+  /// Edit an existing constraint or availability for admin
+  void _editConstraintOrAvailability(DateConstraint constraint) async {
+    final result = await showDialog<DateConstraint>(
+      context: context,
+      builder: (context) => _AdminConstraintDialog(
+        constraint: constraint,
+        isPermanent: _isPermanent,
+      ),
+    );
 
-  //   if (result != null) {
-  //     setState(() {
-  //       _constraints[index] = result;
-  //       _isDirty = true;
-  //     });
-  //   }
-  // }
+    if (result != null) {
+      final index = _constraints.indexWhere((c) => c.id == constraint.id);
+      if (index != -1) {
+        setState(() {
+          _constraints[index] = result;
+          _isDirty = true;
+        });
+      }
+    }
+  }
+
+  /// Delete a constraint or availability for admin
+  void _deleteConstraintOrAvailability(DateConstraint constraint) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text(_isPermanent ? 'מחיקת מגבלה' : 'מחיקת זמינות'),
+          content: Text(_isPermanent
+              ? 'האם את/ה בטוח/ה שברצונך למחוק את המגבלה הזו?'
+              : 'האם את/ה בטוח/ה שברצונך למחוק זמינות זו?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('ביטול'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('מחק'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() {
+        _constraints.removeWhere((c) => c.id == constraint.id);
+        _isDirty = true;
+      });
+    }
+  }
 }
 
 // Constraint Dialog Widget
@@ -2509,6 +2562,198 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
         ],
       ),
     );
+  }
+}
+
+// Admin Constraint/Availability Dialog Widget
+class _AdminConstraintDialog extends StatefulWidget {
+  final DateConstraint? constraint;
+  final bool isPermanent; // true = constraint (permanent member), false = availability (non-permanent)
+
+  const _AdminConstraintDialog({
+    this.constraint,
+    required this.isPermanent,
+  });
+
+  @override
+  State<_AdminConstraintDialog> createState() => _AdminConstraintDialogState();
+}
+
+class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
+  DateTime? _startDate;
+  DateTime? _endDate;
+  final TextEditingController _noteController = TextEditingController();
+  bool _canSubmit = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.constraint != null) {
+      _startDate = widget.constraint!.startDate;
+      _endDate = widget.constraint!.endDate;
+      _noteController.text = widget.constraint!.note ?? '';
+    }
+    _noteController.addListener(_updateCanSubmit);
+  }
+
+  @override
+  void dispose() {
+    _noteController.removeListener(_updateCanSubmit);
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  void _updateCanSubmit() {
+    setState(() {
+      // For permanent members (constraints), note is required
+      // For non-permanent members (availability), note is optional
+      if (widget.isPermanent) {
+        _canSubmit = _startDate != null && _noteController.text.trim().isNotEmpty;
+      } else {
+        _canSubmit = _startDate != null;
+      }
+    });
+  }
+
+  Future<void> _pickDates() async {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+
+    final result = await showDialog<Map<String, DateTime?>>(
+      context: context,
+      builder: (context) => DualCalendarDatePicker(
+        isSingleDate: false,
+        initialStartDate: _startDate,
+        initialEndDate: _endDate,
+        title: widget.isPermanent ? 'בחר תאריכי מגבלה' : 'בחר תאריכי זמינות',
+        minDate: todayDate, // Prevent selecting dates before today
+      ),
+    );
+
+    if (result != null) {
+      final selectedStartDate = result['startDate'];
+      final selectedEndDate = result['endDate'];
+
+      setState(() {
+        _startDate = selectedStartDate;
+        // If only start date selected, set end date to start date (single day)
+        _endDate = selectedEndDate ?? selectedStartDate;
+      });
+      _updateCanSubmit();
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: Text(
+          widget.constraint == null
+              ? (widget.isPermanent ? 'הוספת מגבלה' : 'הוספת זמינות')
+              : (widget.isPermanent ? 'עריכת מגבלה' : 'עריכת זמינות'),
+          textAlign: TextAlign.right,
+        ),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('תאריכים:'),
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: _pickDates,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_today),
+                      const SizedBox(width: 8),
+                      Text(
+                        _startDate != null
+                            ? (_endDate != null && !_isSameDay(_startDate!, _endDate!)
+                                ? '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}'
+                                : _formatDate(_startDate!))
+                            : 'בחר תאריכים',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                widget.isPermanent ? 'סיבה (חובה):' : 'הערה (אופציונלי):',
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _noteController,
+                textAlign: TextAlign.right,
+                textAlignVertical: TextAlignVertical.top,
+                textDirection: TextDirection.rtl,
+                decoration: InputDecoration(
+                  hintText: widget.isPermanent
+                      ? 'יש להזין סיבה למגבלה...'
+                      : 'פרטים נוספים על הזמינות...',
+                  border: const OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                  hintStyle: TextStyle(
+                    color: Colors.grey[600],
+                    height: 1.5,
+                  ),
+                  hintTextDirection: TextDirection.rtl,
+                ),
+                maxLines: 3,
+                minLines: 3,
+                style: const TextStyle(height: 1.5),
+                scrollPhysics: const BouncingScrollPhysics(),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('ביטול'),
+          ),
+          ElevatedButton(
+            onPressed: _canSubmit
+                ? () {
+                    final noteText = _noteController.text.trim();
+                    Navigator.of(context).pop(
+                      DateConstraint(
+                        id: widget.constraint?.id ?? const Uuid().v4(),
+                        startDate: _startDate!,
+                        endDate: _isSameDay(_startDate!, _endDate!) ? null : _endDate,
+                        note: noteText.isEmpty ? null : noteText,
+                        status: ConstraintStatus.approved, // Admin creates are always auto-approved
+                        constraintType: widget.isPermanent
+                            ? ConstraintType.unavailability
+                            : ConstraintType.availability,
+                        wasAutoRejectedFromCalendar: false,
+                      ),
+                    );
+                  }
+                : null,
+            child: Text(widget.constraint == null ? 'הוספה' : 'שמור שינויים'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 }
 
