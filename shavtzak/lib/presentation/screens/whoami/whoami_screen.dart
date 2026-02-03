@@ -9,6 +9,7 @@ import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
 import '../../widgets/test_environment_indicator.dart';
 import '../../widgets/passcode_verification_dialog.dart';
+import '../../widgets/loading_overlay.dart';
 
 /// Screen for user selection - "מי את/ה?"
 class WhoamiScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
   late bool _isLoading;
   String _searchQuery = '';
   String? _errorMessage;
+  bool _isAuthenticating = false;
 
   @override
   void initState() {
@@ -79,28 +81,49 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
   }
 
   Future<void> _handleTeamMemberSelection(BuildContext context, TeamMember teamMember) async {
-    // Check if team member has passcode
-    if (teamMember.passcode != null && teamMember.passcodeLength != null) {
-      // Show passcode verification dialog
-      final verified = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => PasscodeVerificationDialog(
-          passcodeLength: teamMember.passcodeLength!,
-          correctPasscode: teamMember.passcode!,
-        ),
-      );
+    // Show loading immediately
+    setState(() => _isAuthenticating = true);
 
-      if (verified == true) {
-        // Passcode verified, proceed with selection
+    try {
+      // Check if team member has passcode
+      if (teamMember.passcode != null && teamMember.passcodeLength != null) {
+        // Hide loading before showing dialog
+        setState(() => _isAuthenticating = false);
+
+        // Show passcode verification dialog
+        final verified = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => PasscodeVerificationDialog(
+            passcodeLength: teamMember.passcodeLength!,
+            correctPasscode: teamMember.passcode!,
+          ),
+        );
+
+        if (verified == true) {
+          // Passcode verified, proceed with selection
+          if (context.mounted) {
+            setState(() => _isAuthenticating = true);
+            context.read<UserSelectionBloc>().add(SelectUser(teamMember.uniqueKey));
+          }
+        }
+        // If verified is false or null, do nothing (user cancelled or verification failed)
+      } else {
+        // No passcode set, proceed directly
         if (context.mounted) {
           context.read<UserSelectionBloc>().add(SelectUser(teamMember.uniqueKey));
         }
       }
-      // If verified is false or null, do nothing (user cancelled or verification failed)
-    } else {
-      // No passcode set, proceed directly
-      context.read<UserSelectionBloc>().add(SelectUser(teamMember.uniqueKey));
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isAuthenticating = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('שגיאה בבחירת משתמש: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -203,55 +226,64 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
   }
 
   Widget _buildSingleScreenLayout() {
-    return Column(
+    return Stack(
       children: [
-        // Header with title and search
-        Container(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 40),
+        Column(
+          children: [
+            // Header with title and search
+            Container(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 40),
 
-              // Title
-              Text(
-                'מי את/ה?',
-                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
+                  // Title
+                  Text(
+                    'מי את/ה?',
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Subtitle
+                  Text(
+                    'חפש/י את עצמך ברשימת חברי הצוות',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Search field
+                  TextField(
+                    controller: _searchController,
+                    textDirection: TextDirection.rtl,
+                    decoration: const InputDecoration(
+                      hintText: 'חפש/י את השם שלך...',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
               ),
+            ),
 
-              const SizedBox(height: 16),
-
-              // Subtitle
-              Text(
-                'חפש/י את עצמך ברשימת חברי הצוות',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-              ),
-
-              const SizedBox(height: 32),
-
-              // Search field
-              TextField(
-                controller: _searchController,
-                textDirection: TextDirection.rtl,
-                decoration: const InputDecoration(
-                  hintText: 'חפש/י את השם שלך...',
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
+            // Team members list
+            Expanded(
+              child: _buildTeamMembersListWidget(),
+            ),
+          ],
         ),
-
-        // Team members list
-        Expanded(
-          child: _buildTeamMembersListWidget(),
+        // Loading overlay when authenticating
+        LoadingOverlay(
+          isLoading: _isAuthenticating,
+          message: 'מאמת...',
         ),
       ],
     );

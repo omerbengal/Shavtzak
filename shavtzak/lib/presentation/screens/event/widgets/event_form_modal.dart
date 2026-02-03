@@ -14,6 +14,7 @@ import '../../../bloc/role/role_state.dart';
 import '../../../widgets/date_picker_dialog.dart';
 import '../../../widgets/map_location_picker.dart';
 import '../../../widgets/parking_location_picker_dialog.dart';
+import '../../../widgets/loading_overlay.dart';
 import '../quota_reduction_analyzer.dart';
 import 'quota_reduction_dialog.dart';
 import 'duplication_conflict_resolution_dialog.dart';
@@ -67,6 +68,7 @@ class _EventFormModalState extends State<EventFormModal> {
 
   // For highlighting selected role
   ScrollController? _scrollController; // Will be set from DraggableScrollableSheet
+  bool _isSaving = false; // Loading state during save
   final _sheetController = DraggableScrollableController(); // Controller to expand sheet
   final Map<RoleType, GlobalKey> _roleKeys = {};
   RoleType? _highlightedRole;
@@ -214,8 +216,11 @@ class _EventFormModalState extends State<EventFormModal> {
   }
 
   Future<void> _saveEvent() async {
+    if (_isSaving) return; // Prevent double-submit
+
     // Enable validation for all fields after first submit attempt
     setState(() {
+      _isSaving = true;
       _validateName = true;
       // Always validate date field when save is attempted
       if (_startDate == null || _endDate == null) {
@@ -228,9 +233,11 @@ class _EventFormModalState extends State<EventFormModal> {
     });
 
     if (!_formKey.currentState!.validate()) {
+      setState(() => _isSaving = false);
       return;
     }
     if (_startDate == null || _endDate == null) {
+      setState(() => _isSaving = false);
       // This is now redundant since we set the error above, but keeping for safety
       return;
     }
@@ -241,6 +248,7 @@ class _EventFormModalState extends State<EventFormModal> {
       if (_startDate == null || _endDate == null) {
         setState(() {
           _dateError = '↑ יש לבחור תאריכי התחלה וסיום לאירוע המשוכפל ↑';
+          _isSaving = false;
         });
         return;
       }
@@ -302,6 +310,7 @@ class _EventFormModalState extends State<EventFormModal> {
             // User cancelled - revert quotas to original values
             setState(() {
               _roleRequirements = Map.from(widget.event!.roleRequirements);
+              _isSaving = false;
             });
             return;
           }
@@ -404,6 +413,7 @@ class _EventFormModalState extends State<EventFormModal> {
               ),
             );
         }
+        setState(() => _isSaving = false);
         return;
       }
     }
@@ -510,13 +520,15 @@ class _EventFormModalState extends State<EventFormModal> {
 
                 return Padding(
                   padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                    ),
-                    child: Column(
-                children: [
+                  child: Stack(
+                    children: [
+                      Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                        ),
+                        child: Column(
+                    children: [
                   // Modal Header
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -825,21 +837,29 @@ class _EventFormModalState extends State<EventFormModal> {
                                   hintText: 'לדוגמה: חניון יקב',
                                   prefixIcon: const Icon(Icons.local_parking, color: Colors.purple),
                                   border: const OutlineInputBorder(),
-                                  // Parking picker button and clear button
+                                  // Parking picker button, editors button, and clear button
                                   suffixIcon: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      // Parking picker button
+                                      // Parking picker button (map)
                                       IconButton(
                                         icon: const Icon(Icons.map, color: Colors.blue),
                                         tooltip: 'בחר מיקום חנייה במפה',
                                         onPressed: () async {
+                                          // Get current event location from form (not from DB)
+                                          String currentEventLocation = _locationController.text.trim();
+                                          if (_rawLocationValue != null) {
+                                            final strippedRaw = MapLocationResult.stripCoordinates(_rawLocationValue!);
+                                            if (strippedRaw == currentEventLocation) {
+                                              // User didn't edit, use raw value with coordinates
+                                              currentEventLocation = _rawLocationValue!;
+                                            }
+                                          }
+
                                           final result = await ParkingLocationPickerDialog.show(
                                             context,
-                                            eventLocation: _rawLocationValue ?? _locationController.text,
+                                            eventLocation: currentEventLocation,
                                             initialParkingLocation: _rawParkingLocationValue,
-                                            initialEditorIds: _parkingEditorIds,
-                                            isAdmin: true, // Admin can edit team members
                                           );
 
                                           if (result != null) {
@@ -850,7 +870,27 @@ class _EventFormModalState extends State<EventFormModal> {
                                               _parkingLocationController.text = parkingLocation != null
                                                   ? MapLocationResult.stripCoordinates(parkingLocation)
                                                   : '';
-                                              _parkingEditorIds = result.editorIds;
+                                              _isDirty = true;
+                                            });
+                                          }
+                                        },
+                                      ),
+                                      // Parking editors button (people)
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.people,
+                                          color: _parkingEditorIds.isNotEmpty ? Colors.green : Colors.grey,
+                                        ),
+                                        tooltip: 'עורכים מורשים למיקום חנייה',
+                                        onPressed: () async {
+                                          final result = await ParkingEditorsDialog.show(
+                                            context,
+                                            initialEditorIds: _parkingEditorIds,
+                                          );
+
+                                          if (result != null) {
+                                            setState(() {
+                                              _parkingEditorIds = result;
                                               _isDirty = true;
                                             });
                                           }
@@ -873,7 +913,14 @@ class _EventFormModalState extends State<EventFormModal> {
                                     ],
                                   ),
                                 ),
-                                onChanged: (_) => setState(() => _isDirty = true),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _isDirty = true;
+                                    // Update raw value when user types directly
+                                    // (without coordinates since they're typing manually)
+                                    _rawParkingLocationValue = value.trim().isEmpty ? null : value.trim();
+                                  });
+                                },
                               ),
 
                               const SizedBox(height: 16),
@@ -1306,16 +1353,29 @@ class _EventFormModalState extends State<EventFormModal> {
                         const SizedBox(width: 16),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: _saveEvent,
-                            child: Text(widget.isDuplication ? 'שכפל אירוע' : 'שמור'),
+                            onPressed: _isSaving ? null : _saveEvent,
+                            child: _isSaving
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : Text(widget.isDuplication ? 'שכפל אירוע' : 'שמור'),
                           ),
                         ),
                       ],
                     ),
                   ),
-                      ],
-                    ),
-                  ),
+                ],
+              ),
+            ),
+            // Loading overlay
+            LoadingOverlay(
+              isLoading: _isSaving,
+              message: widget.isDuplication ? 'משכפל אירוע...' : 'שומר...',
+            ),
+          ],
+        ),
                 );
               },
             ),

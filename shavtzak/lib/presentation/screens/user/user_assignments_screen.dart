@@ -26,6 +26,9 @@ class UserAssignmentsScreen extends StatefulWidget {
 }
 
 class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
+  // State persistence to prevent infinite loading
+  AssignmentState? _lastLoadedState;
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +85,11 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
               return BlocConsumer<AssignmentBloc, AssignmentState>(
                 listener: (context, state) {
+                  // Save the last loaded state with data
+                  if (state is! AssignmentLoading && state is! AssignmentError) {
+                    _lastLoadedState = state;
+                  }
+
                   if (state is AssignmentError) {
                     ScaffoldMessenger.of(context)
                       ..clearSnackBars()
@@ -98,27 +106,32 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   }
                 },
                 builder: (context, state) {
-                  if (state is AssignmentLoading) {
+                  // Use last loaded state during loading to prevent flickering
+                  final displayState = state is AssignmentLoading && _lastLoadedState != null
+                      ? _lastLoadedState!
+                      : state;
+
+                  if (state is AssignmentLoading && _lastLoadedState == null) {
                     return const Center(
                       child: CircularProgressIndicator(),
                     );
                   }
 
-                  if (state is AssignmentsEmpty) {
+                  if (displayState is AssignmentsEmpty) {
                     return _buildEmptyState();
                   }
 
-                  if (state is AssignmentsLoaded) {
+                  if (displayState is AssignmentsLoaded) {
                     // Wrap with BlocBuilder to rebuild when role order changes
                     return BlocBuilder<RoleBloc, RoleState>(
                       builder: (context, roleState) {
-                        return _buildAssignmentsContent(context, state.assignments);
+                        return _buildAssignmentsContent(context, displayState.assignments);
                       },
                     );
                   }
 
-                  if (state is AssignmentError) {
-                    return _buildErrorState(state.message);
+                  if (displayState is AssignmentError) {
+                    return _buildErrorState(displayState.message);
                   }
 
                   // Initial state or other states - show loading
@@ -481,11 +494,15 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: RichText(
-                            text: _formatDateWithHighlight(
-                              _formatSingleDayDisplay(event.startDate, isToday, isTomorrow),
-                              isUpcoming,
-                              context,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: AlignmentDirectional.centerStart,
+                            child: RichText(
+                              text: _formatDateWithHighlight(
+                                _formatSingleDayDisplay(event.startDate, isToday, isTomorrow),
+                                isUpcoming,
+                                context,
+                              ),
                             ),
                           ),
                         ),
@@ -515,11 +532,15 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: RichText(
-                                text: _formatDateWithHighlight(
-                                  _formatSingleDayDisplay(event.startDate, isToday, isTomorrow),
-                                  isUpcoming,
-                                  context,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: AlignmentDirectional.centerStart,
+                                child: RichText(
+                                  text: _formatDateWithHighlight(
+                                    _formatSingleDayDisplay(event.startDate, isToday, isTomorrow),
+                                    isUpcoming,
+                                    context,
+                                  ),
                                 ),
                               ),
                             ),
@@ -545,11 +566,15 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: RichText(
-                                text: _formatDateWithHighlight(
-                                  _formatSingleDayDisplay(event.endDate, false, false),
-                                  isUpcoming,
-                                  context,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: AlignmentDirectional.centerStart,
+                                child: RichText(
+                                  text: _formatDateWithHighlight(
+                                    _formatSingleDayDisplay(event.endDate, false, false),
+                                    isUpcoming,
+                                    context,
+                                  ),
                                 ),
                               ),
                             ),
@@ -640,7 +665,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                   Icon(
                                     Icons.local_parking,
                                     size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
-                                    color: isUpcoming ? Colors.purple.shade800 : Colors.grey.shade600,
+                                    color: iconColor,
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
@@ -666,7 +691,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                               fontSize: _getResponsiveFontSize(context),
                                               fontWeight: FontWeight.bold,
                                               color: hasParkingLocation
-                                                  ? (isUpcoming ? Colors.purple.shade900 : Colors.grey.shade700)
+                                                  ? (isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700)
                                                   : (isUpcoming ? Colors.grey.shade600 : Colors.grey.shade400),
                                               fontStyle: hasParkingLocation ? FontStyle.normal : FontStyle.italic,
                                               decoration: canEditParking ? TextDecoration.underline : null,
@@ -724,64 +749,102 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
             const SizedBox(height: 12),
 
-            // Event time range
-            Row(
-              children: [
-                Icon(
-                  Icons.access_time,
-                  size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
-                  color: iconColor,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'שעות האירוע:',
-                  style: TextStyle(
-                    fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
-                    color: secondaryTextColor,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _formatEventTimes(event.startTime, event.endTime),
-                  style: TextStyle(
-                    fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
-                    fontWeight: FontWeight.w500,
-                    color: textColor,
-                  ),
-                ),
-              ],
-            ),
-
-            // Actual show start time (if available)
-            if (event.actualShowStartTime.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(
-                    Icons.play_circle_outline,
-                    size: _getResponsiveIconSize(context, minSize: 14.0, maxSize: 16.0),
-                    color: Colors.blue.shade600,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'תחילת המופע:',
-                    style: TextStyle(
-                      fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
-                      color: secondaryTextColor,
+            // Event times - vertical list in chronological order
+            // 1. Audience gathering time (התכנסות קהל)
+            if (event.startTime.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.groups_outlined,
+                      size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
+                      color: iconColor,
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    event.actualShowStartTime,
-                    style: TextStyle(
-                      fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
-                      fontWeight: FontWeight.w500,
-                      color: Colors.blue.shade700,
+                    const SizedBox(width: 8),
+                    Text(
+                      'התכנסות קהל:',
+                      style: TextStyle(
+                        fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                        color: secondaryTextColor,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Text(
+                      event.startTime,
+                      style: TextStyle(
+                        fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
+                        fontWeight: FontWeight.w500,
+                        color: textColor,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ],
+
+            // 2. Actual show start time (תחילת המופע)
+            if (event.actualShowStartTime.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.play_circle_outline,
+                      size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
+                      color: iconColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'תחילת המופע:',
+                      style: TextStyle(
+                        fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                        color: secondaryTextColor,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      event.actualShowStartTime,
+                      style: TextStyle(
+                        fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
+                        fontWeight: FontWeight.w500,
+                        color: textColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // 3. End time (סיום)
+            if (event.endTime.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.flag_outlined,
+                      size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
+                      color: iconColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'סיום:',
+                      style: TextStyle(
+                        fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                        color: secondaryTextColor,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      event.endTime,
+                      style: TextStyle(
+                        fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
+                        fontWeight: FontWeight.w500,
+                        color: textColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             // "Who's with me?" button
             const SizedBox(height: 8),
@@ -1214,8 +1277,9 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
   /// Check if the current user can edit the parking location for an event
   bool _canUserEditParking(Event event, UserAuthenticated userState) {
-    return event.parkingEditorIds.contains(userState.user.id) ||
-        userState.user.isAdmin;
+    // Only allow edit if user is explicitly in parkingEditorIds
+    // Admins must be explicitly added to edit parking from user/assignments
+    return event.parkingEditorIds.contains(userState.user.id);
   }
 
   /// Update parking location for an event
@@ -1237,15 +1301,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
   /// Edit parking location for an event
   void _editParkingLocation(BuildContext context, Event event) async {
-    final userState = context.read<UserSelectionBloc>().state;
-    final isAdmin = userState is UserAuthenticated && userState.user.isAdmin;
-
+    // Use simplified dialog in user/assignments screen
+    // Team member editor selection only available in admin/event modal
     final result = await ParkingLocationPickerDialog.show(
       context,
       eventLocation: event.location,
       initialParkingLocation: event.parkingLocation,
-      initialEditorIds: event.parkingEditorIds,
-      isAdmin: isAdmin, // Only admins can edit team members
     );
 
     if (result != null && mounted) {
@@ -1256,7 +1317,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
         context,
         event,
         newLocation,
-        result.editorIds,
+        event.parkingEditorIds, // Keep original editor IDs (users can't change them)
       );
 
       // Show success message

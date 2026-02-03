@@ -554,7 +554,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Update event cache
           cachedEventsMap.clear();
           cachedEventsMap.addAll({for (var e in updatedEvents) e.id: e});
-          // CRITICAL FIX: Fetch FRESH assignments from DB when events change
+
+          // CRITICAL FIX: Add a small delay to ensure Firestore consistency
+          // This prevents stale cached data after quota changes
+          await Future.delayed(const Duration(milliseconds: 100));
+
+          // Fetch FRESH assignments from DB when events change
           // This prevents stale cached data after quota changes
           final freshAssignments = await _repository.getAssignmentsInTimeWindow(
             windowStart: windowStart,
@@ -1110,6 +1115,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             final assignment = roleAssignments
                 .cast<Assignment?>()
                 .firstWhere((a) => a?.slotIndex == i, orElse: () => null);
+
+            // CRITICAL: Verify the assignment still exists in the fresh assignment list
+            // This prevents showing deleted assignments from stale cache
+            if (assignment != null) {
+              final stillExists = assignments.any((a) => a.id == assignment.id);
+              if (!stillExists) {
+                // Assignment was deleted, treat this slot as empty
+                continue;
+              }
+            }
 
             // Get all assignments for this event to check who's already assigned
             final eventAssignments = assignments

@@ -352,25 +352,34 @@ class _EventListScreenState extends State<EventListScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              // All fields in a single Wrap for horizontal flow
-              Wrap(
-                spacing: 16,
-                runSpacing: 4,
-                children: [
-                  // Date field(s) - smart logic
-                  if (isSameDate)
-                    _buildFieldItem('תאריך', _formatDate(event.startDate))
-                  else ...[
-                    _buildFieldItem('תאריך התחלה', _formatDate(event.startDate)),
-                    _buildFieldItem('תאריך סיום', _formatDate(event.endDate)),
+              // Event details - aligned to visual right with padding
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Line 1: Date(s) with old styling
+                    if (isSameDate)
+                      _buildFieldItem('תאריך', _formatDate(event.startDate))
+                    else
+                      // Multi-day: both dates on same row
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildFieldItem('תאריך התחלה', _formatDate(event.startDate)),
+                          const SizedBox(width: 16),
+                          _buildFieldItem('תאריך סיום', _formatDate(event.endDate)),
+                        ],
+                      ),
+                    // Line 2: Location with old styling (only if not empty)
+                    if (event.location.isNotEmpty)
+                      _buildFieldItem('מיקום', _formatLocationForDisplay(event.location)),
+                    // Line 3: Time fields with old styling and responsive font size
+                    if (event.assemblyTime.isNotEmpty || event.startTime.isNotEmpty || event.actualShowStartTime.isNotEmpty || event.endTime.isNotEmpty)
+                      _buildFieldItemWithResponsiveFont('שעות', _formatTimeFields(event)),
                   ],
-                  _buildFieldItem('מיקום', _formatLocationForDisplay(event.location)),
-                  // Time fields
-                  _buildFieldItem('שעת התייצבות', event.assemblyTime.isEmpty ? '-' : event.assemblyTime),
-                  _buildFieldItem('שעת התכנסות קהל', event.startTime.isEmpty ? '-' : event.startTime),
-                  _buildFieldItem('שעת תחילת המופע', event.actualShowStartTime.isEmpty ? '-' : event.actualShowStartTime),
-                  _buildFieldItem('שעת סיום', event.endTime.isEmpty ? '-' : event.endTime),
-                ],
+                ),
               ),
               // Comments (if not empty)
               if (event.comments.isNotEmpty) ...[
@@ -461,11 +470,30 @@ class _EventListScreenState extends State<EventListScreen> {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
+  String _formatTimeFields(Event event) {
+    final parts = <String>[];
+
+    if (event.assemblyTime.isNotEmpty) {
+      parts.add('התייצבות: ${event.assemblyTime}');
+    }
+    if (event.startTime.isNotEmpty) {
+      parts.add('התכנסות: ${event.startTime}');
+    }
+    if (event.actualShowStartTime.isNotEmpty) {
+      parts.add('תחילת מופע: ${event.actualShowStartTime}');
+    }
+    if (event.endTime.isNotEmpty) {
+      parts.add('סיום: ${event.endTime}');
+    }
+
+    return parts.join(' | ');
+  }
+
   Widget _buildFieldItem(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(top: 2, bottom: 2),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
@@ -476,6 +504,33 @@ class _EventListScreenState extends State<EventListScreen> {
           Text(
             value,
             style: const TextStyle(fontSize: 12, color: Colors.black87),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build field item with responsive font size for the value
+  /// Uses FittedBox to automatically scale down font size when text would wrap
+  Widget _buildFieldItemWithResponsiveFont(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 12, color: Colors.black87),
+              maxLines: 1,
+            ),
           ),
         ],
       ),

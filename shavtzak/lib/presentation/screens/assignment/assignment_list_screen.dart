@@ -445,13 +445,55 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        // Line 2: Times formatted with labels
-                        Text(
-                          _formatTimeFields(slot.event),
-                          style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                        // Line 2: Times formatted with labels - responsive layout
+                        Builder(
+                          builder: (context) {
+                            // Check if screen is narrow (phone) using actual screen width
+                            final screenWidth = MediaQuery.of(context).size.width;
+                            final isNarrow = screenWidth < 880;
+
+                            if (isNarrow) {
+                              // Narrow screen: each time field on a separate row
+                              return Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (slot.event.assemblyTime.isNotEmpty)
+                                    Text(
+                                      'התייצבות: ${slot.event.assemblyTime}',
+                                      style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  if (slot.event.startTime.isNotEmpty)
+                                    Text(
+                                      'התכנסות: ${slot.event.startTime}',
+                                      style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  if (slot.event.actualShowStartTime.isNotEmpty)
+                                    Text(
+                                      'תחילת מופע: ${slot.event.actualShowStartTime}',
+                                      style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  if (slot.event.endTime.isNotEmpty)
+                                    Text(
+                                      'סיום: ${slot.event.endTime}',
+                                      style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                ],
+                              );
+                            } else {
+                              // Wide screen: single line with all times
+                              return Text(
+                                _formatTimeFields(slot.event),
+                                style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              );
+                            }
+                          },
                         ),
                         // Line 3: Location (only if not empty)
                         if (slot.event.location.isNotEmpty)
@@ -459,7 +501,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                             _formatLocationForDisplay(slot.event.location),
                             style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
                             textAlign: TextAlign.center,
-                            maxLines: 1,
+                            maxLines: 3,
                             overflow: TextOverflow.ellipsis,
                           ),
                       ],
@@ -653,6 +695,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       // Step 1: Delete the assignment if it exists (filled slot)
       if (slot.currentAssignment != null) {
         await assignmentRepo.deleteAssignment(slot.currentAssignment!.id);
+
+        // CRITICAL: Clear the cache to prevent stale data
+        assignmentRepo.clearCache();
       }
 
       // Step 2: Get all remaining assignments for this event and role

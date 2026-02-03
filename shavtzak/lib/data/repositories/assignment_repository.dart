@@ -346,6 +346,11 @@ class AssignmentRepository {
     _cachedAssignments = assignments;
   }
 
+  /// Clear cached assignments
+  void clearCache() {
+    _cachedAssignments = [];
+  }
+
   /// Get currently cached assignments
   List<Assignment> getCurrentAssignments() {
     return _cachedAssignments;
