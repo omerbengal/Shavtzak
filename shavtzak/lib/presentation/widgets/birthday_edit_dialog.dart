@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
+import 'loading_overlay.dart';
 
 /// Dialog for editing user's birthday
 class BirthdayEditDialog extends StatefulWidget {
@@ -18,6 +19,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
   int? _selectedYear;
   bool _isDirty = false;
   bool _showValidationErrors = false;
+  bool _isSaving = false;
 
   // Hebrew month names
   static const List<String> _hebrewMonths = [
@@ -99,7 +101,9 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(
+      child: Stack(
+        children: [
+          AlertDialog(
         title: Row(
           children: [
             const Icon(Icons.cake, color: Colors.pink),
@@ -201,19 +205,24 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: _isDirty ? _saveBirthday : null,
+            onPressed: (_isDirty && !_isSaving) ? _saveBirthday : null,
             child: const Text('שמור'),
           ),
+        ],
+          ),
+          LoadingOverlay(isLoading: _isSaving, message: 'מעדכן תאריך לידה...'),
         ],
       ),
     );
   }
 
   void _saveBirthday() async {
+    if (_isSaving) return;
+
     // Check if selection is valid before saving
     if (_hasPartialSelection) {
       setState(() {
@@ -231,6 +240,8 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
 
     final selectedDate = _getSelectedDate();
 
+    setState(() => _isSaving = true);
+
     try {
       // Use the UpdateBirthday event to update the birthday
       bloc.add(UpdateBirthday(selectedDate));
@@ -246,6 +257,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('שגיאה בעדכון תאריך לידה: $e'),

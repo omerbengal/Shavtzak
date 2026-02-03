@@ -5,6 +5,7 @@ import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../../core/utils/validators.dart';
 import '../../core/utils/phone_input_formatter.dart';
+import 'loading_overlay.dart';
 
 /// Dialog for editing user's phone number
 class PhoneEditDialog extends StatefulWidget {
@@ -18,6 +19,7 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _phoneController;
   bool _isDirty = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -43,7 +45,9 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(
+      child: Stack(
+        children: [
+          AlertDialog(
         title: Row(
           children: [
             const Icon(Icons.phone, color: Colors.blue),
@@ -96,22 +100,29 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: _isDirty ? _savePhone : null,
+            onPressed: (_isDirty && !_isSaving) ? _savePhone : null,
             child: const Text('שמור'),
           ),
+        ],
+          ),
+          LoadingOverlay(isLoading: _isSaving, message: 'מעדכן מספר טלפון...'),
         ],
       ),
     );
   }
 
   void _savePhone() async {
+    if (_isSaving) return;
+
     if (!_formKey.currentState!.validate()) {
       return;
     }
+
+    setState(() => _isSaving = true);
 
     final bloc = context.read<UserSelectionBloc>();
     final currentState = bloc.state;
@@ -139,6 +150,7 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('שגיאה בעדכון מספר טלפון: $e'),

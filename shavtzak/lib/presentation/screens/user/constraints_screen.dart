@@ -11,6 +11,7 @@ import '../../bloc/team/team_state.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../widgets/date_picker_dialog.dart';
+import '../../widgets/loading_overlay.dart';
 import 'availability_screen.dart';
 import 'user_navigation_shell.dart'; // Import for onConstraintsPageVisible callback
 
@@ -507,6 +508,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
   DateTime? endDate;
   final noteController = TextEditingController();
   bool _canSubmit = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -537,14 +539,16 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        title: const Text(
-          'הוספת בקשת מגבלה',
-          textAlign: TextAlign.right,
-        ),
-      content: SizedBox(
-        width: 400,
-        child: Column(
+      child: Stack(
+        children: [
+          AlertDialog(
+            title: const Text(
+              'הוספת בקשת מגבלה',
+              textAlign: TextAlign.right,
+            ),
+          content: SizedBox(
+            width: 400,
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -599,21 +603,26 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('ביטול'),
-        ),
-        ElevatedButton(
-          onPressed: _canSubmit
-              ? () {
-                  widget.onAdd(startDate!, endDate, noteController.text);
-                  Navigator.of(context).pop();
-                }
-              : null,
-          child: const Text('הוסף בקשה'),
-        ),
-      ],
+          actions: [
+            TextButton(
+              onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+              child: const Text('ביטול'),
+            ),
+            ElevatedButton(
+              onPressed: (_canSubmit && !_isSaving)
+                  ? () {
+                      if (_isSaving) return;
+                      setState(() => _isSaving = true);
+                      widget.onAdd(startDate!, endDate, noteController.text);
+                      Navigator.of(context).pop();
+                    }
+                  : null,
+              child: const Text('הוסף בקשה'),
+            ),
+          ],
+          ),
+          LoadingOverlay(isLoading: _isSaving, message: 'שולח בקשה...'),
+        ],
       ),
     );
   }
@@ -669,6 +678,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
   DateTime? endDate;
   late TextEditingController noteController;
   bool _canSubmit = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -711,14 +721,16 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        title: const Text(
-          'עריכת מגבלה',
-          textAlign: TextAlign.right,
-        ),
-      content: SizedBox(
-        width: 400,
-        child: Column(
+      child: Stack(
+        children: [
+          AlertDialog(
+            title: const Text(
+              'עריכת מגבלה',
+              textAlign: TextAlign.right,
+            ),
+          content: SizedBox(
+            width: 400,
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -771,21 +783,26 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('ביטול'),
-        ),
-        ElevatedButton(
-          onPressed: _canSubmit
-              ? () {
-                  widget.onSave(startDate, endDate, noteController.text);
-                  Navigator.of(context).pop();
-                }
-              : null,
-          child: const Text('שמור שינויים'),
-        ),
-      ],
+          actions: [
+            TextButton(
+              onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+              child: const Text('ביטול'),
+            ),
+            ElevatedButton(
+              onPressed: (_canSubmit && !_isSaving)
+                  ? () {
+                      if (_isSaving) return;
+                      setState(() => _isSaving = true);
+                      widget.onSave(startDate, endDate, noteController.text);
+                      Navigator.of(context).pop();
+                    }
+                  : null,
+              child: const Text('שמור שינויים'),
+            ),
+          ],
+          ),
+          LoadingOverlay(isLoading: _isSaving, message: 'שומר שינויים...'),
+        ],
       ),
     );
   }

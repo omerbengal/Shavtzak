@@ -35,6 +35,7 @@ import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/swipeable_page_view.dart';
 import '../../widgets/admin_passcode_dialog.dart';
 import '../../widgets/vehicle_info_copy_dialog.dart';
+import '../../widgets/loading_overlay.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
@@ -832,6 +833,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   List<DateConstraint> _constraints = [];
   bool _isDirty = false;
   String? _roleError; // Track role validation error
+  bool _isSaving = false;
+  bool _isDeleting = false;
 
     bool get _isEditMode => widget.member != null;
 
@@ -902,6 +905,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   }
 
   Future<void> _saveMember() async {
+    if (_isSaving) return; // Prevent double-submit
+
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -913,6 +918,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       });
       return;
     }
+
+    setState(() => _isSaving = true);
 
     // Use the constraints list directly
     final finalConstraints = _constraints;
@@ -952,6 +959,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
         if (action == null) {
           // User cancelled, don't save
+          if (mounted) setState(() => _isSaving = false);
           return;
         }
 
@@ -1259,12 +1267,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
                 return Padding(
                   padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                    ),
-                    child: Column(
+                  child: Stack(
+                    children: [
+                      Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                        ),
+                        child: Column(
                 children: [
                   // Modal Header
                   Container(
@@ -1314,14 +1324,18 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                           TextButton(
                                             child: const Text('מחק', style: TextStyle(color: Colors.red)),
                                             onPressed: () {
+                                              Navigator.of(dialogContext).pop(); // Close dialog first
+                                              setState(() => _isDeleting = true);
                                               final bloc = context.read<TeamBloc>();
                                               bloc.add(team.DeleteTeamMember(widget.member!.id));
                                               // Reload all team members after operation completes (filtering happens in UI)
-                                              Future.delayed(const Duration(milliseconds: 100), () {
+                                              Future.delayed(const Duration(milliseconds: 300), () {
                                                 bloc.add(const team.LoadTeamMembers());
                                               });
-                                              Navigator.of(dialogContext).pop(); // Close dialog
-                                              widget.onSuccess(); // Close modal
+                                              // Close modal after showing delete overlay briefly
+                                              Future.delayed(const Duration(milliseconds: 500), () {
+                                                widget.onSuccess();
+                                              });
                                             },
                                           ),
                                         ],
@@ -1836,7 +1850,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                         const SizedBox(width: 16),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: _saveMember,
+                            onPressed: _isSaving ? null : _saveMember,
                             child: const Text('שמור'),
                           ),
                         ),
@@ -1845,6 +1859,13 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                   ),
                       ],
                     ),
+                  ),
+                      // Loading overlay
+                      LoadingOverlay(
+                        isLoading: _isSaving || _isDeleting,
+                        message: _isDeleting ? 'מוחק איש צוות...' : (_isEditMode ? 'שומר איש צוות...' : 'יוצר איש צוות...'),
+                      ),
+                    ],
                   ),
                 );
               },

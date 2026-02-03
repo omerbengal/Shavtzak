@@ -9,6 +9,7 @@ import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
 import '../../widgets/date_picker_dialog.dart';
+import '../../widgets/loading_overlay.dart';
 
 /// Screen for non-permanent users to manage their availability
 class AvailabilityScreen extends StatefulWidget {
@@ -495,6 +496,7 @@ class _AddAvailabilityDialogState extends State<_AddAvailabilityDialog> {
   DateTime? endDate;
   final noteController = TextEditingController();
   bool _canSubmit = false;
+  bool _isSaving = false;
 
   bool _isSameDay(DateTime date1, DateTime date2) {
     return date1.year == date2.year &&
@@ -525,14 +527,16 @@ class _AddAvailabilityDialogState extends State<_AddAvailabilityDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        title: const Text(
-          'הוספת זמינות',
-          textAlign: TextAlign.right,
-        ),
-        content: SizedBox(
-          width: 400,
-          child: Column(
+      child: Stack(
+        children: [
+          AlertDialog(
+            title: const Text(
+              'הוספת זמינות',
+              textAlign: TextAlign.right,
+            ),
+          content: SizedBox(
+            width: 400,
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -590,12 +594,14 @@ class _AddAvailabilityDialogState extends State<_AddAvailabilityDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: _canSubmit
+            onPressed: (_canSubmit && !_isSaving)
                 ? () {
+                    if (_isSaving) return;
+                    setState(() => _isSaving = true);
                     Navigator.of(context).pop();
                     widget.onAdd(
                       startDate!,
@@ -606,6 +612,9 @@ class _AddAvailabilityDialogState extends State<_AddAvailabilityDialog> {
                 : null,
             child: const Text('הוספה'),
           ),
+        ],
+          ),
+          LoadingOverlay(isLoading: _isSaving, message: 'מעדכן זמינות...'),
         ],
       ),
     );
@@ -663,6 +672,7 @@ class _EditAvailabilityDialogState extends State<_EditAvailabilityDialog> {
   DateTime? endDate;
   late TextEditingController noteController;
   bool _canSubmit = false;
+  bool _isSaving = false;
 
   bool _isSameDay(DateTime date1, DateTime date2) {
     return date1.year == date2.year &&
@@ -695,14 +705,16 @@ class _EditAvailabilityDialogState extends State<_EditAvailabilityDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        title: const Text(
-          'עריכת זמינות',
-          textAlign: TextAlign.right,
-        ),
-        content: SizedBox(
-          width: 400,
-          child: Column(
+      child: Stack(
+        children: [
+          AlertDialog(
+            title: const Text(
+              'עריכת זמינות',
+              textAlign: TextAlign.right,
+            ),
+          content: SizedBox(
+            width: 400,
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -758,22 +770,27 @@ class _EditAvailabilityDialogState extends State<_EditAvailabilityDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: _canSubmit
+            onPressed: (_canSubmit && !_isSaving)
                 ? () {
-                  Navigator.of(context).pop();
-                  widget.onSave(
-                    startDate,
-                    endDate,
-                    noteController.text.trim().isEmpty ? null : noteController.text.trim(),
-                  );
-                }
+                    if (_isSaving) return;
+                    setState(() => _isSaving = true);
+                    Navigator.of(context).pop();
+                    widget.onSave(
+                      startDate,
+                      endDate,
+                      noteController.text.trim().isEmpty ? null : noteController.text.trim(),
+                    );
+                  }
                 : null,
             child: const Text('שמור שינויים'),
           ),
+        ],
+          ),
+          LoadingOverlay(isLoading: _isSaving, message: 'מעדכן זמינות...'),
         ],
       ),
     );

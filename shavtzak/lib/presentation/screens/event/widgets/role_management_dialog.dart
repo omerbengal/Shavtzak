@@ -4,6 +4,7 @@ import '../../../../domain/entities/role.dart';
 import '../../../bloc/role/role_bloc.dart';
 import '../../../bloc/role/role_event.dart';
 import '../../../bloc/role/role_state.dart';
+import '../../../widgets/loading_overlay.dart';
 
 /// Dialog for managing roles (add, rename, archive, restore, reorder, toggle visibility)
 class RoleManagementDialog extends StatefulWidget {
@@ -15,6 +16,7 @@ class RoleManagementDialog extends StatefulWidget {
 
 class _RoleManagementDialogState extends State<RoleManagementDialog> {
   bool _showArchive = false;
+  bool _isLoading = false;
 
   /// Local optimistic state for reordering - updates immediately via setState
   /// before BLoC/Firestore responds. Cleared when BLoC state updates.
@@ -24,9 +26,11 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
+      child: Stack(
+        children: [
+          Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Container(
           width: MediaQuery.of(context).size.width * 0.9,
           constraints: const BoxConstraints(maxWidth: 600, maxHeight: 700),
           padding: const EdgeInsets.all(24),
@@ -75,10 +79,16 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                     if (state is RolesLoaded && _pendingReorderedRoles != null) {
                       setState(() {
                         _pendingReorderedRoles = null;
+                        _isLoading = false;
+                      });
+                    } else if (state is RolesLoaded && _isLoading) {
+                      setState(() {
+                        _isLoading = false;
                       });
                     }
 
                     if (state is RoleError) {
+                      setState(() => _isLoading = false);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(state.message),
@@ -121,6 +131,9 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
             ],
           ),
         ),
+          ),
+          LoadingOverlay(isLoading: _isLoading, message: 'מעבד...'),
+        ],
       ),
     );
   }

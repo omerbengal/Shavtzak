@@ -6,6 +6,7 @@ import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../../core/services/utilities_service.dart';
+import 'loading_overlay.dart';
 
 /// Dialog for editing user's vehicle information
 class VehicleInfoEditDialog extends StatefulWidget {
@@ -21,6 +22,7 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
   final TextEditingController _modelController = TextEditingController();
   String? _selectedManufacturer;
   bool _isDirty = false;
+  bool _isSaving = false;
 
   // Error states
   bool _showValidationErrors = false;
@@ -103,7 +105,9 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(
+      child: Stack(
+        children: [
+          AlertDialog(
         title: const Row(
           children: [
             Icon(Icons.directions_car, color: Colors.blue),
@@ -242,13 +246,16 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: _isDirty ? _saveVehicleInfo : null,
+            onPressed: (_isDirty && !_isSaving) ? _saveVehicleInfo : null,
             child: const Text('שמור'),
           ),
+        ],
+          ),
+          LoadingOverlay(isLoading: _isSaving, message: 'מעדכן פרטי רכב...'),
         ],
       ),
     );
@@ -267,6 +274,8 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
   }
 
   void _saveVehicleInfo() async {
+    if (_isSaving) return;
+
     // Check if selection is valid before saving
     final vehicleInfo = _getVehicleInfo();
 
@@ -276,6 +285,8 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
       });
       return;
     }
+
+    setState(() => _isSaving = true);
 
     final bloc = context.read<UserSelectionBloc>();
 
@@ -294,6 +305,7 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('שגיאה בעדכון פרטי רכב: $e'),

@@ -9,6 +9,7 @@ import '../../bloc/event/event_state.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
+import '../loading_overlay.dart';
 
 /// Modal form for creating or editing a checklist item
 class ChecklistFormModal extends StatefulWidget {
@@ -42,6 +43,7 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
   TeamMember? _selectedResponsible;
   bool _status = false;
   List<TeamMember> _selectedCcMembers = [];
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -86,11 +88,15 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
   }
 
   void _save() {
+    if (_isSaving) return; // Prevent double-submit
+
     if (!_formKey.currentState!.validate()) return;
     if (_selectedEvent == null || _selectedResponsible == null) {
       // Validation will be handled by the dropdown validators
       return;
     }
+
+    setState(() => _isSaving = true);
 
     // Determine createdByAdminId:
     // - For NEW items (widget.item?.id is empty): use currentUserId
@@ -156,8 +162,10 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
         minChildSize: 0.5,
         maxChildSize: 0.95,
         expand: false,
-        builder: (context, scrollController) => Material(
-          child: Container(
+        builder: (context, scrollController) => Stack(
+          children: [
+            Material(
+              child: Container(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -229,6 +237,9 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
               ],
             ),
           ),
+            ),
+            LoadingOverlay(isLoading: _isSaving, message: widget.item == null ? 'יוצר פריט...' : 'שומר פריט...'),
+          ],
         ),
       ),
     );
@@ -475,7 +486,7 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
 
           // Save button
           ElevatedButton(
-            onPressed: _save,
+            onPressed: _isSaving ? null : _save,
             child: Text(widget.item == null ? 'צור פריט' : 'שמור שינויים'),
           ),
         ],
