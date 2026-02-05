@@ -1872,7 +1872,115 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                               if (_isPermanent)
                                 ..._buildVisibleConstraintsList()
                               else
-                                ..._buildAvailabilityEventsList(),
+                                BlocBuilder<EventBloc, EventState>(
+                                  builder: (context, eventState) {
+                                    if (eventState is! EventsLoaded) {
+                                      return const Padding(
+                                        padding: EdgeInsets.all(16),
+                                        child: Center(child: CircularProgressIndicator()),
+                                      );
+                                    }
+
+                                    final now = DateTime.now();
+                                    final today = DateTime(now.year, now.month, now.day);
+
+                                    // Get future events that this member is available for
+                                    final availableEvents = eventState.events.where((event) {
+                                      final eventEndDate = DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
+                                      return !eventEndDate.isBefore(today) && _availableEventIds.contains(event.id);
+                                    }).toList()
+                                      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+
+                                    if (availableEvents.isEmpty) {
+                                      return Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Text(
+                                          'אין אירועים נבחרים',
+                                          style: TextStyle(
+                                            color: Colors.grey,
+                                            fontSize: 16,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      );
+                                    }
+
+                                    return Column(
+                                      children: availableEvents.map((event) {
+                                        final formattedLocation = event.location.isNotEmpty
+                                            ? _formatLocationForDisplay(event.location)
+                                            : '';
+
+                                        return Card(
+                                          color: Colors.green[50],
+                                          margin: const EdgeInsets.only(bottom: 8),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(12),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.event_available,
+                                                      color: Colors.green[600],
+                                                      size: 20,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        event.name,
+                                                        style: TextStyle(
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 16,
+                                                          color: Colors.green[700],
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Padding(
+                                                  padding: const EdgeInsets.only(left: 28),
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        _formatEventDates(event),
+                                                        style: const TextStyle(
+                                                          fontSize: 14,
+                                                          color: Colors.black,
+                                                          fontWeight: FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                      Text(
+                                                        _formatEventTimes(event),
+                                                        style: const TextStyle(
+                                                          fontSize: 13,
+                                                          color: Colors.black,
+                                                          fontWeight: FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                      if (formattedLocation.isNotEmpty)
+                                                        Text(
+                                                          'מיקום: $formattedLocation',
+                                                          style: const TextStyle(
+                                                            fontSize: 13,
+                                                            color: Colors.black,
+                                                            fontWeight: FontWeight.bold,
+                                                          ),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    );
+                                  },
+                                ),
 
                               const Divider(height: 32),
 
@@ -2405,108 +2513,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     return widgets;
   }
 
-  /// Build the list of events the non-permanent member is available for
-  List<Widget> _buildAvailabilityEventsList() {
-    final eventState = context.read<EventBloc>().state;
-    if (eventState is! EventsLoaded) {
-      return [
-        const Padding(
-          padding: EdgeInsets.all(16),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      ];
-    }
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    // Get future events that this member is available for
-    final availableEvents = eventState.events.where((event) {
-      final eventEndDate = DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
-      return !eventEndDate.isBefore(today) && _availableEventIds.contains(event.id);
-    }).toList()
-      ..sort((a, b) => a.startDate.compareTo(b.startDate));
-
-    if (availableEvents.isEmpty) {
-      return [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            'אין אירועים נבחרים',
-            style: TextStyle(
-              color: Colors.grey,
-              fontSize: 16,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ];
-    }
-
-    return availableEvents.map((event) {
-      final formattedLocation = event.location.isNotEmpty
-          ? _formatLocationForDisplay(event.location)
-          : '';
-
-      return Card(
-        color: Colors.green[50],
-        margin: const EdgeInsets.only(bottom: 8),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.event_available,
-                    color: Colors.green[600],
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      event.name,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: Colors.green[700],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Padding(
-                padding: const EdgeInsets.only(left: 28),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _formatEventDates(event),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.green[600],
-                      ),
-                    ),
-                    if (formattedLocation.isNotEmpty)
-                      Text(
-                        'מיקום: $formattedLocation',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }).toList();
-  }
-
   /// Open the availability events editor modal
   void _editAvailabilityEvents() async {
     final eventState = context.read<EventBloc>().state;
@@ -2548,6 +2554,23 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     } else {
       return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)} - יום ${_getFullHebrewDayName(event.endDate.weekday)} ${event.endDate.day} ב${_getHebrewMonthName(event.endDate.month)}';
     }
+  }
+
+  String _formatEventTimes(Event event) {
+    final parts = <String>[];
+    if (event.assemblyTime.isNotEmpty) {
+      parts.add('התייצבות - ${event.assemblyTime}');
+    }
+    if (event.startTime.isNotEmpty) {
+      parts.add('התכנסות - ${event.startTime}');
+    }
+    if (event.actualShowStartTime.isNotEmpty) {
+      parts.add('תחילת מופע - ${event.actualShowStartTime}');
+    }
+    if (event.endTime.isNotEmpty) {
+      parts.add('סיום - ${event.endTime}');
+    }
+    return parts.join(' | ');
   }
 
   String _getFullHebrewDayName(int weekday) {
@@ -3150,6 +3173,23 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
     }
   }
 
+  String _formatEventTimes(Event event) {
+    final parts = <String>[];
+    if (event.assemblyTime.isNotEmpty) {
+      parts.add('התייצבות - ${event.assemblyTime}');
+    }
+    if (event.startTime.isNotEmpty) {
+      parts.add('התכנסות - ${event.startTime}');
+    }
+    if (event.actualShowStartTime.isNotEmpty) {
+      parts.add('תחילת מופע - ${event.actualShowStartTime}');
+    }
+    if (event.endTime.isNotEmpty) {
+      parts.add('סיום - ${event.endTime}');
+    }
+    return parts.join(' | ');
+  }
+
   String _getFullHebrewDayName(int weekday) {
     const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
     return days[weekday == 7 ? 7 : weekday];
@@ -3274,6 +3314,14 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
                                         _formatEventDates(event),
                                         style: TextStyle(
                                           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                      Text(
+                                        _formatEventTimes(event),
+                                        style: TextStyle(
+                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                          color: Colors.black,
                                         ),
                                       ),
                                       if (formattedLocation.isNotEmpty)
@@ -3281,6 +3329,7 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
                                           'מיקום: $formattedLocation',
                                           style: TextStyle(
                                             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                            color: Colors.black,
                                           ),
                                         ),
                                     ],

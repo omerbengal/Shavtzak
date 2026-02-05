@@ -3,7 +3,11 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/event_assignment_status.dart';
+import '../../../domain/entities/category.dart';
 import '../../../domain/entities/event.dart';
+import '../../bloc/category/category_bloc.dart';
+import '../../bloc/category/category_event.dart';
+import '../../bloc/category/category_state.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/checklist_item.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
@@ -31,6 +35,8 @@ class SummaryScreen extends StatefulWidget {
 }
 
 class _SummaryScreenState extends State<SummaryScreen> {
+  final Map<String, bool> _expandedCategories = {};
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +48,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
     context.read<EventBloc>().add(const LoadEvents());
     context.read<AssignmentBloc>().add(const LoadAssignments());
     context.read<ChecklistBloc>().add(LoadChecklistItems());
+    context.read<CategoryBloc>().add(const LoadCategories());
   }
 
   @override
@@ -95,61 +102,68 @@ class _SummaryScreenState extends State<SummaryScreen> {
   }
 
   Widget _buildBody() {
-    return BlocBuilder<EventBloc, EventState>(
-      builder: (context, eventState) {
-        return BlocBuilder<AssignmentBloc, AssignmentState>(
-          builder: (context, assignmentState) {
-            return BlocBuilder<ChecklistBloc, ChecklistState>(
-              builder: (context, checklistState) {
-                // Check if data is still loading
-                if (eventState is EventLoading ||
-                    eventState is EventInitial ||
-                    assignmentState is AssignmentLoading ||
-                    assignmentState is AssignmentInitial ||
-                    checklistState is ChecklistLoading ||
-                    checklistState is ChecklistInitial) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
+    return BlocBuilder<CategoryBloc, CategoryState>(
+      builder: (context, categoryState) {
+        final categories = categoryState is CategoriesLoaded
+            ? categoryState.activeCategories
+            : <Category>[];
+        return BlocBuilder<EventBloc, EventState>(
+          builder: (context, eventState) {
+            return BlocBuilder<AssignmentBloc, AssignmentState>(
+              builder: (context, assignmentState) {
+                return BlocBuilder<ChecklistBloc, ChecklistState>(
+                  builder: (context, checklistState) {
+                    // Check if data is still loading
+                    if (eventState is EventLoading ||
+                        eventState is EventInitial ||
+                        assignmentState is AssignmentLoading ||
+                        assignmentState is AssignmentInitial ||
+                        checklistState is ChecklistLoading ||
+                        checklistState is ChecklistInitial) {
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    }
 
-                // Extract data from states
-                final events = eventState is EventsLoaded
-                    ? eventState.events
-                    : <Event>[];
-                final assignments = assignmentState is AssignmentsLoaded
-                    ? assignmentState.assignments
-                    : <Assignment>[];
-                final checklistItems = checklistState is ChecklistLoaded
-                    ? checklistState.items
-                    : <ChecklistItem>[];
+                    // Extract data from states
+                    final events = eventState is EventsLoaded
+                        ? eventState.events
+                        : <Event>[];
+                    final assignments = assignmentState is AssignmentsLoaded
+                        ? assignmentState.assignments
+                        : <Assignment>[];
+                    final checklistItems = checklistState is ChecklistLoaded
+                        ? checklistState.items
+                        : <ChecklistItem>[];
 
-                // Filter to upcoming events only
-                final upcomingEvents = events
-                    .where((e) => e.isUpcoming || e.isActive)
-                    .toList()
-                  ..sort((a, b) => a.startDate.compareTo(b.startDate));
+                    // Filter to upcoming events only
+                    final upcomingEvents = events
+                        .where((e) => e.isUpcoming || e.isActive)
+                        .toList()
+                      ..sort((a, b) => a.startDate.compareTo(b.startDate));
 
-                if (upcomingEvents.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'אין אירועים קרובים',
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  );
-                }
+                    if (upcomingEvents.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'אין אירועים קרובים',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      );
+                    }
 
-                // Compute metrics
-                final metrics = _computeMetrics(
-                  upcomingEvents,
-                  assignments,
-                  checklistItems,
+                    // Compute metrics
+                    final metrics = _computeMetrics(
+                      upcomingEvents,
+                      assignments,
+                      checklistItems,
+                    );
+
+                    return _buildContent(metrics, assignments, categories);
+                  },
                 );
-
-                return _buildContent(metrics, assignments);
               },
             );
           },
@@ -158,7 +172,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
-  Widget _buildContent(_SummaryMetrics metrics, List<Assignment> assignments) {
+  Widget _buildContent(_SummaryMetrics metrics, List<Assignment> assignments, List<Category> categories) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isWideScreen = screenWidth >= 600;
 
@@ -176,7 +190,26 @@ class _SummaryScreenState extends State<SummaryScreen> {
             ),
           ),
         ),
-        // Section 2: Event Tiles
+        // Section 2: Event Tiles grouped by category
+        ..._buildGroupedEventTiles(metrics.eventSummaries, assignments, categories),
+        // Bottom padding
+        const SliverToBoxAdapter(
+          child: SizedBox(height: 16),
+        ),
+      ],
+    );
+  }
+
+  /// Build event tiles grouped by category headers.
+  /// Returns a list of sliver widgets.
+  List<Widget> _buildGroupedEventTiles(
+    List<EventSummaryData> eventSummaries,
+    List<Assignment> assignments,
+    List<Category> categories,
+  ) {
+    // No categories in system → flat list, no category headers
+    if (categories.isEmpty) {
+      return [
         SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           sliver: SliverList(
@@ -185,20 +218,198 @@ class _SummaryScreenState extends State<SummaryScreen> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: EventSummaryTile(
-                    data: metrics.eventSummaries[index],
+                    data: eventSummaries[index],
                     allAssignments: assignments,
                   ),
                 );
               },
-              childCount: metrics.eventSummaries.length,
+              childCount: eventSummaries.length,
             ),
           ),
         ),
-        // Bottom padding
-        const SliverToBoxAdapter(
-          child: SizedBox(height: 16),
+      ];
+    }
+
+    // Group event summaries by category
+    final Map<String?, List<EventSummaryData>> groupedSummaries = {};
+    for (final summary in eventSummaries) {
+      final categoryId = summary.event.categoryId;
+      groupedSummaries.putIfAbsent(categoryId, () => []);
+      groupedSummaries[categoryId]!.add(summary);
+    }
+
+    final activeCategoryIds = categories.map((c) => c.id).toSet();
+    final List<Widget> slivers = [];
+
+    // Categories sorted by sortOrder — only those with events
+    final sortedCategories = categories
+        .where((c) => groupedSummaries.containsKey(c.id))
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+    for (final category in sortedCategories) {
+      final summaries = groupedSummaries[category.id]!;
+      slivers.add(_buildCategoryHeaderSliver(
+        category.id,
+        category.name,
+        summaries,
+      ));
+      if (_expandedCategories[category.id] ?? false) {
+        slivers.add(_buildEventTilesSliver(summaries, assignments));
+      }
+    }
+
+    // Uncategorized events section (always last)
+    if (groupedSummaries.containsKey(null) ||
+        groupedSummaries.keys.any((id) => id != null && !activeCategoryIds.contains(id))) {
+      final uncategorizedSummaries = <EventSummaryData>[
+        ...groupedSummaries[null] ?? [],
+        ...groupedSummaries.entries
+            .where((e) => e.key != null && !activeCategoryIds.contains(e.key))
+            .expand((e) => e.value),
+      ];
+      if (uncategorizedSummaries.isNotEmpty) {
+        slivers.add(_buildCategoryHeaderSliver(
+          '__uncategorized__',
+          'אירועים ללא קטגוריה',
+          uncategorizedSummaries,
+        ));
+        if (_expandedCategories['__uncategorized__'] ?? false) {
+          slivers.add(_buildEventTilesSliver(uncategorizedSummaries, assignments));
+        }
+      }
+    }
+
+    return slivers;
+  }
+
+  /// Build a category header sliver with aggregate status color and statistics.
+  Widget _buildCategoryHeaderSliver(String categoryId, String categoryName, List<EventSummaryData> summaries) {
+    // Calculate aggregate statistics
+    final totalUnfilledSlots = summaries.fold<int>(0, (sum, s) => sum + s.unfilledSlots);
+    final totalPendingChecklist = summaries.fold<int>(0, (sum, s) => sum + s.pendingChecklistItems);
+    final totalChecklistItems = summaries.fold<int>(0, (sum, s) => sum + s.totalChecklistItems);
+
+    // Determine color: orange if any event has issues, green otherwise
+    final hasIssues = summaries.any((s) => !s.isFullyStaffed || s.pendingChecklistItems > 0);
+    final headerColor = hasIssues ? Colors.orange.shade50 : Colors.green.shade50;
+
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.only(top: 16, left: 4, right: 4, bottom: 4),
+        child: Material(
+          color: headerColor,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            onTap: () => setState(() {
+              _expandedCategories[categoryId] = !(_expandedCategories[categoryId] ?? false);
+            }),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Top row: folder icon, name, event count, expand icon
+                  Row(
+                    children: [
+                      Icon(Icons.folder, size: 20, color: Colors.grey.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          categoryName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${summaries.length} ${summaries.length == 1 ? "אירוע" : "אירועים"}',
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        _expandedCategories[categoryId] ?? false
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                        color: Colors.grey.shade600,
+                      ),
+                    ],
+                  ),
+                  // Bottom row: aggregate statistics (if any issues exist)
+                  if (hasIssues) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: [
+                        // Unfilled roles
+                        if (totalUnfilledSlots > 0)
+                          _buildAggregateStatChip(
+                            icon: Icons.person_off,
+                            label: '$totalUnfilledSlots תפקידים חסרים',
+                            color: Colors.red,
+                          ),
+                        // Pending checklist items
+                        if (totalPendingChecklist > 0)
+                          _buildAggregateStatChip(
+                            icon: Icons.pending,
+                            label: '$totalPendingChecklist/$totalChecklistItems פריטים ממתינים',
+                            color: Colors.orange,
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build a small stat chip for aggregate data.
+  Widget _buildAggregateStatChip({
+    required IconData icon,
+    required String label,
+    required MaterialColor color,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color.shade700),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: color.shade700,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ],
+    );
+  }
+
+  /// Build a sliver list of event tiles.
+  Widget _buildEventTilesSliver(List<EventSummaryData> summaries, List<Assignment> assignments) {
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: EventSummaryTile(
+                data: summaries[index],
+                allAssignments: assignments,
+              ),
+            );
+          },
+          childCount: summaries.length,
+        ),
+      ),
     );
   }
 

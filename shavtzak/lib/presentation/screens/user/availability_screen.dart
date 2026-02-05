@@ -278,6 +278,14 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
               _formatEventDates(event),
               style: TextStyle(
                 fontWeight: isAvailable ? FontWeight.bold : FontWeight.normal,
+                color: Colors.black,
+              ),
+            ),
+            Text(
+              _formatEventTimes(event),
+              style: TextStyle(
+                fontWeight: isAvailable ? FontWeight.bold : FontWeight.normal,
+                color: Colors.black,
               ),
             ),
             if (formattedLocation.isNotEmpty)
@@ -285,6 +293,7 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
                 'מיקום: $formattedLocation',
                 style: TextStyle(
                   fontWeight: isAvailable ? FontWeight.bold : FontWeight.normal,
+                  color: Colors.black,
                 ),
               ),
           ],
@@ -395,6 +404,24 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
     } else {
       return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)} - יום ${_getFullHebrewDayName(event.endDate.weekday)} ${event.endDate.day} ב${_getHebrewMonthName(event.endDate.month)}';
     }
+  }
+
+  /// Format event times
+  String _formatEventTimes(Event event) {
+    final parts = <String>[];
+    if (event.assemblyTime.isNotEmpty) {
+      parts.add('התייצבות - ${event.assemblyTime}');
+    }
+    if (event.startTime.isNotEmpty) {
+      parts.add('התכנסות - ${event.startTime}');
+    }
+    if (event.actualShowStartTime.isNotEmpty) {
+      parts.add('תחילת מופע - ${event.actualShowStartTime}');
+    }
+    if (event.endTime.isNotEmpty) {
+      parts.add('סיום - ${event.endTime}');
+    }
+    return parts.join(' | ');
   }
 
   /// Get full Hebrew day name (e.g., "ראשון", "שני")

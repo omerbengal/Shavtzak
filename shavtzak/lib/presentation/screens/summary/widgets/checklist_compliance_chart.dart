@@ -33,15 +33,6 @@ class ChecklistComplianceChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (data.isEmpty) {
-      return const Center(
-        child: Text(
-          'אין נתונים',
-          style: TextStyle(color: Colors.grey),
-        ),
-      );
-    }
-
     return Column(
       children: [
         Text(
@@ -51,41 +42,51 @@ class ChecklistComplianceChart extends StatelessWidget {
             fontWeight: FontWeight.bold,
           ),
         ),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              // Calculate outer radius based on available space
-              // Vertical: use most of available height
-              // Horizontal: use the full width
-              final baseDimension = isVerticalLayout
-                  ? constraints.maxHeight
-                  : constraints.maxWidth;
+        if (data.isEmpty)
+          const Expanded(
+            child: Center(
+              child: Text(
+                'אין נתונים',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Calculate outer radius based on available space
+                // Vertical: use most of available height
+                // Horizontal: use the full width
+                final baseDimension = isVerticalLayout
+                    ? constraints.maxHeight
+                    : constraints.maxWidth;
 
-              // Calculate chart size - BIGGER chart, BIGGER hole for text
-              final maxRadius = isVerticalLayout ? 999.0 : 80.0;
-              final outerRadius = (baseDimension / 2 - 4).clamp(50.0, maxRadius);
-              final centerSpaceRadius = outerRadius * 0.75;  // Bigger hole for text
+                // Calculate chart size - BIGGER chart, BIGGER hole for text
+                final maxRadius = isVerticalLayout ? 999.0 : 80.0;
+                final outerRadius = (baseDimension / 2 - 4).clamp(50.0, maxRadius);
+                final centerSpaceRadius = outerRadius * 0.75;  // Bigger hole for text
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    PieChart(
-                      PieChartData(
-                        sectionsSpace: 2,
-                        centerSpaceRadius: centerSpaceRadius,
-                        sections: _buildSections(outerRadius - centerSpaceRadius),
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PieChart(
+                        PieChartData(
+                          sectionsSpace: 2,
+                          centerSpaceRadius: centerSpaceRadius,
+                          sections: _buildSections(outerRadius - centerSpaceRadius),
+                        ),
                       ),
-                    ),
-                    _buildCenterText(),
-                  ],
-                ),
-              );
-            },
+                      _buildCenterText(),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
-        ),
-        _buildLegend(),
+        if (!data.isEmpty) _buildLegend(),
       ],
     );
   }
