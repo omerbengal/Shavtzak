@@ -15,6 +15,7 @@ class Event extends Equatable {
   final List<String> parkingEditorIds; // IDs of team members who can edit parking
   final bool requiresArmed;
   final String comments; // Comments about the event
+  final String? categoryId; // Foreign key to Category (null = uncategorized)
   final Map<String, int> roleRequirements; // How many people needed per role (role key -> count)
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -38,6 +39,7 @@ class Event extends Equatable {
     this.parkingEditorIds = const [],
     required this.requiresArmed,
     this.comments = '',
+    this.categoryId,
     required this.roleRequirements,
     required this.createdAt,
     required this.updatedAt,
@@ -127,6 +129,7 @@ class Event extends Equatable {
     List<String>? parkingEditorIds,
     bool? requiresArmed,
     String? comments,
+    String? categoryId,
     Map<String, int>? roleRequirements,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -134,6 +137,7 @@ class Event extends Equatable {
     String? driveFolderLink,
     bool? isArchived,
     bool clearParkingLocation = false, // Flag to explicitly clear nullable fields
+    bool clearCategoryId = false,
   }) {
     return Event(
       id: id ?? this.id,
@@ -149,6 +153,7 @@ class Event extends Equatable {
       parkingEditorIds: parkingEditorIds ?? this.parkingEditorIds,
       requiresArmed: requiresArmed ?? this.requiresArmed,
       comments: comments ?? this.comments,
+      categoryId: clearCategoryId ? null : (categoryId ?? this.categoryId),
       roleRequirements: roleRequirements ?? this.roleRequirements,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -173,6 +178,7 @@ class Event extends Equatable {
         parkingEditorIds,
         requiresArmed,
         comments,
+        categoryId,
         roleRequirements,
         createdAt,
         updatedAt,

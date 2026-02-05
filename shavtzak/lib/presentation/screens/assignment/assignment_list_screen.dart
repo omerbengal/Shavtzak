@@ -111,50 +111,70 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('שיבוצים'),
-          leading: Container(
-            width: 180,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  FilterPersistence.showPastEvents = !FilterPersistence.showPastEvents;
-                });
-                // Reload assignments with new filter setting
-                context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: FilterPersistence.showPastEvents
-                      ? Colors.green.shade50
-                      : Colors.grey.shade100,
-                  border: Border.all(
-                    color: FilterPersistence.showPastEvents
-                        ? Colors.green
-                        : Colors.grey.shade400,
-                    width: 2,
-                  ),
-                ),
-                child: Center(
-                  child: Text(
-                    FilterPersistence.showPastEvents
-                        ? 'מציג אירועי עבר'
-                        : 'לא מציג אירועי עבר',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+          leading: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      FilterPersistence.showPastEvents = !FilterPersistence.showPastEvents;
+                    });
+                    // Reload assignments with new filter setting
+                    context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
                       color: FilterPersistence.showPastEvents
-                          ? Colors.green.shade700
-                          : Colors.grey.shade700,
+                          ? Colors.green.shade50
+                          : Colors.grey.shade100,
+                      border: Border.all(
+                        color: FilterPersistence.showPastEvents
+                            ? Colors.green
+                            : Colors.grey.shade400,
+                        width: 2,
+                      ),
                     ),
-                    textAlign: TextAlign.center,
+                    child: Center(
+                      child: Text(
+                        FilterPersistence.showPastEvents
+                            ? 'מציג אירועי עבר'
+                            : 'לא מציג אירועי עבר',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: FilterPersistence.showPastEvents
+                              ? Colors.green.shade700
+                              : Colors.grey.shade700,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(
+                  Icons.filter_list,
+                  color: Colors.white,
+                ),
+                onPressed: () {
+                  if (_lastSlotsState != null) {
+                    _showFilterModal(context, _lastSlotsState!);
+                  }
+                },
+                tooltip: 'סינון',
+                iconSize: 24,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+            ],
           ),
-          leadingWidth: 200,
+          leadingWidth: 250,
           actions: [
             IconButton(
               icon: const Icon(Icons.home),
@@ -328,58 +348,32 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
         // Header row
         Container(
-          height: 56, // Fixed height to accommodate both layers
+          height: 48,
           color: Colors.grey.shade200,
-          child: Stack(
-            children: [
-              // Bottom layer: Column titles with exact same structure as data rows
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  child: Row(
-                    children: [
-                      // Event column (matches data row flex: 3)
-                      Expanded(
-                        flex: 3,
-                        child: Text('אירוע',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontWeight: FontWeight.bold))),
-                      // Role column (matches data row flex: 2)
-                      Expanded(
-                        flex: 2,
-                        child: Text('תפקיד',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontWeight: FontWeight.bold))),
-                      // Assignment column (matches data row flex: 3)
-                      Expanded(
-                        flex: 3,
-                        child: Text('שיבוץ',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontWeight: FontWeight.bold))),
-                    ],
-                  ),
-                ),
-              ),
-              // Top layer: Filter icon positioned on the right (in RTL)
-              Positioned(
-                right: 12,
-                top: 6,
-                bottom: 6,
-                child: IconButton(
-                  icon: Icon(
-                    Icons.filter_list,
-                    color: state.selectedEventIds.isEmpty
-                        ? Colors.grey.shade700
-                        : Colors.blue,
-                  ),
-                  onPressed: () => _showFilterModal(context, state),
-                  tooltip: 'סינון',
-                  iconSize: 24,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-                ),
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              children: [
+                // Event column (matches data row flex: 3)
+                Expanded(
+                  flex: 3,
+                  child: Text('אירוע',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+                // Role column (matches data row flex: 2)
+                Expanded(
+                  flex: 2,
+                  child: Text('תפקיד',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+                // Assignment column (matches data row flex: 3)
+                Expanded(
+                  flex: 3,
+                  child: Text('שיבוץ',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+              ],
+            ),
           ),
         ),
 

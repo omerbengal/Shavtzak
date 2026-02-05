@@ -5,6 +5,7 @@ import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import '../../domain/entities/assignment.dart';
+import '../../domain/entities/category.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
@@ -15,6 +16,7 @@ import '../../core/constants/calendar_constants.dart';
 import '../../core/constants/role_types.dart';
 import '../../core/services/environment_service.dart';
 import '../models/assignment_model.dart';
+import '../models/category_model.dart';
 import '../models/checklist_item_model.dart';
 import '../models/event_model.dart';
 import '../models/preset_model.dart';
@@ -61,6 +63,12 @@ class FirestoreDatabase implements DatabaseInterface {
   String get _presetsCollection {
     final collection = '${EnvironmentService.instance.collectionPrefix}checklist_presets';
     developer.log('FirestoreDatabase._presetsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
+    return collection;
+  }
+
+  String get _categoriesCollection {
+    final collection = '${EnvironmentService.instance.collectionPrefix}categories';
+    developer.log('FirestoreDatabase._categoriesCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
     return collection;
   }
 
@@ -2053,6 +2061,173 @@ class FirestoreDatabase implements DatabaseInterface {
     } catch (e) {
       throw DatabaseException('Failed to update roles sort order: $e');
     }
+  }
+
+  // ========== Categories ==========
+
+  @override
+  Future<List<Category>> getCategories() async {
+    try {
+      final snapshot = await _firestore
+          .collection(_categoriesCollection)
+          .orderBy('sortOrder')
+          .get();
+
+      final categories = snapshot.docs
+          .map((doc) => CategoryModel.fromFirestore(doc).toEntity())
+          .toList();
+
+      developer.log('FirestoreDatabase.getCategories: Retrieved ${categories.length} categories', name: 'Firestore');
+      return categories;
+    } catch (e) {
+      throw DatabaseException('Failed to get categories: $e');
+    }
+  }
+
+  @override
+  Future<List<Category>> getActiveCategories() async {
+    try {
+      final snapshot = await _firestore
+          .collection(_categoriesCollection)
+          .where('isArchived', isEqualTo: false)
+          .orderBy('sortOrder')
+          .get();
+
+      final categories = snapshot.docs
+          .map((doc) => CategoryModel.fromFirestore(doc).toEntity())
+          .toList();
+
+      developer.log('FirestoreDatabase.getActiveCategories: Retrieved ${categories.length} active categories', name: 'Firestore');
+      return categories;
+    } catch (e) {
+      throw DatabaseException('Failed to get active categories: $e');
+    }
+  }
+
+  @override
+  Future<Category?> getCategoryById(String id) async {
+    try {
+      final doc = await _firestore.collection(_categoriesCollection).doc(id).get();
+
+      if (!doc.exists) return null;
+
+      return CategoryModel.fromFirestore(doc).toEntity();
+    } catch (e) {
+      throw DatabaseException('Failed to get category: $e');
+    }
+  }
+
+  @override
+  Future<void> insertCategory(Category category) async {
+    try {
+      final model = CategoryModel.fromEntity(category);
+      await _firestore
+          .collection(_categoriesCollection)
+          .doc(category.id)
+          .set(model.toFirestore());
+
+      developer.log('FirestoreDatabase.insertCategory: Inserted category "${category.name}"', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to insert category: $e');
+    }
+  }
+
+  @override
+  Future<void> updateCategory(Category category) async {
+    try {
+      final model = CategoryModel.fromEntity(category);
+      await _firestore
+          .collection(_categoriesCollection)
+          .doc(category.id)
+          .update(model.toFirestore());
+
+      developer.log('FirestoreDatabase.updateCategory: Updated category "${category.name}"', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to update category: $e');
+    }
+  }
+
+  @override
+  Future<void> deleteCategory(String id) async {
+    try {
+      // Soft delete: set isArchived to true
+      await _firestore
+          .collection(_categoriesCollection)
+          .doc(id)
+          .update({
+            'isArchived': true,
+            'updatedAt': Timestamp.fromDate(DateTime.now()),
+          });
+
+      developer.log('FirestoreDatabase.deleteCategory: Soft deleted category $id', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to delete category: $e');
+    }
+  }
+
+  @override
+  Future<void> permanentlyDeleteCategory(String id) async {
+    try {
+      // Actually delete the document from Firestore
+      await _firestore
+          .collection(_categoriesCollection)
+          .doc(id)
+          .delete();
+
+      developer.log('FirestoreDatabase.permanentlyDeleteCategory: Permanently deleted category $id', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to permanently delete category: $e');
+    }
+  }
+
+  @override
+  Future<void> restoreCategory(String id) async {
+    try {
+      await _firestore
+          .collection(_categoriesCollection)
+          .doc(id)
+          .update({
+            'isArchived': false,
+            'updatedAt': Timestamp.fromDate(DateTime.now()),
+          });
+
+      developer.log('FirestoreDatabase.restoreCategory: Restored category $id', name: 'Firestore');
+    } catch (e) {
+      throw DatabaseException('Failed to restore category: $e');
+    }
+  }
+
+  @override
+  Stream<List<Category>> watchCategories() {
+    return _firestore
+        .collection(_categoriesCollection)
+        .orderBy('sortOrder')
+        .snapshots()
+        .map((snapshot) {
+      final categories = snapshot.docs
+          .map((doc) => CategoryModel.fromFirestore(doc).toEntity())
+          .toList();
+
+      developer.log('FirestoreDatabase.watchCategories: Stream emitted ${categories.length} categories', name: 'Firestore');
+      return categories;
+    });
+  }
+
+  @override
+  Stream<List<Category>> watchActiveCategories() {
+    return _firestore
+        .collection(_categoriesCollection)
+        .where('isArchived', isEqualTo: false)
+        .orderBy('sortOrder')
+        .snapshots()
+        .map((snapshot) {
+      final categories = snapshot.docs
+          .map((doc) => CategoryModel.fromFirestore(doc).toEntity())
+          .toList();
+
+      developer.log('FirestoreDatabase.watchActiveCategories: Stream emitted ${categories.length} active categories', name: 'Firestore');
+      return categories;
+    });
   }
 }
 

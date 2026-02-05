@@ -1,4 +1,5 @@
 import '../../domain/entities/assignment.dart';
+import '../../domain/entities/category.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
@@ -296,4 +297,36 @@ abstract class DatabaseInterface {
 
   /// Update sort order for multiple roles in batch
   Future<void> updateRolesSortOrder(Map<String, int> roleIdToSortOrder);
+
+  // ========== Categories ==========
+
+  /// Get all categories
+  Future<List<Category>> getCategories();
+
+  /// Get active categories (isArchived = false)
+  Future<List<Category>> getActiveCategories();
+
+  /// Get a category by ID
+  Future<Category?> getCategoryById(String id);
+
+  /// Insert a new category
+  Future<void> insertCategory(Category category);
+
+  /// Update an existing category
+  Future<void> updateCategory(Category category);
+
+  /// Delete a category (soft delete - set isArchived to true)
+  Future<void> deleteCategory(String id);
+
+  /// Permanently delete a category (actual deletion from database)
+  Future<void> permanentlyDeleteCategory(String id);
+
+  /// Restore an archived category
+  Future<void> restoreCategory(String id);
+
+  /// Watch all categories in real-time
+  Stream<List<Category>> watchCategories();
+
+  /// Watch active categories in real-time
+  Stream<List<Category>> watchActiveCategories();
 }

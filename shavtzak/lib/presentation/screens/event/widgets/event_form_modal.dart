@@ -3,9 +3,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../core/utils/validators.dart';
+import '../../../../domain/entities/category.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../data/repositories/assignment_repository.dart';
 import '../../../../data/repositories/event_repository.dart';
+import '../../../bloc/category/category_bloc.dart';
+import '../../../bloc/category/category_state.dart';
 import '../../../bloc/event/event_bloc.dart';
 import '../../../bloc/event/event_event.dart';
 import '../../../bloc/event/event_state.dart';
@@ -65,6 +68,7 @@ class _EventFormModalState extends State<EventFormModal> {
   String? _rawLocationValue; // Stores location with hidden coordinates (Name||lat,lng)
   String? _rawParkingLocationValue; // Stores parking location with hidden coordinates
   List<String> _parkingEditorIds = const []; // IDs of team members who can edit parking
+  String? _selectedCategoryId; // Selected category ID for the event
 
   // For highlighting selected role
   ScrollController? _scrollController; // Will be set from DraggableScrollableSheet
@@ -125,6 +129,8 @@ class _EventFormModalState extends State<EventFormModal> {
       _requiresArmed = widget.event!.requiresArmed;
       // Load role requirements from event (already String keys)
       _roleRequirements = Map.from(widget.event!.roleRequirements);
+      // Load category
+      _selectedCategoryId = widget.event!.categoryId;
     }
 
     _nameController.addListener(() => _isDirty = true);
@@ -276,6 +282,7 @@ class _EventFormModalState extends State<EventFormModal> {
         newRequiresArmed: _requiresArmed,
         newRoleRequirements: Map.from(_roleRequirements),
         duplicateAssignments: _duplicateAssignments,
+        categoryId: _selectedCategoryId,
       ));
 
       // If duplicating WITH assignments, DON'T close immediately!
@@ -444,6 +451,7 @@ class _EventFormModalState extends State<EventFormModal> {
       parkingEditorIds: _parkingEditorIds,
       requiresArmed: _requiresArmed,
       comments: _commentsController.text.trim(),
+      categoryId: _selectedCategoryId,
       roleRequirements: _roleRequirements,
       createdAt: _isEditMode ? widget.event!.createdAt : now,
       updatedAt: now,
@@ -708,6 +716,78 @@ class _EventFormModalState extends State<EventFormModal> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
+                              const SizedBox(height: 16),
+
+                              // Category Dropdown (first field)
+                              BlocBuilder<CategoryBloc, CategoryState>(
+                                builder: (context, state) {
+                                  if (state is CategoriesLoaded) {
+                                    final categories = state.activeCategories;
+
+                                    // If the event's original category is archived, keep it
+                                    // in the dropdown for the entire modal session so the user
+                                    // can switch back to it after changing away.
+                                    final originalCategoryId = widget.event?.categoryId;
+                                    final archivedOriginal = originalCategoryId != null
+                                        && !categories.any((c) => c.id == originalCategoryId)
+                                        ? state.archivedCategories.where((c) => c.id == originalCategoryId).firstOrNull
+                                        : null;
+
+                                    return DropdownButtonFormField<String?>(
+                                      value: _selectedCategoryId,
+                                      decoration: const InputDecoration(
+                                        labelText: 'קטגוריה',
+                                        hintText: 'בחר קטגוריה (אופציונלי)',
+                                        prefixIcon: Icon(Icons.category),
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      items: [
+                                        // Null option for uncategorized
+                                        const DropdownMenuItem<String?>(
+                                          value: null,
+                                          child: Text('ללא קטגוריה'),
+                                        ),
+                                        // If the event's original category is archived, show it
+                                        // greyed out so the user can see and re-select it
+                                        if (archivedOriginal != null)
+                                          DropdownMenuItem<String?>(
+                                            value: archivedOriginal.id,
+                                            child: Text(
+                                              '${archivedOriginal.name} (בארכיון)',
+                                              style: const TextStyle(color: Colors.grey),
+                                            ),
+                                          ),
+                                        // Active category options
+                                        ...categories.map((category) {
+                                          return DropdownMenuItem<String?>(
+                                            value: category.id,
+                                            child: Text(category.name),
+                                          );
+                                        }),
+                                      ],
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _selectedCategoryId = value;
+                                          _isDirty = true;
+                                        });
+                                      },
+                                    );
+                                  } else {
+                                    // Loading state or error
+                                    return DropdownButtonFormField<String?>(
+                                      value: null,
+                                      decoration: InputDecoration(
+                                        labelText: 'קטגוריה',
+                                        prefixIcon: const Icon(Icons.category),
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      items: [],
+                                      onChanged: null,
+                                    );
+                                  }
+                                },
+                              ),
+
                               const SizedBox(height: 16),
 
                               // Name field

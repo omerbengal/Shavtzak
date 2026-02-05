@@ -13,6 +13,8 @@ import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/map_location_picker.dart';
+import 'widgets/category_filter_modal.dart';
+import 'widgets/category_management_dialog.dart';
 import 'widgets/event_form_modal.dart';
 import 'widgets/role_management_dialog.dart';
 import 'dart:async';
@@ -31,6 +33,21 @@ class _EventListScreenState extends State<EventListScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
   EventsLoaded? _lastLoadedState;
+  Set<String> _selectedCategoryIds = {};
+
+  /// Build a compact icon button for the leading AppBar section
+  Widget _buildCompactIcon({required IconData icon, required VoidCallback onPressed, Widget? badge}) {
+    return InkWell(
+      onTap: onPressed,
+      customBorder: const CircleBorder(),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: badge != null
+            ? Badge(label: badge, child: Icon(icon, size: 22))
+            : Icon(icon, size: 22),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -58,6 +75,25 @@ class _EventListScreenState extends State<EventListScreen> {
     setState(() {
       FilterPersistence.eventFilterIndex = newIndex;
     });
+  }
+
+  /// Show category filter modal
+  Future<void> _showCategoryFilterModal() async {
+    final result = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => CategoryFilterModal(
+        selectedCategoryIds: _selectedCategoryIds,
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        _selectedCategoryIds = result;
+        FilterPersistence.selectedEventCategoryIds = result;
+      });
+    }
   }
 
   /// Format location for display based on how it was entered
@@ -100,6 +136,7 @@ class _EventListScreenState extends State<EventListScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
+          leadingWidth: 160,
           title: _showSearch
               ? TextField(
                   controller: _searchController,
@@ -113,26 +150,57 @@ class _EventListScreenState extends State<EventListScreen> {
                   onChanged: _onSearchChanged,
                 )
               : const Text('אירועים'),
-          leading: IconButton(
-            icon: Icon(_showSearch ? Icons.close : Icons.search),
-            onPressed: () {
-              setState(() {
-                _showSearch = !_showSearch;
-                if (!_showSearch) {
-                  _searchController.clear();
-                  context.read<EventBloc>().add(const LoadEvents());
-                }
-              });
-            },
+          leading: Padding(
+            padding: const EdgeInsetsDirectional.only(start: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Search/Close button
+                _buildCompactIcon(
+                  icon: _showSearch ? Icons.close : Icons.search,
+                  onPressed: () {
+                    setState(() {
+                      _showSearch = !_showSearch;
+                      if (!_showSearch) {
+                        _searchController.clear();
+                        context.read<EventBloc>().add(const LoadEvents());
+                      }
+                    });
+                  },
+                ),
+                const SizedBox(width: 4),
+                // Filter button
+                _buildCompactIcon(
+                  icon: Icons.filter_list,
+                  onPressed: () => _showCategoryFilterModal(),
+                  badge: _selectedCategoryIds.isNotEmpty
+                      ? Text('${_selectedCategoryIds.length}')
+                      : null,
+                ),
+              ],
+            ),
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.settings),
+              icon: const Icon(Icons.work),
               tooltip: 'ניהול תפקידים',
               onPressed: () {
                 showDialog(
                   context: context,
                   builder: (context) => const RoleManagementDialog(),
+                );
+              },
+              iconSize: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+            ),
+            IconButton(
+              icon: const Icon(Icons.category),
+              tooltip: 'ניהול קטגוריות',
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => const CategoryManagementDialog(),
                 );
               },
               iconSize: 24,
@@ -271,21 +339,35 @@ class _EventListScreenState extends State<EventListScreen> {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
 
+    List<Event> result;
     switch (filterIndex) {
       case 0: // All
-        return events;
+        result = events;
+        break;
       case 1: // Future (עתידיים) - endDate >= today
-        return events.where((event) {
+        result = events.where((event) {
           return event.endDate.isAfter(todayDate) ||
                  event.endDate.isAtSameMomentAs(todayDate);
         }).toList();
+        break;
       case 2: // Past (עברו) - endDate < today
-        return events.where((event) {
+        result = events.where((event) {
           return event.endDate.isBefore(todayDate);
         }).toList();
+        break;
       default:
-        return events;
+        result = events;
     }
+
+    // Apply category filter if any categories are selected
+    if (_selectedCategoryIds.isNotEmpty) {
+      result = result.where((event) {
+        return event.categoryId != null &&
+               _selectedCategoryIds.contains(event.categoryId);
+      }).toList();
+    }
+
+    return result;
   }
 
   /// Get background color for event card based on assignment status

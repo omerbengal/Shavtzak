@@ -361,6 +361,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         actualShowStartTime: event.newActualShowStartTime,
         requiresArmed: event.newRequiresArmed,
         roleRequirements: Map.from(event.newRoleRequirements),
+        categoryId: event.categoryId,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         // Drive fields are omitted - they will be created by createEvent
@@ -538,6 +539,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       assemblyTime: proposedEvent.assemblyTime,
       requiresArmed: proposedEvent.requiresArmed,
       roleRequirements: updatedRoleRequirements,
+      categoryId: proposedEvent.categoryId,
       createdAt: proposedEvent.createdAt,
       updatedAt: DateTime.now(), // Update timestamp since we're modifying quotas
       // Preserve Drive fields from proposedEvent (if any)

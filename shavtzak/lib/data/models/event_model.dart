@@ -16,6 +16,7 @@ class EventModel {
   final List<String> parkingEditorIds;
   final bool requiresArmed;
   final String comments;
+  final String? categoryId; // Foreign key to Category
   final Map<String, int> roleRequirements; // Stored as string keys in Firestore
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -39,6 +40,7 @@ class EventModel {
     this.parkingEditorIds = const [],
     required this.requiresArmed,
     this.comments = '',
+    this.categoryId,
     required this.roleRequirements,
     required this.createdAt,
     required this.updatedAt,
@@ -63,6 +65,7 @@ class EventModel {
       parkingEditorIds: entity.parkingEditorIds,
       requiresArmed: entity.requiresArmed,
       comments: entity.comments,
+      categoryId: entity.categoryId,
       roleRequirements: Map<String, int>.from(entity.roleRequirements),
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
@@ -88,6 +91,7 @@ class EventModel {
       parkingEditorIds: parkingEditorIds,
       requiresArmed: requiresArmed,
       comments: comments,
+      categoryId: categoryId,
       roleRequirements: Map<String, int>.from(roleRequirements),
       createdAt: createdAt,
       updatedAt: updatedAt,
@@ -115,6 +119,7 @@ class EventModel {
       parkingEditorIds: List<String>.from(data['parkingEditorIds'] as List? ?? const []),
       requiresArmed: data['requiresArmed'] as bool? ?? false,
       comments: data['comments'] as String? ?? data['notes'] as String? ?? '',
+      categoryId: data['categoryId'] as String?,
       roleRequirements: Map<String, int>.from(data['roleRequirements'] as Map? ?? {}),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
@@ -140,6 +145,7 @@ class EventModel {
       'parkingEditorIds': parkingEditorIds,
       'requiresArmed': requiresArmed,
       'comments': comments,
+      'categoryId': categoryId,
       'roleRequirements': roleRequirements,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
@@ -165,6 +171,7 @@ class EventModel {
       parkingEditorIds: List<String>.from(json['parkingEditorIds'] as List? ?? const []),
       requiresArmed: json['requiresArmed'] as bool? ?? false,
       comments: json['comments'] as String? ?? json['notes'] as String? ?? '',
+      categoryId: json['categoryId'] as String?,
       roleRequirements: Map<String, int>.from(json['roleRequirements'] as Map? ?? {}),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -190,6 +197,7 @@ class EventModel {
       'parkingEditorIds': parkingEditorIds,
       'requiresArmed': requiresArmed,
       'comments': comments,
+      'categoryId': categoryId,
       'roleRequirements': roleRequirements,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),

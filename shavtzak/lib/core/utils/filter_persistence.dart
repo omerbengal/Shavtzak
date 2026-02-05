@@ -17,4 +17,10 @@ class FilterPersistence {
 
   /// Whether to show past events in Assignments screen
   static bool showPastEvents = false; // Default to false (hide past events)
+
+  /// Selected category IDs for Events screen
+  static Set<String> selectedEventCategoryIds = {};
+
+  /// Selected category IDs for Assignments screen
+  static Set<String> selectedAssignmentCategoryIds = {};
 }

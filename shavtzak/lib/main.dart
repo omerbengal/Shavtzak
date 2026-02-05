@@ -20,6 +20,7 @@ import 'data/repositories/user_selection_repository.dart';
 import 'data/repositories/checklist_repository.dart';
 import 'data/repositories/preset_repository.dart';
 import 'data/repositories/role_repository.dart';
+import 'data/repositories/category_repository.dart';
 import 'domain/entities/team_member.dart';
 import 'core/services/user_cache_service.dart';
 import 'core/services/environment_service.dart';
@@ -41,6 +42,8 @@ import 'presentation/bloc/checklist/checklist_bloc.dart';
 import 'presentation/bloc/preset/preset_bloc.dart';
 import 'presentation/bloc/role/role_bloc.dart';
 import 'presentation/bloc/role/role_event.dart';
+import 'presentation/bloc/category/category_bloc.dart';
+import 'presentation/bloc/category/category_event.dart';
 
 // Router
 import 'core/router/app_router.dart';
@@ -199,6 +202,7 @@ Future<void> _initialize() async {
         checklist: ChecklistRepository(database),
         preset: PresetRepository(database),
         role: RoleRepository(database),
+        category: CategoryRepository(database),
         userSelection: UserSelectionRepository(
           database: database,
           userCacheService: userCacheService,
@@ -232,6 +236,7 @@ Future<void> _initialize() async {
         checklistRepository: repositories.checklist,
         presetRepository: repositories.preset,
         roleRepository: repositories.role,
+        categoryRepository: repositories.category,
         userSelectionRepository: repositories.userSelection,
         calendarSyncBloc: bloc,
         preAuthenticatedUser: preAuthenticatedUser,
@@ -288,6 +293,7 @@ class MyApp extends StatelessWidget {
   final ChecklistRepository checklistRepository;
   final PresetRepository presetRepository;
   final RoleRepository roleRepository;
+  final CategoryRepository categoryRepository;
   final UserSelectionRepository userSelectionRepository;
   final CalendarSyncBloc calendarSyncBloc;
   final TeamMember? preAuthenticatedUser;
@@ -300,6 +306,7 @@ class MyApp extends StatelessWidget {
     required this.checklistRepository,
     required this.presetRepository,
     required this.roleRepository,
+    required this.categoryRepository,
     required this.userSelectionRepository,
     required this.calendarSyncBloc,
     this.preAuthenticatedUser,
@@ -315,6 +322,7 @@ class MyApp extends StatelessWidget {
         RepositoryProvider.value(value: checklistRepository),
         RepositoryProvider.value(value: presetRepository),
         RepositoryProvider.value(value: roleRepository),
+        RepositoryProvider.value(value: categoryRepository),
         RepositoryProvider.value(value: userSelectionRepository),
       ],
       child: ListenableBuilder(
@@ -396,6 +404,17 @@ class MyApp extends StatelessWidget {
                   // Start loading roles immediately
                   roleBloc.add(const LoadRoles());
                   return roleBloc;
+                },
+              ),
+              BlocProvider(
+                create: (context) {
+                  developer.log('main.dart: Creating CategoryBloc for $env environment', name: 'Main');
+                  final categoryBloc = CategoryBloc(
+                    context.read<CategoryRepository>(),
+                  );
+                  // Start loading categories immediately
+                  categoryBloc.add(const LoadCategories());
+                  return categoryBloc;
                 },
               ),
             ],

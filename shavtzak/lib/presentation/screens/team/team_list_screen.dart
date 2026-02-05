@@ -22,6 +22,9 @@ import 'package:uuid/uuid.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart' as team;
 import '../../bloc/team/team_state.dart';
+import '../../bloc/event/event_bloc.dart';
+import '../../bloc/event/event_event.dart';
+import '../../bloc/event/event_state.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
@@ -65,6 +68,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
     super.initState();
     // Always load ALL team members - filtering happens in UI
     context.read<TeamBloc>().add(const team.LoadTeamMembers());
+    // Ensure events are loaded (needed to count future available events for non-permanent members)
+    context.read<EventBloc>().add(const LoadEvents());
     // Trigger calendar validation sync to check for deleted events on initial load
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<CalendarSyncBloc>().add(const ValidateSyncedEvents());
@@ -555,8 +560,9 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     style: const TextStyle(fontSize: 12),
                   ),
                   // Check if member has any relevant constraints (unavailability for permanent, availability for non-permanent)
-                  Builder(
-                    builder: (context) {
+                  // Uses BlocBuilder<EventBloc> so the count updates in real time when event dates change
+                  BlocBuilder<EventBloc, EventState>(
+                    builder: (context, eventState) {
                       // Helper function to check if constraint is past (same logic as admin modal)
                       bool isPastConstraint(DateConstraint constraint) {
                         if (constraint.endDate != null) {
@@ -589,10 +595,40 @@ class _TeamListScreenState extends State<TeamListScreen> {
                         }
                       }
 
-                      // Filter out past constraints and by constraint type before counting
+                      // Non-permanent members: event-based availability (future events only)
+                      if (!member.isPermanent) {
+                        final now = DateTime.now();
+                        final today = DateTime(now.year, now.month, now.day);
+
+                        int availableCount;
+                        if (eventState is EventsLoaded) {
+                          availableCount = member.availableEventIds.where((id) =>
+                            eventState.events.any((e) =>
+                              e.id == id &&
+                              !DateTime(e.endDate.year, e.endDate.month, e.endDate.day).isBefore(today),
+                            ),
+                          ).length;
+                        } else {
+                          availableCount = member.availableEventIds.length;
+                        }
+
+                        if (availableCount == 0) {
+                          return const SizedBox.shrink();
+                        }
+                        return Text(
+                          'זמין/ה ל-$availableCount אירועים',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        );
+                      }
+
+                      // Permanent members: constraint-based logic
                       final activeConstraints = member.constraints
                           .where((c) => !isPastConstraint(c))
-                          .where((c) => member.isPermanent ? c.isUnavailability : c.isAvailability)
+                          .where((c) => c.isUnavailability)
                           .toList();
                       final approvedCount = activeConstraints.where((c) => c.isApproved()).length;
                       final pendingCount = activeConstraints.where((c) => c.isPending()).length;
@@ -601,17 +637,14 @@ class _TeamListScreenState extends State<TeamListScreen> {
                         return const SizedBox.shrink();
                       }
 
-                      // If has approved constraints, show both counters as before
                       if (approvedCount > 0) {
                         return Row(
                           children: [
                             Text(
-                              member.isPermanent
-                                  ? '$approvedCount מגבלות'
-                                  : '$approvedCount תאריכי זמינות',
-                              style: TextStyle(
+                              '$approvedCount מגבלות',
+                              style: const TextStyle(
                                 fontSize: 12,
-                                color: member.isPermanent ? Colors.orange : Colors.green,
+                                color: Colors.orange,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -629,11 +662,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
                           ],
                         );
                       } else if (pendingCount > 0) {
-                        // If no approved constraints but has pending, show only pending counter in red
                         return Text(
-                          member.isPermanent
-                              ? '$pendingCount מגבלות ממתינות'
-                              : '$pendingCount ממתינות',
+                          '$pendingCount מגבלות ממתינות',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.red,
@@ -641,7 +671,6 @@ class _TeamListScreenState extends State<TeamListScreen> {
                           ),
                         );
                       } else {
-                        // No approved or pending constraints (shouldn't happen with activeConstraints.isEmpty check)
                         return const SizedBox.shrink();
                       }
                     },
