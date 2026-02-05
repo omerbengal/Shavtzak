@@ -59,10 +59,3 @@ class ReorderCategories extends CategoryEvent {
 
   const ReorderCategories(this.categories);
 }
-
-/// Internal event: Categories data updated from stream
-class CategoriesDataUpdated extends CategoryEvent {
-  final List<Category> categories;
-
-  const CategoriesDataUpdated(this.categories);
-}

@@ -233,6 +233,13 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
   Widget _buildCategoryListTile(Category category, {required bool isArchived}) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: Colors.grey.shade300,
+          width: 1,
+        ),
+      ),
       child: ListTile(
         leading: isArchived
             ? const Icon(Icons.archive, color: Colors.grey)

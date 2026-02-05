@@ -3,13 +3,21 @@ import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../data/repositories/category_repository.dart';
+import '../../../domain/entities/category.dart' as domain_category;
 import 'category_event.dart';
 import 'category_state.dart';
 
 /// BLoC for managing Category state
 class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
   final CategoryRepository _categoryRepository;
-  StreamSubscription<List<dynamic>>? _categoriesSubscription;
+
+  // Flag to track if we're currently subscribed to prevent multiple listeners
+  bool _isSubscribed = false;
+
+  // Timestamp of last reorder to suppress stale stream emissions
+  DateTime? _lastReorderTimestamp;
+
+  static const _reorderGracePeriod = Duration(milliseconds: 1500);
 
   CategoryBloc(this._categoryRepository) : super(const CategoryInitial()) {
     on<LoadCategories>(_onLoadCategories);
@@ -20,31 +28,58 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
     on<PermanentlyDeleteCategory>(_onPermanentlyDeleteCategory);
     on<RestoreCategory>(_onRestoreCategory);
     on<ReorderCategories>(_onReorderCategories);
-    on<CategoriesDataUpdated>(_onCategoriesDataUpdated);
   }
 
-  @override
-  Future<void> close() {
-    // Cancel subscription when BLoC is closed
-    _categoriesSubscription?.cancel();
-    return super.close();
-  }
-
+  /// Load all categories with real-time updates
   Future<void> _onLoadCategories(
     LoadCategories event,
     Emitter<CategoryState> emit,
   ) async {
-    emit(const CategoryLoading());
+    // If already subscribed, don't start another subscription
+    if (_isSubscribed) {
+      developer.log('CategoryBloc._onLoadCategories: Already subscribed, skipping', name: 'CategoryBloc');
+      return;
+    }
 
-    // Cancel previous subscription before starting new one to prevent memory leaks
-    await _categoriesSubscription?.cancel();
+    emit(const CategoryLoading());
+    _isSubscribed = true;
 
     try {
-      // Subscribe to categories stream
-      _categoriesSubscription = _categoryRepository.watchCategories().listen(
-        (categories) {
-          // Add internal event when data arrives
-          add(CategoriesDataUpdated(categories));
+      await emit.forEach<List<domain_category.Category>>(
+        _categoryRepository.watchCategories(),
+        onData: (categories) {
+          // Check if we're in the grace period after a reorder
+          // If so, skip this emission to prevent showing stale data
+          if (_lastReorderTimestamp != null) {
+            final timeSinceReorder = DateTime.now().difference(_lastReorderTimestamp!);
+            if (timeSinceReorder < _reorderGracePeriod) {
+              developer.log(
+                'CategoryBloc: Skipping emission ${timeSinceReorder.inMilliseconds}ms after reorder (grace period: ${_reorderGracePeriod.inMilliseconds}ms)',
+                name: 'CategoryBloc',
+              );
+              // Return current state to skip this emission
+              return state;
+            } else {
+              // Grace period over, clear the timestamp
+              _lastReorderTimestamp = null;
+            }
+          }
+
+          // Separate active and archived
+          final active = categories.where((c) => !c.isArchived).toList();
+          final archived = categories.where((c) => c.isArchived).toList();
+
+          if (kDebugMode) {
+            developer.log(
+              'CategoryBloc: Categories updated - ${categories.length} total, ${active.length} active, ${archived.length} archived',
+              name: 'CategoryBloc',
+            );
+          }
+
+          return CategoriesLoaded(
+            activeCategories: active,
+            archivedCategories: archived,
+          );
         },
         onError: (error, stackTrace) {
           if (kDebugMode) {
@@ -55,34 +90,17 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
               stackTrace: stackTrace,
             );
           }
-          // Emit error state
-          emit(CategoryError(error.toString()));
+          return CategoryError(error.toString());
         },
-      );
+      ).then((_) {
+        // Subscription ended (shouldn't happen with Firestore)
+        _isSubscribed = false;
+      });
     } catch (e) {
+      _isSubscribed = false;
+      developer.log('CategoryBloc._onLoadCategories: Error: $e', name: 'CategoryBloc');
       emit(CategoryError(e.toString()));
     }
-  }
-
-  Future<void> _onCategoriesDataUpdated(
-    CategoriesDataUpdated event,
-    Emitter<CategoryState> emit,
-  ) async {
-    // Separate active and archived
-    final active = event.categories.where((c) => !c.isArchived).toList();
-    final archived = event.categories.where((c) => c.isArchived).toList();
-
-    if (kDebugMode) {
-      developer.log(
-        'CategoryBloc: Categories updated - ${event.categories.length} total, ${active.length} active, ${archived.length} archived',
-        name: 'CategoryBloc',
-      );
-    }
-
-    emit(CategoriesLoaded(
-      activeCategories: active,
-      archivedCategories: archived,
-    ));
   }
 
   Future<void> _onCreateCategory(
@@ -156,18 +174,25 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
     Emitter<CategoryState> emit,
   ) async {
     try {
-      // Optimistic update - emit new order immediately
-      final currentState = state;
-      if (currentState is CategoriesLoaded) {
-        emit(CategoriesLoaded(
-          activeCategories: event.categories,
-          archivedCategories: currentState.archivedCategories,
-        ));
-      }
+      // Set timestamp to suppress stale stream emissions during the write
+      _lastReorderTimestamp = DateTime.now();
 
-      // Then persist to database
+      developer.log(
+        'CategoryBloc._onReorderCategories: Starting reorder, suppressing stream emissions for ${_reorderGracePeriod.inMilliseconds}ms',
+        name: 'CategoryBloc',
+      );
+
+      // Don't emit optimistic state here - dialog handles optimistic UI with _pendingReorderedCategories
+      // Just persist to database and let the stream handle updates naturally after grace period
       await _categoryRepository.reorderCategories(event.categories);
+
+      developer.log(
+        'CategoryBloc._onReorderCategories: Reorder complete',
+        name: 'CategoryBloc',
+      );
     } catch (e) {
+      // Clear timestamp on error so we don't suppress legitimate error emissions
+      _lastReorderTimestamp = null;
       emit(CategoryError(e.toString()));
     }
   }

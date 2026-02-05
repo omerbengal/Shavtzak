@@ -63,10 +63,12 @@ class RoleRepository {
       // For now, use a timestamp-based key to ensure uniqueness
       final key = 'role_${DateTime.now().millisecondsSinceEpoch}';
 
-      // Get current max sort order
+      // Get current max sort order from ALL roles (archived + non-archived)
+      // This ensures newly created roles get sortOrder larger than ALL existing roles
+      // (both archived and non-archived), preventing duplicate sortOrders when archived items are restored
       final allRoles = await getAllRoles();
       final maxSortOrder = allRoles.isEmpty
-          ? 0
+          ? -1
           : allRoles.map((r) => r.sortOrder).reduce((a, b) => a > b ? a : b);
 
       final now = DateTime.now();

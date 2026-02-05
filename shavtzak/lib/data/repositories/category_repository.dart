@@ -33,8 +33,13 @@ class CategoryRepository {
     final now = DateTime.now();
     final categories = await getCategories();
 
-    // If sortOrder not provided, append to end
-    final finalSortOrder = sortOrder ?? categories.length;
+    // If sortOrder not provided, use max existing sortOrder + 1
+    // This ensures newly created categories get sortOrder larger than ALL existing categories
+    // (both archived and non-archived), preventing duplicate sortOrders when archived items are restored
+    final maxSortOrder = categories.isEmpty
+        ? -1
+        : categories.map((c) => c.sortOrder).reduce((a, b) => a > b ? a : b);
+    final finalSortOrder = sortOrder ?? (maxSortOrder + 1);
 
     final category = Category(
       id: const Uuid().v4(),

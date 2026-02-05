@@ -217,6 +217,13 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
   Widget _buildRoleListTile(Role role, {required bool isArchived}) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: Colors.grey.shade300,
+          width: 1,
+        ),
+      ),
       child: ListTile(
         leading: isArchived
             ? const Icon(Icons.archive, color: Colors.grey)
@@ -394,7 +401,6 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                       labelText: 'שם התפקיד בעברית',
                       border: OutlineInputBorder(),
                     ),
-                    autofocus: true,
                   ),
                   const SizedBox(height: 16),
                   Row(
@@ -453,7 +459,6 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
               labelText: 'שם התפקיד בעברית',
               border: OutlineInputBorder(),
             ),
-            autofocus: true,
           ),
           actions: [
             TextButton(

@@ -66,12 +66,6 @@ class FirestoreDatabase implements DatabaseInterface {
     return collection;
   }
 
-  String get _categoriesCollection {
-    final collection = '${EnvironmentService.instance.collectionPrefix}categories';
-    developer.log('FirestoreDatabase._categoriesCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
-    return collection;
-  }
-
   FirestoreDatabase({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance,
         _instanceId = DateTime.now().millisecondsSinceEpoch.toString() {
@@ -2064,18 +2058,32 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   // ========== Categories ==========
+  // Categories are stored in utilities/Lists document, Categories field (array)
 
   @override
   Future<List<Category>> getCategories() async {
     try {
-      final snapshot = await _firestore
-          .collection(_categoriesCollection)
-          .orderBy('sortOrder')
-          .get();
+      final doc = await _firestore.collection('utilities').doc('Lists').get();
 
-      final categories = snapshot.docs
-          .map((doc) => CategoryModel.fromFirestore(doc).toEntity())
+      if (!doc.exists || doc.data() == null) {
+        developer.log('FirestoreDatabase.getCategories: utilities/Lists document does not exist', name: 'Firestore');
+        return [];
+      }
+
+      final data = doc.data()!;
+      final categoriesArray = data['Categories'] as List<dynamic>?;
+
+      if (categoriesArray == null || categoriesArray.isEmpty) {
+        developer.log('FirestoreDatabase.getCategories: Categories array is empty or null', name: 'Firestore');
+        return [];
+      }
+
+      final categories = categoriesArray
+          .map((categoryData) => CategoryModel.fromJson(categoryData as Map<String, dynamic>).toEntity())
           .toList();
+
+      // Sort by sortOrder
+      categories.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
       developer.log('FirestoreDatabase.getCategories: Retrieved ${categories.length} categories', name: 'Firestore');
       return categories;
@@ -2087,18 +2095,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<List<Category>> getActiveCategories() async {
     try {
-      final snapshot = await _firestore
-          .collection(_categoriesCollection)
-          .where('isArchived', isEqualTo: false)
-          .orderBy('sortOrder')
-          .get();
-
-      final categories = snapshot.docs
-          .map((doc) => CategoryModel.fromFirestore(doc).toEntity())
-          .toList();
-
-      developer.log('FirestoreDatabase.getActiveCategories: Retrieved ${categories.length} active categories', name: 'Firestore');
-      return categories;
+      final allCategories = await getCategories();
+      final activeCategories = allCategories.where((cat) => !cat.isArchived).toList();
+      developer.log('FirestoreDatabase.getActiveCategories: Retrieved ${activeCategories.length} active categories', name: 'Firestore');
+      return activeCategories;
     } catch (e) {
       throw DatabaseException('Failed to get active categories: $e');
     }
@@ -2107,11 +2107,12 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<Category?> getCategoryById(String id) async {
     try {
-      final doc = await _firestore.collection(_categoriesCollection).doc(id).get();
-
-      if (!doc.exists) return null;
-
-      return CategoryModel.fromFirestore(doc).toEntity();
+      final categories = await getCategories();
+      try {
+        return categories.firstWhere((category) => category.id == id);
+      } catch (e) {
+        return null;
+      }
     } catch (e) {
       throw DatabaseException('Failed to get category: $e');
     }
@@ -2120,11 +2121,30 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> insertCategory(Category category) async {
     try {
-      final model = CategoryModel.fromEntity(category);
-      await _firestore
-          .collection(_categoriesCollection)
-          .doc(category.id)
-          .set(model.toFirestore());
+      // Get the current document
+      final docRef = _firestore.collection('utilities').doc('Lists');
+      final doc = await docRef.get();
+
+      final List<Map<String, dynamic>> categoriesData = [];
+
+      // If document exists, get current categories
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        final List<dynamic>? currentCategories = data['Categories'] as List<dynamic>?;
+        if (currentCategories != null) {
+          for (final cat in currentCategories) {
+            categoriesData.add(cat as Map<String, dynamic>);
+          }
+        }
+      }
+
+      // Add new category
+      categoriesData.add(CategoryModel.fromEntity(category).toJson());
+
+      // Write back to Firestore
+      await docRef.set({
+        'Categories': categoriesData,
+      }, SetOptions(merge: true));
 
       developer.log('FirestoreDatabase.insertCategory: Inserted category "${category.name}"', name: 'Firestore');
     } catch (e) {
@@ -2135,11 +2155,24 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> updateCategory(Category category) async {
     try {
-      final model = CategoryModel.fromEntity(category);
-      await _firestore
-          .collection(_categoriesCollection)
-          .doc(category.id)
-          .update(model.toFirestore());
+      // Get the current list of categories
+      final categories = await getCategories();
+      final index = categories.indexWhere((c) => c.id == category.id);
+
+      if (index == -1) {
+        throw DatabaseException('Category not found: ${category.id}');
+      }
+
+      // Update the category in the list
+      categories[index] = category;
+
+      // Convert all categories to JSON
+      final categoriesData = categories.map((c) => CategoryModel.fromEntity(c).toJson()).toList();
+
+      // Write back to Firestore
+      await _firestore.collection('utilities').doc('Lists').set({
+        'Categories': categoriesData,
+      }, SetOptions(merge: true));
 
       developer.log('FirestoreDatabase.updateCategory: Updated category "${category.name}"', name: 'Firestore');
     } catch (e) {
@@ -2150,14 +2183,39 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteCategory(String id) async {
     try {
+      // Get the current document
+      final docRef = _firestore.collection('utilities').doc('Lists');
+      final doc = await docRef.get();
+
+      if (!doc.exists || doc.data() == null) {
+        throw DatabaseException('utilities/Lists document does not exist');
+      }
+
+      final data = doc.data()!;
+      final List<dynamic> categoriesData = data['Categories'] as List<dynamic>? ?? [];
+
+      // Find and update the category (soft delete)
+      final categories = categoriesData
+          .map((catData) => CategoryModel.fromJson(catData as Map<String, dynamic>).toEntity())
+          .toList();
+
+      final index = categories.indexWhere((c) => c.id == id);
+      if (index == -1) {
+        throw DatabaseException('Category not found: $id');
+      }
+
       // Soft delete: set isArchived to true
-      await _firestore
-          .collection(_categoriesCollection)
-          .doc(id)
-          .update({
-            'isArchived': true,
-            'updatedAt': Timestamp.fromDate(DateTime.now()),
-          });
+      categories[index] = categories[index].copyWith(
+        isArchived: true,
+        updatedAt: DateTime.now(),
+      );
+
+      // Convert back to JSON and write
+      final updatedCategoriesData = categories.map((c) => CategoryModel.fromEntity(c).toJson()).toList();
+
+      await docRef.set({
+        'Categories': updatedCategoriesData,
+      }, SetOptions(merge: true));
 
       developer.log('FirestoreDatabase.deleteCategory: Soft deleted category $id', name: 'Firestore');
     } catch (e) {
@@ -2168,11 +2226,29 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> permanentlyDeleteCategory(String id) async {
     try {
-      // Actually delete the document from Firestore
-      await _firestore
-          .collection(_categoriesCollection)
-          .doc(id)
-          .delete();
+      // Get the current document
+      final docRef = _firestore.collection('utilities').doc('Lists');
+      final doc = await docRef.get();
+
+      if (!doc.exists || doc.data() == null) {
+        throw DatabaseException('utilities/Lists document does not exist');
+      }
+
+      final data = doc.data()!;
+      final List<dynamic> categoriesData = data['Categories'] as List<dynamic>? ?? [];
+
+      // Filter out the category to delete
+      final updatedCategories = categoriesData
+          .where((catData) {
+            final cat = CategoryModel.fromJson(catData as Map<String, dynamic>).toEntity();
+            return cat.id != id;
+          })
+          .toList();
+
+      // Write back to Firestore
+      await docRef.set({
+        'Categories': updatedCategories,
+      }, SetOptions(merge: true));
 
       developer.log('FirestoreDatabase.permanentlyDeleteCategory: Permanently deleted category $id', name: 'Firestore');
     } catch (e) {
@@ -2183,13 +2259,39 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> restoreCategory(String id) async {
     try {
-      await _firestore
-          .collection(_categoriesCollection)
-          .doc(id)
-          .update({
-            'isArchived': false,
-            'updatedAt': Timestamp.fromDate(DateTime.now()),
-          });
+      // Get the current document
+      final docRef = _firestore.collection('utilities').doc('Lists');
+      final doc = await docRef.get();
+
+      if (!doc.exists || doc.data() == null) {
+        throw DatabaseException('utilities/Lists document does not exist');
+      }
+
+      final data = doc.data()!;
+      final List<dynamic> categoriesData = data['Categories'] as List<dynamic>? ?? [];
+
+      // Find and update the category (restore)
+      final categories = categoriesData
+          .map((catData) => CategoryModel.fromJson(catData as Map<String, dynamic>).toEntity())
+          .toList();
+
+      final index = categories.indexWhere((c) => c.id == id);
+      if (index == -1) {
+        throw DatabaseException('Category not found: $id');
+      }
+
+      // Restore: set isArchived to false
+      categories[index] = categories[index].copyWith(
+        isArchived: false,
+        updatedAt: DateTime.now(),
+      );
+
+      // Convert back to JSON and write
+      final updatedCategoriesData = categories.map((c) => CategoryModel.fromEntity(c).toJson()).toList();
+
+      await docRef.set({
+        'Categories': updatedCategoriesData,
+      }, SetOptions(merge: true));
 
       developer.log('FirestoreDatabase.restoreCategory: Restored category $id', name: 'Firestore');
     } catch (e) {
@@ -2200,33 +2302,43 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Stream<List<Category>> watchCategories() {
     return _firestore
-        .collection(_categoriesCollection)
-        .orderBy('sortOrder')
+        .collection('utilities')
+        .doc('Lists')
         .snapshots()
-        .map((snapshot) {
-      final categories = snapshot.docs
-          .map((doc) => CategoryModel.fromFirestore(doc).toEntity())
+        .map<List<Category>>((snapshot) {
+      if (!snapshot.exists || snapshot.data() == null) {
+        developer.log('FirestoreDatabase.watchCategories: Document does not exist', name: 'Firestore');
+        return <Category>[];
+      }
+
+      final data = snapshot.data()!;
+      final categoriesArray = data['Categories'] as List<dynamic>?;
+
+      if (categoriesArray == null || categoriesArray.isEmpty) {
+        developer.log('FirestoreDatabase.watchCategories: Categories array is empty or null', name: 'Firestore');
+        return <Category>[];
+      }
+
+      final categories = categoriesArray
+          .map((categoryData) => CategoryModel.fromJson(categoryData as Map<String, dynamic>).toEntity())
           .toList();
+
+      // Sort by sortOrder
+      categories.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
       developer.log('FirestoreDatabase.watchCategories: Stream emitted ${categories.length} categories', name: 'Firestore');
       return categories;
+    }).handleError((error) {
+      throw DatabaseException('Failed to watch categories: $error');
     });
   }
 
   @override
   Stream<List<Category>> watchActiveCategories() {
-    return _firestore
-        .collection(_categoriesCollection)
-        .where('isArchived', isEqualTo: false)
-        .orderBy('sortOrder')
-        .snapshots()
-        .map((snapshot) {
-      final categories = snapshot.docs
-          .map((doc) => CategoryModel.fromFirestore(doc).toEntity())
-          .toList();
-
-      developer.log('FirestoreDatabase.watchActiveCategories: Stream emitted ${categories.length} active categories', name: 'Firestore');
-      return categories;
+    return watchCategories().map((categories) {
+      final activeCategories = categories.where((cat) => !cat.isArchived).toList();
+      developer.log('FirestoreDatabase.watchActiveCategories: Stream emitted ${activeCategories.length} active categories', name: 'Firestore');
+      return activeCategories;
     });
   }
 }
