@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/team_repository.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../../core/services/user_cache_service.dart';
 import 'user_selection_event.dart';
 import 'user_selection_state.dart';
 import 'dart:async';
@@ -136,6 +137,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
   ) async {
     try {
       await _userSelectionRepository.clearUserSelection();
+      UserCacheService().clearPasscodeDialogFlag();
       emit(const UserSignedOut());
     } catch (e) {
       emit(UserSelectionError('שגיאה בהתנתקות: $e'));

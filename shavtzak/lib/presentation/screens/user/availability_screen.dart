@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:uuid/uuid.dart';
+import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
-import '../../../core/constants/constraint_status.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
-import '../../widgets/date_picker_dialog.dart';
-import '../../widgets/loading_overlay.dart';
+import '../../bloc/event/event_bloc.dart';
+import '../../bloc/event/event_event.dart';
+import '../../bloc/event/event_state.dart';
 
-/// Screen for non-permanent users to manage their availability
+/// Screen for non-permanent users to manage their event-based availability
 class AvailabilityScreen extends StatefulWidget {
   const AvailabilityScreen({super.key});
 
@@ -21,44 +21,14 @@ class AvailabilityScreen extends StatefulWidget {
 
 class _AvailabilityScreenState extends State<AvailabilityScreen> {
   TeamMember? _lastKnownUser;
-
-  // Helper function to check if availability is past
-  bool _isPastAvailability(DateConstraint constraint) {
-    if (constraint.endDate != null) {
-      final today = DateTime.now();
-      final constraintEndDate = DateTime(
-        constraint.endDate!.year,
-        constraint.endDate!.month,
-        constraint.endDate!.day,
-      );
-      final todayDate = DateTime(
-        today.year,
-        today.month,
-        today.day,
-      );
-      return constraintEndDate.isBefore(todayDate);
-    } else {
-      // For single-day availability (no endDate), check if startDate is before today
-      final today = DateTime.now();
-      final constraintStartDate = DateTime(
-        constraint.startDate.year,
-        constraint.startDate.month,
-        constraint.startDate.day,
-      );
-      final todayDate = DateTime(
-        today.year,
-        today.month,
-        today.day,
-      );
-      return constraintStartDate.isBefore(todayDate);
-    }
-  }
+  List<Event> _futureEvents = [];
 
   @override
   void initState() {
     super.initState();
-    // Trigger load of all team members for real-time updates
+    // Load future events and team members for real-time updates
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<EventBloc>().add(const LoadUpcomingEvents());
       context.read<TeamBloc>().add(const LoadTeamMembers());
     });
   }
@@ -78,23 +48,21 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
               }
 
               return BlocConsumer<TeamBloc, TeamState>(
-                listener: (context, state) {
-                  // Only show error messages from TeamBloc for availability screen
-                  if (state is TeamError) {
+                listener: (context, teamState) {
+                  if (teamState is TeamError) {
                     ScaffoldMessenger.of(context)
                       ..clearSnackBars()
                       ..showSnackBar(
                         SnackBar(
                           content: Directionality(
                             textDirection: TextDirection.rtl,
-                            child: Text(state.message),
+                            child: Text(teamState.message),
                           ),
                           backgroundColor: Colors.red,
                           duration: const Duration(seconds: 2),
                         ),
                       );
                   }
-                  // Don't show TeamMemberOperationSuccess here - we'll show our own messages
                 },
                 builder: (context, teamState) {
                   // Show loading only if we don't have any data yet
@@ -133,83 +101,84 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
             },
           ),
         ),
-        floatingActionButton: FloatingActionButton(
-          heroTag: 'availability_fab',
-          onPressed: () => _addAvailability(context),
-          backgroundColor: Colors.green,
-          child: const Icon(Icons.add),
-        ),
       ),
     );
   }
 
   Widget _buildAvailabilityContent(BuildContext context, TeamMember user) {
-    // Filter out past availability from main list (they appear in history modal)
-    final availabilities = user.constraints
-        .where((c) => c.isAvailability && !_isPastAvailability(c))
-        .toList()
-      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+    return BlocBuilder<EventBloc, EventState>(
+      builder: (context, eventState) {
+        if (eventState is EventLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    return Column(
-      children: [
-        // Header
-        Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        if (eventState is EventsLoaded) {
+          _futureEvents = eventState.events
+              .where((event) => !_isPastEvent(event))
+              .toList()
+            ..sort((a, b) {
+              // Sort by date first, then by name
+              final dateComparison = a.startDate.compareTo(b.startDate);
+              if (dateComparison != 0) return dateComparison;
+              return a.name.compareTo(b.name);
+            });
+        }
+
+        return Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'הזמינות שלי',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Colors.green[700],
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'הזמינות שלי',
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          color: Colors.green[700],
+                        ),
+                      ),
+                      // History button for past events
+                      TextButton.icon(
+                        onPressed: () => _showPastEventsModal(context, user),
+                        icon: const Icon(
+                          Icons.history,
+                          size: 20,
+                        ),
+                        label: const Text(
+                          'אירועים שעברו',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.grey[600],
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                    ],
                   ),
-                  // History button for past availability
-                  TextButton.icon(
-                    onPressed: () => _showPastAvailabilityModal(context, user),
-                    icon: const Icon(
-                      Icons.history,
-                      size: 20,
-                    ),
-                    label: const Text(
-                      'זמינות שעברה',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.grey[600],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  const SizedBox(height: 8),
+                  Text(
+                    'כאן תוכל/י לסמן באילו אירועים את/ה זמין/ה להתנדב. הזמינות תשפיע מיד על האפשרות לשבץ אותך לאירועים.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[600],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                'כאן תוכל/י לסמן את התאריכים שבהם את/ה זמין/ה להתנדב. הזמינות שתסמן/י תשפיע מיד על האפשרות לשבץ אותך לאירועים.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
-          ),
-        ),
+            ),
 
-        // Availability list
-        Expanded(
-          child: availabilities.isEmpty
-              ? _buildEmptyState(context)
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: availabilities.length,
-                  itemBuilder: (context, index) {
-                    final availability = availabilities[index];
-                    return _buildAvailabilityCard(context, availability, user);
-                  },
-                ),
-        ),
-      ],
+            // Events list
+            Expanded(
+              child: _futureEvents.isEmpty
+                  ? _buildEmptyState(context)
+                  : _buildEventsList(context, user),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -225,14 +194,14 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'לא סימנת זמינות עדיין',
+            'אין אירועים עתידיים',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               color: Colors.grey[600],
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'לחץ/י על כפתור ההוספה כדי לסמן תאריכים שבהם תרצה/י להתנדב',
+            'כשיווצרו אירועים חדשים, תוכל/י לסמן את הזמינות שלך',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Colors.grey[500],
             ),
@@ -243,194 +212,150 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
     );
   }
 
-  Widget _buildAvailabilityCard(BuildContext context, DateConstraint availability, TeamMember user) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+  Widget _buildEventsList(BuildContext context, TeamMember user) {
+    // Group events by month
+    final groupedEvents = _groupEventsByMonth(_futureEvents);
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: groupedEvents.length,
+      itemBuilder: (context, index) {
+        final monthYear = groupedEvents.keys.elementAt(index);
+        final events = groupedEvents[monthYear]!;
+
+        return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    availability.toString(),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (availability.note != null && availability.note!.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                availability.note!,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
+            // Month header
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                monthYear,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Colors.grey[700],
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton.icon(
-                  onPressed: () => _editAvailability(context, availability, user),
-                  icon: const Icon(Icons.edit, color: Colors.blue),
-                  label: const Text('ערוך', style: TextStyle(color: Colors.blue)),
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () => _deleteAvailability(context, availability, user),
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  label: const Text('מחק', style: TextStyle(color: Colors.red)),
-                ),
-              ],
             ),
+            // Events for this month
+            ...events.map((event) => _buildEventCard(context, event, user)),
+            const SizedBox(height: 16),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 
-  
-  void _addAvailability(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => _AddAvailabilityDialog(
-        onAdd: (startDate, endDate, note) {
-          // Create the new availability constraint
-          final newAvailability = DateConstraint(
-            id: const Uuid().v4(),
-            startDate: startDate,
-            endDate: endDate,
-            note: note?.isNotEmpty == true ? note : null,
-            status: ConstraintStatus.approved, // Auto-approved for availability
-            constraintType: ConstraintType.availability,
-          );
+  Widget _buildEventCard(BuildContext context, Event event, TeamMember user) {
+    final isAvailable = user.availableEventIds.contains(event.id);
+    final formattedLocation = event.location.isNotEmpty
+        ? _formatLocationForDisplay(event.location)
+        : '';
 
-          // Get current user state and team state
-          final userState = context.read<UserSelectionBloc>().state;
-          final teamState = context.read<TeamBloc>().state;
-
-          if (userState is UserAuthenticated && teamState is TeamLoaded) {
-            // Find the current user from the fresh team data
-            final currentUser = teamState.members.firstWhere(
-              (member) => member.id == userState.user.id,
-              orElse: () => userState.user,
-            );
-
-            final updatedUser = currentUser.copyWith(
-              constraints: [...currentUser.constraints, newAvailability],
-            );
-
-            context.read<TeamBloc>().add(UpdateTeamMember(updatedUser));
-
-            // Show our own success message for availability
-            ScaffoldMessenger.of(context)
-              ..clearSnackBars()
-              ..showSnackBar(
-                const SnackBar(
-                  content: Directionality(
-                    textDirection: TextDirection.rtl,
-                    child: Text('הזמינות נוספה בהצלחה'),
-                  ),
-                  backgroundColor: Colors.green,
-                  duration: Duration(seconds: 2),
-                ),
-              );
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: isAvailable ? Colors.green[50] : Colors.white,
+      child: CheckboxListTile(
+        value: isAvailable,
+        onChanged: (bool? value) {
+          if (value != null) {
+            _toggleEventAvailability(context, event, user, value);
           }
         },
-      ),
-    );
-  }
-
-  void _editAvailability(BuildContext context, DateConstraint availability, TeamMember user) {
-    showDialog(
-      context: context,
-      builder: (context) => _EditAvailabilityDialog(
-        availability: availability,
-        user: user,
-        onSave: (startDate, endDate, note) {
-          final updatedAvailability = availability.copyWith(
-            startDate: startDate,
-            endDate: endDate,
-            note: note?.isNotEmpty == true ? note : null,
-          );
-
-          final updatedConstraints = user.constraints
-              .map((c) => c.id == availability.id ? updatedAvailability : c)
-              .toList();
-
-          context.read<TeamBloc>().add(
-                UpdateTeamMember(
-                  user.copyWith(constraints: updatedConstraints),
-                ),
-          );
-
-          // Show success message
-          ScaffoldMessenger.of(context)
-            ..clearSnackBars()
-            ..showSnackBar(
-              const SnackBar(
-                content: Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: Text('הזמינות עודכנה בהצלחה'),
-                ),
-                backgroundColor: Colors.green,
-                duration: Duration(seconds: 2),
+        controlAffinity: ListTileControlAffinity.leading,
+        title: Text(
+          event.name,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            color: isAvailable ? Colors.green[700] : Colors.black87,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _formatEventDates(event),
+              style: TextStyle(
+                fontWeight: isAvailable ? FontWeight.bold : FontWeight.normal,
               ),
-            );
-        },
+            ),
+            if (formattedLocation.isNotEmpty)
+              Text(
+                'מיקום: $formattedLocation',
+                style: TextStyle(
+                  fontWeight: isAvailable ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+          ],
+        ),
+        activeColor: Colors.green,
+        checkColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
     );
   }
 
-  void _deleteAvailability(BuildContext context, DateConstraint availability, TeamMember user) {
+  void _toggleEventAvailability(BuildContext context, Event event, TeamMember user, bool isAvailable) {
+    final userState = context.read<UserSelectionBloc>().state;
+    final teamState = context.read<TeamBloc>().state;
+
+    if (userState is UserAuthenticated && teamState is TeamLoaded) {
+      // Find the current user from the fresh team data
+      final currentUser = teamState.members.firstWhere(
+        (member) => member.id == userState.user.id,
+        orElse: () => userState.user,
+      );
+
+      // Toggle event availability
+      final updatedEventIds = List<String>.from(currentUser.availableEventIds);
+      if (isAvailable) {
+        if (!updatedEventIds.contains(event.id)) {
+          updatedEventIds.add(event.id);
+        }
+      } else {
+        updatedEventIds.remove(event.id);
+      }
+
+      final updatedUser = currentUser.copyWith(
+        availableEventIds: updatedEventIds,
+      );
+
+      context.read<TeamBloc>().add(UpdateTeamMember(updatedUser));
+
+      // Show success message
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Text(isAvailable ? 'נוספה זמינות לאירוע' : 'הוסרה זמינות מהאירוע'),
+            ),
+            backgroundColor: isAvailable ? Colors.green : Colors.orange,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+    }
+  }
+
+  void _showPastEventsModal(BuildContext context, TeamMember user) {
+    // Since we only have future events loaded, show a message explaining that
+    // In a real scenario, you might want to load past events or store history separately
     showDialog(
       context: context,
       builder: (context) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
-          title: const Text('מחיקת זמינות'),
-          content: const Text('האם את/ה בטוח/ה שברצונך למחוק זמינות זו?'),
+          title: const Text('אירועים שעברו'),
+          content: const Text(
+            'הזמינות לאירועים עתידיים מוצגת במסך הראשי. '
+            'אירועים שעברו מוסרים אוטומטית מרשימת הזמינות.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('ביטול'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                final updatedConstraints = user.constraints
-                    .where((c) => c.id != availability.id)
-                    .toList();
-
-                context.read<TeamBloc>().add(
-                      UpdateTeamMember(
-                        user.copyWith(constraints: updatedConstraints),
-                      ),
-                    );
-
-                // Show success message for deletion
-                ScaffoldMessenger.of(context)
-                  ..clearSnackBars()
-                  ..showSnackBar(
-                    const SnackBar(
-                      content: Directionality(
-                        textDirection: TextDirection.rtl,
-                        child: Text('הזמינות נמחקה בהצלחה'),
-                      ),
-                      backgroundColor: Colors.green,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-              },
-              child: const Text('מחק'),
+              child: const Text('הבנתי'),
             ),
           ],
         ),
@@ -438,392 +363,71 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
     );
   }
 
-  void _showPastAvailabilityModal(BuildContext context, TeamMember user) {
-    final pastAvailabilities = user.constraints
-        .where((c) => c.isAvailability && _isPastAvailability(c))
-        .toList()
-      ..sort((a, b) => b.startDate.compareTo(a.startDate));
+  /// Group events by month for easier navigation
+  Map<String, List<Event>> _groupEventsByMonth(List<Event> events) {
+    final grouped = <String, List<Event>>{};
 
-    showDialog(
-      context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('זמינות שעברה'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: pastAvailabilities.isEmpty
-                ? const Text('אין זמינות שעברה')
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: pastAvailabilities.length,
-                    itemBuilder: (context, index) {
-                      final availability = pastAvailabilities[index];
-                      return ListTile(
-                        leading: Icon(
-                          Icons.history,
-                          color: Colors.grey[600],
-                        ),
-                        title: Text(availability.toString()),
-                        subtitle: availability.note != null ? Text(availability.note!) : null,
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('סגור'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+    for (final event in events) {
+      final monthKey = _getHebrewMonthYear(event.startDate);
+      grouped.putIfAbsent(monthKey, () => []).add(event);
+    }
 
-class _AddAvailabilityDialog extends StatefulWidget {
-  final Function(DateTime startDate, DateTime? endDate, String? note) onAdd;
-
-  const _AddAvailabilityDialog({required this.onAdd});
-
-  @override
-  State<_AddAvailabilityDialog> createState() => _AddAvailabilityDialogState();
-}
-
-class _AddAvailabilityDialogState extends State<_AddAvailabilityDialog> {
-  DateTime? startDate;
-  DateTime? endDate;
-  final noteController = TextEditingController();
-  bool _canSubmit = false;
-  bool _isSaving = false;
-
-  bool _isSameDay(DateTime date1, DateTime date2) {
-    return date1.year == date2.year &&
-        date1.month == date2.month &&
-        date1.day == date2.day;
+    return grouped;
   }
 
-  @override
-  void initState() {
-    super.initState();
-    // Note is optional for availability, so we can submit without it
-    _updateCanSubmit();
+  /// Get Hebrew month and year for grouping
+  String _getHebrewMonthYear(DateTime date) {
+    const months = [
+      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    ];
+    return '${months[date.month]} ${date.year}';
   }
 
-  @override
-  void dispose() {
-    noteController.dispose();
-    super.dispose();
-  }
+  /// Format event dates in Hebrew
+  String _formatEventDates(Event event) {
+    final isSameDay = event.startDate.year == event.endDate.year &&
+        event.startDate.month == event.endDate.month &&
+        event.startDate.day == event.endDate.day;
 
-  void _updateCanSubmit() {
-    setState(() {
-      _canSubmit = startDate != null;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Stack(
-        children: [
-          AlertDialog(
-            title: const Text(
-              'הוספת זמינות',
-              textAlign: TextAlign.right,
-            ),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('תאריכים:'),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: _selectDateRange,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.calendar_today),
-                      const SizedBox(width: 8),
-                      Text(
-                        startDate != null
-                            ? (endDate != null && !_isSameDay(startDate!, endDate!)
-                                ? '${_formatDate(startDate!)} - ${_formatDate(endDate!)}'
-                                : _formatDate(startDate!))
-                            : 'בחר תאריכים',
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text('הערה (אופציונלי):'),
-              const SizedBox(height: 8),
-              TextField(
-                controller: noteController,
-                textAlign: TextAlign.right,
-                textAlignVertical: TextAlignVertical.top,
-                textDirection: TextDirection.rtl,
-                decoration: InputDecoration(
-                  hintText: 'פרטים נוספים על הזמינות שלך...',
-                  border: const OutlineInputBorder(),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                  hintStyle: TextStyle(
-                    color: Colors.grey[600],
-                    height: 1.5,
-                  ),
-                  hintTextDirection: TextDirection.rtl,
-                ),
-                maxLines: 3,
-                minLines: 3,
-                style: const TextStyle(height: 1.5),
-                scrollPhysics: const BouncingScrollPhysics(),
-                onChanged: (value) => _updateCanSubmit(),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-            child: const Text('ביטול'),
-          ),
-          ElevatedButton(
-            onPressed: (_canSubmit && !_isSaving)
-                ? () {
-                    if (_isSaving) return;
-                    setState(() => _isSaving = true);
-                    Navigator.of(context).pop();
-                    widget.onAdd(
-                      startDate!,
-                      endDate,
-                      noteController.text.trim().isEmpty ? null : noteController.text.trim(),
-                    );
-                  }
-                : null,
-            child: const Text('הוספה'),
-          ),
-        ],
-          ),
-          LoadingOverlay(isLoading: _isSaving, message: 'מעדכן זמינות...'),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _selectDateRange() async {
-    final today = DateTime.now();
-    final todayDate = DateTime(today.year, today.month, today.day);
-
-    final result = await showDialog<Map<String, DateTime?>>(
-      context: context,
-      builder: (context) => DualCalendarDatePicker(
-        isSingleDate: false,
-        initialStartDate: startDate,
-        initialEndDate: endDate,
-        title: 'בחר תאריכי זמינות',
-        minDate: todayDate, // Prevent selecting dates before today
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        startDate = result['startDate']!;
-        endDate = result['endDate'];
-
-        // If only start date selected, set end date to start date (single-day availability)
-        endDate ??= startDate;
-      });
-      _updateCanSubmit();
+    if (isSameDay) {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)}';
+    } else {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)} - יום ${_getFullHebrewDayName(event.endDate.weekday)} ${event.endDate.day} ב${_getHebrewMonthName(event.endDate.month)}';
     }
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-  }
-}
-
-class _EditAvailabilityDialog extends StatefulWidget {
-  final DateConstraint availability;
-  final TeamMember user;
-  final Function(DateTime startDate, DateTime? endDate, String? note) onSave;
-
-  const _EditAvailabilityDialog({
-    required this.availability,
-    required this.user,
-    required this.onSave,
-  });
-
-  @override
-  State<_EditAvailabilityDialog> createState() => _EditAvailabilityDialogState();
-}
-
-class _EditAvailabilityDialogState extends State<_EditAvailabilityDialog> {
-  late DateTime startDate;
-  DateTime? endDate;
-  late TextEditingController noteController;
-  bool _canSubmit = false;
-  bool _isSaving = false;
-
-  bool _isSameDay(DateTime date1, DateTime date2) {
-    return date1.year == date2.year &&
-        date1.month == date2.month &&
-        date1.day == date2.day;
+  /// Get full Hebrew day name (e.g., "ראשון", "שני")
+  String _getFullHebrewDayName(int weekday) {
+    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    return days[weekday == 7 ? 7 : weekday];
   }
 
-  @override
-  void initState() {
-    super.initState();
-    startDate = widget.availability.startDate;
-    endDate = widget.availability.endDate;
-    noteController = TextEditingController(text: widget.availability.note ?? '');
-    _updateCanSubmit();
+  /// Get Hebrew month name (e.g., "פברואר")
+  String _getHebrewMonthName(int month) {
+    const months = [
+      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    ];
+    return months[month];
   }
 
-  @override
-  void dispose() {
-    noteController.dispose();
-    super.dispose();
+  /// Check if event is past (before today)
+  bool _isPastEvent(Event event) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final eventEndDate = DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
+    return eventEndDate.isBefore(today);
   }
 
-  void _updateCanSubmit() {
-    setState(() {
-      _canSubmit = true; // Always true for editing availability
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Stack(
-        children: [
-          AlertDialog(
-            title: const Text(
-              'עריכת זמינות',
-              textAlign: TextAlign.right,
-            ),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('תאריכים:'),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: _selectDateRange,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.calendar_today),
-                      const SizedBox(width: 8),
-                      Text(
-                        endDate != null && !_isSameDay(startDate, endDate!)
-                            ? '${_formatDate(startDate)} - ${_formatDate(endDate!)}'
-                            : _formatDate(startDate),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text('הערה (אופציונלי):'),
-              const SizedBox(height: 8),
-              TextField(
-                controller: noteController,
-                textAlign: TextAlign.right,
-                textAlignVertical: TextAlignVertical.top,
-                textDirection: TextDirection.rtl,
-                decoration: InputDecoration(
-                  hintText: 'פרטים נוספים על הזמינות שלך...',
-                  border: const OutlineInputBorder(),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                  hintStyle: TextStyle(
-                    color: Colors.grey[600],
-                    height: 1.5,
-                  ),
-                  hintTextDirection: TextDirection.rtl,
-                ),
-                maxLines: 3,
-                minLines: 3,
-                style: const TextStyle(height: 1.5),
-                scrollPhysics: const BouncingScrollPhysics(),
-                onChanged: (value) => _updateCanSubmit(),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-            child: const Text('ביטול'),
-          ),
-          ElevatedButton(
-            onPressed: (_canSubmit && !_isSaving)
-                ? () {
-                    if (_isSaving) return;
-                    setState(() => _isSaving = true);
-                    Navigator.of(context).pop();
-                    widget.onSave(
-                      startDate,
-                      endDate,
-                      noteController.text.trim().isEmpty ? null : noteController.text.trim(),
-                    );
-                  }
-                : null,
-            child: const Text('שמור שינויים'),
-          ),
-        ],
-          ),
-          LoadingOverlay(isLoading: _isSaving, message: 'מעדכן זמינות...'),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _selectDateRange() async {
-    final today = DateTime.now();
-    final todayDate = DateTime(today.year, today.month, today.day);
-
-    final result = await showDialog<Map<String, DateTime?>>(
-      context: context,
-      builder: (context) => DualCalendarDatePicker(
-        isSingleDate: false,
-        initialStartDate: startDate,
-        initialEndDate: endDate,
-        title: 'בחר תאריכי זמינות',
-        minDate: todayDate, // Prevent selecting dates before today
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        startDate = result['startDate']!;
-        endDate = result['endDate'];
-
-        // If only start date selected, set end date to start date (single-day availability)
-        endDate ??= startDate;
-      });
-      _updateCanSubmit();
+  /// Format location for display - remove coordinates
+  String _formatLocationForDisplay(String location) {
+    if (location.contains('||')) {
+      // Extract the part before the "||" separator
+      final parts = location.split('||');
+      final strippedLocation = parts[0].trim();
+      return strippedLocation.isNotEmpty ? strippedLocation : location;
     }
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    return location;
   }
 }

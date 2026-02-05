@@ -1726,9 +1726,9 @@ class FirestoreDatabase implements DatabaseInterface {
           ccIds: templateItem.ccIds,
           ccNotes: const {},
           responsibleNote: const ResponsibleNoteEntry(note: ''),
-          adminNote: templateItem.adminNote.isNotEmpty
-              ? AdminNoteEntry(note: templateItem.adminNote, updatedAt: now)
-              : const AdminNoteEntry(note: ''),
+          adminNotes: templateItem.adminNote.isNotEmpty && creatorAdminId != null
+              ? {creatorAdminId: AdminNoteEntry(note: templateItem.adminNote, updatedAt: now)}
+              : const {},
           status: false,
           createdAt: now,
           updatedAt: now,

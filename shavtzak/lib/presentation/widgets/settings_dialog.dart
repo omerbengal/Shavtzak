@@ -22,6 +22,27 @@ class SettingsDialog extends StatefulWidget {
 class _SettingsDialogState extends State<SettingsDialog> {
   bool _isDeleting = false;
 
+  // Helper method to calculate responsive font size
+  double _getResponsiveFontSize(BuildContext context, double baseSize) {
+    final width = MediaQuery.of(context).size.width;
+    if (width >= 400) return baseSize;
+    return baseSize * (width / 400);
+  }
+
+  // Helper method to calculate responsive padding
+  double _getResponsivePadding(BuildContext context, double basePadding) {
+    final width = MediaQuery.of(context).size.width;
+    if (width >= 400) return basePadding;
+    return basePadding * (width / 400);
+  }
+
+  // Helper method to calculate responsive icon size
+  double _getResponsiveIconSize(BuildContext context, double baseSize) {
+    final width = MediaQuery.of(context).size.width;
+    if (width >= 400) return baseSize;
+    return baseSize * (width / 400);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -62,7 +83,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
           }
         },
         child: AlertDialog(
-          title: const Text('הגדרות'),
+          title: const Center(child: Text('הגדרות')),
           content: ConstrainedBox(
             constraints: BoxConstraints(
               maxWidth: 350,
@@ -76,7 +97,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
               Card(
                 elevation: 2,
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(_getResponsivePadding(context, 8)),
                   child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
                     builder: (context, state) {
                       if (state is! UserAuthenticated) {
@@ -86,6 +107,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
                       final phone = state.user.phoneNumber;
                       final hasPhone = phone != null && phone.isNotEmpty;
                       final formattedPhone = Validators.formatPhoneNumber(phone);
+                      final iconSize = _getResponsiveIconSize(context, 18);
+                      final fontSize = _getResponsiveFontSize(context, 16);
+                      final titleFontSize = _getResponsiveFontSize(context, 18);
+                      final buttonPadding = _getResponsivePadding(context, 16);
+                      final spacing = _getResponsivePadding(context, 8);
+                      final iconSpacing = _getResponsivePadding(context, 4);
 
                       if (hasPhone) {
                         return Column(
@@ -96,53 +123,54 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 Icon(
                                   Icons.phone,
                                   color: Theme.of(context).primaryColor,
+                                  size: iconSize,
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
+                                SizedBox(width: iconSpacing),
+                                Text(
                                   'מספר טלפון',
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: TextStyle(fontSize: titleFontSize, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.01),
                             Text(
                               formattedPhone,
-                              style: const TextStyle(
-                                fontSize: 16,
+                              style: TextStyle(
+                                fontSize: fontSize,
                                 color: Colors.blue,
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.015),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 ElevatedButton.icon(
                                   onPressed: () => _showPhoneEditDialog(context),
-                                  icon: const Icon(Icons.edit, size: 18, color: Colors.white),
-                                  label: const Text('ערוך'),
+                                  icon: Icon(Icons.edit, size: iconSize, color: Colors.white),
+                                  label: Text('ערוך', style: TextStyle(fontSize: fontSize * 0.75)),
                                   style: ElevatedButton.styleFrom(
-                                    minimumSize: const Size(0, 36),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    minimumSize: Size(0, 36 * (MediaQuery.of(context).size.width / 400).clamp(0.7, 1.0)),
+                                    padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
                                   ),
                                 ),
-                                const SizedBox(width: 12),
+                                SizedBox(width: spacing),
                                 OutlinedButton.icon(
                                   onPressed: _isDeleting ? null : () => _deletePhoneNumber(context),
                                   icon: _isDeleting
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.red)),
+                                      ? SizedBox(
+                                          width: iconSize,
+                                          height: iconSize,
+                                          child: CircularProgressIndicator(strokeWidth: 2, valueColor: const AlwaysStoppedAnimation<Color>(Colors.red)),
                                         )
-                                      : const Icon(Icons.delete, size: 18, color: Colors.red),
+                                      : Icon(Icons.delete, size: iconSize, color: Colors.red),
                                   label: Text(
                                     _isDeleting ? 'מוחק...' : 'מחק',
-                                    style: const TextStyle(color: Colors.red),
+                                    style: TextStyle(color: Colors.red, fontSize: fontSize * 0.75),
                                   ),
                                   style: OutlinedButton.styleFrom(
-                                    minimumSize: const Size(0, 36),
+                                    minimumSize: Size(0, 36 * (MediaQuery.of(context).size.width / 400).clamp(0.7, 1.0)),
                                     side: const BorderSide(color: Colors.red),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
                                   ),
                                 ),
                               ],
@@ -158,26 +186,30 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 Icon(
                                   Icons.phone_disabled,
                                   color: Colors.grey[400],
+                                  size: iconSize,
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
+                                SizedBox(width: iconSpacing),
+                                Text(
                                   'מספר טלפון',
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: TextStyle(fontSize: titleFontSize, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            const Text(
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.01),
+                            Text(
                               'לא הוגדר מספר טלפון',
-                              style: TextStyle(fontSize: 16, color: Colors.grey),
+                              style: TextStyle(fontSize: fontSize, color: Colors.grey),
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.015),
                             ElevatedButton.icon(
                               onPressed: () => _showPhoneEditDialog(context),
-                              icon: const Icon(Icons.add),
-                              label: const Text('הוסף מספר טלפון'),
+                              icon: Icon(Icons.add, color: Colors.white, size: iconSize),
+                              label: Text(
+                                'הוסף מספר טלפון',
+                                style: TextStyle(fontSize: fontSize * 0.85),
+                              ),
                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
                               ),
                             ),
                           ],
@@ -187,12 +219,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: MediaQuery.of(context).size.height * 0.02),
               // Birthday section
               Card(
                 elevation: 2,
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(_getResponsivePadding(context, 8)),
                   child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
                     builder: (context, state) {
                       if (state is! UserAuthenticated) {
@@ -201,6 +233,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
                       final birthday = state.user.birthday;
                       final hasBirthday = birthday != null;
+                      final iconSize = _getResponsiveIconSize(context, 18);
+                      final fontSize = _getResponsiveFontSize(context, 16);
+                      final titleFontSize = _getResponsiveFontSize(context, 18);
+                      final buttonPadding = _getResponsivePadding(context, 16);
+                      final spacing = _getResponsivePadding(context, 8);
+                      final iconSpacing = _getResponsivePadding(context, 4);
 
                       if (hasBirthday) {
                         final formattedBirthday = '${birthday.day.toString().padLeft(2, '0')}/${birthday.month.toString().padLeft(2, '0')}/${birthday.year}';
@@ -209,50 +247,51 @@ class _SettingsDialogState extends State<SettingsDialog> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(
+                                Icon(
                                   Icons.cake,
                                   color: Colors.pink,
+                                  size: iconSize,
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
+                                SizedBox(width: iconSpacing),
+                                Text(
                                   'יום הולדת',
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: TextStyle(fontSize: titleFontSize, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.01),
                             Text(
                               formattedBirthday,
-                              style: const TextStyle(
-                                fontSize: 16,
+                              style: TextStyle(
+                                fontSize: fontSize,
                                 color: Colors.pink,
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.015),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 ElevatedButton.icon(
                                   onPressed: () => _showBirthdayEditDialog(context),
-                                  icon: const Icon(Icons.edit, size: 18, color: Colors.white),
-                                  label: const Text('ערוך'),
+                                  icon: Icon(Icons.edit, size: iconSize, color: Colors.white),
+                                  label: Text('ערוך', style: TextStyle(fontSize: fontSize * 0.75)),
                                   style: ElevatedButton.styleFrom(
-                                    minimumSize: const Size(0, 36),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    minimumSize: Size(0, 36 * (MediaQuery.of(context).size.width / 400).clamp(0.7, 1.0)),
+                                    padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
                                   ),
                                 ),
-                                const SizedBox(width: 12),
+                                SizedBox(width: spacing),
                                 OutlinedButton.icon(
                                   onPressed: () => _deleteBirthday(context),
-                                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                  label: const Text(
+                                  icon: Icon(Icons.delete, size: iconSize, color: Colors.red),
+                                  label: Text(
                                     'מחק',
-                                    style: TextStyle(color: Colors.red),
+                                    style: TextStyle(color: Colors.red, fontSize: fontSize * 0.75),
                                   ),
                                   style: OutlinedButton.styleFrom(
-                                    minimumSize: const Size(0, 36),
+                                    minimumSize: Size(0, 36 * (MediaQuery.of(context).size.width / 400).clamp(0.7, 1.0)),
                                     side: const BorderSide(color: Colors.red),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
                                   ),
                                 ),
                               ],
@@ -268,26 +307,30 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 Icon(
                                   Icons.cake_outlined,
                                   color: Colors.grey[400],
+                                  size: iconSize,
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
+                                SizedBox(width: iconSpacing),
+                                Text(
                                   'יום הולדת',
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: TextStyle(fontSize: titleFontSize, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            const Text(
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.01),
+                            Text(
                               'לא הוגדר יום הולדת',
-                              style: TextStyle(fontSize: 16, color: Colors.grey),
+                              style: TextStyle(fontSize: fontSize, color: Colors.grey),
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.015),
                             ElevatedButton.icon(
                               onPressed: () => _showBirthdayEditDialog(context),
-                              icon: const Icon(Icons.add),
-                              label: const Text('הוסף יום הולדת'),
+                              icon: Icon(Icons.add, color: Colors.white, size: iconSize),
+                              label: Text(
+                                'הוסף יום הולדת',
+                                style: TextStyle(fontSize: fontSize * 0.85),
+                              ),
                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
                               ),
                             ),
                           ],
@@ -297,12 +340,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: MediaQuery.of(context).size.height * 0.02),
               // Vehicle info section
               Card(
                 elevation: 2,
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(_getResponsivePadding(context, 8)),
                   child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
                     builder: (context, state) {
                       if (state is! UserAuthenticated) {
@@ -311,6 +354,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
                       final vehicleInfo = state.user.vehicleInfo;
                       final hasVehicleInfo = vehicleInfo != null;
+                      final iconSize = _getResponsiveIconSize(context, 18);
+                      final fontSize = _getResponsiveFontSize(context, 16);
+                      final titleFontSize = _getResponsiveFontSize(context, 18);
+                      final buttonPadding = _getResponsivePadding(context, 16);
+                      final spacing = _getResponsivePadding(context, 8);
+                      final iconSpacing = _getResponsivePadding(context, 4);
 
                       if (hasVehicleInfo) {
                         return Column(
@@ -318,51 +367,52 @@ class _SettingsDialogState extends State<SettingsDialog> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(
+                                Icon(
                                   Icons.directions_car,
                                   color: Colors.blue,
+                                  size: iconSize,
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
+                                SizedBox(width: iconSpacing),
+                                Text(
                                   'פרטי רכב',
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: TextStyle(fontSize: titleFontSize, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.01),
                             Text(
                               vehicleInfo.displayString,
-                              style: const TextStyle(
-                                fontSize: 16,
+                              style: TextStyle(
+                                fontSize: fontSize,
                                 color: Colors.blue,
                               ),
                               textAlign: TextAlign.center,
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.015),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 ElevatedButton.icon(
                                   onPressed: () => _showVehicleInfoEditDialog(context),
-                                  icon: const Icon(Icons.edit, size: 18, color: Colors.white),
-                                  label: const Text('ערוך'),
+                                  icon: Icon(Icons.edit, size: iconSize, color: Colors.white),
+                                  label: Text('ערוך', style: TextStyle(fontSize: fontSize * 0.75)),
                                   style: ElevatedButton.styleFrom(
-                                    minimumSize: const Size(0, 36),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    minimumSize: Size(0, 36 * (MediaQuery.of(context).size.width / 400).clamp(0.7, 1.0)),
+                                    padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
                                   ),
                                 ),
-                                const SizedBox(width: 12),
+                                SizedBox(width: spacing),
                                 OutlinedButton.icon(
                                   onPressed: () => _deleteVehicleInfo(context),
-                                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                  label: const Text(
+                                  icon: Icon(Icons.delete, size: iconSize, color: Colors.red),
+                                  label: Text(
                                     'מחק',
-                                    style: TextStyle(color: Colors.red),
+                                    style: TextStyle(color: Colors.red, fontSize: fontSize * 0.75),
                                   ),
                                   style: OutlinedButton.styleFrom(
-                                    minimumSize: const Size(0, 36),
+                                    minimumSize: Size(0, 36 * (MediaQuery.of(context).size.width / 400).clamp(0.7, 1.0)),
                                     side: const BorderSide(color: Colors.red),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
                                   ),
                                 ),
                               ],
@@ -378,26 +428,30 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 Icon(
                                   Icons.directions_car_outlined,
                                   color: Colors.grey[400],
+                                  size: iconSize,
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
+                                SizedBox(width: iconSpacing),
+                                Text(
                                   'פרטי רכב',
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: TextStyle(fontSize: titleFontSize, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            const Text(
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.01),
+                            Text(
                               'לא הוגדרו פרטי רכב',
-                              style: TextStyle(fontSize: 16, color: Colors.grey),
+                              style: TextStyle(fontSize: fontSize, color: Colors.grey),
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.015),
                             ElevatedButton.icon(
                               onPressed: () => _showVehicleInfoEditDialog(context),
-                              icon: const Icon(Icons.add),
-                              label: const Text('הוסף פרטי רכב'),
+                              icon: Icon(Icons.add, color: Colors.white, size: iconSize),
+                              label: Text(
+                                'הוסף פרטי רכב',
+                                style: TextStyle(fontSize: fontSize * 0.85),
+                              ),
                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
                               ),
                             ),
                           ],
@@ -407,12 +461,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: MediaQuery.of(context).size.height * 0.02),
               // Passcode section
               Card(
                 elevation: 2,
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(_getResponsivePadding(context, 8)),
                   child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
                     builder: (context, state) {
                       if (state is! UserAuthenticated) {
@@ -421,6 +475,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
                       final hasPasscode = state.user.passcode != null;
                       final passcodeLength = state.user.passcodeLength ?? 0;
+                      final iconSize = _getResponsiveIconSize(context, 18);
+                      final fontSize = _getResponsiveFontSize(context, 16);
+                      final titleFontSize = _getResponsiveFontSize(context, 18);
+                      final buttonPadding = _getResponsivePadding(context, 16);
+                      final spacing = _getResponsivePadding(context, 8);
+                      final iconSpacing = _getResponsivePadding(context, 4);
 
                       if (hasPasscode) {
                         return Column(
@@ -431,44 +491,45 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 Icon(
                                   Icons.lock,
                                   color: Theme.of(context).primaryColor,
+                                  size: iconSize,
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
+                                SizedBox(width: iconSpacing),
+                                Text(
                                   'קוד גישה',
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: TextStyle(fontSize: titleFontSize, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.01),
                             Text(
                               'קוד גישה מוגדר ($passcodeLength ספרות)',
-                              style: const TextStyle(fontSize: 16),
+                              style: TextStyle(fontSize: fontSize),
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.015),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 ElevatedButton.icon(
                                   onPressed: () => _showChangePasscodeDialog(context),
-                                  icon: const Icon(Icons.edit, size: 18, color: Colors.white),
-                                  label: const Text('ערוך'),
+                                  icon: Icon(Icons.edit, size: iconSize, color: Colors.white),
+                                  label: Text('ערוך', style: TextStyle(fontSize: fontSize * 0.75)),
                                   style: ElevatedButton.styleFrom(
-                                    minimumSize: const Size(0, 36),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    minimumSize: Size(0, 36 * (MediaQuery.of(context).size.width / 400).clamp(0.7, 1.0)),
+                                    padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
                                   ),
                                 ),
-                                const SizedBox(width: 12),
+                                SizedBox(width: spacing),
                                 OutlinedButton.icon(
                                   onPressed: () => _showRemovePasscodeDialog(context),
-                                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                  label: const Text(
+                                  icon: Icon(Icons.delete, size: iconSize, color: Colors.red),
+                                  label: Text(
                                     'מחק',
-                                    style: TextStyle(color: Colors.red),
+                                    style: TextStyle(color: Colors.red, fontSize: fontSize * 0.75),
                                   ),
                                   style: OutlinedButton.styleFrom(
-                                    minimumSize: const Size(0, 36),
+                                    minimumSize: Size(0, 36 * (MediaQuery.of(context).size.width / 400).clamp(0.7, 1.0)),
                                     side: const BorderSide(color: Colors.red),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
                                   ),
                                 ),
                               ],
@@ -484,27 +545,31 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 Icon(
                                   Icons.lock_open,
                                   color: Colors.grey[400],
+                                  size: iconSize,
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
+                                SizedBox(width: iconSpacing),
+                                Text(
                                   'קוד גישה',
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: TextStyle(fontSize: titleFontSize, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            const Text(
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.01),
+                            Text(
                               'לא הוגדר קוד גישה',
-                              style: TextStyle(fontSize: 16, color: Colors.grey),
+                              style: TextStyle(fontSize: fontSize, color: Colors.grey),
                             ),
-                            const SizedBox(height: 24),
-                            ElevatedButton(
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.02),
+                            ElevatedButton.icon(
                               onPressed: () => _showSetupPasscodeDialog(context),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                textStyle: const TextStyle(fontSize: 16),
+                              icon: Icon(Icons.add, color: Colors.white, size: iconSize),
+                              label: Text(
+                                'הגדר קוד גישה',
+                                style: TextStyle(fontSize: fontSize * 0.85),
                               ),
-                              child: const Text('הגדר קוד גישה'),
+                              style: ElevatedButton.styleFrom(
+                                padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
+                              ),
                             ),
                           ],
                         );

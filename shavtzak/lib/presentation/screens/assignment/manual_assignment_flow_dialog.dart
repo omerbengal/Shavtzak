@@ -63,7 +63,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
             if (state is TeamLoaded) {
               setState(() {
                 _teamMembers = state.members
-                    .where((member) => member.isActive)
+                    .where((member) => member.isActive && !member.isArchived)
                     .toList()
                   ..sort((a, b) => a.name.compareTo(b.name));
               });
@@ -505,7 +505,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     });
   }
 
-  /// Check if non-permanent member has availability for the event dates
+  /// Check if member has availability for the selected event
   bool _hasAvailabilityForEvent(TeamMember teamMember) {
     // Members with allowMultipleAssignments bypass availability checks
     if (teamMember.allowMultipleAssignments) return true;
@@ -515,21 +515,8 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
 
     if (_selectedEvent == null) return false;
 
-    // For non-permanent members, check if they have approved availability that covers the event
-    return teamMember.constraints.any((constraint) {
-      // Only consider APPROVED availability constraints
-      if (constraint.status != ConstraintStatus.approved) return false;
-      if (constraint.constraintType != ConstraintType.availability) return false;
-
-      // Check if availability covers the entire event date range
-      final constraintStart = constraint.startDate;
-      final constraintEnd = constraint.endDate ?? constraint.startDate;
-
-      // Availability must start before or on event start and end after or on event end
-      return constraintStart.isBefore(_selectedEvent!.startDate.add(const Duration(days: 1))) &&
-             (constraintEnd.isAfter(_selectedEvent!.endDate.subtract(const Duration(days: 1))) ||
-              constraintEnd.isAtSameMomentAs(_selectedEvent!.endDate));
-    });
+    // For non-permanent members, use the new event-based availability system
+    return teamMember.isAvailableForEvent(_selectedEvent!.id);
   }
 
   void _showConstraintWarning(TeamMember teamMember) {
@@ -648,10 +635,9 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
 
   void _finish() {
     if (_selectedEvent != null && _selectedTeamMember != null && _selectedRole != null) {
-      // Final validation for non-permanent members
+      // Final validation for non-permanent members using the new event-based availability
       if (!_selectedTeamMember!.isPermanent) {
-        final hasAvailability = _hasAvailabilityForEvent(_selectedTeamMember!);
-        if (!hasAvailability) {
+        if (!_selectedTeamMember!.isAvailableForEvent(_selectedEvent!.id)) {
           showDialog(
             context: context,
             builder: (dialogContext) => Directionality(
@@ -659,7 +645,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
               child: AlertDialog(
                 title: const Text('שגיאת שיבוץ'),
                 content: Text(
-                  '${_selectedTeamMember!.name} אינו זמין לתאריכי האירוע "${_selectedEvent!.name}".\n\n'
+                  '${_selectedTeamMember!.name} אינו זמין לאירוע "${_selectedEvent!.name}".\n\n'
                   'חברי צוות לא-קבועים חייבים לציין זמינות מראש כדי להיות משובצים.',
                 ),
                 actions: [

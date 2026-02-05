@@ -41,10 +41,11 @@ import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../bloc/calendar_sync/calendar_sync_state.dart';
+import '../../widgets/archived_members_dialog.dart';
 import 'dart:async';
 
-// Filter enum for team members (0=all, 1=active, 2=inactive)
-enum TeamFilter { all, active, inactive }
+// Filter enum for team members (0=all non-archived, 1=permanent, 2=non-permanent)
+enum TeamFilter { all, permanent, nonPermanent }
 
 class TeamListScreen extends StatefulWidget {
   const TeamListScreen({super.key});
@@ -262,6 +263,15 @@ class _TeamListScreenState extends State<TeamListScreen> {
           ),
           ),
         actions: [
+          // Archive button - shows archived members dialog
+          IconButton(
+            icon: const Icon(Icons.inventory_2),
+            tooltip: 'ארכיון',
+            onPressed: () => ArchivedMembersDialog.show(context),
+            iconSize: 24,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+          ),
           // Home button (appears middle from left in RTL)
           IconButton(
             icon: const Icon(Icons.home),
@@ -370,8 +380,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
           InteractiveFilterBar(
             options: [
               FilterOption(label: 'סה״כ', count: state.totalCount.toString()),
-              FilterOption(label: 'פעילים', count: state.activeCount.toString()),
-              FilterOption(label: 'לא פעילים', count: state.inactiveCount.toString()),
+              FilterOption(label: 'קבועים', count: state.permanentCount.toString()),
+              FilterOption(label: 'לא קבועים', count: state.nonPermanentCount.toString()),
             ],
             selectedIndex: FilterPersistence.teamFilterIndex,
             onFilterChanged: _onFilterChanged,
@@ -392,17 +402,20 @@ class _TeamListScreenState extends State<TeamListScreen> {
     );
   }
 
-  /// Filter members based on selected filter index
+  /// Filter members based on selected filter index (always excludes archived)
   List<TeamMember> _filterMembers(List<TeamMember> members, int filterIndex) {
+    // First, exclude archived members
+    final nonArchivedMembers = members.where((m) => !m.isArchived).toList();
+
     switch (filterIndex) {
-      case 0: // All
-        return members;
-      case 1: // Active
-        return members.where((m) => m.isActive).toList();
-      case 2: // Inactive
-        return members.where((m) => !m.isActive).toList();
+      case 0: // All non-archived
+        return nonArchivedMembers;
+      case 1: // Permanent (non-archived)
+        return nonArchivedMembers.where((m) => m.isPermanent).toList();
+      case 2: // Non-permanent (non-archived)
+        return nonArchivedMembers.where((m) => !m.isPermanent).toList();
       default:
-        return members;
+        return nonArchivedMembers;
     }
   }
 
@@ -421,7 +434,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header row with avatar, name, and activate/deactivate button
+              // Header row with avatar, name, and archive button
               Row(
                 children: [
                   CircleAvatar(
@@ -455,6 +468,18 @@ class _TeamListScreenState extends State<TeamListScreen> {
                         ],
                       ],
                     ),
+                  ),
+                  // Archive button
+                  IconButton(
+                    icon: Icon(
+                      Icons.archive_outlined,
+                      size: 20,
+                      color: Colors.grey[600],
+                    ),
+                    tooltip: 'העבר לארכיון',
+                    onPressed: () => _showArchiveConfirmation(member),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   ),
                 ],
               ),
@@ -650,6 +675,63 @@ class _TeamListScreenState extends State<TeamListScreen> {
         onSuccess: () {
           Navigator.of(modalContext).pop();
         },
+      ),
+    );
+  }
+
+  void _showArchiveConfirmation(TeamMember member) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('העברה לארכיון'),
+          content: Text(
+            'האם להעביר את ${member.name} לארכיון?\n\nחבר/ת צוות בארכיון לא יופיע/תופיע ברשימה הראשית ולא ניתן לשבצו/ה.',
+          ),
+          actions: [
+            TextButton(
+              child: const Text('ביטול'),
+              onPressed: () => Navigator.pop(dialogContext),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('העבר לארכיון'),
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                final updatedMember = member.copyWith(
+                  isArchived: true,
+                  updatedAt: DateTime.now(),
+                );
+                context.read<TeamBloc>().add(team.UpdateTeamMember(updatedMember));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: Text('${member.name} הועבר/ה לארכיון'),
+                    ),
+                    backgroundColor: Colors.orange,
+                    action: SnackBarAction(
+                      label: 'ביטול',
+                      textColor: Colors.white,
+                      onPressed: () {
+                        // Restore the member
+                        final restoredMember = member.copyWith(
+                          isArchived: false,
+                          updatedAt: DateTime.now(),
+                        );
+                        context.read<TeamBloc>().add(team.UpdateTeamMember(restoredMember));
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

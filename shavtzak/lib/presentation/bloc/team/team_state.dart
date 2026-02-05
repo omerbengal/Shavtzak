@@ -41,8 +41,19 @@ class TeamLoaded extends TeamState {
         .toList();
   }
 
-  /// Get statistics
-  int get totalCount => members.length;
+  /// Get non-archived members (for filtering/display)
+  List<TeamMember> get nonArchivedMembers => members.where((m) => !m.isArchived).toList();
+
+  /// Get archived members (for archive dialog)
+  List<TeamMember> get archivedMembers => members.where((m) => m.isArchived).toList();
+
+  /// Get statistics (excluding archived members)
+  int get totalCount => nonArchivedMembers.length;
+  int get permanentCount => nonArchivedMembers.where((m) => m.isPermanent).length;
+  int get nonPermanentCount => nonArchivedMembers.where((m) => !m.isPermanent).length;
+  int get archivedCount => members.where((m) => m.isArchived).length;
+
+  /// Legacy counts for backward compatibility
   int get activeCount => members.where((m) => m.isActive).length;
   int get inactiveCount => members.where((m) => !m.isActive).length;
 }

@@ -5,15 +5,56 @@ import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../../core/services/environment_service.dart';
+import '../../../core/services/user_cache_service.dart';
+import '../../widgets/passcode_requirement_dialog.dart';
+import '../../widgets/settings_dialog.dart';
 
 /// Choice screen - allows users to choose between available areas
 /// For admins: Personal area, Management, and Summary screen
 /// For non-admins with summary access: Personal area and Summary screen
-class AdminChoiceScreen extends StatelessWidget {
+class AdminChoiceScreen extends StatefulWidget {
   const AdminChoiceScreen({super.key});
 
   @override
+  State<AdminChoiceScreen> createState() => _AdminChoiceScreenState();
+}
+
+class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
+  void _checkAndShowPasscodeDialog(BuildContext context) {
+    final state = context.read<UserSelectionBloc>().state;
+    if (state is UserAuthenticated) {
+      final hasPasscode = state.user.passcode != null && state.user.passcode!.isNotEmpty;
+      if (!hasPasscode) {
+        final cacheService = UserCacheService();
+        if (!cacheService.hasPasscodeDialogBeenShownThisSession()) {
+          cacheService.markPasscodeDialogShownThisSession();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              PasscodeRequirementDialog.show(
+                context,
+                onGoToSettings: () => _showSettingsDialog(context),
+              );
+            }
+          });
+        }
+      }
+    }
+  }
+
+  void _showSettingsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return const SettingsDialog();
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Check and show passcode dialog if user doesn't have one
+    _checkAndShowPasscodeDialog(context);
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(

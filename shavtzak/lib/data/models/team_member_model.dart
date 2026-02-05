@@ -10,6 +10,7 @@ class TeamMemberModel {
   final String name;
   final bool isActive;
   final bool isPermanent;
+  final bool isArchived;
   final List<DateConstraintModel> constraints;
   final Map<String, bool> roleCapabilities; // Stored as string keys in Firestore
   final String comments;
@@ -39,11 +40,15 @@ class TeamMemberModel {
   // Vehicle info field
   final VehicleInfoModel? vehicleInfo; // Optional vehicle information
 
+  // Event-based availability for non-permanent members
+  final List<String> availableEventIds; // List of event IDs this member is available for
+
   const TeamMemberModel({
     required this.id,
     required this.name,
     required this.isActive,
     this.isPermanent = false,
+    this.isArchived = false,
     required this.constraints,
     required this.roleCapabilities,
     this.comments = '',
@@ -58,6 +63,7 @@ class TeamMemberModel {
     this.birthday,
     this.canAccessSummaryScreen = false,
     this.vehicleInfo,
+    this.availableEventIds = const [],
   });
 
   /// Generate a UUID for team members
@@ -72,6 +78,7 @@ class TeamMemberModel {
       name: entity.name,
       isActive: entity.isActive,
       isPermanent: entity.isPermanent,
+      isArchived: entity.isArchived,
       constraints: entity.constraints
           .map((c) => DateConstraintModel.fromEntity(c))
           .toList(),
@@ -90,6 +97,7 @@ class TeamMemberModel {
       vehicleInfo: entity.vehicleInfo != null
           ? VehicleInfoModel.fromEntity(entity.vehicleInfo!)
           : null,
+      availableEventIds: List<String>.from(entity.availableEventIds),
     );
   }
 
@@ -100,6 +108,7 @@ class TeamMemberModel {
       name: name,
       isActive: isActive,
       isPermanent: isPermanent,
+      isArchived: isArchived,
       constraints: constraints.map((c) => c.toEntity()).toList(),
       roleCapabilities: Map<String, bool>.from(roleCapabilities),
       comments: comments,
@@ -114,6 +123,7 @@ class TeamMemberModel {
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
       vehicleInfo: vehicleInfo?.toEntity(),
+      availableEventIds: List<String>.from(availableEventIds),
     );
   }
 
@@ -152,11 +162,21 @@ class TeamMemberModel {
         ? VehicleInfoModel.fromJson(vehicleInfoData)
         : null;
 
+    // Handle migration - isArchived is optional, if missing derive from !isActive for backward compatibility
+    final isActiveValue = data['isActive'] as bool? ?? true;
+    final isArchived = data['isArchived'] as bool? ?? !isActiveValue;
+
+    // Handle migration - availableEventIds is optional, default to empty list for existing members
+    final availableEventIds = (data['availableEventIds'] as List<dynamic>?)
+        ?.map((e) => e as String)
+        .toList() ?? [];
+
     final model = TeamMemberModel(
       id: doc.id,
       name: data['name'] as String,
-      isActive: data['isActive'] as bool? ?? true,
+      isActive: isActiveValue,
       isPermanent: data['isPermanent'] as bool? ?? false,
+      isArchived: isArchived,
       constraints: (data['constraints'] as List<dynamic>?)
               ?.map((c) => DateConstraintModel.fromJson(c as Map<String, dynamic>))
               .toList() ??
@@ -178,6 +198,7 @@ class TeamMemberModel {
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
       vehicleInfo: vehicleInfo,
+      availableEventIds: availableEventIds,
     );
 
     // If migration was needed (UUID was generated), update the document
@@ -207,6 +228,7 @@ class TeamMemberModel {
       'name': name,
       'isActive': isActive,
       'isPermanent': isPermanent,
+      'isArchived': isArchived,
       'constraints': constraints.map((c) => c.toJson()).toList(),
       'roleCapabilities': roleCapabilities,
       'comments': comments,
@@ -221,6 +243,7 @@ class TeamMemberModel {
       'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
       'canAccessSummaryScreen': canAccessSummaryScreen,
       'vehicleInfo': vehicleInfo?.toJson(),
+      'availableEventIds': availableEventIds,
     };
   }
 
@@ -257,11 +280,21 @@ class TeamMemberModel {
         ? VehicleInfoModel.fromJson(vehicleInfoData)
         : null;
 
+    // Handle migration - isArchived is optional, if missing derive from !isActive for backward compatibility
+    final isActiveValue = json['isActive'] as bool? ?? true;
+    final isArchived = json['isArchived'] as bool? ?? !isActiveValue;
+
+    // Handle migration - availableEventIds is optional, default to empty list for existing members
+    final availableEventIds = (json['availableEventIds'] as List<dynamic>?)
+        ?.map((e) => e as String)
+        .toList() ?? [];
+
     return TeamMemberModel(
       id: json['id'] as String,
       name: json['name'] as String,
-      isActive: json['isActive'] as bool? ?? true,
+      isActive: isActiveValue,
       isPermanent: json['isPermanent'] as bool? ?? false,
+      isArchived: isArchived,
       constraints: (json['constraints'] as List<dynamic>?)
               ?.map((c) => DateConstraintModel.fromJson(c as Map<String, dynamic>))
               .toList() ??
@@ -279,6 +312,7 @@ class TeamMemberModel {
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
       vehicleInfo: vehicleInfo,
+      availableEventIds: availableEventIds,
     );
   }
 
@@ -289,6 +323,7 @@ class TeamMemberModel {
       'name': name,
       'isActive': isActive,
       'isPermanent': isPermanent,
+      'isArchived': isArchived,
       'constraints': constraints.map((c) => c.toJson()).toList(),
       'roleCapabilities': roleCapabilities,
       'comments': comments,
@@ -303,6 +338,7 @@ class TeamMemberModel {
       'birthday': birthday?.toIso8601String(),
       'canAccessSummaryScreen': canAccessSummaryScreen,
       'vehicleInfo': vehicleInfo?.toJson(),
+      'availableEventIds': availableEventIds,
     };
   }
 }

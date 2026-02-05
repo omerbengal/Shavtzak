@@ -7,6 +7,8 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/navigation_menu.dart';
 import '../../widgets/test_environment_indicator.dart';
 import '../../widgets/settings_dialog.dart';
+import '../../widgets/passcode_requirement_dialog.dart';
+import '../../../core/services/user_cache_service.dart';
 
 // Global callback to trigger constraints sync when constraints page becomes visible
 void Function()? onConstraintsPageVisible;
@@ -33,6 +35,27 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
     _previousIndex = widget.navigationShell.currentIndex;
   }
 
+  void _checkAndShowPasscodeDialog(BuildContext context) {
+    final state = context.read<UserSelectionBloc>().state;
+    if (state is UserAuthenticated) {
+      final hasPasscode = state.user.passcode != null && state.user.passcode!.isNotEmpty;
+      if (!hasPasscode) {
+        final cacheService = UserCacheService();
+        if (!cacheService.hasPasscodeDialogBeenShownThisSession()) {
+          cacheService.markPasscodeDialogShownThisSession();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              PasscodeRequirementDialog.show(
+                context,
+                onGoToSettings: () => _showSettingsDialog(context),
+              );
+            }
+          });
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentIndex = widget.navigationShell.currentIndex;
@@ -46,6 +69,9 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
     }
 
     _previousIndex = currentIndex;
+
+    // Check and show passcode dialog if user doesn't have one
+    _checkAndShowPasscodeDialog(context);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -80,6 +106,9 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: MediaQuery.of(context).size.width < 370 ? 14 : 18,
+              ),
             ),
             centerTitle: true,
             leading: IconButton(
@@ -95,11 +124,17 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
               if (state.user.isAdmin || state.user.canAccessSummaryScreen)
                 const NavigationMenu()
               else
-                // Regular users get logout button
-                IconButton(
-                  icon: const Icon(Icons.logout),
-                  tooltip: 'התנתקות',
-                  onPressed: () => _showLogoutDialog(context),
+                // Regular users get logout button with padding to balance the settings icon
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(width: 60),
+                    IconButton(
+                      icon: const Icon(Icons.logout),
+                      tooltip: 'התנתקות',
+                      onPressed: () => _showLogoutDialog(context),
+                    ),
+                  ],
                 ),
             ],
           );

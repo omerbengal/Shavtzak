@@ -14,7 +14,6 @@ import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_state.dart';
 import '../../bloc/event/event_event.dart';
 import '../../widgets/checklist/user_checklist_item_card.dart';
-import '../../widgets/checklist/checklist_form_modal.dart';
 
 /// User screen for viewing and editing their checklist items
 class UserChecklistScreen extends StatefulWidget {
@@ -53,9 +52,15 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
     super.dispose();
   }
 
-  void _showCcNoteDialog(ChecklistItem item) {
+  void _showNoteDialog(ChecklistItem item, bool isResponsible) {
     final currentUser = (context.read<UserSelectionBloc>().state as UserAuthenticated).user;
-    final controller = TextEditingController(text: item.getCcNote(currentUser.id) ?? '');
+
+    // Get the current note based on user role
+    final currentNote = isResponsible
+        ? item.responsibleNote.note
+        : (item.getCcNote(currentUser.id) ?? '');
+
+    final controller = TextEditingController(text: currentNote);
 
     showDialog(
       context: context,
@@ -80,68 +85,28 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
             ),
             ElevatedButton(
               onPressed: () {
-                context.read<ChecklistBloc>().add(
-                  UpdateCcNote(
-                    itemId: item.id,
-                    ccMemberId: currentUser.id,
-                    note: controller.text.trim(),
-                  ),
-                );
+                if (isResponsible) {
+                  context.read<ChecklistBloc>().add(
+                    UpdateResponsibleNote(
+                      itemId: item.id,
+                      note: controller.text.trim(),
+                    ),
+                  );
+                } else {
+                  context.read<ChecklistBloc>().add(
+                    UpdateCcNote(
+                      itemId: item.id,
+                      ccMemberId: currentUser.id,
+                      note: controller.text.trim(),
+                    ),
+                  );
+                }
                 Navigator.pop(dialogContext);
               },
               child: const Text('שמור'),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _deleteItem(ChecklistItem item) {
-    showDialog(
-      context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('מחיקת פריט מהצ\'קליסט'),
-          content: Text('האם אתה בטוח שברצונך למחוק את "${item.name}"?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('ביטול'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                context.read<ChecklistBloc>().add(DeleteChecklistItem(item.id));
-                Navigator.pop(context); // Close confirmation dialog
-                Navigator.pop(context); // Close edit dialog
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('מחק'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showEditItemDialog(ChecklistItem item, TeamMember currentUser) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (modalContext) => ChecklistFormModal(
-        item: item,
-        currentUserId: currentUser.id, // For tracking who edited it
-        isResponsibleUser: true, // This is a responsible user, not an admin
-        onSave: (updatedItem) {
-          // Update the checklist item
-          context.read<ChecklistBloc>().add(UpdateChecklistItem(updatedItem));
-          Navigator.pop(modalContext);
-        },
-        onDelete: () => _deleteItem(item),
       ),
     );
   }
@@ -203,53 +168,57 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
                   ],
                 ),
               ),
-              body: BlocConsumer<ChecklistBloc, ChecklistState>(
-                listener: (context, state) {
-                  if (state is ChecklistError) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(state.message),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                },
-                builder: (context, state) {
-                  if (state is ChecklistLoading) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+              body: BlocBuilder<TeamBloc, TeamState>(
+                builder: (context, teamState) {
+                  return BlocConsumer<ChecklistBloc, ChecklistState>(
+                    listener: (context, state) {
+                      if (state is ChecklistError) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(state.message),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                    builder: (context, state) {
+                      if (state is ChecklistLoading) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
 
-                  if (state is UserChecklistLoaded) {
-                    developer.log('UserChecklistScreen: Received UserChecklistLoaded with ${state.responsibleItems.length} responsible and ${state.ccItems.length} CC items', name: 'Checklist');
+                      if (state is UserChecklistLoaded) {
+                        developer.log('UserChecklistScreen: Received UserChecklistLoaded with ${state.responsibleItems.length} responsible and ${state.ccItems.length} CC items', name: 'Checklist');
 
-                    return TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildResponsibleItemsTab(state.responsibleItems, currentUser),
-                        _buildCcItemsTab(state.ccItems, currentUser),
-                      ],
-                    );
-                  }
+                        return TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildResponsibleItemsTab(state.responsibleItems, currentUser, teamState),
+                            _buildCcItemsTab(state.ccItems, currentUser, teamState),
+                          ],
+                        );
+                      }
 
-                  if (state is ChecklistLoaded) {
-                    // Fallback if loaded with different state type
-                    final responsibleItems = state.items
-                        .where((item) => item.responsibleId == currentUser.id)
-                        .toList();
-                    final ccItems = state.items
-                        .where((item) => item.ccIds.contains(currentUser.id))
-                        .toList();
+                      if (state is ChecklistLoaded) {
+                        // Fallback if loaded with different state type
+                        final responsibleItems = state.items
+                            .where((item) => item.responsibleId == currentUser.id)
+                            .toList();
+                        final ccItems = state.items
+                            .where((item) => item.ccIds.contains(currentUser.id))
+                            .toList();
 
-                    return TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildResponsibleItemsTab(responsibleItems, currentUser),
-                        _buildCcItemsTab(ccItems, currentUser),
-                      ],
-                    );
-                  }
+                        return TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildResponsibleItemsTab(responsibleItems, currentUser, teamState),
+                            _buildCcItemsTab(ccItems, currentUser, teamState),
+                          ],
+                        );
+                      }
 
-                  return const Center(child: Text('לא נמצאו פריטים בצ\'קליסט'));
+                      return const Center(child: Text('לא נמצאו פריטים בצ\'קליסט'));
+                    },
+                  );
                 },
               ),
             ),
@@ -259,7 +228,7 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
     );
   }
 
-  Widget _buildResponsibleItemsTab(List<ChecklistItem> items, TeamMember currentUser) {
+  Widget _buildResponsibleItemsTab(List<ChecklistItem> items, TeamMember currentUser, TeamState teamState) {
     if (items.isEmpty) {
       return const Center(
         child: Column(
@@ -276,8 +245,7 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
       );
     }
 
-    // Get all team members from TeamBloc
-    final teamState = context.read<TeamBloc>().state;
+    // Get all team members from the passed teamState
     final allTeamMembers = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
 
     // Get all events from EventBloc
@@ -315,14 +283,14 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
                 ),
               );
             },
-            onEditItem: () => _showEditItemDialog(item, currentUser),
+            onEditItem: () => _showNoteDialog(item, true),
           )).toList(),
         );
       },
     );
   }
 
-  Widget _buildCcItemsTab(List<ChecklistItem> items, TeamMember currentUser) {
+  Widget _buildCcItemsTab(List<ChecklistItem> items, TeamMember currentUser, TeamState teamState) {
     if (items.isEmpty) {
       return const Center(
         child: Column(
@@ -338,6 +306,9 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
         ),
       );
     }
+
+    // Get all team members from the passed teamState
+    final allTeamMembers = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
 
     // Group by event
     final grouped = _groupByEvent(items);
@@ -361,7 +332,16 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
           children: eventItems.map((item) => UserChecklistItemCard(
             item: item,
             user: currentUser,
-            onEditItem: () => _showCcNoteDialog(item),
+            allTeamMembers: allTeamMembers,
+            onStatusChanged: (newStatus) {
+              context.read<ChecklistBloc>().add(
+                UpdateChecklistItemStatus(
+                  itemId: item.id,
+                  newStatus: newStatus,
+                ),
+              );
+            },
+            onEditItem: () => _showNoteDialog(item, false),
           )).toList(),
         );
       },

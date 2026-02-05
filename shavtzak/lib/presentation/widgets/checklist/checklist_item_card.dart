@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
+import '../map_location_picker.dart';
 import 'chat_bubble.dart';
 
 /// Class to hold unified note data for sorting
@@ -25,17 +26,39 @@ class _NoteData {
 
 /// Get all notes sorted chronologically by timestamp
 /// Notes with timestamps are sorted ascending, notes without timestamp come last
-List<_NoteData> _getAllNotesSorted(ChecklistItem item, String? currentUserId) {
+List<_NoteData> _getAllNotesSorted(ChecklistItem item, String? currentUserId, List<TeamMember> allTeamMembers) {
   final notes = <_NoteData>[];
 
-  // Add admin note
-  if (item.adminNote.note.isNotEmpty) {
-    notes.add(_NoteData(
-      type: 'admin',
-      note: item.adminNote.note,
-      timestamp: item.adminNote.updatedAt,
-      isOwn: currentUserId != null && item.createdByAdminId == currentUserId,
-    ));
+  // Add admin notes (purple color, "(מנהל)" label) - one per admin
+  for (final entry in item.adminNotes.entries) {
+    if (entry.value.note.isNotEmpty) {
+      final adminId = entry.key;
+      final admin = allTeamMembers.firstWhere(
+        (m) => m.id == adminId,
+        orElse: () {
+          final now = DateTime.now();
+          return TeamMember(
+            id: adminId,
+            name: 'מנהל לא ידוע',
+            isActive: true,
+            isPermanent: false,
+            constraints: [],
+            roleCapabilities: {},
+            createdAt: now,
+            updatedAt: now,
+            uniqueKey: '',
+            isAdmin: true,
+          );
+        },
+      );
+      notes.add(_NoteData(
+        type: 'admin',
+        note: entry.value.note,
+        timestamp: entry.value.updatedAt,
+        member: admin,
+        isOwn: currentUserId != null && adminId == currentUserId,
+      ));
+    }
   }
 
   // Add responsible note
@@ -135,7 +158,7 @@ class ChecklistItemCard extends StatelessWidget {
     final canUpdateStatus = isAdmin;
 
     // Get all notes sorted chronologically
-    final sortedNotes = _getAllNotesSorted(item, currentUserId);
+    final sortedNotes = _getAllNotesSorted(item, currentUserId, allTeamMembers);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -161,6 +184,11 @@ class ChecklistItemCard extends StatelessWidget {
                 'תאריך: ${_formatDate(item.event!.startDate)}',
                 style: const TextStyle(fontSize: 12),
               ),
+              if (item.event!.location.isNotEmpty)
+                Text(
+                  'מיקום: ${MapLocationResult.stripCoordinates(item.event!.location)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
             ],
             Text(
               'אחראי: ${item.responsible?.name ?? "לא ידוע"}',
@@ -182,15 +210,12 @@ class ChecklistItemCard extends StatelessWidget {
                 _ => Colors.grey.withValues(alpha: 0.3),
               };
 
-              // Get admin member for admin notes
-              final adminMember = _getAdminMember();
-
               final authorName = switch (noteData.type) {
                 'admin' => noteData.isOwn
-                    ? 'אני'
-                    : '${adminMember?.name ?? 'מנהל'} (מנהל)',
+                    ? 'אני (מנהל)'
+                    : '${noteData.member?.name ?? "מנהל"} (מנהל)',
                 'responsible' => noteData.isOwn
-                    ? 'אני'
+                    ? 'אני (אחראי)'
                     : '${noteData.member?.name ?? "לא ידוע"} (אחראי)',
                 'cc' => noteData.isOwn
                     ? 'אני'
@@ -200,7 +225,7 @@ class ChecklistItemCard extends StatelessWidget {
 
               // Format timestamp as HH:mm, DD/MM (removed seconds)
               final timestamp = noteData.timestamp != null
-                  ? DateFormat('HH:mm, dd/M').format(noteData.timestamp!)
+                  ? DateFormat('HH:mm, dd/MM').format(noteData.timestamp!)
                   : null;
 
               return Padding(
@@ -266,6 +291,10 @@ class ChecklistItemCard extends StatelessWidget {
   }
 
   String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
+    final months = [
+      'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    ];
+    return '${date.day} ב${months[date.month - 1]}';
   }
 }

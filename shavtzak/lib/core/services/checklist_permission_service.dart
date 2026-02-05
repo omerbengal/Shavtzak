@@ -24,7 +24,8 @@ class ChecklistPermissionService {
   /// Check if a user can update the status
   static bool canUpdateStatus(ChecklistItem item, TeamMember user) {
     if (user.isAdmin) return true;
-    return item.responsibleId == user.id;
+    if (item.responsibleId == user.id) return true;
+    return item.ccIds.contains(user.id);
   }
 
   /// Check if a user can add CC members

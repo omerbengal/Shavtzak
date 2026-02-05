@@ -94,6 +94,7 @@ class TeamMember extends Equatable {
   final String name;
   final bool isActive;
   final bool isPermanent; // Whether this is a permanent team member
+  final bool isArchived; // Whether this team member is archived (hidden from main lists)
   final List<DateConstraint> constraints; // When unavailable
   final Map<String, bool> roleCapabilities; // Which roles can they perform (role key -> bool)
   final String comments; // Comments about the team member
@@ -123,11 +124,15 @@ class TeamMember extends Equatable {
   // Vehicle info field
   final VehicleInfo? vehicleInfo; // Optional vehicle information
 
+  // Event-based availability for non-permanent members
+  final List<String> availableEventIds; // List of event IDs this member is available for (non-permanent only)
+
   const TeamMember({
     required this.id,
     required this.name,
     required this.isActive,
     this.isPermanent = false,
+    this.isArchived = false,
     required this.constraints,
     required this.roleCapabilities,
     this.comments = '',
@@ -142,12 +147,13 @@ class TeamMember extends Equatable {
     this.birthday,
     this.canAccessSummaryScreen = false,
     this.vehicleInfo,
+    this.availableEventIds = const [],
   });
 
   /// Check if team member is available on a given date
   /// Logic depends on member type and constraint type
   bool isAvailableOn(DateTime date) {
-    if (!isActive) return false;
+    if (!isActive || isArchived) return false;
 
     for (final constraint in constraints) {
       if (constraint.isAvailability && constraint.conflictsWith(date)) {
@@ -170,7 +176,7 @@ class TeamMember extends Equatable {
   /// Check if team member is available for ALL dates in a range
   /// Returns true if available on every day from startDate to endDate (inclusive)
   bool isAvailableForDateRange(DateTime startDate, DateTime? endDate) {
-    if (!isActive) return false;
+    if (!isActive || isArchived) return false;
 
     // Normalize dates to remove time component
     final start = DateTime(startDate.year, startDate.month, startDate.day);
@@ -206,6 +212,20 @@ class TeamMember extends Equatable {
   /// Check if this team member can have availability (non-permanent members only)
   bool get canHaveAvailability => !isPermanent;
 
+  /// Check if team member is available for a specific event
+  /// For non-permanent members, uses event-based availability (availableEventIds)
+  /// For permanent members, always returns true (they use date-based constraints instead)
+  bool isAvailableForEvent(String eventId) {
+    if (isArchived) return false;
+    if (!isActive) return false;
+    if (!isPermanent) {
+      // Non-permanent members use event-based availability
+      return availableEventIds.contains(eventId);
+    }
+    // Permanent members are available by default (constraints handle unavailability)
+    return true;
+  }
+
   /// Get list of all role keys this team member can perform
   List<String> get availableRoleKeys {
     return roleCapabilities.entries
@@ -220,6 +240,7 @@ class TeamMember extends Equatable {
     String? name,
     bool? isActive,
     bool? isPermanent,
+    bool? isArchived,
     List<DateConstraint>? constraints,
     Map<String, bool>? roleCapabilities,
     String? comments,
@@ -238,12 +259,14 @@ class TeamMember extends Equatable {
     bool? canAccessSummaryScreen,
     VehicleInfo? vehicleInfo,
     bool clearVehicleInfo = false,
+    List<String>? availableEventIds,
   }) {
     return TeamMember(
       id: id ?? this.id,
       name: name ?? this.name,
       isActive: isActive ?? this.isActive,
       isPermanent: isPermanent ?? this.isPermanent,
+      isArchived: isArchived ?? this.isArchived,
       constraints: constraints ?? this.constraints,
       roleCapabilities: roleCapabilities ?? this.roleCapabilities,
       comments: comments ?? this.comments,
@@ -258,6 +281,7 @@ class TeamMember extends Equatable {
       birthday: clearBirthday ? null : (birthday ?? this.birthday),
       canAccessSummaryScreen: canAccessSummaryScreen ?? this.canAccessSummaryScreen,
       vehicleInfo: clearVehicleInfo ? null : (vehicleInfo ?? this.vehicleInfo),
+      availableEventIds: availableEventIds ?? this.availableEventIds,
     );
   }
 
@@ -267,6 +291,7 @@ class TeamMember extends Equatable {
         name,
         isActive,
         isPermanent,
+        isArchived,
         constraints,
         roleCapabilities,
         comments,
@@ -281,6 +306,7 @@ class TeamMember extends Equatable {
         birthday,
         canAccessSummaryScreen,
         vehicleInfo,
+        availableEventIds,
       ];
 
   @override

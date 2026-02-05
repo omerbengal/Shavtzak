@@ -53,7 +53,13 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
 
   void _initializeFromItem(ChecklistItem item, List<Event> events, List<TeamMember> teamMembers) {
     _nameController.text = item.name;
-    _adminNoteController.text = item.adminNote.note;
+
+    // Load the current admin's note from the adminNotes map
+    final currentAdminNote = widget.currentUserId != null
+        ? item.adminNotes[widget.currentUserId]
+        : null;
+    _adminNoteController.text = currentAdminNote?.note ?? '';
+
     _responsibleNoteController.text = item.responsibleNote.note;
 
     // Safely find the event using try-catch
@@ -98,50 +104,63 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
 
     setState(() => _isSaving = true);
 
-    // Determine createdByAdminId:
-    // - For NEW items (widget.item?.id is empty): use currentUserId
-    // - For EXISTING items: ALWAYS preserve createdByAdminId from widget.item, NEVER overwrite it
-    final createdByAdminId = (widget.item?.id ?? '').isEmpty
-        ? widget.currentUserId  // New item - set to current admin
-        : widget.item?.createdByAdminId;  // Existing item - preserve original creator
+    // For new items, createdByAdminId should be the current admin
+    // For existing items, preserve the original creator
+    final isNewItem = (widget.item?.id ?? '').isEmpty;
+    final createdByAdminId = isNewItem
+        ? widget.currentUserId
+        : widget.item?.createdByAdminId;
 
-    // Determine adminNote entry - preserve timestamp if note hasn't changed
+    // Start with base item (new or existing)
+    final baseItem = isNewItem
+        ? ChecklistItem(
+            id: '',
+            eventId: _selectedEvent!.id,
+            name: _nameController.text.trim(),
+            responsibleId: _selectedResponsible!.id,
+            responsibleNote: const ResponsibleNoteEntry(note: ''),
+            adminNotes: {},
+            ccIds: _selectedCcMembers.map((m) => m.id).toList(),
+            ccNotes: {},
+            status: _status,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            statusLastUpdatedAt: DateTime.now(),
+            createdByAdminId: widget.currentUserId,
+          )
+        : widget.item!;
+
+    // Update admin note (for current admin)
     final adminNoteText = _adminNoteController.text.trim();
-    final AdminNoteEntry adminNote;
-    if (widget.item?.adminNote.note == adminNoteText) {
-      // Note hasn't changed - preserve existing entry
-      adminNote = widget.item!.adminNote;
-    } else {
-      // Note has changed or is new - create new entry with timestamp
-      adminNote = AdminNoteEntry(note: adminNoteText, updatedAt: DateTime.now());
-    }
+    final itemWithAdminNote = widget.currentUserId != null
+        ? baseItem.withUpdatedAdminNote(widget.currentUserId!, adminNoteText)
+        : baseItem;
 
-    // Determine responsibleNote entry - preserve timestamp if note hasn't changed
+    // Update responsible note (only for responsible users)
     final responsibleNoteText = _responsibleNoteController.text.trim();
-    final ResponsibleNoteEntry responsibleNote;
-    if (widget.item?.responsibleNote.note == responsibleNoteText) {
-      // Note hasn't changed - preserve existing entry
-      responsibleNote = widget.item!.responsibleNote;
-    } else {
-      // Note has changed or is new - create new entry with timestamp
-      responsibleNote = ResponsibleNoteEntry(note: responsibleNoteText, updatedAt: DateTime.now());
-    }
+    final itemWithResponsibleNote = itemWithAdminNote.copyWith(
+      responsibleNote: ResponsibleNoteEntry(
+        note: responsibleNoteText,
+        updatedAt: (baseItem.responsibleNote.note == responsibleNoteText)
+            ? baseItem.responsibleNote.updatedAt
+            : DateTime.now(),
+      ),
+    );
 
-    final checklistItem = ChecklistItem(
-      id: widget.item?.id ?? '',
+    // Update other fields
+    var checklistItem = itemWithResponsibleNote.copyWith(
       eventId: _selectedEvent!.id,
       name: _nameController.text.trim(),
       responsibleId: _selectedResponsible!.id,
-      responsibleNote: responsibleNote,
-      adminNote: adminNote,
       ccIds: _selectedCcMembers.map((m) => m.id).toList(),
-      ccNotes: widget.item?.ccNotes ?? {},
       status: _status,
-      createdAt: widget.item?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
-      statusLastUpdatedAt: widget.item?.statusLastUpdatedAt ?? DateTime.now(),
-      createdByAdminId: createdByAdminId,
     );
+
+    // Only update createdByAdminId for new items
+    if (isNewItem && widget.currentUserId != null) {
+      checklistItem = checklistItem.copyWith(createdByAdminId: widget.currentUserId);
+    }
 
     widget.onSave(checklistItem);
   }
@@ -220,15 +239,25 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                           final events = eventState is EventsLoaded ? eventState.events : <Event>[];
                           final teamMembers = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
 
+                          // Deduplicate events by ID to prevent DropdownButton errors
+                          final seenEventIds = <String>{};
+                          final deduplicatedEvents = events.where((event) {
+                            if (seenEventIds.contains(event.id)) {
+                              return false; // Skip duplicate
+                            }
+                            seenEventIds.add(event.id);
+                            return true;
+                          }).toList();
+
                           // Initialize from item if not already done
                           if (widget.item != null && _nameController.text.isEmpty) {
                             WidgetsBinding.instance.addPostFrameCallback((_) {
-                              _initializeFromItem(widget.item!, events, teamMembers);
+                              _initializeFromItem(widget.item!, deduplicatedEvents, teamMembers);
                               setState(() {});
                             });
                           }
 
-                          return _buildForm(scrollController, events, teamMembers);
+                          return _buildForm(scrollController, deduplicatedEvents, teamMembers);
                         },
                       );
                     },
@@ -303,7 +332,13 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                                 }
                                 return null;
                               },
-                              items: events.where((event) => event.endDate.isAfter(DateTime.now())).map((event) {
+                              items: events.where((event) {
+                                // Show event if it's in the future OR if it's the currently selected event
+                                final now = DateTime.now();
+                                final today = DateTime(now.year, now.month, now.day);
+                                final eventEndDate = DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
+                                return eventEndDate.isAtSameMomentAs(today) || eventEndDate.isAfter(today) || (_selectedEvent != null && event.id == _selectedEvent!.id);
+                              }).map((event) {
                                 return DropdownMenuItem(
                                   value: event,
                                   child: Text(
@@ -391,7 +426,7 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                           textAlign: TextAlign.right,
                           textDirection: TextDirection.rtl,
                           decoration: const InputDecoration(
-                            labelText: 'הערות מנהל',
+                            labelText: 'הערה',
                             border: OutlineInputBorder(),
                             alignLabelWithHint: true,
                           ),

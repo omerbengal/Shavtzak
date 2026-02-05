@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/services/checklist_permission_service.dart';
+import '../../widgets/map_location_picker.dart';
 import 'chat_bubble.dart';
 
 /// Class to hold unified note data for sorting
@@ -26,23 +27,50 @@ class _NoteData {
 
 /// Get all notes sorted chronologically by timestamp (for user view)
 /// Notes with timestamps are sorted ascending, notes without timestamp come last
-List<_NoteData> _getAllNotesSortedForUser(ChecklistItem item, TeamMember user, ChecklistUserRole userRole) {
+List<_NoteData> _getAllNotesSortedForUser(ChecklistItem item, TeamMember user, ChecklistUserRole userRole, List<TeamMember>? allTeamMembers) {
   final notes = <_NoteData>[];
 
-  // Add admin note (always shown, never own in user view)
-  if (item.adminNote.note.isNotEmpty) {
+  // Add admin notes (purple color, "(מנהל)" label) - one per admin
+  for (final entry in item.adminNotes.entries) {
+    if (entry.value.note.isEmpty) continue;
+
+    final adminId = entry.key;
+    final admin = allTeamMembers?.firstWhere(
+      (m) => m.id == adminId,
+      orElse: () {
+        final now = DateTime.now();
+        return TeamMember(
+          id: adminId,
+          name: 'מנהל לא ידוע',
+          isActive: true,
+          isPermanent: false,
+          constraints: [],
+          roleCapabilities: {},
+          createdAt: now,
+          updatedAt: now,
+          uniqueKey: '',
+          isAdmin: true,
+        );
+      },
+    );
+
+    final isOwn = adminId == user.id;
     notes.add(_NoteData(
       type: 'admin',
-      note: item.adminNote.note,
-      timestamp: item.adminNote.updatedAt,
-      isOwn: false,
+      note: entry.value.note,
+      timestamp: entry.value.updatedAt,
+      member: admin,
+      isOwn: isOwn,
     ));
   }
 
   // Add responsible note
+  // Note: The admin notes and responsible note are SEPARATE notes and can both exist
   if (item.responsibleNote.note.isNotEmpty) {
-    if (userRole == ChecklistUserRole.responsible) {
-      // User IS the responsible - show as own note
+    final isResponsible = item.responsibleId == user.id;
+
+    if (isResponsible) {
+      // User IS the responsible person - show as own note (even if also admin)
       notes.add(_NoteData(
         type: 'responsible',
         note: item.responsibleNote.note,
@@ -50,8 +78,8 @@ List<_NoteData> _getAllNotesSortedForUser(ChecklistItem item, TeamMember user, C
         member: item.responsible,
         isOwn: true,
       ));
-    } else if (userRole == ChecklistUserRole.cc) {
-      // User is CC - show responsible's note as other's message
+    } else if (userRole == ChecklistUserRole.cc || userRole == ChecklistUserRole.admin) {
+      // User is CC or admin viewing someone else's responsible note
       notes.add(_NoteData(
         type: 'responsible',
         note: item.responsibleNote.note,
@@ -127,16 +155,44 @@ class UserChecklistItemCard extends StatelessWidget {
   });
 
   String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
+    final months = [
+      'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    ];
+    return '${date.day} ב${months[date.month - 1]}';
   }
 
   /// Get the admin member who created this item
   TeamMember? _getAdminMember() {
     if (item.createdByAdminId == null) return null;
-    return allTeamMembers?.firstWhere(
-      (m) => m.id == item.createdByAdminId,
-      orElse: () => item.responsible!,
-    );
+
+    // First try to find in allTeamMembers
+    if (allTeamMembers != null) {
+      try {
+        return allTeamMembers!.firstWhere(
+          (m) => m.id == item.createdByAdminId,
+        );
+      } catch (e) {
+        // Admin not found in allTeamMembers, continue to fallback
+      }
+    }
+
+    // Fallback: if the admin is the responsible person, use that
+    if (item.responsible?.id == item.createdByAdminId) {
+      return item.responsible;
+    }
+
+    // Fallback: if the admin is one of the CC members, use that
+    try {
+      return item.ccMembers.firstWhere(
+        (m) => m.id == item.createdByAdminId,
+      );
+    } catch (e) {
+      // Admin not found in CC members either
+    }
+
+    // Last resort: return null to trigger "מנהל" fallback label
+    return null;
   }
 
   Color _getBackgroundColor() {
@@ -155,8 +211,8 @@ class UserChecklistItemCard extends StatelessWidget {
     final userRole = _getUserRole();
     final canUpdateStatus = ChecklistPermissionService.canUpdateStatus(item, user);
 
-    // Get all notes sorted chronologically (including user's own CC note)
-    final sortedNotes = _getAllNotesSortedForUser(item, user, userRole);
+    // Get all notes sorted chronologically (including user's own admin and CC notes)
+    final sortedNotes = _getAllNotesSortedForUser(item, user, userRole, allTeamMembers);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -199,7 +255,7 @@ class UserChecklistItemCard extends StatelessWidget {
             // Show location if available
             if (item.event?.location.isNotEmpty == true)
               Text(
-                'מיקום: ${item.event!.location}',
+                'מיקום: ${MapLocationResult.stripCoordinates(item.event!.location)}',
                 style: const TextStyle(fontSize: 12),
               ),
             // CC names (if any)
@@ -219,15 +275,12 @@ class UserChecklistItemCard extends StatelessWidget {
                 _ => Colors.grey.withValues(alpha: 0.3),
               };
 
-              // Get admin member for admin notes
-              final adminMember = _getAdminMember();
-
               final authorName = switch (noteData.type) {
                 'admin' => noteData.isOwn
-                    ? 'אני'
-                    : '${adminMember?.name ?? 'מנהל'} (מנהל)',
+                    ? 'אני (מנהל)'
+                    : '${noteData.member?.name ?? "מנהל"} (מנהל)',
                 'responsible' => noteData.isOwn
-                    ? 'אני'
+                    ? 'אני (אחראי)'
                     : '${noteData.member?.name ?? "לא ידוע"} (אחראי)',
                 'cc' => noteData.isOwn
                     ? 'אני'
@@ -237,7 +290,7 @@ class UserChecklistItemCard extends StatelessWidget {
 
               // Format timestamp as HH:mm, DD/MM (removed seconds)
               final timestamp = noteData.timestamp != null
-                  ? DateFormat('HH:mm, dd/M').format(noteData.timestamp!)
+                  ? DateFormat('HH:mm, dd/MM').format(noteData.timestamp!)
                   : null;
 
               return Padding(
@@ -280,7 +333,7 @@ class UserChecklistItemCard extends StatelessWidget {
                   ),
                 ),
               )
-            else if (!canUpdateStatus)
+            else
               // Just display status (non-editable)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

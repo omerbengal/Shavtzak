@@ -38,6 +38,9 @@ class ChecklistRepository {
         for (final doc in snapshot.docs) {
           final data = doc.data() as Map<String, dynamic>;
 
+          // DEBUG: Log createdByAdminId
+          developer.log('DEBUG ChecklistRepository: item=${data['name']}, createdByAdminId=${data['createdByAdminId']}', name: 'Checklist');
+
           final eventId = data['eventId'] as String;
           final event = eventMap[eventId];
 
@@ -58,7 +61,7 @@ class ChecklistRepository {
             name: data['name'] as String,
             responsibleId: responsibleId,
             responsibleNote: _convertResponsibleNote(data['responsibleNote']),
-            adminNote: _convertAdminNote(data['adminNote']),
+            adminNotes: _convertAdminNotes(data['adminNotes']),
             ccIds: ccIds,
             ccNotes: _convertCcNotes(data['ccNotes']),
             status: data['status'] as bool,
@@ -119,7 +122,7 @@ class ChecklistRepository {
             name: data['name'] as String,
             responsibleId: responsibleId,
             responsibleNote: _convertResponsibleNote(data['responsibleNote']),
-            adminNote: _convertAdminNote(data['adminNote']),
+            adminNotes: _convertAdminNotes(data['adminNotes']),
             ccIds: ccIds,
             ccNotes: _convertCcNotes(data['ccNotes']),
             status: data['status'] as bool,
@@ -171,6 +174,9 @@ class ChecklistRepository {
           for (final doc in snapshot.docs) {
             final data = doc.data() as Map<String, dynamic>;
 
+            // DEBUG: Log createdByAdminId
+            developer.log('DEBUG ChecklistRepository USER: item=${data['name']}, createdByAdminId=${data['createdByAdminId']}', name: 'Checklist');
+
             final eventId = data['eventId'] as String;
             final event = eventMap[eventId];
 
@@ -191,13 +197,14 @@ class ChecklistRepository {
               name: data['name'] as String,
               responsibleId: responsibleId,
               responsibleNote: _convertResponsibleNote(data['responsibleNote']),
-              adminNote: _convertAdminNote(data['adminNote']),
+              adminNotes: _convertAdminNotes(data['adminNotes']),
               ccIds: ccIds,
               ccNotes: _convertCcNotes(data['ccNotes']),
               status: data['status'] as bool,
               createdAt: (data['createdAt'] as Timestamp).toDate(),
               updatedAt: (data['updatedAt'] as Timestamp).toDate(),
               statusLastUpdatedAt: (data['statusLastUpdatedAt'] as Timestamp).toDate(),
+              createdByAdminId: data['createdByAdminId'] as String?,
               event: event,
               responsible: responsible,
               ccMembers: ccMembers,
@@ -281,17 +288,23 @@ class ChecklistRepository {
     });
   }
 
-  /// Convert Firestore adminNote to AdminNoteEntry
-  AdminNoteEntry _convertAdminNote(dynamic adminNote) {
-    if (adminNote != null && adminNote is Map) {
-      return AdminNoteEntry(
-        note: adminNote['note']?.toString() ?? '',
-        updatedAt: adminNote['updatedAt'] is Timestamp
-            ? (adminNote['updatedAt'] as Timestamp).toDate()
-            : null,
-      );
-    }
-    return AdminNoteEntry(note: adminNote?.toString() ?? '', updatedAt: null);
+  /// Convert Firestore adminNotes Map to proper Map<String, AdminNoteEntry>
+  Map<String, AdminNoteEntry> _convertAdminNotes(dynamic adminNotes) {
+    if (adminNotes == null) return {};
+
+    final notesMap = adminNotes as Map;
+    return notesMap.map((key, value) {
+      // Handle new format: {note: String, updatedAt: Timestamp}
+      if (value is Map && value.containsKey('note')) {
+        final noteText = value['note']?.toString() ?? '';
+        final updatedAt = value['updatedAt'] is Timestamp
+            ? (value['updatedAt'] as Timestamp).toDate()
+            : null;
+        return MapEntry(key.toString(), AdminNoteEntry(note: noteText, updatedAt: updatedAt));
+      }
+      // Handle old format: just a string
+      return MapEntry(key.toString(), AdminNoteEntry(note: value.toString(), updatedAt: null));
+    });
   }
 
   /// Convert Firestore responsibleNote to ResponsibleNoteEntry

@@ -63,6 +63,27 @@ class UserCacheService {
       return null;
     }
   }
+
+  // In-memory flag to track if passcode dialog has been shown in current app session
+  // This resets when the app is fully closed and reopened (not just on route navigation)
+  static bool _hasShownPasscodeDialogThisSession = false;
+
+  /// Check if the passcode requirement dialog has been shown this app session
+  /// Note: This is an in-memory flag that resets when the app is closed
+  bool hasPasscodeDialogBeenShownThisSession() {
+    return _hasShownPasscodeDialogThisSession;
+  }
+
+  /// Mark that the passcode requirement dialog has been shown this app session
+  /// Note: This is an in-memory flag that resets when the app is closed
+  void markPasscodeDialogShownThisSession() {
+    _hasShownPasscodeDialogThisSession = true;
+  }
+
+  /// Clear the passcode dialog shown flag (called when user logs out)
+  void clearPasscodeDialogFlag() {
+    _hasShownPasscodeDialogThisSession = false;
+  }
 }
 
 /// Custom exception for user cache errors

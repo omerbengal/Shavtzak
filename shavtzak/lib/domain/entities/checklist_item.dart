@@ -81,14 +81,14 @@ class ChecklistItem extends Equatable {
   final String name; // Title of the checklist item
   final String responsibleId; // Foreign key to TeamMember (אחראי)
   final ResponsibleNoteEntry responsibleNote; // פירוט אחראי
-  final AdminNoteEntry adminNote; // הערת מנהל
+  final Map<String, AdminNoteEntry> adminNotes; // Map of adminId → AdminNoteEntry (הערות מנהלים)
   final List<String> ccIds; // List of team member IDs (מיודעים)
   final Map<String, CcNoteEntry> ccNotes; // Map of teamMemberId → CcNoteEntry (פירוט מיודעים)
   final bool status; // true = כן, false = לא
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime statusLastUpdatedAt; // Hidden timestamp for status changes
-  final String? createdByAdminId; // The admin who created this item (for personal note display)
+  final String? createdByAdminId; // The admin who created this item
 
   // Computed fields (populated by repository)
   final Event? event;
@@ -101,7 +101,7 @@ class ChecklistItem extends Equatable {
     required this.name,
     required this.responsibleId,
     this.responsibleNote = const ResponsibleNoteEntry(note: ''),
-    this.adminNote = const AdminNoteEntry(note: ''),
+    this.adminNotes = const {},
     this.ccIds = const [],
     this.ccNotes = const {},
     required this.status,
@@ -121,7 +121,7 @@ class ChecklistItem extends Equatable {
     String? name,
     String? responsibleId,
     ResponsibleNoteEntry? responsibleNote,
-    AdminNoteEntry? adminNote,
+    Map<String, AdminNoteEntry>? adminNotes,
     List<String>? ccIds,
     Map<String, CcNoteEntry>? ccNotes,
     bool? status,
@@ -139,7 +139,7 @@ class ChecklistItem extends Equatable {
       name: name ?? this.name,
       responsibleId: responsibleId ?? this.responsibleId,
       responsibleNote: responsibleNote ?? this.responsibleNote,
-      adminNote: adminNote ?? this.adminNote,
+      adminNotes: adminNotes ?? this.adminNotes,
       ccIds: ccIds ?? this.ccIds,
       ccNotes: ccNotes ?? this.ccNotes,
       status: status ?? this.status,
@@ -195,12 +195,28 @@ class ChecklistItem extends Equatable {
     return copyWith(ccNotes: updatedNotes, updatedAt: DateTime.now());
   }
 
-  /// Update the admin note with timestamp
-  ChecklistItem withUpdatedAdminNote(String note) {
-    return copyWith(
-      adminNote: AdminNoteEntry(note: note, updatedAt: DateTime.now()),
-      updatedAt: DateTime.now(),
-    );
+  /// Get the admin note for a specific admin
+  String? getAdminNote(String adminId) {
+    return adminNotes[adminId]?.note;
+  }
+
+  /// Get the full AdminNoteEntry for a specific admin
+  AdminNoteEntry? getAdminNoteEntry(String adminId) {
+    return adminNotes[adminId];
+  }
+
+  /// Update the note for a specific admin
+  ChecklistItem withUpdatedAdminNote(String adminId, String note) {
+    final updatedNotes = Map<String, AdminNoteEntry>.from(adminNotes);
+    if (note.isNotEmpty) {
+      updatedNotes[adminId] = AdminNoteEntry(
+        note: note,
+        updatedAt: DateTime.now(),
+      );
+    } else {
+      updatedNotes.remove(adminId);
+    }
+    return copyWith(adminNotes: updatedNotes, updatedAt: DateTime.now());
   }
 
   /// Update the responsible note with timestamp
@@ -249,7 +265,7 @@ class ChecklistItem extends Equatable {
         name,
         responsibleId,
         responsibleNote,
-        adminNote,
+        adminNotes,
         ccIds,
         ccNotes,
         status,

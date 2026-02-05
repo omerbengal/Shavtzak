@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../data/repositories/checklist_repository.dart';
+import '../../../core/services/checklist_permission_service.dart';
 import '../user_selection/user_selection_bloc.dart';
 import '../user_selection/user_selection_state.dart';
 
@@ -203,9 +204,9 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
         return;
       }
 
-      // Check permissions (responsible person or admin can update status)
-      if (!item.userCanEdit(currentUser.id, currentUser.isAdmin)) {
-        emit(ChecklistError('You do not have permission to update the status of this item'));
+      // Check permissions using ChecklistPermissionService (allows responsible, admins, and CC members)
+      if (!ChecklistPermissionService.canUpdateStatus(item, currentUser)) {
+        emit(ChecklistError('אין לך הרשאה לעדכן את הסטטוס של פריט זה'));
         return;
       }
 

@@ -309,9 +309,17 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         }
       }
 
-      // Emit success to show snackbar
-      // The existing stream subscription will automatically pick up the database changes
-      emit(const TeamMemberOperationSuccess('פרטי חבר/ת הצוות עודכנו בהצלחה'));
+      // Explicitly reload ALL members to ensure the archive dialog updates in real-time
+      // This includes both archived and non-archived members
+      final allMembers = await _repository.getAllTeamMembers();
+
+      // Emit TeamLoaded state with ALL members to trigger BlocBuilder rebuilds
+      final searchQuery = state is TeamLoaded ? (state as TeamLoaded).searchQuery : null;
+      emit(TeamLoaded(allMembers, searchQuery: searchQuery));
+
+      // Note: We don't emit TeamMemberOperationSuccess here because it would change the state type
+      // from TeamLoaded, causing the archive dialog (which checks 'state is TeamLoaded') to show empty.
+      // The stream listener will emit additional updates as needed.
     } catch (e) {
       emit(TeamError('שגיאה בעדכון פרטי חבר/ת הצוות: $e'));
     }
