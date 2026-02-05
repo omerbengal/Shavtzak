@@ -10,6 +10,7 @@ import '../../../core/constants/constraint_status.dart';
 import '../../../core/constants/calendar_constants.dart';
 import '../../../core/state/constraint_manager.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../../domain/entities/event.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/vehicle_info.dart';
 import '../../../domain/entities/role.dart';
@@ -942,6 +943,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
   late TeamBloc _teamBloc;
   List<DateConstraint> _constraints = [];
+  List<String> _availableEventIds = []; // Event-based availability for non-permanent members
   bool _isDirty = false;
   String? _roleError; // Track role validation error
   bool _isSaving = false;
@@ -967,6 +969,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       _canAccessSummaryScreen = widget.member!.canAccessSummaryScreen;
       _roleCapabilities = Map.from(widget.member!.roleCapabilities);
       _constraints = List.from(widget.member!.constraints);
+      _availableEventIds = List.from(widget.member!.availableEventIds);
       if (widget.member!.birthday != null) {
         _birthdayDay = widget.member!.birthday!.day;
         _birthdayMonth = widget.member!.birthday!.month;
@@ -1058,6 +1061,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       createdAt: _isEditMode ? widget.member!.createdAt : now,
       updatedAt: now,
       isAdmin: _isEditMode ? widget.member!.isAdmin : false,
+      availableEventIds: _availableEventIds,
     );
 
     // Check for conflicting assignments if editing and constraints changed
@@ -1801,7 +1805,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                               Row(
                                 children: [
                                   Text(
-                                    _isPermanent ? 'מגבלות זמן' : 'זמינות',
+                                    _isPermanent ? 'מגבלות זמן' : 'זמינות לאירועים',
                                     style: TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
@@ -1809,32 +1813,44 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                     ),
                                   ),
                                   const Spacer(),
-                                  // Add constraint/availability button for admin
-                                  IconButton(
-                                    onPressed: () => _addConstraintOrAvailability(),
-                                    icon: Icon(
-                                      Icons.add_circle_outline,
-                                      color: _isPermanent ? Colors.orange : Colors.green,
-                                    ),
-                                    tooltip: _isPermanent ? 'הוסף מגבלה' : 'הוסף זמינות',
-                                  ),
-                                  // Show rejected constraints button only for permanent members with unavailability constraints
-                                  if (_isPermanent && _constraints.any((c) => c.isUnavailability && c.status == ConstraintStatus.rejected))
-                                    TextButton.icon(
-                                      onPressed: () => _showRejectedConstraints(_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).toList()),
+                                  if (_isPermanent) ...[
+                                    // Add constraint button for permanent members
+                                    IconButton(
+                                      onPressed: () => _addConstraintOrAvailability(),
                                       icon: const Icon(
-                                        Icons.visibility,
-                                        size: 20,
+                                        Icons.add_circle_outline,
+                                        color: Colors.orange,
                                       ),
-                                      label: Text(
-                                        'הצג מגבלות שנדחו (${_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).length})',
-                                        style: const TextStyle(fontSize: 14),
-                                      ),
-                                      style: TextButton.styleFrom(
-                                        foregroundColor: Colors.grey[600],
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      ),
+                                      tooltip: 'הוסף מגבלה',
                                     ),
+                                    // Show rejected constraints button
+                                    if (_constraints.any((c) => c.isUnavailability && c.status == ConstraintStatus.rejected))
+                                      TextButton.icon(
+                                        onPressed: () => _showRejectedConstraints(_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).toList()),
+                                        icon: const Icon(
+                                          Icons.visibility,
+                                          size: 20,
+                                        ),
+                                        label: Text(
+                                          'הצג מגבלות שנדחו (${_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).length})',
+                                          style: const TextStyle(fontSize: 14),
+                                        ),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Colors.grey[600],
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        ),
+                                      ),
+                                  ] else ...[
+                                    // Edit availability button for non-permanent members (blue pencil)
+                                    IconButton(
+                                      onPressed: () => _editAvailabilityEvents(),
+                                      icon: const Icon(
+                                        Icons.edit,
+                                        color: Colors.blue,
+                                      ),
+                                      tooltip: 'ערוך זמינות',
+                                    ),
+                                  ],
                                 ],
                               ),
 
@@ -1844,7 +1860,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                               Text(
                                 _isPermanent
                                     ? 'כאן תוכל לאשר או לדחות בקשות מגבלות מחברי צוות קבועים. מגבלות מאושרות ימנעו שיבוץ לאירועים.'
-                                    : 'זמינות שסימן/ה חבר הצוות הזה. זמינות פעילה מאפשרת שיבוץ לאירועים.',
+                                    : 'אירועים שחבר הצוות הזה סימן את עצמו/ה זמין/ה להתנדב. לחץ על העיגול כדי לערוך.',
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   color: Colors.grey[600],
                                 ),
@@ -1852,8 +1868,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
                               const SizedBox(height: 8),
 
-                              // Constraints/Availability list
-                              ..._buildVisibleConstraintsList(),
+                              // Constraints list (permanent) / Availability events list (non-permanent)
+                              if (_isPermanent)
+                                ..._buildVisibleConstraintsList()
+                              else
+                                ..._buildAvailabilityEventsList(),
 
                               const Divider(height: 32),
 
@@ -2386,6 +2405,174 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     return widgets;
   }
 
+  /// Build the list of events the non-permanent member is available for
+  List<Widget> _buildAvailabilityEventsList() {
+    final eventState = context.read<EventBloc>().state;
+    if (eventState is! EventsLoaded) {
+      return [
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    // Get future events that this member is available for
+    final availableEvents = eventState.events.where((event) {
+      final eventEndDate = DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
+      return !eventEndDate.isBefore(today) && _availableEventIds.contains(event.id);
+    }).toList()
+      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+
+    if (availableEvents.isEmpty) {
+      return [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'אין אירועים נבחרים',
+            style: TextStyle(
+              color: Colors.grey,
+              fontSize: 16,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ];
+    }
+
+    return availableEvents.map((event) {
+      final formattedLocation = event.location.isNotEmpty
+          ? _formatLocationForDisplay(event.location)
+          : '';
+
+      return Card(
+        color: Colors.green[50],
+        margin: const EdgeInsets.only(bottom: 8),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.event_available,
+                    color: Colors.green[600],
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      event.name,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.green[700],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.only(left: 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _formatEventDates(event),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.green[600],
+                      ),
+                    ),
+                    if (formattedLocation.isNotEmpty)
+                      Text(
+                        'מיקום: $formattedLocation',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  /// Open the availability events editor modal
+  void _editAvailabilityEvents() async {
+    final eventState = context.read<EventBloc>().state;
+    if (eventState is! EventsLoaded) return;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final futureEvents = eventState.events.where((event) {
+      final eventEndDate = DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
+      return !eventEndDate.isBefore(today);
+    }).toList()
+      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (context) => _AdminAvailabilityDialog(
+        events: futureEvents,
+        initialSelectedEventIds: _availableEventIds,
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        _availableEventIds = result;
+        _isDirty = true;
+      });
+    }
+  }
+
+  /// Format event date range in Hebrew
+  String _formatEventDates(Event event) {
+    final isSameDay = event.startDate.year == event.endDate.year &&
+        event.startDate.month == event.endDate.month &&
+        event.startDate.day == event.endDate.day;
+
+    if (isSameDay) {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)}';
+    } else {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)} - יום ${_getFullHebrewDayName(event.endDate.weekday)} ${event.endDate.day} ב${_getHebrewMonthName(event.endDate.month)}';
+    }
+  }
+
+  String _getFullHebrewDayName(int weekday) {
+    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    return days[weekday == 7 ? 7 : weekday];
+  }
+
+  String _getHebrewMonthName(int month) {
+    const months = [
+      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    ];
+    return months[month];
+  }
+
+  /// Format location for display - remove coordinates
+  String _formatLocationForDisplay(String location) {
+    if (location.contains('||')) {
+      final parts = location.split('||');
+      final strippedLocation = parts[0].trim();
+      return strippedLocation.isNotEmpty ? strippedLocation : location;
+    }
+    return location;
+  }
+
   void _showRejectedConstraints(List<DateConstraint> rejectedConstraints) {
     showDialog(
       context: context,
@@ -2896,6 +3083,250 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
     return date1.year == date2.year &&
         date1.month == date2.month &&
         date1.day == date2.day;
+  }
+}
+
+// Admin dialog for editing event-based availability of a non-permanent member
+class _AdminAvailabilityDialog extends StatefulWidget {
+  final List<Event> events;
+  final List<String> initialSelectedEventIds;
+
+  const _AdminAvailabilityDialog({
+    super.key,
+    required this.events,
+    required this.initialSelectedEventIds,
+  });
+
+  @override
+  State<_AdminAvailabilityDialog> createState() => _AdminAvailabilityDialogState();
+}
+
+class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
+  late Set<String> _selectedEventIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedEventIds = Set.from(widget.initialSelectedEventIds);
+  }
+
+  void _toggleEvent(String eventId) {
+    setState(() {
+      if (_selectedEventIds.contains(eventId)) {
+        _selectedEventIds.remove(eventId);
+      } else {
+        _selectedEventIds.add(eventId);
+      }
+    });
+  }
+
+  /// Group events by month
+  Map<String, List<Event>> _groupEventsByMonth(List<Event> events) {
+    final grouped = <String, List<Event>>{};
+    for (final event in events) {
+      final monthKey = _getHebrewMonthYear(event.startDate);
+      grouped.putIfAbsent(monthKey, () => []).add(event);
+    }
+    return grouped;
+  }
+
+  String _getHebrewMonthYear(DateTime date) {
+    const months = [
+      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    ];
+    return '${months[date.month]} ${date.year}';
+  }
+
+  String _formatEventDates(Event event) {
+    final isSameDay = event.startDate.year == event.endDate.year &&
+        event.startDate.month == event.endDate.month &&
+        event.startDate.day == event.endDate.day;
+
+    if (isSameDay) {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)}';
+    } else {
+      return 'יום ${_getFullHebrewDayName(event.startDate.weekday)} ${event.startDate.day} ב${_getHebrewMonthName(event.startDate.month)} - יום ${_getFullHebrewDayName(event.endDate.weekday)} ${event.endDate.day} ב${_getHebrewMonthName(event.endDate.month)}';
+    }
+  }
+
+  String _getFullHebrewDayName(int weekday) {
+    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    return days[weekday == 7 ? 7 : weekday];
+  }
+
+  String _getHebrewMonthName(int month) {
+    const months = [
+      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    ];
+    return months[month];
+  }
+
+  String _formatLocationForDisplay(String location) {
+    if (location.contains('||')) {
+      final parts = location.split('||');
+      final strippedLocation = parts[0].trim();
+      return strippedLocation.isNotEmpty ? strippedLocation : location;
+    }
+    return location;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final groupedEvents = _groupEventsByMonth(widget.events);
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: SizedBox(
+          width: 500,
+          height: MediaQuery.of(context).size.height * 0.75,
+          child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ערוך זמינות לאירועים',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Colors.green[700],
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'סמן/ה את האירועים שחבר הצוות זמין/ה להתנדב אליהם',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const Divider(height: 1),
+
+            // Events list
+            Expanded(
+              child: widget.events.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Text(
+                          'אין אירועים עתידיים',
+                          style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: groupedEvents.length,
+                      itemBuilder: (context, index) {
+                        final monthYear = groupedEvents.keys.elementAt(index);
+                        final events = groupedEvents[monthYear]!;
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Month header
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Text(
+                                monthYear,
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: Colors.grey[700],
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            // Event checkboxes
+                            ...events.map((event) {
+                              final isSelected = _selectedEventIds.contains(event.id);
+                              final formattedLocation = event.location.isNotEmpty
+                                  ? _formatLocationForDisplay(event.location)
+                                  : '';
+
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                color: isSelected ? Colors.green[50] : Colors.white,
+                                child: CheckboxListTile(
+                                  value: isSelected,
+                                  onChanged: (_) => _toggleEvent(event.id),
+                                  controlAffinity: ListTileControlAffinity.leading,
+                                  title: Text(
+                                    event.name,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: isSelected ? Colors.green[700] : Colors.black87,
+                                    ),
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _formatEventDates(event),
+                                        style: TextStyle(
+                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                        ),
+                                      ),
+                                      if (formattedLocation.isNotEmpty)
+                                        Text(
+                                          'מיקום: $formattedLocation',
+                                          style: TextStyle(
+                                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  activeColor: Colors.green,
+                                  checkColor: Colors.white,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                ),
+                              );
+                            }).toList(),
+                            const SizedBox(height: 8),
+                          ],
+                        );
+                      },
+                    ),
+            ),
+
+            const Divider(height: 1),
+
+            // Footer buttons
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('ביטול'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(_selectedEventIds.toList()),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green[600],
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('שמור'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        ), // SizedBox
+      ),
+    );
   }
 }
 
