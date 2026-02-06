@@ -110,12 +110,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('שיבוצים'),
-          leading: Row(
-            mainAxisSize: MainAxisSize.min,
+          automaticallyImplyLeading: false,
+          titleSpacing: 0,
+          title: Row(
             children: [
+              // Leading: past-events toggle chip
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                 child: GestureDetector(
                   onTap: () {
                     setState(() {
@@ -125,7 +126,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(20),
                       color: FilterPersistence.showPastEvents
@@ -141,10 +142,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     child: Center(
                       child: Text(
                         FilterPersistence.showPastEvents
-                            ? 'מציג אירועי עבר'
-                            : 'לא מציג אירועי עבר',
+                            ? 'אירועי עבר'
+                            : 'ללא עבר',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: FilterPersistence.showPastEvents
                               ? Colors.green.shade700
@@ -156,7 +157,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
+              // Leading: filter icon
               IconButton(
                 icon: const Icon(
                   Icons.filter_list,
@@ -168,34 +169,36 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   }
                 },
                 tooltip: 'סינון',
-                iconSize: 24,
+                iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+              // Centered title
+              const Expanded(
+                child: Center(child: Text('שיבוצים', style: TextStyle(fontSize: 20))),
+              ),
+              // Trailing icons
+              IconButton(
+                icon: const Icon(Icons.home),
+                tooltip: 'בית',
+                onPressed: () {
+                  final envPrefix = EnvironmentService.instance.routePrefix;
+                  context.go('$envPrefix/admin');
+                },
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'התנתק',
+                onPressed: () => _logout(context),
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
               ),
             ],
           ),
-          leadingWidth: 250,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.home),
-              tooltip: 'בית',
-              onPressed: () {
-                final envPrefix = EnvironmentService.instance.routePrefix;
-                context.go('$envPrefix/admin');
-              },
-              iconSize: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-            ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'התנתק',
-              onPressed: () => _logout(context),
-              iconSize: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-            ),
-          ],
         ),
         floatingActionButton: FloatingActionButton(
           heroTag: 'assignment_fab',

@@ -174,7 +174,45 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('צ\'קליסט אירועים'),
+          automaticallyImplyLeading: false,
+          titleSpacing: 0,
+          title: Row(
+            children: [
+              // Leading: filter icon
+              IconButton(
+                icon: const Icon(Icons.filter_list),
+                onPressed: _showFilterSheet,
+                tooltip: 'סינון',
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+              // Centered title
+              const Expanded(
+                child: Center(child: Text('צ\'קליסט אירועים', style: TextStyle(fontSize: 20))),
+              ),
+              // Trailing icons
+              IconButton(
+                icon: const Icon(Icons.home),
+                tooltip: 'בית',
+                onPressed: () {
+                  final envPrefix = EnvironmentService.instance.routePrefix;
+                  context.go('$envPrefix/admin');
+                },
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'התנתק',
+                onPressed: () => _logout(context),
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+            ],
+          ),
           bottom: TabBar(
             controller: _tabController,
             indicator: UnderlineTabIndicator(
@@ -207,34 +245,6 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
               ),
             ],
           ),
-          leading: IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: _showFilterSheet,
-            tooltip: 'סינון',
-          ),
-          actions: [
-            // Home button (appears closest to title in RTL)
-            IconButton(
-              icon: const Icon(Icons.home),
-              tooltip: 'בית',
-              onPressed: () {
-                final envPrefix = EnvironmentService.instance.routePrefix;
-                context.go('$envPrefix/admin');
-              },
-              iconSize: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-            ),
-            // Logout button (appears farthest left in RTL)
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'התנתק',
-              onPressed: () => _logout(context),
-              iconSize: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-            ),
-          ],
         ),
         body: TabBarView(
           controller: _tabController,

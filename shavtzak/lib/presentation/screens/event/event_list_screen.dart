@@ -136,97 +136,94 @@ class _EventListScreenState extends State<EventListScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          leadingWidth: 160,
-          title: _showSearch
-              ? TextField(
-                  controller: _searchController,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'חיפוש אירוע...',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(color: Colors.black54),
-                  ),
-                  style: const TextStyle(color: Colors.black),
-                  onChanged: _onSearchChanged,
-                )
-              : const Text('אירועים'),
-          leading: Padding(
-            padding: const EdgeInsetsDirectional.only(start: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Search/Close button
-                _buildCompactIcon(
-                  icon: _showSearch ? Icons.close : Icons.search,
-                  onPressed: () {
-                    setState(() {
-                      _showSearch = !_showSearch;
-                      if (!_showSearch) {
-                        _searchController.clear();
-                        context.read<EventBloc>().add(const LoadEvents());
-                      }
-                    });
-                  },
-                ),
-                const SizedBox(width: 4),
-                // Filter button
-                _buildCompactIcon(
-                  icon: Icons.filter_list,
-                  onPressed: () => _showCategoryFilterModal(),
-                  badge: _selectedCategoryIds.isNotEmpty
-                      ? Text('${_selectedCategoryIds.length}')
-                      : null,
-                ),
-              ],
-            ),
+          automaticallyImplyLeading: false,
+          titleSpacing: 0,
+          title: Row(
+            children: [
+              // Leading icons
+              _buildCompactIcon(
+                icon: _showSearch ? Icons.close : Icons.search,
+                onPressed: () {
+                  setState(() {
+                    _showSearch = !_showSearch;
+                    if (!_showSearch) {
+                      _searchController.clear();
+                      context.read<EventBloc>().add(const LoadEvents());
+                    }
+                  });
+                },
+              ),
+              _buildCompactIcon(
+                icon: Icons.filter_list,
+                onPressed: () => _showCategoryFilterModal(),
+                badge: _selectedCategoryIds.isNotEmpty
+                    ? Text('${_selectedCategoryIds.length}')
+                    : null,
+              ),
+              // Centered title
+              Expanded(
+                child: _showSearch
+                    ? TextField(
+                        controller: _searchController,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          hintText: 'חיפוש אירוע...',
+                          border: InputBorder.none,
+                          hintStyle: TextStyle(color: Colors.black54),
+                        ),
+                        style: const TextStyle(color: Colors.black),
+                        onChanged: _onSearchChanged,
+                      )
+                    : const Center(child: Text('אירועים', style: TextStyle(fontSize: 20))),
+              ),
+              // Trailing icons
+              IconButton(
+                icon: const Icon(Icons.work),
+                tooltip: 'ניהול תפקידים',
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => const RoleManagementDialog(),
+                  );
+                },
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+              IconButton(
+                icon: const Icon(Icons.category),
+                tooltip: 'ניהול קטגוריות',
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => const CategoryManagementDialog(),
+                  );
+                },
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+              IconButton(
+                icon: const Icon(Icons.home),
+                tooltip: 'בית',
+                onPressed: () {
+                  final envPrefix = EnvironmentService.instance.routePrefix;
+                  context.go('$envPrefix/admin');
+                },
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'התנתק',
+                onPressed: () => _logout(context),
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+            ],
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.work),
-              tooltip: 'ניהול תפקידים',
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => const RoleManagementDialog(),
-                );
-              },
-              iconSize: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-            ),
-            IconButton(
-              icon: const Icon(Icons.category),
-              tooltip: 'ניהול קטגוריות',
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => const CategoryManagementDialog(),
-                );
-              },
-              iconSize: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-            ),
-            IconButton(
-              icon: const Icon(Icons.home),
-              tooltip: 'בית',
-              onPressed: () {
-                final envPrefix = EnvironmentService.instance.routePrefix;
-                context.go('$envPrefix/admin');
-              },
-              iconSize: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-            ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'התנתק',
-              onPressed: () => _logout(context),
-              iconSize: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-            ),
-          ],
         ),
         body: BlocConsumer<EventBloc, EventState>(
           listener: (context, state) {

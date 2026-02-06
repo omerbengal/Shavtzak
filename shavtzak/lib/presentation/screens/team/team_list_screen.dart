@@ -155,26 +155,11 @@ class _TeamListScreenState extends State<TeamListScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          leadingWidth: 160,
-          title: _showSearch
-              ? TextField(
-                  controller: _searchController,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'חיפוש חבר צוות...',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(color: Colors.black54),
-                  ),
-                  style: const TextStyle(color: Colors.black),
-                  onChanged: _onSearchChanged,
-                )
-              : const Text(AppStrings.team),
-          leading: Padding(
-            padding: const EdgeInsetsDirectional.only(start: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Search/Close button
+          automaticallyImplyLeading: false,
+          titleSpacing: 0,
+          title: Row(
+            children: [
+              // Leading: Search/Close button
               _buildCompactIcon(
                 icon: _showSearch ? Icons.close : Icons.search,
                 onPressed: () {
@@ -187,8 +172,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   });
                 },
               ),
-              const SizedBox(width: 4),
-              // Sync button
+              // Leading: Sync button
               BlocListener<CalendarSyncBloc, CalendarSyncState>(
                 listener: (context, state) {
                   if (state is CalendarSyncBidirectionalComplete) {
@@ -251,8 +235,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   },
                 ),
               ),
-              const SizedBox(width: 4),
-              // Vehicle info copy button
+              // Leading: Vehicle info copy button
               _buildCompactIcon(
                 icon: Icons.directions_car,
                 onPressed: () {
@@ -265,42 +248,55 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   );
                 },
               ),
+              // Centered title
+              Expanded(
+                child: _showSearch
+                    ? TextField(
+                        controller: _searchController,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          hintText: 'חיפוש חבר צוות...',
+                          border: InputBorder.none,
+                          hintStyle: TextStyle(color: Colors.black54),
+                        ),
+                        style: const TextStyle(color: Colors.black),
+                        onChanged: _onSearchChanged,
+                      )
+                    : const Center(child: Text(AppStrings.team, style: TextStyle(fontSize: 20))),
+              ),
+              // Trailing: Archive button
+              IconButton(
+                icon: const Icon(Icons.inventory_2),
+                tooltip: 'ארכיון',
+                onPressed: () => ArchivedMembersDialog.show(context),
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+              // Trailing: Home button
+              IconButton(
+                icon: const Icon(Icons.home),
+                tooltip: 'בית',
+                onPressed: () {
+                  final envPrefix = EnvironmentService.instance.routePrefix;
+                  context.go('$envPrefix/admin');
+                },
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
+              // Trailing: Logout button
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'התנתק',
+                onPressed: () => _logout(context),
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
             ],
           ),
-          ),
-        actions: [
-          // Archive button - shows archived members dialog
-          IconButton(
-            icon: const Icon(Icons.inventory_2),
-            tooltip: 'ארכיון',
-            onPressed: () => ArchivedMembersDialog.show(context),
-            iconSize: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-          ),
-          // Home button (appears middle from left in RTL)
-          IconButton(
-            icon: const Icon(Icons.home),
-            tooltip: 'בית',
-            onPressed: () {
-              final envPrefix = EnvironmentService.instance.routePrefix;
-              context.go('$envPrefix/admin');
-            },
-            iconSize: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-          ),
-          // Logout button (appears farthest left in RTL)
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'התנתק',
-            onPressed: () => _logout(context),
-            iconSize: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
-          ),
-        ],
-      ),
+        ),
       body: BlocConsumer<TeamBloc, TeamState>(
           listener: (context, state) {
             if (state is TeamError) {
