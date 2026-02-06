@@ -1,78 +1,7 @@
 import 'package:equatable/equatable.dart';
+import 'checklist_note.dart';
 import 'event.dart';
 import 'team_member.dart';
-
-/// Entry for an admin note with timestamp for ordering
-class AdminNoteEntry extends Equatable {
-  final String note;
-  final DateTime? updatedAt;
-
-  const AdminNoteEntry({
-    required this.note,
-    this.updatedAt,
-  });
-
-  AdminNoteEntry copyWith({
-    String? note,
-    DateTime? updatedAt,
-  }) {
-    return AdminNoteEntry(
-      note: note ?? this.note,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
-  }
-
-  @override
-  List<Object?> get props => [note, updatedAt];
-}
-
-/// Entry for a responsible note with timestamp for ordering
-class ResponsibleNoteEntry extends Equatable {
-  final String note;
-  final DateTime? updatedAt;
-
-  const ResponsibleNoteEntry({
-    required this.note,
-    this.updatedAt,
-  });
-
-  ResponsibleNoteEntry copyWith({
-    String? note,
-    DateTime? updatedAt,
-  }) {
-    return ResponsibleNoteEntry(
-      note: note ?? this.note,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
-  }
-
-  @override
-  List<Object?> get props => [note, updatedAt];
-}
-
-/// Entry for a CC note with timestamp for ordering
-class CcNoteEntry extends Equatable {
-  final String note;
-  final DateTime? updatedAt; // null for legacy entries (before timestamp support)
-
-  const CcNoteEntry({
-    required this.note,
-    this.updatedAt,
-  });
-
-  CcNoteEntry copyWith({
-    String? note,
-    DateTime? updatedAt,
-  }) {
-    return CcNoteEntry(
-      note: note ?? this.note,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
-  }
-
-  @override
-  List<Object?> get props => [note, updatedAt];
-}
 
 /// Entity representing a checklist item for an event
 class ChecklistItem extends Equatable {
@@ -80,10 +9,8 @@ class ChecklistItem extends Equatable {
   final String eventId; // Foreign key to Event
   final String name; // Title of the checklist item
   final String responsibleId; // Foreign key to TeamMember (אחראי)
-  final ResponsibleNoteEntry responsibleNote; // פירוט אחראי
-  final Map<String, AdminNoteEntry> adminNotes; // Map of adminId → AdminNoteEntry (הערות מנהלים)
+  final List<ChecklistNote> notes; // Conversation-like notes thread
   final List<String> ccIds; // List of team member IDs (מיודעים)
-  final Map<String, CcNoteEntry> ccNotes; // Map of teamMemberId → CcNoteEntry (פירוט מיודעים)
   final bool status; // true = כן, false = לא
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -100,10 +27,8 @@ class ChecklistItem extends Equatable {
     required this.eventId,
     required this.name,
     required this.responsibleId,
-    this.responsibleNote = const ResponsibleNoteEntry(note: ''),
-    this.adminNotes = const {},
+    this.notes = const [],
     this.ccIds = const [],
-    this.ccNotes = const {},
     required this.status,
     required this.createdAt,
     required this.updatedAt,
@@ -114,16 +39,19 @@ class ChecklistItem extends Equatable {
     this.ccMembers = const [],
   });
 
+  /// Get the content of the latest note, or null if no notes
+  String? get latestNoteContent {
+    return notes.isEmpty ? null : notes.last.content;
+  }
+
   /// Creates a copy with updated values
   ChecklistItem copyWith({
     String? id,
     String? eventId,
     String? name,
     String? responsibleId,
-    ResponsibleNoteEntry? responsibleNote,
-    Map<String, AdminNoteEntry>? adminNotes,
+    List<ChecklistNote>? notes,
     List<String>? ccIds,
-    Map<String, CcNoteEntry>? ccNotes,
     bool? status,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -138,10 +66,8 @@ class ChecklistItem extends Equatable {
       eventId: eventId ?? this.eventId,
       name: name ?? this.name,
       responsibleId: responsibleId ?? this.responsibleId,
-      responsibleNote: responsibleNote ?? this.responsibleNote,
-      adminNotes: adminNotes ?? this.adminNotes,
+      notes: notes ?? this.notes,
       ccIds: ccIds ?? this.ccIds,
-      ccNotes: ccNotes ?? this.ccNotes,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -165,68 +91,6 @@ class ChecklistItem extends Equatable {
     return responsibleId == teamMemberId;
   }
 
-  /// Check if a user can edit a specific CC note
-  bool userCanEditCcNote(String teamMemberId, String ccId, bool isAdmin) {
-    if (isAdmin) return true;
-    return ccId == teamMemberId;
-  }
-
-  /// Get the note for a specific CC'd team member
-  String? getCcNote(String teamMemberId) {
-    return ccNotes[teamMemberId]?.note;
-  }
-
-  /// Get the full CcNoteEntry for a specific CC'd team member
-  CcNoteEntry? getCcNoteEntry(String teamMemberId) {
-    return ccNotes[teamMemberId];
-  }
-
-  /// Update the note for a specific CC'd team member
-  ChecklistItem withUpdatedCcNote(String teamMemberId, String note) {
-    final updatedNotes = Map<String, CcNoteEntry>.from(ccNotes);
-    if (note.isNotEmpty) {
-      updatedNotes[teamMemberId] = CcNoteEntry(
-        note: note,
-        updatedAt: DateTime.now(),
-      );
-    } else {
-      updatedNotes.remove(teamMemberId);
-    }
-    return copyWith(ccNotes: updatedNotes, updatedAt: DateTime.now());
-  }
-
-  /// Get the admin note for a specific admin
-  String? getAdminNote(String adminId) {
-    return adminNotes[adminId]?.note;
-  }
-
-  /// Get the full AdminNoteEntry for a specific admin
-  AdminNoteEntry? getAdminNoteEntry(String adminId) {
-    return adminNotes[adminId];
-  }
-
-  /// Update the note for a specific admin
-  ChecklistItem withUpdatedAdminNote(String adminId, String note) {
-    final updatedNotes = Map<String, AdminNoteEntry>.from(adminNotes);
-    if (note.isNotEmpty) {
-      updatedNotes[adminId] = AdminNoteEntry(
-        note: note,
-        updatedAt: DateTime.now(),
-      );
-    } else {
-      updatedNotes.remove(adminId);
-    }
-    return copyWith(adminNotes: updatedNotes, updatedAt: DateTime.now());
-  }
-
-  /// Update the responsible note with timestamp
-  ChecklistItem withUpdatedResponsibleNote(String note) {
-    return copyWith(
-      responsibleNote: ResponsibleNoteEntry(note: note, updatedAt: DateTime.now()),
-      updatedAt: DateTime.now(),
-    );
-  }
-
   /// Add a CC'd team member
   ChecklistItem withAddedCc(String teamMemberId) {
     if (ccIds.contains(teamMemberId)) return this;
@@ -237,14 +101,10 @@ class ChecklistItem extends Equatable {
   }
 
   /// Remove a CC'd team member
-  /// Note: Does NOT remove the CC's note from ccNotes - this is intentional.
-  /// The note remains temporarily so toFirestore() can detect it as orphaned
-  /// and add FieldValue.delete() markers to properly delete it from Firestore.
   ChecklistItem withRemovedCc(String teamMemberId) {
     if (!ccIds.contains(teamMemberId)) return this;
     return copyWith(
       ccIds: ccIds.where((id) => id != teamMemberId).toList(),
-      // ccNotes is intentionally NOT modified here
       updatedAt: DateTime.now(),
     );
   }
@@ -264,10 +124,8 @@ class ChecklistItem extends Equatable {
         eventId,
         name,
         responsibleId,
-        responsibleNote,
-        adminNotes,
+        notes,
         ccIds,
-        ccNotes,
         status,
         createdAt,
         updatedAt,

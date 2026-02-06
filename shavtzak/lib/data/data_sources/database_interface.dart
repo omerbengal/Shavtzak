@@ -243,6 +243,9 @@ abstract class DatabaseInterface {
   /// Delete all checklist items for an event
   Future<void> deleteChecklistItemsByEvent(String eventId);
 
+  /// Add a note to a checklist item (atomic arrayUnion)
+  Future<void> addNoteToChecklistItem(String checklistItemId, Map<String, dynamic> noteData);
+
   // ========== Checklist Presets ==========
 
   /// Get all presets

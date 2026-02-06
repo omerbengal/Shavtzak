@@ -64,34 +64,20 @@ class UpdateChecklistItemStatus extends ChecklistEvent {
   List<Object?> get props => [itemId, newStatus];
 }
 
-/// Update the responsible note of a checklist item
-class UpdateResponsibleNote extends ChecklistEvent {
+/// Add a note to a checklist item (conversation-style)
+class AddChecklistNote extends ChecklistEvent {
   final String itemId;
-  final String note;
+  final String content;
+  final String authorRole;
 
-  const UpdateResponsibleNote({
+  const AddChecklistNote({
     required this.itemId,
-    required this.note,
+    required this.content,
+    required this.authorRole,
   });
 
   @override
-  List<Object?> get props => [itemId, note];
-}
-
-/// Update a CC member's note
-class UpdateCcNote extends ChecklistEvent {
-  final String itemId;
-  final String ccMemberId;
-  final String note;
-
-  const UpdateCcNote({
-    required this.itemId,
-    required this.ccMemberId,
-    required this.note,
-  });
-
-  @override
-  List<Object?> get props => [itemId, ccMemberId, note];
+  List<Object?> get props => [itemId, content, authorRole];
 }
 
 /// Add a CC member to a checklist item

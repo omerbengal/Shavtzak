@@ -24,7 +24,6 @@ class ChatBubble extends StatelessWidget {
 
   BorderRadius _getBorderRadius() {
     if (alignRight) {
-      // Own message (right side): only top-right sharp, all others rounded
       return const BorderRadius.only(
         topLeft: Radius.circular(12),
         topRight: Radius.circular(4),
@@ -32,7 +31,6 @@ class ChatBubble extends StatelessWidget {
         bottomRight: Radius.circular(12),
       );
     } else {
-      // Other's message (left side): only top-left sharp, all others rounded
       return const BorderRadius.only(
         topLeft: Radius.circular(4),
         topRight: Radius.circular(12),
@@ -42,120 +40,75 @@ class ChatBubble extends StatelessWidget {
     }
   }
 
-  double _getMaxWidth(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    // Use fixed widths for consistent chat appearance
-    if (screenWidth < 400) return 180.0;      // Small mobile
-    if (screenWidth < 600) return 220.0;      // Large mobile
-    return 250.0;                             // Desktop/tablet
-  }
-
-  double _getHorizontalPadding(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    // For narrow screens, use fixed padding
-    if (screenWidth < 600) return 24.0;
-
-    // For wide screens, center a chat column
-    // Create a 600px wide chat area in the center for proper bubble spacing
-    final targetChatWidth = 600.0;
-    final padding = (screenWidth - targetChatWidth) / 2;
-
-    // Minimum 24px padding, but scale up for wider screens
-    return padding.clamp(24.0, double.infinity);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final maxWidth = _getMaxWidth(context);
-    final horizontalPadding = _getHorizontalPadding(context);
-
-    // In RTL: MainAxisAlignment.start = visually RIGHT (for own messages)
-    //         MainAxisAlignment.end = visually LEFT (for others' messages)
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-      child: Row(
-        mainAxisAlignment: alignRight ? MainAxisAlignment.start : MainAxisAlignment.end,
-        children: [
-          ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxWidth),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Author label - explicitly aligned to same edge as bubble
-                if (showAuthorLabel)
-                  Align(
-                    alignment: alignRight ? Alignment.centerRight : Alignment.centerLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 2),
-                      child: Text(
-                        authorName,
-                        textAlign: alignRight ? TextAlign.right : TextAlign.left,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey[700],
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+    // Use Align + FractionallySizedBox for responsive width without MediaQuery
+    return Align(
+      alignment: alignRight ? AlignmentDirectional.centerStart : AlignmentDirectional.centerEnd,
+      child: FractionallySizedBox(
+        widthFactor: 0.7,
+        child: Align(
+          alignment: alignRight ? AlignmentDirectional.centerStart : AlignmentDirectional.centerEnd,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: alignRight ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+            children: [
+              // Author label
+              if (showAuthorLabel)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    authorName,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w500,
                     ),
-                  ),
-                // Bubble container - explicitly aligned to same edge as author label
-                Align(
-                  alignment: alignRight ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: bubbleColor,
-                      borderRadius: _getBorderRadius(),
-                      border: isOwnMessage
-                          ? Border.all(
-                              color: Colors.blue,
-                              width: 2.0,
-                            )
-                          : null,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Message text with wrapping
-                        Text(
-                          message,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.black87,
-                          ),
-                          softWrap: true,
-                          overflow: TextOverflow.visible,
-                        ),
-                        // Timestamp (if provided) - LTR, centered at bottom
-                        if (timestamp != null) ...[
-                          const SizedBox(height: 4),
-                          SizedBox(
-                            width: double.infinity,
-                            child: Directionality(
-                              textDirection: TextDirection.ltr,
-                              child: Text(
-                                timestamp!,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey[600],
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ],
-            ),
+              // Bubble container
+              Container(
+                decoration: BoxDecoration(
+                  color: bubbleColor,
+                  borderRadius: _getBorderRadius(),
+                  border: isOwnMessage
+                      ? Border.all(color: Colors.blue, width: 2.0)
+                      : null,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      message,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black87,
+                      ),
+                      softWrap: true,
+                    ),
+                    if (timestamp != null) ...[
+                      const SizedBox(height: 4),
+                      Directionality(
+                        textDirection: TextDirection.ltr,
+                        child: Text(
+                          timestamp!,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

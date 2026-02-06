@@ -346,11 +346,22 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                       );
                     }
 
-                    // Sort by date (most recent first)
+                    // Sort by: event start date (asc), event name (asc), checklist item name (asc)
                     final sortedItems = filteredItems.sorted((a, b) {
+                      // First compare by event start date
                       final aDate = a.event?.startDate ?? DateTime(0);
                       final bDate = b.event?.startDate ?? DateTime(0);
-                      return bDate.compareTo(aDate);
+                      final dateCompare = aDate.compareTo(bDate);
+                      if (dateCompare != 0) return dateCompare;
+
+                      // Then compare by event name
+                      final aEventName = a.event?.name ?? '';
+                      final bEventName = b.event?.name ?? '';
+                      final eventNameCompare = aEventName.compareTo(bEventName);
+                      if (eventNameCompare != 0) return eventNameCompare;
+
+                      // Finally compare by checklist item name
+                      return a.name.compareTo(b.name);
                     });
 
                     // Get current user ID for personal note display
@@ -373,6 +384,15 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                               UpdateChecklistItemStatus(
                                 itemId: item.id,
                                 newStatus: newStatus,
+                              ),
+                            );
+                          },
+                          onAddNote: (content) {
+                            context.read<ChecklistBloc>().add(
+                              AddChecklistNote(
+                                itemId: item.id,
+                                content: content,
+                                authorRole: 'מנהל',
                               ),
                             );
                           },
@@ -407,15 +427,23 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
               final filteredItems = _filterItems(state.items);
               final groupedItems = _groupByEvent(filteredItems);
 
-              // Sort events by date
+              // Sort events by date (asc), then by name (asc)
               final sortedEventIds = groupedItems.keys.toList();
               sortedEventIds.sort((a, b) {
                 final aItems = groupedItems[a]!;
                 final bItems = groupedItems[b]!;
                 if (aItems.isEmpty || bItems.isEmpty) return 0;
+
+                // First compare by event start date (asc)
                 final aDate = aItems.first.event?.startDate ?? DateTime(0);
                 final bDate = bItems.first.event?.startDate ?? DateTime(0);
-                return bDate.compareTo(aDate);
+                final dateCompare = aDate.compareTo(bDate);
+                if (dateCompare != 0) return dateCompare;
+
+                // Then compare by event name (asc)
+                final aEventName = aItems.first.event?.name ?? '';
+                final bEventName = bItems.first.event?.name ?? '';
+                return aEventName.compareTo(bEventName);
               });
 
               if (sortedEventIds.isEmpty) {
@@ -448,6 +476,15 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                           UpdateChecklistItemStatus(
                             itemId: item.id,
                             newStatus: newStatus,
+                          ),
+                        );
+                      },
+                      onAddNote: (content) {
+                        context.read<ChecklistBloc>().add(
+                          AddChecklistNote(
+                            itemId: item.id,
+                            content: content,
+                            authorRole: 'מנהל',
                           ),
                         );
                       },

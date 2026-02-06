@@ -2,13 +2,12 @@ import 'package:flutter/material.dart';
 import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
 
-/// Dialog for responsible users to manage CC members and their notes
+/// Dialog for responsible users to manage CC members
 class ResponsibleCcManagementDialog extends StatefulWidget {
   final ChecklistItem item;
   final TeamMember currentUser;
   final List<TeamMember> allTeamMembers;
   final Function(List<String>) onCcMembersChanged;
-  final Function(String, String) onCcNoteUpdated;
 
   const ResponsibleCcManagementDialog({
     super.key,
@@ -16,7 +15,6 @@ class ResponsibleCcManagementDialog extends StatefulWidget {
     required this.currentUser,
     required this.allTeamMembers,
     required this.onCcMembersChanged,
-    required this.onCcNoteUpdated,
   });
 
   @override
@@ -66,20 +64,6 @@ class _ResponsibleCcManagementDialogState extends State<ResponsibleCcManagementD
       _updateAvailableMembers();
     });
     widget.onCcMembersChanged(_selectedCcMembers.map((m) => m.id).toList());
-  }
-
-  void _editCcNote(TeamMember member) {
-    final currentNote = widget.item.getCcNote(member.id) ?? '';
-    showDialog(
-      context: context,
-      builder: (context) => _CcNoteDialog(
-        memberName: member.name,
-        initialNote: currentNote,
-        onSave: (note) {
-          widget.onCcNoteUpdated(member.id, note);
-        },
-      ),
-    );
   }
 
   @override
@@ -136,28 +120,14 @@ class _ResponsibleCcManagementDialogState extends State<ResponsibleCcManagementD
                           itemCount: _selectedCcMembers.length,
                           itemBuilder: (context, index) {
                             final member = _selectedCcMembers[index];
-                            final note = widget.item.getCcNote(member.id);
                             return Card(
                               margin: const EdgeInsets.symmetric(vertical: 4),
                               child: ListTile(
                                 title: Text(member.name),
-                                subtitle: note != null && note.isNotEmpty
-                                    ? Text('הערה: $note', style: const TextStyle(fontSize: 12))
-                                    : null,
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.edit_note, size: 20),
-                                      onPressed: () => _editCcNote(member),
-                                      tooltip: 'ערוך הערה',
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.remove_circle, size: 20),
-                                      onPressed: () => _removeCcMember(member),
-                                      tooltip: 'הסר מהרשימה',
-                                    ),
-                                  ],
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.remove_circle, size: 20),
+                                  onPressed: () => _removeCcMember(member),
+                                  tooltip: 'הסר מהרשימה',
                                 ),
                               ),
                             );
@@ -234,70 +204,6 @@ class _ResponsibleCcManagementDialogState extends State<ResponsibleCcManagementD
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Simple dialog for editing CC notes
-class _CcNoteDialog extends StatefulWidget {
-  final String memberName;
-  final String initialNote;
-  final Function(String) onSave;
-
-  const _CcNoteDialog({
-    required this.memberName,
-    required this.initialNote,
-    required this.onSave,
-  });
-
-  @override
-  State<_CcNoteDialog> createState() => _CcNoteDialogState();
-}
-
-class _CcNoteDialogState extends State<_CcNoteDialog> {
-  final _controller = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.text = widget.initialNote;
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        title: Text('הערה עבור ${widget.memberName}'),
-        content: TextField(
-          controller: _controller,
-          decoration: const InputDecoration(
-            labelText: 'הערה',
-            border: OutlineInputBorder(),
-          ),
-          maxLines: 3,
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('ביטול'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              widget.onSave(_controller.text.trim());
-              Navigator.pop(context);
-            },
-            child: const Text('שמור'),
-          ),
-        ],
       ),
     );
   }

@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:uuid/uuid.dart';
 import '../../domain/entities/checklist_item.dart';
-import '../../domain/entities/event.dart';
+import '../../domain/entities/checklist_note.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/services/environment_service.dart';
 import '../data_sources/database_interface.dart';
+import '../models/checklist_item_model.dart';
+import '../models/checklist_note_model.dart';
 
 /// Repository for managing checklist items with real-time updates
 class ChecklistRepository {
@@ -38,9 +41,6 @@ class ChecklistRepository {
         for (final doc in snapshot.docs) {
           final data = doc.data() as Map<String, dynamic>;
 
-          // DEBUG: Log createdByAdminId
-          developer.log('DEBUG ChecklistRepository: item=${data['name']}, createdByAdminId=${data['createdByAdminId']}', name: 'Checklist');
-
           final eventId = data['eventId'] as String;
           final event = eventMap[eventId];
 
@@ -55,25 +55,7 @@ class ChecklistRepository {
               .cast<TeamMember>()
               .toList();
 
-          final item = ChecklistItem(
-            id: doc.id,
-            eventId: eventId,
-            name: data['name'] as String,
-            responsibleId: responsibleId,
-            responsibleNote: _convertResponsibleNote(data['responsibleNote']),
-            adminNotes: _convertAdminNotes(data['adminNotes']),
-            ccIds: ccIds,
-            ccNotes: _convertCcNotes(data['ccNotes']),
-            status: data['status'] as bool,
-            createdAt: (data['createdAt'] as Timestamp).toDate(),
-            updatedAt: (data['updatedAt'] as Timestamp).toDate(),
-            statusLastUpdatedAt: (data['statusLastUpdatedAt'] as Timestamp).toDate(),
-            createdByAdminId: data['createdByAdminId'] as String?,
-            event: event,
-            responsible: responsible,
-            ccMembers: ccMembers,
-          );
-
+          final item = ChecklistItemModel.fromFirestore(doc, event, responsible, ccMembers);
           items.add(item);
         }
 
@@ -83,6 +65,45 @@ class ChecklistRepository {
         developer.log('Error watching checklist items: $error', name: 'Checklist', error: error, stackTrace: stackTrace);
         return <ChecklistItem>[];
       });
+  }
+
+  /// Watch a single checklist item by ID for real-time updates
+  Stream<ChecklistItem> watchChecklistItem(String itemId) {
+    return FirebaseFirestore.instance
+        .collection('${_getEnvironmentPrefix()}checklist_items')
+        .doc(itemId)
+        .snapshots()
+        .asyncMap((doc) async {
+      if (!doc.exists) {
+        throw Exception('Checklist item not found: $itemId');
+      }
+
+      // Get related data
+      final allTeamMembers = await _database.getTeamMembers();
+      final memberMap = {for (var member in allTeamMembers) member.id: member};
+
+      final data = doc.data() as Map<String, dynamic>;
+
+      final eventId = data['eventId'] as String;
+      final event = await _database.getEventById(eventId);
+
+      final responsibleId = data['responsibleId'] as String;
+      final responsible = memberMap[responsibleId];
+
+      // Get CC members
+      final ccIds = (data['ccIds'] as List?)?.map((e) => e.toString()).toList() ?? [];
+      final ccMembers = ccIds
+          .map((id) => memberMap[id])
+          .where((member) => member != null)
+          .cast<TeamMember>()
+          .toList();
+
+      return ChecklistItemModel.fromFirestore(doc, event, responsible, ccMembers);
+    })
+        .handleError((error, stackTrace) {
+      developer.log('Error watching checklist item: $error', name: 'Checklist', error: error, stackTrace: stackTrace);
+      throw error;
+    });
   }
 
   /// Watch checklist items for a specific event
@@ -116,25 +137,7 @@ class ChecklistRepository {
               .cast<TeamMember>()
               .toList();
 
-          final item = ChecklistItem(
-            id: doc.id,
-            eventId: eventId,
-            name: data['name'] as String,
-            responsibleId: responsibleId,
-            responsibleNote: _convertResponsibleNote(data['responsibleNote']),
-            adminNotes: _convertAdminNotes(data['adminNotes']),
-            ccIds: ccIds,
-            ccNotes: _convertCcNotes(data['ccNotes']),
-            status: data['status'] as bool,
-            createdAt: (data['createdAt'] as Timestamp).toDate(),
-            updatedAt: (data['updatedAt'] as Timestamp).toDate(),
-            statusLastUpdatedAt: (data['statusLastUpdatedAt'] as Timestamp).toDate(),
-            createdByAdminId: data['createdByAdminId'] as String?,
-            event: event,
-            responsible: responsible,
-            ccMembers: ccMembers,
-          );
-
+          final item = ChecklistItemModel.fromFirestore(doc, event, responsible, ccMembers);
           items.add(item);
         }
 
@@ -174,9 +177,6 @@ class ChecklistRepository {
           for (final doc in snapshot.docs) {
             final data = doc.data() as Map<String, dynamic>;
 
-            // DEBUG: Log createdByAdminId
-            developer.log('DEBUG ChecklistRepository USER: item=${data['name']}, createdByAdminId=${data['createdByAdminId']}', name: 'Checklist');
-
             final eventId = data['eventId'] as String;
             final event = eventMap[eventId];
 
@@ -191,24 +191,7 @@ class ChecklistRepository {
                 .cast<TeamMember>()
                 .toList();
 
-            final item = ChecklistItem(
-              id: doc.id,
-              eventId: eventId,
-              name: data['name'] as String,
-              responsibleId: responsibleId,
-              responsibleNote: _convertResponsibleNote(data['responsibleNote']),
-              adminNotes: _convertAdminNotes(data['adminNotes']),
-              ccIds: ccIds,
-              ccNotes: _convertCcNotes(data['ccNotes']),
-              status: data['status'] as bool,
-              createdAt: (data['createdAt'] as Timestamp).toDate(),
-              updatedAt: (data['updatedAt'] as Timestamp).toDate(),
-              statusLastUpdatedAt: (data['statusLastUpdatedAt'] as Timestamp).toDate(),
-              createdByAdminId: data['createdByAdminId'] as String?,
-              event: event,
-              responsible: responsible,
-              ccMembers: ccMembers,
-            );
+            final item = ChecklistItemModel.fromFirestore(doc, event, responsible, ccMembers);
 
             // Categorize based on user's role
             if (responsibleId == teamMemberId) {
@@ -259,6 +242,28 @@ class ChecklistRepository {
     await _database.updateChecklistItem(item);
   }
 
+  /// Add a note to a checklist item (atomic operation)
+  Future<void> addNoteToChecklistItem({
+    required String checklistItemId,
+    required String content,
+    required String teamMemberId,
+    required String teamMemberName,
+    required String authorRole,
+  }) async {
+    final note = ChecklistNote(
+      id: const Uuid().v4(),
+      content: content,
+      createdAt: DateTime.now(),
+      createdByTeamMemberId: teamMemberId,
+      createdByTeamMemberName: teamMemberName,
+      authorRole: authorRole,
+    );
+    await _database.addNoteToChecklistItem(
+      checklistItemId,
+      ChecklistNoteModel.toMap(note),
+    );
+  }
+
   /// Delete a checklist item
   Future<void> deleteChecklistItem(String id) async {
     await _database.deleteChecklistItem(id);
@@ -267,57 +272,6 @@ class ChecklistRepository {
   /// Delete all checklist items for an event
   Future<void> deleteChecklistItemsByEvent(String eventId) async {
     await _database.deleteChecklistItemsByEvent(eventId);
-  }
-
-  /// Convert Firestore ccNotes Map to proper Map<String, CcNoteEntry>
-  Map<String, CcNoteEntry> _convertCcNotes(dynamic ccNotes) {
-    if (ccNotes == null) return {};
-
-    final notesMap = ccNotes as Map;
-    return notesMap.map((key, value) {
-      // Handle new format: {note: String, updatedAt: Timestamp}
-      if (value is Map && value.containsKey('note')) {
-        final noteText = value['note']?.toString() ?? '';
-        final updatedAt = value['updatedAt'] is Timestamp
-            ? (value['updatedAt'] as Timestamp).toDate()
-            : null;
-        return MapEntry(key.toString(), CcNoteEntry(note: noteText, updatedAt: updatedAt));
-      }
-      // Handle old format: just a string
-      return MapEntry(key.toString(), CcNoteEntry(note: value.toString(), updatedAt: null));
-    });
-  }
-
-  /// Convert Firestore adminNotes Map to proper Map<String, AdminNoteEntry>
-  Map<String, AdminNoteEntry> _convertAdminNotes(dynamic adminNotes) {
-    if (adminNotes == null) return {};
-
-    final notesMap = adminNotes as Map;
-    return notesMap.map((key, value) {
-      // Handle new format: {note: String, updatedAt: Timestamp}
-      if (value is Map && value.containsKey('note')) {
-        final noteText = value['note']?.toString() ?? '';
-        final updatedAt = value['updatedAt'] is Timestamp
-            ? (value['updatedAt'] as Timestamp).toDate()
-            : null;
-        return MapEntry(key.toString(), AdminNoteEntry(note: noteText, updatedAt: updatedAt));
-      }
-      // Handle old format: just a string
-      return MapEntry(key.toString(), AdminNoteEntry(note: value.toString(), updatedAt: null));
-    });
-  }
-
-  /// Convert Firestore responsibleNote to ResponsibleNoteEntry
-  ResponsibleNoteEntry _convertResponsibleNote(dynamic responsibleNote) {
-    if (responsibleNote != null && responsibleNote is Map) {
-      return ResponsibleNoteEntry(
-        note: responsibleNote['note']?.toString() ?? '',
-        updatedAt: responsibleNote['updatedAt'] is Timestamp
-            ? (responsibleNote['updatedAt'] as Timestamp).toDate()
-            : null,
-      );
-    }
-    return ResponsibleNoteEntry(note: responsibleNote?.toString() ?? '', updatedAt: null);
   }
 
   /// Get environment prefix for collection names

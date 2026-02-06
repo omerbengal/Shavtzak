@@ -18,6 +18,9 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
   final ChecklistRepository _repository;
   final UserSelectionBloc _userSelectionBloc;
 
+  // Expose repository for direct stream access
+  ChecklistRepository get repository => _repository;
+
   ChecklistBloc({
     required ChecklistRepository repository,
     required UserSelectionBloc userSelectionBloc,
@@ -30,8 +33,7 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
     on<AddChecklistItem>(_onAddChecklistItem);
     on<UpdateChecklistItem>(_onUpdateChecklistItem);
     on<UpdateChecklistItemStatus>(_onUpdateChecklistItemStatus);
-    on<UpdateResponsibleNote>(_onUpdateResponsibleNote);
-    on<UpdateCcNote>(_onUpdateCcNote);
+    on<AddChecklistNote>(_onAddChecklistNote);
     on<AddCcMember>(_onAddCcMember);
     on<RemoveCcMember>(_onRemoveCcMember);
     on<DeleteChecklistItem>(_onDeleteChecklistItem);
@@ -103,16 +105,6 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
           final ccItems = result['cc'] as List<ChecklistItem>;
 
           developer.log('ChecklistBloc: Loaded ${responsibleItems.length} responsible and ${ccItems.length} CC items for user ${event.teamMemberId}', name: 'Checklist');
-
-          // Log details of responsible items
-          for (final item in responsibleItems) {
-            developer.log('Responsible item: ${item.name} (event: ${item.event?.name})', name: 'Checklist');
-          }
-
-          // Log details of CC items
-          for (final item in ccItems) {
-            developer.log('CC item: ${item.name} (event: ${item.event?.name})', name: 'Checklist');
-          }
 
           return UserChecklistLoaded(
             responsibleItems: responsibleItems,
@@ -219,8 +211,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
     }
   }
 
-  Future<void> _onUpdateResponsibleNote(
-    UpdateResponsibleNote event,
+  Future<void> _onAddChecklistNote(
+    AddChecklistNote event,
     Emitter<ChecklistState> emit,
   ) async {
     try {
@@ -230,59 +222,19 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
         return;
       }
 
-      // Get the item
-      final item = await _repository.getChecklistItemById(event.itemId);
-      if (item == null) {
-        emit(ChecklistError('Checklist item not found'));
-        return;
-      }
+      if (event.content.trim().isEmpty) return;
 
-      // Check permissions (responsible person or admin can update note)
-      if (!item.userCanEdit(currentUser.id, currentUser.isAdmin)) {
-        emit(ChecklistError('You do not have permission to update this note'));
-        return;
-      }
-
-      final updatedItem = item.withUpdatedResponsibleNote(event.note);
-
-      await _repository.updateChecklistItem(updatedItem);
-      developer.log('ChecklistBloc: Updated responsible note for item ${event.itemId}', name: 'Checklist');
+      await _repository.addNoteToChecklistItem(
+        checklistItemId: event.itemId,
+        content: event.content.trim(),
+        teamMemberId: currentUser.id,
+        teamMemberName: currentUser.name,
+        authorRole: event.authorRole,
+      );
+      developer.log('ChecklistBloc: Added note to item ${event.itemId}', name: 'Checklist');
     } catch (e) {
-      developer.log('Error updating responsible note: $e', name: 'Checklist');
-      emit(ChecklistError('Failed to update note: $e'));
-    }
-  }
-
-  Future<void> _onUpdateCcNote(
-    UpdateCcNote event,
-    Emitter<ChecklistState> emit,
-  ) async {
-    try {
-      final currentUser = _getCurrentUser();
-      if (currentUser == null) {
-        emit(ChecklistError('User not authenticated'));
-        return;
-      }
-
-      // Get the item
-      final item = await _repository.getChecklistItemById(event.itemId);
-      if (item == null) {
-        emit(ChecklistError('Checklist item not found'));
-        return;
-      }
-
-      // Check permissions (CC member can only edit their own note, admin can edit any)
-      if (!item.userCanEditCcNote(currentUser.id, event.ccMemberId, currentUser.isAdmin)) {
-        emit(ChecklistError('You can only edit your own note'));
-        return;
-      }
-
-      final updatedItem = item.withUpdatedCcNote(event.ccMemberId, event.note);
-      await _repository.updateChecklistItem(updatedItem);
-      developer.log('ChecklistBloc: Updated CC note for member ${event.ccMemberId} on item ${event.itemId}', name: 'Checklist');
-    } catch (e) {
-      developer.log('Error updating CC note: $e', name: 'Checklist');
-      emit(ChecklistError('Failed to update note: $e'));
+      developer.log('Error adding note to checklist item: $e', name: 'Checklist');
+      emit(ChecklistError('Failed to add note: $e'));
     }
   }
 

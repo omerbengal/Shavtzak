@@ -11,7 +11,6 @@ import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_state.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/event/event_bloc.dart';
-import '../../bloc/event/event_state.dart';
 import '../../bloc/event/event_event.dart';
 import '../../widgets/checklist/user_checklist_item_card.dart';
 
@@ -50,65 +49,6 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
   void dispose() {
     _tabController.dispose();
     super.dispose();
-  }
-
-  void _showNoteDialog(ChecklistItem item, bool isResponsible) {
-    final currentUser = (context.read<UserSelectionBloc>().state as UserAuthenticated).user;
-
-    // Get the current note based on user role
-    final currentNote = isResponsible
-        ? item.responsibleNote.note
-        : (item.getCcNote(currentUser.id) ?? '');
-
-    final controller = TextEditingController(text: currentNote);
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: Text('הערה עבור ${item.name}'),
-          content: TextFormField(
-            controller: controller,
-            textAlign: TextAlign.right,
-            textDirection: TextDirection.rtl,
-            decoration: const InputDecoration(
-              labelText: 'הערה שלך',
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 3,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('ביטול'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (isResponsible) {
-                  context.read<ChecklistBloc>().add(
-                    UpdateResponsibleNote(
-                      itemId: item.id,
-                      note: controller.text.trim(),
-                    ),
-                  );
-                } else {
-                  context.read<ChecklistBloc>().add(
-                    UpdateCcNote(
-                      itemId: item.id,
-                      ccMemberId: currentUser.id,
-                      note: controller.text.trim(),
-                    ),
-                  );
-                }
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('שמור'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   @override
@@ -248,10 +188,6 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
     // Get all team members from the passed teamState
     final allTeamMembers = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
 
-    // Get all events from EventBloc
-    final eventState = context.read<EventBloc>().state;
-    final allEvents = eventState is EventsLoaded ? eventState.events : <Event>[];
-
     // Group by event
     final grouped = _groupByEvent(items);
 
@@ -283,7 +219,15 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
                 ),
               );
             },
-            onEditItem: () => _showNoteDialog(item, true),
+            onAddNote: (content) {
+              context.read<ChecklistBloc>().add(
+                AddChecklistNote(
+                  itemId: item.id,
+                  content: content,
+                  authorRole: 'אחראי',
+                ),
+              );
+            },
           )).toList(),
         );
       },
@@ -341,7 +285,15 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
                 ),
               );
             },
-            onEditItem: () => _showNoteDialog(item, false),
+            onAddNote: (content) {
+              context.read<ChecklistBloc>().add(
+                AddChecklistNote(
+                  itemId: item.id,
+                  content: content,
+                  authorRole: 'מיודע',
+                ),
+              );
+            },
           )).toList(),
         );
       },

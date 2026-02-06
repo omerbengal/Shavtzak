@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/checklist_item.dart';
+import '../../domain/entities/checklist_note.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
@@ -1643,6 +1644,21 @@ class FirestoreDatabase implements DatabaseInterface {
     }
   }
 
+  @override
+  Future<void> addNoteToChecklistItem(String checklistItemId, Map<String, dynamic> noteData) async {
+    try {
+      await _firestore
+          .collection(_checklistItemsCollection)
+          .doc(checklistItemId)
+          .update({
+        'notes': FieldValue.arrayUnion([noteData]),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+    } catch (e) {
+      throw DatabaseException('Failed to add note to checklist item: $e');
+    }
+  }
+
   // ========== Checklist Presets ==========
 
   @override
@@ -1720,17 +1736,25 @@ class FirestoreDatabase implements DatabaseInterface {
 
       for (final templateItem in preset.items) {
         final checklistItemId = const Uuid().v4();
+        // Convert admin note from preset template into a ChecklistNote if present
+        final notes = <ChecklistNote>[];
+        if (templateItem.adminNote.isNotEmpty) {
+          notes.add(ChecklistNote(
+            id: const Uuid().v4(),
+            content: templateItem.adminNote,
+            createdAt: now,
+            createdByTeamMemberId: creatorAdminId,
+            createdByTeamMemberName: null,
+          ));
+        }
+
         final checklistItem = ChecklistItem(
           id: checklistItemId,
           eventId: eventId,
           name: templateItem.name,
           responsibleId: templateItem.responsibleId,
           ccIds: templateItem.ccIds,
-          ccNotes: const {},
-          responsibleNote: const ResponsibleNoteEntry(note: ''),
-          adminNotes: templateItem.adminNote.isNotEmpty && creatorAdminId != null
-              ? {creatorAdminId: AdminNoteEntry(note: templateItem.adminNote, updatedAt: now)}
-              : const {},
+          notes: notes,
           status: false,
           createdAt: now,
           updatedAt: now,

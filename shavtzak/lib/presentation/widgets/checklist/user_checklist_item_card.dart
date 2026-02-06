@@ -1,141 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/services/checklist_permission_service.dart';
 import '../../widgets/map_location_picker.dart';
+import '../../bloc/checklist/checklist_bloc.dart';
 import 'chat_bubble.dart';
-
-/// Class to hold unified note data for sorting
-class _NoteData {
-  final String type; // 'admin', 'responsible', 'cc'
-  final String? ccMemberId; // Only for CC notes
-  final String note;
-  final DateTime? timestamp;
-  final TeamMember? member; // For responsible and CC notes
-  final bool isOwn;
-
-  _NoteData({
-    required this.type,
-    this.ccMemberId,
-    required this.note,
-    this.timestamp,
-    this.member,
-    required this.isOwn,
-  });
-}
-
-/// Get all notes sorted chronologically by timestamp (for user view)
-/// Notes with timestamps are sorted ascending, notes without timestamp come last
-List<_NoteData> _getAllNotesSortedForUser(ChecklistItem item, TeamMember user, ChecklistUserRole userRole, List<TeamMember>? allTeamMembers) {
-  final notes = <_NoteData>[];
-
-  // Add admin notes (purple color, "(מנהל)" label) - one per admin
-  for (final entry in item.adminNotes.entries) {
-    if (entry.value.note.isEmpty) continue;
-
-    final adminId = entry.key;
-    final admin = allTeamMembers?.firstWhere(
-      (m) => m.id == adminId,
-      orElse: () {
-        final now = DateTime.now();
-        return TeamMember(
-          id: adminId,
-          name: 'מנהל לא ידוע',
-          isActive: true,
-          isPermanent: false,
-          constraints: [],
-          roleCapabilities: {},
-          createdAt: now,
-          updatedAt: now,
-          uniqueKey: '',
-          isAdmin: true,
-        );
-      },
-    );
-
-    final isOwn = adminId == user.id;
-    notes.add(_NoteData(
-      type: 'admin',
-      note: entry.value.note,
-      timestamp: entry.value.updatedAt,
-      member: admin,
-      isOwn: isOwn,
-    ));
-  }
-
-  // Add responsible note
-  // Note: The admin notes and responsible note are SEPARATE notes and can both exist
-  if (item.responsibleNote.note.isNotEmpty) {
-    final isResponsible = item.responsibleId == user.id;
-
-    if (isResponsible) {
-      // User IS the responsible person - show as own note (even if also admin)
-      notes.add(_NoteData(
-        type: 'responsible',
-        note: item.responsibleNote.note,
-        timestamp: item.responsibleNote.updatedAt,
-        member: item.responsible,
-        isOwn: true,
-      ));
-    } else if (userRole == ChecklistUserRole.cc || userRole == ChecklistUserRole.admin) {
-      // User is CC or admin viewing someone else's responsible note
-      notes.add(_NoteData(
-        type: 'responsible',
-        note: item.responsibleNote.note,
-        timestamp: item.responsibleNote.updatedAt,
-        member: item.responsible,
-        isOwn: false,
-      ));
-    }
-  }
-
-  // Add all CC notes (including user's own - sorted chronologically)
-  for (final entry in item.ccNotes.entries) {
-    if (entry.value.note.isEmpty) continue;
-
-    final ccMember = item.ccMembers.firstWhere(
-      (m) => m.id == entry.key,
-      orElse: () {
-        final now = DateTime.now();
-        return TeamMember(
-          id: entry.key,
-          name: 'משתמש לא ידוע',
-          isActive: true,
-          isPermanent: false,
-          constraints: [],
-          roleCapabilities: {},
-          createdAt: now,
-          updatedAt: now,
-          uniqueKey: '',
-          isAdmin: false,
-        );
-      },
-    );
-
-    final isOwn = entry.key == user.id;
-    notes.add(_NoteData(
-      type: 'cc',
-      ccMemberId: entry.key,
-      note: entry.value.note,
-      timestamp: entry.value.updatedAt,
-      member: ccMember,
-      isOwn: isOwn,
-    ));
-  }
-
-  // Sort by timestamp (notes with timestamps first, then legacy notes)
-  notes.sort((a, b) {
-    final aTime = a.timestamp;
-    final bTime = b.timestamp;
-    if (aTime != null && bTime != null) return aTime.compareTo(bTime);
-    if (aTime != null && bTime == null) return -1;
-    if (aTime == null && bTime != null) return 1;
-    return 0;
-  });
-
-  return notes;
-}
 
 /// Card widget for displaying a checklist item in the user view
 class UserChecklistItemCard extends StatelessWidget {
@@ -143,6 +16,7 @@ class UserChecklistItemCard extends StatelessWidget {
   final TeamMember user;
   final ValueChanged<bool>? onStatusChanged;
   final VoidCallback? onEditItem;
+  final void Function(String content)? onAddNote;
   final List<TeamMember>? allTeamMembers;
 
   const UserChecklistItemCard({
@@ -151,6 +25,7 @@ class UserChecklistItemCard extends StatelessWidget {
     required this.user,
     this.onStatusChanged,
     this.onEditItem,
+    this.onAddNote,
     this.allTeamMembers,
   });
 
@@ -162,57 +37,30 @@ class UserChecklistItemCard extends StatelessWidget {
     return '${date.day} ב${months[date.month - 1]}';
   }
 
-  /// Get the admin member who created this item
-  TeamMember? _getAdminMember() {
-    if (item.createdByAdminId == null) return null;
-
-    // First try to find in allTeamMembers
-    if (allTeamMembers != null) {
-      try {
-        return allTeamMembers!.firstWhere(
-          (m) => m.id == item.createdByAdminId,
-        );
-      } catch (e) {
-        // Admin not found in allTeamMembers, continue to fallback
-      }
-    }
-
-    // Fallback: if the admin is the responsible person, use that
-    if (item.responsible?.id == item.createdByAdminId) {
-      return item.responsible;
-    }
-
-    // Fallback: if the admin is one of the CC members, use that
-    try {
-      return item.ccMembers.firstWhere(
-        (m) => m.id == item.createdByAdminId,
-      );
-    } catch (e) {
-      // Admin not found in CC members either
-    }
-
-    // Last resort: return null to trigger "מנהל" fallback label
-    return null;
-  }
-
   Color _getBackgroundColor() {
-    // Use same colors as EventListScreen
     return item.status
         ? Colors.lightGreen.withValues(alpha: 0.3)
         : Colors.red.withValues(alpha: 0.3);
   }
 
-  ChecklistUserRole _getUserRole() {
-    return ChecklistPermissionService.getUserRole(item, user);
+  String _getLatestNoteSnippet() {
+    final content = item.latestNoteContent;
+    if (content == null) return '';
+    if (content.length <= 50) return content;
+    return '${content.substring(0, 50)}...';
+  }
+
+  String _getMemberName(String memberId) {
+    final member = allTeamMembers?.where((m) => m.id == memberId).firstOrNull;
+    return member?.name ?? 'לא ידוע';
   }
 
   @override
   Widget build(BuildContext context) {
-    final userRole = _getUserRole();
+    final userRole = ChecklistPermissionService.getUserRole(item, user);
     final canUpdateStatus = ChecklistPermissionService.canUpdateStatus(item, user);
-
-    // Get all notes sorted chronologically (including user's own admin and CC notes)
-    final sortedNotes = _getAllNotesSortedForUser(item, user, userRole, allTeamMembers);
+    final latestNote = item.notes.isNotEmpty ? item.notes.last : null;
+    final noteSnippet = _getLatestNoteSnippet();
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -230,7 +78,7 @@ class UserChecklistItemCard extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Event info (ALWAYS shown)
+            // Event info
             if (item.event != null) ...[
               Text(
                 'אירוע: ${item.event!.name}',
@@ -241,77 +89,88 @@ class UserChecklistItemCard extends StatelessWidget {
                 style: const TextStyle(fontSize: 12),
               ),
             ],
-            // Responsible (shown appropriately)
+            // Responsible
             if (userRole == ChecklistUserRole.responsible)
-              Text(
+              const Text(
                 'אחראי: את/ה',
-                style: const TextStyle(fontSize: 12),
+                style: TextStyle(fontSize: 12),
               )
             else if (item.responsible != null)
               Text(
                 'אחראי: ${item.responsible!.name}',
                 style: const TextStyle(fontSize: 12),
               ),
-            // Show location if available
+            // Location
             if (item.event?.location.isNotEmpty == true)
               Text(
                 'מיקום: ${MapLocationResult.stripCoordinates(item.event!.location)}',
                 style: const TextStyle(fontSize: 12),
               ),
-            // CC names (if any)
+            // CC names
             if (item.ccMembers.isNotEmpty)
               Text(
                 'מיודעים: ${item.ccMembers.map((m) => m.name).join(", ")}',
                 style: const TextStyle(fontSize: 12),
               ),
-            const SizedBox(height: 8),
-            // Notes displayed as chat bubbles in chronological order
-            ...sortedNotes.map((noteData) {
-              // Determine color and author label based on note type
-              final bubbleColor = switch (noteData.type) {
-                'admin' => Colors.purple.withValues(alpha: 0.3),
-                'responsible' => Colors.amber.withValues(alpha: 0.3),
-                'cc' => Colors.grey.withValues(alpha: 0.3),
-                _ => Colors.grey.withValues(alpha: 0.3),
-              };
-
-              final authorName = switch (noteData.type) {
-                'admin' => noteData.isOwn
-                    ? 'אני (מנהל)'
-                    : '${noteData.member?.name ?? "מנהל"} (מנהל)',
-                'responsible' => noteData.isOwn
-                    ? 'אני (אחראי)'
-                    : '${noteData.member?.name ?? "לא ידוע"} (אחראי)',
-                'cc' => noteData.isOwn
-                    ? 'אני'
-                    : '${noteData.member?.name ?? "לא ידוע"} (מיודע)',
-                _ => 'הערה',
-              };
-
-              // Format timestamp as HH:mm, DD/MM (removed seconds)
-              final timestamp = noteData.timestamp != null
-                  ? DateFormat('HH:mm, dd/MM').format(noteData.timestamp!)
-                  : null;
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: ChatBubble(
-                  authorName: authorName,
-                  message: noteData.note,
-                  bubbleColor: bubbleColor,
-                  isOwnMessage: noteData.isOwn,
-                  alignRight: noteData.isOwn,
-                  timestamp: timestamp,
-                  showAuthorLabel: true,
+            // Notes section - always show button to access conversation
+            const SizedBox(height: 6),
+            InkWell(
+                onTap: () => _showNotesModal(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.chat_bubble_outline, size: 14, color: Colors.grey[600]),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (latestNote != null) ...[
+                              () {
+                                final snippetAuthor = latestNote.createdByTeamMemberName ?? _getMemberName(latestNote.createdByTeamMemberId);
+                                final snippetName = latestNote.createdByTeamMemberId == user.id ? 'אני' : snippetAuthor;
+                                final snippetDisplay = latestNote.authorRole != null
+                                    ? '$snippetName (${latestNote.authorRole})'
+                                    : snippetName;
+                                return Text(
+                                  snippetDisplay,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                );
+                              }(),
+                            ],
+                            Text(
+                              noteSnippet.isNotEmpty ? noteSnippet : 'הערות (${item.notes.length})',
+                              style: const TextStyle(fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        '${item.notes.length}',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                      ),
+                      Icon(Icons.chevron_left, size: 16, color: Colors.grey[400]),
+                    ],
+                  ),
                 ),
-              );
-            }),
-          ],
+              ),
+            ],
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Status toggle (only if responsible)
             if (canUpdateStatus && onStatusChanged != null)
               Container(
                 decoration: BoxDecoration(
@@ -334,7 +193,6 @@ class UserChecklistItemCard extends StatelessWidget {
                 ),
               )
             else
-              // Just display status (non-editable)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
@@ -349,6 +207,242 @@ class UserChecklistItemCard extends StatelessWidget {
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showNotesModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (modalContext) {
+        return _UserNotesModalWrapper(
+          item: item,
+          currentUserId: user.id,
+          allTeamMembers: allTeamMembers ?? [],
+          onAddNote: onAddNote,
+          parentContext: context,
+        );
+      },
+    );
+  }
+}
+
+/// Wrapper for the user notes modal (uses manual stream subscription like admin)
+class _UserNotesModalWrapper extends StatefulWidget {
+  final ChecklistItem item;
+  final String currentUserId;
+  final List<TeamMember> allTeamMembers;
+  final void Function(String content)? onAddNote;
+  final BuildContext parentContext;
+
+  const _UserNotesModalWrapper({
+    required this.item,
+    required this.currentUserId,
+    required this.allTeamMembers,
+    this.onAddNote,
+    required this.parentContext,
+  });
+
+  @override
+  State<_UserNotesModalWrapper> createState() => _UserNotesModalWrapperState();
+}
+
+class _UserNotesModalWrapperState extends State<_UserNotesModalWrapper> {
+  final _noteController = TextEditingController();
+  final _scrollController = ScrollController();
+  late ChecklistItem _item;
+  StreamSubscription<ChecklistItem>? _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _item = widget.item;
+    // Subscribe to live updates
+    final checklistRepository = widget.parentContext.read<ChecklistBloc>().repository;
+    _subscription = checklistRepository.watchChecklistItem(widget.item.id).listen(
+      (updatedItem) {
+        if (mounted) {
+          final hadNewNotes = updatedItem.notes.length > _item.notes.length;
+          setState(() { _item = updatedItem; });
+          if (hadNewNotes) {
+            WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+          }
+        }
+      },
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    _noteController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  void _submitNote() {
+    final content = _noteController.text.trim();
+    if (content.isEmpty) return;
+    widget.onAddNote?.call(content);
+    _noteController.clear();
+    Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
+  }
+
+  String _getMemberName(String memberId) {
+    final member = widget.allTeamMembers.where((m) => m.id == memberId).firstOrNull;
+    return member?.name ?? 'לא ידוע';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = _item.notes;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.75,
+        child: Column(
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // Header
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'הערות - ${_item.name} (${notes.length})',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (_item.event != null)
+                          Text(
+                            _item.event!.name,
+                            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                          ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            // Notes list
+            Expanded(
+              child: notes.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'אין הערות עדיין',
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                      ),
+                    )
+                  : ListView.separated(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      itemCount: notes.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final note = notes[index];
+                        final isOwn = note.createdByTeamMemberId == widget.currentUserId;
+                        final authorName =
+                            note.createdByTeamMemberName ??
+                            _getMemberName(note.createdByTeamMemberId);
+                        final baseName = isOwn ? 'אני' : authorName;
+                        final displayName = note.authorRole != null
+                            ? '$baseName (${note.authorRole})'
+                            : baseName;
+                        final timestamp = DateFormat('HH:mm, dd/MM').format(note.createdAt);
+
+                        return ChatBubble(
+                          authorName: displayName,
+                          message: note.content,
+                          bubbleColor: isOwn
+                              ? Colors.blue.withValues(alpha: 0.15)
+                              : Colors.grey.withValues(alpha: 0.2),
+                          isOwnMessage: isOwn,
+                          alignRight: isOwn,
+                          timestamp: timestamp,
+                          showAuthorLabel: true,
+                        );
+                      },
+                    ),
+            ),
+
+            // Input field
+            if (widget.onAddNote != null) ...[
+              const Divider(height: 1),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _noteController,
+                        textAlign: TextAlign.right,
+                        textDirection: TextDirection.rtl,
+                        decoration: InputDecoration(
+                          hintText: 'כתוב הערה...',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          isDense: true,
+                        ),
+                        maxLines: null,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _submitNote(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        onPressed: _submitNote,
+                        icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                        padding: const EdgeInsets.all(8),
+                        constraints: const BoxConstraints(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),

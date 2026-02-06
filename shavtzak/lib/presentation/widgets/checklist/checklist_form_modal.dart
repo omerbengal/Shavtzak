@@ -4,10 +4,8 @@ import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../bloc/event/event_bloc.dart';
-import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
 import '../../bloc/team/team_bloc.dart';
-import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
 import '../loading_overlay.dart';
 
@@ -35,8 +33,6 @@ class ChecklistFormModal extends StatefulWidget {
 class _ChecklistFormModalState extends State<ChecklistFormModal> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _adminNoteController = TextEditingController();
-  final _responsibleNoteController = TextEditingController();
   final _ccSearchController = TextEditingController();
 
   Event? _selectedEvent;
@@ -48,19 +44,10 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
   @override
   void initState() {
     super.initState();
-    // Data loading is handled by parent screens
   }
 
   void _initializeFromItem(ChecklistItem item, List<Event> events, List<TeamMember> teamMembers) {
     _nameController.text = item.name;
-
-    // Load the current admin's note from the adminNotes map
-    final currentAdminNote = widget.currentUserId != null
-        ? item.adminNotes[widget.currentUserId]
-        : null;
-    _adminNoteController.text = currentAdminNote?.note ?? '';
-
-    _responsibleNoteController.text = item.responsibleNote.note;
 
     // Safely find the event using try-catch
     try {
@@ -87,8 +74,6 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
   @override
   void dispose() {
     _nameController.dispose();
-    _adminNoteController.dispose();
-    _responsibleNoteController.dispose();
     _ccSearchController.dispose();
     super.dispose();
   }
@@ -98,69 +83,31 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
 
     if (!_formKey.currentState!.validate()) return;
     if (_selectedEvent == null || _selectedResponsible == null) {
-      // Validation will be handled by the dropdown validators
       return;
     }
 
     setState(() => _isSaving = true);
 
-    // For new items, createdByAdminId should be the current admin
-    // For existing items, preserve the original creator
     final isNewItem = (widget.item?.id ?? '').isEmpty;
+
+    // Only update createdByAdminId for new items
     final createdByAdminId = isNewItem
         ? widget.currentUserId
         : widget.item?.createdByAdminId;
 
-    // Start with base item (new or existing)
-    final baseItem = isNewItem
-        ? ChecklistItem(
-            id: '',
-            eventId: _selectedEvent!.id,
-            name: _nameController.text.trim(),
-            responsibleId: _selectedResponsible!.id,
-            responsibleNote: const ResponsibleNoteEntry(note: ''),
-            adminNotes: {},
-            ccIds: _selectedCcMembers.map((m) => m.id).toList(),
-            ccNotes: {},
-            status: _status,
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-            statusLastUpdatedAt: DateTime.now(),
-            createdByAdminId: widget.currentUserId,
-          )
-        : widget.item!;
-
-    // Update admin note (for current admin)
-    final adminNoteText = _adminNoteController.text.trim();
-    final itemWithAdminNote = widget.currentUserId != null
-        ? baseItem.withUpdatedAdminNote(widget.currentUserId!, adminNoteText)
-        : baseItem;
-
-    // Update responsible note (only for responsible users)
-    final responsibleNoteText = _responsibleNoteController.text.trim();
-    final itemWithResponsibleNote = itemWithAdminNote.copyWith(
-      responsibleNote: ResponsibleNoteEntry(
-        note: responsibleNoteText,
-        updatedAt: (baseItem.responsibleNote.note == responsibleNoteText)
-            ? baseItem.responsibleNote.updatedAt
-            : DateTime.now(),
-      ),
-    );
-
-    // Update other fields
-    var checklistItem = itemWithResponsibleNote.copyWith(
+    final checklistItem = ChecklistItem(
+      id: isNewItem ? '' : widget.item!.id,
       eventId: _selectedEvent!.id,
       name: _nameController.text.trim(),
       responsibleId: _selectedResponsible!.id,
+      notes: isNewItem ? const [] : widget.item!.notes,
       ccIds: _selectedCcMembers.map((m) => m.id).toList(),
       status: _status,
+      createdAt: isNewItem ? DateTime.now() : widget.item!.createdAt,
       updatedAt: DateTime.now(),
+      statusLastUpdatedAt: isNewItem ? DateTime.now() : widget.item!.statusLastUpdatedAt,
+      createdByAdminId: createdByAdminId,
     );
-
-    // Only update createdByAdminId for new items
-    if (isNewItem && widget.currentUserId != null) {
-      checklistItem = checklistItem.copyWith(createdByAdminId: widget.currentUserId);
-    }
 
     widget.onSave(checklistItem);
   }
@@ -170,7 +117,6 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
       widget.onDelete!();
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -407,33 +353,6 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                             ),
                       const SizedBox(height: 16),
 
-                      // Show responsible note for responsible users, admin note for admins
-                      if (widget.isResponsibleUser)
-                        TextFormField(
-                          controller: _responsibleNoteController,
-                          textAlign: TextAlign.right,
-                          textDirection: TextDirection.rtl,
-                          decoration: const InputDecoration(
-                            labelText: 'פירוט אחראי',
-                            border: OutlineInputBorder(),
-                            alignLabelWithHint: true,
-                          ),
-                          maxLines: 3,
-                        )
-                      else
-                        TextFormField(
-                          controller: _adminNoteController,
-                          textAlign: TextAlign.right,
-                          textDirection: TextDirection.rtl,
-                          decoration: const InputDecoration(
-                            labelText: 'הערה',
-                            border: OutlineInputBorder(),
-                            alignLabelWithHint: true,
-                          ),
-                          maxLines: 3,
-                        ),
-                      const SizedBox(height: 16),
-
                       // CC members with search
                       const Text(
                         'מיודעים',
@@ -457,7 +376,6 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                       const SizedBox(height: 12),
 
                       // CC member chips
-                      // Show all available team members, but filter based on search if there's text
                       Wrap(
                         spacing: 8,
                         runSpacing: 4,
