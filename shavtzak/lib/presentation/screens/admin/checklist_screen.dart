@@ -646,7 +646,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        TextButton(
+                        ElevatedButton(
                           onPressed: () {
                             setModalState(() {
                               _selectedEventId = null;
@@ -659,6 +659,10 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                               _statusFilter = null;
                             });
                           },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                          ),
                           child: const Text('נקה'),
                         ),
                         ElevatedButton(

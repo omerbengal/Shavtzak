@@ -1357,33 +1357,24 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   Future<void> _showFilterModal(
       BuildContext context, AssignmentSlotsLoaded state) async {
+    void applyFilter(Set<String> selectedEventIds) {
+      if (!mounted) return;
+      if (selectedEventIds.isEmpty) {
+        context.read<AssignmentBloc>().add(const ClearEventFilter());
+      } else {
+        context.read<AssignmentBloc>().add(ApplyEventFilter(selectedEventIds));
+      }
+    }
+
+    List<Event> availableEvents;
+
     // Get all events from repository (not just from slots) when showPastEvents is true
     // This ensures past events appear in the filter when the switch is on
     if (FilterPersistence.showPastEvents) {
       final eventRepo = context.read<EventRepository>();
       final allEvents = await eventRepo.getAllEvents();
-      final availableEvents = allEvents
+      availableEvents = allEvents
         ..sort((a, b) => a.startDate.compareTo(b.startDate));
-
-      final result = await showDialog<Set<String>>(
-        context: context,
-        builder: (context) => AssignmentFilterModal(
-          availableEvents: availableEvents,
-          selectedEventIds: state.selectedEventIds,
-        ),
-      );
-
-      if (result != null) {
-        if (!mounted) return;
-
-        if (result.isEmpty) {
-          // Clear filter
-          context.read<AssignmentBloc>().add(const ClearEventFilter());
-        } else {
-          // Apply filter
-          context.read<AssignmentBloc>().add(ApplyEventFilter(result));
-        }
-      }
     } else {
       // Original behavior when showPastEvents is false
       // Get unique events from slots that have at least one role with capacity > 0
@@ -1393,29 +1384,22 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           eventsMap[slot.event.id] = slot.event;
         }
       }
-      final availableEvents = eventsMap.values.toList()
+      availableEvents = eventsMap.values.toList()
         ..sort((a, b) => a.startDate.compareTo(b.startDate));
-
-      final result = await showDialog<Set<String>>(
-        context: context,
-        builder: (context) => AssignmentFilterModal(
-          availableEvents: availableEvents,
-          selectedEventIds: state.selectedEventIds,
-        ),
-      );
-
-      if (result != null) {
-        if (!mounted) return;
-
-        if (result.isEmpty) {
-          // Clear filter
-          context.read<AssignmentBloc>().add(const ClearEventFilter());
-        } else {
-          // Apply filter
-          context.read<AssignmentBloc>().add(ApplyEventFilter(result));
-        }
-      }
     }
+
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => AssignmentFilterModal(
+        availableEvents: availableEvents,
+        selectedEventIds: state.selectedEventIds,
+        onFilterChanged: applyFilter,
+      ),
+    );
   }
 
   /// Show event form modal for editing an event

@@ -78,22 +78,21 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   /// Show category filter modal
-  Future<void> _showCategoryFilterModal() async {
-    final result = await showModalBottomSheet<Set<String>>(
+  void _showCategoryFilterModal() {
+    showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => CategoryFilterModal(
         selectedCategoryIds: _selectedCategoryIds,
+        onFilterChanged: (selectedIds) {
+          setState(() {
+            _selectedCategoryIds = selectedIds;
+            FilterPersistence.selectedEventCategoryIds = selectedIds;
+          });
+        },
       ),
     );
-
-    if (result != null) {
-      setState(() {
-        _selectedCategoryIds = result;
-        FilterPersistence.selectedEventCategoryIds = result;
-      });
-    }
   }
 
   /// Format location for display based on how it was entered
