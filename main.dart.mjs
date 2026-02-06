@@ -526,6 +526,7 @@ class CompiledApp {
       _1717: x0 => x0.docChanges(),
       _1722: (x0,x1) => x0.get(x1),
       _1724: (x0,x1,x2) => x0.set(x1,x2),
+      _1726: () => globalThis.firebase_firestore.deleteField(),
       _1727: () => globalThis.firebase_firestore.serverTimestamp(),
       _1735: (x0,x1) => globalThis.firebase_firestore.getFirestore(x0,x1),
       _1736: () => globalThis.firebase_firestore.getFirestore(),
