@@ -874,7 +874,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         final screenWidth = MediaQuery.of(dialogContext).size.width;
         final isWide = screenWidth > 600;
         final dialogWidth = isWide ? screenWidth * 0.45 : screenWidth * 0.9;
-        final notesMaxLines = isWide ? 8 : 4;
 
         return Directionality(
         textDirection: TextDirection.rtl,
@@ -918,7 +917,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   const SizedBox(height: 16),
                   TextField(
                     controller: notesController,
-                    maxLines: notesMaxLines,
+                    minLines: 4,
+                    maxLines: 10,
                     decoration: InputDecoration(
                       hintText: 'הכנס הערות...',
                       border: OutlineInputBorder(
@@ -1187,12 +1187,28 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                         enabled: false,
                         child: Container(
                           constraints: const BoxConstraints(minWidth: double.infinity),
-                          child: Text(
-                            member.name,
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 4,
-                            style: const TextStyle(fontSize: 12, color: Colors.black),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  member.name,
+                                  textAlign: TextAlign.center,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 4,
+                                  style: const TextStyle(fontSize: 12, color: Colors.black),
+                                ),
+                              ),
+                              if (member.isPermanent) ...[
+                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.verified_user,
+                                  size: 12,
+                                  color: Colors.blue.shade700,
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ),
@@ -1208,12 +1224,28 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                         enabled: false,
                         child: Container(
                           constraints: const BoxConstraints(minWidth: double.infinity),
-                          child: Text(
-                            currentMember.name,
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 4,
-                            style: const TextStyle(fontSize: 12, color: Colors.black),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  currentMember.name,
+                                  textAlign: TextAlign.center,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 4,
+                                  style: const TextStyle(fontSize: 12, color: Colors.black),
+                                ),
+                              ),
+                              if (currentMember.isPermanent) ...[
+                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.verified_user,
+                                  size: 12,
+                                  color: Colors.blue.shade700,
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ),

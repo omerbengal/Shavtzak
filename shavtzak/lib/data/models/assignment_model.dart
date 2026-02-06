@@ -92,7 +92,7 @@ class AssignmentModel {
       'slotIndex': slotIndex,
       'status': status,
       'notes': notes,
-      if (alternativePhoneNumber != null) 'alternativePhoneNumber': alternativePhoneNumber,
+      'alternativePhoneNumber': alternativePhoneNumber ?? FieldValue.delete(),
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
