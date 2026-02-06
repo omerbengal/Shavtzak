@@ -8,6 +8,8 @@ import '../../../domain/entities/event.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
+import '../../bloc/category/category_bloc.dart';
+import '../../bloc/category/category_state.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
@@ -363,6 +365,13 @@ class _EventListScreenState extends State<EventListScreen> {
       }).toList();
     }
 
+    // Sort by startDate ascending, then by name ascending
+    result.sort((a, b) {
+      final dateCompare = a.startDate.compareTo(b.startDate);
+      if (dateCompare != 0) return dateCompare;
+      return a.name.compareTo(b.name);
+    });
+
     return result;
   }
 
@@ -395,6 +404,22 @@ class _EventListScreenState extends State<EventListScreen> {
     }
   }
 
+  /// Resolve category name from categoryId using the CategoryBloc state
+  String? _getCategoryName(String? categoryId) {
+    if (categoryId == null) return null;
+    final categoryState = context.read<CategoryBloc>().state;
+    if (categoryState is CategoriesLoaded) {
+      for (final category in categoryState.activeCategories) {
+        if (category.id == categoryId) return category.name;
+      }
+      // Also check archived categories in case an event references one
+      for (final category in categoryState.archivedCategories) {
+        if (category.id == categoryId) return category.name;
+      }
+    }
+    return null;
+  }
+
   Widget _buildEventCard(
     Event event,
     Map<String, int> assignmentCounts,
@@ -406,6 +431,7 @@ class _EventListScreenState extends State<EventListScreen> {
         event.startDate.day == event.endDate.day;
 
     final cardColor = _getEventCardColor(event, assignmentCounts);
+    final categoryName = _getCategoryName(event.categoryId);
 
     return Card(
       color: cardColor,
@@ -425,7 +451,27 @@ class _EventListScreenState extends State<EventListScreen> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(event.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: event.name,
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                          ),
+                          if (categoryName != null) ...[
+                            const TextSpan(text: '  '),
+                            TextSpan(
+                              text: '($categoryName)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w400,
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
