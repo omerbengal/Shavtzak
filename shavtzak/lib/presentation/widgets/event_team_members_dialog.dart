@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:url_launcher/url_launcher_string.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../domain/entities/assignment.dart';
-import '../../core/constants/role_types.dart';
+import '../../domain/entities/role.dart';
 import '../bloc/assignment/assignment_bloc.dart';
 import '../bloc/assignment/assignment_event.dart';
 import '../bloc/assignment/assignment_state.dart';
@@ -13,10 +13,9 @@ import '../bloc/role/role_bloc.dart';
 import '../bloc/role/role_state.dart';
 import '../../../core/services/service_locator.dart';
 
-/// Dialog showing all team members assigned to an event
+/// Dialog showing all team members assigned to an event, grouped by role
 /// Excludes the current user from the list
-/// Dialog showing all team members assigned to an event
-/// Excludes the current user from the list
+/// Uses the same UI layout as EventAssignmentsDialog
 class EventTeamMembersDialog extends StatefulWidget {
   final String eventId;
   final String currentUserId;
@@ -64,7 +63,6 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
         final assignmentRepository = serviceLocator.createAssignmentRepository();
         final assignments = await assignmentRepository.getAssignmentsByEvent(widget.eventId);
         _cachedAssignments = assignments;
-        // Mark that we have data to prevent showing empty state
         _hasShownData = assignments.isNotEmpty;
       } catch (e) {
         // If prefetch fails, continue with BLoC loading
@@ -88,409 +86,297 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
         ],
         child: BlocListener<TeamBloc, TeamState>(
           listener: (context, state) {
-            // When team members are updated, refresh the assignments
-            // This will trigger the assignment data to be re-populated with updated team member info
             if (state is TeamLoaded) {
               _assignmentBloc.add(LoadAssignmentsByEvent(widget.eventId));
             }
           },
           child: Dialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 8,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 500,
-              maxHeight: MediaQuery.of(context).size.height * 0.7,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.9,
+              constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Title
+                  // Header
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(
-                        Icons.groups,
-                        color: Colors.blue.shade700,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'מי איתי באירוע?',
-                          style: TextStyle(
+                          'מי איתי ב${widget.eventName}?',
+                          style: const TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
-                            color: Colors.grey.shade800,
                           ),
                         ),
                       ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
                     ],
                   ),
-
-                  const SizedBox(height: 8),
-
-                  // Event name
-                  Text(
-                    'אירוע: ${widget.eventName}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
+                  const SizedBox(height: 16),
                   // Content
                   Expanded(
                     child: BlocBuilder<AssignmentBloc, AssignmentState>(
                       builder: (context, state) {
                         // If we have cached data and are still loading, show the cached data
                         if (state is AssignmentLoading && _cachedAssignments != null) {
-                          // Show cached data while waiting for real-time stream
-                          final filteredAssignments = _cachedAssignments!
+                          final filtered = _cachedAssignments!
                               .where((a) => a.teamMemberId != widget.currentUserId)
                               .toList();
-
-                          if (filteredAssignments.isEmpty) {
-                            // If we have shown data before but now it's empty, show loading instead of empty state
+                          if (filtered.isEmpty) {
                             return _hasShownData
-                                ? _buildLoadingState()
+                                ? const Center(child: CircularProgressIndicator())
                                 : _buildEmptyState();
                           }
-
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${filteredAssignments.where((a) => a.teamMember != null).length} חברי צוות נוספים באירוע',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey.shade600,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  child: _buildTeamMembersList(filteredAssignments),
-                                ),
-                              ),
-                            ],
-                          );
+                          return _buildAssignmentsList(context, filtered);
                         }
 
-                        // Show loading spinner if we don't have cached data
                         if (state is AssignmentLoading && _cachedAssignments == null) {
-                          return _buildLoadingState();
+                          return const Center(child: CircularProgressIndicator());
                         }
 
                         if (state is AssignmentsLoaded) {
-                          // Filter assignments for this event and exclude current user
-                          final eventAssignments = state.assignments
+                          final filtered = state.assignments
                               .where((a) => a.eventId == widget.eventId)
-                              .toList();
-
-                          final filteredAssignments = eventAssignments
                               .where((a) => a.teamMemberId != widget.currentUserId)
                               .toList();
-
-                          if (filteredAssignments.isEmpty) {
+                          if (filtered.isEmpty) {
                             return _buildEmptyState();
                           }
-
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${filteredAssignments.where((a) => a.teamMember != null).length} חברי צוות נוספים באירוע',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey.shade600,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  child: _buildTeamMembersList(filteredAssignments),
-                                ),
-                              ),
-                            ],
-                          );
+                          return _buildAssignmentsList(context, filtered);
                         }
 
                         if (state is AssignmentError) {
                           return Center(
                             child: Text(
                               'שגיאה בטעינת נתונים',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.red.shade600,
-                              ),
+                              style: TextStyle(fontSize: 16, color: Colors.red.shade600),
                             ),
                           );
                         }
 
-                        return const Center(
-                          child: CircularProgressIndicator(),
-                        );
+                        return const Center(child: CircularProgressIndicator());
                       },
                     ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Close button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          backgroundColor: Colors.blue.shade50,
-                          foregroundColor: Colors.blue.shade700,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text('סגור'),
-                      ),
-                    ],
                   ),
                 ],
               ),
             ),
+          ),
         ),
       ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoadingState() {
-    return const Center(
-      child: CircularProgressIndicator(),
     );
   }
 
   Widget _buildEmptyState() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 32.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.person_off_outlined,
-            size: 48,
-            color: Colors.grey.shade400,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'אין חברי צוות נוספים באירוע',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey.shade600,
-            ),
-          ),
-        ],
+    return Center(
+      child: Text(
+        'אין חברי צוות נוספים באירוע',
+        style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
       ),
     );
   }
 
-  Widget _buildTeamMembersList(List<Assignment> assignments) {
-    // Group by team member to handle multiple roles
-    final Map<String, List<Assignment>> memberAssignments = {};
-    for (final assignment in assignments) {
-      final memberId = assignment.teamMemberId;
+  Widget _buildAssignmentsList(BuildContext context, List<Assignment> assignments) {
+    return BlocBuilder<RoleBloc, RoleState>(
+      builder: (context, roleState) {
+        if (roleState is! RolesLoaded) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-      // Add assignment even if teamMember is null - we'll handle it in the UI
-      memberAssignments.putIfAbsent(memberId, () => []);
-      memberAssignments[memberId]!.add(assignment);
-    }
+        final activeRoles = roleState.activeRoles;
 
-    // Sort by team member name, handling null team members
-    final members = memberAssignments.entries.toList()
-      ..sort((a, b) {
-        final aName = a.value.first.teamMember?.name ?? 'Unknown';
-        final bName = b.value.first.teamMember?.name ?? 'Unknown';
-        return aName.compareTo(bName);
-      });
+        // Group assignments by role key
+        final assignmentsByRole = <String, List<Assignment>>{};
+        for (final assignment in assignments) {
+          assignmentsByRole.putIfAbsent(assignment.roleType, () => []);
+          assignmentsByRole[assignment.roleType]!.add(assignment);
+        }
 
-    return Column(
-      children: members.asMap().entries.map((entry) {
-        final index = entry.key;
-        final memberEntry = entry.value;
+        // Sort team members alphabetically within each role
+        for (final roleKey in assignmentsByRole.keys) {
+          assignmentsByRole[roleKey]!.sort((a, b) {
+            final aName = a.teamMember?.name ?? '';
+            final bName = b.teamMember?.name ?? '';
+            return aName.compareTo(bName);
+          });
+        }
 
-        return Column(
-          children: [
-            _buildTeamMemberItem(memberEntry),
-            if (index < members.length - 1) const Divider(height: 1),
-          ],
-        );
-      }).toList(),
+        // Build list: only show roles that have assignments, in sortOrder
+        final roleSections = <Widget>[];
+        for (final role in activeRoles) {
+          final roleAssignments = assignmentsByRole[role.key];
+          if (roleAssignments == null || roleAssignments.isEmpty) continue;
+          roleSections.add(_buildRoleSection(role, roleAssignments));
+        }
+
+        if (roleSections.isEmpty) {
+          return _buildEmptyState();
+        }
+
+        return ListView(children: roleSections);
+      },
     );
   }
 
-  Widget _buildTeamMemberItem(MapEntry<String, List<Assignment>> memberEntry) {
-    final member = memberEntry.value.first.teamMember;
-    final assignments = memberEntry.value;
-    final roles = assignments.map((a) => a.roleType).toList()
-      ..sort((a, b) => a.compareTo(b));
-
-    // Skip if no team member data
-    if (member == null) {
-      return const SizedBox.shrink();
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Avatar
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: Colors.blue.shade100,
-            child: Text(
-              member.name.isNotEmpty ? member.name[0] : '?',
-              style: TextStyle(
-                color: Colors.blue.shade700,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // Name, roles, and phone
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildRoleSection(Role role, List<Assignment> assignments) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Role header with count
+            Row(
               children: [
-                // Name with phone button
-                Row(
+                Icon(
+                  Icons.badge_outlined,
+                  size: 24,
+                  color: Colors.blue.shade700,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    role.hebrewName,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${assignments.length}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Team members
+            ...assignments.map((assignment) {
+              final member = assignment.teamMember;
+              if (member == null) return const SizedBox.shrink();
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 28, bottom: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              member.name,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
-                              ),
-                            ),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.person_outline,
+                          size: 18,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            member.name,
+                            style: const TextStyle(fontSize: 16),
                           ),
-                          if (member.isPermanent) ...[
-                            const SizedBox(width: 6),
-                            Icon(
-                              Icons.verified_user,
-                              size: 16,
+                        ),
+                        // Phone icon with fallback: member phone → assignment alternative phone
+                        if ((member.phoneNumber != null && member.phoneNumber!.isNotEmpty) ||
+                            (assignment.alternativePhoneNumber != null && assignment.alternativePhoneNumber!.isNotEmpty)) ...[
+                          InkWell(
+                            onTap: () => _makePhoneCall(
+                              (member.phoneNumber != null && member.phoneNumber!.isNotEmpty)
+                                  ? member.phoneNumber!
+                                  : assignment.alternativePhoneNumber!,
+                            ),
+                            child: Icon(
+                              Icons.phone,
+                              size: 22,
                               color: Colors.blue.shade700,
                             ),
-                          ],
+                          ),
+                          const SizedBox(width: 8),
                         ],
-                      ),
+                      ],
                     ),
-                    if (member.phoneNumber?.isNotEmpty == true) ...[
-                      const SizedBox(width: 12),
-                      InkWell(
-                        onTap: () => _launchPhone(member.phoneNumber!),
-                        borderRadius: BorderRadius.circular(4),
+                    // Notes display
+                    if (assignment.notes.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 26, top: 4),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: Colors.green.shade50,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.green.shade200),
+                            color: Colors.purple.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.purple.shade200),
                           ),
                           child: Row(
-                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Icon(
-                                Icons.phone,
-                                size: 16,
-                                color: Colors.green.shade700,
+                                Icons.note_alt_outlined,
+                                size: 14,
+                                color: Colors.purple.shade700,
                               ),
                               const SizedBox(width: 6),
-                              Text(
-                                member.phoneNumber!,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.green.shade700,
-                                  fontWeight: FontWeight.w500,
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: 'הערות לשיבוץ: ',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.purple.shade800,
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text: assignment.notes,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.purple.shade900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                         ),
                       ),
-                    ],
                   ],
                 ),
-                const SizedBox(height: 6),
-                // Role badges
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: roles.map((roleKey) => _buildRoleBadge(roleKey)).toList(),
-                ),
-              ],
-            ),
-          ),
-        ],
+              );
+            }),
+          ],
+        ),
       ),
     );
   }
 
-  /// Launch phone dialer with the phone number
-  void _launchPhone(String phoneNumber) async {
-    // Clean the phone number - remove non-digit characters except +
-    final cleanedNumber = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
-
-    // Create the tel: URL
-    final url = 'tel:$cleanedNumber';
-
-    // Try to launch
-    if (await canLaunchUrlString(url)) {
-      await launchUrlString(url);
-    }
-  }
-
-  Widget _buildRoleBadge(String roleKey) {
-    return BlocBuilder<RoleBloc, RoleState>(
-      builder: (context, roleState) {
-        final roleHebrewName = roleState is RolesLoaded
-            ? roleState.getRoleHebrewName(roleKey)
-            : roleKey;
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: _getRoleColor(),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            roleHebrewName,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: Colors.white,
-            ),
-          ),
-        );
-      },
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    final Uri launchUri = Uri(
+      scheme: 'tel',
+      path: phoneNumber,
     );
-  }
-
-  Color _getRoleColor() {
-    // Use green color for all roles for consistency
-    return Colors.green.shade600;
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
+    }
   }
 }

@@ -877,82 +877,86 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             ),
 
             // Assignment notes (at the bottom)
-            if (assignmentNotes.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.purple.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.purple.shade200),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.note_alt_outlined,
-                          size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
-                          color: Colors.purple.shade700,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'הערות לשיבוץ:',
-                          style: TextStyle(
-                            fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
-                            fontWeight: FontWeight.w600,
-                            color: Colors.purple.shade800,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    ...assignmentNotes.map((entry) => Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '• ',
-                            style: TextStyle(
-                              fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
-                              color: Colors.purple.shade700,
-                            ),
-                          ),
-                          if (assignmentNotes.length > 1) ...[
-                            BlocBuilder<RoleBloc, RoleState>(
-                              builder: (context, roleState) {
-                                final roleHebrewName = roleState is RolesLoaded
-                                    ? roleState.getRoleHebrewName(entry.key)
-                                    : entry.key;
-                                return Text(
-                                  '$roleHebrewName: ',
-                                  style: TextStyle(
-                                    fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.purple.shade800,
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                          Expanded(
-                            child: Text(
-                              entry.value,
-                              style: TextStyle(
-                                fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
-                                color: Colors.purple.shade900,
-                              ),
-                            ),
-                          ),
-                        ],
+            ...assignmentNotes.map((entry) {
+              final noteText = assignmentNotes.length > 1
+                  ? null // will use BlocBuilder for role prefix
+                  : entry.value;
+              return Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.purple.shade200),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.note_alt_outlined,
+                        size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
+                        color: Colors.purple.shade700,
                       ),
-                    )),
-                  ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: assignmentNotes.length > 1
+                            ? BlocBuilder<RoleBloc, RoleState>(
+                                builder: (context, roleState) {
+                                  final roleHebrewName = roleState is RolesLoaded
+                                      ? roleState.getRoleHebrewName(entry.key)
+                                      : entry.key;
+                                  return Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text: 'הערות לשיבוץ ($roleHebrewName): ',
+                                          style: TextStyle(
+                                            fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.purple.shade800,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: entry.value,
+                                          style: TextStyle(
+                                            fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                                            color: Colors.purple.shade900,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              )
+                            : Text.rich(
+                                TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: 'הערות לשיבוץ: ',
+                                      style: TextStyle(
+                                        fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.purple.shade800,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: noteText,
+                                      style: TextStyle(
+                                        fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                                        color: Colors.purple.shade900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              );
+            }),
           ],
         ),
       ),

@@ -10,6 +10,7 @@ import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/event.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/event_repository.dart';
+import '../../../data/repositories/team_repository.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/services/environment_service.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
@@ -28,6 +29,8 @@ import 'assignment_filter_modal.dart';
 import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
 import '../../widgets/map_location_picker.dart';
+import '../../../core/utils/validators.dart';
+import '../../../core/utils/phone_input_formatter.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -399,6 +402,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     final hasNotes = slot.isFilled &&
                      slot.currentAssignment != null &&
                      slot.currentAssignment!.notes.isNotEmpty;
+    final hasAltPhone = slot.isFilled &&
+                        slot.currentAssignment != null &&
+                        slot.currentAssignment!.alternativePhoneNumber != null &&
+                        slot.currentAssignment!.alternativePhoneNumber!.isNotEmpty;
+    final hasExtraInfo = hasNotes || hasAltPhone;
 
     final rowContent = Container(
       decoration: BoxDecoration(
@@ -588,22 +596,107 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             ),
           ),
 
-          // Notes section (only shown if there are notes)
-          if (hasNotes)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+          // Notes and alternative phone section
+          if (hasExtraInfo)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
               child: Directionality(
                 textDirection: TextDirection.rtl,
-                child: Text(
-                  slot.currentAssignment!.notes,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.purple.shade700,
-                    fontStyle: FontStyle.italic,
-                    fontWeight: FontWeight.w500,
-                  ),
+                child: Column(
+                  children: [
+                    // Notes card
+                    if (hasNotes)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.purple.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.purple.shade200),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.note_alt_outlined,
+                              size: 14,
+                              color: Colors.purple.shade700,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text.rich(
+                                TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: 'הערות לשיבוץ: ',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.purple.shade800,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: slot.currentAssignment!.notes,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.purple.shade900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    // Alternative phone card
+                    if (hasAltPhone) ...[
+                      if (hasNotes) const SizedBox(height: 4),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.teal.shade200),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.phone_android,
+                              size: 14,
+                              color: Colors.teal.shade700,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text.rich(
+                                TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: 'טלפון חד פעמי לשיבוץ: ',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.teal.shade800,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: slot.currentAssignment!.alternativePhoneNumber!,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.teal.shade900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -771,11 +864,19 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     final assignment = slot.currentAssignment;
     if (assignment == null) return;
 
-    final controller = TextEditingController(text: assignment.notes);
+    final notesController = TextEditingController(text: assignment.notes);
+    final phoneController = TextEditingController(text: assignment.alternativePhoneNumber ?? '');
+    final formKey = GlobalKey<FormState>();
 
-    final result = await showDialog<String?>(
+    final result = await showDialog<Map<String, String>?>(
       context: context,
-      builder: (dialogContext) => Directionality(
+      builder: (dialogContext) {
+        final screenWidth = MediaQuery.of(dialogContext).size.width;
+        final isWide = screenWidth > 600;
+        final dialogWidth = isWide ? screenWidth * 0.45 : screenWidth * 0.9;
+        final notesMaxLines = isWide ? 8 : 4;
+
+        return Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           actionsAlignment: MainAxisAlignment.center,
@@ -791,59 +892,68 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Show assignment info
-              Text(
-                '${slot.currentAssignment?.teamMember?.name ?? ""} - ${slot.role.hebrewName}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-              Text(
-                slot.event.name,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                maxLines: 4,
-                decoration: InputDecoration(
-                  hintText: 'הכנס הערות...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey.shade50,
-                ),
-                textDirection: TextDirection.rtl,
-                autofocus: false,
-              ),
-              // Delete note button (only show if there are existing notes)
-              if (assignment.notes.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton.icon(
-                    onPressed: () => Navigator.of(dialogContext).pop(''),
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    label: const Text(
-                      'מחק הערה',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.red.shade50,
+          content: SizedBox(
+            width: dialogWidth,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Show assignment info
+                  Text(
+                    '${slot.currentAssignment?.teamMember?.name ?? ""} - ${slot.role.hebrewName}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
                     ),
                   ),
-                ),
-              ],
-            ],
+                  Text(
+                    slot.event.name,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: notesController,
+                    maxLines: notesMaxLines,
+                    decoration: InputDecoration(
+                      hintText: 'הכנס הערות...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey.shade50,
+                    ),
+                    textDirection: TextDirection.rtl,
+                    autofocus: false,
+                  ),
+                  const SizedBox(height: 16),
+                  // Alternative phone number field
+                  TextFormField(
+                    controller: phoneController,
+                    keyboardType: TextInputType.phone,
+                    textDirection: TextDirection.ltr,
+                    textAlign: TextAlign.center,
+                    inputFormatters: [PhoneNumberTextInputFormatter()],
+                    validator: Validators.validatePhoneNumber,
+                    decoration: InputDecoration(
+                      labelText: 'טלפון חד פעמי לשיבוץ',
+                      hintText: '05X-XXXXXXX',
+                      hintTextDirection: TextDirection.ltr,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey.shade50,
+                      prefixIcon: const Icon(Icons.phone),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
           actions: [
             TextButton(
@@ -851,7 +961,14 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               child: const Text('ביטול'),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.of(dialogContext).pop({
+                    'notes': notesController.text,
+                    'phone': phoneController.text,
+                  });
+                }
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
                 foregroundColor: Colors.white,
@@ -860,13 +977,19 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             ),
           ],
         ),
-      ),
+      );
+      },
     );
 
     if (result != null && mounted) {
-      // Update notes via BLoC (empty string = delete note)
+      final phone = result['phone'];
+      // Update notes and phone via BLoC
       context.read<AssignmentBloc>().add(
-        UpdateAssignmentNotes(assignment.id, result),
+        UpdateAssignmentNotes(
+          assignment.id,
+          result['notes']!,
+          alternativePhoneNumber: phone != null && phone.isNotEmpty ? phone : null,
+        ),
       );
     }
   }
@@ -996,6 +1119,30 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       ),
     ));
 
+    // Add "constrained/unavailable members" option
+    items.add(DropdownMenuItem<String>(
+      value: '__show_constrained__',
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.block, size: 16, color: Colors.red.shade700),
+              const SizedBox(width: 8),
+              Text(
+                'בעלי מגבלות / לא זמינים...',
+                style: TextStyle(
+                  color: Colors.red.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ));
+
     // Determine if dropdown should be enabled
     // Enable if: there are available members, OR there's a current assignment, OR there are already assigned members
     final bool hasOptions = slot.availableMembers.isNotEmpty ||
@@ -1080,6 +1227,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               if (selectedValue == '__show_already_assigned__') {
                 // Show dialog for already-assigned members
                 _showAlreadyAssignedDialog(slot);
+              } else if (selectedValue == '__show_constrained__') {
+                // Show dialog for constrained/unavailable members
+                _showConstrainedMembersDialog(slot);
               } else if (selectedValue != null && selectedValue != '__divider__') {
                 // Find the selected member by ID
                 final member = slot.availableMembers.firstWhereOrNull(
@@ -1243,6 +1393,186 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     } else {
       // User closed dialog without selecting - force dropdown reset
       _resetDropdown(slot);
+    }
+  }
+
+  /// Show dialog with constrained/unavailable team members for the event
+  /// Allows admin to force-assign them despite constraints
+  Future<void> _showConstrainedMembersDialog(AssignmentSlot slot) async {
+    // Get all active team members
+    final teamRepo = context.read<TeamRepository>();
+    final allMembers = await teamRepo.getActiveTeamMembers();
+
+    // IDs of members already in available and alreadyAssigned lists
+    final availableIds = slot.availableMembers.map((m) => m.id).toSet();
+    final alreadyAssignedIds = slot.alreadyAssignedMembers.map((m) => m.id).toSet();
+
+    // Find constrained/unavailable members:
+    // - Must have the required role capability
+    // - Must NOT be in available or alreadyAssigned lists (those are already shown)
+    // - Must be active and not archived
+    final constrainedMembers = allMembers.where((member) {
+      // Must have role capability
+      if (!member.canPerformRole(slot.role.key)) return false;
+
+      // Must not already be in available or alreadyAssigned lists
+      if (availableIds.contains(member.id) || alreadyAssignedIds.contains(member.id)) return false;
+
+      // Must be unavailable for the event dates (which is why they were filtered out)
+      return !member.isAvailableForDateRange(slot.event.startDate, slot.event.endDate);
+    }).toList();
+
+    // Sort alphabetically
+    constrainedMembers.sort((a, b) => a.name.compareTo(b.name));
+
+    if (!mounted) return;
+
+    final selectedMember = await showDialog<TeamMember>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.block, color: Colors.red),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'בעלי מגבלות / לא זמינים - "${slot.event.name}"',
+                  maxLines: 3,
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (constrainedMembers.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      children: [
+                        Icon(Icons.info_outline, size: 48, color: Colors.grey.shade600),
+                        const SizedBox(height: 16),
+                        Text(
+                          'אין אנשים עם מגבלות או חוסר זמינות לתפקיד ${slot.role.hebrewName} באירוע זה',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else ...[
+                  Text(
+                    'האנשים הבאים לא זמינים לתאריכי האירוע:',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.5,
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: constrainedMembers.length,
+                      itemBuilder: (context, index) {
+                        final member = constrainedMembers[index];
+                        // Determine the reason for unavailability
+                        String reason;
+                        if (member.isPermanent) {
+                          reason = 'מגבלה מאושרת';
+                        } else {
+                          reason = 'לא ציין/ה זמינות';
+                        }
+
+                        return ListTile(
+                          leading: Icon(
+                            member.isPermanent ? Icons.event_busy : Icons.schedule,
+                            color: Colors.red.shade400,
+                          ),
+                          title: Text(member.name),
+                          subtitle: Text(
+                            reason,
+                            style: TextStyle(color: Colors.red.shade600, fontSize: 12),
+                          ),
+                          trailing: ElevatedButton(
+                            onPressed: () => Navigator.of(context).pop(member),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('שבץ בכל זאת'),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('סגור'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (selectedMember != null) {
+      _handleAssignmentChangeWithBypass(slot, selectedMember);
+    } else {
+      // User closed dialog without selecting - force dropdown reset
+      _resetDropdown(slot);
+    }
+  }
+
+  /// Handle assignment change bypassing conflict checks (for constrained members)
+  Future<void> _handleAssignmentChangeWithBypass(
+      AssignmentSlot slot, TeamMember selectedMember) async {
+    // Check if already assigned (no-op)
+    if (slot.currentAssignment?.teamMemberId == selectedMember.id) {
+      return;
+    }
+
+    // Create assignment object
+    final assignment = slot.currentAssignment != null
+        ? slot.currentAssignment!.copyWith(
+            teamMemberId: selectedMember.id,
+            teamMember: selectedMember,
+            updatedAt: DateTime.now(),
+          )
+        : Assignment(
+            id: const Uuid().v4(),
+            eventId: slot.event.id,
+            teamMemberId: selectedMember.id,
+            roleType: slot.role.key,
+            slotIndex: slot.slotIndex,
+            status: AssignmentStatus.confirmed,
+            notes: '',
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            event: slot.event,
+            teamMember: selectedMember,
+          );
+
+    // Use optimistic path with bypass flag to skip conflict checks
+    if (slot.currentAssignment != null) {
+      context.read<AssignmentBloc>().add(
+        OptimisticUpdateAssignment(assignment),
+      );
+    } else {
+      context.read<AssignmentBloc>().add(
+        OptimisticCreateAssignment(assignment, bypassConflicts: true),
+      );
     }
   }
 

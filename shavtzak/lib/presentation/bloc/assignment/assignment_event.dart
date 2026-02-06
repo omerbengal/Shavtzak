@@ -221,15 +221,16 @@ class RebuildAssignmentSlotsFromData extends AssignmentEvent {
   List<Object?> get props => [assignments, events, teamMembers, selectedEventIds];
 }
 
-/// Update assignment notes
+/// Update assignment notes and/or alternative phone number
 class UpdateAssignmentNotes extends AssignmentEvent {
   final String id;
   final String notes;
+  final String? alternativePhoneNumber;
 
-  const UpdateAssignmentNotes(this.id, this.notes);
+  const UpdateAssignmentNotes(this.id, this.notes, {this.alternativePhoneNumber});
 
   @override
-  List<Object?> get props => [id, notes];
+  List<Object?> get props => [id, notes, alternativePhoneNumber];
 }
 
 /// Base class for optimistic assignment operations
@@ -250,12 +251,17 @@ abstract class OptimisticAssignmentEvent extends AssignmentEvent {
 
 /// Optimistically create a new assignment
 class OptimisticCreateAssignment extends OptimisticAssignmentEvent {
-  OptimisticCreateAssignment(Assignment assignment)
+  final bool bypassConflicts;
+
+  OptimisticCreateAssignment(Assignment assignment, {this.bypassConflicts = false})
       : super(
           operationId: Uuid().v4(),
           slotKey: '${assignment.eventId}_${assignment.roleType}_${assignment.slotIndex}',
           assignment: assignment,
         );
+
+  @override
+  List<Object?> get props => [operationId, slotKey, assignment, bypassConflicts];
 }
 
 /// Optimistically update an existing assignment

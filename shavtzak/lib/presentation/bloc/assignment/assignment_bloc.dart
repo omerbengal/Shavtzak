@@ -949,7 +949,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     // Execute database operation
     try {
-      await _repository.createAssignment(event.assignment);
+      if (event.bypassConflicts) {
+        await _repository.createAssignmentWithBypass(event.assignment);
+      } else {
+        await _repository.createAssignment(event.assignment);
+      }
       // Firestore stream will emit fresh state automatically
     } catch (e) {
       // On error: remove operation, revert to database state
@@ -1591,7 +1595,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final previousState = state;
 
     try {
-      await _repository.updateAssignmentNotes(event.id, event.notes);
+      await _repository.updateAssignmentNotes(event.id, event.notes, alternativePhoneNumber: event.alternativePhoneNumber);
       emit(const AssignmentOperationSuccess('הערות עודכנו בהצלחה'));
 
       // Trigger rebuild based on current view type

@@ -235,38 +235,96 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
               if (member == null) return const SizedBox.shrink();
 
               return Padding(
-                padding: const EdgeInsets.only(right: 28, bottom: 4),
-                child: Row(
+                padding: const EdgeInsets.only(right: 28, bottom: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.person_outline,
-                      size: 18,
-                      color: Colors.grey.shade600,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        member.name,
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ),
-                    // Phone icon if phone number exists
-                    if (member.phoneNumber != null && member.phoneNumber!.isNotEmpty) ...[
-                      InkWell(
-                        onTap: () => _makePhoneCall(member.phoneNumber!),
-                        child: Icon(
-                          Icons.phone,
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.person_outline,
                           size: 18,
-                          color: Colors.blue.shade700,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            member.name,
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                        ),
+                        // Phone icon with fallback: member phone → assignment alternative phone
+                        if ((member.phoneNumber != null && member.phoneNumber!.isNotEmpty) ||
+                            (assignment.alternativePhoneNumber != null && assignment.alternativePhoneNumber!.isNotEmpty)) ...[
+                          InkWell(
+                            onTap: () => _makePhoneCall(
+                              (member.phoneNumber != null && member.phoneNumber!.isNotEmpty)
+                                  ? member.phoneNumber!
+                                  : assignment.alternativePhoneNumber!,
+                            ),
+                            child: Icon(
+                              Icons.phone,
+                              size: 22,
+                              color: Colors.blue.shade700,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        // Show status indicator if needed
+                        if (assignment.status != AssignmentStatus.confirmed) ...[
+                          _buildStatusIndicator(assignment.status),
+                          const SizedBox(width: 8),
+                        ],
+                      ],
+                    ),
+                    // Notes display
+                    if (assignment.notes.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 26, top: 4),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.purple.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.purple.shade200),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.note_alt_outlined,
+                                size: 14,
+                                color: Colors.purple.shade700,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: 'הערות לשיבוץ: ',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.purple.shade800,
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text: assignment.notes,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.purple.shade900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                    ],
-                    // Show status indicator if needed
-                    if (assignment.status != AssignmentStatus.confirmed) ...[
-                      _buildStatusIndicator(assignment.status),
-                      const SizedBox(width: 8),
-                    ],
                   ],
                 ),
               );

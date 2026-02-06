@@ -307,6 +307,7 @@ class AssignmentRepository {
       slotIndex: assignment.slotIndex,
       status: status,
       notes: assignment.notes,
+      alternativePhoneNumber: assignment.alternativePhoneNumber,
       createdAt: assignment.createdAt,
       updatedAt: DateTime.now(),
       event: assignment.event,
@@ -326,8 +327,8 @@ class AssignmentRepository {
     await updateAssignmentStatus(id, AssignmentStatus.declined);
   }
 
-  /// Update assignment notes
-  Future<void> updateAssignmentNotes(String id, String notes) async {
+  /// Update assignment notes and/or alternative phone number
+  Future<void> updateAssignmentNotes(String id, String notes, {String? alternativePhoneNumber}) async {
     final assignment = await getAssignmentById(id);
     if (assignment == null) {
       throw Exception('Assignment not found: $id');
@@ -335,6 +336,7 @@ class AssignmentRepository {
 
     final updated = assignment.copyWith(
       notes: notes,
+      alternativePhoneNumber: () => alternativePhoneNumber,
       updatedAt: DateTime.now(),
     );
 

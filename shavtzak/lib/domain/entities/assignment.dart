@@ -17,6 +17,7 @@ class Assignment extends Equatable {
   final int slotIndex; // Which slot (0, 1, 2...) for this role in the event
   final AssignmentStatus status;
   final String notes;
+  final String? alternativePhoneNumber;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -32,6 +33,7 @@ class Assignment extends Equatable {
     required this.slotIndex,
     required this.status,
     required this.notes,
+    this.alternativePhoneNumber,
     required this.createdAt,
     required this.updatedAt,
     this.event,
@@ -103,6 +105,7 @@ class Assignment extends Equatable {
       slotIndex: slotIndex,
       status: status,
       notes: notes,
+      alternativePhoneNumber: alternativePhoneNumber,
       createdAt: createdAt,
       updatedAt: updatedAt,
       event: event ?? this.event,
@@ -119,6 +122,7 @@ class Assignment extends Equatable {
     int? slotIndex,
     AssignmentStatus? status,
     String? notes,
+    String? Function()? alternativePhoneNumber,
     DateTime? createdAt,
     DateTime? updatedAt,
     Event? event,
@@ -132,6 +136,7 @@ class Assignment extends Equatable {
       slotIndex: slotIndex ?? this.slotIndex,
       status: status ?? this.status,
       notes: notes ?? this.notes,
+      alternativePhoneNumber: alternativePhoneNumber != null ? alternativePhoneNumber() : this.alternativePhoneNumber,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       event: event ?? this.event,
@@ -148,6 +153,7 @@ class Assignment extends Equatable {
         slotIndex,
         status,
         notes,
+        alternativePhoneNumber,
         createdAt,
         updatedAt,
         // Include event and teamMember in equality so that
