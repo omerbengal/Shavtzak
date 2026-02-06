@@ -4,6 +4,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../bloc/team/team_bloc.dart';
+import '../../bloc/team/team_event.dart' as team;
+import '../../bloc/team/team_state.dart';
+import '../../../core/constants/constraint_status.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/user_cache_service.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
@@ -20,6 +24,13 @@ class AdminChoiceScreen extends StatefulWidget {
 }
 
 class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Load team members to get pending constraint count for notification badge
+    context.read<TeamBloc>().add(const team.LoadTeamMembers());
+  }
+
   void _checkAndShowPasscodeDialog(BuildContext context) {
     final state = context.read<UserSelectionBloc>().state;
     if (state is UserAuthenticated) {
@@ -126,14 +137,20 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
 
                             // Management Card (admin only)
                             if (showManagementCard) ...[
-                              _buildChoiceCard(
-                                width: cardWidth,
-                                icon: Icons.admin_panel_settings,
-                                iconColor: Colors.green,
-                                title: 'ניהול שבצק',
-                                subtitle: 'ניהול צוות, אירועים ושיבוצים',
-                                isCompact: isCompact,
-                                onTap: () => context.go('$envPrefix/admin/team-members'),
+                              BlocBuilder<TeamBloc, TeamState>(
+                                builder: (context, teamState) {
+                                  final pendingCount = _countPendingConstraints(teamState);
+                                  return _buildChoiceCard(
+                                    width: cardWidth,
+                                    icon: Icons.admin_panel_settings,
+                                    iconColor: Colors.green,
+                                    title: 'ניהול שבצק',
+                                    subtitle: 'ניהול צוות, אירועים ושיבוצים',
+                                    isCompact: isCompact,
+                                    onTap: () => context.go('$envPrefix/admin/team-members'),
+                                    badgeCount: pendingCount,
+                                  );
+                                },
                               ),
                               SizedBox(height: cardSpacing),
                             ],
@@ -163,6 +180,20 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
     );
   }
 
+  /// Count total pending constraints across all team members
+  int _countPendingConstraints(TeamState teamState) {
+    if (teamState is! TeamLoaded) return 0;
+    int count = 0;
+    for (final member in teamState.members) {
+      for (final constraint in member.constraints) {
+        if (constraint.status == ConstraintStatus.pending) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
   /// Build a choice card - no fixed height, content-sized
   Widget _buildChoiceCard({
     required double width,
@@ -172,8 +203,9 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
     required String subtitle,
     required bool isCompact,
     required VoidCallback onTap,
+    int badgeCount = 0,
   }) {
-    return SizedBox(
+    final card = SizedBox(
       width: width,
       child: Card(
         elevation: 4,
@@ -210,6 +242,47 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
           ),
         ),
       ),
+    );
+
+    if (badgeCount <= 0) return card;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        card,
+        // Red notification badge at top-right corner (offset accounts for Card's default 4px margin)
+        PositionedDirectional(
+          top: -2,
+          end: 0,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.red.withValues(alpha: 0.4),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            constraints: const BoxConstraints(
+              minWidth: 24,
+              minHeight: 24,
+            ),
+            child: Text(
+              '$badgeCount',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

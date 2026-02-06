@@ -371,6 +371,16 @@ class _TeamListScreenState extends State<TeamListScreen> {
     // Filter members based on selected filter
     final filteredMembers = _filterMembers(state.members, FilterPersistence.teamFilterIndex);
 
+    // Split into members with pending constraints and without
+    final membersWithPending = filteredMembers
+        .where((m) => m.constraints.any((c) => c.status == ConstraintStatus.pending))
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final membersWithoutPending = filteredMembers
+        .where((m) => !m.constraints.any((c) => c.status == ConstraintStatus.pending))
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+
     return RefreshIndicator(
       onRefresh: () async {
         context.read<TeamBloc>().add(const team.RefreshTeamMembers());
@@ -392,10 +402,28 @@ class _TeamListScreenState extends State<TeamListScreen> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 80),
-              itemCount: filteredMembers.length,
+              itemCount: membersWithPending.length +
+                  (membersWithPending.isNotEmpty && membersWithoutPending.isNotEmpty ? 1 : 0) +
+                  membersWithoutPending.length,
               itemBuilder: (context, index) {
-                final member = filteredMembers[index];
-                return _buildTeamMemberCard(member);
+                // Pending constraints section
+                if (index < membersWithPending.length) {
+                  return _buildTeamMemberCard(membersWithPending[index]);
+                }
+                // Divider between sections
+                if (membersWithPending.isNotEmpty &&
+                    membersWithoutPending.isNotEmpty &&
+                    index == membersWithPending.length) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Divider(thickness: 2, color: Colors.grey[700]),
+                  );
+                }
+                // Remaining members section
+                final remainingIndex = index -
+                    membersWithPending.length -
+                    (membersWithPending.isNotEmpty && membersWithoutPending.isNotEmpty ? 1 : 0);
+                return _buildTeamMemberCard(membersWithoutPending[remainingIndex]);
               },
             ),
           ),
@@ -622,10 +650,11 @@ class _TeamListScreenState extends State<TeamListScreen> {
                         );
                       }
 
-                      // Permanent members: constraint-based logic
+                      // Permanent members: constraint-based logic (exclude rejected)
                       final activeConstraints = member.constraints
                           .where((c) => !isPastConstraint(c))
                           .where((c) => c.isUnavailability)
+                          .where((c) => !c.isRejected())
                           .toList();
                       final approvedCount = activeConstraints.where((c) => c.isApproved()).length;
                       final pendingCount = activeConstraints.where((c) => c.isPending()).length;
@@ -634,11 +663,13 @@ class _TeamListScreenState extends State<TeamListScreen> {
                         return const SizedBox.shrink();
                       }
 
+                      final totalCount = activeConstraints.length;
+
                       if (approvedCount > 0) {
                         return Row(
                           children: [
                             Text(
-                              '$approvedCount מגבלות',
+                              '$totalCount מגבלות',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Colors.orange,
@@ -648,7 +679,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                             if (pendingCount > 0) ...[
                               const SizedBox(width: 4),
                               Text(
-                                '($pendingCount ממתינות)',
+                                '($pendingCount ממתינות לבחינה)',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.red,
@@ -660,7 +691,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                         );
                       } else if (pendingCount > 0) {
                         return Text(
-                          '$pendingCount מגבלות ממתינות',
+                          '$pendingCount מגבלות ממתינות לבחינה',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.red,
@@ -2603,6 +2634,21 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
           onApproveConstraint: (constraintId) => _approveConstraint(constraintId),
           onRejectConstraint: (constraintId) => _rejectConstraint(constraintId),
           onSetPendingConstraint: (constraintId) => _setPendingConstraint(constraintId),
+          onDeleteConstraint: (constraintId) {
+            setState(() {
+              _constraints.removeWhere((c) => c.id == constraintId);
+              _isDirty = true;
+            });
+          },
+          onEditConstraint: (constraintId, updatedConstraint) {
+            final index = _constraints.indexWhere((c) => c.id == constraintId);
+            if (index != -1) {
+              setState(() {
+                _constraints[index] = updatedConstraint;
+                _isDirty = true;
+              });
+            }
+          },
         ),
       ),
     );
@@ -3382,6 +3428,8 @@ class _RejectedConstraintsDialog extends StatefulWidget {
   final Function(String) onApproveConstraint;
   final Function(String) onRejectConstraint;
   final Function(String) onSetPendingConstraint;
+  final Function(String) onDeleteConstraint;
+  final Function(String, DateConstraint) onEditConstraint;
 
   const _RejectedConstraintsDialog({
     required this.teamMemberId,
@@ -3389,6 +3437,8 @@ class _RejectedConstraintsDialog extends StatefulWidget {
     required this.onApproveConstraint,
     required this.onRejectConstraint,
     required this.onSetPendingConstraint,
+    required this.onDeleteConstraint,
+    required this.onEditConstraint,
   });
 
   @override
@@ -3570,6 +3620,30 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
                                         minimumSize: Size.zero,
                                       ),
                                     ),
+
+                                  const Spacer(),
+
+                                  // Edit button
+                                  IconButton(
+                                    onPressed: () => _editConstraint(constraint),
+                                    icon: const Icon(Icons.edit, size: 18),
+                                    color: Colors.blue,
+                                    tooltip: 'ערוך',
+                                    constraints: const BoxConstraints(),
+                                    padding: const EdgeInsets.all(4),
+                                  ),
+
+                                  const SizedBox(width: 4),
+
+                                  // Delete button
+                                  IconButton(
+                                    onPressed: () => _deleteConstraint(constraint),
+                                    icon: const Icon(Icons.delete, size: 18),
+                                    color: Colors.red,
+                                    tooltip: 'מחק',
+                                    constraints: const BoxConstraints(),
+                                    padding: const EdgeInsets.all(4),
+                                  ),
                                 ],
                               ),
                             ],
@@ -3621,7 +3695,54 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
     setState(() {}); // Refresh dialog
   }
 
-  
+  void _deleteConstraint(DateConstraint constraint) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('מחיקת מגבלה'),
+          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את המגבלה הזו?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('ביטול'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('מחק'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      widget.onDeleteConstraint(constraint.id);
+      setState(() {}); // Refresh dialog
+    }
+  }
+
+  void _editConstraint(DateConstraint constraint) async {
+    final result = await showDialog<DateConstraint>(
+      context: context,
+      builder: (context) => _AdminConstraintDialog(
+        constraint: constraint,
+        isPermanent: true, // Rejected constraints dialog is for permanent members only
+      ),
+    );
+
+    if (result != null) {
+      // Preserve the original rejected status - do NOT auto-move to pending/approved
+      final updatedConstraint = result.copyWith(
+        status: constraint.status,
+      );
+      widget.onEditConstraint(constraint.id, updatedConstraint);
+      setState(() {}); // Refresh dialog
+    }
+  }
+
   Widget _buildStatusBadge(ConstraintStatus status) {
     Color backgroundColor;
     Color textColor;
