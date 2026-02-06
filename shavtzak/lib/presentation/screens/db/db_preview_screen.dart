@@ -32,12 +32,19 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
 
   // Track stream subscriptions
   final Map<String, StreamSubscription<QuerySnapshot>> _streamSubscriptions = {};
+  StreamSubscription? _rolesSubscription;
 
   // Track document data for filtering (cache for search)
   final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> _collectionDataCache = {};
 
-  // ValueNotifiers for collections that need custom sorting (events, roles, assignments, checklist_items)
+  // ValueNotifiers for collections that need sorting
   final Map<String, ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>> _sortedCollectionNotifiers = {};
+
+  // Track which collections have received their first data snapshot
+  final Set<String> _loadedCollections = {};
+
+  // Pre-built role key → sortOrder map (roles are stored in utilities/Lists document, not a collection)
+  final Map<String, int> _roleSortOrders = {};
 
   // All collections to display
   static const List<_CollectionConfig> _collections = [
@@ -46,7 +53,6 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     _CollectionConfig('assignments', 'שיבוצים', Icons.assignment_ind, true),
     _CollectionConfig('checklist_items', 'פריטי צ\'קליסט', Icons.checklist, true),
     _CollectionConfig('checklist_presets', 'תבניות צ\'קליסט', Icons.list_alt, true),
-    _CollectionConfig('roles', 'תפקידים', Icons.work, true),
     _CollectionConfig('utilities', 'כלים (גלובלי)', Icons.build, false),
     _CollectionConfig('keys', 'מפתחות (גלובלי)', Icons.key, false),
   ];
@@ -76,6 +82,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     for (final sub in _streamSubscriptions.values) {
       sub.cancel();
     }
+    _rolesSubscription?.cancel();
     // Dispose all sorted collection notifiers
     for (final notifier in _sortedCollectionNotifiers.values) {
       notifier.dispose();
@@ -97,9 +104,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     for (final config in _collections) {
       final collectionName = config.useEnvironmentPrefix ? '$prefix${config.name}' : config.name;
 
-      // Create ValueNotifier for all collections that need sorting (events, roles, assignments, checklist_items)
-      // Initialize with empty list to prevent loading issues
-      if (config.name == 'events' || config.name == 'roles' || config.name == 'assignments' || config.name == 'checklist_items') {
+      // Create ValueNotifier for collections that need sorting
+      if (config.name == 'events' || config.name == 'assignments' || config.name == 'checklist_items' || config.name == 'teamMembers' || config.name == 'checklist_presets') {
         _sortedCollectionNotifiers.putIfAbsent(
           config.name,
           () => ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>([]),
@@ -112,30 +118,38 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       // Add orderBy based on collection type
       if (config.name == 'events') {
         query = query.orderBy('startDate', descending: false);
-      } else if (config.name == 'roles') {
-        query = query.orderBy('sortOrder', descending: false);
       }
 
       final subscription = query.snapshots().listen((snapshot) {
         var docs = snapshot.docs.cast<QueryDocumentSnapshot<Map<String, dynamic>>>();
 
-        // Client-side sorting for complex cases
+        // Client-side sorting
         if (config.name == 'assignments') {
-          // Sort assignments by event.startDate then role.sortOrder
-          // This requires joining with events and roles data
           docs = _sortAssignments(docs);
         } else if (config.name == 'checklist_items') {
-          // Sort checklist items by event.startDate
           docs = _sortChecklistItems(docs);
+        } else if (config.name == 'events') {
+          docs = _sortEvents(docs);
+        } else if (config.name == 'teamMembers' || config.name == 'checklist_presets') {
+          docs = _sortByName(docs);
         }
 
-        // Cache the document data for filtering
+        // Mark collection as loaded and cache data
+        _loadedCollections.add(config.name);
         _collectionDataCache[config.name] = docs;
 
         // Update sorted collection notifier if it exists
         final sortedNotifier = _sortedCollectionNotifiers[config.name];
         if (sortedNotifier != null) {
           sortedNotifier.value = docs;
+        }
+
+        // Re-sort dependent collections when dependency data changes
+        if (config.name == 'events') {
+          _resortCollection('assignments');
+          _resortCollection('checklist_items');
+        } else if (config.name == 'teamMembers') {
+          _resortCollection('assignments');
         }
 
         final count = docs.length;
@@ -161,93 +175,195 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
 
       _streamSubscriptions[config.name] = subscription;
     }
+
+    // Subscribe to utilities/Lists document for role sort order data
+    // Roles are stored as an array in the 'Roles' field, not as a separate collection
+    final rolesSubscription = FirebaseFirestore.instance
+        .collection('utilities')
+        .doc('Lists')
+        .snapshots()
+        .listen((doc) {
+      _roleSortOrders.clear();
+      if (doc.exists && doc.data() != null) {
+        final rolesArray = doc.data()!['Roles'] as List<dynamic>?;
+        if (rolesArray != null) {
+          for (final roleData in rolesArray) {
+            if (roleData is Map<String, dynamic>) {
+              final key = roleData['key'] as String?;
+              final sortOrder = roleData['sortOrder'];
+              if (key != null && sortOrder is num) {
+                _roleSortOrders[key] = sortOrder.toInt();
+              }
+            }
+          }
+        }
+      }
+      // Re-sort assignments since they depend on role sort orders
+      _resortCollection('assignments');
+    });
+    _rolesSubscription = rolesSubscription;
   }
 
-  /// Sort assignments by event.startDate then role.sortOrder
+  /// Re-sort a dependent collection using the latest cached dependency data
+  void _resortCollection(String collectionName) {
+    final docs = _collectionDataCache[collectionName];
+    if (docs == null) return;
+
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> sorted;
+    if (collectionName == 'assignments') {
+      sorted = _sortAssignments(docs);
+    } else if (collectionName == 'checklist_items') {
+      sorted = _sortChecklistItems(docs);
+    } else {
+      return;
+    }
+
+    _collectionDataCache[collectionName] = sorted;
+    final notifier = _sortedCollectionNotifiers[collectionName];
+    if (notifier != null) {
+      notifier.value = sorted;
+    }
+  }
+
+  /// Sort events by startDate ascending, then name ascending
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortEvents(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+    sortedDocs.sort((a, b) {
+      final aData = a.data();
+      final bData = b.data();
+
+      final aDate = aData['startDate'];
+      final bDate = bData['startDate'];
+      final aDateTime = aDate is Timestamp ? aDate.toDate() : DateTime(2099, 12, 31);
+      final bDateTime = bDate is Timestamp ? bDate.toDate() : DateTime(2099, 12, 31);
+      final dateCompare = aDateTime.compareTo(bDateTime);
+      if (dateCompare != 0) return dateCompare;
+
+      final aName = (aData['name'] as String? ?? '').toLowerCase();
+      final bName = (bData['name'] as String? ?? '').toLowerCase();
+      return aName.compareTo(bName);
+    });
+    return sortedDocs;
+  }
+
+  /// Sort documents by name field ascending
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortByName(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+    sortedDocs.sort((a, b) {
+      final aName = ((a.data())['name'] as String? ?? '').toLowerCase();
+      final bName = ((b.data())['name'] as String? ?? '').toLowerCase();
+      return aName.compareTo(bName);
+    });
+    return sortedDocs;
+  }
+
+  /// Sort assignments by event.startDate, event.name, role.sortOrder, teamMember.name
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortAssignments(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    // We need to sort by event data and role data
-    // Build maps for quick lookup
     final Map<String, DateTime> eventStartDates = {};
-    final Map<String, int> roleSortOrders = {};
+    final Map<String, String> eventNames = {};
+    final Map<String, String> teamMemberNames = {};
 
     // Get events data
     final eventsDocs = _collectionDataCache['events'];
     if (eventsDocs != null) {
       for (final doc in eventsDocs) {
-        final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data();
         final startDate = data['startDate'];
         if (startDate is Timestamp) {
           eventStartDates[doc.id] = startDate.toDate();
         }
+        eventNames[doc.id] = (data['name'] as String? ?? '').toLowerCase();
       }
     }
 
-    // Get roles data
-    final rolesDocs = _collectionDataCache['roles'];
-    if (rolesDocs != null) {
-      for (final doc in rolesDocs) {
-        final data = doc.data() as Map<String, dynamic>;
-        final sortOrder = data['sortOrder'];
-        if (sortOrder is int) {
-          roleSortOrders[data['key']] = sortOrder;
-        }
+    // Get team member data
+    final membersDocs = _collectionDataCache['teamMembers'];
+    if (membersDocs != null) {
+      for (final doc in membersDocs) {
+        final data = doc.data();
+        teamMemberNames[doc.id] = (data['name'] as String? ?? '').toLowerCase();
       }
     }
 
-    // Sort assignments
     final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
     sortedDocs.sort((a, b) {
-      final aData = a.data() as Map<String, dynamic>;
-      final bData = b.data() as Map<String, dynamic>;
+      final aData = a.data();
+      final bData = b.data();
 
       final aEventId = aData['eventId'] as String?;
       final bEventId = bData['eventId'] as String?;
       final aRoleType = aData['roleType'] as String?;
       final bRoleType = bData['roleType'] as String?;
+      final aTeamMemberId = aData['teamMemberId'] as String?;
+      final bTeamMemberId = bData['teamMemberId'] as String?;
 
-      // First compare by event start date
+      // 1. event.startDate ascending
       final aEventDate = aEventId != null ? (eventStartDates[aEventId] ?? DateTime(2099, 12, 31)) : DateTime(2099, 12, 31);
       final bEventDate = bEventId != null ? (eventStartDates[bEventId] ?? DateTime(2099, 12, 31)) : DateTime(2099, 12, 31);
       final dateCompare = aEventDate.compareTo(bEventDate);
       if (dateCompare != 0) return dateCompare;
 
-      // Then compare by role sort order
-      final aRoleSort = aRoleType != null ? (roleSortOrders[aRoleType] ?? 999) : 999;
-      final bRoleSort = bRoleType != null ? (roleSortOrders[bRoleType] ?? 999) : 999;
-      return aRoleSort.compareTo(bRoleSort);
+      // 2. event.name ascending
+      final aEventName = aEventId != null ? (eventNames[aEventId] ?? '') : '';
+      final bEventName = bEventId != null ? (eventNames[bEventId] ?? '') : '';
+      final nameCompare = aEventName.compareTo(bEventName);
+      if (nameCompare != 0) return nameCompare;
+
+      // 3. role.sortOrder ascending (from _roleSortOrders built from utilities/Lists)
+      final aRoleSort = aRoleType != null ? (_roleSortOrders[aRoleType] ?? 999) : 999;
+      final bRoleSort = bRoleType != null ? (_roleSortOrders[bRoleType] ?? 999) : 999;
+      final roleCompare = aRoleSort.compareTo(bRoleSort);
+      if (roleCompare != 0) return roleCompare;
+
+      // 4. teamMember.name ascending
+      final aName = aTeamMemberId != null ? (teamMemberNames[aTeamMemberId] ?? '') : '';
+      final bName = bTeamMemberId != null ? (teamMemberNames[bTeamMemberId] ?? '') : '';
+      return aName.compareTo(bName);
     });
 
     return sortedDocs;
   }
 
-  /// Sort checklist items by event.startDate
+  /// Sort checklist items by event.startDate, event.name, then item name
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortChecklistItems(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    // Build map of event start dates
     final Map<String, DateTime> eventStartDates = {};
+    final Map<String, String> eventNames = {};
     final eventsDocs = _collectionDataCache['events'];
     if (eventsDocs != null) {
       for (final doc in eventsDocs) {
-        final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data();
         final startDate = data['startDate'];
         if (startDate is Timestamp) {
           eventStartDates[doc.id] = startDate.toDate();
         }
+        eventNames[doc.id] = (data['name'] as String? ?? '').toLowerCase();
       }
     }
 
-    // Sort checklist items
     final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
     sortedDocs.sort((a, b) {
-      final aData = a.data() as Map<String, dynamic>;
-      final bData = b.data() as Map<String, dynamic>;
+      final aData = a.data();
+      final bData = b.data();
 
       final aEventId = aData['eventId'] as String?;
       final bEventId = bData['eventId'] as String?;
 
+      // 1. event.startDate ascending
       final aEventDate = aEventId != null ? (eventStartDates[aEventId] ?? DateTime(2099, 12, 31)) : DateTime(2099, 12, 31);
       final bEventDate = bEventId != null ? (eventStartDates[bEventId] ?? DateTime(2099, 12, 31)) : DateTime(2099, 12, 31);
+      final dateCompare = aEventDate.compareTo(bEventDate);
+      if (dateCompare != 0) return dateCompare;
 
-      return aEventDate.compareTo(bEventDate);
+      // 2. event.name ascending
+      final aEventName = aEventId != null ? (eventNames[aEventId] ?? '') : '';
+      final bEventName = bEventId != null ? (eventNames[bEventId] ?? '') : '';
+      final nameCompare = aEventName.compareTo(bEventName);
+      if (nameCompare != 0) return nameCompare;
+
+      // 3. checklistItem.name ascending
+      final aName = (aData['name'] as String? ?? '').toLowerCase();
+      final bName = (bData['name'] as String? ?? '').toLowerCase();
+      return aName.compareTo(bName);
     });
 
     return sortedDocs;
@@ -272,7 +388,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       }
 
       // Search in primary field value (insightful preview text)
-      final data = doc.data() as Map<String, dynamic>;
+      final data = doc.data();
       final primaryValue = _getPrimaryFieldValue(collectionName, data);
       if (primaryValue != null && primaryValue.toLowerCase().contains(query)) {
         matchCount++;
@@ -316,26 +432,46 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
 
   /// Get the primary field value for filtering (same logic as CollectionViewer and DocumentCard)
   String? _getPrimaryFieldValue(String collectionName, Map<String, dynamic> data) {
-    // Checklist items: Show "EventName | ItemName"
+    // Checklist items: Show "EventName | ItemName | ResponsibleName"
     if (collectionName.contains('checklist_item')) {
       final name = data['name'] as String?;
       final eventId = data['eventId'] as String?;
+      final responsibleId = data['responsibleId'] as String?;
 
-      if (name != null && eventId != null) {
-        // Try to get event name from cache
+      String? eventName;
+      String? responsibleName;
+
+      if (eventId != null) {
         final eventsDocs = _collectionDataCache['events'];
         if (eventsDocs != null) {
           for (final eventDoc in eventsDocs) {
             if (eventDoc.id == eventId) {
-              final eventData = eventDoc.data() as Map<String, dynamic>;
-              final eventName = eventData['name'] as String?;
-              if (eventName != null) {
-                return '$eventName | $name';
-              }
+              final eventData = eventDoc.data();
+              eventName = eventData['name'] as String?;
+              break;
             }
           }
         }
       }
+
+      if (responsibleId != null) {
+        final membersDocs = _collectionDataCache['teamMembers'];
+        if (membersDocs != null) {
+          for (final memberDoc in membersDocs) {
+            if (memberDoc.id == responsibleId) {
+              final memberData = memberDoc.data();
+              responsibleName = memberData['name'] as String?;
+              break;
+            }
+          }
+        }
+      }
+
+      final parts = <String>[];
+      if (eventName != null) parts.add(eventName);
+      if (name != null) parts.add(name);
+      if (responsibleName != null) parts.add(responsibleName);
+      if (parts.isNotEmpty) return parts.join(' | ');
       if (name != null) return name;
     }
 
@@ -355,7 +491,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
         if (membersDocs != null) {
           for (final memberDoc in membersDocs) {
             if (memberDoc.id == teamMemberId) {
-              final memberData = memberDoc.data() as Map<String, dynamic>;
+              final memberData = memberDoc.data();
               memberName = memberData['name'] as String?;
               break;
             }
@@ -369,7 +505,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
         if (eventsDocs != null) {
           for (final eventDoc in eventsDocs) {
             if (eventDoc.id == eventId) {
-              final eventData = eventDoc.data() as Map<String, dynamic>;
+              final eventData = eventDoc.data();
               eventName = eventData['name'] as String?;
               break;
             }
@@ -390,11 +526,6 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       final event = eventName ?? 'אירוע לא ידוע';
 
       return '$member | $roleName | $event';
-    }
-
-    // Roles collection: Show just the Hebrew name
-    if (collectionName == 'roles') {
-      return data['hebrewName'] as String?;
     }
 
     // Team members: Show name + capability count
@@ -619,7 +750,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       final docs = entry.value;
       final Map<String, Map<String, dynamic>> dataMap = {};
       for (final doc in docs) {
-        dataMap[doc.id] = doc.data() as Map<String, dynamic>;
+        dataMap[doc.id] = doc.data();
       }
       collectionsData[collectionName] = dataMap;
     }
@@ -681,6 +812,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
                 searchQuery: _searchQuery,
                 collectionsData: collectionsData,
                 documentsNotifier: _getSortedNotifier(config.name),
+                isLoaded: _loadedCollections.contains(config.name),
                 expandedDocIds: _getExpandedDocIds(config.name),
                 onToggleDocument: (docId) => _toggleDocumentExpansion(config.name, docId),
               ),

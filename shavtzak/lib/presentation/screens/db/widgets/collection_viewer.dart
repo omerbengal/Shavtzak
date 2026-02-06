@@ -13,6 +13,7 @@ class CollectionViewer extends StatefulWidget {
   final String searchQuery;
   final Map<String, Map<String, Map<String, dynamic>>>? collectionsData; // Data from other collections for lookups
   final ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>? documentsNotifier; // Receive sorted documents from parent
+  final bool isLoaded; // Whether the collection has received its first data snapshot
   final Set<String> expandedDocIds; // Expanded document IDs (managed by parent)
   final Function(String documentId) onToggleDocument; // Callback to toggle document expansion
 
@@ -23,6 +24,7 @@ class CollectionViewer extends StatefulWidget {
     this.searchQuery = '',
     this.collectionsData,
     this.documentsNotifier,
+    this.isLoaded = false,
     required this.expandedDocIds,
     required this.onToggleDocument,
   });
@@ -52,22 +54,40 @@ class _CollectionViewerState extends State<CollectionViewer> {
   /// This is the same logic used in DocumentCard._getPrimaryFieldValue()
   String? _getPrimaryFieldValue(Map<String, dynamic> data) {
     // Collection-specific hints
-    // Checklist items: Show "EventName | ItemName"
+    // Checklist items: Show "EventName | ItemName | ResponsibleName"
     if (widget.collectionName.contains('checklist_item')) {
       final name = data['name'] as String?;
       final eventId = data['eventId'] as String?;
+      final responsibleId = data['responsibleId'] as String?;
 
-      if (name != null && eventId != null && widget.collectionsData != null) {
-        // Try to get event name from collectionsData
+      String? eventName;
+      String? responsibleName;
+
+      if (eventId != null && widget.collectionsData != null) {
         final eventData = widget.collectionsData!['events'];
         if (eventData != null) {
           final event = eventData[eventId];
           if (event != null && event['name'] != null) {
-            final eventName = event['name'] as String;
-            return '$eventName | $name';
+            eventName = event['name'] as String;
           }
         }
       }
+
+      if (responsibleId != null && widget.collectionsData != null) {
+        final membersData = widget.collectionsData!['teamMembers'];
+        if (membersData != null) {
+          final member = membersData[responsibleId];
+          if (member != null && member['name'] != null) {
+            responsibleName = member['name'] as String;
+          }
+        }
+      }
+
+      final parts = <String>[];
+      if (eventName != null) parts.add(eventName);
+      if (name != null) parts.add(name);
+      if (responsibleName != null) parts.add(responsibleName);
+      if (parts.isNotEmpty) return parts.join(' | ');
       if (name != null) return name;
     }
 
@@ -116,11 +136,6 @@ class _CollectionViewerState extends State<CollectionViewer> {
       final event = eventName ?? 'אירוע לא ידוע';
 
       return '$member | $roleName | $event';
-    }
-
-    // Roles collection: Show just the Hebrew name
-    if (widget.collectionName == 'roles') {
-      return data['hebrewName'] as String?;
     }
 
     // Team members: Show name + capability count
@@ -172,14 +187,26 @@ class _CollectionViewerState extends State<CollectionViewer> {
           final filteredDocs = _filterDocuments(docs);
 
           if (filteredDocs.isEmpty) {
-            return docs.isEmpty
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(32),
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                : const SizedBox.shrink();
+            if (docs.isEmpty && !widget.isLoaded) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+            if (docs.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: Text(
+                    'אין מסמכים',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                ),
+              );
+            }
+            return const SizedBox.shrink();
           }
 
           return _buildDocumentsList(filteredDocs);

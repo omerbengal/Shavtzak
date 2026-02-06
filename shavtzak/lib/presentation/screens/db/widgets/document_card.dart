@@ -150,11 +150,6 @@ class DocumentCard extends StatelessWidget {
         }
       }
 
-      // Roles collection: Show just the Hebrew name
-      if (collectionName == 'roles') {
-        return data['hebrewName'] as String?;
-      }
-
       // Team members: Show name + capability count
       if (collectionName!.contains('teamMember')) {
         final name = data['name'] as String?;
@@ -168,22 +163,40 @@ class DocumentCard extends StatelessWidget {
         }
       }
 
-      // Checklist items: Show "EventName | ItemName"
+      // Checklist items: Show "EventName | ItemName | ResponsibleName"
       if (collectionName!.contains('checklist_item')) {
         final name = data['name'] as String?;
         final eventId = data['eventId'] as String?;
+        final responsibleId = data['responsibleId'] as String?;
 
-        if (name != null && eventId != null && collectionsData != null) {
-          // Try to get event name from collectionsData
+        String? eventName;
+        String? responsibleName;
+
+        if (eventId != null && collectionsData != null) {
           final eventData = collectionsData!['events'];
           if (eventData != null) {
             final event = eventData[eventId];
             if (event != null && event['name'] != null) {
-              final eventName = event['name'] as String;
-              return '$eventName | $name';
+              eventName = event['name'] as String;
             }
           }
         }
+
+        if (responsibleId != null && collectionsData != null) {
+          final membersData = collectionsData!['teamMembers'];
+          if (membersData != null) {
+            final member = membersData[responsibleId];
+            if (member != null && member['name'] != null) {
+              responsibleName = member['name'] as String;
+            }
+          }
+        }
+
+        final parts = <String>[];
+        if (eventName != null) parts.add(eventName);
+        if (name != null) parts.add(name);
+        if (responsibleName != null) parts.add(responsibleName);
+        if (parts.isNotEmpty) return parts.join(' | ');
         if (name != null) return name;
       }
 
