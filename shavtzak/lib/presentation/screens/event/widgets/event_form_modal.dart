@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
@@ -232,6 +233,74 @@ class _EventFormModalState extends State<EventFormModal> {
         });
       }
     });
+  }
+
+  Future<void> _showTimePickerFor(TextEditingController controller) async {
+    // Parse existing value as initial time, default to current time
+    final now = DateTime.now();
+    DateTime initialTime = now;
+    if (controller.text.isNotEmpty) {
+      final parts = controller.text.split(':');
+      if (parts.length == 2) {
+        final hour = int.tryParse(parts[0]);
+        final minute = int.tryParse(parts[1]);
+        if (hour != null && minute != null) {
+          initialTime = DateTime(now.year, now.month, now.day, hour, minute);
+        }
+      }
+    }
+
+    DateTime selectedTime = initialTime;
+
+    final result = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SizedBox(
+          width: 280,
+          height: 220,
+          child: Column(
+            children: [
+              // Cupertino time picker wheel
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: initialTime,
+                  use24hFormat: true,
+                  onDateTimeChanged: (DateTime newTime) {
+                    selectedTime = newTime;
+                  },
+                ),
+              ),
+              // Footer with cancel/confirm buttons
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      child: const Text('ביטול'),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    TextButton(
+                      child: const Text('אישור'),
+                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        controller.text = '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
+        _isDirty = true;
+      });
+    }
   }
 
   Future<void> _saveEvent() async {
@@ -1152,13 +1221,25 @@ class _EventFormModalState extends State<EventFormModal> {
                               // Assembly Time
                               TextFormField(
                                 controller: _assemblyTimeController,
-                                decoration: const InputDecoration(
+                                readOnly: true,
+                                onTap: () => _showTimePickerFor(_assemblyTimeController),
+                                decoration: InputDecoration(
                                   labelText: 'שעת התייצבות (אופציונלי)',
                                   hintText: 'לדוגמה: 17:00',
-                                  prefixIcon: Icon(Icons.access_time),
-                                  border: OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.access_time),
+                                  border: const OutlineInputBorder(),
+                                  suffixIcon: _assemblyTimeController.text.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, color: Colors.grey),
+                                          onPressed: () {
+                                            setState(() {
+                                              _assemblyTimeController.clear();
+                                              _isDirty = true;
+                                            });
+                                          },
+                                        )
+                                      : null,
                                 ),
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               const SizedBox(height: 16),
@@ -1166,13 +1247,25 @@ class _EventFormModalState extends State<EventFormModal> {
                               // Start Time (Audience Gathering Time)
                               TextFormField(
                                 controller: _startTimeController,
-                                decoration: const InputDecoration(
+                                readOnly: true,
+                                onTap: () => _showTimePickerFor(_startTimeController),
+                                decoration: InputDecoration(
                                   labelText: 'שעת התכנסות קהל (אופציונלי)',
                                   hintText: 'לדוגמה: 18:00',
-                                  prefixIcon: Icon(Icons.access_time),
-                                  border: OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.access_time),
+                                  border: const OutlineInputBorder(),
+                                  suffixIcon: _startTimeController.text.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, color: Colors.grey),
+                                          onPressed: () {
+                                            setState(() {
+                                              _startTimeController.clear();
+                                              _isDirty = true;
+                                            });
+                                          },
+                                        )
+                                      : null,
                                 ),
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               const SizedBox(height: 16),
@@ -1180,13 +1273,25 @@ class _EventFormModalState extends State<EventFormModal> {
                               // Actual Show Start Time
                               TextFormField(
                                 controller: _actualShowStartTimeController,
-                                decoration: const InputDecoration(
+                                readOnly: true,
+                                onTap: () => _showTimePickerFor(_actualShowStartTimeController),
+                                decoration: InputDecoration(
                                   labelText: 'שעת תחילת המופע בפועל (אופציונלי)',
                                   hintText: 'לדוגמה: 19:00',
-                                  prefixIcon: Icon(Icons.play_circle_outline),
-                                  border: OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.play_circle_outline),
+                                  border: const OutlineInputBorder(),
+                                  suffixIcon: _actualShowStartTimeController.text.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, color: Colors.grey),
+                                          onPressed: () {
+                                            setState(() {
+                                              _actualShowStartTimeController.clear();
+                                              _isDirty = true;
+                                            });
+                                          },
+                                        )
+                                      : null,
                                 ),
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               const SizedBox(height: 16),
@@ -1194,13 +1299,25 @@ class _EventFormModalState extends State<EventFormModal> {
                               // End Time
                               TextFormField(
                                 controller: _endTimeController,
-                                decoration: const InputDecoration(
+                                readOnly: true,
+                                onTap: () => _showTimePickerFor(_endTimeController),
+                                decoration: InputDecoration(
                                   labelText: 'שעת סיום (אופציונלי)',
                                   hintText: 'לדוגמה: 23:00',
-                                  prefixIcon: Icon(Icons.access_time),
-                                  border: OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.access_time),
+                                  border: const OutlineInputBorder(),
+                                  suffixIcon: _endTimeController.text.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, color: Colors.grey),
+                                          onPressed: () {
+                                            setState(() {
+                                              _endTimeController.clear();
+                                              _isDirty = true;
+                                            });
+                                          },
+                                        )
+                                      : null,
                                 ),
-                                onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
                               const SizedBox(height: 16),
