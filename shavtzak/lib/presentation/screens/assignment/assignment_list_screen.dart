@@ -1089,55 +1089,65 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       ));
     }
 
-    // ALWAYS add "שובצו כבר" option at the end (even if no one is assigned)
-    items.add(const DropdownMenuItem<String>(
-      value: '__divider__',
-      enabled: false,
-      child: Divider(),
-    ));
-
+    // ALWAYS add "שובצו כבר" option (with top border as divider)
     items.add(DropdownMenuItem<String>(
       value: '__show_already_assigned__',
-      child: Directionality(
-        textDirection: TextDirection.rtl,
-        child: Center(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.people, size: 16, color: Colors.orange.shade700),
-              const SizedBox(width: 8),
-              Text(
-                'שובצו כבר...',
-                style: TextStyle(
-                  color: Colors.orange.shade700,
-                  fontWeight: FontWeight.w500,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: Colors.grey.shade300)),
+        ),
+        child: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Center(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.people, size: 16, color: Colors.orange.shade700),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    'שובצו כבר',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.orange.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     ));
 
-    // Add "constrained/unavailable members" option
+    // Add "constrained/unavailable members" option (with top border as divider)
     items.add(DropdownMenuItem<String>(
       value: '__show_constrained__',
-      child: Directionality(
-        textDirection: TextDirection.rtl,
-        child: Center(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.block, size: 16, color: Colors.red.shade700),
-              const SizedBox(width: 8),
-              Text(
-                'בעלי מגבלות / לא זמינים...',
-                style: TextStyle(
-                  color: Colors.red.shade700,
-                  fontWeight: FontWeight.w500,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: Colors.grey.shade300)),
+        ),
+        child: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Center(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.block, size: 16, color: Colors.red.shade700),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    'בעלי מגבלות / לא זמינים',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1163,11 +1173,20 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   ? (slot.isFilled ? Colors.green.shade50 : Colors.white)
                   : Colors.grey.shade200,
             ),
-            child: DropdownButtonHideUnderline(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final screenWidth = MediaQuery.of(context).size.width;
+                // On small screens, make menu wider (expand towards screen center).
+                // Use the full container width (constraints + padding) * 1.5
+                final double? menuWidth = screenWidth < 600
+                    ? (constraints.maxWidth + 24) * 2 // 24 = horizontal padding (12*2)
+                    : null;
+                return DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 key: ValueKey('${_getSlotKey(slot)}_${_dropdownResetCounters[_getSlotKey(slot)] ?? 0}'),
                 value: currentMember?.id,
                 isExpanded: true,
+                menuWidth: menuWidth,
                 hint: const Text(
                   'בחר...',
                   textAlign: TextAlign.center,
@@ -1252,6 +1271,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     );
                   }
 
+                  // Add placeholders for button items to match items count
+                  // __show_already_assigned__, __show_constrained__
+                  for (var i = 0; i < 2; i++) {
+                    selectedItems.add(const SizedBox.shrink());
+                  }
+
                   return selectedItems;
                 },
                 items: items,
@@ -1262,7 +1287,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               } else if (selectedValue == '__show_constrained__') {
                 // Show dialog for constrained/unavailable members
                 _showConstrainedMembersDialog(slot);
-              } else if (selectedValue != null && selectedValue != '__divider__') {
+              } else if (selectedValue != null) {
                 // Find the selected member by ID
                 final member = slot.availableMembers.firstWhereOrNull(
                       (m) => m.id == selectedValue,
@@ -1277,6 +1302,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               }
             } : null, // Disable dropdown when no options available
               ),
+            );
+              },
             ),
           ),
         ),
