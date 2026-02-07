@@ -170,12 +170,52 @@ class FirestoreDatabase implements DatabaseInterface {
   Future<void> updateTeamMember(TeamMember member) async {
     try {
       final model = TeamMemberModel.fromEntity(member);
+      final data = model.toFirestore();
+
+      // Remove passcode fields to prevent race conditions when the app is open
+      // on multiple devices. Passcode should only be updated via the dedicated
+      // updateTeamMemberPasscode/clearTeamMemberPasscode methods.
+      data.remove('passcode');
+      data.remove('passcodeLength');
+
       await _firestore
           .collection(_teamMembersCollection)
           .doc(member.id)
-          .update(model.toFirestore());
+          .update(data);
     } catch (e) {
       throw DatabaseException('Failed to update team member: $e');
+    }
+  }
+
+  @override
+  Future<void> updateTeamMemberPasscode(String id, String passcode, int length) async {
+    try {
+      await _firestore
+          .collection(_teamMembersCollection)
+          .doc(id)
+          .update({
+            'passcode': passcode,
+            'passcodeLength': length,
+            'updatedAt': Timestamp.fromDate(DateTime.now()),
+          });
+    } catch (e) {
+      throw DatabaseException('Failed to update team member passcode: $e');
+    }
+  }
+
+  @override
+  Future<void> clearTeamMemberPasscode(String id) async {
+    try {
+      await _firestore
+          .collection(_teamMembersCollection)
+          .doc(id)
+          .update({
+            'passcode': FieldValue.delete(),
+            'passcodeLength': FieldValue.delete(),
+            'updatedAt': Timestamp.fromDate(DateTime.now()),
+          });
+    } catch (e) {
+      throw DatabaseException('Failed to clear team member passcode: $e');
     }
   }
 

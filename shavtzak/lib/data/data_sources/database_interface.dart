@@ -27,7 +27,16 @@ abstract class DatabaseInterface {
   Future<void> insertTeamMember(TeamMember member);
 
   /// Update an existing team member
+  /// NOTE: This method does NOT update passcode fields to prevent race conditions
+  /// when the app is open on multiple devices. Use updateTeamMemberPasscode/
+  /// clearTeamMemberPasscode for passcode operations.
   Future<void> updateTeamMember(TeamMember member);
+
+  /// Update passcode for a team member (field-specific, avoids race conditions)
+  Future<void> updateTeamMemberPasscode(String id, String passcode, int length);
+
+  /// Clear passcode for a team member (field-specific, avoids race conditions)
+  Future<void> clearTeamMemberPasscode(String id);
 
   /// Delete a team member
   Future<void> deleteTeamMember(String id);

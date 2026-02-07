@@ -130,6 +130,7 @@ class UserSelectionRepository {
   }
 
   /// Set passcode for a team member
+  /// Uses field-specific update to prevent race conditions with concurrent edits
   Future<void> setTeamMemberPasscode(String uniqueKey, String passcode, int length) async {
     try {
       final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
@@ -137,13 +138,7 @@ class UserSelectionRepository {
         throw UserSelectionException('Team member not found with unique key: $uniqueKey');
       }
 
-      final updatedMember = teamMember.copyWith(
-        passcode: passcode,
-        passcodeLength: length,
-        updatedAt: DateTime.now(),
-      );
-
-      await _database.updateTeamMember(updatedMember);
+      await _database.updateTeamMemberPasscode(teamMember.id, passcode, length);
     } catch (e) {
       if (e is UserSelectionException) rethrow;
       throw UserSelectionException('Failed to set passcode: $e');
@@ -151,6 +146,7 @@ class UserSelectionRepository {
   }
 
   /// Clear passcode for a team member
+  /// Uses field-specific update to prevent race conditions with concurrent edits
   Future<void> clearTeamMemberPasscode(String uniqueKey) async {
     try {
       final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
@@ -158,12 +154,7 @@ class UserSelectionRepository {
         throw UserSelectionException('Team member not found with unique key: $uniqueKey');
       }
 
-      final updatedMember = teamMember.copyWith(
-        clearPasscode: true,
-        updatedAt: DateTime.now(),
-      );
-
-      await _database.updateTeamMember(updatedMember);
+      await _database.clearTeamMemberPasscode(teamMember.id);
     } catch (e) {
       if (e is UserSelectionException) rethrow;
       throw UserSelectionException('Failed to clear passcode: $e');
