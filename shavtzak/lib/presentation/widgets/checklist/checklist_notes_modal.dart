@@ -3,6 +3,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
 import 'chat_bubble.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 
 /// Modal dialog showing the full notes conversation for a checklist item
 class ChecklistNotesModal extends StatefulWidget {
@@ -26,10 +27,12 @@ class ChecklistNotesModal extends StatefulWidget {
 class _ChecklistNotesModalState extends State<ChecklistNotesModal> {
   final _noteController = TextEditingController();
   final _scrollController = ScrollController();
+  late final FocusNode _noteFocusNode;
 
   @override
   void initState() {
     super.initState();
+    _noteFocusNode = createRtlCursorFixedFocusNode(_noteController);
     // Auto-scroll to bottom after build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToBottom();
@@ -38,6 +41,7 @@ class _ChecklistNotesModalState extends State<ChecklistNotesModal> {
 
   @override
   void dispose() {
+    _noteFocusNode.dispose();
     _noteController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -196,8 +200,8 @@ class _ChecklistNotesModalState extends State<ChecklistNotesModal> {
                         Expanded(
                           child: TextField(
                             controller: _noteController,
+                            focusNode: _noteFocusNode,
                             textAlign: TextAlign.right,
-                            textDirection: TextDirection.rtl,
                             decoration: InputDecoration(
                               hintText: 'כתוב הערה...',
                               border: OutlineInputBorder(

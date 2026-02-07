@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
+import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/category.dart';
 import '../../../../domain/entities/event.dart';
@@ -64,6 +65,9 @@ class _EventFormModalState extends State<EventFormModal> {
   bool _validateName = false; // Enable name validation after blur or submit
   String? _dateError; // Track date validation error
   final _nameFocusNode = FocusNode(); // For name field blur detection
+  late final FocusNode _locationFocusNode;
+  late final FocusNode _parkingLocationFocusNode;
+  late final FocusNode _commentsFocusNode;
   bool _duplicateAssignments = false; // For duplication mode checkbox
   String? _rawLocationValue; // Stores location with hidden coordinates (Name||lat,lng)
   String? _rawParkingLocationValue; // Stores parking location with hidden coordinates
@@ -138,6 +142,12 @@ class _EventFormModalState extends State<EventFormModal> {
     _parkingLocationController.addListener(() => _isDirty = true);
     _commentsController.addListener(() => _isDirty = true);
 
+    // RTL cursor fix for all text fields
+    addRtlCursorFix(_nameFocusNode, _nameController);
+    _locationFocusNode = createRtlCursorFixedFocusNode(_locationController);
+    _parkingLocationFocusNode = createRtlCursorFixedFocusNode(_parkingLocationController);
+    _commentsFocusNode = createRtlCursorFixedFocusNode(_commentsController);
+
     // Enable validation when name field loses focus
     _nameFocusNode.addListener(() {
       if (!_nameFocusNode.hasFocus && _nameController.text.isNotEmpty) {
@@ -170,6 +180,9 @@ class _EventFormModalState extends State<EventFormModal> {
     _assemblyTimeController.dispose();
     _actualShowStartTimeController.dispose();
     _nameFocusNode.dispose();
+    _locationFocusNode.dispose();
+    _parkingLocationFocusNode.dispose();
+    _commentsFocusNode.dispose();
     _sheetController.dispose();
     super.dispose();
   }
@@ -794,7 +807,6 @@ class _EventFormModalState extends State<EventFormModal> {
                               TextFormField(
                                 controller: _nameController,
                                 focusNode: _nameFocusNode,
-                                textDirection: TextDirection.rtl,
                                 decoration: InputDecoration(
                                   labelText: 'שם האירוע',
                                   hintText: 'לדוגמה: חתונת כהן',
@@ -822,7 +834,7 @@ class _EventFormModalState extends State<EventFormModal> {
                               // Location field
                               TextFormField(
                                 controller: _locationController,
-                                textDirection: TextDirection.rtl,
+                                focusNode: _locationFocusNode,
                                 decoration: InputDecoration(
                                   labelText: 'מיקום',
                                   hintText: 'לדוגמה: אולמי ורסאי',
@@ -911,7 +923,7 @@ class _EventFormModalState extends State<EventFormModal> {
                               // Parking Location field
                               TextFormField(
                                 controller: _parkingLocationController,
-                                textDirection: TextDirection.rtl,
+                                focusNode: _parkingLocationFocusNode,
                                 decoration: InputDecoration(
                                   labelText: 'מיקום חנייה',
                                   hintText: 'לדוגמה: חניון יקב',
@@ -1392,6 +1404,7 @@ class _EventFormModalState extends State<EventFormModal> {
                               // Comments
                               TextFormField(
                                 controller: _commentsController,
+                                focusNode: _commentsFocusNode,
                                 decoration: const InputDecoration(
                                   labelText: 'הערות',
                                   hintText: 'הערות על האירוע',

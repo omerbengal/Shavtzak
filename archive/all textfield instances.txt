@@ -1,0 +1,107 @@
+RTL Cursor Fix - TextField Instances Tracking
+==============================================
+Fix: Remove explicit textDirection: TextDirection.rtl, add FocusNode with RTL cursor fix.
+Utility: lib/core/utils/rtl_text_field_utils.dart (addRtlCursorFix / createRtlCursorFixedFocusNode)
+
+LEGEND:
+  [x] = done
+  [SKIP] = not applicable (numeric-only, read-only, passcode, LTR phone, or .bak file)
+
+=== event_form_modal.dart ===
+[x] :807  - event name (TextFormField)
+[x] :835  - location (TextFormField)
+[x] :924  - parking location (TextFormField)
+[SKIP] :1153 - assembly time (TextFormField) - time format only
+[SKIP] :1167 - start time (TextFormField) - time format only
+[SKIP] :1181 - show start time (TextFormField) - time format only
+[SKIP] :1195 - end time (TextFormField) - time format only
+[x] :1405 - comments (TextFormField)
+
+=== team_list_screen.dart ===
+[x] :258  - search (TextField)
+[x] :1543 - team member name (TextFormField)
+[SKIP] :1559 - phone number (TextFormField) - phone formatter
+[SKIP] :1584 - birthday (TextFormField) - readOnly, opens picker
+[SKIP] :1617 - vehicle info (TextFormField) - readOnly, opens dialog
+[x] :2086 - comments (TextFormField)
+[x] :2929 - constraint note (TextField)
+[x] :3109 - constraint note (TextField)
+[SKIP] :4144 - vehicle number (TextField) - digits only
+[x] :4201 - vehicle model (TextField)
+[x] :4218 - vehicle color (TextField)
+
+=== constraints_screen.dart ===
+[x] :587  - constraint reason (TextField)
+[x] :770  - constraint reason (TextField)
+[x] :1367 - constraint note (TextField)
+
+=== checklist_item_card.dart ===
+[x] :409  - note input (TextField)
+
+=== user_checklist_item_card.dart ===
+[x] :418  - note input (TextField)
+
+=== checklist_form_modal.dart ===
+[x] :243  - checklist name (TextFormField)
+[x] :372  - CC search (TextField)
+
+=== checklist_notes_modal.dart ===
+[x] :201  - note input (TextField)
+
+=== preset_form_modal.dart ===
+[x] :151  - preset name (TextFormField)
+[x] :400  - item name (TextFormField)
+[x] :441  - admin note (TextFormField)
+
+=== role_management_dialog.dart ===
+[x] :400  - role name (TextField)
+[x] :463  - rename role (TextField)
+
+=== category_management_dialog.dart ===
+[x] :472  - category name (TextField)
+[x] :516  - rename category (TextField)
+
+=== event_list_screen.dart ===
+[x] :171  - search (TextField)
+
+=== whoami_screen.dart ===
+[x] :268  - search (TextField)
+
+=== responsible_cc_management_dialog.dart ===
+[x] :157  - search (TextField)
+
+=== parking_location_picker_dialog.dart ===
+[x] :279  - search (TextField)
+
+=== map_location_picker.dart ===
+[x] :597  - search (TextField)
+
+=== assignment_list_screen.dart ===
+[x] :920  - notes (TextField)
+[SKIP] :937 - alt phone (TextFormField) - textDirection: TextDirection.ltr, phone formatter
+
+=== assignment_form_screen.dart ===
+[x] :387  - notes (TextFormField)
+
+=== phone_edit_dialog.dart ===
+[SKIP] :70 - phone number (TextFormField) - phone field
+
+=== vehicle_info_edit_dialog.dart ===
+[SKIP] :136 - vehicle number (TextField) - digits only
+[x] :192  - vehicle model (TextField)
+[x] :209  - vehicle color (TextField)
+
+=== db_preview_screen.dart ===
+[x] :667  - search (TextField)
+
+=== checklist_screen.dart ===
+[x] :304  - search (TextField)
+
+=== passcode_digit_field.dart ===
+[SKIP] :64 - passcode digit (TextField) - single digit input
+
+=== .bak files ===
+[SKIP] - all .bak files skipped
+
+TOTAL: 36 fields fixed, 11 skipped
+STATUS: COMPLETE

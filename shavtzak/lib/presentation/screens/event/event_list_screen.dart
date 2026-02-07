@@ -19,6 +19,7 @@ import 'widgets/category_filter_modal.dart';
 import 'widgets/category_management_dialog.dart';
 import 'widgets/event_form_modal.dart';
 import 'widgets/role_management_dialog.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 import 'dart:async';
 
 // Filter enum for events (0=all, 1=future, 2=past)
@@ -33,6 +34,7 @@ class EventListScreen extends StatefulWidget {
 
 class _EventListScreenState extends State<EventListScreen> {
   final TextEditingController _searchController = TextEditingController();
+  late final FocusNode _searchFocusNode;
   bool _showSearch = false;
   EventsLoaded? _lastLoadedState;
   Set<String> _selectedCategoryIds = {};
@@ -54,12 +56,14 @@ class _EventListScreenState extends State<EventListScreen> {
   @override
   void initState() {
     super.initState();
+    _searchFocusNode = createRtlCursorFixedFocusNode(_searchController);
     // Always load ALL events - filtering happens in UI
     context.read<EventBloc>().add(const LoadEvents());
   }
 
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -166,6 +170,7 @@ class _EventListScreenState extends State<EventListScreen> {
                 child: _showSearch
                     ? TextField(
                         controller: _searchController,
+                        focusNode: _searchFocusNode,
                         autofocus: true,
                         decoration: const InputDecoration(
                           hintText: 'חיפוש אירוע...',

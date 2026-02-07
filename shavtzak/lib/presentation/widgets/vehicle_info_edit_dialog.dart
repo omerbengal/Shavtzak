@@ -7,6 +7,7 @@ import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../../core/services/utilities_service.dart';
 import 'loading_overlay.dart';
+import '../../core/utils/rtl_text_field_utils.dart';
 
 /// Dialog for editing user's vehicle information
 class VehicleInfoEditDialog extends StatefulWidget {
@@ -20,6 +21,8 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
   final TextEditingController _vehicleNumberController = TextEditingController();
   final TextEditingController _colorController = TextEditingController();
   final TextEditingController _modelController = TextEditingController();
+  late final FocusNode _modelFocusNode;
+  late final FocusNode _colorFocusNode;
   String? _selectedManufacturer;
   bool _isDirty = false;
   bool _isSaving = false;
@@ -31,6 +34,8 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
   @override
   void initState() {
     super.initState();
+    _modelFocusNode = createRtlCursorFixedFocusNode(_modelController);
+    _colorFocusNode = createRtlCursorFixedFocusNode(_colorController);
     // Initialize real-time updates
     UtilitiesService.instance.initialize();
     _initializeFields();
@@ -49,6 +54,8 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
 
   @override
   void dispose() {
+    _modelFocusNode.dispose();
+    _colorFocusNode.dispose();
     _vehicleNumberController.dispose();
     _colorController.dispose();
     _modelController.dispose();
@@ -184,6 +191,7 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
               // Model field - free text input
               TextField(
                 controller: _modelController,
+                focusNode: _modelFocusNode,
                 decoration: const InputDecoration(
                   labelText: 'דגם',
                   hintText: 'למשל: יונדאי אקונט X, סונטה סדאן',
@@ -200,6 +208,7 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
               // Color field
               TextField(
                 controller: _colorController,
+                focusNode: _colorFocusNode,
                 decoration: const InputDecoration(
                   labelText: 'צבע',
                   hintText: 'למשל: לבן, שחור, כסף',

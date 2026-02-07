@@ -14,6 +14,7 @@ import '../../../domain/entities/event.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/vehicle_info.dart';
 import '../../../domain/entities/role.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/filter_persistence.dart';
@@ -60,6 +61,7 @@ class TeamListScreen extends StatefulWidget {
 
 class _TeamListScreenState extends State<TeamListScreen> {
   final TextEditingController _searchController = TextEditingController();
+  late final FocusNode _searchFocusNode;
   bool _showSearch = false;
   TeamLoaded? _lastLoadedState;
   bool _hasTriggeredInitialSync = false;
@@ -67,6 +69,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
   @override
   void initState() {
     super.initState();
+    _searchFocusNode = createRtlCursorFixedFocusNode(_searchController);
     // Always load ALL team members - filtering happens in UI
     context.read<TeamBloc>().add(const team.LoadTeamMembers());
     // Ensure events are loaded (needed to count future available events for non-permanent members)
@@ -87,6 +90,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     // Unregister callback
     onTeamPageVisible = null;
     super.dispose();
@@ -253,6 +257,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 child: _showSearch
                     ? TextField(
                         controller: _searchController,
+                        focusNode: _searchFocusNode,
                         autofocus: true,
                         decoration: const InputDecoration(
                           hintText: 'חיפוש חבר צוות...',
@@ -975,12 +980,16 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   String? _roleError; // Track role validation error
   bool _isSaving = false;
   bool _isDeleting = false;
+  late final FocusNode _nameFocusNode;
+  late final FocusNode _commentsFocusNode;
 
     bool get _isEditMode => widget.member != null;
 
   @override
   void initState() {
     super.initState();
+    _nameFocusNode = createRtlCursorFixedFocusNode(_nameController);
+    _commentsFocusNode = createRtlCursorFixedFocusNode(_commentsController);
 
     // Initialize role capabilities with all roles set to false
     // Will be populated from RoleBloc when state is loaded
@@ -1042,6 +1051,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     _commentsController.dispose();
     _birthdayController.dispose();
     _vehicleInfoController.dispose();
+    _nameFocusNode.dispose();
+    _commentsFocusNode.dispose();
     super.dispose();
   }
 
@@ -1531,6 +1542,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                               // Name field
                               TextFormField(
                                 controller: _nameController,
+                                focusNode: _nameFocusNode,
                                 decoration: const InputDecoration(
                                   labelText: 'שם חבר הצוות',
                                   hintText: 'הזן שם מלא',
@@ -1538,7 +1550,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                   border: OutlineInputBorder(),
                                 ),
                                 validator: Validators.validateName,
-                                textDirection: TextDirection.rtl,
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 
@@ -2074,7 +2085,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                               // Comments field
                               TextFormField(
                                 controller: _commentsController,
-                                textDirection: TextDirection.rtl,
+                                focusNode: _commentsFocusNode,
                                 decoration: const InputDecoration(
                                   labelText: 'הערות',
                                   hintText: 'הערות על חבר הצוות',
@@ -2782,10 +2793,12 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
   DateTime? _startDate;
   DateTime? _endDate;
   final TextEditingController _noteController = TextEditingController();
+  late final FocusNode _noteFocusNode;
 
   @override
   void initState() {
     super.initState();
+    _noteFocusNode = createRtlCursorFixedFocusNode(_noteController);
     if (widget.constraint != null) {
       _startDate = widget.constraint!.startDate;
       _endDate = widget.constraint!.endDate;
@@ -2796,6 +2809,7 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
   @override
   void dispose() {
     _noteController.dispose();
+    _noteFocusNode.dispose();
     super.dispose();
   }
 
@@ -2914,6 +2928,7 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
             const SizedBox(height: 16),
             TextField(
               controller: _noteController,
+              focusNode: _noteFocusNode,
               decoration: const InputDecoration(
                 labelText: 'הערה',
                 hintText: 'הוסף הערה למגבלה',
@@ -2977,11 +2992,13 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
   DateTime? _startDate;
   DateTime? _endDate;
   final TextEditingController _noteController = TextEditingController();
+  late final FocusNode _noteFocusNode;
   bool _canSubmit = false;
 
   @override
   void initState() {
     super.initState();
+    _noteFocusNode = createRtlCursorFixedFocusNode(_noteController);
     if (widget.constraint != null) {
       _startDate = widget.constraint!.startDate;
       _endDate = widget.constraint!.endDate;
@@ -2994,6 +3011,7 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
   void dispose() {
     _noteController.removeListener(_updateCanSubmit);
     _noteController.dispose();
+    _noteFocusNode.dispose();
     super.dispose();
   }
 
@@ -3090,9 +3108,9 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
               const SizedBox(height: 8),
               TextField(
                 controller: _noteController,
+                focusNode: _noteFocusNode,
                 textAlign: TextAlign.right,
                 textAlignVertical: TextAlignVertical.top,
-                textDirection: TextDirection.rtl,
                 decoration: InputDecoration(
                   hintText: widget.isPermanent
                       ? 'יש להזין סיבה למגבלה...'
@@ -4016,6 +4034,8 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
   final TextEditingController _vehicleNumberController = TextEditingController();
   final TextEditingController _colorController = TextEditingController();
   final TextEditingController _modelController = TextEditingController();
+  late final FocusNode _modelFocusNode;
+  late final FocusNode _colorFocusNode;
   String? _selectedManufacturer;
   bool _isDirty = false;
 
@@ -4026,6 +4046,8 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
   @override
   void initState() {
     super.initState();
+    _modelFocusNode = createRtlCursorFixedFocusNode(_modelController);
+    _colorFocusNode = createRtlCursorFixedFocusNode(_colorController);
     // Initialize real-time updates
     UtilitiesService.instance.initialize();
     _initializeFields();
@@ -4045,6 +4067,8 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
     _vehicleNumberController.dispose();
     _colorController.dispose();
     _modelController.dispose();
+    _modelFocusNode.dispose();
+    _colorFocusNode.dispose();
     super.dispose();
   }
 
@@ -4176,6 +4200,7 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
               // Model field - free text input
               TextField(
                 controller: _modelController,
+                focusNode: _modelFocusNode,
                 decoration: const InputDecoration(
                   labelText: 'דגם',
                   hintText: 'למשל: יונדאי אקונט X, סונטה סדאן',
@@ -4192,6 +4217,7 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
               // Color field
               TextField(
                 controller: _colorController,
+                focusNode: _colorFocusNode,
                 decoration: const InputDecoration(
                   labelText: 'צבע',
                   hintText: 'למשל: לבן, שחור, כסף',

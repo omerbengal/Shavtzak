@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/team/team_bloc.dart';
 import '../bloc/team/team_state.dart';
 import 'map_location_picker.dart';
+import '../../core/utils/rtl_text_field_utils.dart';
 
 /// Result from parking location picker dialog
 class ParkingLocationResult {
@@ -214,15 +215,18 @@ class ParkingEditorsDialog extends StatefulWidget {
 class _ParkingEditorsDialogState extends State<ParkingEditorsDialog> {
   final List<String> _selectedEditorIds = [];
   final _editorSearchController = TextEditingController();
+  late final FocusNode _editorSearchFocusNode;
 
   @override
   void initState() {
     super.initState();
+    _editorSearchFocusNode = createRtlCursorFixedFocusNode(_editorSearchController);
     _selectedEditorIds.addAll(widget.initialEditorIds);
   }
 
   @override
   void dispose() {
+    _editorSearchFocusNode.dispose();
     _editorSearchController.dispose();
     super.dispose();
   }
@@ -274,8 +278,8 @@ class _ParkingEditorsDialogState extends State<ParkingEditorsDialog> {
                     // Search bar
                     TextField(
                       controller: _editorSearchController,
+                      focusNode: _editorSearchFocusNode,
                       textAlign: TextAlign.right,
-                      textDirection: TextDirection.rtl,
                       decoration: const InputDecoration(
                         labelText: 'חיפוש חבר צוות...',
                         prefixIcon: Icon(Icons.search),

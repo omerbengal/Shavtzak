@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../../core/constants/calendar_constants.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/team/team_bloc.dart';
@@ -507,12 +508,14 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
   DateTime? startDate;
   DateTime? endDate;
   final noteController = TextEditingController();
+  late final FocusNode _noteFocusNode;
   bool _canSubmit = false;
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
+    _noteFocusNode = createRtlCursorFixedFocusNode(noteController);
     noteController.addListener(_onNoteChanged);
   }
 
@@ -520,6 +523,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
   void dispose() {
     noteController.removeListener(_onNoteChanged);
     noteController.dispose();
+    _noteFocusNode.dispose();
     super.dispose();
   }
 
@@ -582,9 +586,9 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
             const SizedBox(height: 8),
             TextField(
               controller: noteController,
+              focusNode: _noteFocusNode,
               textAlign: TextAlign.right,
               textAlignVertical: TextAlignVertical.top,
-              textDirection: TextDirection.rtl,
               decoration: InputDecoration(
                 hintText: 'יש להזין סיבה לבקשה...',
                 border: const OutlineInputBorder(),
@@ -677,6 +681,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
   late DateTime startDate;
   DateTime? endDate;
   late TextEditingController noteController;
+  late final FocusNode _noteFocusNode;
   bool _canSubmit = false;
   bool _isSaving = false;
 
@@ -686,6 +691,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
     startDate = widget.constraint.startDate;
     endDate = widget.constraint.endDate;
     noteController = TextEditingController(text: widget.constraint.note ?? '');
+    _noteFocusNode = createRtlCursorFixedFocusNode(noteController);
     noteController.addListener(_onNoteChanged);
   }
 
@@ -693,6 +699,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
   void dispose() {
     noteController.removeListener(_onNoteChanged);
     noteController.dispose();
+    _noteFocusNode.dispose();
     super.dispose();
   }
 
@@ -762,9 +769,9 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
             const SizedBox(height: 8),
             TextField(
               controller: noteController,
+              focusNode: _noteFocusNode,
               textAlign: TextAlign.right,
               textAlignVertical: TextAlignVertical.top,
-              textDirection: TextDirection.rtl,
               decoration: InputDecoration(
                 hintText: 'יש להזין סיבה לבקשה...',
                 border: const OutlineInputBorder(),
@@ -1283,6 +1290,7 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
   late DateTime startDate;
   DateTime? endDate;
   late TextEditingController noteController;
+  late final FocusNode _noteFocusNode;
   bool _canSubmit = false;
 
   @override
@@ -1291,12 +1299,14 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
     startDate = widget.constraint.startDate;
     endDate = widget.constraint.endDate;
     noteController = TextEditingController(text: widget.constraint.note ?? '');
+    _noteFocusNode = createRtlCursorFixedFocusNode(noteController);
     _onNoteChanged();
   }
 
   @override
   void dispose() {
     noteController.dispose();
+    _noteFocusNode.dispose();
     super.dispose();
   }
 
@@ -1356,6 +1366,7 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
               const SizedBox(height: 8),
               TextField(
                 controller: noteController,
+                focusNode: _noteFocusNode,
                 decoration: const InputDecoration(
                   hintText: 'הסבר קצר לגבי המגבלה...',
                   border: OutlineInputBorder(),

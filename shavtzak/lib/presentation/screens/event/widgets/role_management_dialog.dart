@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../domain/entities/role.dart';
 import '../../../bloc/role/role_bloc.dart';
 import '../../../bloc/role/role_event.dart';
@@ -381,6 +382,7 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
   /// Show dialog to add a new role
   void _showAddRoleDialog(BuildContext context) {
     final controller = TextEditingController();
+    final focusNode = createRtlCursorFixedFocusNode(controller);
     bool isVisible = true;
 
     showDialog(
@@ -397,6 +399,7 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                 children: [
                   TextField(
                     controller: controller,
+                    focusNode: focusNode,
                     decoration: const InputDecoration(
                       labelText: 'שם התפקיד בעברית',
                       border: OutlineInputBorder(),
@@ -440,12 +443,16 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
           },
         ),
       ),
-    );
+    ).then((_) {
+      focusNode.dispose();
+      controller.dispose();
+    });
   }
 
   /// Show dialog to rename a role
   void _showRenameDialog(BuildContext context, Role role) {
     final controller = TextEditingController(text: role.hebrewName);
+    final focusNode = createRtlCursorFixedFocusNode(controller);
 
     showDialog(
       context: context,
@@ -455,6 +462,7 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
           title: const Text('שנה שם תפקיד'),
           content: TextField(
             controller: controller,
+            focusNode: focusNode,
             decoration: const InputDecoration(
               labelText: 'שם התפקיד בעברית',
               border: OutlineInputBorder(),
@@ -481,6 +489,9 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
           ],
         ),
       ),
-    );
+    ).then((_) {
+      focusNode.dispose();
+      controller.dispose();
+    });
   }
 }

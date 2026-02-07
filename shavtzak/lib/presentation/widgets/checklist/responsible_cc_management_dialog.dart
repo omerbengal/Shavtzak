@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 
 /// Dialog for responsible users to manage CC members
 class ResponsibleCcManagementDialog extends StatefulWidget {
@@ -25,16 +26,19 @@ class _ResponsibleCcManagementDialogState extends State<ResponsibleCcManagementD
   late List<TeamMember> _selectedCcMembers;
   late List<TeamMember> _availableMembers;
   final _searchController = TextEditingController();
+  late final FocusNode _searchFocusNode;
 
   @override
   void initState() {
     super.initState();
+    _searchFocusNode = createRtlCursorFixedFocusNode(_searchController);
     _selectedCcMembers = widget.item.ccMembers.toList();
     _updateAvailableMembers();
   }
 
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -152,8 +156,8 @@ class _ResponsibleCcManagementDialogState extends State<ResponsibleCcManagementD
                     const SizedBox(height: 8),
                     TextField(
                       controller: _searchController,
+                      focusNode: _searchFocusNode,
                       textAlign: TextAlign.right,
-                      textDirection: TextDirection.rtl,
                       decoration: const InputDecoration(
                         labelText: 'חיפוש חבר צוות...',
                         prefixIcon: Icon(Icons.search),

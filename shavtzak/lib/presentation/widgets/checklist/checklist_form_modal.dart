@@ -7,6 +7,7 @@ import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_state.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_state.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 import '../loading_overlay.dart';
 
 /// Modal form for creating or editing a checklist item
@@ -35,6 +36,9 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
   final _nameController = TextEditingController();
   final _ccSearchController = TextEditingController();
 
+  late final FocusNode _nameFocusNode;
+  late final FocusNode _ccSearchFocusNode;
+
   Event? _selectedEvent;
   TeamMember? _selectedResponsible;
   bool _status = false;
@@ -44,6 +48,8 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
   @override
   void initState() {
     super.initState();
+    _nameFocusNode = createRtlCursorFixedFocusNode(_nameController);
+    _ccSearchFocusNode = createRtlCursorFixedFocusNode(_ccSearchController);
   }
 
   void _initializeFromItem(ChecklistItem item, List<Event> events, List<TeamMember> teamMembers) {
@@ -73,6 +79,8 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
 
   @override
   void dispose() {
+    _nameFocusNode.dispose();
+    _ccSearchFocusNode.dispose();
     _nameController.dispose();
     _ccSearchController.dispose();
     super.dispose();
@@ -234,8 +242,8 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                       // Name field
                       TextFormField(
                         controller: _nameController,
+                        focusNode: _nameFocusNode,
                         textAlign: TextAlign.right,
-                        textDirection: TextDirection.rtl,
                         decoration: InputDecoration(
                           labelText: 'שם הפריט *',
                           border: const OutlineInputBorder(),
@@ -363,8 +371,8 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                       // Search bar for CCs
                       TextField(
                         controller: _ccSearchController,
+                        focusNode: _ccSearchFocusNode,
                         textAlign: TextAlign.right,
-                        textDirection: TextDirection.rtl,
                         decoration: const InputDecoration(
                           labelText: 'חיפוש חבר צוות...',
                           prefixIcon: Icon(Icons.search),

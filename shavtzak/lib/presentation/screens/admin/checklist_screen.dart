@@ -18,6 +18,7 @@ import '../../widgets/checklist/checklist_form_modal.dart';
 import '../../widgets/checklist/checklist_item_card.dart';
 import '../../widgets/checklist/presets_dialog.dart';
 import '../../../core/services/environment_service.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 
 /// Admin screen for managing all checklist items
 class AdminChecklistScreen extends StatefulWidget {
@@ -31,6 +32,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
+  late final FocusNode _searchFocusNode;
   String _searchQuery = '';
   String? _selectedEventId;
   String? _selectedResponsibleId;
@@ -39,6 +41,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
   @override
   void initState() {
     super.initState();
+    _searchFocusNode = createRtlCursorFixedFocusNode(_searchController);
     _tabController = TabController(length: 2, vsync: this);
     // Load events and team members for dropdowns
     context.read<EventBloc>().add(LoadEvents());
@@ -50,6 +53,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -299,6 +303,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
           padding: const EdgeInsets.all(16.0),
           child: TextField(
             controller: _searchController,
+            focusNode: _searchFocusNode,
             decoration: const InputDecoration(
               labelText: 'חיפוש...',
               prefixIcon: Icon(Icons.search),

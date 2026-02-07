@@ -8,6 +8,7 @@ import '../../../domain/entities/team_member.dart';
 import '../map_location_picker.dart';
 import '../../bloc/checklist/checklist_bloc.dart';
 import 'chat_bubble.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 
 /// Card widget for displaying a checklist item (admin view)
 class ChecklistItemCard extends StatelessWidget {
@@ -247,12 +248,14 @@ class _NotesModalWrapper extends StatefulWidget {
 class _NotesModalWrapperState extends State<_NotesModalWrapper> {
   final _noteController = TextEditingController();
   final _scrollController = ScrollController();
+  late final FocusNode _noteFocusNode;
   late ChecklistItem _item;
   StreamSubscription<ChecklistItem>? _subscription;
 
   @override
   void initState() {
     super.initState();
+    _noteFocusNode = createRtlCursorFixedFocusNode(_noteController);
     _item = widget.item;
     // Subscribe to live updates
     final checklistRepository = widget.parentContext.read<ChecklistBloc>().repository;
@@ -273,6 +276,7 @@ class _NotesModalWrapperState extends State<_NotesModalWrapper> {
   @override
   void dispose() {
     _subscription?.cancel();
+    _noteFocusNode.dispose();
     _noteController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -404,8 +408,8 @@ class _NotesModalWrapperState extends State<_NotesModalWrapper> {
                     Expanded(
                       child: TextField(
                         controller: _noteController,
+                        focusNode: _noteFocusNode,
                         textAlign: TextAlign.right,
-                        textDirection: TextDirection.rtl,
                         decoration: InputDecoration(
                           hintText: 'כתוב הערה...',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),

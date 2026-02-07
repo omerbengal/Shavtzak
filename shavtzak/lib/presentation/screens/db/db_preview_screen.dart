@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/constants/role_types.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 import 'widgets/collection_viewer.dart';
 
 /// A hidden diagnostic screen for viewing Firestore data in real-time.
@@ -18,6 +19,7 @@ class DbPreviewScreen extends StatefulWidget {
 class _DbPreviewScreenState extends State<DbPreviewScreen> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  late final FocusNode _searchFocusNode;
   final Set<String> _expandedCollections = {};
   final ScrollController _scrollController = ScrollController();
 
@@ -60,6 +62,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
   @override
   void initState() {
     super.initState();
+    _searchFocusNode = createRtlCursorFixedFocusNode(_searchController);
     // Initialize notifiers for all collections
     for (final config in _collections) {
       _docCountNotifiers.putIfAbsent(config.name, () => ValueNotifier<int>(0));
@@ -76,6 +79,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
 
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _searchController.dispose();
     _scrollController.dispose();
     // Cancel all stream subscriptions
@@ -662,6 +666,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       color: Colors.grey.shade100,
       child: TextField(
         controller: _searchController,
+        focusNode: _searchFocusNode,
         decoration: InputDecoration(
           hintText: 'חיפוש לפי ID או תוכן...',
           prefixIcon: const Icon(Icons.search),

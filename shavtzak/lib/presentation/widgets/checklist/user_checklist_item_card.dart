@@ -9,6 +9,7 @@ import '../../../core/services/checklist_permission_service.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../bloc/checklist/checklist_bloc.dart';
 import 'chat_bubble.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 
 /// Card widget for displaying a checklist item in the user view
 class UserChecklistItemCard extends StatelessWidget {
@@ -256,12 +257,14 @@ class _UserNotesModalWrapper extends StatefulWidget {
 class _UserNotesModalWrapperState extends State<_UserNotesModalWrapper> {
   final _noteController = TextEditingController();
   final _scrollController = ScrollController();
+  late final FocusNode _noteFocusNode;
   late ChecklistItem _item;
   StreamSubscription<ChecklistItem>? _subscription;
 
   @override
   void initState() {
     super.initState();
+    _noteFocusNode = createRtlCursorFixedFocusNode(_noteController);
     _item = widget.item;
     // Subscribe to live updates
     final checklistRepository = widget.parentContext.read<ChecklistBloc>().repository;
@@ -282,6 +285,7 @@ class _UserNotesModalWrapperState extends State<_UserNotesModalWrapper> {
   @override
   void dispose() {
     _subscription?.cancel();
+    _noteFocusNode.dispose();
     _noteController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -413,8 +417,8 @@ class _UserNotesModalWrapperState extends State<_UserNotesModalWrapper> {
                     Expanded(
                       child: TextField(
                         controller: _noteController,
+                        focusNode: _noteFocusNode,
                         textAlign: TextAlign.right,
-                        textDirection: TextDirection.rtl,
                         decoration: InputDecoration(
                           hintText: 'כתוב הערה...',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),

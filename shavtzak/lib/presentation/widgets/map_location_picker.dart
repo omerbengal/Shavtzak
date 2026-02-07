@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../../core/utils/rtl_text_field_utils.dart';
 
 // Conditional imports for web-specific geolocation API
 import 'web/geolocation_stub.dart'
@@ -238,6 +239,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   void initState() {
     super.initState();
     _mapController = MapController();
+    addRtlCursorFix(_searchFocusNode, _searchController);
     _initialCenter = LatLng(
       widget.initialLatitude ?? _defaultLatitude,
       widget.initialLongitude ?? _defaultLongitude,
@@ -595,7 +597,6 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                     child: TextField(
                                       controller: _searchController,
                                       focusNode: _searchFocusNode,
-                                      textDirection: TextDirection.rtl,
                                       decoration: InputDecoration(
                                         hintText: 'חיפוש מיקום...',
                                         prefixIcon: _isSearching

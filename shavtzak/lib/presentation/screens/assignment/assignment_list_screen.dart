@@ -31,6 +31,7 @@ import 'manual_assignment_flow_dialog.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -865,6 +866,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     if (assignment == null) return;
 
     final notesController = TextEditingController(text: assignment.notes);
+    final notesFocusNode = createRtlCursorFixedFocusNode(notesController);
     final phoneController = TextEditingController(text: assignment.alternativePhoneNumber ?? '');
     final formKey = GlobalKey<FormState>();
 
@@ -917,6 +919,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   const SizedBox(height: 16),
                   TextField(
                     controller: notesController,
+                    focusNode: notesFocusNode,
                     minLines: 4,
                     maxLines: 10,
                     decoration: InputDecoration(
@@ -927,7 +930,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       filled: true,
                       fillColor: Colors.grey.shade50,
                     ),
-                    textDirection: TextDirection.rtl,
                     autofocus: false,
                   ),
                   const SizedBox(height: 16),
@@ -980,6 +982,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       );
       },
     );
+
+    // Dispose local focus node and controllers after dialog closes
+    notesFocusNode.dispose();
+    notesController.dispose();
+    phoneController.dispose();
 
     if (result != null && mounted) {
       final phone = result['phone'];

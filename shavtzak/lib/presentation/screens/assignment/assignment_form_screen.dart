@@ -18,6 +18,7 @@ import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
 import '../../bloc/role/role_bloc.dart';
 import '../../bloc/role/role_state.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 
 class AssignmentFormScreen extends StatefulWidget {
   final Assignment? assignment;
@@ -36,6 +37,7 @@ class AssignmentFormScreen extends StatefulWidget {
 class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _notesController = TextEditingController();
+  late final FocusNode _notesFocusNode;
 
   Event? _selectedEvent;
   TeamMember? _selectedTeamMember;
@@ -50,6 +52,7 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
   @override
   void initState() {
     super.initState();
+    _notesFocusNode = createRtlCursorFixedFocusNode(_notesController);
 
     // Load data
     context.read<EventBloc>().add(const LoadEvents());
@@ -70,6 +73,7 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
 
   @override
   void dispose() {
+    _notesFocusNode.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -382,6 +386,7 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
                     // Notes
                     TextFormField(
                       controller: _notesController,
+                      focusNode: _notesFocusNode,
                       decoration: const InputDecoration(
                         labelText: 'הערות',
                         hintText: 'הערות נוספות על השיבוץ',

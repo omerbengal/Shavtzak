@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../domain/entities/preset.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../bloc/team/team_bloc.dart';
@@ -23,11 +24,13 @@ class PresetFormModal extends StatefulWidget {
 class _PresetFormModalState extends State<PresetFormModal> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  late final FocusNode _nameFocusNode;
   List<PresetItem> _items = [];
 
   @override
   void initState() {
     super.initState();
+    _nameFocusNode = createRtlCursorFixedFocusNode(_nameController);
     if (widget.preset != null) {
       _nameController.text = widget.preset!.name;
       _items = List.from(widget.preset!.items);
@@ -36,6 +39,7 @@ class _PresetFormModalState extends State<PresetFormModal> {
 
   @override
   void dispose() {
+    _nameFocusNode.dispose();
     _nameController.dispose();
     super.dispose();
   }
@@ -146,6 +150,7 @@ class _PresetFormModalState extends State<PresetFormModal> {
                         // Name field
                         TextFormField(
                           controller: _nameController,
+                          focusNode: _nameFocusNode,
                           decoration: const InputDecoration(
                             labelText: 'שם הפריסט *',
                             border: OutlineInputBorder(),
@@ -304,6 +309,8 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _adminNoteController = TextEditingController();
+  late final FocusNode _nameFocusNode;
+  late final FocusNode _adminNoteFocusNode;
   TeamMember? _selectedResponsible;
   List<TeamMember> _selectedCcMembers = [];
   bool _initialized = false;
@@ -311,6 +318,8 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
   @override
   void initState() {
     super.initState();
+    _nameFocusNode = createRtlCursorFixedFocusNode(_nameController);
+    _adminNoteFocusNode = createRtlCursorFixedFocusNode(_adminNoteController);
     if (widget.item != null) {
       _nameController.text = widget.item!.name;
       _adminNoteController.text = widget.item!.adminNote;
@@ -319,6 +328,8 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
 
   @override
   void dispose() {
+    _nameFocusNode.dispose();
+    _adminNoteFocusNode.dispose();
     _nameController.dispose();
     _adminNoteController.dispose();
     super.dispose();
@@ -388,6 +399,7 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
                     // Name field
                     TextFormField(
                       controller: _nameController,
+                      focusNode: _nameFocusNode,
                       decoration: const InputDecoration(
                         labelText: 'שם הפריט *',
                         border: OutlineInputBorder(),
@@ -428,6 +440,7 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
                     // Admin note field
                     TextFormField(
                       controller: _adminNoteController,
+                      focusNode: _adminNoteFocusNode,
                       decoration: const InputDecoration(
                         labelText: 'הערת מנהל',
                         border: OutlineInputBorder(),

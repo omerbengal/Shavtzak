@@ -10,6 +10,7 @@ import '../../bloc/team/team_state.dart';
 import '../../widgets/test_environment_indicator.dart';
 import '../../widgets/passcode_verification_dialog.dart';
 import '../../widgets/loading_overlay.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 
 /// Screen for user selection - "מי את/ה?"
 class WhoamiScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class WhoamiScreen extends StatefulWidget {
 
 class _WhoamiScreenState extends State<WhoamiScreen> {
   final TextEditingController _searchController = TextEditingController();
+  late final FocusNode _searchFocusNode;
 
   List<TeamMember> _allTeamMembers = [];
   List<TeamMember> _filteredTeamMembers = [];
@@ -32,6 +34,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
   @override
   void initState() {
     super.initState();
+    _searchFocusNode = createRtlCursorFixedFocusNode(_searchController);
 
     // Check initial TeamBloc state - if already loaded, use that data immediately
     final teamState = context.read<TeamBloc>().state;
@@ -62,6 +65,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
 
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -263,7 +267,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
                   // Search field
                   TextField(
                     controller: _searchController,
-                    textDirection: TextDirection.rtl,
+                    focusNode: _searchFocusNode,
                     decoration: const InputDecoration(
                       hintText: 'חפש/י את השם שלך...',
                       prefixIcon: Icon(Icons.search),

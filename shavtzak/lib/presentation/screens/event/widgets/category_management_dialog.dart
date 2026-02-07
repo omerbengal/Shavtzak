@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../domain/entities/category.dart';
 import '../../../../data/repositories/event_repository.dart';
 import '../../../bloc/category/category_bloc.dart';
@@ -460,6 +461,7 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
   /// Show dialog to add a new category
   void _showAddCategoryDialog(BuildContext context) {
     final controller = TextEditingController();
+    final focusNode = createRtlCursorFixedFocusNode(controller);
 
     showDialog(
       context: context,
@@ -469,6 +471,7 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
           title: const Text('צור קטגוריה חדשה'),
           content: TextField(
             controller: controller,
+            focusNode: focusNode,
             decoration: const InputDecoration(
               labelText: 'שם הקטגוריה',
               border: OutlineInputBorder(),
@@ -493,12 +496,16 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
           ],
         ),
       ),
-    );
+    ).then((_) {
+      focusNode.dispose();
+      controller.dispose();
+    });
   }
 
   /// Show dialog to rename a category
   void _showRenameDialog(BuildContext context, Category category) {
     final controller = TextEditingController(text: category.name);
+    final focusNode = createRtlCursorFixedFocusNode(controller);
 
     showDialog(
       context: context,
@@ -508,6 +515,7 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
           title: const Text('שנה שם קטגוריה'),
           content: TextField(
             controller: controller,
+            focusNode: focusNode,
             decoration: const InputDecoration(
               labelText: 'שם הקטגוריה',
               border: OutlineInputBorder(),
@@ -534,6 +542,9 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
           ],
         ),
       ),
-    );
+    ).then((_) {
+      focusNode.dispose();
+      controller.dispose();
+    });
   }
 }
