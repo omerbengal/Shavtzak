@@ -24,6 +24,7 @@ import 'widgets/events_overview_chart.dart';
 import 'widgets/staffing_status_chart.dart';
 import 'widgets/checklist_compliance_chart.dart';
 import 'widgets/event_summary_tile.dart';
+import 'widgets/category_summary_card.dart';
 
 /// Summary screen - dashboard for managers
 /// Accessible directly via /summary route (not part of main navigation)
@@ -35,7 +36,6 @@ class SummaryScreen extends StatefulWidget {
 }
 
 class _SummaryScreenState extends State<SummaryScreen> {
-  final Map<String, bool> _expandedCategories = {};
 
   @override
   void initState() {
@@ -200,36 +200,13 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
-  /// Build event tiles grouped by category headers.
+  /// Build event tiles grouped by category cards.
   /// Returns a list of sliver widgets.
   List<Widget> _buildGroupedEventTiles(
     List<EventSummaryData> eventSummaries,
     List<Assignment> assignments,
     List<Category> categories,
   ) {
-    // No categories in system → flat list, no category headers
-    if (categories.isEmpty) {
-      return [
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: EventSummaryTile(
-                    data: eventSummaries[index],
-                    allAssignments: assignments,
-                  ),
-                );
-              },
-              childCount: eventSummaries.length,
-            ),
-          ),
-        ),
-      ];
-    }
-
     // Group event summaries by category
     final Map<String?, List<EventSummaryData>> groupedSummaries = {};
     for (final summary in eventSummaries) {
@@ -249,14 +226,17 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
     for (final category in sortedCategories) {
       final summaries = groupedSummaries[category.id]!;
-      slivers.add(_buildCategoryHeaderSliver(
-        category.id,
-        category.name,
-        summaries,
+      slivers.add(SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: CategorySummaryCard(
+            categoryId: category.id,
+            categoryName: category.name,
+            eventSummaries: summaries,
+            allAssignments: assignments,
+          ),
+        ),
       ));
-      if (_expandedCategories[category.id] ?? false) {
-        slivers.add(_buildEventTilesSliver(summaries, assignments));
-      }
     }
 
     // Uncategorized events section (always last)
@@ -269,148 +249,21 @@ class _SummaryScreenState extends State<SummaryScreen> {
             .expand((e) => e.value),
       ];
       if (uncategorizedSummaries.isNotEmpty) {
-        slivers.add(_buildCategoryHeaderSliver(
-          '__uncategorized__',
-          'אירועים ללא קטגוריה',
-          uncategorizedSummaries,
+        slivers.add(SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: CategorySummaryCard(
+              categoryId: '__uncategorized__',
+              categoryName: 'אירועים ללא קטגוריה',
+              eventSummaries: uncategorizedSummaries,
+              allAssignments: assignments,
+            ),
+          ),
         ));
-        if (_expandedCategories['__uncategorized__'] ?? false) {
-          slivers.add(_buildEventTilesSliver(uncategorizedSummaries, assignments));
-        }
       }
     }
 
     return slivers;
-  }
-
-  /// Build a category header sliver with aggregate status color and statistics.
-  Widget _buildCategoryHeaderSliver(String categoryId, String categoryName, List<EventSummaryData> summaries) {
-    // Calculate aggregate statistics
-    final totalUnfilledSlots = summaries.fold<int>(0, (sum, s) => sum + s.unfilledSlots);
-    final totalPendingChecklist = summaries.fold<int>(0, (sum, s) => sum + s.pendingChecklistItems);
-    final totalChecklistItems = summaries.fold<int>(0, (sum, s) => sum + s.totalChecklistItems);
-
-    // Determine color: orange if any event has issues, green otherwise
-    final hasIssues = summaries.any((s) => !s.isFullyStaffed || s.pendingChecklistItems > 0);
-    final headerColor = hasIssues ? Colors.orange.shade50 : Colors.green.shade50;
-
-    return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.only(top: 16, left: 4, right: 4, bottom: 4),
-        child: Material(
-          color: headerColor,
-          borderRadius: BorderRadius.circular(8),
-          child: InkWell(
-            onTap: () => setState(() {
-              _expandedCategories[categoryId] = !(_expandedCategories[categoryId] ?? false);
-            }),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Top row: folder icon, name, event count, expand icon
-                  Row(
-                    children: [
-                      Icon(Icons.folder, size: 20, color: Colors.grey.shade700),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          categoryName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '${summaries.length} ${summaries.length == 1 ? "אירוע" : "אירועים"}',
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                      ),
-                      const SizedBox(width: 8),
-                      Icon(
-                        _expandedCategories[categoryId] ?? false
-                            ? Icons.expand_less
-                            : Icons.expand_more,
-                        color: Colors.grey.shade600,
-                      ),
-                    ],
-                  ),
-                  // Bottom row: aggregate statistics (if any issues exist)
-                  if (hasIssues) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 4,
-                      children: [
-                        // Unfilled roles
-                        if (totalUnfilledSlots > 0)
-                          _buildAggregateStatChip(
-                            icon: Icons.person_off,
-                            label: '$totalUnfilledSlots תפקידים חסרים',
-                            color: Colors.red,
-                          ),
-                        // Pending checklist items
-                        if (totalPendingChecklist > 0)
-                          _buildAggregateStatChip(
-                            icon: Icons.pending,
-                            label: '$totalPendingChecklist/$totalChecklistItems פריטים ממתינים',
-                            color: Colors.orange,
-                          ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Build a small stat chip for aggregate data.
-  Widget _buildAggregateStatChip({
-    required IconData icon,
-    required String label,
-    required MaterialColor color,
-  }) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: color.shade700),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            color: color.shade700,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Build a sliver list of event tiles.
-  Widget _buildEventTilesSliver(List<EventSummaryData> summaries, List<Assignment> assignments) {
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: EventSummaryTile(
-                data: summaries[index],
-                allAssignments: assignments,
-              ),
-            );
-          },
-          childCount: summaries.length,
-        ),
-      ),
-    );
   }
 
   Widget _buildHorizontalCharts(_SummaryMetrics metrics) {
