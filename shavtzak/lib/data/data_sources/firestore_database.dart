@@ -844,18 +844,31 @@ class FirestoreDatabase implements DatabaseInterface {
       // Subscribe to each stream
       for (int i = 0; i < allStreams.length; i++) {
         final stream = allStreams[i];
+        final index = i; // Capture for closure
         stream.listen(
           (data) {
-            latestValues.add(data);
-            receivedCount.add(i);
-
-            // When we have data from all streams, emit combined result
-            if (receivedCount.length == allStreams.length) {
-              final combined = latestValues.expand((list) => list).toList();
-              controller.add(combined);
+            print('📡 [FIRESTORE_STREAM] Stream $index emitted: ${data.length} assignments');
+            // Replace old value at this index instead of appending
+            while (latestValues.length <= index) {
+              latestValues.add([]);
             }
+            latestValues[index] = data;
+            receivedCount.add(index);
+
+            // CRITICAL FIX: Always emit combined result when ANY stream updates
+            // (not just when all streams have emitted for the first time)
+            // Build combined from all streams that have emitted so far
+            final combined = <Assignment>[];
+            for (int j = 0; j < allStreams.length; j++) {
+              if (j < latestValues.length) {
+                combined.addAll(latestValues[j]);
+              }
+            }
+            print('📡 [FIRESTORE_STREAM] Emitting combined: ${combined.length} total assignments');
+            controller.add(combined);
           },
           onError: (error) {
+            print('❌ [FIRESTORE_STREAM] Stream $index error: $error');
             controller.addError(error);
           },
         );
@@ -881,10 +894,16 @@ class FirestoreDatabase implements DatabaseInterface {
           assignment.eventId, assignment.teamMemberId);
 
       final model = AssignmentModel.fromEntity(assignment);
+
+      // For new documents, filter out FieldValue.delete() since set() doesn't support it
+      final firestoreData = model.toFirestore();
+      final cleanData = Map<String, dynamic>.from(firestoreData)
+        ..removeWhere((key, value) => value is FieldValue);
+
       await _firestore
           .collection(_assignmentsCollection)
           .doc(assignment.id)
-          .set(model.toFirestore());
+          .set(cleanData);
     } catch (e) {
       throw DatabaseException('Failed to insert assignment: $e');
     }
@@ -909,9 +928,12 @@ class FirestoreDatabase implements DatabaseInterface {
 
   @override
   Future<void> deleteAssignment(String id) async {
+    print('🗑️ [FIRESTORE_DB] Deleting assignment: $id');
     try {
       await _firestore.collection(_assignmentsCollection).doc(id).delete();
+      print('✅ [FIRESTORE_DB] Assignment deleted successfully - Firestore stream should fire');
     } catch (e) {
+      print('❌ [FIRESTORE_DB] Failed to delete assignment: $e');
       throw DatabaseException('Failed to delete assignment: $e');
     }
   }

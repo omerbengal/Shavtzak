@@ -102,18 +102,29 @@ class AssignmentRepository {
   /// Create a new assignment
   /// Validates FK relationships and checks for conflicts
   Future<void> createAssignment(Assignment assignment) async {
+    print('💾 [REPO_DEBUG] createAssignment START');
+    print('  Assignment ID: ${assignment.id}');
+    print('  Event ID: ${assignment.eventId}');
+    print('  Team Member ID: ${assignment.teamMemberId}');
+    print('  Role: ${assignment.roleType}');
+    print('  Slot Index: ${assignment.slotIndex}');
+
     // Validate that event and team member exist (handled by FirestoreDatabase)
     // Check for conflicts before inserting
+    print('  🔍 Checking for conflicts...');
     final conflicts = await checkConflicts(assignment);
 
     if (conflicts.isNotEmpty) {
+      print('  ❌ CONFLICTS FOUND: $conflicts');
       throw AssignmentConflictException(
         'Assignment has conflicts',
         conflicts,
       );
     }
 
+    print('  ✅ No conflicts, inserting into database...');
     await _database.insertAssignment(assignment);
+    print('✅ [REPO_DEBUG] createAssignment END');
   }
 
   /// Create assignment without conflict checking (for imports)
@@ -128,16 +139,26 @@ class AssignmentRepository {
 
   /// Update an existing assignment
   Future<void> updateAssignment(Assignment assignment) async {
+    print('💾 [REPO_DEBUG] updateAssignment START');
+    print('  Assignment ID: ${assignment.id}');
+    print('  Event ID: ${assignment.eventId}');
+    print('  Team Member ID: ${assignment.teamMemberId}');
+    print('  Role: ${assignment.roleType}');
+
+    print('  🔍 Checking for conflicts...');
     final conflicts = await checkConflicts(assignment);
 
     if (conflicts.isNotEmpty) {
+      print('  ❌ CONFLICTS FOUND: $conflicts');
       throw AssignmentConflictException(
         'Assignment has conflicts',
         conflicts,
       );
     }
 
+    print('  ✅ No conflicts, updating database...');
     await _database.updateAssignment(assignment);
+    print('✅ [REPO_DEBUG] updateAssignment END');
   }
 
   /// Update assignment without conflict checking (for internal operations like slot reassignment)
@@ -147,7 +168,9 @@ class AssignmentRepository {
 
   /// Delete an assignment
   Future<void> deleteAssignment(String id) async {
+    print('🗑️ [REPO] deleteAssignment called: $id');
     await _database.deleteAssignment(id);
+    print('✅ [REPO] deleteAssignment completed');
   }
 
   /// Delete multiple assignments in a single batch operation

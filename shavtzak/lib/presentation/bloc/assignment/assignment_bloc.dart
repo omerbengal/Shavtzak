@@ -513,12 +513,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         windowEnd: windowEnd,
       ).listen(
         (assignments) {
+          print('📡 [STREAM] Assignment stream FIRED!');
+          print('  Assignments count: ${assignments.length}');
+          print('  Triggering rebuild...');
           // Cache current assignments for rebuild purposes
           _repository.cacheCurrentAssignments(assignments);
           // Rebuild slots using cached data - use _currentEventFilter to preserve user's filter
           add(RebuildAssignmentSlotsFromData(assignments, cachedEventsMap, cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
+          print('❌ [STREAM] Assignment stream ERROR: $e');
           emit(AssignmentError('שגיאה בהאזנה לשיבוצים: $e'));
         },
       );
@@ -649,14 +653,26 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     List<AssignmentSlot> databaseSlots,
     Map<String, PendingOperation> pendingOperations,
   ) {
+    print('  🔀 [MERGE_DEBUG] _mergeSlotsWithOptimisticUpdates START');
+    print('    Database slots: ${databaseSlots.length}');
+    print('    Pending operations: ${pendingOperations.length}');
+
     if (pendingOperations.isEmpty) {
+      print('    ℹ️ No pending operations, returning database slots as-is');
       return databaseSlots;
     }
 
     // Remove expired operations (older than 5 seconds)
+    print('    🧹 Checking for expired operations...');
     final activeOperations = Map<String, PendingOperation>.fromEntries(
       pendingOperations.entries.where((entry) => !entry.value.isExpired),
     );
+
+    final expiredCount = pendingOperations.length - activeOperations.length;
+    if (expiredCount > 0) {
+      print('    ⏰ Removed $expiredCount expired operations');
+    }
+    print('    Active operations: ${activeOperations.length}');
 
     // CRITICAL FIX: Track slots with delete operations (including expired ones)
     // This ensures deleted slots stay empty even after operations expire
@@ -908,6 +924,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
     }
 
+    print('  ✅ [MERGE_DEBUG] Merged slots count: ${resultSlots.length}');
+    print('  🔚 [MERGE_DEBUG] _mergeSlotsWithOptimisticUpdates END');
     return resultSlots;
   }
 
@@ -916,7 +934,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     OptimisticCreateAssignment event,
     Emitter<AssignmentState> emit,
   ) async {
-    if (state is! AssignmentSlotsLoaded) return;
+    print('🎯 [BLOC_DEBUG] _onOptimisticCreateAssignment START');
+    print('  Assignment ID: ${event.assignment.id}');
+    print('  Slot Key: ${event.slotKey}');
+    print('  Team Member: ${event.assignment.teamMember?.name} (${event.assignment.teamMemberId})');
+    print('  Event: ${event.assignment.event?.name} (${event.assignment.eventId})');
+    print('  Role: ${event.assignment.roleType}');
+    print('  Slot Index: ${event.assignment.slotIndex}');
+
+    if (state is! AssignmentSlotsLoaded) {
+      print('  ❌ ERROR: State is not AssignmentSlotsLoaded!');
+      print('    Current state: ${state.runtimeType}');
+      return;
+    }
 
     final currentState = state as AssignmentSlotsLoaded;
 
@@ -929,11 +959,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       timestamp: DateTime.now(),
     );
 
+    print('  📝 Created pending operation: ${operation.id}');
+
     // Add to BLoC-level pending operations map
     _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations);
     _pendingOperations[event.slotKey] = operation;
+    print('  📦 Pending operations count: ${_pendingOperations.length}');
 
     // Apply optimistic update
+    print('  🎨 Applying optimistic update...');
     final updatedSlots = _applyOptimisticUpdate(
       currentState.slots,
       event.slotKey,
@@ -941,21 +975,30 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       isDelete: false,
     );
 
+    print('  ✅ Optimistic update applied. Slots count: ${updatedSlots.length}');
+
     emit(AssignmentSlotsLoaded(
       updatedSlots,
       selectedEventIds: currentState.selectedEventIds,
       pendingOperations: _pendingOperations,
     ));
 
+    print('  📤 State emitted with optimistic update');
+
     // Execute database operation
+    print('  💾 Starting database write...');
     try {
       if (event.bypassConflicts) {
         await _repository.createAssignmentWithBypass(event.assignment);
       } else {
         await _repository.createAssignment(event.assignment);
       }
+      print('  ✅ Database write SUCCESSFUL');
+      print('  🔄 Firestore stream will emit fresh state automatically');
       // Firestore stream will emit fresh state automatically
     } catch (e) {
+      print('  ❌ Database write FAILED: $e');
+      print('  🔙 Reverting to database state...');
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
       emit(AssignmentSlotsLoaded(
@@ -964,6 +1007,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         pendingOperations: _pendingOperations,
       ));
     }
+    print('🏁 [BLOC_DEBUG] _onOptimisticCreateAssignment END');
   }
 
   /// Optimistic update assignment handler
@@ -971,7 +1015,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     OptimisticUpdateAssignment event,
     Emitter<AssignmentState> emit,
   ) async {
-    if (state is! AssignmentSlotsLoaded) return;
+    print('🎯 [BLOC_DEBUG] _onOptimisticUpdateAssignment START');
+    print('  Assignment ID: ${event.assignment.id}');
+    print('  Slot Key: ${event.slotKey}');
+    print('  Team Member: ${event.assignment.teamMember?.name} (${event.assignment.teamMemberId})');
+    print('  Event: ${event.assignment.event?.name} (${event.assignment.eventId})');
+    print('  Role: ${event.assignment.roleType}');
+
+    if (state is! AssignmentSlotsLoaded) {
+      print('  ❌ ERROR: State is not AssignmentSlotsLoaded!');
+      print('    Current state: ${state.runtimeType}');
+      return;
+    }
 
     final currentState = state as AssignmentSlotsLoaded;
 
@@ -984,11 +1039,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       timestamp: DateTime.now(),
     );
 
+    print('  📝 Created pending operation: ${operation.id}');
+
     // Add to BLoC-level pending operations map
     _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations);
     _pendingOperations[event.slotKey] = operation;
+    print('  📦 Pending operations count: ${_pendingOperations.length}');
 
     // Apply optimistic update
+    print('  🎨 Applying optimistic update...');
     final updatedSlots = _applyOptimisticUpdate(
       currentState.slots,
       event.slotKey,
@@ -996,17 +1055,26 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       isDelete: false,
     );
 
+    print('  ✅ Optimistic update applied. Slots count: ${updatedSlots.length}');
+
     emit(AssignmentSlotsLoaded(
       updatedSlots,
       selectedEventIds: currentState.selectedEventIds,
       pendingOperations: _pendingOperations,
     ));
 
+    print('  📤 State emitted with optimistic update');
+
     // Execute database operation
+    print('  💾 Starting database write...');
     try {
       await _repository.updateAssignment(event.assignment);
+      print('  ✅ Database write SUCCESSFUL');
+      print('  🔄 Firestore stream will emit fresh state automatically');
       // Firestore stream will emit fresh state automatically
     } catch (e) {
+      print('  ❌ Database write FAILED: $e');
+      print('  🔙 Reverting to database state...');
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
       emit(AssignmentSlotsLoaded(
@@ -1015,6 +1083,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         pendingOperations: _pendingOperations,
       ));
     }
+    print('🏁 [BLOC_DEBUG] _onOptimisticUpdateAssignment END');
   }
 
   /// Optimistic delete assignment handler
@@ -1303,6 +1372,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     RebuildAssignmentSlotsFromData rebuildEvent,
     Emitter<AssignmentState> emit,
   ) async {
+    print('🔄 [STREAM_DEBUG] _onRebuildAssignmentSlotsFromData START');
+    print('  Assignments count: ${rebuildEvent.assignments.length}');
+    print('  Events count: ${rebuildEvent.events.length}');
+    print('  Team Members count: ${rebuildEvent.teamMembers.length}');
+    print('  Selected Event IDs: ${rebuildEvent.selectedEventIds}');
+    print('  Current pending operations: ${_pendingOperations.length}');
+
     try {
       // Update the repository's cached assignments
       _repository.cacheCurrentAssignments(rebuildEvent.assignments);
@@ -1465,17 +1541,21 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _currentEventFilter = rebuildEvent.selectedEventIds;
 
       // Merge optimistic updates on top of database state using BLoC-level pending operations
+      print('  🔀 Merging with pending operations...');
       final mergedSlots = _mergeSlotsWithOptimisticUpdates(
         filteredSlots,
         _pendingOperations,
       );
 
+      print('  📤 Emitting AssignmentSlotsLoaded with ${mergedSlots.length} slots');
       emit(AssignmentSlotsLoaded(
         mergedSlots,
         selectedEventIds: rebuildEvent.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
+      print('✅ [STREAM_DEBUG] _onRebuildAssignmentSlotsFromData END');
     } catch (e) {
+      print('  ❌ ERROR in rebuild: $e');
       emit(AssignmentError('שגיאה בבניית שיבוצים: $e'));
     }
   }
