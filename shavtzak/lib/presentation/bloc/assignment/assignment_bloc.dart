@@ -994,7 +994,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         await _repository.createAssignment(event.assignment);
       }
       print('  ✅ Database write SUCCESSFUL');
+      print('  🧹 Removing completed pending operation: ${event.slotKey}');
       print('  🔄 Firestore stream will emit fresh state automatically');
+      // CRITICAL FIX: Remove pending operation after successful write
+      _pendingOperations.remove(event.slotKey);
       // Firestore stream will emit fresh state automatically
     } catch (e) {
       print('  ❌ Database write FAILED: $e');
@@ -1070,7 +1073,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     try {
       await _repository.updateAssignment(event.assignment);
       print('  ✅ Database write SUCCESSFUL');
+      print('  🧹 Removing completed pending operation: ${event.slotKey}');
       print('  🔄 Firestore stream will emit fresh state automatically');
+      // CRITICAL FIX: Remove pending operation after successful write
+      _pendingOperations.remove(event.slotKey);
       // Firestore stream will emit fresh state automatically
     } catch (e) {
       print('  ❌ Database write FAILED: $e');
@@ -1125,6 +1131,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // Execute database operation
     try {
       await _repository.deleteAssignment(event.assignmentId);
+      // CRITICAL FIX: Remove pending operation after successful delete
+      _pendingOperations.remove(event.slotKey);
       // Firestore stream will emit fresh state automatically
     } catch (e) {
       // On error: remove operation, revert to database state
