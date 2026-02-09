@@ -541,6 +541,9 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Get keyboard height for padding
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Stack(
@@ -550,80 +553,91 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
               'הוספת בקשת מגבלה',
               textAlign: TextAlign.right,
             ),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('תאריכים:'),
-            const SizedBox(height: 8),
-            InkWell(
-              onTap: _selectDateRange,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(4),
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+            content: SizedBox(
+              width: 400,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.6,
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.calendar_today),
-                    const SizedBox(width: 8),
-                    Text(
-                      startDate != null
-                          ? (endDate != null && !_isSameDay(startDate!, endDate!)
-                              ? '${_formatDate(startDate!)} - ${_formatDate(endDate!)}'
-                              : _formatDate(startDate!))
-                          : 'בחר תאריכים',
-                    ),
-                  ],
+                child: SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  padding: EdgeInsets.only(bottom: keyboardHeight > 0 ? 16 : 0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('תאריכים:'),
+                      const SizedBox(height: 8),
+                      InkWell(
+                        onTap: _selectDateRange,
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.calendar_today),
+                              const SizedBox(width: 8),
+                              Text(
+                                startDate != null
+                                    ? (endDate != null && !_isSameDay(startDate!, endDate!)
+                                        ? '${_formatDate(startDate!)} - ${_formatDate(endDate!)}'
+                                        : _formatDate(startDate!))
+                                    : 'בחר תאריכים',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('סיבה (חובה):'),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: noteController,
+                        focusNode: _noteFocusNode,
+                        textAlign: TextAlign.right,
+                        textAlignVertical: TextAlignVertical.top,
+                        decoration: InputDecoration(
+                          hintText: 'יש להזין סיבה לבקשה...',
+                          border: const OutlineInputBorder(),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                          hintStyle: TextStyle(
+                            color: Colors.grey[600],
+                            height: 1.5,
+                          ),
+                          hintTextDirection: TextDirection.rtl,
+                        ),
+                        maxLines: 3,
+                        minLines: 3,
+                        style: const TextStyle(height: 1.5),
+                        scrollPhysics: const BouncingScrollPhysics(),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            const Text('סיבה (חובה):'),
-            const SizedBox(height: 8),
-            TextField(
-              controller: noteController,
-              focusNode: _noteFocusNode,
-              textAlign: TextAlign.right,
-              textAlignVertical: TextAlignVertical.top,
-              decoration: InputDecoration(
-                hintText: 'יש להזין סיבה לבקשה...',
-                border: const OutlineInputBorder(),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                hintStyle: TextStyle(
-                  color: Colors.grey[600],
-                  height: 1.5,
-                ),
-                hintTextDirection: TextDirection.rtl,
+            actions: [
+              TextButton(
+                onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                child: const Text('ביטול'),
               ),
-              maxLines: 3,
-              minLines: 3,
-              style: const TextStyle(height: 1.5),
-              scrollPhysics: const BouncingScrollPhysics(),
-            ),
-          ],
-        ),
-      ),
-          actions: [
-            TextButton(
-              onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-              child: const Text('ביטול'),
-            ),
-            ElevatedButton(
-              onPressed: (_canSubmit && !_isSaving)
-                  ? () {
-                      if (_isSaving) return;
-                      setState(() => _isSaving = true);
-                      widget.onAdd(startDate!, endDate, noteController.text);
-                      Navigator.of(context).pop();
-                    }
-                  : null,
-              child: const Text('הוסף בקשה'),
-            ),
-          ],
+              ElevatedButton(
+                onPressed: (_canSubmit && !_isSaving)
+                    ? () {
+                        if (_isSaving) return;
+                        setState(() => _isSaving = true);
+                        widget.onAdd(startDate!, endDate, noteController.text);
+                        Navigator.of(context).pop();
+                      }
+                    : null,
+                child: const Text('הוסף בקשה'),
+              ),
+            ],
           ),
           LoadingOverlay(isLoading: _isSaving, message: 'שולח בקשה...'),
         ],
@@ -726,6 +740,9 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Get keyboard height for padding
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Stack(
@@ -735,78 +752,89 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
               'עריכת מגבלה',
               textAlign: TextAlign.right,
             ),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('תאריכים:'),
-            const SizedBox(height: 8),
-            InkWell(
-              onTap: _selectDateRange,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(4),
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+            content: SizedBox(
+              width: 400,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.6,
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.calendar_today),
-                    const SizedBox(width: 8),
-                    Text(
-                      endDate != null && !_isSameDay(startDate, endDate!)
-                          ? '${_formatDate(startDate)} - ${_formatDate(endDate!)}'
-                          : _formatDate(startDate),
-                    ),
-                  ],
+                child: SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  padding: EdgeInsets.only(bottom: keyboardHeight > 0 ? 16 : 0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('תאריכים:'),
+                      const SizedBox(height: 8),
+                      InkWell(
+                        onTap: _selectDateRange,
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.calendar_today),
+                              const SizedBox(width: 8),
+                              Text(
+                                endDate != null && !_isSameDay(startDate, endDate!)
+                                    ? '${_formatDate(startDate)} - ${_formatDate(endDate!)}'
+                                    : _formatDate(startDate),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('סיבה (חובה):'),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: noteController,
+                        focusNode: _noteFocusNode,
+                        textAlign: TextAlign.right,
+                        textAlignVertical: TextAlignVertical.top,
+                        decoration: InputDecoration(
+                          hintText: 'יש להזין סיבה לבקשה...',
+                          border: const OutlineInputBorder(),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                          hintStyle: TextStyle(
+                            color: Colors.grey[600],
+                            height: 1.5,
+                          ),
+                          hintTextDirection: TextDirection.rtl,
+                        ),
+                        maxLines: 3,
+                        minLines: 3,
+                        style: const TextStyle(height: 1.5),
+                        scrollPhysics: const BouncingScrollPhysics(),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            const Text('סיבה (חובה):'),
-            const SizedBox(height: 8),
-            TextField(
-              controller: noteController,
-              focusNode: _noteFocusNode,
-              textAlign: TextAlign.right,
-              textAlignVertical: TextAlignVertical.top,
-              decoration: InputDecoration(
-                hintText: 'יש להזין סיבה לבקשה...',
-                border: const OutlineInputBorder(),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                hintStyle: TextStyle(
-                  color: Colors.grey[600],
-                  height: 1.5,
-                ),
-                hintTextDirection: TextDirection.rtl,
+            actions: [
+              TextButton(
+                onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                child: const Text('ביטול'),
               ),
-              maxLines: 3,
-              minLines: 3,
-              style: const TextStyle(height: 1.5),
-              scrollPhysics: const BouncingScrollPhysics(),
-            ),
-          ],
-        ),
-      ),
-          actions: [
-            TextButton(
-              onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-              child: const Text('ביטול'),
-            ),
-            ElevatedButton(
-              onPressed: (_canSubmit && !_isSaving)
-                  ? () {
-                      if (_isSaving) return;
-                      setState(() => _isSaving = true);
-                      widget.onSave(startDate, endDate, noteController.text);
-                      Navigator.of(context).pop();
-                    }
-                  : null,
-              child: const Text('שמור שינויים'),
-            ),
-          ],
+              ElevatedButton(
+                onPressed: (_canSubmit && !_isSaving)
+                    ? () {
+                        if (_isSaving) return;
+                        setState(() => _isSaving = true);
+                        widget.onSave(startDate, endDate, noteController.text);
+                        Navigator.of(context).pop();
+                      }
+                    : null,
+                child: const Text('שמור שינויים'),
+              ),
+            ],
           ),
           LoadingOverlay(isLoading: _isSaving, message: 'שומר שינויים...'),
         ],
