@@ -113,8 +113,27 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
         }
 
         if (eventState is EventsLoaded) {
+          final assignmentCounts = eventState.assignmentCounts;
+
           _futureEvents = eventState.events
-              .where((event) => !_isPastEvent(event))
+              .where((event) {
+                // Check 1: Not past
+                if (_isPastEvent(event)) return false;
+
+                // Check 2: Relevant for extended team
+                if (!event.relevantForExtendedTeam) return false;
+
+                // Check 3: User has marked as available OR event has available slots
+                final userHasMarkedAvailable = user.availableEventIds.contains(event.id);
+                if (userHasMarkedAvailable) return true; // Show even if fully occupied
+
+                // If user hasn't marked as available, check if event has available slots
+                final totalRequired = event.totalPeopleRequired;
+                if (totalRequired == 0) return false; // Hide events with no quotas
+
+                final assignmentCount = assignmentCounts[event.id] ?? 0;
+                return assignmentCount < totalRequired; // Has available slots
+              })
               .toList()
             ..sort((a, b) {
               // Sort by date first, then by name

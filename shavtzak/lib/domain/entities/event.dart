@@ -24,6 +24,7 @@ class Event extends Equatable {
   final String? driveFolderId; // Google Drive folder ID for event files
   final String? driveFolderLink; // Direct link to the Drive folder
   final bool isArchived; // True when folder has been moved to archive
+  final bool relevantForExtendedTeam; // Event is relevant for extended team (non-permanent members)
 
   const Event({
     required this.id,
@@ -46,6 +47,7 @@ class Event extends Equatable {
     this.driveFolderId,
     this.driveFolderLink,
     this.isArchived = false,
+    this.relevantForExtendedTeam = false,
   });
 
   /// Check if event occurs on a given date
@@ -136,6 +138,7 @@ class Event extends Equatable {
     String? driveFolderId,
     String? driveFolderLink,
     bool? isArchived,
+    bool? relevantForExtendedTeam,
     bool clearParkingLocation = false, // Flag to explicitly clear nullable fields
     bool clearCategoryId = false,
   }) {
@@ -160,6 +163,7 @@ class Event extends Equatable {
       driveFolderId: driveFolderId ?? this.driveFolderId,
       driveFolderLink: driveFolderLink ?? this.driveFolderLink,
       isArchived: isArchived ?? this.isArchived,
+      relevantForExtendedTeam: relevantForExtendedTeam ?? this.relevantForExtendedTeam,
     );
   }
 
@@ -185,6 +189,7 @@ class Event extends Equatable {
         driveFolderId,
         driveFolderLink,
         isArchived,
+        relevantForExtendedTeam,
       ];
 
   @override

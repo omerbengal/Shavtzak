@@ -74,6 +74,7 @@ class _EventFormModalState extends State<EventFormModal> {
   String? _rawParkingLocationValue; // Stores parking location with hidden coordinates
   List<String> _parkingEditorIds = const []; // IDs of team members who can edit parking
   String? _selectedCategoryId; // Selected category ID for the event
+  bool _relevantForExtendedTeam = false; // Event is relevant for extended team
 
   // For highlighting selected role
   ScrollController? _scrollController; // Will be set from DraggableScrollableSheet
@@ -136,6 +137,8 @@ class _EventFormModalState extends State<EventFormModal> {
       _roleRequirements = Map.from(widget.event!.roleRequirements);
       // Load category
       _selectedCategoryId = widget.event!.categoryId;
+      // Load relevant for extended team
+      _relevantForExtendedTeam = widget.event!.relevantForExtendedTeam;
     }
 
     _nameController.addListener(() => _isDirty = true);
@@ -365,6 +368,7 @@ class _EventFormModalState extends State<EventFormModal> {
         newRoleRequirements: Map.from(_roleRequirements),
         duplicateAssignments: _duplicateAssignments,
         categoryId: _selectedCategoryId,
+        newRelevantForExtendedTeam: _relevantForExtendedTeam,
       ));
 
       // If duplicating WITH assignments, DON'T close immediately!
@@ -541,6 +545,7 @@ class _EventFormModalState extends State<EventFormModal> {
       driveFolderId: _isEditMode ? widget.event!.driveFolderId : null,
       driveFolderLink: _isEditMode ? widget.event!.driveFolderLink : null,
       isArchived: _isEditMode ? widget.event!.isArchived : false,
+      relevantForExtendedTeam: _relevantForExtendedTeam,
     );
 
     if (!mounted) return;
@@ -1328,6 +1333,17 @@ class _EventFormModalState extends State<EventFormModal> {
                                 value: _requiresArmed,
                                 onChanged: (v) => setState(() {
                                   _requiresArmed = v;
+                                  _isDirty = true;
+                                }),
+                              ),
+
+                              // Relevant for Extended Team
+                              SwitchListTile(
+                                title: const Text('רלוונטי לצוות המורחב'),
+                                subtitle: const Text('האם האירוע מיועד לצוות המורחב (לא-קבועים)?'),
+                                value: _relevantForExtendedTeam,
+                                onChanged: (v) => setState(() {
+                                  _relevantForExtendedTeam = v;
                                   _isDirty = true;
                                 }),
                               ),

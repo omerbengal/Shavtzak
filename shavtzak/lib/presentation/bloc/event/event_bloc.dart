@@ -365,6 +365,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         // Drive fields are omitted - they will be created by createEvent
+        relevantForExtendedTeam: event.newRelevantForExtendedTeam,
       );
 
       // If not duplicating assignments, just create the event directly
@@ -546,6 +547,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       driveFolderId: proposedEvent.driveFolderId,
       driveFolderLink: proposedEvent.driveFolderLink,
       isArchived: proposedEvent.isArchived,
+      relevantForExtendedTeam: proposedEvent.relevantForExtendedTeam,
     );
   }
 

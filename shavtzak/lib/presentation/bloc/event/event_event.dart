@@ -90,6 +90,7 @@ class DuplicateEvent extends EventEvent {
   final Map<String, int> newRoleRequirements;
   final bool duplicateAssignments;
   final String? categoryId;
+  final bool newRelevantForExtendedTeam;
 
   const DuplicateEvent({
     required this.eventId,
@@ -106,6 +107,7 @@ class DuplicateEvent extends EventEvent {
     required this.newRoleRequirements,
     this.duplicateAssignments = false,
     this.categoryId,
+    this.newRelevantForExtendedTeam = false,
   });
 
   @override
@@ -124,6 +126,7 @@ class DuplicateEvent extends EventEvent {
         newRoleRequirements,
         duplicateAssignments,
         categoryId,
+        newRelevantForExtendedTeam,
       ];
 }
 

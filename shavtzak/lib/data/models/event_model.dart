@@ -25,6 +25,7 @@ class EventModel {
   final String? driveFolderId;
   final String? driveFolderLink;
   final bool isArchived;
+  final bool relevantForExtendedTeam;
 
   const EventModel({
     required this.id,
@@ -47,6 +48,7 @@ class EventModel {
     this.driveFolderId,
     this.driveFolderLink,
     this.isArchived = false,
+    this.relevantForExtendedTeam = false,
   });
 
   /// Convert from domain entity
@@ -72,6 +74,7 @@ class EventModel {
       driveFolderId: entity.driveFolderId,
       driveFolderLink: entity.driveFolderLink,
       isArchived: entity.isArchived,
+      relevantForExtendedTeam: entity.relevantForExtendedTeam,
     );
   }
 
@@ -98,6 +101,7 @@ class EventModel {
       driveFolderId: driveFolderId,
       driveFolderLink: driveFolderLink,
       isArchived: isArchived,
+      relevantForExtendedTeam: relevantForExtendedTeam,
     );
   }
 
@@ -126,6 +130,7 @@ class EventModel {
       driveFolderId: data['driveFolderId'] as String?,
       driveFolderLink: data['driveFolderLink'] as String?,
       isArchived: data['isArchived'] as bool? ?? false,
+      relevantForExtendedTeam: data['relevantForExtendedTeam'] as bool? ?? false,
     );
   }
 
@@ -152,6 +157,7 @@ class EventModel {
       'driveFolderId': driveFolderId,
       'driveFolderLink': driveFolderLink,
       'isArchived': isArchived,
+      'relevantForExtendedTeam': relevantForExtendedTeam,
     };
   }
 
@@ -178,6 +184,7 @@ class EventModel {
       driveFolderId: json['driveFolderId'] as String?,
       driveFolderLink: json['driveFolderLink'] as String?,
       isArchived: json['isArchived'] as bool? ?? false,
+      relevantForExtendedTeam: json['relevantForExtendedTeam'] as bool? ?? false,
     );
   }
 
@@ -204,6 +211,7 @@ class EventModel {
       'driveFolderId': driveFolderId,
       'driveFolderLink': driveFolderLink,
       'isArchived': isArchived,
+      'relevantForExtendedTeam': relevantForExtendedTeam,
     };
   }
 }
