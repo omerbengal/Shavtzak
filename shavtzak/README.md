@@ -1,6 +1,6 @@
 # shavtzak
 
-A new Flutter project.
+Shavtzak
 
 ## Getting Started
 
