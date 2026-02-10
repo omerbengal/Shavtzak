@@ -229,14 +229,24 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
                   style: TextStyle(color: Colors.red, fontSize: 13),
                 ),
               ],
-              // Clear button when has data
+              // Add padding at bottom to account for keyboard
+              SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
+            ],
+          ),
+        ),
+        ),
+        actions: [
+          // Center all buttons horizontally
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Clear details button
               if (_vehicleNumberController.text.isNotEmpty ||
                   _selectedManufacturer != null ||
                   _modelController.text.isNotEmpty ||
-                  _colorController.text.isNotEmpty) ...[
-                const SizedBox(height: 12),
+                  _colorController.text.isNotEmpty)
                 TextButton.icon(
-                  onPressed: () {
+                  onPressed: _isSaving ? null : () {
                     setState(() {
                       _vehicleNumberController.clear();
                       _selectedManufacturer = null;
@@ -250,21 +260,15 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
                   icon: const Icon(Icons.clear, size: 18, color: Colors.red),
                   label: const Text('נקה פרטים', style: TextStyle(color: Colors.red)),
                 ),
-              ],
-              // Add padding at bottom to account for keyboard
-              SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
+              TextButton(
+                onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                child: const Text('ביטול'),
+              ),
+              ElevatedButton(
+                onPressed: (_isDirty && !_isSaving) ? _saveVehicleInfo : null,
+                child: const Text('שמור'),
+              ),
             ],
-          ),
-        ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-            child: const Text('ביטול'),
-          ),
-          ElevatedButton(
-            onPressed: (_isDirty && !_isSaving) ? _saveVehicleInfo : null,
-            child: const Text('שמור'),
           ),
         ],
           ),

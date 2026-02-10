@@ -4237,12 +4237,19 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
                   style: TextStyle(color: Colors.red, fontSize: 13),
                 ),
               ],
-              // Clear button when has data
+            ],
+          ),
+        ),
+        actions: [
+          // Center all buttons horizontally
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Clear details button
               if (_vehicleNumberController.text.isNotEmpty ||
                   _selectedManufacturer != null ||
                   _modelController.text.isNotEmpty ||
-                  _colorController.text.isNotEmpty) ...[
-                const SizedBox(height: 12),
+                  _colorController.text.isNotEmpty)
                 TextButton.icon(
                   onPressed: () {
                     setState(() {
@@ -4258,18 +4265,15 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
                   icon: const Icon(Icons.clear, size: 18, color: Colors.red),
                   label: const Text('נקה פרטים', style: TextStyle(color: Colors.red)),
                 ),
-              ],
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('ביטול'),
+              ),
+              ElevatedButton(
+                onPressed: _isDirty ? _saveVehicleInfo : null,
+                child: const Text('שמור'),
+              ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('ביטול'),
-          ),
-          ElevatedButton(
-            onPressed: _isDirty ? _saveVehicleInfo : null,
-            child: const Text('שמור'),
           ),
         ],
       ),
