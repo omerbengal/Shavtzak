@@ -250,31 +250,6 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
           style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
         ),
         const SizedBox(height: 8),
-        // Note about member availability
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.blue.shade50,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: Colors.blue.shade200),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'חברי צוות לא-קבועים יופיעו אם ורק אם יש להם זמינות שאושרה לתאריכי האירוע',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.blue.shade700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
         Expanded(
           child: _teamMembers.isEmpty
               ? const Center(
@@ -288,76 +263,58 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                     final hasConflict = _hasDateConstraintConflict(teamMember);
                     final hasAvailability = _hasAvailabilityForEvent(teamMember);
 
-                    // Disable the card if member has no availability for the event
-                    final isDisabled = !teamMember.isPermanent && !hasAvailability;
+                    // Track availability issue but don't disable
+                    final hasAvailabilityIssue = !teamMember.isPermanent && !hasAvailability;
 
                     return Card(
-                      elevation: isSelected ? 4 : (isDisabled ? 0 : 1),
+                      elevation: isSelected ? 4 : 1,
                       color: isSelected
                           ? Colors.blue.shade50
-                          : isDisabled
-                              ? Colors.grey.shade100
-                              : Colors.white,
-                      child: Opacity(
-                        opacity: isDisabled ? 0.5 : 1.0,
-                        child: ListTile(
-                          title: Row(
-                            children: [
-                              Text(
-                                teamMember.name,
-                                style: TextStyle(
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                  color: isSelected
-                                      ? Colors.blue.shade700
-                                      : isDisabled
-                                          ? Colors.grey.shade500
-                                          : Colors.black,
-                                ),
+                          : Colors.white,
+                      child: ListTile(
+                        title: Row(
+                          children: [
+                            Text(
+                              teamMember.name,
+                              style: TextStyle(
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                color: isSelected
+                                    ? Colors.blue.shade700
+                                    : Colors.black,
                               ),
-                              if (teamMember.isPermanent) ...[
-                                const SizedBox(width: 6),
-                                Icon(
-                                  Icons.verified_user,
-                                  size: 16,
-                                  color: Colors.blue.shade700,
-                                ),
-                              ],
+                            ),
+                            if (teamMember.isPermanent) ...[
+                              const SizedBox(width: 6),
+                              Icon(
+                                Icons.verified_user,
+                                size: 16,
+                                color: Colors.blue.shade700,
+                              ),
                             ],
-                          ),
-                          subtitle: isDisabled
-                              ? Text(
-                                  'לא זמין לתאריכי האירוע',
-                                  style: TextStyle(
-                                    color: Colors.grey.shade600,
-                                    fontSize: 12,
-                                  ),
-                                )
-                              : null, // uniqueKey not implemented yet
-                          trailing: hasConflict
-                              ? Icon(Icons.warning, color: Colors.orange.shade700)
-                              : null,
-                          onTap: isDisabled
-                              ? null // Disable tap for non-available members
-                              : () {
-                                  if (hasConflict) {
-                                    _showConstraintWarning(teamMember);
-                                  } else {
-                                    setState(() {
-                                      _selectedTeamMember = isSelected ? null : teamMember;
-                                    });
-                                    // Auto-advance to next step if team member was selected
-                                    if (_selectedTeamMember != null) {
-                                      Future.delayed(const Duration(milliseconds: 300), () {
-                                        if (mounted) {
-                                          setState(() {
-                                            _currentStep = 2;
-                                          });
-                                        }
-                                      });
-                                    }
-                                  }
-                                },
+                          ],
                         ),
+                        trailing: hasConflict || hasAvailabilityIssue
+                            ? Icon(Icons.warning, color: Colors.orange.shade700)
+                            : null,
+                        onTap: () {
+                          if (hasConflict || hasAvailabilityIssue) {
+                            _showConstraintWarning(teamMember, hasAvailabilityIssue);
+                          } else {
+                            setState(() {
+                              _selectedTeamMember = isSelected ? null : teamMember;
+                            });
+                            // Auto-advance to next step if team member was selected
+                            if (_selectedTeamMember != null) {
+                              Future.delayed(const Duration(milliseconds: 300), () {
+                                if (mounted) {
+                                  setState(() {
+                                    _currentStep = 2;
+                                  });
+                                }
+                              });
+                            }
+                          }
+                        },
                       ),
                     );
                   },
@@ -526,23 +483,77 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     return teamMember.isAvailableForEvent(_selectedEvent!.id);
   }
 
-  void _showConstraintWarning(TeamMember teamMember) {
-    final conflictingConstraints = teamMember.constraints.where((constraint) {
-      // Only show approved unavailability constraints for permanent members
-      if (constraint.status != ConstraintStatus.approved) return false;
-      if (teamMember.isPermanent && constraint.constraintType != ConstraintType.unavailability) return false;
-      if (!teamMember.isPermanent) return false; // Don't show for non-permanent members
+  void _showConstraintWarning(TeamMember teamMember, bool isAvailabilityIssue) {
+    String warningMessage;
+    List<Widget> constraintDetails = [];
 
-      final constraintStart = constraint.startDate;
-      final constraintEnd = constraint.endDate ?? constraint.startDate;
-      final dateOverlap = !(constraintEnd.isBefore(_selectedEvent!.startDate) ||
-               constraintStart.isAfter(_selectedEvent!.endDate));
+    if (isAvailabilityIssue) {
+      // Non-permanent member without availability
+      warningMessage = 'ל${teamMember.name} אין זמינות לאירוע "${_selectedEvent!.name}".\n\nחברי צוות לא-קבועים צריכים לציין זמינות מראש.';
+    } else {
+      // Date constraint conflict for permanent member
+      final conflictingConstraints = teamMember.constraints.where((constraint) {
+        // Only show approved unavailability constraints for permanent members
+        if (constraint.status != ConstraintStatus.approved) return false;
+        if (teamMember.isPermanent && constraint.constraintType != ConstraintType.unavailability) return false;
+        if (!teamMember.isPermanent) return false; // Don't show for non-permanent members
 
-      if (!dateOverlap) return false;
+        final constraintStart = constraint.startDate;
+        final constraintEnd = constraint.endDate ?? constraint.startDate;
+        final dateOverlap = !(constraintEnd.isBefore(_selectedEvent!.startDate) ||
+                 constraintStart.isAfter(_selectedEvent!.endDate));
 
-      // Check if this constraint blocks the event
-      return constraint.blocksEventAssignment(_selectedEvent!);
-    }).toList();
+        if (!dateOverlap) return false;
+
+        // Check if this constraint blocks the event
+        return constraint.blocksEventAssignment(_selectedEvent!);
+      }).toList();
+
+      warningMessage = 'ל${teamMember.name} יש הגבלות אישורות החופפות לאירוע "${_selectedEvent!.name}":';
+      constraintDetails = conflictingConstraints.map((constraint) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.block, size: 16, color: Colors.red),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    constraint.endDate != null && !_isSameDay(constraint.startDate, constraint.endDate!)
+                        ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
+                        : _formatDate(constraint.startDate),
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  // Show time range if specified
+                  if (constraint.startTime != null && constraint.endTime != null)
+                    Text(
+                      'שעות: ${constraint.startTime}-${constraint.endTime}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.red.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  // Show event time for context
+                  if (_selectedEvent!.assemblyTime.isNotEmpty)
+                    Text(
+                      'שעת התייצבות לאירוע: ${_selectedEvent!.assemblyTime}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[600],
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      )).toList();
+    }
 
     showDialog(
       context: context,
@@ -560,51 +571,11 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('ל${teamMember.name} יש הגבלות אישורות החופפות לאירוע "${_selectedEvent!.name}":'),
-              const SizedBox(height: 12),
-              ...conflictingConstraints.map((constraint) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.block, size: 16, color: Colors.red),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            constraint.endDate != null && !_isSameDay(constraint.startDate, constraint.endDate!)
-                                ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
-                                : _formatDate(constraint.startDate),
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          // Show time range if specified
-                          if (constraint.startTime != null && constraint.endTime != null)
-                            Text(
-                              'שעות: ${constraint.startTime}-${constraint.endTime}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.red.shade700,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          // Show event time for context
-                          if (_selectedEvent!.assemblyTime.isNotEmpty)
-                            Text(
-                              'שעת התייצבות לאירוע: ${_selectedEvent!.assemblyTime}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[600],
-                                fontStyle: FontStyle.italic,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              )),
+              Text(warningMessage),
+              if (constraintDetails.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                ...constraintDetails,
+              ],
             ],
           ),
           actions: [
@@ -673,32 +644,6 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
 
   void _finish() {
     if (_selectedEvent != null && _selectedTeamMember != null && _selectedRole != null) {
-      // Final validation for non-permanent members using the new event-based availability
-      if (!_selectedTeamMember!.isPermanent) {
-        if (!_selectedTeamMember!.isAvailableForEvent(_selectedEvent!.id)) {
-          showDialog(
-            context: context,
-            builder: (dialogContext) => Directionality(
-              textDirection: TextDirection.rtl,
-              child: AlertDialog(
-                title: const Text('שגיאת שיבוץ'),
-                content: Text(
-                  '${_selectedTeamMember!.name} אינו זמין לאירוע "${_selectedEvent!.name}".\n\n'
-                  'חברי צוות לא-קבועים חייבים לציין זמינות מראש כדי להיות משובצים.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: const Text('הבנתי'),
-                  ),
-                ],
-              ),
-            ),
-          );
-          return;
-        }
-      }
-
       Navigator.of(context).pop({
         'event': _selectedEvent!,
         'teamMember': _selectedTeamMember!,
@@ -722,8 +667,8 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
 
   /// Get full Hebrew day name (e.g., "ראשון", "שני")
   String _getFullHebrewDayName(int weekday) {
-    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-    return days[weekday == 7 ? 7 : weekday];
+    const days = ['', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון'];
+    return days[weekday];
   }
 
   /// Get Hebrew month name (e.g., "פברואר")

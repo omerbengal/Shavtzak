@@ -398,8 +398,8 @@ class EventSummaryTile extends StatelessWidget {
 
   /// Get full Hebrew day name (e.g., "ראשון", "שני")
   String _getFullHebrewDayName(int weekday) {
-    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-    return days[weekday == 7 ? 7 : weekday];
+    const days = ['', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון'];
+    return days[weekday];
   }
 
   /// Get Hebrew month name (e.g., "פברואר")

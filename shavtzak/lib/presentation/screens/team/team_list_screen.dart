@@ -2645,8 +2645,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   }
 
   String _getFullHebrewDayName(int weekday) {
-    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-    return days[weekday == 7 ? 7 : weekday];
+    const days = ['', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון'];
+    return days[weekday];
   }
 
   String _getHebrewMonthName(int month) {
@@ -3463,8 +3463,8 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
   }
 
   String _getFullHebrewDayName(int weekday) {
-    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-    return days[weekday == 7 ? 7 : weekday];
+    const days = ['', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון'];
+    return days[weekday];
   }
 
   String _getHebrewMonthName(int month) {
@@ -4395,7 +4395,12 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
                     items: manufacturers.map((manufacturer) {
                       return DropdownMenuItem(
                         value: manufacturer,
-                        child: Text(manufacturer),
+                        child: Directionality(
+                          textDirection: TextDirection.rtl,
+                          child: Center(
+                            child: Text(manufacturer),
+                          ),
+                        ),
                       );
                     }).toList(),
                     onChanged: (value) {

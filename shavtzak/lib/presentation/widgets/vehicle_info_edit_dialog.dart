@@ -176,7 +176,12 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
                     items: manufacturers.map((manufacturer) {
                       return DropdownMenuItem(
                         value: manufacturer,
-                        child: Text(manufacturer),
+                        child: Directionality(
+                          textDirection: TextDirection.rtl,
+                          child: Center(
+                            child: Text(manufacturer),
+                          ),
+                        ),
                       );
                     }).toList(),
                     onChanged: (value) {

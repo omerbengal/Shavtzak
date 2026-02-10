@@ -410,9 +410,10 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   /// Resolve category name from categoryId using the CategoryBloc state
+  /// Uses context.watch for real-time updates when category names change
   String? _getCategoryName(String? categoryId) {
     if (categoryId == null) return null;
-    final categoryState = context.read<CategoryBloc>().state;
+    final categoryState = context.watch<CategoryBloc>().state;
     if (categoryState is CategoriesLoaded) {
       for (final category in categoryState.activeCategories) {
         if (category.id == categoryId) return category.name;

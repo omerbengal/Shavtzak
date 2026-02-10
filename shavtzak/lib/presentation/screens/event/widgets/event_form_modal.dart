@@ -11,6 +11,7 @@ import '../../../../data/repositories/assignment_repository.dart';
 import '../../../../data/repositories/event_repository.dart';
 import '../../../bloc/category/category_bloc.dart';
 import '../../../bloc/category/category_state.dart';
+import '../../../bloc/category/category_event.dart';
 import '../../../bloc/event/event_bloc.dart';
 import '../../../bloc/event/event_event.dart';
 import '../../../bloc/event/event_state.dart';
@@ -74,7 +75,7 @@ class _EventFormModalState extends State<EventFormModal> {
   String? _rawParkingLocationValue; // Stores parking location with hidden coordinates
   List<String> _parkingEditorIds = const []; // IDs of team members who can edit parking
   String? _selectedCategoryId; // Selected category ID for the event
-  bool _relevantForExtendedTeam = false; // Event is relevant for extended team
+  bool _relevantForExtendedTeam = true; // Event is relevant for extended team (UI is inverted)
 
   // For highlighting selected role
   ScrollController? _scrollController; // Will be set from DraggableScrollableSheet
@@ -137,8 +138,8 @@ class _EventFormModalState extends State<EventFormModal> {
       _roleRequirements = Map.from(widget.event!.roleRequirements);
       // Load category
       _selectedCategoryId = widget.event!.categoryId;
-      // Load relevant for extended team
-      _relevantForExtendedTeam = widget.event!.relevantForExtendedTeam;
+      // Load relevant for extended team (inverted for UI)
+      _relevantForExtendedTeam = !widget.event!.relevantForExtendedTeam;
     }
 
     _nameController.addListener(() => _isDirty = true);
@@ -368,7 +369,7 @@ class _EventFormModalState extends State<EventFormModal> {
         newRoleRequirements: Map.from(_roleRequirements),
         duplicateAssignments: _duplicateAssignments,
         categoryId: _selectedCategoryId,
-        newRelevantForExtendedTeam: _relevantForExtendedTeam,
+        newRelevantForExtendedTeam: !_relevantForExtendedTeam, // Invert back for database
       ));
 
       // If duplicating WITH assignments, DON'T close immediately!
@@ -545,7 +546,7 @@ class _EventFormModalState extends State<EventFormModal> {
       driveFolderId: _isEditMode ? widget.event!.driveFolderId : null,
       driveFolderLink: _isEditMode ? widget.event!.driveFolderLink : null,
       isArchived: _isEditMode ? widget.event!.isArchived : false,
-      relevantForExtendedTeam: _relevantForExtendedTeam,
+      relevantForExtendedTeam: !_relevantForExtendedTeam, // Invert back for database
     );
 
     if (!mounted) return;
@@ -828,31 +829,156 @@ class _EventFormModalState extends State<EventFormModal> {
                                         prefixIcon: Icon(Icons.category),
                                         border: OutlineInputBorder(),
                                       ),
+                                      selectedItemBuilder: (context) {
+                                        // Build items for display when selected
+                                        final items = <Widget>[];
+
+                                        // Null option
+                                        items.add(const DropdownMenuItem<String?>(
+                                          value: null,
+                                          child: Directionality(
+                                            textDirection: TextDirection.rtl,
+                                            child: Center(
+                                              child: Text('ללא קטגוריה'),
+                                            ),
+                                          ),
+                                        ));
+
+                                        // Archived original (if exists)
+                                        if (archivedOriginal != null) {
+                                          items.add(DropdownMenuItem<String?>(
+                                            value: archivedOriginal.id,
+                                            child: Directionality(
+                                              textDirection: TextDirection.rtl,
+                                              child: Center(
+                                                child: Text(
+                                                  '${archivedOriginal.name} (בארכיון)',
+                                                  style: TextStyle(color: Colors.grey),
+                                                ),
+                                              ),
+                                            ),
+                                          ));
+                                        }
+
+                                        // Active categories
+                                        for (final category in categories) {
+                                          items.add(DropdownMenuItem<String?>(
+                                            value: category.id,
+                                            child: Directionality(
+                                              textDirection: TextDirection.rtl,
+                                              child: Center(
+                                                child: Text(category.name),
+                                              ),
+                                            ),
+                                          ));
+                                        }
+
+                                        // For "New Category" button index - repeat the first item as fallback
+                                        // This prevents empty display when the button is clicked
+                                        if (items.isNotEmpty) {
+                                          items.add(items.first);
+                                        } else {
+                                          items.add(const DropdownMenuItem<String?>(
+                                            value: null,
+                                            child: Directionality(
+                                              textDirection: TextDirection.rtl,
+                                              child: Center(
+                                                child: Text('ללא קטגוריה'),
+                                              ),
+                                            ),
+                                          ));
+                                        }
+
+                                        return items;
+                                      },
                                       items: [
                                         // Null option for uncategorized
                                         const DropdownMenuItem<String?>(
                                           value: null,
-                                          child: Text('ללא קטגוריה'),
+                                          child: Directionality(
+                                            textDirection: TextDirection.rtl,
+                                            child: Center(
+                                              child: Text('ללא קטגוריה'),
+                                            ),
+                                          ),
                                         ),
                                         // If the event's original category is archived, show it
                                         // greyed out so the user can see and re-select it
                                         if (archivedOriginal != null)
                                           DropdownMenuItem<String?>(
                                             value: archivedOriginal.id,
-                                            child: Text(
-                                              '${archivedOriginal.name} (בארכיון)',
-                                              style: const TextStyle(color: Colors.grey),
+                                            child: Directionality(
+                                              textDirection: TextDirection.rtl,
+                                              child: Center(
+                                                child: Text(
+                                                  '${archivedOriginal.name} (בארכיון)',
+                                                  style: TextStyle(color: Colors.grey),
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         // Active category options
                                         ...categories.map((category) {
                                           return DropdownMenuItem<String?>(
                                             value: category.id,
-                                            child: Text(category.name),
+                                            child: Directionality(
+                                              textDirection: TextDirection.rtl,
+                                              child: Center(
+                                                child: Text(category.name),
+                                              ),
+                                            ),
                                           );
                                         }),
+                                        // "New Category" button at the end
+                                        DropdownMenuItem<String?>(
+                                          value: '__create_new_category__',
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              // Divider line - shifted up by 4px to counteract DropdownMenuItem's top padding
+                                              Transform.translate(
+                                                offset: const Offset(0, -4),
+                                                child: Container(
+                                                  height: 1,
+                                                  color: Colors.grey.shade300,
+                                                ),
+                                              ),
+                                              // Content
+                                              Padding(
+                                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                                child: Directionality(
+                                                  textDirection: TextDirection.rtl,
+                                                  child: Center(
+                                                    child: Row(
+                                                      mainAxisAlignment: MainAxisAlignment.center,
+                                                      children: [
+                                                        Icon(Icons.add_circle, size: 16, color: Colors.green.shade700),
+                                                        const SizedBox(width: 8),
+                                                        Flexible(
+                                                          child: Text(
+                                                            'קטגוריה חדשה',
+                                                            textAlign: TextAlign.center,
+                                                            style: TextStyle(
+                                                              color: Colors.green.shade700,
+                                                              fontWeight: FontWeight.w500,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ],
                                       onChanged: (value) {
+                                        if (value == '__create_new_category__') {
+                                          // Don't update state, just show dialog
+                                          _showCreateCategoryDialog();
+                                          return;
+                                        }
                                         setState(() {
                                           _selectedCategoryId = value;
                                           _isDirty = true;
@@ -1337,10 +1463,10 @@ class _EventFormModalState extends State<EventFormModal> {
                                 }),
                               ),
 
-                              // Relevant for Extended Team
+                              // Permanent Team Only (inverted logic for UI)
                               SwitchListTile(
-                                title: const Text('רלוונטי לצוות המורחב'),
-                                subtitle: const Text('האם האירוע מיועד לצוות המורחב (לא-קבועים)?'),
+                                title: const Text('צוות קבוע בלבד?'),
+                                subtitle: const Text('האם האירוע מיועד לצוות הקבוע בלבד (לא לצוות המורחב)?'),
                                 value: _relevantForExtendedTeam,
                                 onChanged: (v) => setState(() {
                                   _relevantForExtendedTeam = v;
@@ -1637,5 +1763,49 @@ class _EventFormModalState extends State<EventFormModal> {
     return date1.year == date2.year &&
         date1.month == date2.month &&
         date1.day == date2.day;
+  }
+
+  /// Show dialog to create a new category
+  void _showCreateCategoryDialog() {
+    final controller = TextEditingController();
+    final focusNode = createRtlCursorFixedFocusNode(controller);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('צור קטגוריה חדשה'),
+          content: TextField(
+            controller: controller,
+            focusNode: focusNode,
+            decoration: const InputDecoration(
+              labelText: 'שם הקטגוריה',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('ביטול'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (controller.text.trim().isNotEmpty) {
+                  context.read<CategoryBloc>().add(CreateCategory(
+                        controller.text.trim(),
+                      ));
+                  Navigator.of(dialogContext).pop();
+                }
+              },
+              child: const Text('צור'),
+            ),
+          ],
+        ),
+      ),
+    ).then((_) {
+      focusNode.dispose();
+      controller.dispose();
+    });
   }
 }

@@ -1047,12 +1047,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
   String _getHebrewDayName(int weekday) {
     const days = ['', 'יום ב\'', 'יום ג\'', 'יום ד\'', 'יום ה\'', 'יום ו\'', 'שבת', 'יום א\''];
-    return days[weekday == 7 ? 7 : weekday];
+    return days[weekday];
   }
 
   String _getFullHebrewDayName(int weekday) {
-    const days = ['', 'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-    return days[weekday == 7 ? 7 : weekday];
+    const days = ['', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון'];
+    return days[weekday];
   }
 
   TextSpan _formatDateWithHighlight(String dateText, bool isUpcoming, BuildContext context) {
