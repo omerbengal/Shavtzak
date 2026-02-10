@@ -541,28 +541,23 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // Get keyboard height for padding
-    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Stack(
         children: [
-          AlertDialog(
-            title: const Text(
-              'הוספת בקשת מגבלה',
-              textAlign: TextAlign.right,
-            ),
-            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-            content: SizedBox(
-              width: 400,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.6,
-                ),
+          Scaffold(
+            backgroundColor: Colors.transparent,
+            resizeToAvoidBottomInset: false,
+            body: AlertDialog(
+              title: const Text(
+                'הוספת בקשת מגבלה',
+                textAlign: TextAlign.right,
+              ),
+              contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+              content: SizedBox(
+                width: 400,
                 child: SingleChildScrollView(
                   physics: const ClampingScrollPhysics(),
-                  padding: EdgeInsets.only(bottom: keyboardHeight > 0 ? 16 : 0),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -620,24 +615,24 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                   ),
                 ),
               ),
+              actions: [
+                TextButton(
+                  onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                  child: const Text('ביטול'),
+                ),
+                ElevatedButton(
+                  onPressed: (_canSubmit && !_isSaving)
+                      ? () {
+                          if (_isSaving) return;
+                          setState(() => _isSaving = true);
+                          widget.onAdd(startDate!, endDate, noteController.text);
+                          Navigator.of(context).pop();
+                        }
+                      : null,
+                  child: const Text('הוסף בקשה'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-                child: const Text('ביטול'),
-              ),
-              ElevatedButton(
-                onPressed: (_canSubmit && !_isSaving)
-                    ? () {
-                        if (_isSaving) return;
-                        setState(() => _isSaving = true);
-                        widget.onAdd(startDate!, endDate, noteController.text);
-                        Navigator.of(context).pop();
-                      }
-                    : null,
-                child: const Text('הוסף בקשה'),
-              ),
-            ],
           ),
           LoadingOverlay(isLoading: _isSaving, message: 'שולח בקשה...'),
         ],
@@ -740,28 +735,23 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // Get keyboard height for padding
-    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Stack(
         children: [
-          AlertDialog(
-            title: const Text(
-              'עריכת מגבלה',
-              textAlign: TextAlign.right,
-            ),
-            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-            content: SizedBox(
-              width: 400,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.6,
-                ),
+          Scaffold(
+            backgroundColor: Colors.transparent,
+            resizeToAvoidBottomInset: false,
+            body: AlertDialog(
+              title: const Text(
+                'עריכת מגבלה',
+                textAlign: TextAlign.right,
+              ),
+              contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+              content: SizedBox(
+                width: 400,
                 child: SingleChildScrollView(
                   physics: const ClampingScrollPhysics(),
-                  padding: EdgeInsets.only(bottom: keyboardHeight > 0 ? 16 : 0),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -817,24 +807,24 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                   ),
                 ),
               ),
+              actions: [
+                TextButton(
+                  onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                  child: const Text('ביטול'),
+                ),
+                ElevatedButton(
+                  onPressed: (_canSubmit && !_isSaving)
+                      ? () {
+                          if (_isSaving) return;
+                          setState(() => _isSaving = true);
+                          widget.onSave(startDate, endDate, noteController.text);
+                          Navigator.of(context).pop();
+                        }
+                      : null,
+                  child: const Text('שמור שינויים'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-                child: const Text('ביטול'),
-              ),
-              ElevatedButton(
-                onPressed: (_canSubmit && !_isSaving)
-                    ? () {
-                        if (_isSaving) return;
-                        setState(() => _isSaving = true);
-                        widget.onSave(startDate, endDate, noteController.text);
-                        Navigator.of(context).pop();
-                      }
-                    : null,
-                child: const Text('שמור שינויים'),
-              ),
-            ],
           ),
           LoadingOverlay(isLoading: _isSaving, message: 'שומר שינויים...'),
         ],
