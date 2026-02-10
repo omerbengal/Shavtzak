@@ -86,7 +86,9 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
         actionsAlignment: MainAxisAlignment.center,
         content: SizedBox(
           width: 450,
-          child: _buildCurrentStep(),
+          child: SingleChildScrollView(
+            child: _buildCurrentStep(),
+          ),
         ),
         actions: _buildActions(),
       ),

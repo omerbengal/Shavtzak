@@ -38,6 +38,7 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
         body: SafeArea(
           child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
             builder: (context, userState) {

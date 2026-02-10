@@ -62,7 +62,9 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
         actionsAlignment: MainAxisAlignment.center,
         content: SizedBox(
           width: 450,
-          child: _buildCurrentStep(),
+          child: SingleChildScrollView(
+            child: _buildCurrentStep(),
+          ),
         ),
         actions: _buildActions(),
       ),

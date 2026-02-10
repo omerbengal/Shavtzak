@@ -76,6 +76,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
         appBar: _buildAppBar(context),
         body: TestEnvironmentIndicator(
           child: SafeArea(

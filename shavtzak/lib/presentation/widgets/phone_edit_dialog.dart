@@ -57,44 +57,48 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
         ),
         content: SizedBox(
           width: 300,
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'הזן את מספר הטלפון שלך',
-                  style: TextStyle(fontSize: 16),
-                ),
-                const SizedBox(height: 20),
-                TextFormField(
-                  controller: _phoneController,
-                  decoration: const InputDecoration(
-                    labelText: 'מספר טלפון',
-                    hintText: '05X-XXXXXXX',
-                    prefixIcon: Icon(Icons.phone),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'הזן את מספר הטלפון שלך',
+                    style: TextStyle(fontSize: 16),
                   ),
-                  validator: Validators.validatePhoneNumber,
-                  keyboardType: TextInputType.phone,
-                  textDirection: TextDirection.ltr,
-                  smartQuotesType: SmartQuotesType.disabled,
-                  smartDashesType: SmartDashesType.disabled,
-                  textAlign: TextAlign.end, // Right-aligned like the team member modal
-                  autofocus: false,
-                  inputFormatters: [
-                    PhoneNumberTextInputFormatter(),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'פורמט: 05X-XXXXXXX',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: _phoneController,
+                    decoration: const InputDecoration(
+                      labelText: 'מספר טלפון',
+                      hintText: '05X-XXXXXXX',
+                      prefixIcon: Icon(Icons.phone),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                    validator: Validators.validatePhoneNumber,
+                    keyboardType: TextInputType.phone,
+                    textDirection: TextDirection.ltr,
+                    smartQuotesType: SmartQuotesType.disabled,
+                    smartDashesType: SmartDashesType.disabled,
+                    textAlign: TextAlign.end, // Right-aligned like the team member modal
+                    autofocus: false,
+                    inputFormatters: [
+                      PhoneNumberTextInputFormatter(),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'פורמט: 05X-XXXXXXX',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                  // Add padding at bottom to account for keyboard
+                  SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
+                ],
+              ),
             ),
           ),
         ),

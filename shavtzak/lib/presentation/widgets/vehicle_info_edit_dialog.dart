@@ -124,9 +124,10 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
         ),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 350),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
               const Text(
                 'מלא את פרטי הרכב שלך',
                 style: TextStyle(fontSize: 16),
@@ -250,8 +251,11 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
                   label: const Text('נקה פרטים', style: TextStyle(color: Colors.red)),
                 ),
               ],
+              // Add padding at bottom to account for keyboard
+              SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
             ],
           ),
+        ),
         ),
         actions: [
           TextButton(
