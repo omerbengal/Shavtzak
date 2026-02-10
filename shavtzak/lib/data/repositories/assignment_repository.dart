@@ -197,9 +197,9 @@ class AssignmentRepository {
       return conflicts;
     }
 
-    // Check availability conflict for entire event duration
+    // Check availability conflict for entire event duration (with time-based detection)
     // Skip for members with allowMultipleAssignments
-    if (!member.allowMultipleAssignments && !member.isAvailableForDateRange(event.startDate, event.endDate)) {
+    if (!member.allowMultipleAssignments && !member.isAvailableForEventWithTime(event)) {
       final dateRange = _isSameDay(event.startDate, event.endDate)
           ? _formatDate(event.startDate)
           : '${_formatDate(event.startDate)} - ${_formatDate(event.endDate)}';

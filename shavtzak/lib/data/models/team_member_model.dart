@@ -403,6 +403,8 @@ class DateConstraintModel {
   final ConstraintStatus status;
   final ConstraintType constraintType;
   final bool wasAutoRejectedFromCalendar;
+  final String? startTime; // Start time in "HH:mm" format (optional)
+  final String? endTime; // End time in "HH:mm" format (optional)
 
   const DateConstraintModel({
     required this.id,
@@ -412,6 +414,8 @@ class DateConstraintModel {
     this.status = ConstraintStatus.approved, // default to approved for existing constraints
     this.constraintType = ConstraintType.unavailability, // default to unavailability for backward compatibility
     this.wasAutoRejectedFromCalendar = false, // default to false for existing constraints
+    this.startTime,
+    this.endTime,
   });
 
   factory DateConstraintModel.fromEntity(DateConstraint entity) {
@@ -423,6 +427,8 @@ class DateConstraintModel {
       status: entity.status,
       constraintType: entity.constraintType,
       wasAutoRejectedFromCalendar: entity.wasAutoRejectedFromCalendar,
+      startTime: entity.startTime,
+      endTime: entity.endTime,
     );
   }
 
@@ -435,6 +441,8 @@ class DateConstraintModel {
       status: status,
       constraintType: constraintType,
       wasAutoRejectedFromCalendar: wasAutoRejectedFromCalendar,
+      startTime: startTime,
+      endTime: endTime,
     );
   }
 
@@ -463,6 +471,10 @@ class DateConstraintModel {
     // Handle migration - default to false for existing constraints missing wasAutoRejectedFromCalendar
     final wasAutoRejectedFromCalendar = json['wasAutoRejectedFromCalendar'] as bool? ?? false;
 
+    // Handle migration - time fields are optional, default to null for existing constraints
+    final startTime = json['startTime'] as String?;
+    final endTime = json['endTime'] as String?;
+
     return DateConstraintModel(
       id: constraintId,
       startDate: json['startDate'] is Timestamp
@@ -477,6 +489,8 @@ class DateConstraintModel {
       status: status,
       constraintType: constraintType,
       wasAutoRejectedFromCalendar: wasAutoRejectedFromCalendar,
+      startTime: startTime,
+      endTime: endTime,
     );
   }
 
@@ -489,6 +503,8 @@ class DateConstraintModel {
       'status': status.name,
       'constraintType': constraintType.name,
       'wasAutoRejectedFromCalendar': wasAutoRejectedFromCalendar,
+      'startTime': startTime,
+      'endTime': endTime,
     };
   }
 }

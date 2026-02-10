@@ -1,6 +1,8 @@
 import 'package:equatable/equatable.dart';
 import '../../core/constants/constraint_status.dart';
+import '../../core/utils/time_range_utils.dart';
 import 'vehicle_info.dart';
+import 'event.dart';
 
 /// Date constraint representing when a team member is unavailable or available
 class DateConstraint extends Equatable {
@@ -11,6 +13,8 @@ class DateConstraint extends Equatable {
   final ConstraintStatus status; // status of the constraint request
   final ConstraintType constraintType; // type of constraint (unavailability/availability)
   final bool wasAutoRejectedFromCalendar; // true if constraint was auto-rejected due to calendar event deletion
+  final String? startTime; // Start time in "HH:mm" format (optional, null = entire day)
+  final String? endTime; // End time in "HH:mm" format (optional, null = entire day)
 
   const DateConstraint({
     required this.id,
@@ -20,6 +24,8 @@ class DateConstraint extends Equatable {
     this.status = ConstraintStatus.approved, // default to approved for existing constraints
     required this.constraintType, // constraint type must be explicitly provided
     this.wasAutoRejectedFromCalendar = false, // default to false
+    this.startTime,
+    this.endTime,
   });
 
   /// Check if a given date falls within this constraint
@@ -45,16 +51,24 @@ class DateConstraint extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, startDate, endDate, note, status, constraintType, wasAutoRejectedFromCalendar];
+  List<Object?> get props => [id, startDate, endDate, note, status, constraintType, wasAutoRejectedFromCalendar, startTime, endTime];
 
   @override
   String toString() {
     // If endDate is null or same as startDate, display single date
-    if (endDate == null || _isSameDay(startDate, endDate!)) {
-      return '${startDate.day.toString().padLeft(2, '0')}/${startDate.month.toString().padLeft(2, '0')}/${startDate.year}';
+    final dateStr = endDate == null || _isSameDay(startDate, endDate!)
+        ? '${startDate.day.toString().padLeft(2, '0')}/${startDate.month.toString().padLeft(2, '0')}/${startDate.year}'
+        : '${startDate.day.toString().padLeft(2, '0')}/${startDate.month.toString().padLeft(2, '0')}/${startDate.year} - ${endDate!.day.toString().padLeft(2, '0')}/${endDate!.month.toString().padLeft(2, '0')}/${endDate!.year}';
+
+    // Add time range if specified
+    if (startTime != null && endTime != null) {
+      return '$dateStr ($startTime-$endTime)';
+    } else if (startTime != null || endTime != null) {
+      // Only one time specified (shouldn't happen normally, but handle it)
+      return '$dateStr (${startTime ?? '?'}-${endTime ?? '?'})';
     }
-    // Otherwise display date range
-    return '${startDate.day.toString().padLeft(2, '0')}/${startDate.month.toString().padLeft(2, '0')}/${startDate.year} - ${endDate!.day.toString().padLeft(2, '0')}/${endDate!.month.toString().padLeft(2, '0')}/${endDate!.year}';
+
+    return dateStr;
   }
 
   /// Copy with method for immutability
@@ -66,6 +80,10 @@ class DateConstraint extends Equatable {
     ConstraintStatus? status,
     ConstraintType? constraintType,
     bool? wasAutoRejectedFromCalendar,
+    String? startTime,
+    String? endTime,
+    bool clearStartTime = false,
+    bool clearEndTime = false,
   }) {
     return DateConstraint(
       id: id ?? this.id,
@@ -75,7 +93,40 @@ class DateConstraint extends Equatable {
       status: status ?? this.status,
       constraintType: constraintType ?? this.constraintType,
       wasAutoRejectedFromCalendar: wasAutoRejectedFromCalendar ?? this.wasAutoRejectedFromCalendar,
+      startTime: clearStartTime ? null : (startTime ?? this.startTime),
+      endTime: clearEndTime ? null : (endTime ?? this.endTime),
     );
+  }
+
+  /// Check if this constraint blocks the member from being assigned to an event
+  /// For unavailability constraints with time specified: returns true ONLY if times overlap
+  /// For unavailability constraints without time: returns true (unavailable all day)
+  bool blocksEventAssignment(Event event) {
+    // Use assemblyTime as the event's start time if available, otherwise startTime
+    final eventStart = event.assemblyTime.isNotEmpty ? event.assemblyTime : event.startTime;
+    final eventEnd = event.endTime;
+
+    // If constraint has no time specified, it applies to entire day (blocks assignment)
+    if (startTime == null && endTime == null) {
+      return true; // Member is unavailable all day
+    }
+
+    // If event has no times but constraint does, the constraint still blocks
+    // (member is unavailable during those hours on that day)
+    if (eventStart.isEmpty && eventEnd.isEmpty) {
+      return true;
+    }
+
+    // Check if the constraint's time range overlaps with event's time range
+    // If they overlap, member is unavailable during the event
+    return TimeRangeUtils.timesOverlap(startTime, endTime, eventStart, eventEnd);
+  }
+
+  /// Check if this constraint conflicts with an event's time range
+  /// This is the original method - kept for backward compatibility
+  @deprecated
+  bool conflictsWithEventTime(Event event) {
+    return blocksEventAssignment(event);
   }
 
   /// Helper methods to check constraint status
@@ -224,6 +275,64 @@ class TeamMember extends Equatable {
     }
     // Permanent members are available by default (constraints handle unavailability)
     return true;
+  }
+
+  /// Check if team member is available for a specific event (with time-based conflict detection)
+  /// This considers both date ranges and time ranges for the full event duration.
+  /// Returns true if available, false if unavailable due to date/time constraints
+  bool isAvailableForEventWithTime(Event event) {
+    if (isArchived || !isActive) return false;
+
+    // Get the full event date range
+    final eventStart = DateTime(event.startDate.year, event.startDate.month, event.startDate.day);
+    final eventEnd = DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
+
+    if (isPermanent) {
+      // Permanent members: available by default, unavailability constraints block them
+      // Check each day of the event — if ANY day is blocked, member is not available
+      DateTime currentDate = eventStart;
+      while (!currentDate.isAfter(eventEnd)) {
+        for (final constraint in constraints) {
+          if (!constraint.isApproved()) continue;
+          if (!constraint.isUnavailability) continue;
+          if (!constraint.conflictsWith(currentDate)) continue;
+
+          // Date matches — check if constraint's time range blocks the event
+          if (constraint.blocksEventAssignment(event)) {
+            return false;
+          }
+        }
+        currentDate = currentDate.add(const Duration(days: 1));
+      }
+      return true; // No blocking constraint found on any event day
+    } else {
+      // Non-permanent members: unavailable by default
+      // Check event-based availability first (new system used by AvailabilityScreen)
+      if (availableEventIds.contains(event.id)) {
+        return true;
+      }
+
+      // Fall back to date-based availability constraints (legacy system)
+      // Must have availability for ALL event days
+      DateTime currentDate = eventStart;
+      while (!currentDate.isAfter(eventEnd)) {
+        bool availableOnDay = false;
+        for (final constraint in constraints) {
+          if (!constraint.isApproved()) continue;
+          if (!constraint.isAvailability) continue;
+          if (!constraint.conflictsWith(currentDate)) continue;
+
+          // Date matches — check if the availability's time range covers the event
+          if (constraint.blocksEventAssignment(event)) {
+            availableOnDay = true;
+            break;
+          }
+        }
+        if (!availableOnDay) return false;
+        currentDate = currentDate.add(const Duration(days: 1));
+      }
+      return true; // Available on all event days
+    }
   }
 
   /// Get list of all role keys this team member can perform

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
@@ -1495,8 +1496,20 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       // Must not already be in available or alreadyAssigned lists
       if (availableIds.contains(member.id) || alreadyAssignedIds.contains(member.id)) return false;
 
-      // Must be unavailable for the event dates (which is why they were filtered out)
-      return !member.isAvailableForDateRange(slot.event.startDate, slot.event.endDate);
+      // Must be unavailable for the event (including time-based constraints)
+      final isAvailable = member.isAvailableForEventWithTime(slot.event);
+      if (kDebugMode) {
+        print('[ASSIGNMENT_LIST] Checking member ${member.name} for constrained dialog');
+        print('[ASSIGNMENT_LIST]   Event: ${slot.event.name} (${slot.event.startDate}-${slot.event.endDate}, ${slot.event.assemblyTime}-${slot.event.endTime})');
+        print('[ASSIGNMENT_LIST]   Is available: $isAvailable');
+        for (final constraint in member.constraints) {
+          if (constraint.isApproved() && constraint.isUnavailability) {
+            final blocks = constraint.blocksEventAssignment(slot.event);
+            print('[ASSIGNMENT_LIST]     - Constraint: ${constraint.startDate}-${constraint.endDate} ${constraint.startTime ?? ''}-${constraint.endTime ?? ''}, blocks: $blocks');
+          }
+        }
+      }
+      return !isAvailable;
     }).toList();
 
     // Sort alphabetically

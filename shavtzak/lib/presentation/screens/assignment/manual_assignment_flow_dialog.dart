@@ -500,8 +500,15 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
       // Check if constraint overlaps with event dates
       final constraintStart = constraint.startDate;
       final constraintEnd = constraint.endDate ?? constraint.startDate;
-      return !(constraintEnd.isBefore(_selectedEvent!.startDate) ||
+      final dateOverlap = !(constraintEnd.isBefore(_selectedEvent!.startDate) ||
                constraintStart.isAfter(_selectedEvent!.endDate));
+
+      if (!dateOverlap) return false;
+
+      // If dates overlap, check if constraint blocks the event
+      // If constraint has no time specified, it blocks (applies to entire day)
+      // If constraint has time, check if it blocks event time
+      return constraint.blocksEventAssignment(_selectedEvent!);
     });
   }
 
@@ -528,8 +535,13 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
 
       final constraintStart = constraint.startDate;
       final constraintEnd = constraint.endDate ?? constraint.startDate;
-      return !(constraintEnd.isBefore(_selectedEvent!.startDate) ||
+      final dateOverlap = !(constraintEnd.isBefore(_selectedEvent!.startDate) ||
                constraintStart.isAfter(_selectedEvent!.endDate));
+
+      if (!dateOverlap) return false;
+
+      // Check if this constraint blocks the event
+      return constraint.blocksEventAssignment(_selectedEvent!);
     }).toList();
 
     showDialog(
@@ -553,15 +565,41 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
               ...conflictingConstraints.map((constraint) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Icon(Icons.block, size: 16, color: Colors.red),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        constraint.endDate != null && !_isSameDay(constraint.startDate, constraint.endDate!)
-                            ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
-                            : _formatDate(constraint.startDate),
-                        style: const TextStyle(fontSize: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            constraint.endDate != null && !_isSameDay(constraint.startDate, constraint.endDate!)
+                                ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
+                                : _formatDate(constraint.startDate),
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          // Show time range if specified
+                          if (constraint.startTime != null && constraint.endTime != null)
+                            Text(
+                              'שעות: ${constraint.startTime}-${constraint.endTime}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.red.shade700,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          // Show event time for context
+                          if (_selectedEvent!.assemblyTime.isNotEmpty)
+                            Text(
+                              'שעת התייצבות לאירוע: ${_selectedEvent!.assemblyTime}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ],

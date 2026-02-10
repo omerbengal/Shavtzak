@@ -46,6 +46,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     on<UpdateConstraintStatus>(_onUpdateConstraintStatus);
     on<AddConstraintRequest>(_onAddConstraintRequest);
     on<RemoveConstraintRequest>(_onRemoveConstraintRequest);
+    on<EditConstraintRequest>(_onEditConstraintRequest);
 
     // Hybrid constraint state management events
     on<InitializeConstraintManager>(_onInitializeConstraintManager);
@@ -453,19 +454,12 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     }
   }
 
-  /// Add constraint request
+  /// Add constraint request (targeted update - only writes constraints field)
   Future<void> _onAddConstraintRequest(
     AddConstraintRequest event,
     Emitter<TeamState> emit,
   ) async {
     try {
-      // Get the current team member
-      final currentMember = await _repository.getTeamMemberById(event.teamMemberId);
-      if (currentMember == null) {
-        emit(const TeamError('חבר/ת צוות לא נמצא/ה'));
-        return;
-      }
-
       // Create new constraint with pending status
       // If endDate is null, set it to startDate (single-day constraint)
       final DateTime effectiveEndDate = event.endDate ?? event.startDate;
@@ -477,19 +471,15 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         note: event.note,
         status: ConstraintStatus.pending,
         constraintType: ConstraintType.unavailability, // For permanent members
+        startTime: event.startTime,
+        endTime: event.endTime,
       );
 
-      // Add to constraints list
-      final updatedConstraints = List<DateConstraint>.from(currentMember.constraints);
-      updatedConstraints.add(newConstraint);
-
-      // Update team member
-      final updatedMember = currentMember.copyWith(
-        constraints: updatedConstraints,
-        updatedAt: DateTime.now(),
+      // Use targeted database method (atomic append, only writes constraints field)
+      await _repository.database.addConstraint(
+        event.teamMemberId,
+        newConstraint,
       );
-
-      await _repository.updateTeamMember(updatedMember);
 
       // Emit success to show snackbar
       // The existing stream subscription will automatically pick up the database changes
@@ -499,56 +489,97 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     }
   }
 
-  /// Remove constraint request
+  /// Remove constraint by ID (targeted update - only writes constraints field)
   Future<void> _onRemoveConstraintRequest(
     RemoveConstraintRequest event,
     Emitter<TeamState> emit,
   ) async {
     try {
-      // Get the current team member
-      final currentMember = await _repository.getTeamMemberById(event.teamMemberId);
-      if (currentMember == null) {
-        emit(const TeamError('חבר/ת צוות לא נמצא/ה'));
+      // Use targeted database method that finds by ID and only updates constraints field
+      final removedConstraint = await _repository.database.removeConstraintById(
+        event.teamMemberId,
+        event.constraintId,
+      );
+
+      if (removedConstraint == null) {
+        // Constraint was already removed (idempotent) - not an error
+        emit(const TeamMemberOperationSuccess('בקשת מגבלה נמחקה בהצלחה'));
         return;
       }
-
-      // Check if constraint index is valid
-      if (event.constraintIndex < 0 || event.constraintIndex >= currentMember.constraints.length) {
-        emit(const TeamError('אינדקס מגבלה לא תקין'));
-        return;
-      }
-
-      // Get the constraint before removing it
-      final constraint = currentMember.constraints[event.constraintIndex];
 
       // If constraint was approved AND it's an unavailability constraint, remove from calendar
-      if (_calendarSyncBloc != null && constraint.isApproved() && constraint.isUnavailability) {
+      if (_calendarSyncBloc != null && removedConstraint.isApproved() && removedConstraint.isUnavailability) {
         developer.log(
           'TeamBloc: Removing approved unavailability constraint from calendar',
           name: 'TeamBloc',
         );
         _calendarSyncBloc!.add(RemoveConstraintFromCalendar(
-          constraintId: constraint.id,
+          constraintId: event.constraintId,
         ));
       }
-
-      // Remove constraint (users can delete their own constraints regardless of status)
-      final updatedConstraints = List<DateConstraint>.from(currentMember.constraints);
-      updatedConstraints.removeAt(event.constraintIndex);
-
-      // Update team member
-      final updatedMember = currentMember.copyWith(
-        constraints: updatedConstraints,
-        updatedAt: DateTime.now(),
-      );
-
-      await _repository.updateTeamMember(updatedMember);
 
       // Emit success to show snackbar
       // The existing stream subscription will automatically pick up the database changes
       emit(const TeamMemberOperationSuccess('בקשת מגבלה נמחקה בהצלחה'));
     } catch (e) {
       emit(TeamError('שגיאה במחיקת בקשת מגבלה: $e'));
+    }
+  }
+
+  /// Edit constraint by ID (targeted update - reads latest from DB, only writes constraints field)
+  Future<void> _onEditConstraintRequest(
+    EditConstraintRequest event,
+    Emitter<TeamState> emit,
+  ) async {
+    try {
+      // Build the updated constraint
+      final updatedConstraint = DateConstraint(
+        id: event.constraintId,
+        startDate: event.startDate,
+        endDate: event.endDate,
+        note: event.note,
+        status: event.status,
+        constraintType: event.constraintType,
+        wasAutoRejectedFromCalendar: event.wasAutoRejectedFromCalendar,
+        startTime: event.startTime,
+        endTime: event.endTime,
+      );
+
+      // Use targeted database method that finds by ID and only updates constraints field
+      await _repository.database.editConstraintById(
+        event.teamMemberId,
+        event.constraintId,
+        updatedConstraint,
+      );
+
+      // Handle calendar sync for status changes
+      if (_calendarSyncBloc != null) {
+        // Get the old constraint to detect status changes
+        final currentMember = await _repository.getTeamMemberById(event.teamMemberId);
+        if (currentMember != null) {
+          final oldConstraint = currentMember.constraints
+              .where((c) => c.id == event.constraintId)
+              .firstOrNull;
+
+          if (oldConstraint != null && oldConstraint.status != event.status) {
+            if (event.status == ConstraintStatus.approved && updatedConstraint.isUnavailability) {
+              _calendarSyncBloc!.add(SyncConstraintToCalendar(
+                constraintId: event.constraintId,
+                teamMember: currentMember,
+                constraint: updatedConstraint,
+              ));
+            } else if (oldConstraint.status == ConstraintStatus.approved && oldConstraint.isUnavailability) {
+              _calendarSyncBloc!.add(RemoveConstraintFromCalendar(
+                constraintId: event.constraintId,
+              ));
+            }
+          }
+        }
+      }
+
+      emit(const TeamMemberOperationSuccess('מגבלה עודכנה בהצלחה'));
+    } catch (e) {
+      emit(TeamError('שגיאה בעדכון מגבלה: $e'));
     }
   }
 

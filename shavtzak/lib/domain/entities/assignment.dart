@@ -4,6 +4,8 @@ import 'event.dart';
 import 'team_member.dart';
 
 /// Assignment domain entity
+
+/// Assignment domain entity
 /// THIS IS THE KEY ENTITY THAT FIXES THE V1 SYNC PROBLEM
 ///
 /// Each assignment stores explicit foreign keys (eventId, teamMemberId)
@@ -57,11 +59,12 @@ class Assignment extends Equatable {
 
   /// Check if this assignment conflicts with team member availability
   /// Returns true if team member is unavailable on ANY of the event dates
+  /// Includes time-based conflict detection
   bool hasAvailabilityConflict() {
     if (event == null || teamMember == null) return false;
 
-    // Check availability for the entire event date range
-    return !teamMember!.isAvailableForDateRange(event!.startDate, event!.endDate);
+    // Use event-aware availability check that considers both dates and times
+    return !teamMember!.isAvailableForEventWithTime(event!);
   }
 
   /// Check if team member is qualified for this role

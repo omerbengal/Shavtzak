@@ -513,16 +513,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         windowEnd: windowEnd,
       ).listen(
         (assignments) {
-          print('📡 [STREAM] Assignment stream FIRED!');
-          print('  Assignments count: ${assignments.length}');
-          print('  Triggering rebuild...');
           // Cache current assignments for rebuild purposes
           _repository.cacheCurrentAssignments(assignments);
           // Rebuild slots using cached data - use _currentEventFilter to preserve user's filter
           add(RebuildAssignmentSlotsFromData(assignments, cachedEventsMap, cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
-          print('❌ [STREAM] Assignment stream ERROR: $e');
           emit(AssignmentError('שגיאה בהאזנה לשיבוצים: $e'));
         },
       );
@@ -653,26 +649,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     List<AssignmentSlot> databaseSlots,
     Map<String, PendingOperation> pendingOperations,
   ) {
-    print('  🔀 [MERGE_DEBUG] _mergeSlotsWithOptimisticUpdates START');
-    print('    Database slots: ${databaseSlots.length}');
-    print('    Pending operations: ${pendingOperations.length}');
-
     if (pendingOperations.isEmpty) {
-      print('    ℹ️ No pending operations, returning database slots as-is');
       return databaseSlots;
     }
 
     // Remove expired operations (older than 5 seconds)
-    print('    🧹 Checking for expired operations...');
     final activeOperations = Map<String, PendingOperation>.fromEntries(
       pendingOperations.entries.where((entry) => !entry.value.isExpired),
     );
-
-    final expiredCount = pendingOperations.length - activeOperations.length;
-    if (expiredCount > 0) {
-      print('    ⏰ Removed $expiredCount expired operations');
-    }
-    print('    Active operations: ${activeOperations.length}');
 
     // CRITICAL FIX: Track slots with delete operations (including expired ones)
     // This ensures deleted slots stay empty even after operations expire
@@ -769,9 +753,22 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Check capability
           if (!member.canPerformRole(slot.role.key)) continue;
 
-          // Check availability for entire event duration
-          if (!member.allowMultipleAssignments &&
-              !member.isAvailableForDateRange(slot.event.startDate, slot.event.endDate)) {
+          // Check availability for entire event duration (including time-based constraints)
+          final isAvailable = member.isAvailableForEventWithTime(slot.event);
+          if (kDebugMode) {
+            if (!isAvailable) {
+              print('[ASSIGNMENT_BLOC] Member ${member.name} is NOT available for event ${slot.event.name} (${slot.event.startDate}-${slot.event.endDate}, ${slot.event.assemblyTime}-${slot.event.endTime})');
+              print('[ASSIGNMENT_BLOC]   Checking constraints:');
+              for (final constraint in member.constraints) {
+                if (constraint.isApproved() && constraint.isUnavailability) {
+                  final blocks = constraint.blocksEventAssignment(slot.event);
+                  print('[ASSIGNMENT_BLOC]     - Constraint: ${constraint.startDate}-${constraint.endDate} ${constraint.startTime ?? ''}-${constraint.endTime ?? ''}, blocks: $blocks');
+                }
+              }
+            }
+          }
+
+          if (!member.allowMultipleAssignments && !isAvailable) {
             continue;
           }
 
@@ -781,6 +778,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           } else if (effectiveAssignedMemberIds.contains(member.id)) {
             alreadyAssignedMembersMap[member.id] = member;
           } else {
+            if (kDebugMode) {
+              print('[ASSIGNMENT_BLOC] Member ${member.name} IS AVAILABLE for event ${slot.event.name}');
+            }
             availableMembersMap[member.id] = member;
           }
         }
@@ -924,8 +924,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
     }
 
-    print('  ✅ [MERGE_DEBUG] Merged slots count: ${resultSlots.length}');
-    print('  🔚 [MERGE_DEBUG] _mergeSlotsWithOptimisticUpdates END');
     return resultSlots;
   }
 
@@ -934,17 +932,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     OptimisticCreateAssignment event,
     Emitter<AssignmentState> emit,
   ) async {
-    print('🎯 [BLOC_DEBUG] _onOptimisticCreateAssignment START');
-    print('  Assignment ID: ${event.assignment.id}');
-    print('  Slot Key: ${event.slotKey}');
-    print('  Team Member: ${event.assignment.teamMember?.name} (${event.assignment.teamMemberId})');
-    print('  Event: ${event.assignment.event?.name} (${event.assignment.eventId})');
-    print('  Role: ${event.assignment.roleType}');
-    print('  Slot Index: ${event.assignment.slotIndex}');
-
     if (state is! AssignmentSlotsLoaded) {
-      print('  ❌ ERROR: State is not AssignmentSlotsLoaded!');
-      print('    Current state: ${state.runtimeType}');
       return;
     }
 
@@ -959,15 +947,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       timestamp: DateTime.now(),
     );
 
-    print('  📝 Created pending operation: ${operation.id}');
-
     // Add to BLoC-level pending operations map
     _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations);
     _pendingOperations[event.slotKey] = operation;
-    print('  📦 Pending operations count: ${_pendingOperations.length}');
 
     // Apply optimistic update
-    print('  🎨 Applying optimistic update...');
     final updatedSlots = _applyOptimisticUpdate(
       currentState.slots,
       event.slotKey,
@@ -975,33 +959,23 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       isDelete: false,
     );
 
-    print('  ✅ Optimistic update applied. Slots count: ${updatedSlots.length}');
-
     emit(AssignmentSlotsLoaded(
       updatedSlots,
       selectedEventIds: currentState.selectedEventIds,
       pendingOperations: _pendingOperations,
     ));
 
-    print('  📤 State emitted with optimistic update');
-
     // Execute database operation
-    print('  💾 Starting database write...');
     try {
       if (event.bypassConflicts) {
         await _repository.createAssignmentWithBypass(event.assignment);
       } else {
         await _repository.createAssignment(event.assignment);
       }
-      print('  ✅ Database write SUCCESSFUL');
-      print('  🧹 Removing completed pending operation: ${event.slotKey}');
-      print('  🔄 Firestore stream will emit fresh state automatically');
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
       // Firestore stream will emit fresh state automatically
     } catch (e) {
-      print('  ❌ Database write FAILED: $e');
-      print('  🔙 Reverting to database state...');
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
       emit(AssignmentSlotsLoaded(
@@ -1010,7 +984,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         pendingOperations: _pendingOperations,
       ));
     }
-    print('🏁 [BLOC_DEBUG] _onOptimisticCreateAssignment END');
   }
 
   /// Optimistic update assignment handler
@@ -1018,16 +991,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     OptimisticUpdateAssignment event,
     Emitter<AssignmentState> emit,
   ) async {
-    print('🎯 [BLOC_DEBUG] _onOptimisticUpdateAssignment START');
-    print('  Assignment ID: ${event.assignment.id}');
-    print('  Slot Key: ${event.slotKey}');
-    print('  Team Member: ${event.assignment.teamMember?.name} (${event.assignment.teamMemberId})');
-    print('  Event: ${event.assignment.event?.name} (${event.assignment.eventId})');
-    print('  Role: ${event.assignment.roleType}');
-
     if (state is! AssignmentSlotsLoaded) {
-      print('  ❌ ERROR: State is not AssignmentSlotsLoaded!');
-      print('    Current state: ${state.runtimeType}');
       return;
     }
 
@@ -1042,15 +1006,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       timestamp: DateTime.now(),
     );
 
-    print('  📝 Created pending operation: ${operation.id}');
-
     // Add to BLoC-level pending operations map
     _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations);
     _pendingOperations[event.slotKey] = operation;
-    print('  📦 Pending operations count: ${_pendingOperations.length}');
 
     // Apply optimistic update
-    print('  🎨 Applying optimistic update...');
     final updatedSlots = _applyOptimisticUpdate(
       currentState.slots,
       event.slotKey,
@@ -1058,29 +1018,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       isDelete: false,
     );
 
-    print('  ✅ Optimistic update applied. Slots count: ${updatedSlots.length}');
-
     emit(AssignmentSlotsLoaded(
       updatedSlots,
       selectedEventIds: currentState.selectedEventIds,
       pendingOperations: _pendingOperations,
     ));
 
-    print('  📤 State emitted with optimistic update');
-
     // Execute database operation
-    print('  💾 Starting database write...');
     try {
       await _repository.updateAssignment(event.assignment);
-      print('  ✅ Database write SUCCESSFUL');
-      print('  🧹 Removing completed pending operation: ${event.slotKey}');
-      print('  🔄 Firestore stream will emit fresh state automatically');
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
       // Firestore stream will emit fresh state automatically
     } catch (e) {
-      print('  ❌ Database write FAILED: $e');
-      print('  🔙 Reverting to database state...');
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
       emit(AssignmentSlotsLoaded(
@@ -1089,7 +1039,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         pendingOperations: _pendingOperations,
       ));
     }
-    print('🏁 [BLOC_DEBUG] _onOptimisticUpdateAssignment END');
   }
 
   /// Optimistic delete assignment handler
@@ -1225,11 +1174,23 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               // Check capability
               if (!member.canPerformRole(role.key)) continue;
 
-              // Check availability for entire event duration
+              // Check availability for entire event duration (including time-based constraints)
               // Skip availability check for members with allowMultipleAssignments
-              if (!member.allowMultipleAssignments &&
-                  !member.isAvailableForDateRange(event.startDate, event.endDate)) {
+              final isAvailable = member.isAvailableForEventWithTime(event);
+              if (!member.allowMultipleAssignments && !isAvailable) {
+                if (kDebugMode) {
+                  print('[ASSIGNMENT_BLOC] Member ${member.name} is NOT available for event ${event.name} (${event.startDate}-${event.endDate}, ${event.assemblyTime}-${event.endTime})');
+                  for (final constraint in member.constraints) {
+                    if (constraint.isApproved() && constraint.isUnavailability) {
+                      final blocks = constraint.blocksEventAssignment(event);
+                      print('[ASSIGNMENT_BLOC]     - Constraint: ${constraint.startDate}-${constraint.endDate} ${constraint.startTime ?? ''}-${constraint.endTime ?? ''}, blocks: $blocks');
+                    }
+                  }
+                }
                 continue;
+              }
+              if (kDebugMode && isAvailable && !member.allowMultipleAssignments) {
+                print('[ASSIGNMENT_BLOC] Member ${member.name} IS AVAILABLE for event ${event.name}');
               }
 
               // Separate based on whether already assigned to this event
@@ -1380,12 +1341,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     RebuildAssignmentSlotsFromData rebuildEvent,
     Emitter<AssignmentState> emit,
   ) async {
-    print('🔄 [STREAM_DEBUG] _onRebuildAssignmentSlotsFromData START');
-    print('  Assignments count: ${rebuildEvent.assignments.length}');
-    print('  Events count: ${rebuildEvent.events.length}');
-    print('  Team Members count: ${rebuildEvent.teamMembers.length}');
-    print('  Selected Event IDs: ${rebuildEvent.selectedEventIds}');
-    print('  Current pending operations: ${_pendingOperations.length}');
+    if (kDebugMode) {
+      print('[ASSIGNMENT_BLOC] ========== RebuildAssignmentSlotsFromData START ==========');
+      print('[ASSIGNMENT_BLOC] Assignments: ${rebuildEvent.assignments.length}');
+      print('[ASSIGNMENT_BLOC] Events: ${rebuildEvent.events.length}');
+      print('[ASSIGNMENT_BLOC] Team Members: ${rebuildEvent.teamMembers.length}');
+    }
 
     try {
       // Update the repository's cached assignments
@@ -1455,12 +1416,27 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
             for (final member in teamMembers) {
               // Check capability
-              if (!member.canPerformRole(role.key)) continue;
+              if (!member.canPerformRole(role.key)) {
+                if (kDebugMode) {
+                  print('[ASSIGNMENT_BLOC] Member ${member.name} CANNOT perform role ${role.key}');
+                }
+                continue;
+              }
 
-              // Check availability for entire event duration
+              // Check availability for entire event duration (including time-based constraints)
               // Skip availability check for members with allowMultipleAssignments
-              if (!member.allowMultipleAssignments &&
-                  !member.isAvailableForDateRange(eventData.startDate, eventData.endDate)) {
+              final isAvailable = member.isAvailableForEventWithTime(eventData);
+              if (!member.allowMultipleAssignments && !isAvailable) {
+                if (kDebugMode) {
+                  print('[ASSIGNMENT_BLOC] Member ${member.name} is NOT available for event ${eventData.name} (${eventData.startDate}-${eventData.endDate}, ${eventData.assemblyTime}-${eventData.endTime})');
+                  print('[ASSIGNMENT_BLOC]   Checking constraints:');
+                  for (final constraint in member.constraints) {
+                    if (constraint.isApproved() && constraint.isUnavailability) {
+                      final blocks = constraint.blocksEventAssignment(eventData);
+                      print('[ASSIGNMENT_BLOC]     - Constraint: ${constraint.startDate}-${constraint.endDate} ${constraint.startTime ?? ''}-${constraint.endTime ?? ''}, blocks: $blocks');
+                    }
+                  }
+                }
                 continue;
               }
 
@@ -1471,6 +1447,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               } else if (assignedMemberIds.contains(member.id)) {
                 alreadyAssignedMembersMap[member.id] = member;
               } else {
+                if (kDebugMode) {
+                  print('[ASSIGNMENT_BLOC] Member ${member.name} IS AVAILABLE for event ${eventData.name} (${eventData.startDate}-${eventData.endDate}, ${eventData.assemblyTime}-${eventData.endTime})');
+                }
                 availableMembersMap[member.id] = member;
               }
             }
@@ -1549,21 +1528,20 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _currentEventFilter = rebuildEvent.selectedEventIds;
 
       // Merge optimistic updates on top of database state using BLoC-level pending operations
-      print('  🔀 Merging with pending operations...');
       final mergedSlots = _mergeSlotsWithOptimisticUpdates(
         filteredSlots,
         _pendingOperations,
       );
 
-      print('  📤 Emitting AssignmentSlotsLoaded with ${mergedSlots.length} slots');
       emit(AssignmentSlotsLoaded(
         mergedSlots,
         selectedEventIds: rebuildEvent.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
-      print('✅ [STREAM_DEBUG] _onRebuildAssignmentSlotsFromData END');
     } catch (e) {
-      print('  ❌ ERROR in rebuild: $e');
+      if (kDebugMode) {
+        print('❌ ERROR in rebuild: $e');
+      }
       emit(AssignmentError('שגיאה בבניית שיבוצים: $e'));
     }
   }

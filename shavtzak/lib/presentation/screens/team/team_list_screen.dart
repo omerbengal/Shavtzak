@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +19,7 @@ import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/filter_persistence.dart';
+import '../../../core/utils/time_range_utils.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/utilities_service.dart';
 import 'package:uuid/uuid.dart';
@@ -2182,12 +2184,30 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 _buildStatusBadge(effectiveStatus),
               ],
             ),
-            subtitle: constraint.note != null && constraint.note!.isNotEmpty
-                ? Text(
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (constraint.startTime != null || constraint.endTime != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      children: [
+                        Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
+                        const SizedBox(width: 4),
+                        Text(
+                          'שעות: ${constraint.startTime ?? '---'} - ${constraint.endTime ?? '---'}',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (constraint.note != null && constraint.note!.isNotEmpty)
+                  Text(
                     constraint.note!,
                     style: const TextStyle(fontStyle: FontStyle.italic),
-                  )
-                : null,
+                  ),
+              ],
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2386,6 +2406,19 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 ),
               ],
             ),
+            if (availability.startTime != null || availability.endTime != null) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.access_time, size: 14, color: Colors.green[600]),
+                  const SizedBox(width: 4),
+                  Text(
+                    'שעות: ${availability.startTime ?? '---'} - ${availability.endTime ?? '---'}',
+                    style: TextStyle(fontSize: 12, color: Colors.green[600]),
+                  ),
+                ],
+              ),
+            ],
             if (availability.note != null && availability.note!.isNotEmpty) ...[
               const SizedBox(height: 8),
               Container(
@@ -2992,6 +3025,8 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
   DateTime? _startDate;
   DateTime? _endDate;
   final TextEditingController _noteController = TextEditingController();
+  final TextEditingController _startTimeController = TextEditingController();
+  final TextEditingController _endTimeController = TextEditingController();
   late final FocusNode _noteFocusNode;
   bool _canSubmit = false;
 
@@ -3003,8 +3038,12 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
       _startDate = widget.constraint!.startDate;
       _endDate = widget.constraint!.endDate;
       _noteController.text = widget.constraint!.note ?? '';
+      _startTimeController.text = widget.constraint!.startTime ?? '';
+      _endTimeController.text = widget.constraint!.endTime ?? '';
     }
     _noteController.addListener(_updateCanSubmit);
+    _startTimeController.addListener(_updateCanSubmit);
+    _endTimeController.addListener(_updateCanSubmit);
   }
 
   @override
@@ -3012,6 +3051,10 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
     _noteController.removeListener(_updateCanSubmit);
     _noteController.dispose();
     _noteFocusNode.dispose();
+    _startTimeController.removeListener(_updateCanSubmit);
+    _startTimeController.dispose();
+    _endTimeController.removeListener(_updateCanSubmit);
+    _endTimeController.dispose();
     super.dispose();
   }
 
@@ -3019,12 +3062,95 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
     setState(() {
       // For permanent members (constraints), note is required
       // For non-permanent members (availability), note is optional
+      bool dateValid;
       if (widget.isPermanent) {
-        _canSubmit = _startDate != null && _noteController.text.trim().isNotEmpty;
+        dateValid = _startDate != null && _noteController.text.trim().isNotEmpty;
       } else {
-        _canSubmit = _startDate != null;
+        dateValid = _startDate != null;
       }
+
+      // Validate time range:
+      // - If one time is set, the other must be set too
+      // - If both are set, start must be before end
+      bool timeValid = true;
+      final hasStart = _startTimeController.text.isNotEmpty;
+      final hasEnd = _endTimeController.text.isNotEmpty;
+      if (hasStart != hasEnd) {
+        timeValid = false; // One set but not the other
+      } else if (hasStart && hasEnd) {
+        timeValid = TimeRangeUtils.isValidTimeRange(
+          _startTimeController.text,
+          _endTimeController.text,
+        );
+      }
+
+      _canSubmit = dateValid && timeValid;
     });
+  }
+
+  /// Show time picker (Cupertino style)
+  Future<void> _showTimePickerFor(TextEditingController controller) async {
+    final now = DateTime.now();
+    DateTime initialTime = now;
+    if (controller.text.isNotEmpty) {
+      final parts = controller.text.split(':');
+      if (parts.length == 2) {
+        final hour = int.tryParse(parts[0]);
+        final minute = int.tryParse(parts[1]);
+        if (hour != null && minute != null) {
+          initialTime = DateTime(now.year, now.month, now.day, hour, minute);
+        }
+      }
+    }
+
+    DateTime selectedTime = initialTime;
+
+    final result = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SizedBox(
+          width: 280,
+          height: 220,
+          child: Column(
+            children: [
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: initialTime,
+                  use24hFormat: true,
+                  onDateTimeChanged: (DateTime newTime) {
+                    selectedTime = newTime;
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      child: const Text('ביטול'),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    TextButton(
+                      child: const Text('אישור'),
+                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        controller.text = '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
+      });
+    }
   }
 
   Future<void> _pickDates() async {
@@ -3072,7 +3198,8 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
         ),
         content: SizedBox(
           width: 400,
-          child: Column(
+          child: SingleChildScrollView(
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -3102,6 +3229,82 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                 ),
               ),
               const SizedBox(height: 16),
+              const Text('טווח שעות (אופציונלי):'),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _startTimeController,
+                      readOnly: true,
+                      onTap: () => _showTimePickerFor(_startTimeController),
+                      decoration: InputDecoration(
+                        labelText: 'שעת התחלה',
+                        hintText: 'לדוגמה: 09:00',
+                        prefixIcon: const Icon(Icons.access_time),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: _startTimeController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, color: Colors.grey),
+                                onPressed: () {
+                                  setState(() {
+                                    _startTimeController.clear();
+                                  });
+                                },
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _endTimeController,
+                      readOnly: true,
+                      onTap: () => _showTimePickerFor(_endTimeController),
+                      decoration: InputDecoration(
+                        labelText: 'שעת סיום',
+                        hintText: 'לדוגמה: 17:00',
+                        prefixIcon: const Icon(Icons.access_time),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: _endTimeController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, color: Colors.grey),
+                                onPressed: () {
+                                  setState(() {
+                                    _endTimeController.clear();
+                                  });
+                                },
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              // Validation warnings
+              if (_startTimeController.text.isNotEmpty != _endTimeController.text.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'יש להזין גם שעת התחלה וגם שעת סיום',
+                    style: TextStyle(color: Colors.red[700], fontSize: 12),
+                  ),
+                ),
+              if (_startTimeController.text.isNotEmpty &&
+                  _endTimeController.text.isNotEmpty &&
+                  !TimeRangeUtils.isValidTimeRange(
+                    _startTimeController.text,
+                    _endTimeController.text,
+                  ))
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'שעת סיום חייבת להיות אחרי שעת התחלה',
+                    style: TextStyle(color: Colors.red[700], fontSize: 12),
+                  ),
+                ),
+              const SizedBox(height: 16),
               Text(
                 widget.isPermanent ? 'סיבה (חובה):' : 'הערה (אופציונלי):',
               ),
@@ -3130,6 +3333,7 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
               ),
             ],
           ),
+          ),
         ),
         actions: [
           TextButton(
@@ -3140,17 +3344,25 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
             onPressed: _canSubmit
                 ? () {
                     final noteText = _noteController.text.trim();
+                    final startTime = _startTimeController.text.isNotEmpty
+                        ? _startTimeController.text
+                        : null;
+                    final endTime = _endTimeController.text.isNotEmpty
+                        ? _endTimeController.text
+                        : null;
                     Navigator.of(context).pop(
                       DateConstraint(
                         id: widget.constraint?.id ?? const Uuid().v4(),
                         startDate: _startDate!,
-                        endDate: _isSameDay(_startDate!, _endDate!) ? null : _endDate,
+                        endDate: _endDate != null && !_isSameDay(_startDate!, _endDate!) ? _endDate : null,
                         note: noteText.isEmpty ? null : noteText,
                         status: ConstraintStatus.approved, // Admin creates are always auto-approved
                         constraintType: widget.isPermanent
                             ? ConstraintType.unavailability
                             : ConstraintType.availability,
                         wasAutoRejectedFromCalendar: false,
+                        startTime: startTime,
+                        endTime: endTime,
                       ),
                     );
                   }

@@ -209,6 +209,27 @@ abstract class DatabaseInterface {
     bool? wasAutoRejectedFromCalendar,
   });
 
+  /// Add a constraint to a team member (targeted update - only writes constraints field)
+  Future<void> addConstraint(
+    String teamMemberId,
+    DateConstraint newConstraint,
+  );
+
+  /// Edit a constraint by ID (targeted update - only writes constraints field)
+  /// Reads the latest member data, finds the constraint by ID, replaces it, and writes back.
+  Future<void> editConstraintById(
+    String teamMemberId,
+    String constraintId,
+    DateConstraint updatedConstraint,
+  );
+
+  /// Remove a constraint by ID (targeted update - only writes constraints field)
+  /// Reads the latest member data, finds the constraint by ID, removes it, and writes back.
+  Future<DateConstraint?> removeConstraintById(
+    String teamMemberId,
+    String constraintId,
+  );
+
   /// Get all synced constraints for a team member
   Future<List<Map<String, dynamic>>> getSyncedConstraintsForMember(String teamMemberId);
 

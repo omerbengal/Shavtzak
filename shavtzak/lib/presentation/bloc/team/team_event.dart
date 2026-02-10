@@ -117,30 +117,75 @@ class AddConstraintRequest extends TeamEvent {
   final DateTime startDate;
   final DateTime? endDate;
   final String? note;
+  final String? startTime; // Start time in "HH:mm" format (optional)
+  final String? endTime; // End time in "HH:mm" format (optional)
 
   const AddConstraintRequest({
     required this.teamMemberId,
     required this.startDate,
     this.endDate,
     this.note,
+    this.startTime,
+    this.endTime,
   });
 
   @override
-  List<Object?> get props => [teamMemberId, startDate, endDate, note];
+  List<Object?> get props => [teamMemberId, startDate, endDate, note, startTime, endTime];
 }
 
-/// Remove a pending constraint request for a team member (user-facing)
+/// Remove a constraint by ID for a team member (targeted update)
 class RemoveConstraintRequest extends TeamEvent {
   final String teamMemberId;
-  final int constraintIndex;
+  final String constraintId;
 
   const RemoveConstraintRequest({
     required this.teamMemberId,
-    required this.constraintIndex,
+    required this.constraintId,
   });
 
   @override
-  List<Object?> get props => [teamMemberId, constraintIndex];
+  List<Object?> get props => [teamMemberId, constraintId];
+}
+
+/// Edit an existing constraint by ID (targeted update - reads latest from DB)
+class EditConstraintRequest extends TeamEvent {
+  final String teamMemberId;
+  final String constraintId;
+  final DateTime startDate;
+  final DateTime? endDate;
+  final String? note;
+  final ConstraintStatus status;
+  final ConstraintType constraintType;
+  final String? startTime;
+  final String? endTime;
+  final bool wasAutoRejectedFromCalendar;
+
+  const EditConstraintRequest({
+    required this.teamMemberId,
+    required this.constraintId,
+    required this.startDate,
+    this.endDate,
+    this.note,
+    required this.status,
+    required this.constraintType,
+    this.startTime,
+    this.endTime,
+    this.wasAutoRejectedFromCalendar = false,
+  });
+
+  @override
+  List<Object?> get props => [
+        teamMemberId,
+        constraintId,
+        startDate,
+        endDate,
+        note,
+        status,
+        constraintType,
+        startTime,
+        endTime,
+        wasAutoRejectedFromCalendar,
+      ];
 }
 
 // === Hybrid Constraint State Management Events ===

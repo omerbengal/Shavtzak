@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../../core/constants/calendar_constants.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
+import '../../../core/utils/time_range_utils.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/team/team_bloc.dart';
@@ -322,6 +324,18 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                 ),
               ),
             ],
+            // Show time range if specified
+            if (constraint.startTime != null && constraint.endTime != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'שעות: ${constraint.startTime}-${constraint.endTime}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.blue[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
             // Show auto-rejection message in red if applicable
             if (constraint.wasAutoRejectedFromCalendar) ...[
               const SizedBox(height: 8),
@@ -401,7 +415,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
     showDialog(
       context: context,
       builder: (context) => _ConstraintRequestDialog(
-        onAdd: (startDate, endDate, note) {
+        onAdd: (startDate, endDate, note, startTime, endTime) {
           final userState = context.read<UserSelectionBloc>().state;
           if (userState is UserAuthenticated) {
             // Send to database - UI will update automatically via stream
@@ -410,6 +424,8 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
               startDate: startDate,
               endDate: endDate,
               note: note,
+              startTime: startTime,
+              endTime: endTime,
             ));
           }
         },
@@ -434,15 +450,11 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
               onPressed: () {
                 Navigator.of(context).pop();
 
-                // Find the constraint index
-                final constraintIndex = user.constraints.indexWhere((c) => c.id == constraintId);
-                if (constraintIndex != -1) {
-                  // Send to database - UI will update automatically via stream
-                  context.read<TeamBloc>().add(RemoveConstraintRequest(
-                    teamMemberId: user.id,
-                    constraintIndex: constraintIndex,
-                  ));
-                }
+                // Use ID-based removal (targeted update - only writes constraints field)
+                context.read<TeamBloc>().add(RemoveConstraintRequest(
+                  teamMemberId: user.id,
+                  constraintId: constraintId,
+                ));
               },
               child: const Text('מחק', style: TextStyle(color: Colors.red)),
             ),
@@ -457,24 +469,22 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
       context: context,
       builder: (context) => _EditConstraintDialog(
         constraint: constraint,
-        onSave: (startDate, endDate, note) {
-          // Create updated constraint with pending status
-          final updatedConstraint = constraint.copyWith(
-            startDate: startDate,
-            endDate: endDate,
-            note: note,
-            status: ConstraintStatus.pending, // Always change to pending when edited
-            wasAutoRejectedFromCalendar: false, // Reset auto-rejection flag when edited
-          );
-
+        onSave: (startDate, endDate, note, startTime, endTime) {
           final userState = context.read<UserSelectionBloc>().state;
           if (userState is UserAuthenticated) {
-            // Update constraint by removing and re-adding with new data
-            final updatedConstraints = List<DateConstraint>.from(user.constraints);
-            updatedConstraints[index] = updatedConstraint;
-
-            final updatedUser = user.copyWith(constraints: updatedConstraints);
-            context.read<TeamBloc>().add(UpdateTeamMember(updatedUser));
+            // Use targeted edit (reads latest from DB, finds by ID, writes only constraints field)
+            context.read<TeamBloc>().add(EditConstraintRequest(
+              teamMemberId: userState.user.id,
+              constraintId: constraint.id,
+              startDate: startDate,
+              endDate: endDate,
+              note: note,
+              status: ConstraintStatus.pending, // Always change to pending when edited
+              constraintType: constraint.constraintType,
+              startTime: startTime,
+              endTime: endTime,
+              wasAutoRejectedFromCalendar: false, // Reset auto-rejection flag when edited
+            ));
           }
         },
       ),
@@ -497,7 +507,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
 
 /// Dialog for adding constraint requests
 class _ConstraintRequestDialog extends StatefulWidget {
-  final Function(DateTime startDate, DateTime? endDate, String? note) onAdd;
+  final Function(DateTime startDate, DateTime? endDate, String? note, String? startTime, String? endTime) onAdd;
 
   const _ConstraintRequestDialog({required this.onAdd});
 
@@ -512,12 +522,16 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
   late final FocusNode _noteFocusNode;
   bool _canSubmit = false;
   bool _isSaving = false;
+  final startTimeController = TextEditingController();
+  final endTimeController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _noteFocusNode = createRtlCursorFixedFocusNode(noteController);
     noteController.addListener(_onNoteChanged);
+    startTimeController.addListener(_onNoteChanged);
+    endTimeController.addListener(_onNoteChanged);
   }
 
   @override
@@ -525,12 +539,28 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
     noteController.removeListener(_onNoteChanged);
     noteController.dispose();
     _noteFocusNode.dispose();
+    startTimeController.removeListener(_onNoteChanged);
+    startTimeController.dispose();
+    endTimeController.removeListener(_onNoteChanged);
+    endTimeController.dispose();
     super.dispose();
   }
 
   void _onNoteChanged() {
     setState(() {
-      _canSubmit = noteController.text.isNotEmpty && startDate != null;
+      // Both time fields must be set or both empty
+      final hasStart = startTimeController.text.isNotEmpty;
+      final hasEnd = endTimeController.text.isNotEmpty;
+      bool timeValid = true;
+      if (hasStart != hasEnd) {
+        timeValid = false;
+      } else if (hasStart && hasEnd) {
+        timeValid = TimeRangeUtils.isValidTimeRange(
+          startTimeController.text,
+          endTimeController.text,
+        );
+      }
+      _canSubmit = noteController.text.isNotEmpty && startDate != null && timeValid;
     });
   }
 
@@ -538,6 +568,74 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
     return date1.year == date2.year &&
         date1.month == date2.month &&
         date1.day == date2.day;
+  }
+
+  /// Show time picker (Cupertino style)
+  Future<void> _showTimePickerFor(TextEditingController controller) async {
+    // Parse existing value as initial time, default to current time
+    final now = DateTime.now();
+    DateTime initialTime = now;
+    if (controller.text.isNotEmpty) {
+      final parts = controller.text.split(':');
+      if (parts.length == 2) {
+        final hour = int.tryParse(parts[0]);
+        final minute = int.tryParse(parts[1]);
+        if (hour != null && minute != null) {
+          initialTime = DateTime(now.year, now.month, now.day, hour, minute);
+        }
+      }
+    }
+
+    DateTime selectedTime = initialTime;
+
+    final result = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SizedBox(
+          width: 280,
+          height: 220,
+          child: Column(
+            children: [
+              // Cupertino time picker wheel
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: initialTime,
+                  use24hFormat: true,
+                  onDateTimeChanged: (DateTime newTime) {
+                    selectedTime = newTime;
+                  },
+                ),
+              ),
+              // Footer with cancel/confirm buttons
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      child: const Text('ביטול'),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    TextButton(
+                      child: const Text('אישור'),
+                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        controller.text = '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
+      });
+    }
   }
 
   @override
@@ -586,6 +684,71 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    const Text('טווח שעות (אופציונלי):'),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: startTimeController,
+                            readOnly: true,
+                            onTap: () => _showTimePickerFor(startTimeController),
+                            decoration: InputDecoration(
+                              labelText: 'שעת התחלה',
+                              hintText: 'לדוגמה: 09:00',
+                              prefixIcon: const Icon(Icons.access_time),
+                              border: const OutlineInputBorder(),
+                              suffixIcon: startTimeController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, color: Colors.grey),
+                                      onPressed: () {
+                                        setState(() {
+                                          startTimeController.clear();
+                                        });
+                                      },
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            controller: endTimeController,
+                            readOnly: true,
+                            onTap: () => _showTimePickerFor(endTimeController),
+                            decoration: InputDecoration(
+                              labelText: 'שעת סיום',
+                              hintText: 'לדוגמה: 17:00',
+                              prefixIcon: const Icon(Icons.access_time),
+                              border: const OutlineInputBorder(),
+                              suffixIcon: endTimeController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, color: Colors.grey),
+                                      onPressed: () {
+                                        setState(() {
+                                          endTimeController.clear();
+                                        });
+                                      },
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (startTimeController.text.isNotEmpty && endTimeController.text.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'המגבלה תחול רק על השעות ${startTimeController.text}-${endTimeController.text}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
                     const Text('סיבה (חובה):'),
                     const SizedBox(height: 8),
                     TextField(
@@ -623,8 +786,31 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                 onPressed: (_canSubmit && !_isSaving)
                     ? () {
                         if (_isSaving) return;
+
+                        // Validate time range if both times are specified
+                        if (startTimeController.text.isNotEmpty && endTimeController.text.isNotEmpty) {
+                          if (!TimeRangeUtils.isValidTimeRange(startTimeController.text, endTimeController.text)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Directionality(
+                                  textDirection: TextDirection.rtl,
+                                  child: Text('שעת הסיום חייבת להיות אחרי שעת ההתחלה'),
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+                        }
+
                         setState(() => _isSaving = true);
-                        widget.onAdd(startDate!, endDate, noteController.text);
+                        widget.onAdd(
+                          startDate!,
+                          endDate,
+                          noteController.text,
+                          startTimeController.text.isNotEmpty ? startTimeController.text : null,
+                          endTimeController.text.isNotEmpty ? endTimeController.text : null,
+                        );
                         Navigator.of(context).pop();
                       }
                     : null,
@@ -673,7 +859,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
 /// Dialog for editing constraints
 class _EditConstraintDialog extends StatefulWidget {
   final DateConstraint constraint;
-  final Function(DateTime startDate, DateTime? endDate, String note) onSave;
+  final Function(DateTime startDate, DateTime? endDate, String note, String? startTime, String? endTime) onSave;
 
   const _EditConstraintDialog({
     required this.constraint,
@@ -691,6 +877,8 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
   late final FocusNode _noteFocusNode;
   bool _canSubmit = false;
   bool _isSaving = false;
+  final startTimeController = TextEditingController();
+  final endTimeController = TextEditingController();
 
   @override
   void initState() {
@@ -698,8 +886,13 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
     startDate = widget.constraint.startDate;
     endDate = widget.constraint.endDate;
     noteController = TextEditingController(text: widget.constraint.note ?? '');
+    startTimeController.text = widget.constraint.startTime ?? '';
+    endTimeController.text = widget.constraint.endTime ?? '';
     _noteFocusNode = createRtlCursorFixedFocusNode(noteController);
     noteController.addListener(_onNoteChanged);
+    startTimeController.addListener(_onNoteChanged);
+    endTimeController.addListener(_onNoteChanged);
+    _onNoteChanged();
   }
 
   @override
@@ -707,12 +900,26 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
     noteController.removeListener(_onNoteChanged);
     noteController.dispose();
     _noteFocusNode.dispose();
+    startTimeController.dispose();
+    endTimeController.dispose();
     super.dispose();
   }
 
   void _onNoteChanged() {
     setState(() {
-      _canSubmit = _hasChanges();
+      // Both time fields must be set or both empty
+      final hasStart = startTimeController.text.isNotEmpty;
+      final hasEnd = endTimeController.text.isNotEmpty;
+      bool timeValid = true;
+      if (hasStart != hasEnd) {
+        timeValid = false;
+      } else if (hasStart && hasEnd) {
+        timeValid = TimeRangeUtils.isValidTimeRange(
+          startTimeController.text,
+          endTimeController.text,
+        );
+      }
+      _canSubmit = _hasChanges() && timeValid;
     });
   }
 
@@ -721,14 +928,84 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
     final startDateChanged = !_isSameDay(startDate, widget.constraint.startDate);
     final endDateChanged = (endDate == null) != (widget.constraint.endDate == null) ||
         (endDate != null && widget.constraint.endDate != null && !_isSameDay(endDate!, widget.constraint.endDate!));
+    final startTimeChanged = startTimeController.text != (widget.constraint.startTime ?? '');
+    final endTimeChanged = endTimeController.text != (widget.constraint.endTime ?? '');
 
-    return noteChanged || startDateChanged || endDateChanged;
+    return noteChanged || startDateChanged || endDateChanged || startTimeChanged || endTimeChanged;
   }
 
   bool _isSameDay(DateTime date1, DateTime date2) {
     return date1.year == date2.year &&
         date1.month == date2.month &&
         date1.day == date2.day;
+  }
+
+  /// Show time picker (Cupertino style)
+  Future<void> _showTimePickerFor(TextEditingController controller) async {
+    // Parse existing value as initial time, default to current time
+    final now = DateTime.now();
+    DateTime initialTime = now;
+    if (controller.text.isNotEmpty) {
+      final parts = controller.text.split(':');
+      if (parts.length == 2) {
+        final hour = int.tryParse(parts[0]);
+        final minute = int.tryParse(parts[1]);
+        if (hour != null && minute != null) {
+          initialTime = DateTime(now.year, now.month, now.day, hour, minute);
+        }
+      }
+    }
+
+    DateTime selectedTime = initialTime;
+
+    final result = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SizedBox(
+          width: 280,
+          height: 220,
+          child: Column(
+            children: [
+              // Cupertino time picker wheel
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: initialTime,
+                  use24hFormat: true,
+                  onDateTimeChanged: (DateTime newTime) {
+                    selectedTime = newTime;
+                  },
+                ),
+              ),
+              // Footer with cancel/confirm buttons
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      child: const Text('ביטול'),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    TextButton(
+                      child: const Text('אישור'),
+                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        controller.text = '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
+      });
+    }
   }
 
   @override
@@ -775,6 +1052,71 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    const Text('טווח שעות (אופציונלי):'),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: startTimeController,
+                            readOnly: true,
+                            onTap: () => _showTimePickerFor(startTimeController),
+                            decoration: InputDecoration(
+                              labelText: 'שעת התחלה',
+                              hintText: 'לדוגמה: 09:00',
+                              prefixIcon: const Icon(Icons.access_time),
+                              border: const OutlineInputBorder(),
+                              suffixIcon: startTimeController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, color: Colors.grey),
+                                      onPressed: () {
+                                        setState(() {
+                                          startTimeController.clear();
+                                        });
+                                      },
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            controller: endTimeController,
+                            readOnly: true,
+                            onTap: () => _showTimePickerFor(endTimeController),
+                            decoration: InputDecoration(
+                              labelText: 'שעת סיום',
+                              hintText: 'לדוגמה: 17:00',
+                              prefixIcon: const Icon(Icons.access_time),
+                              border: const OutlineInputBorder(),
+                              suffixIcon: endTimeController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, color: Colors.grey),
+                                      onPressed: () {
+                                        setState(() {
+                                          endTimeController.clear();
+                                        });
+                                      },
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (startTimeController.text.isNotEmpty && endTimeController.text.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'המגבלה תחול רק על השעות ${startTimeController.text}-${endTimeController.text}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
                     const Text('סיבה (חובה):'),
                     const SizedBox(height: 8),
                     TextField(
@@ -812,8 +1154,31 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                 onPressed: (_canSubmit && !_isSaving)
                     ? () {
                         if (_isSaving) return;
+
+                        // Validate time range if both times are specified
+                        if (startTimeController.text.isNotEmpty && endTimeController.text.isNotEmpty) {
+                          if (!TimeRangeUtils.isValidTimeRange(startTimeController.text, endTimeController.text)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Directionality(
+                                  textDirection: TextDirection.rtl,
+                                  child: Text('שעת הסיום חייבת להיות אחרי שעת ההתחלה'),
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+                        }
+
                         setState(() => _isSaving = true);
-                        widget.onSave(startDate, endDate, noteController.text);
+                        widget.onSave(
+                          startDate,
+                          endDate,
+                          noteController.text,
+                          startTimeController.text.isNotEmpty ? startTimeController.text : null,
+                          endTimeController.text.isNotEmpty ? endTimeController.text : null,
+                        );
                         Navigator.of(context).pop();
                       }
                     : null,
@@ -1097,7 +1462,6 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                       itemCount: expiredConstraints.length,
                       itemBuilder: (context, index) {
                         final constraint = expiredConstraints[index];
-                        final originalIndex = currentUser.constraints.indexOf(constraint);
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
@@ -1157,6 +1521,19 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                                   ),
                                 ],
 
+                                // Time range if specified
+                                if (constraint.startTime != null && constraint.endTime != null) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'שעות: ${constraint.startTime}-${constraint.endTime}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.blue[700],
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+
                                 // Auto-rejection message in red if applicable
                                 if (constraint.wasAutoRejectedFromCalendar) ...[
                                   const SizedBox(height: 8),
@@ -1176,7 +1553,7 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
                                     TextButton.icon(
-                                      onPressed: () => _editExpiredConstraint(constraint, originalIndex, currentUser),
+                                      onPressed: () => _editExpiredConstraint(constraint, currentUser),
                                       icon: const Icon(Icons.edit, size: 16),
                                       label: const Text('ערוך'),
                                       style: TextButton.styleFrom(
@@ -1236,13 +1613,12 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
     }
   }
 
-  void _editExpiredConstraint(DateConstraint constraint, int originalIndex, TeamMember currentUser) {
+  void _editExpiredConstraint(DateConstraint constraint, TeamMember currentUser) {
     showDialog(
       context: context,
       builder: (context) => _EditExpiredConstraintDialog(
         user: currentUser,
         constraint: constraint,
-        originalIndex: originalIndex,
       ),
     );
   }
@@ -1264,15 +1640,11 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
               onPressed: () {
                 Navigator.of(context).pop();
 
-                // Find the constraint index
-                final constraintIndex = user.constraints.indexWhere((c) => c.id == constraintId);
-                if (constraintIndex != -1) {
-                  // Send to database - UI will update automatically via stream
-                  context.read<TeamBloc>().add(RemoveConstraintRequest(
-                    teamMemberId: user.id,
-                    constraintIndex: constraintIndex,
-                  ));
-                }
+                // Use ID-based removal (targeted update - only writes constraints field)
+                context.read<TeamBloc>().add(RemoveConstraintRequest(
+                  teamMemberId: user.id,
+                  constraintId: constraintId,
+                ));
               },
               child: const Text('מחק', style: TextStyle(color: Colors.red)),
             ),
@@ -1287,12 +1659,10 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
 class _EditExpiredConstraintDialog extends StatefulWidget {
   final TeamMember user;
   final DateConstraint constraint;
-  final int originalIndex;
 
   const _EditExpiredConstraintDialog({
     required this.user,
     required this.constraint,
-    required this.originalIndex,
   });
 
   @override
@@ -1305,6 +1675,8 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
   late TextEditingController noteController;
   late final FocusNode _noteFocusNode;
   bool _canSubmit = false;
+  final startTimeController = TextEditingController();
+  final endTimeController = TextEditingController();
 
   @override
   void initState() {
@@ -1312,6 +1684,8 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
     startDate = widget.constraint.startDate;
     endDate = widget.constraint.endDate;
     noteController = TextEditingController(text: widget.constraint.note ?? '');
+    startTimeController.text = widget.constraint.startTime ?? '';
+    endTimeController.text = widget.constraint.endTime ?? '';
     _noteFocusNode = createRtlCursorFixedFocusNode(noteController);
     _onNoteChanged();
   }
@@ -1320,6 +1694,8 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
   void dispose() {
     noteController.dispose();
     _noteFocusNode.dispose();
+    startTimeController.dispose();
+    endTimeController.dispose();
     super.dispose();
   }
 
@@ -1327,6 +1703,71 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
     setState(() {
       _canSubmit = noteController.text.trim().isNotEmpty;
     });
+  }
+
+  /// Show time picker (Cupertino style)
+  Future<void> _showTimePickerFor(TextEditingController controller) async {
+    final now = DateTime.now();
+    DateTime initialTime = now;
+    if (controller.text.isNotEmpty) {
+      final parts = controller.text.split(':');
+      if (parts.length == 2) {
+        final hour = int.tryParse(parts[0]);
+        final minute = int.tryParse(parts[1]);
+        if (hour != null && minute != null) {
+          initialTime = DateTime(now.year, now.month, now.day, hour, minute);
+        }
+      }
+    }
+
+    DateTime selectedTime = initialTime;
+
+    final result = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SizedBox(
+          width: 280,
+          height: 220,
+          child: Column(
+            children: [
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: initialTime,
+                  use24hFormat: true,
+                  onDateTimeChanged: (DateTime newTime) {
+                    selectedTime = newTime;
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      child: const Text('ביטול'),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    TextButton(
+                      child: const Text('אישור'),
+                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        controller.text = '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
+      });
+    }
   }
 
   @override
@@ -1371,6 +1812,76 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
               ),
               const SizedBox(height: 16),
 
+              // Time range fields
+              const Text(
+                'טווח שעות (אופציונלי):',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: startTimeController,
+                      readOnly: true,
+                      onTap: () => _showTimePickerFor(startTimeController),
+                      decoration: InputDecoration(
+                        labelText: 'שעת התחלה',
+                        hintText: 'לדוגמה: 09:00',
+                        prefixIcon: const Icon(Icons.access_time),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: startTimeController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, color: Colors.grey),
+                                onPressed: () {
+                                  setState(() {
+                                    startTimeController.clear();
+                                  });
+                                },
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextFormField(
+                      controller: endTimeController,
+                      readOnly: true,
+                      onTap: () => _showTimePickerFor(endTimeController),
+                      decoration: InputDecoration(
+                        labelText: 'שעת סיום',
+                        hintText: 'לדוגמה: 17:00',
+                        prefixIcon: const Icon(Icons.access_time),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: endTimeController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, color: Colors.grey),
+                                onPressed: () {
+                                  setState(() {
+                                    endTimeController.clear();
+                                  });
+                                },
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (startTimeController.text.isNotEmpty && endTimeController.text.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'המגבלה תחול רק על השעות ${startTimeController.text}-${endTimeController.text}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 16),
+
               // Note field
               const Text(
                 'הערה (לאישור מנהל):',
@@ -1398,24 +1909,37 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
           ElevatedButton(
             onPressed: _canSubmit
                 ? () {
-                    // Create updated constraint with pending status
-                    final updatedConstraint = DateConstraint(
-                      id: widget.constraint.id,
+                    // Validate time range if both times are specified
+                    if (startTimeController.text.isNotEmpty && endTimeController.text.isNotEmpty) {
+                      if (!TimeRangeUtils.isValidTimeRange(startTimeController.text, endTimeController.text)) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Directionality(
+                              textDirection: TextDirection.rtl,
+                              child: Text('שעת הסיום חייבת להיות אחרי שעת ההתחלה'),
+                            ),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+                    }
+
+                    // Use targeted edit (reads latest from DB, finds by ID, writes only constraints field)
+                    context.read<TeamBloc>().add(EditConstraintRequest(
+                      teamMemberId: widget.user.id,
+                      constraintId: widget.constraint.id,
                       startDate: startDate,
                       endDate: endDate,
                       note: noteController.text.trim().isEmpty
                           ? null
                           : noteController.text.trim(),
                       status: ConstraintStatus.pending, // Reset to pending when edited
-                      constraintType: widget.constraint.constraintType, // Preserve original constraint type
-                    );
-
-                    // Update constraint via BLoC (same pattern as existing edit constraint)
-                    final updatedConstraints = List<DateConstraint>.from(widget.user.constraints);
-                    updatedConstraints[widget.originalIndex] = updatedConstraint;
-
-                    final updatedUser = widget.user.copyWith(constraints: updatedConstraints);
-                    context.read<TeamBloc>().add(UpdateTeamMember(updatedUser));
+                      constraintType: widget.constraint.constraintType,
+                      startTime: startTimeController.text.isNotEmpty ? startTimeController.text : null,
+                      endTime: endTimeController.text.isNotEmpty ? endTimeController.text : null,
+                      wasAutoRejectedFromCalendar: false, // Reset auto-rejection flag when edited
+                    ));
 
                     Navigator.of(context).pop();
                   }

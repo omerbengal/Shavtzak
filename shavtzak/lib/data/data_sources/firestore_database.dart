@@ -326,6 +326,126 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<void> addConstraint(
+    String teamMemberId,
+    DateConstraint newConstraint,
+  ) async {
+    try {
+      final model = DateConstraintModel.fromEntity(newConstraint);
+      final constraintJson = model.toJson();
+
+      // Use arrayUnion for atomic append (only writes constraints field)
+      await _firestore
+          .collection(_teamMembersCollection)
+          .doc(teamMemberId)
+          .update({
+            'constraints': FieldValue.arrayUnion([constraintJson]),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+    } catch (e) {
+      throw DatabaseException('Failed to add constraint: $e');
+    }
+  }
+
+  @override
+  Future<void> editConstraintById(
+    String teamMemberId,
+    String constraintId,
+    DateConstraint updatedConstraint,
+  ) async {
+    try {
+      final doc = await _firestore
+          .collection(_teamMembersCollection)
+          .doc(teamMemberId)
+          .get();
+
+      if (!doc.exists) {
+        throw DatabaseException('Team member not found: $teamMemberId');
+      }
+
+      final data = doc.data() as Map<String, dynamic>;
+      final constraints = (data['constraints'] as List<dynamic>?) ?? [];
+
+      // Find the constraint by ID
+      final constraintIndex = constraints.indexWhere(
+        (c) => c['id'] == constraintId,
+      );
+
+      if (constraintIndex == -1) {
+        throw DatabaseException('Constraint not found: $constraintId');
+      }
+
+      // Replace the constraint at the found index
+      final updatedConstraints = List<dynamic>.from(constraints);
+      final model = DateConstraintModel.fromEntity(updatedConstraint);
+      updatedConstraints[constraintIndex] = model.toJson();
+
+      // Write only the constraints field (targeted update)
+      await _firestore
+          .collection(_teamMembersCollection)
+          .doc(teamMemberId)
+          .update({
+            'constraints': updatedConstraints,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+    } catch (e) {
+      if (e is DatabaseException) rethrow;
+      throw DatabaseException('Failed to edit constraint: $e');
+    }
+  }
+
+  @override
+  Future<DateConstraint?> removeConstraintById(
+    String teamMemberId,
+    String constraintId,
+  ) async {
+    try {
+      final doc = await _firestore
+          .collection(_teamMembersCollection)
+          .doc(teamMemberId)
+          .get();
+
+      if (!doc.exists) {
+        throw DatabaseException('Team member not found: $teamMemberId');
+      }
+
+      final data = doc.data() as Map<String, dynamic>;
+      final constraints = (data['constraints'] as List<dynamic>?) ?? [];
+
+      // Find the constraint by ID
+      final constraintIndex = constraints.indexWhere(
+        (c) => c['id'] == constraintId,
+      );
+
+      if (constraintIndex == -1) {
+        return null; // Constraint already removed (idempotent)
+      }
+
+      // Parse the constraint before removing so we can return it
+      final removedConstraintData = constraints[constraintIndex] as Map<String, dynamic>;
+      final removedConstraint = DateConstraintModel.fromJson(removedConstraintData).toEntity();
+
+      // Remove the constraint
+      final updatedConstraints = List<dynamic>.from(constraints);
+      updatedConstraints.removeAt(constraintIndex);
+
+      // Write only the constraints field (targeted update)
+      await _firestore
+          .collection(_teamMembersCollection)
+          .doc(teamMemberId)
+          .update({
+            'constraints': updatedConstraints,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+
+      return removedConstraint;
+    } catch (e) {
+      if (e is DatabaseException) rethrow;
+      throw DatabaseException('Failed to remove constraint: $e');
+    }
+  }
+
+  @override
   Future<void> deleteTeamMember(String id) async {
     try {
       await _firestore.collection(_teamMembersCollection).doc(id).delete();
@@ -847,7 +967,6 @@ class FirestoreDatabase implements DatabaseInterface {
         final index = i; // Capture for closure
         stream.listen(
           (data) {
-            print('📡 [FIRESTORE_STREAM] Stream $index emitted: ${data.length} assignments');
             // Replace old value at this index instead of appending
             while (latestValues.length <= index) {
               latestValues.add([]);
@@ -864,11 +983,9 @@ class FirestoreDatabase implements DatabaseInterface {
                 combined.addAll(latestValues[j]);
               }
             }
-            print('📡 [FIRESTORE_STREAM] Emitting combined: ${combined.length} total assignments');
             controller.add(combined);
           },
           onError: (error) {
-            print('❌ [FIRESTORE_STREAM] Stream $index error: $error');
             controller.addError(error);
           },
         );
