@@ -471,46 +471,96 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
           child: StatefulBuilder(
             builder: (context, setState) {
               return AlertDialog(
+                titlePadding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                contentPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                actionsPadding: EdgeInsets.zero,
                 title: const Row(
                   children: [
                     Icon(Icons.check_circle, color: Colors.green),
                     SizedBox(width: 8),
-                    Text('הייצוא הושלם בהצלחה'),
+                    Expanded(
+                      child: Text('הייצוא הושלם בהצלחה', overflow: TextOverflow.ellipsis),
+                    ),
                   ],
                 ),
                 content: const Text('הגיליון נוצר בתיקיית שבצק ב-Google Drive.'),
                 actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: const Text('סגירה'),
-                  ),
-                  ElevatedButton.icon(
-                    icon: Icon(
-                      _copied ? Icons.check_circle : Icons.copy,
-                      color: _copied ? const Color(0xFF00E676) : Colors.white, // Lighter green for better visibility
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: TextButton(
+                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                              ),
+                              child: const Text(
+                                'סגירה',
+                                style: TextStyle(fontSize: 14),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: ElevatedButton.icon(
+                              icon: Icon(
+                                _copied ? Icons.check_circle : Icons.copy,
+                                color: _copied ? const Color(0xFF00E676) : Colors.white,
+                                size: 16,
+                              ),
+                              label: const Text(
+                                'העתק קישור',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                              onPressed: () async {
+                                await Clipboard.setData(ClipboardData(text: url));
+                                setState(() => _copied = true);
+                                // Reset after 2 seconds
+                                Future.delayed(const Duration(seconds: 2), () {
+                                  if (context.mounted) {
+                                    setState(() => _copied = false);
+                                  }
+                                });
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.of(dialogContext).pop();
+                                launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                              ),
+                              child: const Text(
+                                'פתח גיליון',
+                                style: TextStyle(fontSize: 14),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    label: const Text('העתק קישור'),
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: url));
-                      setState(() => _copied = true);
-                      // Reset after 2 seconds
-                      Future.delayed(const Duration(seconds: 2), () {
-                        if (context.mounted) {
-                          setState(() => _copied = false);
-                        }
-                      });
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(dialogContext).pop();
-                      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                    },
-                    child: const Text('פתח גיליון'),
                   ),
                 ],
               );
