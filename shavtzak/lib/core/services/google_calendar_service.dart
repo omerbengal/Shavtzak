@@ -4,7 +4,6 @@ import 'package:googleapis_auth/auth_io.dart';
 import 'dart:developer' as developer;
 
 import '../constants/calendar_constants.dart';
-import '../constants/role_types.dart';
 import '../../domain/entities/team_member.dart';
 import 'environment_service.dart';
 
@@ -116,13 +115,6 @@ class GoogleCalendarService {
     );
 
     try {
-      // For all-day events, use date property with date-only DateTime
-      final startDate = _toDateOnly(constraint.startDate);
-      final endDate = _toDateOnly(
-        constraint.endDate?.add(const Duration(days: 1)) ??
-            constraint.startDate.add(const Duration(days: 1)),
-      );
-
       // Use yellow color in test mode, otherwise use appropriate color
       final colorId = _isTestMode
           ? CalendarEventColors.testMode
@@ -130,11 +122,38 @@ class GoogleCalendarService {
               ? CalendarEventColors.unavailability
               : CalendarEventColors.availability);
 
+      // Build start/end based on whether constraint has specific times
+      final hasTimeRange = constraint.startTime != null && constraint.endTime != null;
+      final calendar.EventDateTime eventStart;
+      final calendar.EventDateTime eventEnd;
+
+      if (hasTimeRange) {
+        // Timed event: combine date + time with Israel timezone
+        eventStart = calendar.EventDateTime(
+          dateTime: _combineDateAndTime(constraint.startDate, constraint.startTime!),
+          timeZone: _timeZone,
+        );
+        final endBaseDate = constraint.endDate ?? constraint.startDate;
+        eventEnd = calendar.EventDateTime(
+          dateTime: _combineDateAndTime(endBaseDate, constraint.endTime!),
+          timeZone: _timeZone,
+        );
+      } else {
+        // All-day event: use date property with date-only DateTime
+        final startDate = _toDateOnly(constraint.startDate);
+        final endDate = _toDateOnly(
+          constraint.endDate?.add(const Duration(days: 1)) ??
+              constraint.startDate.add(const Duration(days: 1)),
+        );
+        eventStart = calendar.EventDateTime(date: startDate);
+        eventEnd = calendar.EventDateTime(date: endDate);
+      }
+
       final event = calendar.Event(
         summary: title,
         description: description,
-        start: calendar.EventDateTime(date: startDate),
-        end: calendar.EventDateTime(date: endDate),
+        start: eventStart,
+        end: eventEnd,
         colorId: colorId,
         extendedProperties: calendar.EventExtendedProperties(
           private: {
@@ -189,13 +208,6 @@ class GoogleCalendarService {
     );
 
     try {
-      // For all-day events, use date property with date-only DateTime
-      final startDate = _toDateOnly(constraint.startDate);
-      final endDate = _toDateOnly(
-        constraint.endDate?.add(const Duration(days: 1)) ??
-            constraint.startDate.add(const Duration(days: 1)),
-      );
-
       // Use yellow color in test mode, otherwise use appropriate color
       final colorId = _isTestMode
           ? CalendarEventColors.testMode
@@ -203,11 +215,38 @@ class GoogleCalendarService {
               ? CalendarEventColors.unavailability
               : CalendarEventColors.availability);
 
+      // Build start/end based on whether constraint has specific times
+      final hasTimeRange = constraint.startTime != null && constraint.endTime != null;
+      final calendar.EventDateTime eventStart;
+      final calendar.EventDateTime eventEnd;
+
+      if (hasTimeRange) {
+        // Timed event: combine date + time with Israel timezone
+        eventStart = calendar.EventDateTime(
+          dateTime: _combineDateAndTime(constraint.startDate, constraint.startTime!),
+          timeZone: _timeZone,
+        );
+        final endBaseDate = constraint.endDate ?? constraint.startDate;
+        eventEnd = calendar.EventDateTime(
+          dateTime: _combineDateAndTime(endBaseDate, constraint.endTime!),
+          timeZone: _timeZone,
+        );
+      } else {
+        // All-day event: use date property with date-only DateTime
+        final startDate = _toDateOnly(constraint.startDate);
+        final endDate = _toDateOnly(
+          constraint.endDate?.add(const Duration(days: 1)) ??
+              constraint.startDate.add(const Duration(days: 1)),
+        );
+        eventStart = calendar.EventDateTime(date: startDate);
+        eventEnd = calendar.EventDateTime(date: endDate);
+      }
+
       final event = calendar.Event(
         summary: title,
         description: description,
-        start: calendar.EventDateTime(date: startDate),
-        end: calendar.EventDateTime(date: endDate),
+        start: eventStart,
+        end: eventEnd,
         colorId: colorId,
         extendedProperties: calendar.EventExtendedProperties(
           private: {
@@ -319,9 +358,20 @@ class GoogleCalendarService {
     }
   }
 
+  /// Israel timezone for timed events
+  static const String _timeZone = 'Asia/Jerusalem';
+
   /// Convert DateTime to date-only DateTime (midnight UTC) for all-day events
   DateTime _toDateOnly(DateTime date) {
     return DateTime.utc(date.year, date.month, date.day);
+  }
+
+  /// Combine a date with a "HH:mm" time string into a full DateTime
+  DateTime _combineDateAndTime(DateTime date, String time) {
+    final parts = time.split(':');
+    final hour = int.parse(parts[0]);
+    final minute = int.parse(parts[1]);
+    return DateTime(date.year, date.month, date.day, hour, minute);
   }
 
   void _ensureInitialized() {

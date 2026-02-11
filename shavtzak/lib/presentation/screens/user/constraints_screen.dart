@@ -771,6 +771,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                       style: const TextStyle(height: 1.5),
                       scrollPhysics: const BouncingScrollPhysics(),
                     ),
+                    const SizedBox(height: 8),
                     // Add padding at bottom to account for keyboard
                     SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
                   ],
@@ -1139,6 +1140,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                       style: const TextStyle(height: 1.5),
                       scrollPhysics: const BouncingScrollPhysics(),
                     ),
+                    const SizedBox(height: 8),
                     // Add padding at bottom to account for keyboard
                     SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
                   ],
@@ -1898,6 +1900,7 @@ class _EditExpiredConstraintDialogState extends State<_EditExpiredConstraintDial
                 maxLines: 3,
                 onChanged: (value) => _onNoteChanged(),
               ),
+              const SizedBox(height: 8),
             ],
           ),
         ),
