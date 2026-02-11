@@ -755,18 +755,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
           // Check availability for entire event duration (including time-based constraints)
           final isAvailable = member.isAvailableForEventWithTime(slot.event);
-          if (kDebugMode) {
-            if (!isAvailable) {
-              print('[ASSIGNMENT_BLOC] Member ${member.name} is NOT available for event ${slot.event.name} (${slot.event.startDate}-${slot.event.endDate}, ${slot.event.assemblyTime}-${slot.event.endTime})');
-              print('[ASSIGNMENT_BLOC]   Checking constraints:');
-              for (final constraint in member.constraints) {
-                if (constraint.isApproved() && constraint.isUnavailability) {
-                  final blocks = constraint.blocksEventAssignment(slot.event);
-                  print('[ASSIGNMENT_BLOC]     - Constraint: ${constraint.startDate}-${constraint.endDate} ${constraint.startTime ?? ''}-${constraint.endTime ?? ''}, blocks: $blocks');
-                }
-              }
-            }
-          }
 
           if (!member.allowMultipleAssignments && !isAvailable) {
             continue;
@@ -778,9 +766,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           } else if (effectiveAssignedMemberIds.contains(member.id)) {
             alreadyAssignedMembersMap[member.id] = member;
           } else {
-            if (kDebugMode) {
-              print('[ASSIGNMENT_BLOC] Member ${member.name} IS AVAILABLE for event ${slot.event.name}');
-            }
             availableMembersMap[member.id] = member;
           }
         }
@@ -1164,6 +1149,44 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 .map((a) => a.teamMemberId)
                 .toSet();
 
+            // Detect same-day assignments (members assigned to OTHER events on same day(s))
+            final sameDayAssignedMembersMap = <String, TeamMember>{};
+            final sameDayEventInfoMap = <String, List<String>>{};
+
+            for (final otherAssignment in assignments) {
+              // Skip assignments to THIS event
+              if (otherAssignment.eventId == event.id) continue;
+
+              // Find the other event
+              final otherEvent = events.firstWhere(
+                (e) => e.id == otherAssignment.eventId,
+                orElse: () => event, // Fallback (shouldn't happen)
+              );
+
+              // Skip if event not found or is the same event
+              if (otherEvent.id == event.id) continue;
+
+              // Check if events share dates
+              if (_eventsShareDate(event, otherEvent)) {
+                final memberId = otherAssignment.teamMemberId;
+                final member = allMembers.firstWhere(
+                  (m) => m.id == memberId,
+                  orElse: () => allMembers.first, // Fallback
+                );
+
+                // Only add if member has the capability for current role and doesn't allow multiple assignments
+                if (member.canPerformRole(role.key) && !member.allowMultipleAssignments) {
+                  // Check availability (same logic as normal available members)
+                  final isAvailable = member.isAvailableForEventWithTime(event);
+                  if (isAvailable) {
+                    sameDayAssignedMembersMap[memberId] = member;
+                    sameDayEventInfoMap.putIfAbsent(memberId, () => []);
+                    sameDayEventInfoMap[memberId]!.add(otherEvent.name);
+                  }
+                }
+              }
+            }
+
             // Separate members into available (not assigned to this event)
             // and already assigned (assigned to this event)
             // Use Maps to prevent duplicates
@@ -1178,19 +1201,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               // Skip availability check for members with allowMultipleAssignments
               final isAvailable = member.isAvailableForEventWithTime(event);
               if (!member.allowMultipleAssignments && !isAvailable) {
-                if (kDebugMode) {
-                  print('[ASSIGNMENT_BLOC] Member ${member.name} is NOT available for event ${event.name} (${event.startDate}-${event.endDate}, ${event.assemblyTime}-${event.endTime})');
-                  for (final constraint in member.constraints) {
-                    if (constraint.isApproved() && constraint.isUnavailability) {
-                      final blocks = constraint.blocksEventAssignment(event);
-                      print('[ASSIGNMENT_BLOC]     - Constraint: ${constraint.startDate}-${constraint.endDate} ${constraint.startTime ?? ''}-${constraint.endTime ?? ''}, blocks: $blocks');
-                    }
-                  }
-                }
                 continue;
-              }
-              if (kDebugMode && isAvailable && !member.allowMultipleAssignments) {
-                print('[ASSIGNMENT_BLOC] Member ${member.name} IS AVAILABLE for event ${event.name}');
               }
 
               // Separate based on whether already assigned to this event
@@ -1199,6 +1210,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 availableMembersMap[member.id] = member;
               } else if (assignedMemberIds.contains(member.id)) {
                 alreadyAssignedMembersMap[member.id] = member;
+              } else if (sameDayAssignedMembersMap.containsKey(member.id)) {
+                // Member is assigned to another event on the same day - don't add to available
+                continue;
               } else {
                 availableMembersMap[member.id] = member;
               }
@@ -1206,6 +1220,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
             final availableMembers = availableMembersMap.values.toList();
             final alreadyAssignedMembers = alreadyAssignedMembersMap.values.toList();
+            final sameDayAssignedMembers = sameDayAssignedMembersMap.values.toList();
 
             slots.add(AssignmentSlot(
               event: event,
@@ -1214,6 +1229,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               currentAssignment: assignment,
               availableMembers: availableMembers,
               alreadyAssignedMembers: alreadyAssignedMembers,
+              sameDayAssignedMembers: sameDayAssignedMembers,
+              sameDayEventInfo: sameDayEventInfoMap,
             ));
           }
         }
@@ -1341,13 +1358,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     RebuildAssignmentSlotsFromData rebuildEvent,
     Emitter<AssignmentState> emit,
   ) async {
-    if (kDebugMode) {
-      print('[ASSIGNMENT_BLOC] ========== RebuildAssignmentSlotsFromData START ==========');
-      print('[ASSIGNMENT_BLOC] Assignments: ${rebuildEvent.assignments.length}');
-      print('[ASSIGNMENT_BLOC] Events: ${rebuildEvent.events.length}');
-      print('[ASSIGNMENT_BLOC] Team Members: ${rebuildEvent.teamMembers.length}');
-    }
-
     try {
       // Update the repository's cached assignments
       _repository.cacheCurrentAssignments(rebuildEvent.assignments);
@@ -1408,6 +1418,41 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 .map((a) => a.teamMemberId)
                 .toSet();
 
+            // Detect same-day assignments (members assigned to OTHER events on same day(s))
+            final sameDayAssignedMembersMap = <String, TeamMember>{};
+            final sameDayEventInfoMap = <String, List<String>>{};
+
+            for (final otherAssignment in rebuildEvent.assignments) {
+              // Skip assignments to THIS event
+              if (otherAssignment.eventId == eventData.id) continue;
+
+              // Find the other event
+              final otherEvent = rebuildEvent.events[otherAssignment.eventId];
+
+              // Skip if event not found
+              if (otherEvent == null) continue;
+
+              // Check if events share dates
+              if (_eventsShareDate(eventData, otherEvent)) {
+                final memberId = otherAssignment.teamMemberId;
+                final member = teamMembersMap[memberId];
+
+                // Skip if member not found
+                if (member == null) continue;
+
+                // Only add if member has the capability for current role and doesn't allow multiple assignments
+                if (member.canPerformRole(role.key) && !member.allowMultipleAssignments) {
+                  // Check availability (same logic as normal available members)
+                  final isAvailable = member.isAvailableForEventWithTime(eventData);
+                  if (isAvailable) {
+                    sameDayAssignedMembersMap[memberId] = member;
+                    sameDayEventInfoMap.putIfAbsent(memberId, () => []);
+                    sameDayEventInfoMap[memberId]!.add(otherEvent.name);
+                  }
+                }
+              }
+            }
+
             // Separate members into available (not assigned to this event)
             // and already assigned (assigned to this event)
             // Use Maps to prevent duplicates
@@ -1417,9 +1462,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             for (final member in teamMembers) {
               // Check capability
               if (!member.canPerformRole(role.key)) {
-                if (kDebugMode) {
-                  print('[ASSIGNMENT_BLOC] Member ${member.name} CANNOT perform role ${role.key}');
-                }
                 continue;
               }
 
@@ -1427,16 +1469,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               // Skip availability check for members with allowMultipleAssignments
               final isAvailable = member.isAvailableForEventWithTime(eventData);
               if (!member.allowMultipleAssignments && !isAvailable) {
-                if (kDebugMode) {
-                  print('[ASSIGNMENT_BLOC] Member ${member.name} is NOT available for event ${eventData.name} (${eventData.startDate}-${eventData.endDate}, ${eventData.assemblyTime}-${eventData.endTime})');
-                  print('[ASSIGNMENT_BLOC]   Checking constraints:');
-                  for (final constraint in member.constraints) {
-                    if (constraint.isApproved() && constraint.isUnavailability) {
-                      final blocks = constraint.blocksEventAssignment(eventData);
-                      print('[ASSIGNMENT_BLOC]     - Constraint: ${constraint.startDate}-${constraint.endDate} ${constraint.startTime ?? ''}-${constraint.endTime ?? ''}, blocks: $blocks');
-                    }
-                  }
-                }
                 continue;
               }
 
@@ -1446,16 +1478,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 availableMembersMap[member.id] = member;
               } else if (assignedMemberIds.contains(member.id)) {
                 alreadyAssignedMembersMap[member.id] = member;
+              } else if (sameDayAssignedMembersMap.containsKey(member.id)) {
+                // Member is assigned to another event on the same day - don't add to available
+                continue;
               } else {
-                if (kDebugMode) {
-                  print('[ASSIGNMENT_BLOC] Member ${member.name} IS AVAILABLE for event ${eventData.name} (${eventData.startDate}-${eventData.endDate}, ${eventData.assemblyTime}-${eventData.endTime})');
-                }
                 availableMembersMap[member.id] = member;
               }
             }
 
             final availableMembers = availableMembersMap.values.toList();
             final alreadyAssignedMembers = alreadyAssignedMembersMap.values.toList();
+            final sameDayAssignedMembers = sameDayAssignedMembersMap.values.toList();
 
             slots.add(AssignmentSlot(
               event: eventData,
@@ -1464,6 +1497,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               currentAssignment: assignment,
               availableMembers: availableMembers,
               alreadyAssignedMembers: alreadyAssignedMembers,
+              sameDayAssignedMembers: sameDayAssignedMembers,
+              sameDayEventInfo: sameDayEventInfoMap,
             ));
           }
         }
@@ -1685,5 +1720,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     } catch (e) {
       emit(AssignmentError('שגיאה בעדכון הערות: $e'));
     }
+  }
+
+  /// Helper function to check if two events share at least one day
+  bool _eventsShareDate(Event a, Event b) {
+    // Normalize dates to day precision (ignore time)
+    final aStart = DateTime(a.startDate.year, a.startDate.month, a.startDate.day);
+    final aEnd = DateTime(a.endDate.year, a.endDate.month, a.endDate.day);
+    final bStart = DateTime(b.startDate.year, b.startDate.month, b.startDate.day);
+    final bEnd = DateTime(b.endDate.year, b.endDate.month, b.endDate.day);
+
+    // Check for overlap: events overlap if one starts before the other ends
+    return aStart.isBefore(bEnd.add(const Duration(days: 1))) &&
+           bStart.isBefore(aEnd.add(const Duration(days: 1)));
   }
 }

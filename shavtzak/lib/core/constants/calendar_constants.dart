@@ -42,8 +42,8 @@ extension CalendarSyncStatusExtension on CalendarSyncStatus {
 /// Calendar event colors (Google Calendar color IDs)
 /// See: https://developers.google.com/calendar/api/v3/reference/colors
 class CalendarEventColors {
-  // Unavailability constraints - Red tone
-  static const String unavailability = '11'; // Red (Tomato)
+  // Unavailability constraints - Graphite tone
+  static const String unavailability = '8'; // Graphite
 
   // Availability constraints - Green tone
   static const String availability = '10'; // Green (Basil)

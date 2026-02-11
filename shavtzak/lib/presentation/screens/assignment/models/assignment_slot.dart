@@ -15,6 +15,8 @@ class AssignmentSlot extends Equatable {
   final List<TeamMember> alreadyAssignedMembers; // Members already assigned to this event
   final bool hasDoubleAssignment; // Person assigned to multiple roles in same event
   final List<String> otherRoles; // Other roles this person has in the same event
+  final List<TeamMember> sameDayAssignedMembers; // Members assigned to OTHER events on same day(s)
+  final Map<String, List<String>> sameDayEventInfo; // memberId -> other event names
 
   const AssignmentSlot({
     required this.event,
@@ -25,6 +27,8 @@ class AssignmentSlot extends Equatable {
     this.alreadyAssignedMembers = const [],
     this.hasDoubleAssignment = false,
     this.otherRoles = const [],
+    this.sameDayAssignedMembers = const [],
+    this.sameDayEventInfo = const {},
   });
 
   /// Whether this slot is currently filled
@@ -52,6 +56,8 @@ class AssignmentSlot extends Equatable {
         alreadyAssignedMembers,
         hasDoubleAssignment,
         otherRoles,
+        sameDayAssignedMembers,
+        sameDayEventInfo,
       ];
 
   @override

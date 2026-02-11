@@ -47,11 +47,20 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   final Map<String, int> _dropdownResetCounters = {};
   // Track if initial data load is complete (to show loading until both assignments and team members are loaded)
   bool _isInitialLoadComplete = false;
+  // Search functionality
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   /// Handle filter change
@@ -107,6 +116,32 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       default:
         return slots;
     }
+  }
+
+  /// Filter slots by search query (event name, role name, member name)
+  List<AssignmentSlot> _searchSlots(List<AssignmentSlot> slots) {
+    if (_searchQuery.isEmpty) {
+      return slots;
+    }
+
+    final query = _searchQuery.toLowerCase();
+    return slots.where((slot) {
+      // Search in event name
+      if (slot.event.name.toLowerCase().contains(query)) {
+        return true;
+      }
+      // Search in role Hebrew name
+      if (slot.role.hebrewName.toLowerCase().contains(query)) {
+        return true;
+      }
+      // Search in assigned member name (if filled)
+      if (slot.isFilled && slot.currentAssignment?.teamMember?.name != null) {
+        if (slot.currentAssignment!.teamMember!.name.toLowerCase().contains(query)) {
+          return true;
+        }
+      }
+      return false;
+    }).toList();
   }
 
   @override
@@ -330,7 +365,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     final unfilledSlots = filteredSlots.where((s) => !s.isFilled).length;
 
     // Apply assignment filter
-    final slots = _filterAssignments(filteredSlots, FilterPersistence.assignmentFilterIndex);
+    final filteredByStatus = _filterAssignments(filteredSlots, FilterPersistence.assignmentFilterIndex);
+
+    // Apply search filter
+    final slots = _searchSlots(filteredByStatus);
 
     if (slots.isEmpty) {
       return _buildEmptyState(totalSlots, filledSlots, unfilledSlots);
@@ -352,6 +390,43 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ],
           selectedIndex: FilterPersistence.assignmentFilterIndex,
           onFilterChanged: _onFilterChanged,
+        ),
+
+        // Search bar
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'חיפוש באירוע, תפקיד או שם...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          setState(() {
+                            _searchController.clear();
+                            _searchQuery = '';
+                          });
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+            ),
+          ),
         ),
 
         // Header row
@@ -1362,7 +1437,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   Future<void> _showAlreadyAssignedDialog(AssignmentSlot slot) async {
     // FILTER: Exclude members who already have this exact role
-    final filteredMembers = slot.alreadyAssignedMembers.where((member) {
+    final filteredSameEventMembers = slot.alreadyAssignedMembers.where((member) {
       final hasThisRole = _allSlots.any((s) =>
           s.event.id == slot.event.id &&
           s.role.key == slot.role.key &&  // Same role type
@@ -1370,6 +1445,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           s.currentAssignment!.teamMemberId == member.id);
       return !hasThisRole;
     }).toList();
+
+    // Combine with same-day assigned members
+    final allMembers = [...filteredSameEventMembers, ...slot.sameDayAssignedMembers];
 
     final selectedMember = await showDialog<TeamMember>(
       context: context,
@@ -1393,7 +1471,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (filteredMembers.isEmpty)
+                if (allMembers.isEmpty)
                   // Show message when no members are available
                   Padding(
                     padding: const EdgeInsets.all(16.0),
@@ -1402,7 +1480,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                         Icon(Icons.info_outline, size: 48, color: Colors.grey.shade600),
                         const SizedBox(height: 16),
                         Text(
-                          slot.alreadyAssignedMembers.isEmpty
+                          slot.alreadyAssignedMembers.isEmpty && slot.sameDayAssignedMembers.isEmpty
                               ? 'אין אנשים שכבר שובצו לאירוע זה'
                               : 'כל האנשים שכבר שובצו לאירוע זה כבר משובצים לתפקיד ${slot.role.hebrewName}',
                           textAlign: TextAlign.center,
@@ -1417,7 +1495,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 else ...[
                   // Show list of members
                   Text(
-                    'האנשים הבאים כבר משובצים לאירוע זה בתפקידים אחרים (לא ${slot.role.hebrewName}):',
+                    'האנשים הבאים כבר משובצים לאירוע זה או לאירועים אחרים באותם תאריכים:',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
@@ -1428,22 +1506,37 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     ),
                     child: ListView.builder(
                       shrinkWrap: true,
-                      itemCount: filteredMembers.length,
+                      itemCount: allMembers.length,
                       itemBuilder: (context, index) {
-                        final member = filteredMembers[index];
-                        // Find what OTHER roles this person has in this event (excluding current role)
-                        final memberRoles = _allSlots
-                            .where((s) =>
-                                s.event.id == slot.event.id &&
-                                s.isFilled &&
-                                s.currentAssignment!.teamMemberId == member.id &&
-                                s.role.key != slot.role.key)  // Exclude current role
-                            .map((s) => s.role.hebrewName)
-                            .toList();
+                        final member = allMembers[index];
+
+                        // Determine if this is a same-event or same-day member
+                        final isSameEvent = filteredSameEventMembers.contains(member);
+                        final isSameDay = slot.sameDayAssignedMembers.contains(member);
+
+                        String subtitle;
+                        if (isSameEvent) {
+                          // Find what OTHER roles this person has in this event (excluding current role)
+                          final memberRoles = _allSlots
+                              .where((s) =>
+                                  s.event.id == slot.event.id &&
+                                  s.isFilled &&
+                                  s.currentAssignment!.teamMemberId == member.id &&
+                                  s.role.key != slot.role.key)  // Exclude current role
+                              .map((s) => s.role.hebrewName)
+                              .toList();
+                          subtitle = 'תפקידים: ${memberRoles.join(", ")}';
+                        } else if (isSameDay) {
+                          // Show the other events this person is assigned to on the same day
+                          final otherEvents = slot.sameDayEventInfo[member.id] ?? [];
+                          subtitle = 'משובצ/ת ב: ${otherEvents.join(", ")}';
+                        } else {
+                          subtitle = '';
+                        }
 
                         return ListTile(
                           title: Text(member.name),
-                          subtitle: Text('תפקידים: ${memberRoles.join(", ")}'),
+                          subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
                           trailing: ElevatedButton(
                             onPressed: () => Navigator.of(context).pop(member),
                             child: const Text('שבץ בכל זאת'),
@@ -1498,17 +1591,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
       // Must be unavailable for the event (including time-based constraints)
       final isAvailable = member.isAvailableForEventWithTime(slot.event);
-      if (kDebugMode) {
-        print('[ASSIGNMENT_LIST] Checking member ${member.name} for constrained dialog');
-        print('[ASSIGNMENT_LIST]   Event: ${slot.event.name} (${slot.event.startDate}-${slot.event.endDate}, ${slot.event.assemblyTime}-${slot.event.endTime})');
-        print('[ASSIGNMENT_LIST]   Is available: $isAvailable');
-        for (final constraint in member.constraints) {
-          if (constraint.isApproved() && constraint.isUnavailability) {
-            final blocks = constraint.blocksEventAssignment(slot.event);
-            print('[ASSIGNMENT_LIST]     - Constraint: ${constraint.startDate}-${constraint.endDate} ${constraint.startTime ?? ''}-${constraint.endTime ?? ''}, blocks: $blocks');
-          }
-        }
-      }
       return !isAvailable;
     }).toList();
 
@@ -1670,16 +1752,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       AssignmentSlot slot, TeamMember selectedMember) async {
     // Check if already assigned (no-op)
     if (slot.currentAssignment?.teamMemberId == selectedMember.id) {
-      print('🔄 [ASSIGNMENT_DEBUG] Already assigned - no-op');
       return;
     }
-
-    print('📝 [ASSIGNMENT_DEBUG] _handleAssignmentChange START');
-    print('  Event: ${slot.event.name} (${slot.event.id})');
-    print('  Role: ${slot.role.hebrewName} (${slot.role.key})');
-    print('  Slot Index: ${slot.slotIndex}');
-    print('  Selected Member: ${selectedMember.name} (${selectedMember.id})');
-    print('  Current Assignment: ${slot.currentAssignment?.teamMember?.name ?? "none"}');
 
     // Create assignment object
     final assignment = slot.currentAssignment != null
@@ -1702,22 +1776,16 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             teamMember: selectedMember,
           );
 
-    print('  Assignment ID: ${assignment.id}');
-    print('  Is Update: ${slot.currentAssignment != null}');
-
     // Dispatch to BLoC - no local state manipulation!
     if (slot.currentAssignment != null) {
-      print('  🚀 Dispatching OptimisticUpdateAssignment');
       context.read<AssignmentBloc>().add(
         OptimisticUpdateAssignment(assignment),
       );
     } else {
-      print('  🚀 Dispatching OptimisticCreateAssignment');
       context.read<AssignmentBloc>().add(
         OptimisticCreateAssignment(assignment),
       );
     }
-    print('✅ [ASSIGNMENT_DEBUG] _handleAssignmentChange END');
   }
 
   

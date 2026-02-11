@@ -3,8 +3,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/role.dart';
+import '../../../domain/entities/assignment.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/constants/constraint_status.dart';
+import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
@@ -29,6 +31,8 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
   Role? _selectedRole;
   List<Event> _futureEvents = [];
   List<TeamMember> _teamMembers = [];
+  List<Assignment> _allAssignments = [];
+  Map<String, List<String>> _sameDayEventsByMember = {}; // memberId -> list of event names
 
   @override
   void initState() {
@@ -36,10 +40,14 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     _loadData();
   }
 
-  void _loadData() {
+  void _loadData() async {
     // Load events and team members
     context.read<EventBloc>().add(const LoadEvents());
     context.read<TeamBloc>().add(const LoadActiveTeamMembers());
+
+    // Load all assignments for same-day conflict detection
+    final assignmentRepo = context.read<AssignmentRepository>();
+    _allAssignments = await assignmentRepo.getAllAssignments();
   }
 
   @override
@@ -212,6 +220,10 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                           setState(() {
                             _selectedEvent = isSelected ? null : event;
                           });
+                          // Compute same-day assignments when event is selected
+                          if (_selectedEvent != null) {
+                            _computeSameDayAssignments();
+                          }
                           // Auto-advance to next step if event was selected
                           if (_selectedEvent != null) {
                             Future.delayed(const Duration(milliseconds: 300), () {
@@ -262,6 +274,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                     final isSelected = _selectedTeamMember?.id == teamMember.id;
                     final hasConflict = _hasDateConstraintConflict(teamMember);
                     final hasAvailability = _hasAvailabilityForEvent(teamMember);
+                    final hasSameDay = _hasSameDayAssignment(teamMember);
 
                     // Track availability issue but don't disable
                     final hasAvailabilityIssue = !teamMember.isPermanent && !hasAvailability;
@@ -293,12 +306,12 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                             ],
                           ],
                         ),
-                        trailing: hasConflict || hasAvailabilityIssue
+                        trailing: hasConflict || hasAvailabilityIssue || hasSameDay
                             ? Icon(Icons.warning, color: Colors.orange.shade700)
                             : null,
                         onTap: () {
-                          if (hasConflict || hasAvailabilityIssue) {
-                            _showConstraintWarning(teamMember, hasAvailabilityIssue);
+                          if (hasConflict || hasAvailabilityIssue || hasSameDay) {
+                            _showConstraintWarning(teamMember, hasAvailabilityIssue, hasSameDay: hasSameDay);
                           } else {
                             setState(() {
                               _selectedTeamMember = isSelected ? null : teamMember;
@@ -483,11 +496,88 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     return teamMember.isAvailableForEvent(_selectedEvent!.id);
   }
 
-  void _showConstraintWarning(TeamMember teamMember, bool isAvailabilityIssue) {
+  /// Check if member is assigned to another event on the same day(s)
+  bool _hasSameDayAssignment(TeamMember teamMember) {
+    if (_selectedEvent == null) return false;
+
+    // Members with allowMultipleAssignments bypass same-day checks
+    if (teamMember.allowMultipleAssignments) return false;
+
+    return _sameDayEventsByMember.containsKey(teamMember.id);
+  }
+
+  /// Compute same-day assignments for the selected event
+  void _computeSameDayAssignments() {
+    if (_selectedEvent == null) {
+      _sameDayEventsByMember = {};
+      return;
+    }
+
+    final sameDayMap = <String, List<String>>{};
+
+    for (final assignment in _allAssignments) {
+      // Skip assignments to the selected event
+      if (assignment.eventId == _selectedEvent!.id) continue;
+
+      // Find the other event
+      final otherEvent = _futureEvents.firstWhere(
+        (e) => e.id == assignment.eventId,
+        orElse: () => Event(
+          id: '',
+          name: '',
+          startDate: DateTime.now(),
+          endDate: DateTime.now(),
+          startTime: '',
+          endTime: '',
+          assemblyTime: '',
+          location: '',
+          requiresArmed: false,
+          roleRequirements: {},
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      );
+
+      // Skip if event not found
+      if (otherEvent.id.isEmpty) continue;
+
+      // Check if events share dates
+      if (_eventsShareDate(_selectedEvent!, otherEvent)) {
+        final memberId = assignment.teamMemberId;
+        sameDayMap.putIfAbsent(memberId, () => []);
+        if (!sameDayMap[memberId]!.contains(otherEvent.name)) {
+          sameDayMap[memberId]!.add(otherEvent.name);
+        }
+      }
+    }
+
+    setState(() {
+      _sameDayEventsByMember = sameDayMap;
+    });
+  }
+
+  /// Helper function to check if two events share at least one day
+  bool _eventsShareDate(Event a, Event b) {
+    // Normalize dates to day precision (ignore time)
+    final aStart = DateTime(a.startDate.year, a.startDate.month, a.startDate.day);
+    final aEnd = DateTime(a.endDate.year, a.endDate.month, a.endDate.day);
+    final bStart = DateTime(b.startDate.year, b.startDate.month, b.startDate.day);
+    final bEnd = DateTime(b.endDate.year, b.endDate.month, b.endDate.day);
+
+    // Check for overlap: events overlap if one starts before the other ends
+    return aStart.isBefore(bEnd.add(const Duration(days: 1))) &&
+           bStart.isBefore(aEnd.add(const Duration(days: 1)));
+  }
+
+  void _showConstraintWarning(TeamMember teamMember, bool isAvailabilityIssue, {bool hasSameDay = false}) {
     String warningMessage;
     List<Widget> constraintDetails = [];
 
-    if (isAvailabilityIssue) {
+    if (hasSameDay) {
+      // Same-day assignment conflict
+      final otherEvents = _sameDayEventsByMember[teamMember.id] ?? [];
+      warningMessage = 'חבר/ת צוות זה/זו משובצ/ת לאירוע אחר באותם תאריכים:\n\n${otherEvents.join(", ")}';
+    } else if (isAvailabilityIssue) {
       // Non-permanent member without availability
       warningMessage = 'ל${teamMember.name} אין זמינות לאירוע "${_selectedEvent!.name}".\n\nחברי צוות לא-קבועים צריכים לציין זמינות מראש.';
     } else {
