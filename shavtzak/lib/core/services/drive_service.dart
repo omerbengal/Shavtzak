@@ -138,6 +138,12 @@ class DriveService {
   /// Check if service is initialized
   bool get isInitialized => _isInitialized;
 
+  /// Expose script URL for other services (e.g. ExportService)
+  String? get scriptUrl => _scriptUrl;
+
+  /// Expose API key for other services (e.g. ExportService)
+  String? get apiKey => _apiKey;
+
   /// Make a POST request to the Apps Script
   /// Uses text/plain content type to avoid CORS preflight requests
   Future<Map<String, dynamic>> _post(Map<String, dynamic> body) async {

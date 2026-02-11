@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
@@ -8,7 +11,9 @@ import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart' as team;
 import '../../bloc/team/team_state.dart';
 import '../../../core/constants/constraint_status.dart';
+import '../../../core/services/drive_service.dart';
 import '../../../core/services/environment_service.dart';
+import '../../../core/services/export_service.dart';
 import '../../../core/services/user_cache_service.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
 import '../../widgets/settings_dialog.dart';
@@ -309,6 +314,27 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
             centerTitle: true,
             leading: const SizedBox.shrink(), // Prevent automatic back arrow
             actions: [
+              // Export buttons (admin only, when Drive is initialized)
+              if (state.isAdmin && DriveService.instance.isInitialized) ...[
+                // Full DB export button (database icon)
+                IconButton(
+                  icon: const Icon(Icons.storage),
+                  tooltip: 'ייצוא בסיס נתונים',
+                  onPressed: () => _showFullExportDialog(context),
+                  iconSize: 24,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+                ),
+                // Assignments-only export button (cloud icon)
+                IconButton(
+                  icon: const Icon(Icons.cloud),
+                  tooltip: 'ייצוא שיבוצים',
+                  onPressed: () => _showAssignmentsExportDialog(context),
+                  iconSize: 24,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+                ),
+              ],
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתקות',
@@ -321,6 +347,205 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
           );
         },
       ),
+    );
+  }
+
+  /// Show full DB export confirmation dialog
+  void _showFullExportDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('ייצוא בסיס נתונים'),
+            content: const Text(
+              'פעולה זו תייצא את כל בסיס הנתונים של הפרודקשן לגיליון Google Sheets חדש.\n\n'
+              'שימו לב: הגיליון יכיל מידע רגיש (קודים, מפתחות, פרטים אישיים).',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('ביטול'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  _performExport(context, isFullExport: true);
+                },
+                child: const Text('ייצוא'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Show assignments-only export confirmation dialog
+  void _showAssignmentsExportDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('ייצוא שיבוצים'),
+            content: const Text(
+              'ייצוא רשימת שיבוצים בלבד לגיליון Google Sheets חדש.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('ביטול'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  _performExport(context, isFullExport: false);
+                },
+                child: const Text('ייצוא'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Perform the actual export
+  Future<void> _performExport(BuildContext context, {required bool isFullExport}) async {
+    // Show loading dialog and capture its context
+    if (!context.mounted) return;
+    BuildContext? dialogContext;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext ctx) {
+        dialogContext = ctx;
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(isFullExport ? 'מייצא בסיס נתונים...' : 'מייצא שיבוצים...'),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    // Perform export in background
+    final result = isFullExport
+        ? await ExportService().exportToSheets()
+        : await ExportService().exportAssignmentsOnly();
+
+    // Close loading dialog using the dialog's context
+    if (dialogContext != null) {
+      Navigator.of(dialogContext!).pop();
+    }
+
+    // Show result dialog
+    if (!context.mounted) return;
+    if (result.success && result.spreadsheetUrl != null) {
+      _showExportSuccessDialog(context, result.spreadsheetUrl!);
+    } else {
+      _showExportErrorDialog(context, result.error ?? 'שגיאה לא ידועה');
+    }
+  }
+
+  /// Show success dialog with link to spreadsheet
+  void _showExportSuccessDialog(BuildContext context, String url) {
+    bool _copied = false;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              return AlertDialog(
+                title: const Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green),
+                    SizedBox(width: 8),
+                    Text('הייצוא הושלם בהצלחה'),
+                  ],
+                ),
+                content: const Text('הגיליון נוצר בתיקיית שבצק ב-Google Drive.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('סגירה'),
+                  ),
+                  ElevatedButton.icon(
+                    icon: Icon(
+                      _copied ? Icons.check_circle : Icons.copy,
+                      color: _copied ? const Color(0xFF00E676) : Colors.white, // Lighter green for better visibility
+                    ),
+                    label: const Text('העתק קישור'),
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: url));
+                      setState(() => _copied = true);
+                      // Reset after 2 seconds
+                      Future.delayed(const Duration(seconds: 2), () {
+                        if (context.mounted) {
+                          setState(() => _copied = false);
+                        }
+                      });
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                    },
+                    child: const Text('פתח גיליון'),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  /// Show export error dialog
+  void _showExportErrorDialog(BuildContext context, String error) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.error, color: Colors.red),
+                SizedBox(width: 8),
+                Text('שגיאה בייצוא'),
+              ],
+            ),
+            content: Text('הייצוא נכשל:\n$error'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('סגירה'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
