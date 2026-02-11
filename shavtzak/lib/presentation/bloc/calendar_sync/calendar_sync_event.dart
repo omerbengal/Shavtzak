@@ -125,6 +125,7 @@ class SyncAppEventToCalendar extends CalendarSyncEvent {
   final DateTime startDate;
   final DateTime endDate;
   final String assemblyTime;
+  final String startTime;
   final String actualShowStartTime;
   final String endTime;
   final String? location;
@@ -135,6 +136,7 @@ class SyncAppEventToCalendar extends CalendarSyncEvent {
     required this.startDate,
     required this.endDate,
     required this.assemblyTime,
+    required this.startTime,
     required this.actualShowStartTime,
     required this.endTime,
     this.location,
@@ -147,6 +149,7 @@ class SyncAppEventToCalendar extends CalendarSyncEvent {
         startDate,
         endDate,
         assemblyTime,
+        startTime,
         actualShowStartTime,
         endTime,
         location,

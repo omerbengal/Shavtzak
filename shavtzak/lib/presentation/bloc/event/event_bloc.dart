@@ -577,6 +577,15 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     // Only sync if calendar sync bloc is available
     if (_calendarSyncBloc == null) return;
 
+    // Extract clean location name (remove coordinates if present)
+    String? cleanLocation;
+    if (event.location.isNotEmpty) {
+      // Location format: "Name||lat,lng" - extract only the name part
+      final parts = event.location.split('||');
+      cleanLocation = parts[0].trim();
+      if (cleanLocation.isEmpty) cleanLocation = null;
+    }
+
     // IMPORTANT: Always dispatch sync event, even if time fields are empty
     // The sync service will handle deletion of calendar events when time fields are removed
     // Dispatch sync event to calendar sync bloc
@@ -586,9 +595,10 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       startDate: event.startDate,
       endDate: event.endDate,
       assemblyTime: event.assemblyTime,
+      startTime: event.startTime,
       actualShowStartTime: event.actualShowStartTime,
       endTime: event.endTime,
-      location: event.location.isNotEmpty ? event.location : null,
+      location: cleanLocation,
     ));
   }
 

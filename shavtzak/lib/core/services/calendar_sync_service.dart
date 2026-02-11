@@ -375,6 +375,7 @@ class CalendarSyncService {
   /// Sync an app event to the calendar
   /// Creates or updates both assembly and main calendar events
   /// Deletes calendar events if their required time fields are missing
+  /// Uses startTime as fallback if actualShowStartTime is null
   /// Uses atomic transaction to prevent race conditions
   Future<SyncResult> syncAppEventToCalendar({
     required String eventId,
@@ -382,6 +383,7 @@ class CalendarSyncService {
     required DateTime startDate,
     required DateTime endDate,
     required String assemblyTime,
+    required String startTime,
     required String actualShowStartTime,
     required String endTime,
     String? location,
@@ -395,9 +397,15 @@ class CalendarSyncService {
     );
 
     try {
+      // Use startTime as fallback if actualShowStartTime is empty
+      final separatorTime = actualShowStartTime.isNotEmpty ? actualShowStartTime : startTime;
+
       // Determine which events should exist based on time fields
-      final shouldHaveAssembly = assemblyTime.isNotEmpty && actualShowStartTime.isNotEmpty;
-      final shouldHaveMain = actualShowStartTime.isNotEmpty && endTime.isNotEmpty;
+      // Assembly event requires: assemblyTime AND separator
+      // Main event requires: separator AND endTime
+      // Special case: if assemblyTime and endTime exist but no separator → single main event
+      final shouldHaveAssembly = assemblyTime.isNotEmpty && separatorTime.isNotEmpty;
+      final shouldHaveMain = endTime.isNotEmpty && (separatorTime.isNotEmpty || assemblyTime.isNotEmpty);
 
       // Check if already synced
       final existingState = await _database.getEventCalendarSyncState(eventId);
@@ -458,7 +466,7 @@ class CalendarSyncService {
             startDate: startDate,
             endDate: endDate,
             assemblyTime: assemblyTime,
-            actualShowStartTime: actualShowStartTime,
+            separatorTime: separatorTime,
             endTime: endTime,
             location: location,
           );
@@ -507,7 +515,7 @@ class CalendarSyncService {
           startDate: startDate,
           endDate: endDate,
           assemblyTime: assemblyTime,
-          actualShowStartTime: actualShowStartTime,
+          separatorTime: separatorTime,
           endTime: endTime,
           location: location,
         );

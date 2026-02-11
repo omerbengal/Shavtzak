@@ -375,9 +375,10 @@ class GoogleCalendarService {
   }
 
   /// Create calendar events for an app event
-  /// Creates 2 events:
-  /// 1. Assembly event: [name] - התייצבות והכנות (assemblyTime → actualShowStartTime)
-  /// 2. Main event: [name] (actualShowStartTime → endTime)
+  /// Creates up to 2 events based on available time fields:
+  /// 1. Assembly event: [name] - התייצבות והכנות (assemblyTime → separatorTime)
+  /// 2. Main event: [name] (separatorTime → endTime)
+  /// If no separator but assemblyTime and endTime exist: creates single main event (assemblyTime → endTime)
   /// Returns map with 'assembly' and 'main' calendar event IDs
   /// In test mode, events are created with yellow color and "שבצק טסטינג: " prefix
   Future<Map<String, String>> createAppEventCalendarEvents({
@@ -386,7 +387,7 @@ class GoogleCalendarService {
     required DateTime startDate,
     required DateTime endDate,
     required String assemblyTime,
-    required String actualShowStartTime,
+    required String separatorTime,
     required String endTime,
     String? location,
   }) async {
@@ -400,11 +401,11 @@ class GoogleCalendarService {
           ? CalendarEventColors.testMode
           : CalendarEventColors.appEvent;
 
-      // Create assembly event if assemblyTime and actualShowStartTime are provided
-      if (assemblyTime.isNotEmpty && actualShowStartTime.isNotEmpty) {
+      // Create assembly event if assemblyTime and separatorTime are provided
+      if (assemblyTime.isNotEmpty && separatorTime.isNotEmpty) {
         final assemblyTitle = CalendarEventTitles.eventAssembly(eventName, isTestMode: _isTestMode);
         final assemblyStart = _combineDateAndTime(startDate, assemblyTime);
-        final assemblyEnd = _combineDateAndTime(startDate, actualShowStartTime);
+        final assemblyEnd = _combineDateAndTime(startDate, separatorTime);
 
         final assemblyEvent = calendar.Event(
           summary: assemblyTitle,
@@ -437,10 +438,25 @@ class GoogleCalendarService {
         );
       }
 
-      // Create main event if actualShowStartTime and endTime are provided
-      if (actualShowStartTime.isNotEmpty && endTime.isNotEmpty) {
+      // Create main event
+      // Case 1: separatorTime and endTime exist → normal main event (separatorTime → endTime)
+      // Case 2: no separatorTime but assemblyTime and endTime exist → single main event (assemblyTime → endTime)
+      if (endTime.isNotEmpty) {
         final mainTitle = CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
-        final mainStart = _combineDateAndTime(startDate, actualShowStartTime);
+
+        // Determine main event start time
+        final DateTime mainStart;
+        if (separatorTime.isNotEmpty) {
+          // Normal case: use separator time
+          mainStart = _combineDateAndTime(startDate, separatorTime);
+        } else if (assemblyTime.isNotEmpty) {
+          // Special case: no separator, use assembly time
+          mainStart = _combineDateAndTime(startDate, assemblyTime);
+        } else {
+          // Skip if no valid start time
+          return result;
+        }
+
         // Main event can span to endDate for multi-day events
         final mainEnd = _combineDateAndTime(endDate, endTime);
 
@@ -490,6 +506,7 @@ class GoogleCalendarService {
   /// Updates both assembly and main events with new data
   /// If calendar event IDs are empty but time fields are provided, creates new events
   /// If calendar events were deleted, recreates them and returns new IDs
+  /// Uses separatorTime (fallback logic already applied by caller)
   /// In test mode, events are updated with yellow color and "שבצק טסטינג: " prefix
   /// Returns map with new calendar event IDs if events were recreated, null otherwise
   Future<Map<String, String>?> updateAppEventCalendarEvents({
@@ -500,7 +517,7 @@ class GoogleCalendarService {
     required DateTime startDate,
     required DateTime endDate,
     required String assemblyTime,
-    required String actualShowStartTime,
+    required String separatorTime,
     required String endTime,
     String? location,
   }) async {
@@ -517,8 +534,9 @@ class GoogleCalendarService {
           : CalendarEventColors.appEvent;
 
       // Determine which events should exist based on time fields
-      final shouldHaveAssembly = assemblyTime.isNotEmpty && actualShowStartTime.isNotEmpty;
-      final shouldHaveMain = actualShowStartTime.isNotEmpty && endTime.isNotEmpty;
+      final shouldHaveAssembly = assemblyTime.isNotEmpty && separatorTime.isNotEmpty;
+      // Main event can exist with separator OR with just assemblyTime + endTime
+      final shouldHaveMain = endTime.isNotEmpty && (separatorTime.isNotEmpty || assemblyTime.isNotEmpty);
 
       // Handle assembly event
       if (shouldHaveAssembly) {
@@ -529,7 +547,7 @@ class GoogleCalendarService {
           // Try to update existing event
           final assemblyTitle = CalendarEventTitles.eventAssembly(eventName, isTestMode: _isTestMode);
           final assemblyStart = _combineDateAndTime(startDate, assemblyTime);
-          final assemblyEnd = _combineDateAndTime(startDate, actualShowStartTime);
+          final assemblyEnd = _combineDateAndTime(startDate, separatorTime);
 
           final assemblyEvent = calendar.Event(
             summary: assemblyTitle,
@@ -583,7 +601,17 @@ class GoogleCalendarService {
         } else {
           // Try to update existing event
           final mainTitle = CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
-          final mainStart = _combineDateAndTime(startDate, actualShowStartTime);
+
+          // Determine main event start time (same logic as create)
+          final DateTime mainStart;
+          if (separatorTime.isNotEmpty) {
+            // Normal case: use separator time
+            mainStart = _combineDateAndTime(startDate, separatorTime);
+          } else {
+            // Special case: no separator, use assembly time
+            mainStart = _combineDateAndTime(startDate, assemblyTime);
+          }
+
           final mainEnd = _combineDateAndTime(endDate, endTime);
 
           final mainEvent = calendar.Event(
@@ -643,7 +671,7 @@ class GoogleCalendarService {
         if (needsAssemblyRecreation) {
           final assemblyTitle = CalendarEventTitles.eventAssembly(eventName, isTestMode: _isTestMode);
           final assemblyStart = _combineDateAndTime(startDate, assemblyTime);
-          final assemblyEnd = _combineDateAndTime(startDate, actualShowStartTime);
+          final assemblyEnd = _combineDateAndTime(startDate, separatorTime);
 
           final assemblyEvent = calendar.Event(
             summary: assemblyTitle,
@@ -679,7 +707,17 @@ class GoogleCalendarService {
         // Only create main event if it needs recreation
         if (needsMainRecreation) {
           final mainTitle = CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
-          final mainStart = _combineDateAndTime(startDate, actualShowStartTime);
+
+          // Determine main event start time (same logic as create and update)
+          final DateTime mainStart;
+          if (separatorTime.isNotEmpty) {
+            // Normal case: use separator time
+            mainStart = _combineDateAndTime(startDate, separatorTime);
+          } else {
+            // Special case: no separator, use assembly time
+            mainStart = _combineDateAndTime(startDate, assemblyTime);
+          }
+
           final mainEnd = _combineDateAndTime(endDate, endTime);
 
           final mainEvent = calendar.Event(

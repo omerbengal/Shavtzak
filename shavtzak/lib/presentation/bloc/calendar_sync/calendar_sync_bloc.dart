@@ -567,6 +567,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         startDate: event.startDate,
         endDate: event.endDate,
         assemblyTime: event.assemblyTime,
+        startTime: event.startTime,
         actualShowStartTime: event.actualShowStartTime,
         endTime: event.endTime,
         location: event.location,
