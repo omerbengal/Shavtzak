@@ -198,6 +198,22 @@ abstract class DatabaseInterface {
   /// Get all synced constraints across all team members
   Future<List<Map<String, dynamic>>> getSyncedConstraintsForAllMembers();
 
+  // ========== Event Calendar Sync State ==========
+
+  /// Save event calendar sync state mapping event ID to calendar event IDs
+  Future<void> saveEventCalendarSyncState({
+    required String eventId,
+    required String assemblyCalendarEventId,
+    required String mainCalendarEventId,
+    required CalendarSyncStatus status,
+  });
+
+  /// Get event calendar sync state
+  Future<Map<String, dynamic>?> getEventCalendarSyncState(String eventId);
+
+  /// Remove event calendar sync state
+  Future<void> removeEventCalendarSyncState(String eventId);
+
   /// Update constraint status
   /// If constraintIndex is null, teamMemberIdOrConstraintId is treated as constraintId
   /// If constraintIndex is provided, teamMemberIdOrConstraintId is treated as teamMemberId

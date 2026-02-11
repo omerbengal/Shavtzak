@@ -55,6 +55,12 @@ class FirestoreDatabase implements DatabaseInterface {
     return collection;
   }
 
+  String get _eventCalendarSyncCollection {
+    final collection = '${EnvironmentService.instance.collectionPrefix}event_calendar_sync';
+    developer.log('FirestoreDatabase._eventCalendarSyncCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
+    return collection;
+  }
+
   String get _checklistItemsCollection {
     final collection = '${EnvironmentService.instance.collectionPrefix}checklist_items';
     developer.log('FirestoreDatabase._checklistItemsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
@@ -1465,6 +1471,66 @@ class FirestoreDatabase implements DatabaseInterface {
       }).toList();
     } catch (e) {
       throw DatabaseException('Failed to get synced constraints: $e');
+    }
+  }
+
+  // ========== Event Calendar Sync State ==========
+
+  @override
+  Future<void> saveEventCalendarSyncState({
+    required String eventId,
+    required String assemblyCalendarEventId,
+    required String mainCalendarEventId,
+    required CalendarSyncStatus status,
+  }) async {
+    try {
+      await _firestore.collection(_eventCalendarSyncCollection).doc(eventId).set({
+        'assemblyCalendarEventId': assemblyCalendarEventId,
+        'mainCalendarEventId': mainCalendarEventId,
+        'status': status.name,
+        'syncedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw DatabaseException('Failed to save event calendar sync state: $e');
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getEventCalendarSyncState(String eventId) async {
+    try {
+      final doc = await _firestore
+          .collection(_eventCalendarSyncCollection)
+          .doc(eventId)
+          .get();
+
+      if (!doc.exists) return null;
+
+      final data = doc.data();
+      if (data == null) return null;
+
+      return {
+        'eventId': eventId,
+        'assemblyCalendarEventId': data['assemblyCalendarEventId'],
+        'mainCalendarEventId': data['mainCalendarEventId'],
+        'status': data['status'],
+        'syncedAt': data['syncedAt'],
+        'updatedAt': data['updatedAt'],
+      };
+    } catch (e) {
+      throw DatabaseException('Failed to get event calendar sync state: $e');
+    }
+  }
+
+  @override
+  Future<void> removeEventCalendarSyncState(String eventId) async {
+    try {
+      await _firestore
+          .collection(_eventCalendarSyncCollection)
+          .doc(eventId)
+          .delete();
+    } catch (e) {
+      throw DatabaseException('Failed to remove event calendar sync state: $e');
     }
   }
 

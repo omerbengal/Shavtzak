@@ -354,6 +354,7 @@ class MyApp extends StatelessWidget {
                   return EventBloc(
                     context.read<EventRepository>(),
                     context.read<AssignmentRepository>(),
+                    calendarSyncBloc: context.read<CalendarSyncBloc>(),
                   );
                 },
               ),

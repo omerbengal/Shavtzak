@@ -48,6 +48,9 @@ class CalendarEventColors {
   // Availability constraints - Green tone
   static const String availability = '10'; // Green (Basil)
 
+  // App events - Peacock tone
+  static const String appEvent = '7'; // Peacock (טווס)
+
   // Test mode - Yellow tone (used for all test events)
   static const String testMode = '5'; // Yellow (Banana)
 }
@@ -93,6 +96,19 @@ class CalendarEventTitles {
   static String availability(String memberName, {bool isTestMode = false}) {
     final title = '$memberName - זמינות';
     return isTestMode ? '$testModePrefix$title' : title;
+  }
+
+  /// Title for event assembly calendar event
+  /// Format: "[Event Name] - התייצבות והכנות" (or "שבצק טסטינג: [Event Name] - התייצבות והכנות" in test mode)
+  static String eventAssembly(String eventName, {bool isTestMode = false}) {
+    final title = '$eventName - התייצבות והכנות';
+    return isTestMode ? '$testModePrefix$title' : title;
+  }
+
+  /// Title for event main calendar event
+  /// Format: "[Event Name]" (or "שבצק טסטינג: [Event Name]" in test mode)
+  static String eventMain(String eventName, {bool isTestMode = false}) {
+    return isTestMode ? '$testModePrefix$eventName' : eventName;
   }
 }
 

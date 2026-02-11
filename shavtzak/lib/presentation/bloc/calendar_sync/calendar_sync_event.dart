@@ -117,3 +117,50 @@ class ValidateSyncedEvents extends CalendarSyncEvent {
 class PerformBidirectionalSync extends CalendarSyncEvent {
   const PerformBidirectionalSync();
 }
+
+/// Sync an app event to the calendar
+class SyncAppEventToCalendar extends CalendarSyncEvent {
+  final String eventId;
+  final String eventName;
+  final DateTime startDate;
+  final DateTime endDate;
+  final String assemblyTime;
+  final String actualShowStartTime;
+  final String endTime;
+  final String? location;
+
+  const SyncAppEventToCalendar({
+    required this.eventId,
+    required this.eventName,
+    required this.startDate,
+    required this.endDate,
+    required this.assemblyTime,
+    required this.actualShowStartTime,
+    required this.endTime,
+    this.location,
+  });
+
+  @override
+  List<Object?> get props => [
+        eventId,
+        eventName,
+        startDate,
+        endDate,
+        assemblyTime,
+        actualShowStartTime,
+        endTime,
+        location,
+      ];
+}
+
+/// Remove an app event from the calendar
+class RemoveAppEventFromCalendar extends CalendarSyncEvent {
+  final String eventId;
+
+  const RemoveAppEventFromCalendar({
+    required this.eventId,
+  });
+
+  @override
+  List<Object?> get props => [eventId];
+}

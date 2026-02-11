@@ -6,6 +6,8 @@ import '../../../data/repositories/assignment_repository.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../core/constants/role_types.dart';
+import '../calendar_sync/calendar_sync_bloc.dart';
+import '../calendar_sync/calendar_sync_event.dart';
 import 'event_event.dart';
 import 'event_state.dart';
 
@@ -13,6 +15,7 @@ import 'event_state.dart';
 class EventBloc extends Bloc<EventEvent, EventState> {
   final EventRepository _repository;
   final AssignmentRepository _assignmentRepository;
+  final CalendarSyncBloc? _calendarSyncBloc;
 
   // Stream subscriptions for manual control to prevent memory leaks
   StreamSubscription<List<Event>>? _eventsSubscription;
@@ -25,7 +28,12 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   bool _assignmentsLoaded = false;
   bool _upcomingOnly = false;
 
-  EventBloc(this._repository, this._assignmentRepository) : super(const EventInitial()) {
+  EventBloc(
+    this._repository,
+    this._assignmentRepository, {
+    CalendarSyncBloc? calendarSyncBloc,
+  })  : _calendarSyncBloc = calendarSyncBloc,
+        super(const EventInitial()) {
     // Register event handlers
     on<LoadEvents>(_onLoadEvents);
     on<LoadUpcomingEvents>(_onLoadUpcomingEvents);
@@ -275,6 +283,10 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     try {
       // Don't emit EventOperating to avoid UI rebuild
       await _repository.createEvent(event.event);
+
+      // Sync to Google Calendar if calendar sync is enabled
+      _syncEventToCalendar(event.event);
+
       // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('האירוע נוסף בהצלחה'));
 
@@ -292,6 +304,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     try {
       // Don't emit EventOperating to avoid UI rebuild
       await _repository.updateEvent(event.event);
+
+      // Sync to Google Calendar if calendar sync is enabled
+      // Note: We sync on every update to ensure calendar is always up-to-date
+      _syncEventToCalendar(event.event);
+
       // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('פרטי האירוע עודכנו בהצלחה'));
 
@@ -307,6 +324,9 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     Emitter<EventState> emit,
   ) async {
     try {
+      // Remove from Google Calendar first if calendar sync is enabled
+      _removeEventFromCalendar(event.id);
+
       // Delete the event
       await _repository.deleteEvent(event.id);
 
@@ -549,6 +569,38 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       isArchived: proposedEvent.isArchived,
       relevantForExtendedTeam: proposedEvent.relevantForExtendedTeam,
     );
+  }
+
+  /// Helper method to sync event to Google Calendar
+  /// Always syncs to handle both creation/update AND deletion of calendar events
+  void _syncEventToCalendar(Event event) {
+    // Only sync if calendar sync bloc is available
+    if (_calendarSyncBloc == null) return;
+
+    // IMPORTANT: Always dispatch sync event, even if time fields are empty
+    // The sync service will handle deletion of calendar events when time fields are removed
+    // Dispatch sync event to calendar sync bloc
+    _calendarSyncBloc!.add(SyncAppEventToCalendar(
+      eventId: event.id,
+      eventName: event.name,
+      startDate: event.startDate,
+      endDate: event.endDate,
+      assemblyTime: event.assemblyTime,
+      actualShowStartTime: event.actualShowStartTime,
+      endTime: event.endTime,
+      location: event.location.isNotEmpty ? event.location : null,
+    ));
+  }
+
+  /// Helper method to remove event from Google Calendar
+  void _removeEventFromCalendar(String eventId) {
+    // Only remove if calendar sync bloc is available
+    if (_calendarSyncBloc == null) return;
+
+    // Dispatch remove event to calendar sync bloc
+    _calendarSyncBloc!.add(RemoveAppEventFromCalendar(
+      eventId: eventId,
+    ));
   }
 
   @override

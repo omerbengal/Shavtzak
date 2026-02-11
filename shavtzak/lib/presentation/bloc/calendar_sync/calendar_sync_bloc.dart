@@ -30,8 +30,10 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     on<RetryFailedSync>(_onRetryFailedSync);
     on<ClearConstraintSyncState>(_onClearSyncState);
     on<CheckSyncStatus>(_onCheckSyncStatus);
-  on<ValidateSyncedEvents>(_onValidateSyncedEvents);
+    on<ValidateSyncedEvents>(_onValidateSyncedEvents);
     on<PerformBidirectionalSync>(_onPerformBidirectionalSync);
+    on<SyncAppEventToCalendar>(_onSyncAppEvent);
+    on<RemoveAppEventFromCalendar>(_onRemoveAppEvent);
   }
 
   /// Initialize the calendar sync service
@@ -536,6 +538,108 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         constraintId: 'bidirectional',
         errorMessage: 'סנכרון דו-כיווני נכשל: ${e.toString()}',
         isRetryable: true,
+      ));
+    }
+  }
+
+  /// Sync an app event to the calendar
+  Future<void> _onSyncAppEvent(
+    SyncAppEventToCalendar event,
+    Emitter<CalendarSyncState> emit,
+  ) async {
+    if (_syncService == null) {
+      developer.log(
+        'CalendarSyncBloc: Sync service not initialized, skipping app event sync',
+        name: 'CalendarSyncBloc',
+      );
+      return;
+    }
+
+    emit(CalendarSyncInProgress(
+      constraintId: event.eventId,
+      message: 'מסנכרן אירוע ליומן גוגל...',
+    ));
+
+    try {
+      final result = await _syncService!.syncAppEventToCalendar(
+        eventId: event.eventId,
+        eventName: event.eventName,
+        startDate: event.startDate,
+        endDate: event.endDate,
+        assemblyTime: event.assemblyTime,
+        actualShowStartTime: event.actualShowStartTime,
+        endTime: event.endTime,
+        location: event.location,
+      );
+
+      if (result.success) {
+        emit(CalendarSyncSuccess(
+          constraintId: event.eventId,
+          calendarEventId: result.calendarEventId,
+          message: 'האירוע סונכרן ליומן גוגל בהצלחה',
+        ));
+      } else {
+        emit(CalendarSyncFailure(
+          constraintId: event.eventId,
+          errorMessage: result.errorMessage ?? 'שגיאה לא ידועה',
+          isRetryable: result.isRetryable,
+        ));
+      }
+    } catch (e) {
+      developer.log(
+        'CalendarSyncBloc: App event sync failed - $e',
+        name: 'CalendarSyncBloc',
+        error: e,
+      );
+      emit(CalendarSyncFailure(
+        constraintId: event.eventId,
+        errorMessage: e.toString(),
+      ));
+    }
+  }
+
+  /// Remove an app event from the calendar
+  Future<void> _onRemoveAppEvent(
+    RemoveAppEventFromCalendar event,
+    Emitter<CalendarSyncState> emit,
+  ) async {
+    if (_syncService == null) {
+      developer.log(
+        'CalendarSyncBloc: Sync service not initialized, skipping app event removal',
+        name: 'CalendarSyncBloc',
+      );
+      return;
+    }
+
+    emit(CalendarSyncInProgress(
+      constraintId: event.eventId,
+      message: 'מסיר אירוע מיומן גוגל...',
+    ));
+
+    try {
+      final result = await _syncService!.removeAppEventFromCalendar(event.eventId);
+
+      if (result.success) {
+        emit(CalendarSyncRemovalSuccess(
+          constraintId: event.eventId,
+          message: 'האירוע הוסר מיומן גוגל בהצלחה',
+        ));
+      } else {
+        emit(CalendarSyncFailure(
+          constraintId: event.eventId,
+          errorMessage: result.errorMessage ?? 'שגיאה בהסרה מהיומן',
+          isRetryable: result.isRetryable,
+        ));
+      }
+    } catch (e) {
+      developer.log(
+        'CalendarSyncBloc: App event removal failed - $e',
+        name: 'CalendarSyncBloc',
+        error: e,
+      );
+      emit(CalendarSyncFailure(
+        constraintId: event.eventId,
+        errorMessage: e.toString(),
       ));
     }
   }

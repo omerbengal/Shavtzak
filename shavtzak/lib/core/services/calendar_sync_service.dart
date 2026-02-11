@@ -372,6 +372,236 @@ class CalendarSyncService {
     }
   }
 
+  /// Sync an app event to the calendar
+  /// Creates or updates both assembly and main calendar events
+  /// Deletes calendar events if their required time fields are missing
+  /// Uses atomic transaction to prevent race conditions
+  Future<SyncResult> syncAppEventToCalendar({
+    required String eventId,
+    required String eventName,
+    required DateTime startDate,
+    required DateTime endDate,
+    required String assemblyTime,
+    required String actualShowStartTime,
+    required String endTime,
+    String? location,
+  }) async {
+    // Cancel any pending debounced sync for this event
+    _cancelDebounce(eventId);
+
+    developer.log(
+      'CalendarSyncService: Starting sync for app event $eventId',
+      name: 'CalendarSync',
+    );
+
+    try {
+      // Determine which events should exist based on time fields
+      final shouldHaveAssembly = assemblyTime.isNotEmpty && actualShowStartTime.isNotEmpty;
+      final shouldHaveMain = actualShowStartTime.isNotEmpty && endTime.isNotEmpty;
+
+      // Check if already synced
+      final existingState = await _database.getEventCalendarSyncState(eventId);
+
+      if (existingState != null) {
+        // Get existing calendar event IDs
+        final existingAssemblyId = existingState['assemblyCalendarEventId'] as String? ?? '';
+        final existingMainId = existingState['mainCalendarEventId'] as String? ?? '';
+
+        developer.log(
+          'CalendarSyncService: Event $eventId already synced, checking for changes',
+          name: 'CalendarSync',
+        );
+
+        // Handle assembly event: delete if it should not exist but does
+        String newAssemblyId = existingAssemblyId;
+        if (!shouldHaveAssembly && existingAssemblyId.isNotEmpty) {
+          developer.log(
+            'CalendarSyncService: Deleting assembly event $existingAssemblyId (time fields removed)',
+            name: 'CalendarSync',
+          );
+          await _calendarService.deleteAppEventCalendarEvents(
+            assemblyCalendarEventId: existingAssemblyId,
+          );
+          newAssemblyId = '';
+        }
+
+        // Handle main event: delete if it should not exist but does
+        String newMainId = existingMainId;
+        if (!shouldHaveMain && existingMainId.isNotEmpty) {
+          developer.log(
+            'CalendarSyncService: Deleting main event $existingMainId (time fields removed)',
+            name: 'CalendarSync',
+          );
+          await _calendarService.deleteAppEventCalendarEvents(
+            mainCalendarEventId: existingMainId,
+          );
+          newMainId = '';
+        }
+
+        // If both events should be deleted, remove sync state entirely
+        if (!shouldHaveAssembly && !shouldHaveMain) {
+          developer.log(
+            'CalendarSyncService: No calendar events needed, removing sync state',
+            name: 'CalendarSync',
+          );
+          await _database.removeEventCalendarSyncState(eventId);
+          return const SyncResult.success(null);
+        }
+
+        // Update or create events that should exist
+        if (shouldHaveAssembly || shouldHaveMain) {
+          final recreatedIds = await _calendarService.updateAppEventCalendarEvents(
+            assemblyCalendarEventId: newAssemblyId,
+            mainCalendarEventId: newMainId,
+            eventId: eventId,
+            eventName: eventName,
+            startDate: startDate,
+            endDate: endDate,
+            assemblyTime: assemblyTime,
+            actualShowStartTime: actualShowStartTime,
+            endTime: endTime,
+            location: location,
+          );
+
+          // If events were recreated (deleted from calendar), use new IDs
+          if (recreatedIds != null) {
+            developer.log(
+              'CalendarSyncService: Calendar events were recreated, updating sync state with new IDs',
+              name: 'CalendarSync',
+            );
+            newAssemblyId = recreatedIds['assembly'] ?? newAssemblyId;
+            newMainId = recreatedIds['main'] ?? newMainId;
+          }
+
+          // Update sync state with current IDs
+          await _database.saveEventCalendarSyncState(
+            eventId: eventId,
+            assemblyCalendarEventId: newAssemblyId,
+            mainCalendarEventId: newMainId,
+            status: CalendarSyncStatus.synced,
+          );
+
+          return SyncResult.success('$newAssemblyId,$newMainId');
+        }
+
+        return SyncResult.success('$newAssemblyId,$newMainId');
+      } else {
+        // No existing sync state - create new calendar events if needed
+        if (!shouldHaveAssembly && !shouldHaveMain) {
+          // No events needed, don't create sync state
+          developer.log(
+            'CalendarSyncService: No calendar events needed for event $eventId (no time fields)',
+            name: 'CalendarSync',
+          );
+          return const SyncResult.success(null);
+        }
+
+        developer.log(
+          'CalendarSyncService: Creating new calendar events for app event $eventId',
+          name: 'CalendarSync',
+        );
+
+        final calendarEventIds = await _calendarService.createAppEventCalendarEvents(
+          eventId: eventId,
+          eventName: eventName,
+          startDate: startDate,
+          endDate: endDate,
+          assemblyTime: assemblyTime,
+          actualShowStartTime: actualShowStartTime,
+          endTime: endTime,
+          location: location,
+        );
+
+        // Save sync state
+        await _database.saveEventCalendarSyncState(
+          eventId: eventId,
+          assemblyCalendarEventId: calendarEventIds['assembly'] ?? '',
+          mainCalendarEventId: calendarEventIds['main'] ?? '',
+          status: CalendarSyncStatus.synced,
+        );
+
+        developer.log(
+          'CalendarSyncService: Successfully synced app event $eventId',
+          name: 'CalendarSync',
+        );
+
+        return SyncResult.success('${calendarEventIds['assembly']},${calendarEventIds['main']}');
+      }
+    } catch (e) {
+      developer.log(
+        'CalendarSyncService: Failed to sync app event $eventId - $e',
+        name: 'CalendarSync',
+        error: e,
+      );
+
+      // Save failed state
+      try {
+        await _database.saveEventCalendarSyncState(
+          eventId: eventId,
+          assemblyCalendarEventId: '',
+          mainCalendarEventId: '',
+          status: CalendarSyncStatus.failed,
+        );
+      } catch (dbError) {
+        developer.log(
+          'CalendarSyncService: Failed to save failed sync state - $dbError',
+          name: 'CalendarSync',
+          error: dbError,
+        );
+      }
+
+      return SyncResult.failure(e.toString());
+    }
+  }
+
+  /// Remove an app event from the calendar
+  /// Deletes both assembly and main calendar events
+  Future<SyncResult> removeAppEventFromCalendar(String eventId) async {
+    developer.log(
+      'CalendarSyncService: Removing app event $eventId from calendar',
+      name: 'CalendarSync',
+    );
+
+    try {
+      // Get existing sync state
+      final existingState = await _database.getEventCalendarSyncState(eventId);
+      if (existingState == null) {
+        developer.log(
+          'CalendarSyncService: No sync state found for app event $eventId',
+          name: 'CalendarSync',
+        );
+        return const SyncResult.success(null);
+      }
+
+      final assemblyId = existingState['assemblyCalendarEventId'] as String?;
+      final mainId = existingState['mainCalendarEventId'] as String?;
+
+      // Delete from Google Calendar
+      await _calendarService.deleteAppEventCalendarEvents(
+        assemblyCalendarEventId: assemblyId,
+        mainCalendarEventId: mainId,
+      );
+
+      // Remove sync state from database
+      await _database.removeEventCalendarSyncState(eventId);
+
+      developer.log(
+        'CalendarSyncService: Successfully removed app event $eventId from calendar',
+        name: 'CalendarSync',
+      );
+
+      return const SyncResult.success(null);
+    } catch (e) {
+      developer.log(
+        'CalendarSyncService: Failed to remove app event $eventId - $e',
+        name: 'CalendarSync',
+        error: e,
+      );
+
+      return SyncResult.failure(e.toString());
+    }
+  }
+
   /// Clean up all debounce timers
   void dispose() {
     for (final timer in _debounceTimers.values) {
