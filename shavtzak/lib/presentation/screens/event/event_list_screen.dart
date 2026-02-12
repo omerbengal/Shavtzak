@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/utils/event_assignment_status.dart';
 import '../../../core/utils/filter_persistence.dart';
+import '../../../core/utils/search_utils.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../domain/entities/event.dart';
 import '../../bloc/event/event_bloc.dart';
@@ -35,7 +36,7 @@ class EventListScreen extends StatefulWidget {
 class _EventListScreenState extends State<EventListScreen> {
   final TextEditingController _searchController = TextEditingController();
   late final FocusNode _searchFocusNode;
-  bool _showSearch = false;
+  String _searchQuery = '';
   EventsLoaded? _lastLoadedState;
   Set<String> _selectedCategoryIds = {};
 
@@ -69,11 +70,9 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   void _onSearchChanged(String query) {
-    if (query.isEmpty) {
-      context.read<EventBloc>().add(const LoadEvents());
-    } else {
-      context.read<EventBloc>().add(SearchEvents(query));
-    }
+    setState(() {
+      _searchQuery = query;
+    });
   }
 
   /// Handle filter change
@@ -145,42 +144,9 @@ class _EventListScreenState extends State<EventListScreen> {
           titleSpacing: 0,
           title: Row(
             children: [
-              // Leading icons
-              _buildCompactIcon(
-                icon: _showSearch ? Icons.close : Icons.search,
-                onPressed: () {
-                  setState(() {
-                    _showSearch = !_showSearch;
-                    if (!_showSearch) {
-                      _searchController.clear();
-                      context.read<EventBloc>().add(const LoadEvents());
-                    }
-                  });
-                },
-              ),
-              _buildCompactIcon(
-                icon: Icons.filter_list,
-                onPressed: () => _showCategoryFilterModal(),
-                badge: _selectedCategoryIds.isNotEmpty
-                    ? Text('${_selectedCategoryIds.length}')
-                    : null,
-              ),
               // Centered title
-              Expanded(
-                child: _showSearch
-                    ? TextField(
-                        controller: _searchController,
-                        focusNode: _searchFocusNode,
-                        autofocus: true,
-                        decoration: const InputDecoration(
-                          hintText: 'חיפוש אירוע...',
-                          border: InputBorder.none,
-                          hintStyle: TextStyle(color: Colors.black54),
-                        ),
-                        style: const TextStyle(color: Colors.black),
-                        onChanged: _onSearchChanged,
-                      )
-                    : const Center(child: Text('אירועים', style: TextStyle(fontSize: 20))),
+              const Expanded(
+                child: Center(child: Text('אירועים', style: TextStyle(fontSize: 20))),
               ),
               // Trailing icons
               IconButton(
@@ -319,6 +285,61 @@ class _EventListScreenState extends State<EventListScreen> {
             selectedIndex: FilterPersistence.eventFilterIndex,
             onFilterChanged: _onFilterChanged,
           ),
+          // Search bar with filter button inside
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                decoration: InputDecoration(
+                  hintText: 'חיפוש אירוע...',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Clear button (only when there's text)
+                      if (_searchQuery.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            setState(() {
+                              _searchController.clear();
+                              _searchQuery = '';
+                            });
+                          },
+                        ),
+                      // Filter button (always visible)
+                      IconButton(
+                        icon: Badge(
+                          isLabelVisible: _selectedCategoryIds.isNotEmpty,
+                          label: Text(_selectedCategoryIds.length.toString()),
+                          child: Icon(
+                            Icons.filter_list,
+                            color: _selectedCategoryIds.isNotEmpty
+                                ? Colors.blue.shade700
+                                : null,
+                          ),
+                        ),
+                        onPressed: _showCategoryFilterModal,
+                        tooltip: _selectedCategoryIds.isEmpty
+                            ? 'סינון לפי קטגוריה'
+                            : 'סינון: ${_selectedCategoryIds.length} קטגוריות',
+                      ),
+                    ],
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onChanged: _onSearchChanged,
+              ),
+            ),
+          ),
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 80),
@@ -367,6 +388,17 @@ class _EventListScreenState extends State<EventListScreen> {
       result = result.where((event) {
         return event.categoryId != null &&
                _selectedCategoryIds.contains(event.categoryId);
+      }).toList();
+    }
+
+    // Apply search filter
+    if (_searchQuery.isNotEmpty) {
+      final normalizedQuery = normalizeForSearch(_searchQuery);
+      result = result.where((event) {
+        final normalizedName = normalizeForSearch(event.name);
+        final normalizedLocation = normalizeForSearch(event.location);
+        return normalizedName.contains(normalizedQuery) ||
+               normalizedLocation.contains(normalizedQuery);
       }).toList();
     }
 

@@ -6,6 +6,7 @@ import '../../../domain/entities/role.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/constants/constraint_status.dart';
+import '../../../core/utils/search_utils.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
@@ -33,6 +34,32 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
   List<TeamMember> _teamMembers = [];
   List<Assignment> _allAssignments = [];
   Map<String, List<String>> _sameDayEventsByMember = {}; // memberId -> list of event names
+
+  // Search controllers for each step
+  final TextEditingController _eventSearchController = TextEditingController();
+  final TextEditingController _memberSearchController = TextEditingController();
+  final TextEditingController _roleSearchController = TextEditingController();
+
+  // Scroll controllers for each step
+  final ScrollController _eventScrollController = ScrollController();
+  final ScrollController _memberScrollController = ScrollController();
+  final ScrollController _roleScrollController = ScrollController();
+
+  // Search queries for each step
+  String _eventSearchQuery = '';
+  String _memberSearchQuery = '';
+  String _roleSearchQuery = '';
+
+  @override
+  void dispose() {
+    _eventSearchController.dispose();
+    _memberSearchController.dispose();
+    _roleSearchController.dispose();
+    _eventScrollController.dispose();
+    _memberScrollController.dispose();
+    _roleScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -80,6 +107,9 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
         ),
       ],
       child: AlertDialog(
+        actionsAlignment: _currentStep == 0
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.spaceBetween,
         title: Text(
           'שיבוץ ידני חדש',
           textAlign: TextAlign.center,
@@ -107,7 +137,33 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
           ),
         ),
         actions: [
-          // Cancel button only - role selection auto-completes the assignment
+          // Back button (only show on steps 2 and 3)
+          if (_currentStep == 1 || _currentStep == 2)
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _currentStep--;
+                  // Clear search query when going back
+                  if (_currentStep == 1) {
+                    _memberSearchController.clear();
+                    _memberSearchQuery = '';
+                  } else if (_currentStep == 0) {
+                    _eventSearchController.clear();
+                    _eventSearchQuery = '';
+                  }
+                });
+                // Scroll to top when going back (after widget rebuild)
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_currentStep == 1 && _memberScrollController.hasClients) {
+                    _memberScrollController.jumpTo(0);
+                  } else if (_currentStep == 0 && _eventScrollController.hasClients) {
+                    _eventScrollController.jumpTo(0);
+                  }
+                });
+              },
+              child: const Text('אחורה'),
+            ),
+          // Cancel button - role selection auto-completes the assignment
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('ביטול', style: TextStyle(color: Colors.red)),
@@ -148,6 +204,25 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
   }
 
   Widget _buildEventSelectionStep() {
+    // Filter events based on normalized search query
+    final normalizedQuery = normalizeForSearch(_eventSearchController.text.trim());
+    var filteredEvents = normalizedQuery.isEmpty
+        ? _futureEvents
+        : _futureEvents.where((event) {
+            final normalizedName = normalizeForSearch(event.name);
+            final normalizedLocation = normalizeForSearch(event.location);
+            return normalizedName.contains(normalizedQuery) ||
+                   normalizedLocation.contains(normalizedQuery);
+          }).toList();
+
+    // Sort so selected event appears at the top
+    if (_selectedEvent != null && filteredEvents.any((e) => e.id == _selectedEvent!.id)) {
+      filteredEvents = [
+        filteredEvents.firstWhere((e) => e.id == _selectedEvent!.id),
+        ...filteredEvents.where((e) => e.id != _selectedEvent!.id),
+      ];
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -164,9 +239,46 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
           'בחר אירוע עתידי שברצונך לשבץ לו איש צוות:',
           style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
+        // Search bar
+        Directionality(
+          textDirection: TextDirection.rtl,
+          child: TextField(
+            controller: _eventSearchController,
+            textDirection: TextDirection.rtl,
+            decoration: InputDecoration(
+              hintText: 'חיפוש אירוע לפי שם או מיקום...',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _eventSearchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        setState(() {
+                          _eventSearchController.clear();
+                          _eventSearchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              filled: true,
+              fillColor: Colors.grey.shade50,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              isDense: true,
+            ),
+            style: const TextStyle(fontSize: 14),
+            onChanged: (value) {
+              setState(() {
+                _eventSearchQuery = value;
+              });
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
         Expanded(
-          child: _futureEvents.isEmpty
+          child: filteredEvents.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -174,16 +286,19 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                       Icon(Icons.event_busy, size: 48, color: Colors.grey.shade400),
                       const SizedBox(height: 16),
                       Text(
-                        'לא נמצאו אירועים עתידיים',
+                        normalizedQuery.isEmpty
+                            ? 'לא נמצאו אירועים עתידיים'
+                            : 'לא נמצאו אירועים התואמים לחיפוש',
                         style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                       ),
                     ],
                   ),
                 )
               : ListView.builder(
-                  itemCount: _futureEvents.length,
+                  controller: _eventScrollController,
+                  itemCount: filteredEvents.length,
                   itemBuilder: (context, index) {
-                    final event = _futureEvents[index];
+                    final event = filteredEvents[index];
                     final isSelected = _selectedEvent?.id == event.id;
 
                     return Card(
@@ -217,23 +332,30 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                           ],
                         ),
                         onTap: () {
-                          setState(() {
-                            _selectedEvent = isSelected ? null : event;
-                          });
-                          // Compute same-day assignments when event is selected
-                          if (_selectedEvent != null) {
-                            _computeSameDayAssignments();
-                          }
-                          // Auto-advance to next step if event was selected
-                          if (_selectedEvent != null) {
-                            Future.delayed(const Duration(milliseconds: 300), () {
-                              if (mounted) {
-                                setState(() {
-                                  _currentStep = 1;
-                                });
-                              }
+                          // Update selection if different event
+                          if (!isSelected) {
+                            setState(() {
+                              _selectedEvent = event;
                             });
                           }
+                          // Always advance to next step (even if same event)
+                          _computeSameDayAssignments();
+                          Future.delayed(const Duration(milliseconds: 300), () {
+                            if (mounted) {
+                              setState(() {
+                                _currentStep = 1;
+                                // Clear member search when entering step 2
+                                _memberSearchController.clear();
+                                _memberSearchQuery = '';
+                              });
+                              // Scroll member list to top after widget rebuild
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted && _memberScrollController.hasClients) {
+                                  _memberScrollController.jumpTo(0);
+                                }
+                              });
+                            }
+                          });
                         },
                       ),
                     );
@@ -245,6 +367,23 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
   }
 
   Widget _buildTeamMemberSelectionStep() {
+    // Filter team members based on normalized search query
+    final normalizedQuery = normalizeForSearch(_memberSearchController.text.trim());
+    var filteredMembers = normalizedQuery.isEmpty
+        ? _teamMembers
+        : _teamMembers.where((member) {
+            final normalizedName = normalizeForSearch(member.name);
+            return normalizedName.contains(normalizedQuery);
+          }).toList();
+
+    // Sort so selected team member appears at the top
+    if (_selectedTeamMember != null && filteredMembers.any((m) => m.id == _selectedTeamMember!.id)) {
+      filteredMembers = [
+        filteredMembers.firstWhere((m) => m.id == _selectedTeamMember!.id),
+        ...filteredMembers.where((m) => m.id != _selectedTeamMember!.id),
+      ];
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -262,15 +401,57 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
           style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
         ),
         const SizedBox(height: 8),
+        // Search bar
+        Directionality(
+          textDirection: TextDirection.rtl,
+          child: TextField(
+            controller: _memberSearchController,
+            textDirection: TextDirection.rtl,
+            decoration: InputDecoration(
+              hintText: 'חיפוש איש צוות לפי שם...',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _memberSearchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        setState(() {
+                          _memberSearchController.clear();
+                          _memberSearchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              filled: true,
+              fillColor: Colors.grey.shade50,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              isDense: true,
+            ),
+            style: const TextStyle(fontSize: 14),
+            onChanged: (value) {
+              setState(() {
+                _memberSearchQuery = value;
+              });
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
         Expanded(
-          child: _teamMembers.isEmpty
-              ? const Center(
-                  child: Text('לא נמצאו אנשי צוות פעילים'),
+          child: filteredMembers.isEmpty
+              ? Center(
+                  child: Text(
+                    normalizedQuery.isEmpty
+                        ? 'לא נמצאו אנשי צוות פעילים'
+                        : 'לא נמצאו אנשי צוות התואמים לחיפוש',
+                  ),
                 )
               : ListView.builder(
-                  itemCount: _teamMembers.length,
+                  controller: _memberScrollController,
+                  itemCount: filteredMembers.length,
                   itemBuilder: (context, index) {
-                    final teamMember = _teamMembers[index];
+                    final teamMember = filteredMembers[index];
                     final isSelected = _selectedTeamMember?.id == teamMember.id;
                     final hasConflict = _hasDateConstraintConflict(teamMember);
                     final hasAvailability = _hasAvailabilityForEvent(teamMember);
@@ -313,19 +494,29 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                           if (hasConflict || hasAvailabilityIssue || hasSameDay) {
                             _showConstraintWarning(teamMember, hasAvailabilityIssue, hasSameDay: hasSameDay);
                           } else {
-                            setState(() {
-                              _selectedTeamMember = isSelected ? null : teamMember;
-                            });
-                            // Auto-advance to next step if team member was selected
-                            if (_selectedTeamMember != null) {
-                              Future.delayed(const Duration(milliseconds: 300), () {
-                                if (mounted) {
-                                  setState(() {
-                                    _currentStep = 2;
-                                  });
-                                }
+                            // Update selection if different member
+                            if (!isSelected) {
+                              setState(() {
+                                _selectedTeamMember = teamMember;
                               });
                             }
+                            // Always advance to next step (even if same member)
+                            Future.delayed(const Duration(milliseconds: 300), () {
+                              if (mounted) {
+                                setState(() {
+                                  _currentStep = 2;
+                                  // Clear role search when entering step 3
+                                  _roleSearchController.clear();
+                                  _roleSearchQuery = '';
+                                });
+                                // Scroll role list to top after widget rebuild
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  if (mounted && _roleScrollController.hasClients) {
+                                    _roleScrollController.jumpTo(0);
+                                  }
+                                });
+                              }
+                            });
                           }
                         },
                       ),
@@ -366,10 +557,27 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
         }
 
         // Filter roles to only those that match available role keys
-        final filteredRoles = roles.where((roleObj) {
+        var filteredRoles = roles.where((roleObj) {
           return availableRoleKeys.contains(roleObj.key);
         }).toList()
           ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+        // Apply search filter
+        final normalizedQuery = normalizeForSearch(_roleSearchController.text.trim());
+        if (normalizedQuery.isNotEmpty) {
+          filteredRoles = filteredRoles.where((role) {
+            final normalizedRoleName = normalizeForSearch(role.hebrewName);
+            return normalizedRoleName.contains(normalizedQuery);
+          }).toList();
+        }
+
+        // Sort so selected role appears at the top
+        if (_selectedRole != null && filteredRoles.any((r) => r.key == _selectedRole!.key)) {
+          filteredRoles = [
+            filteredRoles.firstWhere((r) => r.key == _selectedRole!.key),
+            ...filteredRoles.where((r) => r.key != _selectedRole!.key),
+          ];
+        }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -387,7 +595,44 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
               'בחר תפקיד עבור ${_selectedTeamMember!.name} באירוע "${_selectedEvent?.name}":',
               style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            // Search bar
+            Directionality(
+              textDirection: TextDirection.rtl,
+              child: TextField(
+                controller: _roleSearchController,
+                textDirection: TextDirection.rtl,
+                decoration: InputDecoration(
+                  hintText: 'חיפוש תפקיד לפי שם...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _roleSearchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            setState(() {
+                              _roleSearchController.clear();
+                              _roleSearchQuery = '';
+                            });
+                          },
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  isDense: true,
+                ),
+                style: const TextStyle(fontSize: 14),
+                onChanged: (value) {
+                  setState(() {
+                    _roleSearchQuery = value;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
             Expanded(
               child: filteredRoles.isEmpty
                   ? Center(
@@ -397,13 +642,16 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                           Icon(Icons.work_off, size: 48, color: Colors.grey.shade400),
                           const SizedBox(height: 16),
                           Text(
-                            'לאיש צוות זה אין תפקידים זמינים',
+                            normalizedQuery.isEmpty
+                                ? 'לאיש צוות זה אין תפקידים זמינים'
+                                : 'לא נמצאו תפקידים התואמים לחיפוש',
                             style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                           ),
                         ],
                       ),
                     )
                   : ListView.builder(
+                      controller: _roleScrollController,
                       itemCount: filteredRoles.length,
                       itemBuilder: (context, index) {
                         final role = filteredRoles[index];
@@ -414,13 +662,14 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                           color: isSelected ? Colors.blue.shade50 : Colors.white,
                           child: InkWell(
                             onTap: () {
-                              // Auto-complete assignment when role is selected
+                              // Update selection if different role
                               if (!isSelected) {
                                 setState(() {
                                   _selectedRole = role;
                                 });
-                                _finish();
                               }
+                              // Always finish (even if same role)
+                              _finish();
                             },
                             borderRadius: BorderRadius.circular(8),
                             child: Padding(
@@ -684,6 +933,9 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                   if (mounted) {
                     setState(() {
                       _currentStep = 2;
+                      // Clear role search when entering step 3
+                      _roleSearchController.clear();
+                      _roleSearchQuery = '';
                     });
                   }
                 });

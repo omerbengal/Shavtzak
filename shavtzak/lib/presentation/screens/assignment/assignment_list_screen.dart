@@ -33,6 +33,7 @@ import '../../widgets/map_location_picker.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
+import '../../../core/utils/search_utils.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -124,19 +125,19 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return slots;
     }
 
-    final query = _searchQuery.toLowerCase();
+    final normalizedQuery = normalizeForSearch(_searchQuery);
     return slots.where((slot) {
       // Search in event name
-      if (slot.event.name.toLowerCase().contains(query)) {
+      if (normalizeForSearch(slot.event.name).contains(normalizedQuery)) {
         return true;
       }
       // Search in role Hebrew name
-      if (slot.role.hebrewName.toLowerCase().contains(query)) {
+      if (normalizeForSearch(slot.role.hebrewName).contains(normalizedQuery)) {
         return true;
       }
       // Search in assigned member name (if filled)
       if (slot.isFilled && slot.currentAssignment?.teamMember?.name != null) {
-        if (slot.currentAssignment!.teamMember!.name.toLowerCase().contains(query)) {
+        if (normalizeForSearch(slot.currentAssignment!.teamMember!.name).contains(normalizedQuery)) {
           return true;
         }
       }
@@ -196,22 +197,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     ),
                   ),
                 ),
-              ),
-              // Leading: filter icon
-              IconButton(
-                icon: const Icon(
-                  Icons.filter_list,
-                  color: Colors.white,
-                ),
-                onPressed: () {
-                  if (_lastSlotsState != null) {
-                    _showFilterModal(context, _lastSlotsState!);
-                  }
-                },
-                tooltip: 'סינון',
-                iconSize: 22,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
               ),
               // Centered title
               const Expanded(
@@ -392,7 +377,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           onFilterChanged: _onFilterChanged,
         ),
 
-        // Search bar
+        // Search bar with filter button inside
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Directionality(
@@ -402,8 +387,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               decoration: InputDecoration(
                 hintText: 'חיפוש באירוע, תפקיד או שם...',
                 prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Clear button (only when there's text)
+                    if (_searchQuery.isNotEmpty)
+                      IconButton(
                         icon: const Icon(Icons.clear),
                         onPressed: () {
                           setState(() {
@@ -411,8 +400,26 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                             _searchQuery = '';
                           });
                         },
-                      )
-                    : null,
+                      ),
+                    // Filter button (always visible)
+                    IconButton(
+                      icon: Badge(
+                        isLabelVisible: state.selectedEventIds.isNotEmpty,
+                        label: Text(state.selectedEventIds.length.toString()),
+                        child: Icon(
+                          Icons.filter_list,
+                          color: state.selectedEventIds.isNotEmpty
+                              ? Colors.blue.shade700
+                              : null,
+                        ),
+                      ),
+                      onPressed: () => _showFilterModal(context, state),
+                      tooltip: state.selectedEventIds.isEmpty
+                          ? 'סינון לפי אירוע'
+                          : 'סינון: ${state.selectedEventIds.length} אירועים',
+                    ),
+                  ],
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),

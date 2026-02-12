@@ -1,0 +1,288 @@
+Implementation Plan: 5 Features                        
+
+Context
+
+Five new features for the Shavtzak app: (1) search in assignments screen, (2) same-day event conflict detection, (3)
+calendar constraint color fix, (4) event-to-Google Calendar sync, (5) repeating constraints. These are independent features
+that can be implemented in sequence.
+
+Implementation Order
+
+1. Feature 3 (trivial color change)
+2. Feature 1 (search - self-contained UI)
+3. Feature 2 (same-day conflict - BLoC + UI)
+4. Feature 4 (event calendar sync - follows existing pattern)
+5. Feature 5 (repeating constraints - most complex, all layers)
+
+---
+Feature 3: Calendar Constraint Color Change (Red → Graphite)
+
+File: shavtzak/lib/core/constants/calendar_constants.dart:46
+
+Change CalendarEventColors.unavailability from '11' (Red/Tomato) to '8' (Graphite).
+
+---
+Feature 1: Search for Assignments Screen
+
+File: shavtzak/lib/presentation/screens/assignment/assignment_list_screen.dart
+
+Changes
+
+1. Add state fields: String _searchQuery = '' and TextEditingController _searchController
+2. Add dispose() for controller cleanup
+3. Add search filter method that checks slot.event.name, slot.role.hebrewName, and slot.currentAssignment?.teamMember?.name
+against query (case-insensitive via toLowerCase() for mixed Hebrew/English)
+4. Add a TextField search bar between the filter bar and the header row with:
+ - RTL direction, hint "חיפוש באירוע, תפקיד או שם..."
+ - Search icon prefix, clear button suffix when non-empty
+ - onChanged → setState to update _searchQuery
+5. Apply _searchSlots() after existing _filterAssignments() in _buildSlotGrid
+6. Filter bar counts (Total/Filled/Unfilled) remain based on pre-search totals
+
+---
+Feature 2: Same-Day Event Conflict Detection
+
+Members assigned to another event on the same day(s) should appear in "שובצו כבר" section (still assignable with
+force-assign). Applies to both the admin assignments dropdown AND the manual assignment flow dialog.
+
+Files to Modify
+
+- shavtzak/lib/presentation/screens/assignment/models/assignment_slot.dart — new fields
+- shavtzak/lib/presentation/bloc/assignment/assignment_bloc.dart — slot building logic
+- shavtzak/lib/presentation/screens/assignment/assignment_list_screen.dart — display in dropdown/dialog
+- shavtzak/lib/presentation/screens/assignment/manual_assignment_flow_dialog.dart — step 2 warning
+
+AssignmentSlot Changes (assignment_slot.dart)
+
+Add fields:
+final List<TeamMember> sameDayAssignedMembers; // assigned to OTHER events on same day(s)
+final Map<String, List<String>> sameDayEventInfo; // memberId → other event names
+Add to constructor (defaults: const [], const {}), add to props.
+
+Assignment BLoC Changes (assignment_bloc.dart)
+
+In the slot-building logic (both _onRebuildAssignmentSlotsFromData and _buildSlotsFromAssignments):
+
+1. After computing assignedMemberIds for the current event, iterate ALL assignments
+2. For each assignment to a DIFFERENT event, check if that event's date range overlaps with current event's date range (use
+same-day comparison: normalize to day precision)
+3. If overlap found AND member has the role capability AND passes availability checks AND !allowMultipleAssignments → add
+to sameDayAssignedMembers map
+4. Remove same-day members from availableMembersMap (they shouldn't appear as freely available)
+5. Pass new fields to AssignmentSlot constructor
+
+Already-Assigned Dialog Changes (assignment_list_screen.dart)
+
+- Merge slot.alreadyAssignedMembers + slot.sameDayAssignedMembers in _showAlreadyAssignedDialog
+- For same-event members: show "תפקידים: ..." (existing)
+- For same-day members: show "משובצ/ת ב: " (new subtitle)
+- Both remain force-assignable via "שבץ בכל זאת"
+
+Manual Assignment Flow (manual_assignment_flow_dialog.dart)
+
+In step 2 (team member selection), after event is selected:
+1. Compute same-day assigned member IDs from all assignments + events available in BLoC state
+2. Show warning icon/indicator for same-day members in the list
+3. On tap, show warning dialog similar to constraint warning: "חבר/ת צוות זה/זו משובצ/ת לאירוע אחר באותו יום: " with "שבץ
+בכל זאת" option
+
+Date Overlap Helper
+
+Reuse Event.occursOn() (already exists at event.dart:54) for checking if events share dates:
+bool eventsShareDate(Event a, Event b) {
+ for (var d = a.startDate; !d.isAfter(a.endDate); d = d.add(Duration(days: 1))) {
+   if (b.occursOn(d)) return true;
+ }
+ return false;
+}
+
+---
+Feature 4: Event → Google Calendar Sync
+
+Each app event creates 2 Google Calendar events. Follow the existing constraint sync pattern.
+
+Files to Modify
+
+- shavtzak/lib/core/constants/calendar_constants.dart — add event color + title templates
+- shavtzak/lib/core/services/google_calendar_service.dart — add event CRUD methods
+- shavtzak/lib/core/services/calendar_sync_service.dart — add event sync orchestration
+- shavtzak/lib/data/data_sources/database_interface.dart — add event sync state abstract methods
+- shavtzak/lib/data/data_sources/firestore_database.dart — implement event sync state
+- shavtzak/lib/presentation/bloc/calendar_sync/calendar_sync_event.dart — new BLoC events
+- shavtzak/lib/presentation/bloc/calendar_sync/calendar_sync_bloc.dart — new handlers
+- shavtzak/lib/presentation/bloc/event/event_bloc.dart — trigger sync on create/update/delete
+
+Calendar Constants Additions
+
+class CalendarEventColors {
+ // ... existing ...
+ static const String appEvent = '7'; // Peacock (טווס)
+}
+
+class CalendarEventTitles {
+ // ... existing ...
+ static String eventAssembly(String eventName, {bool isTestMode = false}) { ... }
+ static String eventMain(String eventName, {bool isTestMode = false}) { ... }
+}
+
+GoogleCalendarService New Methods
+
+- createAppEventCalendarEvents(...) → creates 2 events:
+ a. "<name> - התייצבות והכנות" from assemblyTime→actualShowStartTime on event startDate
+ b. "<name>" from actualShowStartTime→endTime on event startDate (endDate for multi-day)
+ - Returns Map<String, String> with 'assembly' and 'main' calendar event IDs
+ - Uses time-based events (not all-day): EventDateTime(dateTime: combinedDateTime)
+ - Test mode: yellow color + "שבצק טסטינג: " prefix
+- updateAppEventCalendarEvents(...) → updates existing calendar events
+- deleteAppEventCalendarEvents(...) → deletes both calendar events (handles 404/410)
+- Helper: _combineDateTime(DateTime date, String timeHHmm) → combines date + time string
+
+Firestore Sync State
+
+Collection: ${collectionPrefix}event_calendar_sync (doc ID = eventId)
+Fields: assemblyCalendarEventId, mainCalendarEventId, status, lastSyncedAt, retryCount, errorMessage
+
+CalendarSyncBloc New Events
+
+- SyncAppEventToCalendar(Event event) — create or update
+- RemoveAppEventFromCalendar(String eventId) — delete
+
+EventBloc Integration
+
+- In _onCreateEvent: after success, access CalendarSyncBloc and dispatch SyncAppEventToCalendar
+- In _onUpdateEvent: after success, check if date/time fields changed → dispatch SyncAppEventToCalendar
+- In _onDeleteEvent: before/after delete, dispatch RemoveAppEventFromCalendar
+- The EventBloc will need a reference to CalendarSyncBloc (pass via constructor, or use context from UI layer via
+BlocListener)
+
+Edge Cases
+
+- Missing time fields: if assemblyTime/actualShowStartTime/endTime empty → skip creating that calendar event (or create
+all-day event as fallback)
+- Multi-day events: assembly event on startDate, main event spans startDate→endDate
+- Event update: compare old vs new event to determine if sync needed (only if date/time fields changed)
+
+---
+Feature 5: Repeating Constraints
+
+New constraint type for permanent members with recurring unavailability patterns (daily/weekly/monthly).
+
+Files to Modify
+
+- shavtzak/lib/core/constants/constraint_status.dart — add RepeatType enum
+- shavtzak/lib/domain/entities/team_member.dart — extend DateConstraint entity
+- shavtzak/lib/data/models/team_member_model.dart — extend DateConstraintModel serialization
+- shavtzak/lib/presentation/screens/user/constraints_screen.dart — UI flow (prior dialog + repeating dialog + confirmation)
+- shavtzak/lib/presentation/screens/team/team_list_screen.dart — admin constraint card indicator
+
+RepeatType Enum (constraint_status.dart)
+
+enum RepeatType { daily, weekly, monthly }
+With hebrewName extension: 'יומי', 'שבועי', 'חודשי'.
+
+DateConstraint Entity Changes (team_member.dart)
+
+New fields:
+final RepeatType? repeatType;      // null = one-time, or daily/weekly/monthly
+final int? repeatDay;              // weekday (1-7, Mon=1) for weekly; day-of-month (1-31) for monthly; null for daily
+final DateTime? repeatEndDate;     // required for repeating constraints
+Add to constructor, props, copyWith (with clearRepeatType/clearRepeatDay/clearRepeatEndDate booleans).
+
+Update conflictsWith(DateTime date):
+if (repeatType != null) return _matchesRepeatPattern(date);
+// ... existing one-time logic ...
+
+New method _matchesRepeatPattern(DateTime date):
+- Check date is within startDate..repeatEndDate range
+- RepeatType.daily → always true within range
+- RepeatType.weekly → date.weekday == repeatDay
+- RepeatType.monthly → date.day == repeatDay
+
+Update toString() for repeating constraints to show pattern description.
+
+Note: blocksEventAssignment(Event) already works since it checks time overlap — repeating constraints' time fields work the
+same way.
+
+DateConstraintModel Changes (team_member_model.dart)
+
+New fields: repeatType (String?), repeatDay (int?), repeatEndDate (DateTime?)
+
+- fromEntity(): convert RepeatType enum to string name
+- toEntity(): parse string back to RepeatType enum
+- fromJson(): read from Firestore with null defaults (backward compat)
+- toJson(): write to Firestore (null values handled gracefully)
+
+Constraints Screen UI Changes (constraints_screen.dart)
+
+Step 1: Prior "Type Choice" Dialog (replaces direct constraint dialog on FAB tap)
+- Centered dialog with title "על איזו מגבלה מדובר?"
+- Two tappable cards (similar to PasscodeSetupDialog step 0 pattern at passcode_setup_dialog.dart:74):
+ - "מגבלה חד פעמית" with Icons.event_busy → opens existing _ConstraintRequestDialog
+ - "מגבלה קבועה" with Icons.repeat → opens new repeating dialog
+
+Step 2: Repeating Constraint Dialog (new _RepeatingConstraintDialog widget)
+- Top: segmented control / toggle buttons for daily/weekly/monthly
+- Daily: only optional time fields (start/end) + required end date picker
+- Weekly: 7 day-of-week buttons (ראשון through שבת), single select + optional time fields + required end date picker
+ - Map Hebrew weekday names to Dart weekday values: ראשון=7(Sun), שני=1(Mon), ..., שבת=6(Sat)
+- Monthly: single-day calendar picker showing current month only (1st to last day) + optional time fields + required end
+date picker
+ - Reuse/adapt the existing DualCalendarDatePicker but configured for single month + single day selection
+- "סיום" button at bottom
+
+Step 3: Confirmation Dialog
+- Shows summary sentence:
+ - Daily: "כל יום, אני לא זמין/ה" [+ "משעה X עד שעה Y"] + "עד תאריך Z"
+ - Weekly: "כל יום , אני לא זמין/ה" [+ times] + "עד תאריך Z"
+ - Monthly: "כל  לחודש, אני לא זמין/ה" [+ times] + "עד תאריך Z"
+- "מאושר" → creates constraint with status: pending
+- "ביטול" → dismisses entire flow
+
+Constraint creation:
+DateConstraint(
+ id: Uuid().v4(),
+ startDate: DateTime.now(), // pattern start
+ constraintType: ConstraintType.unavailability,
+ status: ConstraintStatus.pending,
+ repeatType: selectedRepeatType,
+ repeatDay: selectedDay,
+ repeatEndDate: selectedEndDate,
+ startTime: selectedStartTime,
+ endTime: selectedEndTime,
+ note: generatedSummaryText, // auto-generated from confirmation
+)
+
+Constraint List Display (constraints_screen.dart)
+
+For repeating constraints in the list, show:
+- Repeat icon (Icons.repeat) instead of date icon
+- Pattern description instead of date range (e.g., "כל יום שני" instead of "01/01/2026 - 31/12/2026")
+- End date shown separately
+
+Admin Constraint Card Indicator (team_list_screen.dart)
+
+In the team member modal where constraint cards are displayed:
+- Add a small Icon(Icons.repeat, size: 14) badge or label "מגבלה קבועה" for constraints where repeatType != null
+- Keep existing approval workflow (approve/reject buttons work the same)
+
+Calendar Sync for Repeating Constraints
+
+Skip for initial implementation — repeating constraints will NOT sync to Google Calendar. This can be added later with
+Google Calendar recurring event RRULE support.
+
+---
+Verification
+
+After each feature, run flutter analyze from the shavtzak/ directory. The user will test manually in the browser.
+
+Feature-specific verification:
+
+1. F3: Create/approve a constraint → verify it appears as graphite (not red) in Google Calendar
+2. F1: Open admin assignments → type in search → verify filtering works across event name, role name, and member name
+3. F2: Assign member to Event A on Monday → open Event B (also Monday) → verify member appears in "שובצו כבר" section, not
+available members. Also test in manual assignment flow dialog.
+4. F4: Create event with all time fields → verify 2 calendar events appear in Google Calendar with correct
+names/times/peacock color. Edit event times → verify calendar events update. Delete event → verify calendar events deleted.
+5. F5: Open constraints → tap FAB → verify type choice dialog. Choose "מגבלה קבועה" → test all 3 modes
+(daily/weekly/monthly). Verify confirmation dialog text. Verify constraint appears in list with repeat indicator. Verify
+admin sees repeat indicator in team member modal. Verify isAvailableOn() correctly blocks matching dates.

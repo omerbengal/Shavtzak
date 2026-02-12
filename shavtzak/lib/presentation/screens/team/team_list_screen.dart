@@ -20,6 +20,7 @@ import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/utils/time_range_utils.dart';
+import '../../../core/utils/search_utils.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/utilities_service.dart';
 import 'package:uuid/uuid.dart';
@@ -64,7 +65,7 @@ class TeamListScreen extends StatefulWidget {
 class _TeamListScreenState extends State<TeamListScreen> {
   final TextEditingController _searchController = TextEditingController();
   late final FocusNode _searchFocusNode;
-  bool _showSearch = false;
+  String _searchQuery = '';
   TeamLoaded? _lastLoadedState;
   bool _hasTriggeredInitialSync = false;
 
@@ -99,11 +100,9 @@ class _TeamListScreenState extends State<TeamListScreen> {
   }
 
   void _onSearchChanged(String query) {
-    if (query.isEmpty) {
-      context.read<TeamBloc>().add(const team.LoadTeamMembers());
-    } else {
-      context.read<TeamBloc>().add(team.SearchTeamMembers(query));
-    }
+    setState(() {
+      _searchQuery = query;
+    });
   }
 
   /// Handle phone number click with device-specific behavior
@@ -165,19 +164,6 @@ class _TeamListScreenState extends State<TeamListScreen> {
           titleSpacing: 0,
           title: Row(
             children: [
-              // Leading: Search/Close button
-              _buildCompactIcon(
-                icon: _showSearch ? Icons.close : Icons.search,
-                onPressed: () {
-                  setState(() {
-                    _showSearch = !_showSearch;
-                    if (!_showSearch) {
-                      _searchController.clear();
-                      context.read<TeamBloc>().add(const team.LoadTeamMembers());
-                    }
-                  });
-                },
-              ),
               // Leading: Sync button
               BlocListener<CalendarSyncBloc, CalendarSyncState>(
                 listener: (context, state) {
@@ -255,21 +241,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 },
               ),
               // Centered title
-              Expanded(
-                child: _showSearch
-                    ? TextField(
-                        controller: _searchController,
-                        focusNode: _searchFocusNode,
-                        autofocus: true,
-                        decoration: const InputDecoration(
-                          hintText: 'חיפוש חבר צוות...',
-                          border: InputBorder.none,
-                          hintStyle: TextStyle(color: Colors.black54),
-                        ),
-                        style: const TextStyle(color: Colors.black),
-                        onChanged: _onSearchChanged,
-                      )
-                    : const Center(child: Text(AppStrings.team, style: TextStyle(fontSize: 20))),
+              const Expanded(
+                child: Center(child: Text(AppStrings.team, style: TextStyle(fontSize: 20))),
               ),
               // Trailing: Archive button
               IconButton(
@@ -405,6 +378,39 @@ class _TeamListScreenState extends State<TeamListScreen> {
             selectedIndex: FilterPersistence.teamFilterIndex,
             onFilterChanged: _onFilterChanged,
           ),
+          // Search bar
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                decoration: InputDecoration(
+                  hintText: 'חיפוש חבר צוות...',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            setState(() {
+                              _searchController.clear();
+                              _searchQuery = '';
+                            });
+                          },
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onChanged: _onSearchChanged,
+              ),
+            ),
+          ),
           // Team list
           Expanded(
             child: ListView.builder(
@@ -444,16 +450,31 @@ class _TeamListScreenState extends State<TeamListScreen> {
     // First, exclude archived members
     final nonArchivedMembers = members.where((m) => !m.isArchived).toList();
 
+    List<TeamMember> result;
     switch (filterIndex) {
       case 0: // All non-archived
-        return nonArchivedMembers;
+        result = nonArchivedMembers;
+        break;
       case 1: // Permanent (non-archived)
-        return nonArchivedMembers.where((m) => m.isPermanent).toList();
+        result = nonArchivedMembers.where((m) => m.isPermanent).toList();
+        break;
       case 2: // Non-permanent (non-archived)
-        return nonArchivedMembers.where((m) => !m.isPermanent).toList();
+        result = nonArchivedMembers.where((m) => !m.isPermanent).toList();
+        break;
       default:
-        return nonArchivedMembers;
+        result = nonArchivedMembers;
     }
+
+    // Apply search filter
+    if (_searchQuery.isNotEmpty) {
+      final normalizedQuery = normalizeForSearch(_searchQuery);
+      result = result.where((member) {
+        final normalizedName = normalizeForSearch(member.name);
+        return normalizedName.contains(normalizedQuery);
+      }).toList();
+    }
+
+    return result;
   }
 
   Widget _buildTeamMemberCard(TeamMember member) {
