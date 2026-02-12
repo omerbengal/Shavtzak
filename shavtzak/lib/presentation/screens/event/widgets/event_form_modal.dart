@@ -705,8 +705,8 @@ class _EventFormModalState extends State<EventFormModal> {
                           IconButton(
                             icon: const Icon(Icons.copy, color: Colors.blue),
                             onPressed: () {
-                              Navigator.of(context).pop(); // Close current modal
-                              _showDuplicationModal(); // Open duplication modal
+                              // Close the current modal and signal duplication intent
+                              Navigator.of(context).pop({'action': 'duplicate', 'event': widget.event});
                             },
                             tooltip: 'שכפל אירוע',
                           ),
@@ -1736,24 +1736,6 @@ class _EventFormModalState extends State<EventFormModal> {
       ); // Close DraggableScrollableSheet
   }
 
-  
-  void _showDuplicationModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: false,
-      enableDrag: false,
-      backgroundColor: Colors.transparent,
-      builder: (modalContext) => EventFormModal(
-        event: widget.event,
-        isDuplication: true,
-        filterIndex: widget.filterIndex,
-        onSuccess: () {
-          Navigator.of(modalContext).pop(); // Close the duplication modal
-        },
-      ),
-    );
-  }
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';

@@ -583,8 +583,8 @@ class _EventListScreenState extends State<EventListScreen> {
     );
   }
 
-  void _showEventFormModal(Event? event) {
-    showModalBottomSheet(
+  void _showEventFormModal(Event? event, {bool isDuplication = false}) async {
+    final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       isDismissible: false,
@@ -593,11 +593,20 @@ class _EventListScreenState extends State<EventListScreen> {
       builder: (modalContext) => EventFormModal(
         event: event,
         filterIndex: FilterPersistence.eventFilterIndex,
+        isDuplication: isDuplication,
         onSuccess: () {
           Navigator.of(modalContext).pop();
         },
       ),
     );
+
+    // Check if the modal was closed with a duplication intent
+    if (result is Map && result['action'] == 'duplicate' && result['event'] != null) {
+      // Open the duplication modal after the original modal is fully closed
+      if (mounted) {
+        _showEventFormModal(result['event'] as Event, isDuplication: true);
+      }
+    }
   }
 
   void _showDeleteConfirmation(Event event) {
