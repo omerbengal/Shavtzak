@@ -119,6 +119,9 @@ class AddConstraintRequest extends TeamEvent {
   final String? note;
   final String? startTime; // Start time in "HH:mm" format (optional)
   final String? endTime; // End time in "HH:mm" format (optional)
+  final RepeatType? repeatType; // null = one-time
+  final int? repeatDay; // weekly weekday (1..7) / monthly day-of-month (1..31)
+  final DateTime? repeatEndDate; // end date for recurring constraints
 
   const AddConstraintRequest({
     required this.teamMemberId,
@@ -127,10 +130,23 @@ class AddConstraintRequest extends TeamEvent {
     this.note,
     this.startTime,
     this.endTime,
+    this.repeatType,
+    this.repeatDay,
+    this.repeatEndDate,
   });
 
   @override
-  List<Object?> get props => [teamMemberId, startDate, endDate, note, startTime, endTime];
+  List<Object?> get props => [
+        teamMemberId,
+        startDate,
+        endDate,
+        note,
+        startTime,
+        endTime,
+        repeatType,
+        repeatDay,
+        repeatEndDate,
+      ];
 }
 
 /// Remove a constraint by ID for a team member (targeted update)
@@ -159,6 +175,9 @@ class EditConstraintRequest extends TeamEvent {
   final String? startTime;
   final String? endTime;
   final bool wasAutoRejectedFromCalendar;
+  final RepeatType? repeatType;
+  final int? repeatDay;
+  final DateTime? repeatEndDate;
 
   const EditConstraintRequest({
     required this.teamMemberId,
@@ -171,6 +190,9 @@ class EditConstraintRequest extends TeamEvent {
     this.startTime,
     this.endTime,
     this.wasAutoRejectedFromCalendar = false,
+    this.repeatType,
+    this.repeatDay,
+    this.repeatEndDate,
   });
 
   @override
@@ -185,6 +207,9 @@ class EditConstraintRequest extends TeamEvent {
         startTime,
         endTime,
         wasAutoRejectedFromCalendar,
+        repeatType,
+        repeatDay,
+        repeatEndDate,
       ];
 }
 

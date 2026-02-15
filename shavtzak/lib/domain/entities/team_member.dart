@@ -11,25 +11,41 @@ class DateConstraint extends Equatable {
   final DateTime? endDate; // null means single day constraint
   final String? note; // optional note for the constraint
   final ConstraintStatus status; // status of the constraint request
-  final ConstraintType constraintType; // type of constraint (unavailability/availability)
-  final bool wasAutoRejectedFromCalendar; // true if constraint was auto-rejected due to calendar event deletion
-  final String? startTime; // Start time in "HH:mm" format (optional, null = entire day)
-  final String? endTime; // End time in "HH:mm" format (optional, null = entire day)
+  final ConstraintType
+      constraintType; // type of constraint (unavailability/availability)
+  final bool
+      wasAutoRejectedFromCalendar; // true if constraint was auto-rejected due to calendar event deletion
+  final String?
+      startTime; // Start time in "HH:mm" format (optional, null = entire day)
+  final String?
+      endTime; // End time in "HH:mm" format (optional, null = entire day)
+  final RepeatType? repeatType; // null = one-time, non-null = recurring pattern
+  final int?
+      repeatDay; // Weekly: weekday (Mon=1..Sun=7), Monthly: day-of-month (1..31)
+  final DateTime? repeatEndDate; // Required for recurring constraints
 
   const DateConstraint({
     required this.id,
     required this.startDate,
     this.endDate,
     this.note,
-    this.status = ConstraintStatus.approved, // default to approved for existing constraints
+    this.status = ConstraintStatus
+        .approved, // default to approved for existing constraints
     required this.constraintType, // constraint type must be explicitly provided
     this.wasAutoRejectedFromCalendar = false, // default to false
     this.startTime,
     this.endTime,
+    this.repeatType,
+    this.repeatDay,
+    this.repeatEndDate,
   });
 
   /// Check if a given date falls within this constraint
   bool conflictsWith(DateTime date) {
+    if (repeatType != null) {
+      return _matchesRepeatPattern(date);
+    }
+
     if (endDate == null) {
       // Single day constraint - check if dates match (ignoring time)
       return _isSameDay(date, startDate);
@@ -50,11 +66,60 @@ class DateConstraint extends Equatable {
         date1.day == date2.day;
   }
 
+  bool _matchesRepeatPattern(DateTime date) {
+    if (repeatEndDate == null) return false;
+
+    final dateOnly = DateTime(date.year, date.month, date.day);
+    final start = DateTime(startDate.year, startDate.month, startDate.day);
+    final end = DateTime(
+      repeatEndDate!.year,
+      repeatEndDate!.month,
+      repeatEndDate!.day,
+    );
+
+    if (dateOnly.isBefore(start) || dateOnly.isAfter(end)) {
+      return false;
+    }
+
+    switch (repeatType!) {
+      case RepeatType.daily:
+        return true;
+      case RepeatType.weekly:
+        return repeatDay != null && dateOnly.weekday == repeatDay;
+      case RepeatType.monthly:
+        return repeatDay != null && dateOnly.day == repeatDay;
+    }
+  }
+
   @override
-  List<Object?> get props => [id, startDate, endDate, note, status, constraintType, wasAutoRejectedFromCalendar, startTime, endTime];
+  List<Object?> get props => [
+        id,
+        startDate,
+        endDate,
+        note,
+        status,
+        constraintType,
+        wasAutoRejectedFromCalendar,
+        startTime,
+        endTime,
+        repeatType,
+        repeatDay,
+        repeatEndDate,
+      ];
 
   @override
   String toString() {
+    if (repeatType != null) {
+      final endDateStr = repeatEndDate != null
+          ? '${repeatEndDate!.day.toString().padLeft(2, '0')}/${repeatEndDate!.month.toString().padLeft(2, '0')}/${repeatEndDate!.year}'
+          : '?';
+      final pattern = _repeatPatternDescription();
+      if (startTime != null && endTime != null) {
+        return '$pattern ($startTime-$endTime), עד $endDateStr';
+      }
+      return '$pattern, עד $endDateStr';
+    }
+
     // If endDate is null or same as startDate, display single date
     final dateStr = endDate == null || _isSameDay(startDate, endDate!)
         ? '${startDate.day.toString().padLeft(2, '0')}/${startDate.month.toString().padLeft(2, '0')}/${startDate.year}'
@@ -71,6 +136,38 @@ class DateConstraint extends Equatable {
     return dateStr;
   }
 
+  String _repeatPatternDescription() {
+    switch (repeatType!) {
+      case RepeatType.daily:
+        return 'כל יום';
+      case RepeatType.weekly:
+        return 'כל יום ${_weekdayHebrewName(repeatDay)}';
+      case RepeatType.monthly:
+        return 'כל ${repeatDay ?? '?'} לחודש';
+    }
+  }
+
+  String _weekdayHebrewName(int? weekday) {
+    switch (weekday) {
+      case 1:
+        return 'שני';
+      case 2:
+        return 'שלישי';
+      case 3:
+        return 'רביעי';
+      case 4:
+        return 'חמישי';
+      case 5:
+        return 'שישי';
+      case 6:
+        return 'שבת';
+      case 7:
+        return 'ראשון';
+      default:
+        return '?';
+    }
+  }
+
   /// Copy with method for immutability
   DateConstraint copyWith({
     String? id,
@@ -82,8 +179,14 @@ class DateConstraint extends Equatable {
     bool? wasAutoRejectedFromCalendar,
     String? startTime,
     String? endTime,
+    RepeatType? repeatType,
+    int? repeatDay,
+    DateTime? repeatEndDate,
     bool clearStartTime = false,
     bool clearEndTime = false,
+    bool clearRepeatType = false,
+    bool clearRepeatDay = false,
+    bool clearRepeatEndDate = false,
   }) {
     return DateConstraint(
       id: id ?? this.id,
@@ -92,9 +195,14 @@ class DateConstraint extends Equatable {
       note: note ?? this.note,
       status: status ?? this.status,
       constraintType: constraintType ?? this.constraintType,
-      wasAutoRejectedFromCalendar: wasAutoRejectedFromCalendar ?? this.wasAutoRejectedFromCalendar,
+      wasAutoRejectedFromCalendar:
+          wasAutoRejectedFromCalendar ?? this.wasAutoRejectedFromCalendar,
       startTime: clearStartTime ? null : (startTime ?? this.startTime),
       endTime: clearEndTime ? null : (endTime ?? this.endTime),
+      repeatType: clearRepeatType ? null : (repeatType ?? this.repeatType),
+      repeatDay: clearRepeatDay ? null : (repeatDay ?? this.repeatDay),
+      repeatEndDate:
+          clearRepeatEndDate ? null : (repeatEndDate ?? this.repeatEndDate),
     );
   }
 
@@ -103,7 +211,8 @@ class DateConstraint extends Equatable {
   /// For unavailability constraints without time: returns true (unavailable all day)
   bool blocksEventAssignment(Event event) {
     // Use assemblyTime as the event's start time if available, otherwise startTime
-    final eventStart = event.assemblyTime.isNotEmpty ? event.assemblyTime : event.startTime;
+    final eventStart =
+        event.assemblyTime.isNotEmpty ? event.assemblyTime : event.startTime;
     final eventEnd = event.endTime;
 
     // If constraint has no time specified, it applies to entire day (blocks assignment)
@@ -119,7 +228,8 @@ class DateConstraint extends Equatable {
 
     // Check if the constraint's time range overlaps with event's time range
     // If they overlap, member is unavailable during the event
-    return TimeRangeUtils.timesOverlap(startTime, endTime, eventStart, eventEnd);
+    return TimeRangeUtils.timesOverlap(
+        startTime, endTime, eventStart, eventEnd);
   }
 
   /// Check if this constraint conflicts with an event's time range
@@ -145,23 +255,26 @@ class TeamMember extends Equatable {
   final String name;
   final bool isActive;
   final bool isPermanent; // Whether this is a permanent team member
-  final bool isArchived; // Whether this team member is archived (hidden from main lists)
+  final bool
+      isArchived; // Whether this team member is archived (hidden from main lists)
   final List<DateConstraint> constraints; // When unavailable
-  final Map<String, bool> roleCapabilities; // Which roles can they perform (role key -> bool)
+  final Map<String, bool>
+      roleCapabilities; // Which roles can they perform (role key -> bool)
   final String comments; // Comments about the team member
   final DateTime createdAt;
   final DateTime updatedAt;
 
   // Feature 13: User authentication fields
   final String uniqueKey; // UUID for user identification (not shown in UI)
-  final bool isAdmin;     // Admin status (defaults to false for non-admin)
+  final bool isAdmin; // Admin status (defaults to false for non-admin)
 
   // Passcode security fields
-  final String? passcode;        // 4 or 6 digit passcode (null = no passcode)
-  final int? passcodeLength;     // Length of passcode (4 or 6, null = no passcode)
+  final String? passcode; // 4 or 6 digit passcode (null = no passcode)
+  final int? passcodeLength; // Length of passcode (4 or 6, null = no passcode)
 
   // Multiple assignment field
-  final bool allowMultipleAssignments; // Allow assigning to same event multiple times
+  final bool
+      allowMultipleAssignments; // Allow assigning to same event multiple times
 
   // Phone number field
   final String? phoneNumber; // Optional Israeli phone number
@@ -173,13 +286,15 @@ class TeamMember extends Equatable {
   final DateTime? birthday; // Optional birthday date
 
   // Summary screen access field
-  final bool canAccessSummaryScreen; // Whether non-admin can access summary screen
+  final bool
+      canAccessSummaryScreen; // Whether non-admin can access summary screen
 
   // Vehicle info field
   final VehicleInfo? vehicleInfo; // Optional vehicle information
 
   // Event-based availability for non-permanent members
-  final List<String> availableEventIds; // List of event IDs this member is available for (non-permanent only)
+  final List<String>
+      availableEventIds; // List of event IDs this member is available for (non-permanent only)
 
   const TeamMember({
     required this.id,
@@ -288,8 +403,10 @@ class TeamMember extends Equatable {
     if (isArchived || !isActive) return false;
 
     // Get the full event date range
-    final eventStart = DateTime(event.startDate.year, event.startDate.month, event.startDate.day);
-    final eventEnd = DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
+    final eventStart = DateTime(
+        event.startDate.year, event.startDate.month, event.startDate.day);
+    final eventEnd =
+        DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
 
     if (isPermanent) {
       // Permanent members: available by default, unavailability constraints block them
@@ -390,12 +507,15 @@ class TeamMember extends Equatable {
       uniqueKey: uniqueKey ?? this.uniqueKey,
       isAdmin: isAdmin ?? this.isAdmin,
       passcode: clearPasscode ? null : (passcode ?? this.passcode),
-      passcodeLength: clearPasscode ? null : (passcodeLength ?? this.passcodeLength),
-      allowMultipleAssignments: allowMultipleAssignments ?? this.allowMultipleAssignments,
+      passcodeLength:
+          clearPasscode ? null : (passcodeLength ?? this.passcodeLength),
+      allowMultipleAssignments:
+          allowMultipleAssignments ?? this.allowMultipleAssignments,
       phoneNumber: clearPhone ? null : (phoneNumber ?? this.phoneNumber),
       email: clearEmail ? null : (email ?? this.email),
       birthday: clearBirthday ? null : (birthday ?? this.birthday),
-      canAccessSummaryScreen: canAccessSummaryScreen ?? this.canAccessSummaryScreen,
+      canAccessSummaryScreen:
+          canAccessSummaryScreen ?? this.canAccessSummaryScreen,
       vehicleInfo: clearVehicleInfo ? null : (vehicleInfo ?? this.vehicleInfo),
       availableEventIds: availableEventIds ?? this.availableEventIds,
     );
@@ -427,5 +547,6 @@ class TeamMember extends Equatable {
       ];
 
   @override
-  String toString() => 'TeamMember($id, $name, active: $isActive, admin: $isAdmin)';
+  String toString() =>
+      'TeamMember($id, $name, active: $isActive, admin: $isAdmin)';
 }

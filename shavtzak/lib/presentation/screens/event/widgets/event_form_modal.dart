@@ -383,14 +383,8 @@ class _EventFormModalState extends State<EventFormModal> {
                 !_relevantForExtendedTeam, // Invert back for database
           ));
 
-      // If duplicating WITH assignments, DON'T close immediately!
-      // The BlocListener will handle showing conflict dialog or closing on success.
-      // If duplicating WITHOUT assignments, close immediately (no conflicts possible).
-      if (!_duplicateAssignments) {
-        widget.onSuccess();
-      }
-      // When _duplicateAssignments is true, the modal stays open
-      // and the BlocListener will handle the response
+      // Don't close here. Duplication completion (or conflict handling) is
+      // managed by the BlocListener to avoid double-pop race conditions.
       return;
     }
 

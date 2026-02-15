@@ -12,21 +12,23 @@ class TeamMemberModel {
   final bool isPermanent;
   final bool isArchived;
   final List<DateConstraintModel> constraints;
-  final Map<String, bool> roleCapabilities; // Stored as string keys in Firestore
+  final Map<String, bool>
+      roleCapabilities; // Stored as string keys in Firestore
   final String comments;
   final DateTime createdAt;
   final DateTime updatedAt;
 
   // Feature 13: User authentication fields
   final String uniqueKey; // UUID for user identification (not shown in UI)
-  final bool isAdmin;     // Admin status (defaults to false for non-admin)
+  final bool isAdmin; // Admin status (defaults to false for non-admin)
 
   // Passcode security fields
-  final String? passcode;        // 4 or 6 digit passcode (null = no passcode)
-  final int? passcodeLength;     // Length of passcode (4 or 6, null = no passcode)
+  final String? passcode; // 4 or 6 digit passcode (null = no passcode)
+  final int? passcodeLength; // Length of passcode (4 or 6, null = no passcode)
 
   // Multiple assignment field
-  final bool allowMultipleAssignments; // Allow assigning to same event multiple times
+  final bool
+      allowMultipleAssignments; // Allow assigning to same event multiple times
 
   // Phone number field
   final String? phoneNumber; // Optional Israeli phone number
@@ -38,13 +40,15 @@ class TeamMemberModel {
   final DateTime? birthday; // Optional birthday date
 
   // Summary screen access field
-  final bool canAccessSummaryScreen; // Whether non-admin can access summary screen
+  final bool
+      canAccessSummaryScreen; // Whether non-admin can access summary screen
 
   // Vehicle info field
   final VehicleInfoModel? vehicleInfo; // Optional vehicle information
 
   // Event-based availability for non-permanent members
-  final List<String> availableEventIds; // List of event IDs this member is available for
+  final List<String>
+      availableEventIds; // List of event IDs this member is available for
 
   const TeamMemberModel({
     required this.id,
@@ -149,7 +153,8 @@ class TeamMemberModel {
     final passcodeLength = data['passcodeLength'] as int?;
 
     // Handle migration - default to false for existing members missing allowMultipleAssignments
-    final allowMultipleAssignments = data['allowMultipleAssignments'] as bool? ?? false;
+    final allowMultipleAssignments =
+        data['allowMultipleAssignments'] as bool? ?? false;
 
     // Handle migration - phone number is optional, default to null for existing members
     final phoneNumber = data['phoneNumber'] as String?;
@@ -163,7 +168,8 @@ class TeamMemberModel {
         : null;
 
     // Handle migration - default to false for existing members missing canAccessSummaryScreen
-    final canAccessSummaryScreen = data['canAccessSummaryScreen'] as bool? ?? false;
+    final canAccessSummaryScreen =
+        data['canAccessSummaryScreen'] as bool? ?? false;
 
     // Handle migration - vehicleInfo is optional, default to null for existing members
     final vehicleInfoData = data['vehicleInfo'] as Map<String, dynamic>?;
@@ -177,8 +183,9 @@ class TeamMemberModel {
 
     // Handle migration - availableEventIds is optional, default to empty list for existing members
     final availableEventIds = (data['availableEventIds'] as List<dynamic>?)
-        ?.map((e) => e as String)
-        .toList() ?? [];
+            ?.map((e) => e as String)
+            .toList() ??
+        [];
 
     final model = TeamMemberModel(
       id: doc.id,
@@ -187,10 +194,12 @@ class TeamMemberModel {
       isPermanent: data['isPermanent'] as bool? ?? false,
       isArchived: isArchived,
       constraints: (data['constraints'] as List<dynamic>?)
-              ?.map((c) => DateConstraintModel.fromJson(c as Map<String, dynamic>))
+              ?.map((c) =>
+                  DateConstraintModel.fromJson(c as Map<String, dynamic>))
               .toList() ??
           [],
-      roleCapabilities: Map<String, bool>.from(data['roleCapabilities'] as Map? ?? {}),
+      roleCapabilities:
+          Map<String, bool>.from(data['roleCapabilities'] as Map? ?? {}),
       comments: data['comments'] as String? ?? '',
       createdAt: data['createdAt'] != null
           ? (data['createdAt'] as Timestamp).toDate()
@@ -220,7 +229,8 @@ class TeamMemberModel {
   }
 
   /// Update document with migration fields (async operation)
-  static void _updateDocumentWithMigrationFields(DocumentReference ref, TeamMemberModel model) {
+  static void _updateDocumentWithMigrationFields(
+      DocumentReference ref, TeamMemberModel model) {
     // Update asynchronously without blocking the read operation
     ref.update({
       'uniqueKey': model.uniqueKey,
@@ -272,7 +282,8 @@ class TeamMemberModel {
     final passcodeLength = json['passcodeLength'] as int?;
 
     // Handle migration - default to false for existing members missing allowMultipleAssignments
-    final allowMultipleAssignments = json['allowMultipleAssignments'] as bool? ?? false;
+    final allowMultipleAssignments =
+        json['allowMultipleAssignments'] as bool? ?? false;
 
     // Handle migration - phone number is optional, default to null for existing members
     final phoneNumber = json['phoneNumber'] as String?;
@@ -286,7 +297,8 @@ class TeamMemberModel {
         : null;
 
     // Handle migration - default to false for existing members missing canAccessSummaryScreen
-    final canAccessSummaryScreen = json['canAccessSummaryScreen'] as bool? ?? false;
+    final canAccessSummaryScreen =
+        json['canAccessSummaryScreen'] as bool? ?? false;
 
     // Handle migration - vehicleInfo is optional, default to null for existing members
     final vehicleInfoData = json['vehicleInfo'] as Map<String, dynamic>?;
@@ -300,8 +312,9 @@ class TeamMemberModel {
 
     // Handle migration - availableEventIds is optional, default to empty list for existing members
     final availableEventIds = (json['availableEventIds'] as List<dynamic>?)
-        ?.map((e) => e as String)
-        .toList() ?? [];
+            ?.map((e) => e as String)
+            .toList() ??
+        [];
 
     return TeamMemberModel(
       id: json['id'] as String,
@@ -310,10 +323,12 @@ class TeamMemberModel {
       isPermanent: json['isPermanent'] as bool? ?? false,
       isArchived: isArchived,
       constraints: (json['constraints'] as List<dynamic>?)
-              ?.map((c) => DateConstraintModel.fromJson(c as Map<String, dynamic>))
+              ?.map((c) =>
+                  DateConstraintModel.fromJson(c as Map<String, dynamic>))
               .toList() ??
           [],
-      roleCapabilities: Map<String, bool>.from(json['roleCapabilities'] as Map? ?? {}),
+      roleCapabilities:
+          Map<String, bool>.from(json['roleCapabilities'] as Map? ?? {}),
       comments: json['comments'] as String? ?? '',
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -421,17 +436,26 @@ class DateConstraintModel {
   final bool wasAutoRejectedFromCalendar;
   final String? startTime; // Start time in "HH:mm" format (optional)
   final String? endTime; // End time in "HH:mm" format (optional)
+  final String? repeatType; // RepeatType enum name
+  final int? repeatDay; // Weekly weekday (1..7) or monthly day-of-month (1..31)
+  final DateTime? repeatEndDate; // End date for recurring constraints
 
   const DateConstraintModel({
     required this.id,
     required this.startDate,
     this.endDate,
     this.note,
-    this.status = ConstraintStatus.approved, // default to approved for existing constraints
-    this.constraintType = ConstraintType.unavailability, // default to unavailability for backward compatibility
-    this.wasAutoRejectedFromCalendar = false, // default to false for existing constraints
+    this.status = ConstraintStatus
+        .approved, // default to approved for existing constraints
+    this.constraintType = ConstraintType
+        .unavailability, // default to unavailability for backward compatibility
+    this.wasAutoRejectedFromCalendar =
+        false, // default to false for existing constraints
     this.startTime,
     this.endTime,
+    this.repeatType,
+    this.repeatDay,
+    this.repeatEndDate,
   });
 
   factory DateConstraintModel.fromEntity(DateConstraint entity) {
@@ -445,10 +469,18 @@ class DateConstraintModel {
       wasAutoRejectedFromCalendar: entity.wasAutoRejectedFromCalendar,
       startTime: entity.startTime,
       endTime: entity.endTime,
+      repeatType: entity.repeatType?.name,
+      repeatDay: entity.repeatDay,
+      repeatEndDate: entity.repeatEndDate,
     );
   }
 
   DateConstraint toEntity() {
+    final parsedRepeatType =
+        repeatType != null && RepeatType.values.any((t) => t.name == repeatType)
+            ? RepeatType.values.firstWhere((t) => t.name == repeatType)
+            : null;
+
     return DateConstraint(
       id: id, // Use the id field from this model
       startDate: startDate,
@@ -459,6 +491,9 @@ class DateConstraintModel {
       wasAutoRejectedFromCalendar: wasAutoRejectedFromCalendar,
       startTime: startTime,
       endTime: endTime,
+      repeatType: parsedRepeatType,
+      repeatDay: repeatDay,
+      repeatEndDate: repeatEndDate,
     );
   }
 
@@ -485,11 +520,19 @@ class DateConstraintModel {
     final constraintId = json['id'] as String? ?? const Uuid().v4();
 
     // Handle migration - default to false for existing constraints missing wasAutoRejectedFromCalendar
-    final wasAutoRejectedFromCalendar = json['wasAutoRejectedFromCalendar'] as bool? ?? false;
+    final wasAutoRejectedFromCalendar =
+        json['wasAutoRejectedFromCalendar'] as bool? ?? false;
 
     // Handle migration - time fields are optional, default to null for existing constraints
     final startTime = json['startTime'] as String?;
     final endTime = json['endTime'] as String?;
+    final repeatType = json['repeatType'] as String?;
+    final repeatDay = (json['repeatDay'] as num?)?.toInt();
+    final repeatEndDate = json['repeatEndDate'] == null
+        ? null
+        : json['repeatEndDate'] is Timestamp
+            ? (json['repeatEndDate'] as Timestamp).toDate()
+            : DateTime.parse(json['repeatEndDate'] as String);
 
     return DateConstraintModel(
       id: constraintId,
@@ -507,6 +550,9 @@ class DateConstraintModel {
       wasAutoRejectedFromCalendar: wasAutoRejectedFromCalendar,
       startTime: startTime,
       endTime: endTime,
+      repeatType: repeatType,
+      repeatDay: repeatDay,
+      repeatEndDate: repeatEndDate,
     );
   }
 
@@ -521,6 +567,9 @@ class DateConstraintModel {
       'wasAutoRejectedFromCalendar': wasAutoRejectedFromCalendar,
       'startTime': startTime,
       'endTime': endTime,
+      'repeatType': repeatType,
+      'repeatDay': repeatDay,
+      'repeatEndDate': repeatEndDate?.toIso8601String(),
     };
   }
 }

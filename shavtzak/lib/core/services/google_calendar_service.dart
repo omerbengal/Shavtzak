@@ -3,6 +3,7 @@ import 'package:googleapis_auth/auth_io.dart';
 import 'dart:developer' as developer;
 
 import '../constants/calendar_constants.dart';
+import '../constants/constraint_status.dart';
 import '../../domain/entities/team_member.dart';
 import 'environment_service.dart';
 import 'google_oauth_service.dart';
@@ -107,7 +108,8 @@ class GoogleCalendarService {
   /// Ensure we have a valid authenticated client before making API calls
   Future<void> _ensureAuthenticated() async {
     if (!_isInitialized) {
-      throw StateError('GoogleCalendarService not initialized. Call initialize() first.');
+      throw StateError(
+          'GoogleCalendarService not initialized. Call initialize() first.');
     }
 
     // If no auth client or not authenticated, refresh
@@ -226,19 +228,20 @@ class GoogleCalendarService {
     required TeamMember teamMember,
     required DateConstraint constraint,
   }) async {
-
     await _ensureAuthenticated();
 
     final isUnavailability = constraint.isUnavailability;
     // Use test mode prefix in title when in test mode
     final title = isUnavailability
-        ? CalendarEventTitles.unavailability(teamMember.name, isTestMode: _isTestMode)
-        : CalendarEventTitles.availability(teamMember.name, isTestMode: _isTestMode);
-
+        ? CalendarEventTitles.unavailability(teamMember.name,
+            isTestMode: _isTestMode)
+        : CalendarEventTitles.availability(teamMember.name,
+            isTestMode: _isTestMode);
 
     final description = CalendarEventDescriptions.constraint(
       memberName: teamMember.name,
-      roles: teamMember.availableRoleKeys, // Pass role keys instead of Hebrew names
+      roles: teamMember
+          .availableRoleKeys, // Pass role keys instead of Hebrew names
       note: constraint.note,
       isUnavailability: isUnavailability,
     );
@@ -252,27 +255,34 @@ class GoogleCalendarService {
               : CalendarEventColors.availability);
 
       // Build start/end based on whether constraint has specific times
-      final hasTimeRange = constraint.startTime != null && constraint.endTime != null;
+      final hasTimeRange =
+          constraint.startTime != null && constraint.endTime != null;
       final calendar.EventDateTime eventStart;
       final calendar.EventDateTime eventEnd;
+      final recurrenceRule = _buildConstraintRecurrenceRule(constraint);
+      final eventStartDate = _resolveConstraintEventStartDate(constraint);
 
       if (hasTimeRange) {
         // Timed event: combine date + time with Israel timezone
         eventStart = calendar.EventDateTime(
-          dateTime: _combineDateAndTime(constraint.startDate, constraint.startTime!),
+          dateTime: _combineDateAndTime(eventStartDate, constraint.startTime!),
           timeZone: _timeZone,
         );
-        final endBaseDate = constraint.endDate ?? constraint.startDate;
+        final endBaseDate = constraint.repeatType != null
+            ? eventStartDate
+            : (constraint.endDate ?? constraint.startDate);
         eventEnd = calendar.EventDateTime(
           dateTime: _combineDateAndTime(endBaseDate, constraint.endTime!),
           timeZone: _timeZone,
         );
       } else {
         // All-day event: use date property with date-only DateTime
-        final startDate = _toDateOnly(constraint.startDate);
+        final startDate = _toDateOnly(eventStartDate);
+        final endSourceDate = constraint.repeatType != null
+            ? eventStartDate
+            : (constraint.endDate ?? constraint.startDate);
         final endDate = _toDateOnly(
-          constraint.endDate?.add(const Duration(days: 1)) ??
-              constraint.startDate.add(const Duration(days: 1)),
+          endSourceDate.add(const Duration(days: 1)),
         );
         eventStart = calendar.EventDateTime(date: startDate);
         eventEnd = calendar.EventDateTime(date: endDate);
@@ -283,19 +293,22 @@ class GoogleCalendarService {
         description: description,
         start: eventStart,
         end: eventEnd,
+        recurrence: recurrenceRule != null ? [recurrenceRule] : null,
         colorId: colorId,
         extendedProperties: calendar.EventExtendedProperties(
           private: {
             'constraintId': constraintId,
             'teamMemberId': teamMember.id,
             'constraintType': constraint.constraintType.name,
+            'repeatType': constraint.repeatType?.name ?? '',
+            'repeatDay': constraint.repeatDay?.toString() ?? '',
+            'repeatEndDate': constraint.repeatEndDate?.toIso8601String() ?? '',
             'isTestMode': _isTestMode.toString(),
           },
         ),
       );
 
       final createdEvent = await _eventsInsert(event);
-
 
       developer.log(
         'GoogleCalendarService: Created event ${createdEvent.id} for constraint $constraintId${_isTestMode ? ' [TEST MODE]' : ''}',
@@ -326,12 +339,15 @@ class GoogleCalendarService {
     final isUnavailability = constraint.isUnavailability;
     // Use test mode prefix in title when in test mode
     final title = isUnavailability
-        ? CalendarEventTitles.unavailability(teamMember.name, isTestMode: _isTestMode)
-        : CalendarEventTitles.availability(teamMember.name, isTestMode: _isTestMode);
+        ? CalendarEventTitles.unavailability(teamMember.name,
+            isTestMode: _isTestMode)
+        : CalendarEventTitles.availability(teamMember.name,
+            isTestMode: _isTestMode);
 
     final description = CalendarEventDescriptions.constraint(
       memberName: teamMember.name,
-      roles: teamMember.availableRoleKeys, // Pass role keys instead of Hebrew names
+      roles: teamMember
+          .availableRoleKeys, // Pass role keys instead of Hebrew names
       note: constraint.note,
       isUnavailability: isUnavailability,
     );
@@ -345,27 +361,34 @@ class GoogleCalendarService {
               : CalendarEventColors.availability);
 
       // Build start/end based on whether constraint has specific times
-      final hasTimeRange = constraint.startTime != null && constraint.endTime != null;
+      final hasTimeRange =
+          constraint.startTime != null && constraint.endTime != null;
       final calendar.EventDateTime eventStart;
       final calendar.EventDateTime eventEnd;
+      final recurrenceRule = _buildConstraintRecurrenceRule(constraint);
+      final eventStartDate = _resolveConstraintEventStartDate(constraint);
 
       if (hasTimeRange) {
         // Timed event: combine date + time with Israel timezone
         eventStart = calendar.EventDateTime(
-          dateTime: _combineDateAndTime(constraint.startDate, constraint.startTime!),
+          dateTime: _combineDateAndTime(eventStartDate, constraint.startTime!),
           timeZone: _timeZone,
         );
-        final endBaseDate = constraint.endDate ?? constraint.startDate;
+        final endBaseDate = constraint.repeatType != null
+            ? eventStartDate
+            : (constraint.endDate ?? constraint.startDate);
         eventEnd = calendar.EventDateTime(
           dateTime: _combineDateAndTime(endBaseDate, constraint.endTime!),
           timeZone: _timeZone,
         );
       } else {
         // All-day event: use date property with date-only DateTime
-        final startDate = _toDateOnly(constraint.startDate);
+        final startDate = _toDateOnly(eventStartDate);
+        final endSourceDate = constraint.repeatType != null
+            ? eventStartDate
+            : (constraint.endDate ?? constraint.startDate);
         final endDate = _toDateOnly(
-          constraint.endDate?.add(const Duration(days: 1)) ??
-              constraint.startDate.add(const Duration(days: 1)),
+          endSourceDate.add(const Duration(days: 1)),
         );
         eventStart = calendar.EventDateTime(date: startDate);
         eventEnd = calendar.EventDateTime(date: endDate);
@@ -376,12 +399,16 @@ class GoogleCalendarService {
         description: description,
         start: eventStart,
         end: eventEnd,
+        recurrence: recurrenceRule != null ? [recurrenceRule] : null,
         colorId: colorId,
         extendedProperties: calendar.EventExtendedProperties(
           private: {
             'constraintId': constraintId,
             'teamMemberId': teamMember.id,
             'constraintType': constraint.constraintType.name,
+            'repeatType': constraint.repeatType?.name ?? '',
+            'repeatDay': constraint.repeatDay?.toString() ?? '',
+            'repeatEndDate': constraint.repeatEndDate?.toIso8601String() ?? '',
             'isTestMode': _isTestMode.toString(),
           },
         ),
@@ -451,7 +478,6 @@ class GoogleCalendarService {
         orderBy: 'startTime',
       );
 
-
       if (events.items != null) {
         for (final _ in events.items!) {
           // Process events if needed
@@ -464,7 +490,6 @@ class GoogleCalendarService {
 
   /// Get an event by ID to check if it exists
   Future<bool> eventExists(String calendarEventId) async {
-
     await _ensureAuthenticated();
 
     try {
@@ -516,6 +541,134 @@ class GoogleCalendarService {
     return DateTime(date.year, date.month, date.day, hour, minute);
   }
 
+  /// Build RRULE for recurring constraints.
+  /// Returns null for one-time constraints.
+  String? _buildConstraintRecurrenceRule(DateConstraint constraint) {
+    if (constraint.repeatType == null || constraint.repeatEndDate == null) {
+      return null;
+    }
+
+    final until = _formatRruleUntil(constraint.repeatEndDate!);
+    switch (constraint.repeatType!) {
+      case RepeatType.daily:
+        return 'RRULE:FREQ=DAILY;UNTIL=$until';
+      case RepeatType.weekly:
+        final byDay = _weekdayToRrule(constraint.repeatDay);
+        if (byDay == null) return null;
+        return 'RRULE:FREQ=WEEKLY;BYDAY=$byDay;UNTIL=$until';
+      case RepeatType.monthly:
+        final day = constraint.repeatDay;
+        if (day == null || day < 1 || day > 31) return null;
+        return 'RRULE:FREQ=MONTHLY;BYMONTHDAY=$day;UNTIL=$until';
+    }
+  }
+
+  String _formatRruleUntil(DateTime endDate) {
+    final utc = DateTime.utc(
+      endDate.year,
+      endDate.month,
+      endDate.day,
+      23,
+      59,
+      59,
+    );
+    final y = utc.year.toString().padLeft(4, '0');
+    final m = utc.month.toString().padLeft(2, '0');
+    final d = utc.day.toString().padLeft(2, '0');
+    final hh = utc.hour.toString().padLeft(2, '0');
+    final mm = utc.minute.toString().padLeft(2, '0');
+    final ss = utc.second.toString().padLeft(2, '0');
+    return '$y$m${d}T$hh$mm${ss}Z';
+  }
+
+  String? _weekdayToRrule(int? weekday) {
+    switch (weekday) {
+      case 1:
+        return 'MO';
+      case 2:
+        return 'TU';
+      case 3:
+        return 'WE';
+      case 4:
+        return 'TH';
+      case 5:
+        return 'FR';
+      case 6:
+        return 'SA';
+      case 7:
+        return 'SU';
+      default:
+        return null;
+    }
+  }
+
+  DateTime _resolveConstraintEventStartDate(DateConstraint constraint) {
+    final start = DateTime(
+      constraint.startDate.year,
+      constraint.startDate.month,
+      constraint.startDate.day,
+    );
+
+    if (constraint.repeatType == null || constraint.repeatEndDate == null) {
+      return start;
+    }
+
+    final repeatEnd = DateTime(
+      constraint.repeatEndDate!.year,
+      constraint.repeatEndDate!.month,
+      constraint.repeatEndDate!.day,
+    );
+
+    switch (constraint.repeatType!) {
+      case RepeatType.daily:
+        return start;
+      case RepeatType.weekly:
+        final day = constraint.repeatDay;
+        if (day == null || day < 1 || day > 7) return start;
+        final offset = (day - start.weekday + 7) % 7;
+        final candidate = start.add(Duration(days: offset));
+        return candidate.isAfter(repeatEnd) ? start : candidate;
+      case RepeatType.monthly:
+        final day = constraint.repeatDay;
+        if (day == null || day < 1 || day > 31) return start;
+        final candidate = _nextMonthlyOccurrenceOnOrAfter(
+          start,
+          day,
+          maxDate: repeatEnd,
+        );
+        return candidate ?? start;
+    }
+  }
+
+  DateTime? _nextMonthlyOccurrenceOnOrAfter(
+    DateTime from,
+    int day, {
+    DateTime? maxDate,
+  }) {
+    var cursor = DateTime(from.year, from.month, 1);
+
+    for (int i = 0; i < 240; i++) {
+      final daysInMonth = DateTime(cursor.year, cursor.month + 1, 0).day;
+      if (day <= daysInMonth) {
+        final candidate = DateTime(cursor.year, cursor.month, day);
+        if (!candidate.isBefore(from)) {
+          if (maxDate != null && candidate.isAfter(maxDate)) {
+            return null;
+          }
+          return candidate;
+        }
+      }
+
+      final nextMonth = DateTime(cursor.year, cursor.month + 1, 1);
+      if (maxDate != null && nextMonth.isAfter(maxDate)) {
+        return null;
+      }
+      cursor = nextMonth;
+    }
+
+    return null;
+  }
+
   /// Create calendar events for an app event
   /// Creates up to 2 events based on available time fields:
   /// 1. Assembly event: [name] - התייצבות והכנות (assemblyTime → separatorTime)
@@ -549,7 +702,8 @@ class GoogleCalendarService {
 
       if (isAllDayEvent) {
         // Create a single all-day event spanning the full date range
-        final allDayTitle = CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
+        final allDayTitle =
+            CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
 
         // For all-day events, use date-only DateTime (midnight UTC)
         final eventStart = _toDateOnly(startDate);
@@ -586,7 +740,8 @@ class GoogleCalendarService {
         // Create timed events
         // Create assembly event if assemblyTime and separatorTime are provided
         if (assemblyTime.isNotEmpty && separatorTime.isNotEmpty) {
-          final assemblyTitle = CalendarEventTitles.eventAssembly(eventName, isTestMode: _isTestMode);
+          final assemblyTitle = CalendarEventTitles.eventAssembly(eventName,
+              isTestMode: _isTestMode);
           final assemblyStart = _combineDateAndTime(startDate, assemblyTime);
           final assemblyEnd = _combineDateAndTime(startDate, separatorTime);
 
@@ -624,7 +779,8 @@ class GoogleCalendarService {
         // Create main event
         // Case 1: separatorTime and endTime exist → normal main event (separatorTime → endTime)
         // Case 2: no separatorTime but assemblyTime and endTime exist → single main event (assemblyTime → endTime)
-        final mainTitle = CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
+        final mainTitle =
+            CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
 
         // Determine main event start time
         final DateTime mainStart;
@@ -735,7 +891,8 @@ class GoogleCalendarService {
           recreatedIds['assembly'] = '';
         }
 
-        final allDayTitle = CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
+        final allDayTitle =
+            CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
         final eventStart = _toDateOnly(startDate);
         final eventEnd = _toDateOnly(endDate.add(const Duration(days: 1)));
 
@@ -813,9 +970,11 @@ class GoogleCalendarService {
 
       // Timed events - original logic
       // Determine which events should exist based on time fields
-      final shouldHaveAssembly = assemblyTime.isNotEmpty && separatorTime.isNotEmpty;
+      final shouldHaveAssembly =
+          assemblyTime.isNotEmpty && separatorTime.isNotEmpty;
       // Main event can exist with separator OR with just assemblyTime + endTime
-      final shouldHaveMain = endTime.isNotEmpty && (separatorTime.isNotEmpty || assemblyTime.isNotEmpty);
+      final shouldHaveMain = endTime.isNotEmpty &&
+          (separatorTime.isNotEmpty || assemblyTime.isNotEmpty);
 
       // Handle assembly event
       if (shouldHaveAssembly) {
@@ -824,7 +983,8 @@ class GoogleCalendarService {
           needsAssemblyRecreation = true;
         } else {
           // Try to update existing event
-          final assemblyTitle = CalendarEventTitles.eventAssembly(eventName, isTestMode: _isTestMode);
+          final assemblyTitle = CalendarEventTitles.eventAssembly(eventName,
+              isTestMode: _isTestMode);
           final assemblyStart = _combineDateAndTime(startDate, assemblyTime);
           final assemblyEnd = _combineDateAndTime(startDate, separatorTime);
 
@@ -879,7 +1039,8 @@ class GoogleCalendarService {
           needsMainRecreation = true;
         } else {
           // Try to update existing event
-          final mainTitle = CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
+          final mainTitle =
+              CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
 
           // Determine main event start time (same logic as create)
           final DateTime mainStart;
@@ -948,7 +1109,8 @@ class GoogleCalendarService {
 
         // Only create assembly event if it needs recreation
         if (needsAssemblyRecreation) {
-          final assemblyTitle = CalendarEventTitles.eventAssembly(eventName, isTestMode: _isTestMode);
+          final assemblyTitle = CalendarEventTitles.eventAssembly(eventName,
+              isTestMode: _isTestMode);
           final assemblyStart = _combineDateAndTime(startDate, assemblyTime);
           final assemblyEnd = _combineDateAndTime(startDate, separatorTime);
 
@@ -964,7 +1126,9 @@ class GoogleCalendarService {
               timeZone: _timeZone,
             ),
             location: location,
-            colorId: _isTestMode ? CalendarEventColors.testMode : CalendarEventColors.appEvent,
+            colorId: _isTestMode
+                ? CalendarEventColors.testMode
+                : CalendarEventColors.appEvent,
             extendedProperties: calendar.EventExtendedProperties(
               private: {
                 'eventId': eventId,
@@ -985,7 +1149,8 @@ class GoogleCalendarService {
 
         // Only create main event if it needs recreation
         if (needsMainRecreation) {
-          final mainTitle = CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
+          final mainTitle =
+              CalendarEventTitles.eventMain(eventName, isTestMode: _isTestMode);
 
           // Determine main event start time (same logic as create and update)
           final DateTime mainStart;
@@ -1011,7 +1176,9 @@ class GoogleCalendarService {
               timeZone: _timeZone,
             ),
             location: location,
-            colorId: _isTestMode ? CalendarEventColors.testMode : CalendarEventColors.appEvent,
+            colorId: _isTestMode
+                ? CalendarEventColors.testMode
+                : CalendarEventColors.appEvent,
             extendedProperties: calendar.EventExtendedProperties(
               private: {
                 'eventId': eventId,
@@ -1053,7 +1220,8 @@ class GoogleCalendarService {
 
     try {
       // Delete assembly event if ID is provided
-      if (assemblyCalendarEventId != null && assemblyCalendarEventId.isNotEmpty) {
+      if (assemblyCalendarEventId != null &&
+          assemblyCalendarEventId.isNotEmpty) {
         try {
           await _eventsDelete(assemblyCalendarEventId);
           developer.log(
@@ -1128,7 +1296,8 @@ class GoogleCalendarService {
           event,
           calendarEventId,
           conferenceDataVersion: 1,
-          sendUpdates: 'none', // Don't send email invites (requires Domain-Wide Delegation)
+          sendUpdates:
+              'none', // Don't send email invites (requires Domain-Wide Delegation)
         );
 
         developer.log(
@@ -1161,7 +1330,8 @@ class GoogleCalendarService {
   }
 
   /// Remove attendee from event
-  Future<void> removeAttendeeFromEvent(String calendarEventId, String email) async {
+  Future<void> removeAttendeeFromEvent(
+      String calendarEventId, String email) async {
     await _ensureAuthenticated();
 
     try {
@@ -1170,19 +1340,20 @@ class GoogleCalendarService {
 
       // Remove attendee if present
       final currentAttendees = event.attendees ?? [];
-      final filteredAttendees = currentAttendees
-          .where((a) => a.email != email)
-          .toList();
+      final filteredAttendees =
+          currentAttendees.where((a) => a.email != email).toList();
 
       if (filteredAttendees.length != currentAttendees.length) {
         // Update the existing event object to preserve all fields
-        event.attendees = filteredAttendees.isNotEmpty ? filteredAttendees : null;
+        event.attendees =
+            filteredAttendees.isNotEmpty ? filteredAttendees : null;
 
         await _eventsUpdate(
           event,
           calendarEventId,
           conferenceDataVersion: 1,
-          sendUpdates: 'none', // Don't send email invites (requires Domain-Wide Delegation)
+          sendUpdates:
+              'none', // Don't send email invites (requires Domain-Wide Delegation)
         );
 
         developer.log(
@@ -1215,7 +1386,8 @@ class GoogleCalendarService {
   }
 
   /// Update attendees for event (replaces entire list)
-  Future<void> updateEventAttendees(String calendarEventId, List<String> emails) async {
+  Future<void> updateEventAttendees(
+      String calendarEventId, List<String> emails) async {
     await _ensureAuthenticated();
 
     try {
@@ -1223,9 +1395,8 @@ class GoogleCalendarService {
       final event = await _eventsGet(calendarEventId);
 
       // Build attendee list from emails
-      final attendees = emails
-          .map((email) => calendar.EventAttendee(email: email))
-          .toList();
+      final attendees =
+          emails.map((email) => calendar.EventAttendee(email: email)).toList();
 
       // Update the existing event object to preserve all fields
       event.attendees = attendees.isNotEmpty ? attendees : null;
@@ -1234,7 +1405,8 @@ class GoogleCalendarService {
         event,
         calendarEventId,
         conferenceDataVersion: 1,
-        sendUpdates: 'none', // Don't send email invites (requires Domain-Wide Delegation)
+        sendUpdates:
+            'none', // Don't send email invites (requires Domain-Wide Delegation)
       );
 
       developer.log(
@@ -1259,7 +1431,6 @@ class GoogleCalendarService {
       rethrow;
     }
   }
-
 }
 
 /// Exception for Google Calendar operations

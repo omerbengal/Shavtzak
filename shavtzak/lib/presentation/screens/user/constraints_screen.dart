@@ -69,6 +69,21 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
 
   // Helper function to check if constraint is past (same logic as modal)
   bool _isPastConstraint(DateConstraint constraint) {
+    if (constraint.repeatType != null && constraint.repeatEndDate != null) {
+      final today = DateTime.now();
+      final constraintEndDate = DateTime(
+        constraint.repeatEndDate!.year,
+        constraint.repeatEndDate!.month,
+        constraint.repeatEndDate!.day,
+      );
+      final todayDate = DateTime(
+        today.year,
+        today.month,
+        today.day,
+      );
+      return constraintEndDate.isBefore(todayDate);
+    }
+
     if (constraint.endDate != null) {
       final today = DateTime.now();
       final constraintEndDate = DateTime(
@@ -360,6 +375,10 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
 
   Widget _buildConstraintCard(BuildContext context, TeamMember user,
       DateConstraint constraint, int index) {
+    final isRepeating = constraint.repeatType != null;
+    final noteTitle = _extractDisplayNote(constraint);
+    final displayTitle =
+        noteTitle.trim().isEmpty ? 'ללא הערה' : noteTitle.trim();
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -371,41 +390,51 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    constraint.toString(),
+                    displayTitle,
                     style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
                 _buildStatusBadge(constraint.status),
               ],
             ),
-            if (constraint.note != null && constraint.note!.isNotEmpty) ...[
-              const SizedBox(height: 8),
+            if (isRepeating) ...[
+              const SizedBox(height: 6),
               Text(
-                constraint.note!,
+                _buildRecurringTypeText(constraint),
                 style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
+                  fontSize: 13,
+                  color: Colors.grey[700],
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
+            const SizedBox(height: 6),
+            Text(
+              _buildConstraintDateLine(constraint),
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
             // Show time range if specified
             if (constraint.startTime != null && constraint.endTime != null) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
-                'שעות: ${constraint.startTime}-${constraint.endTime}',
+                'שעות: ${constraint.startTime} עד ${constraint.endTime}',
                 style: TextStyle(
                   fontSize: 13,
-                  color: Colors.blue[700],
+                  color: Colors.grey[700],
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ],
             // Show auto-rejection message in red if applicable
             if (constraint.wasAutoRejectedFromCalendar) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 CalendarAutoRejection.message,
                 style: const TextStyle(
@@ -420,8 +449,23 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton.icon(
-                  onPressed: () =>
-                      _editConstraint(context, user, constraint, index),
+                  onPressed: () {
+                    if (constraint.repeatType != null) {
+                      ScaffoldMessenger.of(context)
+                        ..clearSnackBars()
+                        ..showSnackBar(
+                          const SnackBar(
+                            content: Directionality(
+                              textDirection: TextDirection.rtl,
+                              child: Text(
+                                  'עריכת מגבלה קבועה עדיין לא זמינה. אפשר למחוק וליצור מחדש.'),
+                            ),
+                          ),
+                        );
+                      return;
+                    }
+                    _editConstraint(context, user, constraint, index);
+                  },
                   icon: const Icon(Icons.edit, color: Colors.blue),
                   label:
                       const Text('ערוך', style: TextStyle(color: Colors.blue)),
@@ -439,6 +483,54 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
         ),
       ),
     );
+  }
+
+  String _extractDisplayNote(DateConstraint constraint) {
+    final raw = (constraint.note ?? '').trim();
+    if (raw.isEmpty) return raw;
+    const marker = '\nהערה:';
+    final markerIndex = raw.indexOf(marker);
+    if (markerIndex != -1) {
+      return raw.substring(markerIndex + marker.length).trim();
+    }
+    return raw;
+  }
+
+  String _buildRecurringTypeText(DateConstraint constraint) {
+    switch (constraint.repeatType) {
+      case RepeatType.daily:
+        return 'סוג: יומי';
+      case RepeatType.weekly:
+        return 'סוג: שבועי, כל יום ${_weekdayHebrewName(constraint.repeatDay)}';
+      case RepeatType.monthly:
+        return 'סוג: חודשי, כל ${constraint.repeatDay ?? '?'} לחודש';
+      case null:
+        return 'סוג: -';
+    }
+  }
+
+  String _buildConstraintDateLine(DateConstraint constraint) {
+    if (constraint.repeatType != null) {
+      final startDate = DateTime(
+        constraint.startDate.year,
+        constraint.startDate.month,
+        constraint.startDate.day,
+      );
+
+      if (constraint.repeatEndDate == null) {
+        return 'עד תאריך: ?';
+      }
+
+      return 'מתאריך: ${_formatDate(startDate)} עד תאריך: ${_formatDate(constraint.repeatEndDate!)}';
+    }
+
+    if (constraint.endDate == null ||
+        (constraint.startDate.year == constraint.endDate!.year &&
+            constraint.startDate.month == constraint.endDate!.month &&
+            constraint.startDate.day == constraint.endDate!.day)) {
+      return 'תאריך: ${_formatDate(constraint.startDate)}';
+    }
+    return 'תאריכים: ${_formatDate(constraint.startDate)} עד ${_formatDate(constraint.endDate!)}';
   }
 
   Widget _buildStatusBadge(ConstraintStatus status) {
@@ -481,21 +573,148 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
     );
   }
 
+  String _buildRepeatPatternText(DateConstraint constraint) {
+    switch (constraint.repeatType) {
+      case RepeatType.daily:
+        return 'כל יום';
+      case RepeatType.weekly:
+        return 'כל יום ${_weekdayHebrewName(constraint.repeatDay)}';
+      case RepeatType.monthly:
+        return 'כל ${constraint.repeatDay ?? '?'} לחודש';
+      case null:
+        return constraint.toString();
+    }
+  }
+
+  String _weekdayHebrewName(int? weekday) {
+    switch (weekday) {
+      case 1:
+        return 'שני';
+      case 2:
+        return 'שלישי';
+      case 3:
+        return 'רביעי';
+      case 4:
+        return 'חמישי';
+      case 5:
+        return 'שישי';
+      case 6:
+        return 'שבת';
+      case 7:
+        return 'ראשון';
+      default:
+        return '?';
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  String _formatRepeatingSummary({
+    required RepeatType repeatType,
+    required int? repeatDay,
+    DateTime? startDate,
+    required DateTime endDate,
+    required String? startTime,
+    required String? endTime,
+  }) {
+    String base;
+    switch (repeatType) {
+      case RepeatType.daily:
+        base = 'כל יום, אני לא זמין/ה';
+        break;
+      case RepeatType.weekly:
+        base = 'כל יום ${_weekdayHebrewName(repeatDay)}, אני לא זמין/ה';
+        break;
+      case RepeatType.monthly:
+        base = 'כל ${repeatDay ?? '?'} לחודש, אני לא זמין/ה';
+        break;
+    }
+
+    final timePart = (startTime != null && endTime != null)
+        ? ' משעה $startTime עד שעה $endTime'
+        : '';
+    if (startDate != null) {
+      return '$base$timePart החל מתאריך ${_formatDate(startDate)} עד תאריך ${_formatDate(endDate)}';
+    }
+    return '$base$timePart מהיום ועד תאריך ${_formatDate(endDate)}';
+  }
+
   void _addConstraintRequest(BuildContext context) {
+    final rootContext = context;
     showDialog(
-      context: context,
-      builder: (context) => _ConstraintRequestDialog(
-        onAdd: (startDate, endDate, note, startTime, endTime) {
-          final userState = context.read<UserSelectionBloc>().state;
+      context: rootContext,
+      builder: (dialogContext) => _ConstraintTypeChoiceDialog(
+        onOneTimeSelected: () {
+          Navigator.of(dialogContext).pop();
+          showDialog(
+            context: rootContext,
+            builder: (context) => _ConstraintRequestDialog(
+              onAdd: (startDate, endDate, note, startTime, endTime) {
+                final userState = rootContext.read<UserSelectionBloc>().state;
+                if (userState is UserAuthenticated) {
+                  // Send to database - UI will update automatically via stream
+                  rootContext.read<TeamBloc>().add(AddConstraintRequest(
+                        teamMemberId: userState.user.id,
+                        startDate: startDate,
+                        endDate: endDate,
+                        note: note,
+                        startTime: startTime,
+                        endTime: endTime,
+                      ));
+                }
+              },
+            ),
+          );
+        },
+        onRepeatingSelected: () async {
+          Navigator.of(dialogContext).pop();
+          final repeatingResult = await showDialog<_RepeatingConstraintResult>(
+            context: rootContext,
+            builder: (context) => const _RepeatingConstraintDialog(),
+          );
+
+          if (repeatingResult == null || !rootContext.mounted) {
+            return;
+          }
+
+          final summary = _formatRepeatingSummary(
+            repeatType: repeatingResult.repeatType,
+            repeatDay: repeatingResult.repeatDay,
+            startDate: repeatingResult.repeatStartDate,
+            endDate: repeatingResult.repeatEndDate,
+            startTime: repeatingResult.startTime,
+            endTime: repeatingResult.endTime,
+          );
+
+          final shouldCreate = await showDialog<bool>(
+            context: rootContext,
+            builder: (context) => _RepeatingConstraintConfirmationDialog(
+              summary: summary,
+              note: repeatingResult.note,
+            ),
+          );
+
+          if (shouldCreate != true || !rootContext.mounted) {
+            return;
+          }
+
+          final userState = rootContext.read<UserSelectionBloc>().state;
           if (userState is UserAuthenticated) {
-            // Send to database - UI will update automatically via stream
-            context.read<TeamBloc>().add(AddConstraintRequest(
+            final now = DateTime.now();
+            final today = DateTime(now.year, now.month, now.day);
+            final startDate = repeatingResult.repeatStartDate ?? today;
+            rootContext.read<TeamBloc>().add(AddConstraintRequest(
                   teamMemberId: userState.user.id,
                   startDate: startDate,
-                  endDate: endDate,
-                  note: note,
-                  startTime: startTime,
-                  endTime: endTime,
+                  endDate: startDate,
+                  note: repeatingResult.note,
+                  startTime: repeatingResult.startTime,
+                  endTime: repeatingResult.endTime,
+                  repeatType: repeatingResult.repeatType,
+                  repeatDay: repeatingResult.repeatDay,
+                  repeatEndDate: repeatingResult.repeatEndDate,
                 ));
           }
         },
@@ -558,6 +777,9 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                   endTime: endTime,
                   wasAutoRejectedFromCalendar:
                       false, // Reset auto-rejection flag when edited
+                  repeatType: constraint.repeatType,
+                  repeatDay: constraint.repeatDay,
+                  repeatEndDate: constraint.repeatEndDate,
                 ));
           }
         },
@@ -573,6 +795,712 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
     showDialog(
       context: context,
       builder: (context) => _ExpiredConstraintsModal(user: user),
+    );
+  }
+}
+
+class _ConstraintTypeChoiceDialog extends StatelessWidget {
+  final VoidCallback onOneTimeSelected;
+  final VoidCallback onRepeatingSelected;
+
+  const _ConstraintTypeChoiceDialog({
+    required this.onOneTimeSelected,
+    required this.onRepeatingSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text(
+          'על איזו מגבלה מדובר?',
+          textAlign: TextAlign.center,
+        ),
+        content: SizedBox(
+          width: 380,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildOptionCard(
+                context: context,
+                title: 'מגבלה חד פעמית',
+                icon: Icons.event_busy,
+                onTap: onOneTimeSelected,
+              ),
+              const SizedBox(height: 12),
+              _buildOptionCard(
+                context: context,
+                title: 'מגבלה קבועה',
+                icon: Icons.repeat,
+                onTap: onRepeatingSelected,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('ביטול'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOptionCard({
+    required BuildContext context,
+    required String title,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Theme.of(context).primaryColor),
+            const SizedBox(width: 12),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RepeatingConstraintResult {
+  final RepeatType repeatType;
+  final int? repeatDay;
+  final DateTime? repeatStartDate;
+  final DateTime repeatEndDate;
+  final String? startTime;
+  final String? endTime;
+  final String note;
+
+  const _RepeatingConstraintResult({
+    required this.repeatType,
+    required this.repeatDay,
+    required this.repeatStartDate,
+    required this.repeatEndDate,
+    required this.startTime,
+    required this.endTime,
+    required this.note,
+  });
+}
+
+class _RepeatingConstraintDialog extends StatefulWidget {
+  const _RepeatingConstraintDialog();
+
+  @override
+  State<_RepeatingConstraintDialog> createState() =>
+      _RepeatingConstraintDialogState();
+}
+
+class _RepeatingConstraintDialogState
+    extends State<_RepeatingConstraintDialog> {
+  RepeatType _repeatType = RepeatType.daily;
+  int? _weeklyDay;
+  int? _monthlyDay;
+  DateTime? _repeatStartDate;
+  DateTime? _repeatEndDate;
+  final TextEditingController _startTimeController = TextEditingController();
+  final TextEditingController _endTimeController = TextEditingController();
+  final TextEditingController _noteController = TextEditingController();
+
+  static const List<Map<String, dynamic>> _weeklyOptions = [
+    {'label': 'ראשון', 'weekday': 7},
+    {'label': 'שני', 'weekday': 1},
+    {'label': 'שלישי', 'weekday': 2},
+    {'label': 'רביעי', 'weekday': 3},
+    {'label': 'חמישי', 'weekday': 4},
+    {'label': 'שישי', 'weekday': 5},
+    {'label': 'שבת', 'weekday': 6},
+  ];
+
+  @override
+  void dispose() {
+    _startTimeController.dispose();
+    _endTimeController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  bool get _isValid {
+    if (_repeatEndDate == null) return false;
+    if (_repeatStartDate != null &&
+        _repeatEndDate!.isBefore(_repeatStartDate!)) {
+      return false;
+    }
+
+    final hasStart = _startTimeController.text.isNotEmpty;
+    final hasEnd = _endTimeController.text.isNotEmpty;
+    if (hasStart != hasEnd) return false;
+    if (hasStart &&
+        !TimeRangeUtils.isValidTimeRange(
+          _startTimeController.text,
+          _endTimeController.text,
+        )) {
+      return false;
+    }
+
+    if (_repeatType == RepeatType.weekly && _weeklyDay == null) return false;
+    if (_repeatType == RepeatType.monthly && _monthlyDay == null) return false;
+    if (_noteController.text.trim().isEmpty) return false;
+    return true;
+  }
+
+  int? get _selectedRepeatDay {
+    switch (_repeatType) {
+      case RepeatType.daily:
+        return null;
+      case RepeatType.weekly:
+        return _weeklyDay;
+      case RepeatType.monthly:
+        return _monthlyDay;
+    }
+  }
+
+  Future<void> _showTimePickerFor(TextEditingController controller) async {
+    final now = DateTime.now();
+    DateTime initialTime = now;
+    if (controller.text.isNotEmpty) {
+      final parts = controller.text.split(':');
+      if (parts.length == 2) {
+        final hour = int.tryParse(parts[0]);
+        final minute = int.tryParse(parts[1]);
+        if (hour != null && minute != null) {
+          initialTime = DateTime(now.year, now.month, now.day, hour, minute);
+        }
+      }
+    }
+
+    DateTime selectedTime = initialTime;
+    final result = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SizedBox(
+          width: 280,
+          height: 220,
+          child: Column(
+            children: [
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: initialTime,
+                  use24hFormat: true,
+                  onDateTimeChanged: (DateTime newTime) {
+                    selectedTime = newTime;
+                  },
+                ),
+              ),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      child: const Text('ביטול'),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    TextButton(
+                      child: const Text('אישור'),
+                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        controller.text =
+            '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
+      });
+    }
+  }
+
+  Future<void> _selectRepeatEndDate() async {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final result = await showDialog<Map<String, DateTime?>>(
+      context: context,
+      builder: (context) => DualCalendarDatePicker(
+        isSingleDate: true,
+        initialStartDate: _repeatEndDate,
+        title: 'בחר תאריך סיום',
+        minDate: todayDate,
+      ),
+    );
+    if (result != null && result['startDate'] != null) {
+      setState(() {
+        _repeatEndDate = result['startDate'];
+      });
+    }
+  }
+
+  Future<void> _selectRepeatStartDate() async {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final result = await showDialog<Map<String, DateTime?>>(
+      context: context,
+      builder: (context) => DualCalendarDatePicker(
+        isSingleDate: true,
+        initialStartDate: _repeatStartDate,
+        title: 'בחר תאריך התחלה',
+        minDate: todayDate,
+      ),
+    );
+    if (result != null && result['startDate'] != null) {
+      setState(() {
+        _repeatStartDate = result['startDate'];
+      });
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  Widget _buildRepeatTypeButton({
+    required String label,
+    required RepeatType type,
+    bool isFirst = false,
+    bool isLast = false,
+  }) {
+    final selected = _repeatType == type;
+    return SizedBox(
+      height: 40,
+      child: OutlinedButton(
+        onPressed: () {
+          setState(() {
+            _repeatType = type;
+          });
+        },
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          foregroundColor: selected ? Colors.white : Colors.black87,
+          backgroundColor:
+              selected ? Theme.of(context).primaryColor : Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.horizontal(
+              right: isFirst ? const Radius.circular(8) : Radius.zero,
+              left: isLast ? const Radius.circular(8) : Radius.zero,
+            ),
+          ),
+          side: BorderSide(
+            color: selected ? Theme.of(context).primaryColor : Colors.grey,
+          ),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            maxLines: 1,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _confirmHighMonthlyDaySelection(int day) async {
+    if (day < 29) return true;
+
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('שים/י לב'),
+          content: const Text('יום זה בחודש לא קיים בכל חודשי השנה'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('אה, לא משנה'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('מאשר'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return approved == true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text('הוספת מגבלה קבועה'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: _buildRepeatTypeButton(
+                            label: 'יומי',
+                            type: RepeatType.daily,
+                            isFirst: true,
+                          ),
+                        ),
+                        Expanded(
+                          child: _buildRepeatTypeButton(
+                            label: 'שבועי',
+                            type: RepeatType.weekly,
+                          ),
+                        ),
+                        Expanded(
+                          child: _buildRepeatTypeButton(
+                            label: 'חודשי',
+                            type: RepeatType.monthly,
+                            isLast: true,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                if (_repeatType == RepeatType.weekly) ...[
+                  const Text('בחר יום בשבוע:'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _weeklyOptions.map((option) {
+                      final weekday = option['weekday'] as int;
+                      final selected = _weeklyDay == weekday;
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: () {
+                          setState(() {
+                            _weeklyDay = selected ? null : weekday;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? Theme.of(context).primaryColor
+                                : Colors.transparent,
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            option['label'] as String,
+                            style: TextStyle(
+                              color: selected ? Colors.white : Colors.black,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                if (_repeatType == RepeatType.monthly) ...[
+                  Text(
+                    'בחר יום בחודש:',
+                  ),
+                  const SizedBox(height: 8),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: 31,
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 7,
+                      mainAxisSpacing: 6,
+                      crossAxisSpacing: 6,
+                      mainAxisExtent: 34,
+                    ),
+                    itemBuilder: (context, index) {
+                      final day = index + 1;
+                      final isSelected = _monthlyDay == day;
+                      return InkWell(
+                        onTap: () async {
+                          if (isSelected) {
+                            setState(() {
+                              _monthlyDay = null;
+                            });
+                            return;
+                          }
+
+                          final approved =
+                              await _confirmHighMonthlyDaySelection(day);
+                          if (!approved) {
+                            if (!mounted) return;
+                            setState(() {
+                              _monthlyDay = null;
+                            });
+                            return;
+                          }
+
+                          if (!mounted) return;
+                          setState(() {
+                            _monthlyDay = day;
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(999),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Theme.of(context).primaryColor
+                                : Colors.transparent,
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            '$day',
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : Colors.black,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                const Text('טווח שעות (אופציונלי):'),
+                const SizedBox(height: 8),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 360;
+                    final startField = TextFormField(
+                      controller: _startTimeController,
+                      readOnly: true,
+                      onTap: () => _showTimePickerFor(_startTimeController),
+                      decoration: InputDecoration(
+                        labelText: 'שעת התחלה',
+                        hintText: 'למשל 09:00',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.access_time),
+                        suffixIcon: _startTimeController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () => setState(
+                                    () => _startTimeController.clear()),
+                              )
+                            : null,
+                      ),
+                    );
+                    final endField = TextFormField(
+                      controller: _endTimeController,
+                      readOnly: true,
+                      onTap: () => _showTimePickerFor(_endTimeController),
+                      decoration: InputDecoration(
+                        labelText: 'שעת סיום',
+                        hintText: 'למשל 17:00',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.access_time),
+                        suffixIcon: _endTimeController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () =>
+                                    setState(() => _endTimeController.clear()),
+                              )
+                            : null,
+                      ),
+                    );
+
+                    if (compact) {
+                      return Column(
+                        children: [
+                          startField,
+                          const SizedBox(height: 8),
+                          endField,
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        Expanded(child: startField),
+                        const SizedBox(width: 8),
+                        Expanded(child: endField),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Text('הערה (חובה):'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _noteController,
+                  maxLines: 2,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    hintText: 'יש להזין הערה למגבלה הקבועה...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text('תאריך התחלה (לא חובה):'),
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: _selectRepeatStartDate,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.play_arrow),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _repeatStartDate == null
+                                ? 'התחל מיידית (ברירת מחדל)'
+                                : _formatDate(_repeatStartDate!),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (_repeatStartDate != null)
+                          IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              setState(() {
+                                _repeatStartDate = null;
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text('תאריך סיום (חובה):'),
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: _selectRepeatEndDate,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.event_available),
+                        const SizedBox(width: 8),
+                        Text(
+                          _repeatEndDate == null
+                              ? 'בחר תאריך סיום'
+                              : _formatDate(_repeatEndDate!),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('ביטול'),
+          ),
+          ElevatedButton(
+            onPressed: !_isValid
+                ? null
+                : () {
+                    Navigator.of(context).pop(
+                      _RepeatingConstraintResult(
+                        repeatType: _repeatType,
+                        repeatDay: _selectedRepeatDay,
+                        repeatStartDate: _repeatStartDate,
+                        repeatEndDate: _repeatEndDate!,
+                        startTime: _startTimeController.text.isNotEmpty
+                            ? _startTimeController.text
+                            : null,
+                        endTime: _endTimeController.text.isNotEmpty
+                            ? _endTimeController.text
+                            : null,
+                        note: _noteController.text.trim(),
+                      ),
+                    );
+                  },
+            child: const Text('סיום'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RepeatingConstraintConfirmationDialog extends StatelessWidget {
+  final String summary;
+  final String note;
+
+  const _RepeatingConstraintConfirmationDialog({
+    required this.summary,
+    required this.note,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text('אישור מגבלה קבועה'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(summary),
+            const SizedBox(height: 10),
+            Text('הערה: $note'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('ביטול'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('מאושר'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -807,58 +1735,72 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                 const SizedBox(height: 16),
                 const Text('טווח שעות (אופציונלי):'),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: startTimeController,
-                        readOnly: true,
-                        onTap: () => _showTimePickerFor(startTimeController),
-                        decoration: InputDecoration(
-                          labelText: 'שעת התחלה',
-                          hintText: 'לדוגמה: 09:00',
-                          prefixIcon: const Icon(Icons.access_time),
-                          border: const OutlineInputBorder(),
-                          suffixIcon: startTimeController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear,
-                                      color: Colors.grey),
-                                  onPressed: () {
-                                    setState(() {
-                                      startTimeController.clear();
-                                    });
-                                  },
-                                )
-                              : null,
-                        ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 360;
+                    final startField = TextFormField(
+                      controller: startTimeController,
+                      readOnly: true,
+                      onTap: () => _showTimePickerFor(startTimeController),
+                      decoration: InputDecoration(
+                        labelText: 'שעת התחלה',
+                        hintText: 'למשל 09:00',
+                        prefixIcon: const Icon(Icons.access_time),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: startTimeController.text.isNotEmpty
+                            ? IconButton(
+                                icon:
+                                    const Icon(Icons.clear, color: Colors.grey),
+                                onPressed: () {
+                                  setState(() {
+                                    startTimeController.clear();
+                                  });
+                                },
+                              )
+                            : null,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextFormField(
-                        controller: endTimeController,
-                        readOnly: true,
-                        onTap: () => _showTimePickerFor(endTimeController),
-                        decoration: InputDecoration(
-                          labelText: 'שעת סיום',
-                          hintText: 'לדוגמה: 17:00',
-                          prefixIcon: const Icon(Icons.access_time),
-                          border: const OutlineInputBorder(),
-                          suffixIcon: endTimeController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear,
-                                      color: Colors.grey),
-                                  onPressed: () {
-                                    setState(() {
-                                      endTimeController.clear();
-                                    });
-                                  },
-                                )
-                              : null,
-                        ),
+                    );
+                    final endField = TextFormField(
+                      controller: endTimeController,
+                      readOnly: true,
+                      onTap: () => _showTimePickerFor(endTimeController),
+                      decoration: InputDecoration(
+                        labelText: 'שעת סיום',
+                        hintText: 'למשל 17:00',
+                        prefixIcon: const Icon(Icons.access_time),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: endTimeController.text.isNotEmpty
+                            ? IconButton(
+                                icon:
+                                    const Icon(Icons.clear, color: Colors.grey),
+                                onPressed: () {
+                                  setState(() {
+                                    endTimeController.clear();
+                                  });
+                                },
+                              )
+                            : null,
                       ),
-                    ),
-                  ],
+                    );
+
+                    if (compact) {
+                      return Column(
+                        children: [
+                          startField,
+                          const SizedBox(height: 8),
+                          endField,
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        Expanded(child: startField),
+                        const SizedBox(width: 8),
+                        Expanded(child: endField),
+                      ],
+                    );
+                  },
                 ),
                 if (startTimeController.text.isNotEmpty &&
                     endTimeController.text.isNotEmpty)
@@ -1129,6 +2071,9 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
           startTimeController.text.isNotEmpty ? startTimeController.text : null,
       endTime:
           endTimeController.text.isNotEmpty ? endTimeController.text : null,
+      repeatType: widget.constraint.repeatType,
+      repeatDay: widget.constraint.repeatDay,
+      repeatEndDate: widget.constraint.repeatEndDate,
     );
   }
 
@@ -1269,58 +2214,72 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                 const SizedBox(height: 16),
                 const Text('טווח שעות (אופציונלי):'),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: startTimeController,
-                        readOnly: true,
-                        onTap: () => _showTimePickerFor(startTimeController),
-                        decoration: InputDecoration(
-                          labelText: 'שעת התחלה',
-                          hintText: 'לדוגמה: 09:00',
-                          prefixIcon: const Icon(Icons.access_time),
-                          border: const OutlineInputBorder(),
-                          suffixIcon: startTimeController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear,
-                                      color: Colors.grey),
-                                  onPressed: () {
-                                    setState(() {
-                                      startTimeController.clear();
-                                    });
-                                  },
-                                )
-                              : null,
-                        ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 360;
+                    final startField = TextFormField(
+                      controller: startTimeController,
+                      readOnly: true,
+                      onTap: () => _showTimePickerFor(startTimeController),
+                      decoration: InputDecoration(
+                        labelText: 'שעת התחלה',
+                        hintText: 'למשל 09:00',
+                        prefixIcon: const Icon(Icons.access_time),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: startTimeController.text.isNotEmpty
+                            ? IconButton(
+                                icon:
+                                    const Icon(Icons.clear, color: Colors.grey),
+                                onPressed: () {
+                                  setState(() {
+                                    startTimeController.clear();
+                                  });
+                                },
+                              )
+                            : null,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextFormField(
-                        controller: endTimeController,
-                        readOnly: true,
-                        onTap: () => _showTimePickerFor(endTimeController),
-                        decoration: InputDecoration(
-                          labelText: 'שעת סיום',
-                          hintText: 'לדוגמה: 17:00',
-                          prefixIcon: const Icon(Icons.access_time),
-                          border: const OutlineInputBorder(),
-                          suffixIcon: endTimeController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear,
-                                      color: Colors.grey),
-                                  onPressed: () {
-                                    setState(() {
-                                      endTimeController.clear();
-                                    });
-                                  },
-                                )
-                              : null,
-                        ),
+                    );
+                    final endField = TextFormField(
+                      controller: endTimeController,
+                      readOnly: true,
+                      onTap: () => _showTimePickerFor(endTimeController),
+                      decoration: InputDecoration(
+                        labelText: 'שעת סיום',
+                        hintText: 'למשל 17:00',
+                        prefixIcon: const Icon(Icons.access_time),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: endTimeController.text.isNotEmpty
+                            ? IconButton(
+                                icon:
+                                    const Icon(Icons.clear, color: Colors.grey),
+                                onPressed: () {
+                                  setState(() {
+                                    endTimeController.clear();
+                                  });
+                                },
+                              )
+                            : null,
                       ),
-                    ),
-                  ],
+                    );
+
+                    if (compact) {
+                      return Column(
+                        children: [
+                          startField,
+                          const SizedBox(height: 8),
+                          endField,
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        Expanded(child: startField),
+                        const SizedBox(width: 8),
+                        Expanded(child: endField),
+                      ],
+                    );
+                  },
                 ),
                 if (startTimeController.text.isNotEmpty &&
                     endTimeController.text.isNotEmpty)
@@ -1469,6 +2428,23 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
 
   // Helper function to check if constraint is past
   bool isPastConstraint(DateConstraint constraint) {
+    if (constraint.repeatType != null && constraint.repeatEndDate != null) {
+      final today = DateTime.now();
+      final constraintEndDate = DateTime(
+        constraint.repeatEndDate!.year,
+        constraint.repeatEndDate!.month,
+        constraint.repeatEndDate!.day,
+      );
+      final todayDate = DateTime(
+        today.year,
+        today.month,
+        today.day,
+      );
+      final isPast = constraintEndDate.isBefore(todayDate);
+
+      return isPast;
+    }
+
     final today = DateTime.now();
 
     if (constraint.endDate != null) {
@@ -1787,8 +2763,25 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
                                     TextButton.icon(
-                                      onPressed: () => _editExpiredConstraint(
-                                          constraint, currentUser),
+                                      onPressed: () {
+                                        if (constraint.repeatType != null) {
+                                          ScaffoldMessenger.of(context)
+                                            ..clearSnackBars()
+                                            ..showSnackBar(
+                                              const SnackBar(
+                                                content: Directionality(
+                                                  textDirection:
+                                                      TextDirection.rtl,
+                                                  child: Text(
+                                                      'עריכת מגבלה קבועה עדיין לא זמינה. אפשר למחוק וליצור מחדש.'),
+                                                ),
+                                              ),
+                                            );
+                                          return;
+                                        }
+                                        _editExpiredConstraint(
+                                            constraint, currentUser);
+                                      },
                                       icon: const Icon(Icons.edit, size: 16),
                                       label: const Text('ערוך'),
                                       style: TextButton.styleFrom(
@@ -2062,58 +3055,70 @@ class _EditExpiredConstraintDialogState
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: startTimeController,
-                      readOnly: true,
-                      onTap: () => _showTimePickerFor(startTimeController),
-                      decoration: InputDecoration(
-                        labelText: 'שעת התחלה',
-                        hintText: 'לדוגמה: 09:00',
-                        prefixIcon: const Icon(Icons.access_time),
-                        border: const OutlineInputBorder(),
-                        suffixIcon: startTimeController.text.isNotEmpty
-                            ? IconButton(
-                                icon:
-                                    const Icon(Icons.clear, color: Colors.grey),
-                                onPressed: () {
-                                  setState(() {
-                                    startTimeController.clear();
-                                  });
-                                },
-                              )
-                            : null,
-                      ),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 360;
+                  final startField = TextFormField(
+                    controller: startTimeController,
+                    readOnly: true,
+                    onTap: () => _showTimePickerFor(startTimeController),
+                    decoration: InputDecoration(
+                      labelText: 'שעת התחלה',
+                      hintText: 'למשל 09:00',
+                      prefixIcon: const Icon(Icons.access_time),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: startTimeController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, color: Colors.grey),
+                              onPressed: () {
+                                setState(() {
+                                  startTimeController.clear();
+                                });
+                              },
+                            )
+                          : null,
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: endTimeController,
-                      readOnly: true,
-                      onTap: () => _showTimePickerFor(endTimeController),
-                      decoration: InputDecoration(
-                        labelText: 'שעת סיום',
-                        hintText: 'לדוגמה: 17:00',
-                        prefixIcon: const Icon(Icons.access_time),
-                        border: const OutlineInputBorder(),
-                        suffixIcon: endTimeController.text.isNotEmpty
-                            ? IconButton(
-                                icon:
-                                    const Icon(Icons.clear, color: Colors.grey),
-                                onPressed: () {
-                                  setState(() {
-                                    endTimeController.clear();
-                                  });
-                                },
-                              )
-                            : null,
-                      ),
+                  );
+                  final endField = TextFormField(
+                    controller: endTimeController,
+                    readOnly: true,
+                    onTap: () => _showTimePickerFor(endTimeController),
+                    decoration: InputDecoration(
+                      labelText: 'שעת סיום',
+                      hintText: 'למשל 17:00',
+                      prefixIcon: const Icon(Icons.access_time),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: endTimeController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, color: Colors.grey),
+                              onPressed: () {
+                                setState(() {
+                                  endTimeController.clear();
+                                });
+                              },
+                            )
+                          : null,
                     ),
-                  ),
-                ],
+                  );
+
+                  if (compact) {
+                    return Column(
+                      children: [
+                        startField,
+                        const SizedBox(height: 8),
+                        endField,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      Expanded(child: startField),
+                      const SizedBox(width: 8),
+                      Expanded(child: endField),
+                    ],
+                  );
+                },
               ),
               if (startTimeController.text.isNotEmpty &&
                   endTimeController.text.isNotEmpty)
@@ -2196,6 +3201,9 @@ class _EditExpiredConstraintDialogState
                               : null,
                           wasAutoRejectedFromCalendar:
                               false, // Reset auto-rejection flag when edited
+                          repeatType: widget.constraint.repeatType,
+                          repeatDay: widget.constraint.repeatDay,
+                          repeatEndDate: widget.constraint.repeatEndDate,
                         ));
 
                     Navigator.of(context).pop();

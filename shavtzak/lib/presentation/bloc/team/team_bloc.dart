@@ -7,7 +7,6 @@ import '../../../data/repositories/assignment_repository.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../../core/state/constraint_manager.dart';
-import '../../../core/services/environment_service.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
 import '../calendar_sync/calendar_sync_event.dart';
 import 'team_event.dart';
@@ -81,12 +80,14 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
           add(_TeamMembersUpdated(members, activeOnly: false));
         },
         onError: (error, stackTrace) {
-          developer.log('TeamBloc._onLoadTeamMembers: Error - $error', name: 'TeamBloc', error: error, stackTrace: stackTrace);
+          developer.log('TeamBloc._onLoadTeamMembers: Error - $error',
+              name: 'TeamBloc', error: error, stackTrace: stackTrace);
           add(_TeamMembersUpdated(const [], activeOnly: false));
         },
       );
     } catch (e) {
-      developer.log('TeamBloc._onLoadTeamMembers: Exception - $e', name: 'TeamBloc', error: e);
+      developer.log('TeamBloc._onLoadTeamMembers: Exception - $e',
+          name: 'TeamBloc', error: e);
       emit(TeamError('שגיאה בטעינת חברי הצוות: $e'));
     }
   }
@@ -229,7 +230,8 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
 
         // Delete assignments for removed roles
         if (removedRoles.isNotEmpty) {
-          final assignments = await _assignmentRepository.getAssignmentsByPerson(event.member.id);
+          final assignments = await _assignmentRepository
+              .getAssignmentsByPerson(event.member.id);
 
           for (final assignment in assignments) {
             if (removedRoles.contains(assignment.roleType)) {
@@ -266,7 +268,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
             if (oldConstraint != null) {
               // Existing constraint - check for status change
               if (oldConstraint.status != newConstraint.status) {
-
                 if (newConstraint.status == ConstraintStatus.approved) {
                   // Constraint changed to approved - sync to calendar ONLY for unavailability constraints
                   if (newConstraint.isUnavailability) {
@@ -293,14 +294,29 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
                   }
                 }
               }
+            } else if (newConstraint.status == ConstraintStatus.approved) {
+              // New constraint added via UpdateTeamMember (e.g. admin modal):
+              // sync immediately if it's an approved unavailability.
+              if (newConstraint.isUnavailability) {
+                developer.log(
+                  'TeamBloc: New approved unavailability constraint via UpdateTeamMember, triggering calendar sync',
+                  name: 'TeamBloc',
+                );
+                calendarSyncBloc.add(SyncConstraintToCalendar(
+                  constraintId: newConstraint.id,
+                  teamMember: event.member,
+                  constraint: newConstraint,
+                ));
+              }
             }
-            // Note: New constraints don't need sync yet - they start as pending
           }
 
           // Check for deleted constraints that were approved
           for (final oldConstraint in oldMember.constraints) {
-            final stillExists = event.member.constraints.any((c) => c.id == oldConstraint.id);
-            if (!stillExists && oldConstraint.status == ConstraintStatus.approved) {
+            final stillExists =
+                event.member.constraints.any((c) => c.id == oldConstraint.id);
+            if (!stillExists &&
+                oldConstraint.status == ConstraintStatus.approved) {
               // Only remove from calendar if it was an unavailability constraint
               if (oldConstraint.isUnavailability) {
                 developer.log(
@@ -313,8 +329,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
               }
             }
           }
-        } else {
-        }
+        } else {}
       }
 
       // Explicitly reload ALL members to ensure the archive dialog updates in real-time
@@ -322,7 +337,8 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       final allMembers = await _repository.getAllTeamMembers();
 
       // Emit TeamLoaded state with ALL members to trigger BlocBuilder rebuilds
-      final searchQuery = state is TeamLoaded ? (state as TeamLoaded).searchQuery : null;
+      final searchQuery =
+          state is TeamLoaded ? (state as TeamLoaded).searchQuery : null;
       emit(TeamLoaded(allMembers, searchQuery: searchQuery));
 
       // Note: We don't emit TeamMemberOperationSuccess here because it would change the state type
@@ -398,14 +414,16 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
   ) async {
     try {
       // Get the current team member to check old status
-      final currentMember = await _repository.getTeamMemberById(event.teamMemberId);
+      final currentMember =
+          await _repository.getTeamMemberById(event.teamMemberId);
       if (currentMember == null) {
         emit(const TeamError('חבר/ת צוות לא נמצא/ה'));
         return;
       }
 
       // Check if constraint index is valid
-      if (event.constraintIndex < 0 || event.constraintIndex >= currentMember.constraints.length) {
+      if (event.constraintIndex < 0 ||
+          event.constraintIndex >= currentMember.constraints.length) {
         emit(const TeamError('אינדקס מגבלה לא תקין'));
         return;
       }
@@ -434,7 +452,8 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
             _calendarSyncBloc!.add(SyncConstraintToCalendar(
               constraintId: constraint.id,
               teamMember: currentMember,
-              constraint: constraint.copyWith(status: ConstraintStatus.approved),
+              constraint:
+                  constraint.copyWith(status: ConstraintStatus.approved),
             ));
           }
         } else if (oldStatus == ConstraintStatus.approved) {
@@ -450,12 +469,12 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
           }
         }
       } else if (_calendarSyncBloc == null) {
-      } else {
-      }
+      } else {}
 
       // Emit success message
       final statusText = event.newStatus.hebrewName;
-      emit(TeamMemberOperationSuccess('סטטוס המגבלה עודכן ל$statusText בהצלחה'));
+      emit(
+          TeamMemberOperationSuccess('סטטוס המגבלה עודכן ל$statusText בהצלחה'));
     } catch (e) {
       emit(TeamError('שגיאה בעדכון סטטוס המגבלה: $e'));
     }
@@ -480,6 +499,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         constraintType: ConstraintType.unavailability, // For permanent members
         startTime: event.startTime,
         endTime: event.endTime,
+        repeatType: event.repeatType,
+        repeatDay: event.repeatDay,
+        repeatEndDate: event.repeatEndDate,
       );
 
       // Use targeted database method (atomic append, only writes constraints field)
@@ -490,7 +512,8 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
 
       // Emit success to show snackbar
       // The existing stream subscription will automatically pick up the database changes
-      emit(const TeamMemberOperationSuccess('בקשת מגבלה נוספה בהצלחה וממתינה לאישור'));
+      emit(const TeamMemberOperationSuccess(
+          'בקשת מגבלה נוספה בהצלחה וממתינה לאישור'));
     } catch (e) {
       emit(TeamError('שגיאה בהוספת בקשת מגבלה: $e'));
     }
@@ -515,7 +538,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       }
 
       // If constraint was approved AND it's an unavailability constraint, remove from calendar
-      if (_calendarSyncBloc != null && removedConstraint.isApproved() && removedConstraint.isUnavailability) {
+      if (_calendarSyncBloc != null &&
+          removedConstraint.isApproved() &&
+          removedConstraint.isUnavailability) {
         developer.log(
           'TeamBloc: Removing approved unavailability constraint from calendar',
           name: 'TeamBloc',
@@ -550,6 +575,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         wasAutoRejectedFromCalendar: event.wasAutoRejectedFromCalendar,
         startTime: event.startTime,
         endTime: event.endTime,
+        repeatType: event.repeatType,
+        repeatDay: event.repeatDay,
+        repeatEndDate: event.repeatEndDate,
       );
 
       // Use targeted database method that finds by ID and only updates constraints field
@@ -562,20 +590,23 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       // Handle calendar sync for status changes
       if (_calendarSyncBloc != null) {
         // Get the old constraint to detect status changes
-        final currentMember = await _repository.getTeamMemberById(event.teamMemberId);
+        final currentMember =
+            await _repository.getTeamMemberById(event.teamMemberId);
         if (currentMember != null) {
           final oldConstraint = currentMember.constraints
               .where((c) => c.id == event.constraintId)
               .firstOrNull;
 
           if (oldConstraint != null && oldConstraint.status != event.status) {
-            if (event.status == ConstraintStatus.approved && updatedConstraint.isUnavailability) {
+            if (event.status == ConstraintStatus.approved &&
+                updatedConstraint.isUnavailability) {
               _calendarSyncBloc!.add(SyncConstraintToCalendar(
                 constraintId: event.constraintId,
                 teamMember: currentMember,
                 constraint: updatedConstraint,
               ));
-            } else if (oldConstraint.status == ConstraintStatus.approved && oldConstraint.isUnavailability) {
+            } else if (oldConstraint.status == ConstraintStatus.approved &&
+                oldConstraint.isUnavailability) {
               _calendarSyncBloc!.add(RemoveConstraintFromCalendar(
                 constraintId: event.constraintId,
               ));
@@ -631,7 +662,8 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         return;
       }
 
-      constraintManager.updateConstraintStatus(event.constraintId, event.newStatus);
+      constraintManager.updateConstraintStatus(
+          event.constraintId, event.newStatus);
 
       emit(ConstraintOperationSuccess(
         'סטטוס מגבלה עודכן במקומי',
@@ -686,7 +718,8 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         return;
       }
 
-      constraintManager.deleteConstraint(event.constraintId, isLocalId: event.isLocalId);
+      constraintManager.deleteConstraint(event.constraintId,
+          isLocalId: event.isLocalId);
 
       emit(ConstraintOperationSuccess(
         'מגבלה הוסרה במקומי',
@@ -709,7 +742,8 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         return;
       }
 
-      final conflicts = constraintManager.syncWithDatabaseChanges(event.remoteConstraints);
+      final conflicts =
+          constraintManager.syncWithDatabaseChanges(event.remoteConstraints);
 
       if (conflicts.isNotEmpty) {
         emit(ConstraintConflictsDetected(

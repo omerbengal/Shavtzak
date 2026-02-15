@@ -1,7 +1,7 @@
 /// Constraint type for date constraints
 enum ConstraintType {
-  unavailability,  // For permanent members - requires approval
-  availability,    // For non-permanent members - immediate effect
+  unavailability, // For permanent members - requires approval
+  availability, // For non-permanent members - immediate effect
 }
 
 /// Constraint status for user-submitted date constraint requests
@@ -10,6 +10,13 @@ enum ConstraintStatus {
   pending,
   approved,
   rejected,
+}
+
+/// Repeat type for recurring constraints
+enum RepeatType {
+  daily,
+  weekly,
+  monthly,
 }
 
 /// Extension to add Hebrew display names for constraint types
@@ -60,6 +67,21 @@ extension ConstraintStatusExtension on ConstraintStatus {
         return '#4CAF50'; // Green
       case ConstraintStatus.rejected:
         return '#F44336'; // Red
+    }
+  }
+}
+
+/// Extension to add Hebrew display names for repeat types
+extension RepeatTypeExtension on RepeatType {
+  /// Get the Hebrew display name for this repeat type
+  String get hebrewName {
+    switch (this) {
+      case RepeatType.daily:
+        return 'יומי';
+      case RepeatType.weekly:
+        return 'שבועי';
+      case RepeatType.monthly:
+        return 'חודשי';
     }
   }
 }
