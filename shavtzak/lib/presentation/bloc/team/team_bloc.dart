@@ -240,7 +240,19 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
 
         // === Calendar Sync: Check for constraint status changes ===
 
-        if (_calendarSyncBloc != null) {
+        final calendarSyncBloc = _calendarSyncBloc;
+        if (calendarSyncBloc != null) {
+          // Sync attendee changes when member email changes.
+          final oldEmail = (oldMember.email ?? '').trim();
+          final newEmail = (event.member.email ?? '').trim();
+          if (oldEmail != newEmail) {
+            calendarSyncBloc.add(OnTeamMemberEmailChanged(
+              teamMemberId: event.member.id,
+              oldEmail: oldEmail,
+              newEmail: newEmail,
+            ));
+          }
+
           // Build a map of old constraints by ID for easy lookup
           final oldConstraintsById = <String, DateConstraint>{};
           for (final constraint in oldMember.constraints) {
@@ -262,7 +274,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
                       'TeamBloc: Unavailability constraint approved via UpdateTeamMember, triggering calendar sync',
                       name: 'TeamBloc',
                     );
-                    _calendarSyncBloc?.add(SyncConstraintToCalendar(
+                    calendarSyncBloc.add(SyncConstraintToCalendar(
                       constraintId: newConstraint.id,
                       teamMember: event.member,
                       constraint: newConstraint,
@@ -275,7 +287,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
                       'TeamBloc: Unavailability constraint un-approved via UpdateTeamMember, removing from calendar',
                       name: 'TeamBloc',
                     );
-                    _calendarSyncBloc?.add(RemoveConstraintFromCalendar(
+                    calendarSyncBloc.add(RemoveConstraintFromCalendar(
                       constraintId: newConstraint.id,
                     ));
                   }
@@ -295,7 +307,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
                   'TeamBloc: Approved unavailability constraint deleted via UpdateTeamMember, removing from calendar',
                   name: 'TeamBloc',
                 );
-                _calendarSyncBloc?.add(RemoveConstraintFromCalendar(
+                calendarSyncBloc.add(RemoveConstraintFromCalendar(
                   constraintId: oldConstraint.id,
                 ));
               }

@@ -78,9 +78,10 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         body: SafeArea(
-          child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
-            builder: (context, userState) {
-              if (userState is! UserAuthenticated) {
+          child: BlocSelector<UserSelectionBloc, UserSelectionState, String?>(
+            selector: (state) => state is UserAuthenticated ? state.user.id : null,
+            builder: (context, userId) {
+              if (userId == null) {
                 return const Center(
                   child: Text('אין משתמש מחובר'),
                 );
@@ -697,10 +698,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   // Show if: (1) parking location exists, OR (2) user can edit parking (show "לא מוגדרת")
                   Builder(
                     builder: (context) {
-                      final userState =
-                          context.watch<UserSelectionBloc>().state;
-                      final canEditParking = userState is UserAuthenticated &&
-                          _canUserEditParking(event, userState);
+                      final currentUserId = context.select<UserSelectionBloc, String?>((bloc) {
+                        final state = bloc.state;
+                        return state is UserAuthenticated ? state.user.id : null;
+                      });
+                      final canEditParking = currentUserId != null &&
+                          event.parkingEditorIds.contains(currentUserId);
 
                       final hasParkingLocation =
                           event.parkingLocation != null &&
@@ -1427,13 +1430,6 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     // Try to parse coordinates directly (format: "lat, lng")
     final coords = MapLocationResult.parseCoordinates(location);
     return coords.$1 != null && coords.$2 != null;
-  }
-
-  /// Check if the current user can edit the parking location for an event
-  bool _canUserEditParking(Event event, UserAuthenticated userState) {
-    // Only allow edit if user is explicitly in parkingEditorIds
-    // Admins must be explicitly added to edit parking from user/assignments
-    return event.parkingEditorIds.contains(userState.user.id);
   }
 
   /// Update parking location for an event

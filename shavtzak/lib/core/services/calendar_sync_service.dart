@@ -669,6 +669,18 @@ class CalendarSyncService {
     required String newEmail,
   }) async {
     try {
+      final normalizedOldEmail = oldEmail.trim();
+      final normalizedNewEmail = newEmail.trim();
+
+      if (normalizedOldEmail == normalizedNewEmail) {
+        return;
+      }
+
+      // Nothing to sync when both are empty.
+      if (normalizedOldEmail.isEmpty && normalizedNewEmail.isEmpty) {
+        return;
+      }
+
       // Get all assignments for this team member
       final assignments = await _database.getAssignmentsByPerson(teamMemberId);
 
@@ -678,10 +690,13 @@ class CalendarSyncService {
       // For each event, update the attendee
       for (final eventId in eventIds) {
         try {
-          // Remove old email
-          await removeAttendeeFromAppEvent(eventId: eventId, email: oldEmail);
-          // Add new email
-          await addAttendeeToAppEvent(eventId: eventId, email: newEmail);
+          if (normalizedOldEmail.isNotEmpty) {
+            // Remove old email when replacing or deleting an address.
+            await removeAttendeeFromAppEvent(eventId: eventId, email: normalizedOldEmail);
+          }
+          if (normalizedNewEmail.isNotEmpty) {
+            await addAttendeeToAppEvent(eventId: eventId, email: normalizedNewEmail);
+          }
         } catch (e) {
           developer.log(
             'CalendarSyncService: Failed to update attendee for event $eventId - $e',

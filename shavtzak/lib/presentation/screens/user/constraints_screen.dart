@@ -18,6 +18,30 @@ import '../../widgets/loading_overlay.dart';
 import 'availability_screen.dart';
 import 'user_navigation_shell.dart'; // Import for onConstraintsPageVisible callback
 
+class _UserConstraintsContext {
+  final String? userId;
+  final bool isAuthenticated;
+  final bool isPermanent;
+
+  const _UserConstraintsContext({
+    required this.userId,
+    required this.isAuthenticated,
+    required this.isPermanent,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is _UserConstraintsContext &&
+        other.userId == userId &&
+        other.isAuthenticated == isAuthenticated &&
+        other.isPermanent == isPermanent;
+  }
+
+  @override
+  int get hashCode => Object.hash(userId, isAuthenticated, isPermanent);
+}
+
 /// Screen for non-admin users to manage their constraint requests
 /// Redirects non-permanent users to availability screen
 class ConstraintsScreen extends StatefulWidget {
@@ -92,9 +116,23 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
-        builder: (context, userState) {
-          if (userState is! UserAuthenticated) {
+      child: BlocSelector<UserSelectionBloc, UserSelectionState, _UserConstraintsContext>(
+        selector: (state) {
+          if (state is UserAuthenticated) {
+            return _UserConstraintsContext(
+              userId: state.user.id,
+              isAuthenticated: true,
+              isPermanent: state.user.isPermanent,
+            );
+          }
+          return const _UserConstraintsContext(
+            userId: null,
+            isAuthenticated: false,
+            isPermanent: false,
+          );
+        },
+        builder: (context, userContext) {
+          if (!userContext.isAuthenticated || userContext.userId == null) {
             return Scaffold(
               body: SafeArea(
                 child: const Center(
@@ -105,7 +143,7 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
           }
 
           // Redirect non-permanent users to availability screen
-          if (!userState.user.isPermanent) {
+          if (!userContext.isPermanent) {
             // Return the availability screen directly
             return const AvailabilityScreen();
           }
@@ -154,10 +192,16 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                   }
 
                   if (teamState is TeamLoaded) {
+                    if (teamState.members.isEmpty) {
+                      if (_lastKnownUser != null) {
+                        return _buildConstraintsContent(context, _lastKnownUser!);
+                      }
+                      return const Center(child: CircularProgressIndicator());
+                    }
                     // Find the current user in the team list
                     final currentUser = teamState.members.firstWhere(
-                      (member) => member.id == userState.user.id,
-                      orElse: () => userState.user,
+                      (member) => member.id == userContext.userId,
+                      orElse: () => _lastKnownUser ?? teamState.members.first,
                     );
                     _lastKnownUser = currentUser;
                     return _buildConstraintsContent(context, currentUser);

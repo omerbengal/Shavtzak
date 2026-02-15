@@ -54,6 +54,11 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
   @override
   Widget build(BuildContext context) {
     return BlocListener<UserSelectionBloc, UserSelectionState>(
+      listenWhen: (previous, current) {
+        final previousId = previous is UserAuthenticated ? previous.user.id : null;
+        final currentId = current is UserAuthenticated ? current.user.id : null;
+        return previousId != currentId;
+      },
       listener: (context, userState) {
         // Reload checklist items when user authentication changes
         if (userState is UserAuthenticated) {
@@ -61,6 +66,12 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
         }
       },
       child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
+        buildWhen: (previous, current) {
+          final previousId = previous is UserAuthenticated ? previous.user.id : null;
+          final currentId = current is UserAuthenticated ? current.user.id : null;
+          return previous.runtimeType != current.runtimeType ||
+              previousId != currentId;
+        },
         builder: (context, userState) {
           if (userState is! UserAuthenticated) {
             return const Center(

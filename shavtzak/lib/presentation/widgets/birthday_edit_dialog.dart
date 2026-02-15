@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
-import 'loading_overlay.dart';
 
 /// Dialog for editing user's birthday
 class BirthdayEditDialog extends StatefulWidget {
@@ -101,9 +100,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Stack(
-        children: [
-          AlertDialog(
+      child: AlertDialog(
         title: Row(
           children: [
             const Icon(Icons.cake, color: Colors.pink),
@@ -217,9 +214,6 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
             child: const Text('שמור'),
           ),
         ],
-          ),
-          LoadingOverlay(isLoading: _isSaving, message: 'מעדכן תאריך לידה...'),
-        ],
       ),
     );
   }
@@ -243,8 +237,6 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
     }
 
     final selectedDate = _getSelectedDate();
-
-    setState(() => _isSaving = true);
 
     try {
       // Use the UpdateBirthday event to update the birthday

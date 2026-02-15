@@ -288,6 +288,8 @@ Future<void> _preloadFont() async {
 }
 
 class MyApp extends StatelessWidget {
+  static int _buildCounter = 0;
+
   final TeamRepository teamRepository;
   final EventRepository eventRepository;
   final AssignmentRepository assignmentRepository;
@@ -330,6 +332,11 @@ class MyApp extends StatelessWidget {
         listenable: EnvironmentService.instance,
         builder: (context, child) {
           final env = EnvironmentService.instance.isTestMode ? 'TEST' : 'PROD';
+          _buildCounter++;
+          developer.log(
+            'MyApp build #$_buildCounter env=$env',
+            name: 'Main',
+          );
 
           return MultiBlocProvider(
             key: ValueKey(EnvironmentService.instance.isTestMode),

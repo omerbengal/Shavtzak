@@ -4,7 +4,6 @@ import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../../core/utils/validators.dart';
-import 'loading_overlay.dart';
 
 /// Dialog for editing user's email address
 class EmailEditDialog extends StatefulWidget {
@@ -49,69 +48,64 @@ class _EmailEditDialogState extends State<EmailEditDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Stack(
-        children: [
-          AlertDialog(
-            title: Row(
-              children: const [
-                Icon(Icons.email, color: Colors.blue),
-                SizedBox(width: 8),
-                Text('עריכת כתובת אימייל'),
-              ],
-            ),
-            content: SizedBox(
-              width: 300,
-              child: SingleChildScrollView(
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        'הזן את כתובת האימייל שלך על מנת שתוכל להיות מזומן לאירועים ביומן',
-                        style: TextStyle(fontSize: 16),
-                      ),
-                      const SizedBox(height: 20),
-                      TextFormField(
-                        controller: _emailController,
-                        decoration: const InputDecoration(
-                          labelText: 'כתובת אימייל',
-                          hintText: 'example@mail.com',
-                          prefixIcon: Icon(Icons.email),
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                        ),
-                        validator: Validators.validateEmail,
-                        keyboardType: TextInputType.emailAddress,
-                        textDirection: TextDirection.ltr,
-                        smartQuotesType: SmartQuotesType.disabled,
-                        smartDashesType: SmartDashesType.disabled,
-                        textAlign: TextAlign.start,
-                        autofocus: false,
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
-                    ],
+      child: AlertDialog(
+        title: Row(
+          children: const [
+            Icon(Icons.email, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('עריכת כתובת אימייל'),
+          ],
+        ),
+        content: SizedBox(
+          width: 300,
+          child: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'הזן את כתובת האימייל שלך על מנת שתוכל להיות מזומן לאירועים ביומן',
+                    style: TextStyle(fontSize: 16),
                   ),
-                ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'כתובת אימייל',
+                      hintText: 'example@mail.com',
+                      prefixIcon: Icon(Icons.email),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                    ),
+                    validator: Validators.validateEmail,
+                    keyboardType: TextInputType.emailAddress,
+                    textDirection: TextDirection.ltr,
+                    smartQuotesType: SmartQuotesType.disabled,
+                    smartDashesType: SmartDashesType.disabled,
+                    textAlign: TextAlign.start,
+                    autofocus: false,
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
+                ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-                child: const Text('ביטול'),
-              ),
-              ElevatedButton(
-                onPressed: (_isDirty && !_isSaving) ? _saveEmail : null,
-                child: const Text('שמור'),
-              ),
-            ],
           ),
-          LoadingOverlay(isLoading: _isSaving, message: 'מעדכן כתובת אימייל...'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+            child: const Text('ביטול'),
+          ),
+          ElevatedButton(
+            onPressed: (_isDirty && !_isSaving) ? _saveEmail : null,
+            child: const Text('שמור'),
+          ),
         ],
       ),
     );
@@ -123,8 +117,6 @@ class _EmailEditDialogState extends State<EmailEditDialog> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-
-    setState(() => _isSaving = true);
 
     final bloc = context.read<UserSelectionBloc>();
     final currentState = bloc.state;

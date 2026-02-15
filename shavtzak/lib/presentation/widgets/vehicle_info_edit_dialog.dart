@@ -6,7 +6,6 @@ import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../../core/services/utilities_service.dart';
-import 'loading_overlay.dart';
 import '../../core/utils/rtl_text_field_utils.dart';
 
 /// Dialog for editing user's vehicle information
@@ -112,9 +111,7 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Stack(
-        children: [
-          AlertDialog(
+      child: AlertDialog(
         title: const Row(
           children: [
             Icon(Icons.directions_car, color: Colors.blue),
@@ -276,9 +273,6 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
             ],
           ),
         ],
-          ),
-          LoadingOverlay(isLoading: _isSaving, message: 'מעדכן פרטי רכב...'),
-        ],
       ),
     );
   }
@@ -307,8 +301,6 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
       });
       return;
     }
-
-    setState(() => _isSaving = true);
 
     final bloc = context.read<UserSelectionBloc>();
 

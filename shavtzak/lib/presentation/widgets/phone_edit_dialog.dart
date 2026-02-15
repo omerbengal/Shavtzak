@@ -5,7 +5,6 @@ import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../../core/utils/validators.dart';
 import '../../core/utils/phone_input_formatter.dart';
-import 'loading_overlay.dart';
 
 /// Dialog for editing user's phone number
 class PhoneEditDialog extends StatefulWidget {
@@ -45,9 +44,7 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Stack(
-        children: [
-          AlertDialog(
+      child: AlertDialog(
         title: Row(
           children: [
             const Icon(Icons.phone, color: Colors.blue),
@@ -112,9 +109,6 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
             child: const Text('שמור'),
           ),
         ],
-          ),
-          LoadingOverlay(isLoading: _isSaving, message: 'מעדכן מספר טלפון...'),
-        ],
       ),
     );
   }
@@ -125,8 +119,6 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-
-    setState(() => _isSaving = true);
 
     final bloc = context.read<UserSelectionBloc>();
     final currentState = bloc.state;

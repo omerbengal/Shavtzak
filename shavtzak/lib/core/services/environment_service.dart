@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'dart:developer' as developer;
 
 // Conditional imports for web-specific functionality
 import 'environment_service_stub.dart'
@@ -56,8 +57,16 @@ class EnvironmentService extends ChangeNotifier {
 
   /// Manually set test mode (useful for testing or direct URL entry)
   void setTestMode(bool isTest) {
+    developer.log(
+      'EnvironmentService.setTestMode called: current=$_isTestMode new=$isTest',
+      name: 'EnvironmentService',
+    );
     if (_isTestMode != isTest) {
       _isTestMode = isTest;
+      developer.log(
+        'EnvironmentService.setTestMode changed -> $_isTestMode (notifyListeners)',
+        name: 'EnvironmentService',
+      );
       notifyListeners();
     }
   }
@@ -65,8 +74,16 @@ class EnvironmentService extends ChangeNotifier {
   /// Update test mode based on a given path
   void updateFromPath(String path) {
     final newTestMode = path.startsWith('/test/') || path == '/test';
+    developer.log(
+      'EnvironmentService.updateFromPath path="$path" current=$_isTestMode new=$newTestMode',
+      name: 'EnvironmentService',
+    );
     if (_isTestMode != newTestMode) {
       _isTestMode = newTestMode;
+      developer.log(
+        'EnvironmentService.updateFromPath changed -> $_isTestMode (notifyListeners)',
+        name: 'EnvironmentService',
+      );
       notifyListeners();
     }
   }

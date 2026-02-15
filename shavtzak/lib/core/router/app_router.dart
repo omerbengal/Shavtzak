@@ -53,6 +53,7 @@ class AppRouter {
   }
 
   static StreamSubscription? _blocSubscription;
+  static String? _lastAuthSignature;
 
   /// Get the router singleton instance
   static GoRouter router({UserSelectionBloc? userSelectionBloc, required UserSelectionRepository userSelectionRepository}) {
@@ -94,6 +95,10 @@ class AppRouter {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final currentRoute = _instance!.routeInformationProvider.value.uri.path;
           final strippedRoute = _stripTestPrefix(currentRoute);
+          developer.log(
+            'bloc stream state=${state.runtimeType} currentRoute="$currentRoute"',
+            name: 'AppRouter',
+          );
 
           // /db route is unauthenticated - never redirect away from it
           if (strippedRoute.startsWith('/db')) {
@@ -102,12 +107,41 @@ class AppRouter {
 
           final envPrefix = _getEnvPrefix(currentRoute);
 
+          String currentSignature;
+          if (state is UserAuthenticated) {
+            currentSignature =
+                'auth:${state.user.id}:${state.isAdmin}:${state.user.canAccessSummaryScreen}';
+          } else if (state is UserSignedOut) {
+            currentSignature = 'signed_out';
+          } else {
+            currentSignature = state.runtimeType.toString();
+          }
+
+          final isNavRelevantRoute = strippedRoute.startsWith('/whoami') ||
+              strippedRoute.isEmpty ||
+              strippedRoute == '/';
+          final shouldSkip = _lastAuthSignature == currentSignature &&
+              !isNavRelevantRoute &&
+              state is UserAuthenticated;
+          if (shouldSkip) {
+            developer.log(
+              'skip stream handling for non-nav auth update signature="$currentSignature" route="$currentRoute"',
+              name: 'AppRouter',
+            );
+            return;
+          }
+          _lastAuthSignature = currentSignature;
+
           // Update environment service based on current path
           EnvironmentService.instance.updateFromPath(currentRoute);
 
           if (state is UserAuthenticated) {
             // User became authenticated, navigate to appropriate home
             if (strippedRoute.startsWith('/whoami') || strippedRoute.isEmpty || strippedRoute == '/') {
+              developer.log(
+                'authenticated on whoami/root, redirecting to home',
+                name: 'AppRouter',
+              );
               if (state.isAdmin) {
                 _instance?.go('$envPrefix/admin');
               } else if (state.user.canAccessSummaryScreen) {
@@ -119,6 +153,10 @@ class AppRouter {
           } else if (state is UserSignedOut) {
             // User signed out, go to whoami
             if (!strippedRoute.startsWith('/whoami')) {
+              developer.log(
+                'signed out, redirecting to whoami',
+                name: 'AppRouter',
+              );
               _instance?.go('$envPrefix/whoami');
             }
           }
@@ -185,6 +223,13 @@ class AppRouter {
 
         final currentState = _userSelectionBloc!.state;
 
+        if (currentRoute.startsWith('/user') || currentRoute.startsWith('/test/user')) {
+          developer.log(
+            'redirect check route="$currentRoute" authState=${currentState.runtimeType}',
+            name: 'AppRouter',
+          );
+        }
+
         // Handle authentication redirects
         if (currentState is UserSignedOut) {
           if (!strippedRoute.startsWith('/whoami')) {
@@ -213,6 +258,10 @@ class AppRouter {
           }
         } else {
           if (!strippedRoute.startsWith('/whoami')) {
+            developer.log(
+              'unauthenticated, redirecting to whoami from "$currentRoute"',
+              name: 'AppRouter',
+            );
             return '$envPrefix/whoami';
           }
         }
@@ -281,6 +330,10 @@ class AppRouter {
           builder: (context, state, navigationShell) {
             final isAuthenticated = context.select<UserSelectionBloc, bool>((bloc) => bloc.state is UserAuthenticated);
             if (!isAuthenticated) {
+              developer.log(
+                'user shell builder unauthenticated at route="${state.uri.path}"',
+                name: 'AppRouter',
+              );
               return const Scaffold(body: Center(child: Text('גישה לא מורשית - דרוש אימות')));
             }
             return UserNavigationShell(navigationShell: navigationShell);
@@ -323,6 +376,10 @@ class AppRouter {
           builder: (context, state, navigationShell) {
             final isAuthenticated = context.select<UserSelectionBloc, bool>((bloc) => bloc.state is UserAuthenticated);
             if (!isAuthenticated) {
+              developer.log(
+                'test user shell builder unauthenticated at route="${state.uri.path}"',
+                name: 'AppRouter',
+              );
               return const Scaffold(body: Center(child: Text('גישה לא מורשית - דרוש אימות')));
             }
             return UserNavigationShell(navigationShell: navigationShell);
@@ -343,5 +400,6 @@ class AppRouter {
   static void reset() {
     _instance = null;
     _userSelectionBloc = null;
+    _lastAuthSignature = null;
   }
 }

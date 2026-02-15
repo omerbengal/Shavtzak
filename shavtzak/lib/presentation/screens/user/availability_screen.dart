@@ -11,6 +11,27 @@ import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
 
+class _UserAvailabilityContext {
+  final String? userId;
+  final bool isAuthenticated;
+
+  const _UserAvailabilityContext({
+    required this.userId,
+    required this.isAuthenticated,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is _UserAvailabilityContext &&
+        other.userId == userId &&
+        other.isAuthenticated == isAuthenticated;
+  }
+
+  @override
+  int get hashCode => Object.hash(userId, isAuthenticated);
+}
+
 /// Screen for non-permanent users to manage their event-based availability
 class AvailabilityScreen extends StatefulWidget {
   const AvailabilityScreen({super.key});
@@ -40,9 +61,21 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
       child: Scaffold(
         resizeToAvoidBottomInset: false,
         body: SafeArea(
-          child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
-            builder: (context, userState) {
-              if (userState is! UserAuthenticated) {
+          child: BlocSelector<UserSelectionBloc, UserSelectionState, _UserAvailabilityContext>(
+            selector: (state) {
+              if (state is UserAuthenticated) {
+                return _UserAvailabilityContext(
+                  userId: state.user.id,
+                  isAuthenticated: true,
+                );
+              }
+              return const _UserAvailabilityContext(
+                userId: null,
+                isAuthenticated: false,
+              );
+            },
+            builder: (context, userContext) {
+              if (!userContext.isAuthenticated || userContext.userId == null) {
                 return const Center(
                   child: Text('אין משתמש מחובר'),
                 );
@@ -74,10 +107,16 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
                   }
 
                   if (teamState is TeamLoaded) {
+                    if (teamState.members.isEmpty) {
+                      if (_lastKnownUser != null) {
+                        return _buildAvailabilityContent(context, _lastKnownUser!);
+                      }
+                      return const Center(child: CircularProgressIndicator());
+                    }
                     // Find the current user in the team list
                     final currentUser = teamState.members.firstWhere(
-                      (member) => member.id == userState.user.id,
-                      orElse: () => userState.user,
+                      (member) => member.id == userContext.userId,
+                      orElse: () => _lastKnownUser ?? teamState.members.first,
                     );
                     _lastKnownUser = currentUser;
                     return _buildAvailabilityContent(context, currentUser);

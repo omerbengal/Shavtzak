@@ -6,6 +6,7 @@ import '../../../core/services/user_cache_service.dart';
 import 'user_selection_event.dart';
 import 'user_selection_state.dart';
 import 'dart:async';
+import 'dart:developer' as developer;
 import '../calendar_sync/calendar_sync_bloc.dart';
 import '../calendar_sync/calendar_sync_event.dart';
 
@@ -48,10 +49,23 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
 
         // Check if any user data changed
         if (updatedUser != currentState.user) {
+          developer.log(
+            'team stream detected user change for ${updatedUser.id} -> emitting UserAuthenticated',
+            name: 'UserSelectionBloc',
+          );
           emit(UserAuthenticated(updatedUser));
         }
       }
     });
+  }
+
+  @override
+  void onChange(Change<UserSelectionState> change) {
+    super.onChange(change);
+    developer.log(
+      'state change: ${change.currentState.runtimeType} -> ${change.nextState.runtimeType}',
+      name: 'UserSelectionBloc',
+    );
   }
 
   @override
@@ -157,6 +171,10 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     final currentState = state;
 
     if (currentState is UserAuthenticated) {
+      developer.log(
+        'RefreshUserData start for user=${currentState.user.id}',
+        name: 'UserSelectionBloc',
+      );
       try {
         final isValid = await _userSelectionRepository.validateUserSelection(
           currentState.user.uniqueKey,
@@ -170,6 +188,10 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
               .firstOrNull;
 
           if (refreshedUser != null) {
+            developer.log(
+              'RefreshUserData emit UserAuthenticated user=${refreshedUser.id}',
+              name: 'UserSelectionBloc',
+            );
             emit(UserAuthenticated(refreshedUser));
           } else {
             // User not found in current members list, clear cache and require reselection
@@ -195,14 +217,15 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     final currentState = state;
 
     if (currentState is UserAuthenticated) {
+      developer.log(
+        'UpdatePhoneNumber requested for user=${currentState.user.id} value="${event.phoneNumber}"',
+        name: 'UserSelectionBloc',
+      );
       try {
         await _userSelectionRepository.updateTeamMemberPhoneNumber(
           currentState.user.uniqueKey,
           event.phoneNumber,
         );
-
-        // Refresh user data to get the updated phone number
-        add(const RefreshUserData());
       } catch (e) {
         emit(UserSelectionError('שגיאה בעדכון מספר טלפון: $e'));
       }
@@ -217,14 +240,15 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     final currentState = state;
 
     if (currentState is UserAuthenticated) {
+      developer.log(
+        'UpdateBirthday requested for user=${currentState.user.id} value=${event.birthday}',
+        name: 'UserSelectionBloc',
+      );
       try {
         await _userSelectionRepository.updateTeamMemberBirthday(
           currentState.user.uniqueKey,
           event.birthday,
         );
-
-        // Refresh user data to get the updated birthday
-        add(const RefreshUserData());
       } catch (e) {
         emit(UserSelectionError('שגיאה בעדכון תאריך לידה: $e'));
       }
@@ -239,14 +263,15 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     final currentState = state;
 
     if (currentState is UserAuthenticated) {
+      developer.log(
+        'UpdateVehicleInfo requested for user=${currentState.user.id}',
+        name: 'UserSelectionBloc',
+      );
       try {
         await _userSelectionRepository.updateTeamMemberVehicleInfo(
           currentState.user.uniqueKey,
           event.vehicleInfo,
         );
-
-        // Refresh user data to get the updated vehicle info
-        add(const RefreshUserData());
       } catch (e) {
         emit(UserSelectionError('שגיאה בעדכון פרטי רכב: $e'));
       }
@@ -261,6 +286,10 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     final currentState = state;
 
     if (currentState is UserAuthenticated) {
+      developer.log(
+        'UpdateEmail requested for user=${currentState.user.id} value="${event.email}"',
+        name: 'UserSelectionBloc',
+      );
       try {
         final oldEmail = currentState.user.email ?? '';
 
@@ -269,16 +298,14 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
           event.email,
         );
 
-        // Refresh user data to get updated email
-        add(const RefreshUserData());
-
-        // Dispatch OnTeamMemberEmailChanged to CalendarSyncBloc
-        // This will trigger calendar invite updates for future events
-        if (oldEmail != null && oldEmail.isNotEmpty && event.email != null && event.email!.isNotEmpty) {
+        // Dispatch OnTeamMemberEmailChanged to CalendarSyncBloc when email changed.
+        // This covers first-time email entry, replacements, and deletions.
+        final newEmail = event.email ?? '';
+        if (oldEmail != newEmail) {
           _calendarSyncBloc?.add(OnTeamMemberEmailChanged(
             teamMemberId: currentState.user.id,
             oldEmail: oldEmail,
-            newEmail: event.email!,
+            newEmail: newEmail,
           ));
         }
       } catch (e) {

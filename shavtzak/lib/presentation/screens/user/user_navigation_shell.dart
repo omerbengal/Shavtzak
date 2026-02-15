@@ -93,6 +93,15 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
     return PreferredSize(
       preferredSize: const Size.fromHeight(kToolbarHeight),
       child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
+        buildWhen: (previous, current) {
+          if (previous is UserAuthenticated && current is UserAuthenticated) {
+            return previous.user.name != current.user.name ||
+                previous.user.isAdmin != current.user.isAdmin ||
+                previous.user.canAccessSummaryScreen !=
+                    current.user.canAccessSummaryScreen;
+          }
+          return previous.runtimeType != current.runtimeType;
+        },
         builder: (context, state) {
           if (state is! UserAuthenticated) {
             return AppBar(
@@ -146,6 +155,12 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
 
   Widget _buildBottomNavigationBar(BuildContext context) {
     return BlocBuilder<UserSelectionBloc, UserSelectionState>(
+      buildWhen: (previous, current) {
+        if (previous is UserAuthenticated && current is UserAuthenticated) {
+          return previous.user.isPermanent != current.user.isPermanent;
+        }
+        return previous.runtimeType != current.runtimeType;
+      },
       builder: (context, state) {
         if (state is! UserAuthenticated) {
           return const SizedBox.shrink();
