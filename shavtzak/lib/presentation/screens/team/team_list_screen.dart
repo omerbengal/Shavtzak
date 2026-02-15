@@ -21,6 +21,7 @@ import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/utils/time_range_utils.dart';
 import '../../../core/utils/search_utils.dart';
+import '../../../core/utils/constraint_event_overlap.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/utilities_service.dart';
 import 'package:uuid/uuid.dart';
@@ -43,9 +44,11 @@ import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/swipeable_page_view.dart';
 import '../../widgets/admin_passcode_dialog.dart';
 import '../../widgets/vehicle_info_copy_dialog.dart';
+import '../../widgets/constraint_event_warning_dialog.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
+import '../../../data/repositories/event_repository.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../bloc/calendar_sync/calendar_sync_state.dart';
@@ -54,6 +57,52 @@ import 'dart:async';
 
 // Filter enum for team members (0=all non-archived, 1=permanent, 2=non-permanent)
 enum TeamFilter { all, permanent, nonPermanent }
+
+Future<List<Event>> _loadEventsForConstraintWarnings(
+    BuildContext context) async {
+  final eventState = context.read<EventBloc>().state;
+  if (eventState is EventsLoaded) {
+    return eventState.events;
+  }
+
+  try {
+    return await context.read<EventRepository>().getAllEvents();
+  } catch (_) {
+    return [];
+  }
+}
+
+Future<bool> _confirmConstraintOverlapWarning({
+  required BuildContext context,
+  required DateConstraint constraint,
+  required List<Event> events,
+  required String title,
+  required String message,
+  required String confirmText,
+  bool showMissingTimeNote = false,
+}) async {
+  if (!constraint.isUnavailability) {
+    return true;
+  }
+
+  final overlaps = getConstraintEventOverlaps(
+    constraint: constraint,
+    events: events,
+  );
+
+  if (overlaps.isEmpty) {
+    return true;
+  }
+
+  return ConstraintEventWarningDialog.show(
+    context,
+    title: title,
+    message: message,
+    confirmText: confirmText,
+    overlaps: overlaps,
+    showMissingTimeNote: showMissingTimeNote,
+  );
+}
 
 class TeamListScreen extends StatefulWidget {
   const TeamListScreen({super.key});
@@ -143,7 +192,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
   }
 
   /// Build a compact icon button for the leading AppBar section
-  Widget _buildCompactIcon({required IconData icon, required VoidCallback onPressed}) {
+  Widget _buildCompactIcon(
+      {required IconData icon, required VoidCallback onPressed}) {
     return InkWell(
       onTap: onPressed,
       customBorder: const CircleBorder(),
@@ -180,7 +230,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
                           duration: const Duration(seconds: 3),
                         ),
                       );
-                  } else if (state is CalendarSyncFailure && state.constraintId == 'bidirectional') {
+                  } else if (state is CalendarSyncFailure &&
+                      state.constraintId == 'bidirectional') {
                     ScaffoldMessenger.of(context)
                       ..clearSnackBars()
                       ..showSnackBar(
@@ -195,7 +246,9 @@ class _TeamListScreenState extends State<TeamListScreen> {
                             label: 'נסה שוב',
                             textColor: Colors.white,
                             onPressed: () {
-                              context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
+                              context
+                                  .read<CalendarSyncBloc>()
+                                  .add(const PerformBidirectionalSync());
                             },
                           ),
                         ),
@@ -204,7 +257,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 },
                 child: BlocBuilder<CalendarSyncBloc, CalendarSyncState>(
                   builder: (context, state) {
-                    final isInProgress = state is CalendarSyncInProgress && state.constraintId == 'bidirectional';
+                    final isInProgress = state is CalendarSyncInProgress &&
+                        state.constraintId == 'bidirectional';
                     if (isInProgress) {
                       return const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 8),
@@ -221,7 +275,9 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     return _buildCompactIcon(
                       icon: Icons.sync,
                       onPressed: () {
-                        context.read<CalendarSyncBloc>().add(const PerformBidirectionalSync());
+                        context
+                            .read<CalendarSyncBloc>()
+                            .add(const PerformBidirectionalSync());
                       },
                     );
                   },
@@ -242,7 +298,9 @@ class _TeamListScreenState extends State<TeamListScreen> {
               ),
               // Centered title
               const Expanded(
-                child: Center(child: Text(AppStrings.team, style: TextStyle(fontSize: 20))),
+                child: Center(
+                    child:
+                        Text(AppStrings.team, style: TextStyle(fontSize: 20))),
               ),
               // Trailing: Archive button
               IconButton(
@@ -277,7 +335,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
             ],
           ),
         ),
-      body: BlocConsumer<TeamBloc, TeamState>(
+        body: BlocConsumer<TeamBloc, TeamState>(
           listener: (context, state) {
             if (state is TeamError) {
               ScaffoldMessenger.of(context)
@@ -349,15 +407,18 @@ class _TeamListScreenState extends State<TeamListScreen> {
 
   Widget _buildTeamList(TeamLoaded state) {
     // Filter members based on selected filter
-    final filteredMembers = _filterMembers(state.members, FilterPersistence.teamFilterIndex);
+    final filteredMembers =
+        _filterMembers(state.members, FilterPersistence.teamFilterIndex);
 
     // Split into members with pending constraints and without
     final membersWithPending = filteredMembers
-        .where((m) => m.constraints.any((c) => c.status == ConstraintStatus.pending))
+        .where((m) =>
+            m.constraints.any((c) => c.status == ConstraintStatus.pending))
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
     final membersWithoutPending = filteredMembers
-        .where((m) => !m.constraints.any((c) => c.status == ConstraintStatus.pending))
+        .where((m) =>
+            !m.constraints.any((c) => c.status == ConstraintStatus.pending))
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
 
@@ -372,8 +433,11 @@ class _TeamListScreenState extends State<TeamListScreen> {
           InteractiveFilterBar(
             options: [
               FilterOption(label: 'סה״כ', count: state.totalCount.toString()),
-              FilterOption(label: 'קבועים', count: state.permanentCount.toString()),
-              FilterOption(label: 'לא קבועים', count: state.nonPermanentCount.toString()),
+              FilterOption(
+                  label: 'קבועים', count: state.permanentCount.toString()),
+              FilterOption(
+                  label: 'לא קבועים',
+                  count: state.nonPermanentCount.toString()),
             ],
             selectedIndex: FilterPersistence.teamFilterIndex,
             onFilterChanged: _onFilterChanged,
@@ -405,7 +469,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   ),
                   filled: true,
                   fillColor: Colors.grey.shade50,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
                 onChanged: _onSearchChanged,
               ),
@@ -416,7 +481,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
             child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 80),
               itemCount: membersWithPending.length +
-                  (membersWithPending.isNotEmpty && membersWithoutPending.isNotEmpty ? 1 : 0) +
+                  (membersWithPending.isNotEmpty &&
+                          membersWithoutPending.isNotEmpty
+                      ? 1
+                      : 0) +
                   membersWithoutPending.length,
               itemBuilder: (context, index) {
                 // Pending constraints section
@@ -428,15 +496,20 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     membersWithoutPending.isNotEmpty &&
                     index == membersWithPending.length) {
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Divider(thickness: 2, color: Colors.grey[700]),
                   );
                 }
                 // Remaining members section
                 final remainingIndex = index -
                     membersWithPending.length -
-                    (membersWithPending.isNotEmpty && membersWithoutPending.isNotEmpty ? 1 : 0);
-                return _buildTeamMemberCard(membersWithoutPending[remainingIndex]);
+                    (membersWithPending.isNotEmpty &&
+                            membersWithoutPending.isNotEmpty
+                        ? 1
+                        : 0);
+                return _buildTeamMemberCard(
+                    membersWithoutPending[remainingIndex]);
               },
             ),
           ),
@@ -496,7 +569,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
               Row(
                 children: [
                   CircleAvatar(
-                    backgroundColor: member.isActive ? Colors.green : Colors.grey,
+                    backgroundColor:
+                        member.isActive ? Colors.green : Colors.grey,
                     child: Text(
                       member.name.isNotEmpty ? member.name[0] : '?',
                       style: const TextStyle(color: Colors.white),
@@ -512,7 +586,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 16,
-                              color: member.isActive ? Colors.black : Colors.grey,
+                              color:
+                                  member.isActive ? Colors.black : Colors.grey,
                             ),
                           ),
                         ),
@@ -537,7 +612,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     tooltip: 'העבר לארכיון',
                     onPressed: () => _showArchiveConfirmation(member),
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                    constraints:
+                        const BoxConstraints(minWidth: 36, minHeight: 36),
                   ),
                 ],
               ),
@@ -547,7 +623,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Phone number if available
-                  if (member.phoneNumber != null && member.phoneNumber!.isNotEmpty)
+                  if (member.phoneNumber != null &&
+                      member.phoneNumber!.isNotEmpty)
                     InkWell(
                       onTap: () => onPhoneClicked(member.phoneNumber!),
                       borderRadius: BorderRadius.circular(4),
@@ -556,7 +633,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.phone, size: 14, color: Colors.blue),
+                            const Icon(Icons.phone,
+                                size: 14, color: Colors.blue),
                             const SizedBox(width: 4),
                             Text(
                               Validators.formatPhoneNumber(member.phoneNumber),
@@ -571,24 +649,24 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     ),
                   // Email if available
                   if (member.email != null && member.email!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.email, size: 14, color: Colors.blue),
-                            const SizedBox(width: 4),
-                            Text(
-                              member.email!,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.blue,
-                              ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.email, size: 14, color: Colors.blue),
+                          const SizedBox(width: 4),
+                          Text(
+                            member.email!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    // Birthday if available
+                    ),
+                  // Birthday if available
                   if (member.birthday != null)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -614,7 +692,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.directions_car, size: 14, color: Colors.brown),
+                          const Icon(Icons.directions_car,
+                              size: 14, color: Colors.brown),
                           const SizedBox(width: 4),
                           Text(
                             member.vehicleInfo!.displayString,
@@ -674,12 +753,17 @@ class _TeamListScreenState extends State<TeamListScreen> {
 
                         int availableCount;
                         if (eventState is EventsLoaded) {
-                          availableCount = member.availableEventIds.where((id) =>
-                            eventState.events.any((e) =>
-                              e.id == id &&
-                              !DateTime(e.endDate.year, e.endDate.month, e.endDate.day).isBefore(today),
-                            ),
-                          ).length;
+                          availableCount = member.availableEventIds
+                              .where(
+                                (id) => eventState.events.any(
+                                  (e) =>
+                                      e.id == id &&
+                                      !DateTime(e.endDate.year, e.endDate.month,
+                                              e.endDate.day)
+                                          .isBefore(today),
+                                ),
+                              )
+                              .length;
                         } else {
                           availableCount = member.availableEventIds.length;
                         }
@@ -703,8 +787,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
                           .where((c) => c.isUnavailability)
                           .where((c) => !c.isRejected())
                           .toList();
-                      final approvedCount = activeConstraints.where((c) => c.isApproved()).length;
-                      final pendingCount = activeConstraints.where((c) => c.isPending()).length;
+                      final approvedCount =
+                          activeConstraints.where((c) => c.isApproved()).length;
+                      final pendingCount =
+                          activeConstraints.where((c) => c.isPending()).length;
 
                       if (activeConstraints.isEmpty) {
                         return const SizedBox.shrink();
@@ -753,7 +839,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   if (member.comments.isNotEmpty)
                     Text(
                       member.comments,
-                      style: const TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic),
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                          fontStyle: FontStyle.italic),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -810,7 +899,9 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   isArchived: true,
                   updatedAt: DateTime.now(),
                 );
-                context.read<TeamBloc>().add(team.UpdateTeamMember(updatedMember));
+                context
+                    .read<TeamBloc>()
+                    .add(team.UpdateTeamMember(updatedMember));
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Directionality(
@@ -827,7 +918,9 @@ class _TeamListScreenState extends State<TeamListScreen> {
                           isArchived: false,
                           updatedAt: DateTime.now(),
                         );
-                        context.read<TeamBloc>().add(team.UpdateTeamMember(restoredMember));
+                        context
+                            .read<TeamBloc>()
+                            .add(team.UpdateTeamMember(restoredMember));
                       },
                     ),
                   ),
@@ -1003,8 +1096,18 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
   // Hebrew month names
   static const List<String> _hebrewMonths = [
-    'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
-    'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    'ינואר',
+    'פברואר',
+    'מרץ',
+    'אפריל',
+    'מאי',
+    'יוני',
+    'יולי',
+    'אוגוסט',
+    'ספטמבר',
+    'אוקטובר',
+    'נובמבר',
+    'דצמבר'
   ];
 
   int get _maxBirthdayYear => DateTime.now().year - 20;
@@ -1018,7 +1121,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
   late TeamBloc _teamBloc;
   List<DateConstraint> _constraints = [];
-  List<String> _availableEventIds = []; // Event-based availability for non-permanent members
+  List<String> _availableEventIds =
+      []; // Event-based availability for non-permanent members
   bool _isDirty = false;
   String? _roleError; // Track role validation error
   bool _isSaving = false;
@@ -1026,7 +1130,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   late final FocusNode _nameFocusNode;
   late final FocusNode _commentsFocusNode;
 
-    bool get _isEditMode => widget.member != null;
+  bool get _isEditMode => widget.member != null;
 
   @override
   void initState() {
@@ -1067,8 +1171,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   }
 
   void _updateBirthdayController() {
-    if (_birthdayDay != null && _birthdayMonth != null && _birthdayYear != null) {
-      _birthdayController.text = '${_birthdayDay.toString().padLeft(2, '0')}/${_birthdayMonth.toString().padLeft(2, '0')}/$_birthdayYear';
+    if (_birthdayDay != null &&
+        _birthdayMonth != null &&
+        _birthdayYear != null) {
+      _birthdayController.text =
+          '${_birthdayDay.toString().padLeft(2, '0')}/${_birthdayMonth.toString().padLeft(2, '0')}/$_birthdayYear';
     } else {
       _birthdayController.clear();
     }
@@ -1122,7 +1229,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     final finalConstraints = _constraints;
 
     final now = DateTime.now();
-    final birthday = (_birthdayDay != null && _birthdayMonth != null && _birthdayYear != null)
+    final birthday = (_birthdayDay != null &&
+            _birthdayMonth != null &&
+            _birthdayYear != null)
         ? DateTime(_birthdayYear!, _birthdayMonth!, _birthdayDay!)
         : null;
     final member = TeamMember(
@@ -1130,11 +1239,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       uniqueKey: _isEditMode ? widget.member!.uniqueKey : const Uuid().v4(),
       name: _nameController.text.trim(),
       phoneNumber: _phoneController.text.trim().isEmpty
-        ? null
-        : _phoneController.text.trim(),
+          ? null
+          : _phoneController.text.trim(),
       email: _emailController.text.trim().isEmpty
-        ? null
-        : _emailController.text.trim(),
+          ? null
+          : _emailController.text.trim(),
       birthday: birthday,
       vehicleInfo: _vehicleInfo,
       isActive: _isActive,
@@ -1219,8 +1328,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   /// Get assignments that conflict with the new constraints
   Future<List<Assignment>> _getConflictingAssignments(TeamMember member) async {
     try {
-      final assignmentRepository = RepositoryProvider.of<AssignmentRepository>(context);
-      final allAssignments = await assignmentRepository.getAssignmentsByPerson(member.id);
+      final assignmentRepository =
+          RepositoryProvider.of<AssignmentRepository>(context);
+      final allAssignments =
+          await assignmentRepository.getAssignmentsByPerson(member.id);
 
       final conflicting = <Assignment>[];
 
@@ -1247,7 +1358,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   }
 
   /// Show warning dialog about conflicting assignments
-  Future<bool?> _showConflictWarningDialog(List<Assignment> conflictingAssignments) {
+  Future<bool?> _showConflictWarningDialog(
+      List<Assignment> conflictingAssignments) {
     return showDialog<bool>(
       context: context,
       builder: (dialogContext) => BlocBuilder<RoleBloc, RoleState>(
@@ -1272,81 +1384,85 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: conflictingAssignments.map((assignment) {
-                            final eventName = assignment.event?.name ?? 'אירוע לא ידוע';
+                            final eventName =
+                                assignment.event?.name ?? 'אירוע לא ידוע';
                             final startDate = assignment.event?.startDate;
                             final endDate = assignment.event?.endDate;
                             String dateStr = '';
                             if (startDate != null) {
-                              dateStr = '${startDate.day}/${startDate.month}/${startDate.year}';
+                              dateStr =
+                                  '${startDate.day}/${startDate.month}/${startDate.year}';
                               // Add end date if it exists and is different from start date
                               if (endDate != null &&
                                   (endDate.day != startDate.day ||
-                                   endDate.month != startDate.month ||
-                                   endDate.year != startDate.year)) {
-                                dateStr += ' - ${endDate.day}/${endDate.month}/${endDate.year}';
+                                      endDate.month != startDate.month ||
+                                      endDate.year != startDate.year)) {
+                                dateStr +=
+                                    ' - ${endDate.day}/${endDate.month}/${endDate.year}';
                               }
                             }
                             final roleName = roleState is RolesLoaded
-                                ? roleState.getRoleHebrewName(assignment.roleType)
+                                ? roleState
+                                    .getRoleHebrewName(assignment.roleType)
                                 : assignment.roleType;
 
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.warning, color: Colors.orange, size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '$eventName ($dateStr) - $roleName',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.warning,
+                                      color: Colors.orange, size: 20),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      '$eventName ($dateStr) - $roleName',
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'בחר את הפעולה הרצויה:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'בחר את הפעולה הרצויה:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(null),
+                  child: const Text('ביטול'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('שמור ומחק שיבוצים'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('שמור והשאר שיבוצים'),
                 ),
               ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(null),
-              child: const Text('ביטול'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('שמור ומחק שיבוצים'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('שמור והשאר שיבוצים'),
-            ),
-          ],
-        ),
           );
         },
       ),
     );
   }
 
-  
   void _handleClose() {
     if (_isDirty) {
       showDialog(
@@ -1355,7 +1471,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
           textDirection: TextDirection.rtl,
           child: AlertDialog(
             title: const Text('שינויים לא נשמרו'),
-            content: const Text('האם אתה בטוח שברצונך לצאת? השינויים לא יישמרו.'),
+            content:
+                const Text('האם אתה בטוח שברצונך לצאת? השינויים לא יישמרו.'),
             actions: [
               TextButton(
                 child: const Text('ביטול'),
@@ -1420,11 +1537,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
           ),
         );
       }
-    } else if (result != null && result['action'] == 'remove' && context.mounted) {
+    } else if (result != null &&
+        result['action'] == 'remove' &&
+        context.mounted) {
       // Remove passcode
       try {
         final userSelectionRepo = context.read<UserSelectionRepository>();
-        await userSelectionRepo.clearTeamMemberPasscode(widget.member!.uniqueKey);
+        await userSelectionRepo
+            .clearTeamMemberPasscode(widget.member!.uniqueKey);
 
         // Refresh team member data
         _teamBloc.add(const team.LoadTeamMembers());
@@ -1452,773 +1572,1008 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
-        initialChildSize: 0.85,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) {
-          return Directionality(
-            textDirection: TextDirection.rtl,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final maxWidth = constraints.maxWidth;
-                final horizontalPadding = maxWidth > 1000
-                  ? (maxWidth - 1000) / 2
-                  : 0.0;
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final maxWidth = constraints.maxWidth;
+              final horizontalPadding =
+                  maxWidth > 1000 ? (maxWidth - 1000) / 2 : 0.0;
 
-                return Padding(
-                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-                  child: Stack(
-                    children: [
-                      Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                        ),
-                        child: Column(
-                children: [
-                  // Modal Header
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(color: Colors.grey.shade300),
+              return Padding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                child: Stack(
+                  children: [
+                    Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(20)),
                       ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _isEditMode ? 'עריכת חבר צוות' : 'הוספת חבר צוות',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
+                      child: Column(
+                        children: [
+                          // Modal Header
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(color: Colors.grey.shade300),
+                              ),
                             ),
-                          ),
-                        ),
-                        if (_isEditMode)
-                          BlocBuilder<UserSelectionBloc, UserSelectionState>(
-                            builder: (context, userState) {
-                              final bool isOwnProfile = userState is UserAuthenticated &&
-                                  widget.member!.id == userState.user.id;
-
-                              return IconButton(
-                                icon: Icon(
-                                  Icons.delete,
-                                  color: isOwnProfile ? Colors.grey.shade400 : Colors.red,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _isEditMode
+                                        ? 'עריכת חבר צוות'
+                                        : 'הוספת חבר צוות',
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
-                                onPressed: isOwnProfile ? null : () {
-                                  showDialog(
-                                    context: context,
-                                    builder: (dialogContext) => Directionality(
-                                      textDirection: TextDirection.rtl,
-                                      child: AlertDialog(
-                                        title: const Text('מחיקת חבר צוות'),
-                                        content: Text(
-                                          'האם אתה בטוח שברצונך למחוק את ${widget.member!.name}?\nפעולה זו תמחק גם את כל השיבוצים שלו.',
+                                if (_isEditMode)
+                                  BlocBuilder<UserSelectionBloc,
+                                      UserSelectionState>(
+                                    builder: (context, userState) {
+                                      final bool isOwnProfile =
+                                          userState is UserAuthenticated &&
+                                              widget.member!.id ==
+                                                  userState.user.id;
+
+                                      return IconButton(
+                                        icon: Icon(
+                                          Icons.delete,
+                                          color: isOwnProfile
+                                              ? Colors.grey.shade400
+                                              : Colors.red,
                                         ),
-                                        actions: [
-                                          TextButton(
-                                            child: const Text('ביטול'),
-                                            onPressed: () => Navigator.of(dialogContext).pop(),
-                                          ),
-                                          TextButton(
-                                            child: const Text('מחק', style: TextStyle(color: Colors.red)),
-                                            onPressed: () {
-                                              Navigator.of(dialogContext).pop(); // Close dialog first
-                                              setState(() => _isDeleting = true);
-                                              final bloc = context.read<TeamBloc>();
-                                              bloc.add(team.DeleteTeamMember(widget.member!.id));
-                                              // Reload all team members after operation completes (filtering happens in UI)
-                                              Future.delayed(const Duration(milliseconds: 300), () {
-                                                bloc.add(const team.LoadTeamMembers());
-                                              });
-                                              // Close modal after showing delete overlay briefly
-                                              Future.delayed(const Duration(milliseconds: 500), () {
-                                                widget.onSuccess();
-                                              });
-                                            },
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                                tooltip: isOwnProfile ? 'לא ניתן למחוק את עצמך' : 'מחק',
-                              );
-                            },
-                          ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: _handleClose,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Modal Body (Scrollable)
-                  Expanded(
-                    child: BlocConsumer<TeamBloc, TeamState>(
-                      listener: (context, state) {
-                        // Update constraints when database changes
-                        if (_isEditMode && state is TeamLoaded) {
-                          final updatedMember = state.members.cast<TeamMember?>().firstWhere(
-                            (member) => member?.id == widget.member!.id,
-                            orElse: () => null,
-                          );
-                          if (updatedMember != null) {
-                            // Update constraints with the latest database state
-                            _constraints = List.from(updatedMember.constraints);
-                            setState(() {});
-                          }
-                        }
-                      },
-                      builder: (context, state) {
-                        return Form(
-                          key: _formKey,
-                          autovalidateMode: AutovalidateMode.onUserInteraction,
-                          child: ListView(
-                            controller: scrollController,
-                            padding: const EdgeInsets.only(
-                              left: 16,
-                              right: 16,
-                              bottom: 16,
+                                        onPressed: isOwnProfile
+                                            ? null
+                                            : () {
+                                                showDialog(
+                                                  context: context,
+                                                  builder: (dialogContext) =>
+                                                      Directionality(
+                                                    textDirection:
+                                                        TextDirection.rtl,
+                                                    child: AlertDialog(
+                                                      title: const Text(
+                                                          'מחיקת חבר צוות'),
+                                                      content: Text(
+                                                        'האם אתה בטוח שברצונך למחוק את ${widget.member!.name}?\nפעולה זו תמחק גם את כל השיבוצים שלו.',
+                                                      ),
+                                                      actions: [
+                                                        TextButton(
+                                                          child: const Text(
+                                                              'ביטול'),
+                                                          onPressed: () =>
+                                                              Navigator.of(
+                                                                      dialogContext)
+                                                                  .pop(),
+                                                        ),
+                                                        TextButton(
+                                                          child: const Text(
+                                                              'מחק',
+                                                              style: TextStyle(
+                                                                  color: Colors
+                                                                      .red)),
+                                                          onPressed: () {
+                                                            Navigator.of(
+                                                                    dialogContext)
+                                                                .pop(); // Close dialog first
+                                                            setState(() =>
+                                                                _isDeleting =
+                                                                    true);
+                                                            final bloc =
+                                                                context.read<
+                                                                    TeamBloc>();
+                                                            bloc.add(team
+                                                                .DeleteTeamMember(
+                                                                    widget
+                                                                        .member!
+                                                                        .id));
+                                                            // Reload all team members after operation completes (filtering happens in UI)
+                                                            Future.delayed(
+                                                                const Duration(
+                                                                    milliseconds:
+                                                                        300),
+                                                                () {
+                                                              bloc.add(const team
+                                                                  .LoadTeamMembers());
+                                                            });
+                                                            // Close modal after showing delete overlay briefly
+                                                            Future.delayed(
+                                                                const Duration(
+                                                                    milliseconds:
+                                                                        500),
+                                                                () {
+                                                              widget
+                                                                  .onSuccess();
+                                                            });
+                                                          },
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                        tooltip: isOwnProfile
+                                            ? 'לא ניתן למחוק את עצמך'
+                                            : 'מחק',
+                                      );
+                                    },
+                                  ),
+                                IconButton(
+                                  icon: const Icon(Icons.close),
+                                  onPressed: _handleClose,
+                                ),
+                              ],
                             ),
-                            children: [
-                              const SizedBox(height: 16),
+                          ),
 
-                              // Name field
-                              TextFormField(
-                                controller: _nameController,
-                                focusNode: _nameFocusNode,
-                                decoration: const InputDecoration(
-                                  labelText: 'שם חבר הצוות',
-                                  hintText: 'הזן שם מלא',
-                                  prefixIcon: Icon(Icons.person),
-                                  border: OutlineInputBorder(),
-                                ),
-                                validator: Validators.validateName,
-                                onChanged: (_) => setState(() => _isDirty = true),
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Phone number field
-                              TextFormField(
-                                controller: _phoneController,
-                                decoration: const InputDecoration(
-                                  labelText: 'מספר טלפון',
-                                  hintText: '05X-XXXXXXX',
-                                  prefixIcon: Icon(Icons.phone),
-                                  border: OutlineInputBorder(),
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                ),
-                                validator: Validators.validatePhoneNumber,
-                                keyboardType: TextInputType.phone,
-                                textDirection: TextDirection.ltr,
-                                smartQuotesType: SmartQuotesType.disabled,
-                                smartDashesType: SmartDashesType.disabled,
-                                textAlign: TextAlign.end, // Right-aligned while keeping LTR
-                                inputFormatters: [
-                                  PhoneNumberTextInputFormatter(),
-                                ],
-                                onChanged: (_) => setState(() => _isDirty = true),
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Email field
-                              TextFormField(
-                                controller: _emailController,
-                                decoration: const InputDecoration(
-                                  labelText: 'כתובת אימייל',
-                                  hintText: 'example@mail.com',
-                                  prefixIcon: Icon(Icons.email),
-                                  border: OutlineInputBorder(),
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                ),
-                                validator: Validators.validateEmail,
-                                keyboardType: TextInputType.emailAddress,
-                                textDirection: TextDirection.ltr, // LTR for email input
-                                smartQuotesType: SmartQuotesType.disabled,
-                                smartDashesType: SmartDashesType.disabled,
-                                textAlign: TextAlign.start, // Left-aligned for email
-                                onChanged: (_) => setState(() => _isDirty = true),
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Birthday field - read-only text field with floating label
-                              TextFormField(
-                                readOnly: true,
-                                onTap: () => _showBirthdayPickerDialog(),
-                                decoration: InputDecoration(
-                                  labelText: 'תאריך לידה',
-                                  prefixIcon: Padding(
-                                    padding: const EdgeInsets.only(left: 4),
-                                    child: Icon(
-                                      Icons.cake,
-                                      color: (_birthdayDay != null && _birthdayMonth != null && _birthdayYear != null)
-                                          ? Colors.black87
-                                          : Colors.grey,
+                          // Modal Body (Scrollable)
+                          Expanded(
+                            child: BlocConsumer<TeamBloc, TeamState>(
+                              listener: (context, state) {
+                                // Update constraints when database changes
+                                if (_isEditMode && state is TeamLoaded) {
+                                  final updatedMember = state.members
+                                      .cast<TeamMember?>()
+                                      .firstWhere(
+                                        (member) =>
+                                            member?.id == widget.member!.id,
+                                        orElse: () => null,
+                                      );
+                                  if (updatedMember != null) {
+                                    // Update constraints with the latest database state
+                                    _constraints =
+                                        List.from(updatedMember.constraints);
+                                    setState(() {});
+                                  }
+                                }
+                              },
+                              builder: (context, state) {
+                                return Form(
+                                  key: _formKey,
+                                  autovalidateMode:
+                                      AutovalidateMode.onUserInteraction,
+                                  child: ListView(
+                                    controller: scrollController,
+                                    padding: const EdgeInsets.only(
+                                      left: 16,
+                                      right: 16,
+                                      bottom: 16,
                                     ),
-                                  ),
-                                  border: const OutlineInputBorder(
-                                    borderSide: BorderSide(color: Colors.grey, width: 0.5),
-                                  ),
-                                  enabledBorder: const OutlineInputBorder(
-                                    borderSide: BorderSide(color: Colors.grey, width: 0.5),
-                                  ),
-                                ),
-                                controller: _birthdayController,
-                                style: TextStyle(
-                                  color: (_birthdayDay != null && _birthdayMonth != null && _birthdayYear != null)
-                                      ? Colors.black87
-                                      : Colors.grey,
-                                  ),
-                                textAlign: TextAlign.right,
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Vehicle info field - read-only text field with floating label
-                              TextFormField(
-                                readOnly: true,
-                                onTap: () => _showVehicleInfoDialog(),
-                                decoration: InputDecoration(
-                                  labelText: 'פרטי רכב',
-                                  prefixIcon: Padding(
-                                    padding: const EdgeInsets.only(left: 4),
-                                    child: Icon(
-                                      _vehicleInfo != null && _vehicleInfo!.isComplete
-                                          ? Icons.directions_car
-                                          : Icons.directions_car_outlined,
-                                      color: _vehicleInfo != null && _vehicleInfo!.isComplete
-                                          ? Colors.black87
-                                          : Colors.grey,
-                                    ),
-                                  ),
-                                  border: const OutlineInputBorder(
-                                    borderSide: BorderSide(color: Colors.grey, width: 0.5),
-                                  ),
-                                  enabledBorder: const OutlineInputBorder(
-                                    borderSide: BorderSide(color: Colors.grey, width: 0.5),
-                                  ),
-                                  suffixIcon: _vehicleInfo != null && _vehicleInfo!.isComplete
-                                      ? IconButton(
-                                          icon: const Icon(Icons.clear, size: 20),
-                                          onPressed: () {
-                                            setState(() {
-                                              _vehicleInfo = null;
-                                              _updateVehicleInfoController();
-                                              _isDirty = true;
-                                            });
-                                          },
-                                        )
-                                      : null,
-                                ),
-                                controller: _vehicleInfoController,
-                                style: TextStyle(
-                                  color: _vehicleInfo != null && _vehicleInfo!.isComplete
-                                      ? Colors.black87
-                                      : Colors.grey,
-                                ),
-                                textAlign: TextAlign.right,
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Active status switch
-                              SwitchListTile(
-                                title: const Text('חבר צוות פעיל'),
-                                subtitle: Text(
-                                  _isActive
-                                      ? 'ניתן לשבץ לאירועים'
-                                      : 'לא ניתן לשבץ לאירועים',
-                                ),
-                                value: _isActive,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _isActive = value;
-                                    _isDirty = true;
-                                  });
-                                },
-                              ),
-
-                              // Permanent status switch
-                              SwitchListTile(
-                                title: const Text('חבר צוות קבוע'),
-                                value: _isPermanent,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _isPermanent = value;
-                                    _isDirty = true;
-                                  });
-                                },
-                              ),
-
-                              // Multiple assignment switch
-                              SwitchListTile(
-                                title: const Text('שיבוץ מרובה'),
-                                subtitle: const Text(
-                                  'מאפשר שיבוץ לאותו אירוע מספר פעמים',
-                                ),
-                                value: _allowMultipleAssignments,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _allowMultipleAssignments = value;
-                                    _isDirty = true;
-                                  });
-                                },
-                              ),
-
-                              // Summary screen access switch
-                              SwitchListTile(
-                                title: const Text('גישה למסך מנהלים'),
-                                subtitle: const Text(
-                                  'מאפשר לחבר צוות שאינו מנהל לצפות במסך מנהלים',
-                                ),
-                                value: _canAccessSummaryScreen,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _canAccessSummaryScreen = value;
-                                    _isDirty = true;
-                                  });
-                                },
-                              ),
-
-                              const Divider(height: 32),
-
-                              // Role capabilities section - wrapped with BlocBuilder
-                              BlocBuilder<RoleBloc, RoleState>(
-                                builder: (context, roleState) {
-                                  return Column(
                                     children: [
-                                      // Role capabilities header with buttons
+                                      const SizedBox(height: 16),
+
+                                      // Name field
+                                      TextFormField(
+                                        controller: _nameController,
+                                        focusNode: _nameFocusNode,
+                                        decoration: const InputDecoration(
+                                          labelText: 'שם חבר הצוות',
+                                          hintText: 'הזן שם מלא',
+                                          prefixIcon: Icon(Icons.person),
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        validator: Validators.validateName,
+                                        onChanged: (_) =>
+                                            setState(() => _isDirty = true),
+                                      ),
+
+                                      const SizedBox(height: 16),
+
+                                      // Phone number field
+                                      TextFormField(
+                                        controller: _phoneController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'מספר טלפון',
+                                          hintText: '05X-XXXXXXX',
+                                          prefixIcon: Icon(Icons.phone),
+                                          border: OutlineInputBorder(),
+                                          isDense: true,
+                                          contentPadding: EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 12),
+                                        ),
+                                        validator:
+                                            Validators.validatePhoneNumber,
+                                        keyboardType: TextInputType.phone,
+                                        textDirection: TextDirection.ltr,
+                                        smartQuotesType:
+                                            SmartQuotesType.disabled,
+                                        smartDashesType:
+                                            SmartDashesType.disabled,
+                                        textAlign: TextAlign
+                                            .end, // Right-aligned while keeping LTR
+                                        inputFormatters: [
+                                          PhoneNumberTextInputFormatter(),
+                                        ],
+                                        onChanged: (_) =>
+                                            setState(() => _isDirty = true),
+                                      ),
+
+                                      const SizedBox(height: 16),
+
+                                      // Email field
+                                      TextFormField(
+                                        controller: _emailController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'כתובת אימייל',
+                                          hintText: 'example@mail.com',
+                                          prefixIcon: Icon(Icons.email),
+                                          border: OutlineInputBorder(),
+                                          isDense: true,
+                                          contentPadding: EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 12),
+                                        ),
+                                        validator: Validators.validateEmail,
+                                        keyboardType:
+                                            TextInputType.emailAddress,
+                                        textDirection: TextDirection
+                                            .ltr, // LTR for email input
+                                        smartQuotesType:
+                                            SmartQuotesType.disabled,
+                                        smartDashesType:
+                                            SmartDashesType.disabled,
+                                        textAlign: TextAlign
+                                            .start, // Left-aligned for email
+                                        onChanged: (_) =>
+                                            setState(() => _isDirty = true),
+                                      ),
+
+                                      const SizedBox(height: 16),
+
+                                      // Birthday field - read-only text field with floating label
+                                      TextFormField(
+                                        readOnly: true,
+                                        onTap: () =>
+                                            _showBirthdayPickerDialog(),
+                                        decoration: InputDecoration(
+                                          labelText: 'תאריך לידה',
+                                          prefixIcon: Padding(
+                                            padding:
+                                                const EdgeInsets.only(left: 4),
+                                            child: Icon(
+                                              Icons.cake,
+                                              color: (_birthdayDay != null &&
+                                                      _birthdayMonth != null &&
+                                                      _birthdayYear != null)
+                                                  ? Colors.black87
+                                                  : Colors.grey,
+                                            ),
+                                          ),
+                                          border: const OutlineInputBorder(
+                                            borderSide: BorderSide(
+                                                color: Colors.grey, width: 0.5),
+                                          ),
+                                          enabledBorder:
+                                              const OutlineInputBorder(
+                                            borderSide: BorderSide(
+                                                color: Colors.grey, width: 0.5),
+                                          ),
+                                        ),
+                                        controller: _birthdayController,
+                                        style: TextStyle(
+                                          color: (_birthdayDay != null &&
+                                                  _birthdayMonth != null &&
+                                                  _birthdayYear != null)
+                                              ? Colors.black87
+                                              : Colors.grey,
+                                        ),
+                                        textAlign: TextAlign.right,
+                                      ),
+
+                                      const SizedBox(height: 16),
+
+                                      // Vehicle info field - read-only text field with floating label
+                                      TextFormField(
+                                        readOnly: true,
+                                        onTap: () => _showVehicleInfoDialog(),
+                                        decoration: InputDecoration(
+                                          labelText: 'פרטי רכב',
+                                          prefixIcon: Padding(
+                                            padding:
+                                                const EdgeInsets.only(left: 4),
+                                            child: Icon(
+                                              _vehicleInfo != null &&
+                                                      _vehicleInfo!.isComplete
+                                                  ? Icons.directions_car
+                                                  : Icons
+                                                      .directions_car_outlined,
+                                              color: _vehicleInfo != null &&
+                                                      _vehicleInfo!.isComplete
+                                                  ? Colors.black87
+                                                  : Colors.grey,
+                                            ),
+                                          ),
+                                          border: const OutlineInputBorder(
+                                            borderSide: BorderSide(
+                                                color: Colors.grey, width: 0.5),
+                                          ),
+                                          enabledBorder:
+                                              const OutlineInputBorder(
+                                            borderSide: BorderSide(
+                                                color: Colors.grey, width: 0.5),
+                                          ),
+                                          suffixIcon: _vehicleInfo != null &&
+                                                  _vehicleInfo!.isComplete
+                                              ? IconButton(
+                                                  icon: const Icon(Icons.clear,
+                                                      size: 20),
+                                                  onPressed: () {
+                                                    setState(() {
+                                                      _vehicleInfo = null;
+                                                      _updateVehicleInfoController();
+                                                      _isDirty = true;
+                                                    });
+                                                  },
+                                                )
+                                              : null,
+                                        ),
+                                        controller: _vehicleInfoController,
+                                        style: TextStyle(
+                                          color: _vehicleInfo != null &&
+                                                  _vehicleInfo!.isComplete
+                                              ? Colors.black87
+                                              : Colors.grey,
+                                        ),
+                                        textAlign: TextAlign.right,
+                                      ),
+
+                                      const SizedBox(height: 16),
+
+                                      // Active status switch
+                                      SwitchListTile(
+                                        title: const Text('חבר צוות פעיל'),
+                                        subtitle: Text(
+                                          _isActive
+                                              ? 'ניתן לשבץ לאירועים'
+                                              : 'לא ניתן לשבץ לאירועים',
+                                        ),
+                                        value: _isActive,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _isActive = value;
+                                            _isDirty = true;
+                                          });
+                                        },
+                                      ),
+
+                                      // Permanent status switch
+                                      SwitchListTile(
+                                        title: const Text('חבר צוות קבוע'),
+                                        value: _isPermanent,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _isPermanent = value;
+                                            _isDirty = true;
+                                          });
+                                        },
+                                      ),
+
+                                      // Multiple assignment switch
+                                      SwitchListTile(
+                                        title: const Text('שיבוץ מרובה'),
+                                        subtitle: const Text(
+                                          'מאפשר שיבוץ לאותו אירוע מספר פעמים',
+                                        ),
+                                        value: _allowMultipleAssignments,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _allowMultipleAssignments = value;
+                                            _isDirty = true;
+                                          });
+                                        },
+                                      ),
+
+                                      // Summary screen access switch
+                                      SwitchListTile(
+                                        title: const Text('גישה למסך מנהלים'),
+                                        subtitle: const Text(
+                                          'מאפשר לחבר צוות שאינו מנהל לצפות במסך מנהלים',
+                                        ),
+                                        value: _canAccessSummaryScreen,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _canAccessSummaryScreen = value;
+                                            _isDirty = true;
+                                          });
+                                        },
+                                      ),
+
+                                      const Divider(height: 32),
+
+                                      // Role capabilities section - wrapped with BlocBuilder
+                                      BlocBuilder<RoleBloc, RoleState>(
+                                        builder: (context, roleState) {
+                                          return Column(
+                                            children: [
+                                              // Role capabilities header with buttons
+                                              Row(
+                                                children: [
+                                                  const Text(
+                                                    'תפקידים',
+                                                    style: TextStyle(
+                                                      fontSize: 18,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  const Spacer(),
+                                                  TextButton(
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        // Select all roles from RoleBloc
+                                                        if (roleState
+                                                            is RolesLoaded) {
+                                                          for (final role
+                                                              in roleState
+                                                                  .allNonArchivedRoles) {
+                                                            _roleCapabilities[
+                                                                    role.key] =
+                                                                true;
+                                                          }
+                                                        }
+                                                        _roleError =
+                                                            null; // Clear error
+                                                        _isDirty = true;
+                                                      });
+                                                    },
+                                                    child:
+                                                        const Text('בחר הכל'),
+                                                  ),
+                                                  TextButton(
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        // Deselect all roles from RoleBloc
+                                                        if (roleState
+                                                            is RolesLoaded) {
+                                                          for (final role
+                                                              in roleState
+                                                                  .allNonArchivedRoles) {
+                                                            _roleCapabilities[
+                                                                    role.key] =
+                                                                false;
+                                                          }
+                                                        }
+                                                        _isDirty = true;
+                                                      });
+                                                    },
+                                                    child:
+                                                        const Text('נקה הכל'),
+                                                  ),
+                                                ],
+                                              ),
+
+                                              const SizedBox(height: 8),
+
+                                              // Role validation error
+                                              if (_roleError != null)
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                          right: 16, bottom: 8),
+                                                  child: Text(
+                                                    _roleError!,
+                                                    style: TextStyle(
+                                                      color:
+                                                          Colors.red.shade700,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ),
+
+                                              // Role checkboxes
+                                              Builder(
+                                                builder: (context) {
+                                                  // Get all non-archived roles
+                                                  List<Role> roles;
+                                                  if (roleState
+                                                      is RolesLoaded) {
+                                                    roles = roleState
+                                                        .allNonArchivedRoles;
+                                                  } else {
+                                                    // Fallback to RoleType.values during initial load
+                                                    roles = RoleType.values
+                                                        .map((rt) => Role(
+                                                              id: rt.key,
+                                                              key: rt.key,
+                                                              hebrewName:
+                                                                  rt.hebrewName,
+                                                              isVisible: true,
+                                                              isArchived: false,
+                                                              sortOrder:
+                                                                  RoleType
+                                                                      .values
+                                                                      .indexOf(
+                                                                          rt),
+                                                              createdAt:
+                                                                  DateTime
+                                                                      .now(),
+                                                              updatedAt:
+                                                                  DateTime
+                                                                      .now(),
+                                                            ))
+                                                        .toList();
+                                                  }
+
+                                                  return Container(
+                                                    decoration:
+                                                        _roleError != null
+                                                            ? BoxDecoration(
+                                                                border: Border.all(
+                                                                    color: Colors
+                                                                        .red
+                                                                        .shade700),
+                                                                borderRadius:
+                                                                    BorderRadius
+                                                                        .circular(
+                                                                            4),
+                                                                color: Colors
+                                                                    .red
+                                                                    .shade50,
+                                                              )
+                                                            : null,
+                                                    child: Column(
+                                                      children:
+                                                          roles.map((roleObj) {
+                                                        return CheckboxListTile(
+                                                          title: Text(roleObj
+                                                              .hebrewName),
+                                                          value:
+                                                              _roleCapabilities[
+                                                                      roleObj
+                                                                          .key] ??
+                                                                  false,
+                                                          onChanged: (value) {
+                                                            setState(() {
+                                                              _roleCapabilities[
+                                                                      roleObj
+                                                                          .key] =
+                                                                  value ??
+                                                                      false;
+                                                              _roleError =
+                                                                  null; // Clear error when user interacts
+                                                              _isDirty = true;
+                                                            });
+                                                          },
+                                                          controlAffinity:
+                                                              ListTileControlAffinity
+                                                                  .leading,
+                                                        );
+                                                      }).toList(),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      ),
+
+                                      const Divider(height: 32),
+
+                                      // Date constraints/availability section
                                       Row(
                                         children: [
-                                          const Text(
-                                            'תפקידים',
+                                          Text(
+                                            _isPermanent
+                                                ? 'מגבלות זמן'
+                                                : 'זמינות לאירועים',
                                             style: TextStyle(
                                               fontSize: 18,
                                               fontWeight: FontWeight.bold,
+                                              color: _isPermanent
+                                                  ? null
+                                                  : Colors.green[700],
                                             ),
                                           ),
                                           const Spacer(),
-                                          TextButton(
-                                            onPressed: () {
-                                              setState(() {
-                                                // Select all roles from RoleBloc
-                                                if (roleState is RolesLoaded) {
-                                                  for (final role in roleState.allNonArchivedRoles) {
-                                                    _roleCapabilities[role.key] = true;
-                                                  }
-                                                }
-                                                _roleError = null; // Clear error
-                                                _isDirty = true;
-                                              });
-                                            },
-                                            child: const Text('בחר הכל'),
-                                          ),
-                                          TextButton(
-                                            onPressed: () {
-                                              setState(() {
-                                                // Deselect all roles from RoleBloc
-                                                if (roleState is RolesLoaded) {
-                                                  for (final role in roleState.allNonArchivedRoles) {
-                                                    _roleCapabilities[role.key] = false;
-                                                  }
-                                                }
-                                                _isDirty = true;
-                                              });
-                                            },
-                                            child: const Text('נקה הכל'),
-                                          ),
+                                          if (_isPermanent) ...[
+                                            // Add constraint button for permanent members
+                                            IconButton(
+                                              onPressed: () =>
+                                                  _addConstraintOrAvailability(),
+                                              icon: const Icon(
+                                                Icons.add_circle_outline,
+                                                color: Colors.orange,
+                                              ),
+                                              tooltip: 'הוסף מגבלה',
+                                            ),
+                                            // Show rejected constraints button
+                                            if (_constraints.any((c) =>
+                                                c.isUnavailability &&
+                                                c.status ==
+                                                    ConstraintStatus.rejected))
+                                              TextButton.icon(
+                                                onPressed: () =>
+                                                    _showRejectedConstraints(_constraints
+                                                        .where((c) =>
+                                                            c.isUnavailability &&
+                                                            c.status ==
+                                                                ConstraintStatus
+                                                                    .rejected)
+                                                        .toList()),
+                                                icon: const Icon(
+                                                  Icons.visibility,
+                                                  size: 20,
+                                                ),
+                                                label: Text(
+                                                  'הצג מגבלות שנדחו (${_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).length})',
+                                                  style: const TextStyle(
+                                                      fontSize: 14),
+                                                ),
+                                                style: TextButton.styleFrom(
+                                                  foregroundColor:
+                                                      Colors.grey[600],
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 8),
+                                                ),
+                                              ),
+                                          ] else ...[
+                                            // Edit availability button for non-permanent members (blue pencil)
+                                            IconButton(
+                                              onPressed: () =>
+                                                  _editAvailabilityEvents(),
+                                              icon: const Icon(
+                                                Icons.edit,
+                                                color: Colors.blue,
+                                              ),
+                                              tooltip: 'ערוך זמינות',
+                                            ),
+                                          ],
                                         ],
                                       ),
 
                                       const SizedBox(height: 8),
 
-                                      // Role validation error
-                                      if (_roleError != null)
-                                        Padding(
-                                          padding: const EdgeInsets.only(right: 16, bottom: 8),
-                                          child: Text(
-                                            _roleError!,
-                                            style: TextStyle(
-                                              color: Colors.red.shade700,
-                                              fontSize: 12,
+                                      // Helper text
+                                      Text(
+                                        _isPermanent
+                                            ? 'כאן תוכל לאשר או לדחות בקשות מגבלות מחברי צוות קבועים. מגבלות מאושרות ימנעו שיבוץ לאירועים.'
+                                            : 'אירועים שחבר הצוות הזה סימן את עצמו/ה זמין/ה להתנדב. לחץ על העיגול כדי לערוך.',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Colors.grey[600],
                                             ),
-                                          ),
-                                        ),
-
-                                      // Role checkboxes
-                                      Builder(
-                                        builder: (context) {
-                                          // Get all non-archived roles
-                                          List<Role> roles;
-                                          if (roleState is RolesLoaded) {
-                                            roles = roleState.allNonArchivedRoles;
-                                          } else {
-                                            // Fallback to RoleType.values during initial load
-                                            roles = RoleType.values.map((rt) => Role(
-                                              id: rt.key,
-                                              key: rt.key,
-                                              hebrewName: rt.hebrewName,
-                                              isVisible: true,
-                                              isArchived: false,
-                                              sortOrder: RoleType.values.indexOf(rt),
-                                              createdAt: DateTime.now(),
-                                              updatedAt: DateTime.now(),
-                                            )).toList();
-                                          }
-
-                                          return Container(
-                                    decoration: _roleError != null
-                                        ? BoxDecoration(
-                                            border: Border.all(color: Colors.red.shade700),
-                                            borderRadius: BorderRadius.circular(4),
-                                            color: Colors.red.shade50,
-                                          )
-                                        : null,
-                                    child: Column(
-                                      children: roles.map((roleObj) {
-                                        return CheckboxListTile(
-                                          title: Text(roleObj.hebrewName),
-                                          value: _roleCapabilities[roleObj.key] ?? false,
-                                          onChanged: (value) {
-                                            setState(() {
-                                              _roleCapabilities[roleObj.key] = value ?? false;
-                                              _roleError = null; // Clear error when user interacts
-                                              _isDirty = true;
-                                            });
-                                          },
-                                          controlAffinity: ListTileControlAffinity.leading,
-                                        );
-                                      }).toList(),
-                                    ),
-                                          );
-                                        },
                                       ),
-                                    ],
-                                  );
-                                },
-                              ),
 
-                              const Divider(height: 32),
+                                      const SizedBox(height: 8),
 
-                              // Date constraints/availability section
-                              Row(
-                                children: [
-                                  Text(
-                                    _isPermanent ? 'מגבלות זמן' : 'זמינות לאירועים',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: _isPermanent ? null : Colors.green[700],
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  if (_isPermanent) ...[
-                                    // Add constraint button for permanent members
-                                    IconButton(
-                                      onPressed: () => _addConstraintOrAvailability(),
-                                      icon: const Icon(
-                                        Icons.add_circle_outline,
-                                        color: Colors.orange,
-                                      ),
-                                      tooltip: 'הוסף מגבלה',
-                                    ),
-                                    // Show rejected constraints button
-                                    if (_constraints.any((c) => c.isUnavailability && c.status == ConstraintStatus.rejected))
-                                      TextButton.icon(
-                                        onPressed: () => _showRejectedConstraints(_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).toList()),
-                                        icon: const Icon(
-                                          Icons.visibility,
-                                          size: 20,
-                                        ),
-                                        label: Text(
-                                          'הצג מגבלות שנדחו (${_constraints.where((c) => c.isUnavailability && c.status == ConstraintStatus.rejected).length})',
-                                          style: const TextStyle(fontSize: 14),
-                                        ),
-                                        style: TextButton.styleFrom(
-                                          foregroundColor: Colors.grey[600],
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                        ),
-                                      ),
-                                  ] else ...[
-                                    // Edit availability button for non-permanent members (blue pencil)
-                                    IconButton(
-                                      onPressed: () => _editAvailabilityEvents(),
-                                      icon: const Icon(
-                                        Icons.edit,
-                                        color: Colors.blue,
-                                      ),
-                                      tooltip: 'ערוך זמינות',
-                                    ),
-                                  ],
-                                ],
-                              ),
+                                      // Constraints list (permanent) / Availability events list (non-permanent)
+                                      if (_isPermanent)
+                                        ..._buildVisibleConstraintsList()
+                                      else
+                                        BlocBuilder<EventBloc, EventState>(
+                                          builder: (context, eventState) {
+                                            if (eventState is! EventsLoaded) {
+                                              return const Padding(
+                                                padding: EdgeInsets.all(16),
+                                                child: Center(
+                                                    child:
+                                                        CircularProgressIndicator()),
+                                              );
+                                            }
 
-                              const SizedBox(height: 8),
+                                            final now = DateTime.now();
+                                            final today = DateTime(
+                                                now.year, now.month, now.day);
 
-                              // Helper text
-                              Text(
-                                _isPermanent
-                                    ? 'כאן תוכל לאשר או לדחות בקשות מגבלות מחברי צוות קבועים. מגבלות מאושרות ימנעו שיבוץ לאירועים.'
-                                    : 'אירועים שחבר הצוות הזה סימן את עצמו/ה זמין/ה להתנדב. לחץ על העיגול כדי לערוך.',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Colors.grey[600],
-                                ),
-                              ),
+                                            // Get future events that this member is available for
+                                            final availableEvents = eventState
+                                                .events
+                                                .where((event) {
+                                              final eventEndDate = DateTime(
+                                                  event.endDate.year,
+                                                  event.endDate.month,
+                                                  event.endDate.day);
+                                              return !eventEndDate
+                                                      .isBefore(today) &&
+                                                  _availableEventIds
+                                                      .contains(event.id);
+                                            }).toList()
+                                              ..sort((a, b) => a.startDate
+                                                  .compareTo(b.startDate));
 
-                              const SizedBox(height: 8),
-
-                              // Constraints list (permanent) / Availability events list (non-permanent)
-                              if (_isPermanent)
-                                ..._buildVisibleConstraintsList()
-                              else
-                                BlocBuilder<EventBloc, EventState>(
-                                  builder: (context, eventState) {
-                                    if (eventState is! EventsLoaded) {
-                                      return const Padding(
-                                        padding: EdgeInsets.all(16),
-                                        child: Center(child: CircularProgressIndicator()),
-                                      );
-                                    }
-
-                                    final now = DateTime.now();
-                                    final today = DateTime(now.year, now.month, now.day);
-
-                                    // Get future events that this member is available for
-                                    final availableEvents = eventState.events.where((event) {
-                                      final eventEndDate = DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
-                                      return !eventEndDate.isBefore(today) && _availableEventIds.contains(event.id);
-                                    }).toList()
-                                      ..sort((a, b) => a.startDate.compareTo(b.startDate));
-
-                                    if (availableEvents.isEmpty) {
-                                      return Padding(
-                                        padding: const EdgeInsets.all(16),
-                                        child: Text(
-                                          'אין אירועים נבחרים',
-                                          style: TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 16,
-                                          ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      );
-                                    }
-
-                                    return Column(
-                                      children: availableEvents.map((event) {
-                                        final formattedLocation = event.location.isNotEmpty
-                                            ? _formatLocationForDisplay(event.location)
-                                            : '';
-
-                                        return Card(
-                                          color: Colors.green[50],
-                                          margin: const EdgeInsets.only(bottom: 8),
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(12),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.event_available,
-                                                      color: Colors.green[600],
-                                                      size: 20,
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: Text(
-                                                        event.name,
-                                                        style: TextStyle(
-                                                          fontWeight: FontWeight.bold,
-                                                          fontSize: 16,
-                                                          color: Colors.green[700],
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
+                                            if (availableEvents.isEmpty) {
+                                              return Padding(
+                                                padding:
+                                                    const EdgeInsets.all(16),
+                                                child: Text(
+                                                  'אין אירועים נבחרים',
+                                                  style: TextStyle(
+                                                    color: Colors.grey,
+                                                    fontSize: 16,
+                                                  ),
+                                                  textAlign: TextAlign.center,
                                                 ),
-                                                const SizedBox(height: 4),
-                                                Padding(
-                                                  padding: const EdgeInsets.only(left: 28),
-                                                  child: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    children: [
-                                                      Text(
-                                                        _formatEventDates(event),
-                                                        style: const TextStyle(
-                                                          fontSize: 14,
-                                                          color: Colors.black,
-                                                          fontWeight: FontWeight.bold,
+                                              );
+                                            }
+
+                                            return Column(
+                                              children:
+                                                  availableEvents.map((event) {
+                                                final formattedLocation = event
+                                                        .location.isNotEmpty
+                                                    ? _formatLocationForDisplay(
+                                                        event.location)
+                                                    : '';
+
+                                                return Card(
+                                                  color: Colors.green[50],
+                                                  margin: const EdgeInsets.only(
+                                                      bottom: 8),
+                                                  child: Padding(
+                                                    padding:
+                                                        const EdgeInsets.all(
+                                                            12),
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .event_available,
+                                                              color: Colors
+                                                                  .green[600],
+                                                              size: 20,
+                                                            ),
+                                                            const SizedBox(
+                                                                width: 8),
+                                                            Expanded(
+                                                              child: Text(
+                                                                event.name,
+                                                                style:
+                                                                    TextStyle(
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                  fontSize: 16,
+                                                                  color: Colors
+                                                                          .green[
+                                                                      700],
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ],
                                                         ),
-                                                      ),
-                                                      Text(
-                                                        _formatEventTimes(event),
-                                                        style: const TextStyle(
-                                                          fontSize: 13,
-                                                          color: Colors.black,
-                                                          fontWeight: FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                      if (formattedLocation.isNotEmpty)
-                                                        Text(
-                                                          'מיקום: $formattedLocation',
-                                                          style: const TextStyle(
-                                                            fontSize: 13,
-                                                            color: Colors.black,
-                                                            fontWeight: FontWeight.bold,
+                                                        const SizedBox(
+                                                            height: 4),
+                                                        Padding(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .only(
+                                                                  left: 28),
+                                                          child: Column(
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            children: [
+                                                              Text(
+                                                                _formatEventDates(
+                                                                    event),
+                                                                style:
+                                                                    const TextStyle(
+                                                                  fontSize: 14,
+                                                                  color: Colors
+                                                                      .black,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                ),
+                                                              ),
+                                                              Text(
+                                                                _formatEventTimes(
+                                                                    event),
+                                                                style:
+                                                                    const TextStyle(
+                                                                  fontSize: 13,
+                                                                  color: Colors
+                                                                      .black,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                ),
+                                                              ),
+                                                              if (formattedLocation
+                                                                  .isNotEmpty)
+                                                                Text(
+                                                                  'מיקום: $formattedLocation',
+                                                                  style:
+                                                                      const TextStyle(
+                                                                    fontSize:
+                                                                        13,
+                                                                    color: Colors
+                                                                        .black,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .bold,
+                                                                  ),
+                                                                ),
+                                                            ],
                                                           ),
                                                         ),
-                                                    ],
+                                                      ],
+                                                    ),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            );
+                                          },
+                                        ),
+
+                                      const Divider(height: 32),
+
+                                      // Passcode management section (admin only, edit mode only)
+                                      if (_isEditMode) ...[
+                                        Row(
+                                          children: [
+                                            const Text(
+                                              'ניהול קוד גישה',
+                                              style: TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            TextButton.icon(
+                                              onPressed: () =>
+                                                  _showAdminPasscodeDialog(),
+                                              icon: const Icon(
+                                                  Icons.admin_panel_settings,
+                                                  size: 20),
+                                              label: const Text('נהל קוד'),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor:
+                                                    Theme.of(context)
+                                                        .primaryColor,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 8),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Container(
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey[50],
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            border: Border.all(
+                                                color: Colors.grey[300]!),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                widget.member?.passcode != null
+                                                    ? Icons.lock
+                                                    : Icons.lock_open,
+                                                color:
+                                                    widget.member?.passcode !=
+                                                            null
+                                                        ? Theme.of(context)
+                                                            .primaryColor
+                                                        : Colors.grey[400],
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Text(
+                                                  widget.member?.passcode !=
+                                                          null
+                                                      ? 'קוד גישה מוגדר (${widget.member?.passcodeLength} ספרות)'
+                                                      : 'לא הוגדר קוד גישה',
+                                                  style: TextStyle(
+                                                    color: widget.member
+                                                                ?.passcode !=
+                                                            null
+                                                        ? null
+                                                        : Colors.grey[600],
                                                   ),
                                                 ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      }).toList(),
-                                    );
-                                  },
-                                ),
-
-                              const Divider(height: 32),
-
-                              // Passcode management section (admin only, edit mode only)
-                              if (_isEditMode) ...[
-                                Row(
-                                  children: [
-                                    const Text(
-                                      'ניהול קוד גישה',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    TextButton.icon(
-                                      onPressed: () => _showAdminPasscodeDialog(),
-                                      icon: const Icon(Icons.admin_panel_settings, size: 20),
-                                      label: const Text('נהל קוד'),
-                                      style: TextButton.styleFrom(
-                                        foregroundColor: Theme.of(context).primaryColor,
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey[50],
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.grey[300]!),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        widget.member?.passcode != null ? Icons.lock : Icons.lock_open,
-                                        color: widget.member?.passcode != null
-                                            ? Theme.of(context).primaryColor
-                                            : Colors.grey[400],
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          widget.member?.passcode != null
-                                              ? 'קוד גישה מוגדר (${widget.member?.passcodeLength} ספרות)'
-                                              : 'לא הוגדר קוד גישה',
-                                          style: TextStyle(
-                                            color: widget.member?.passcode != null
-                                                ? null
-                                                : Colors.grey[600],
+                                              ),
+                                            ],
                                           ),
                                         ),
+                                        const SizedBox(height: 16),
+                                      ],
+
+                                      const Divider(height: 32),
+
+                                      // Comments field
+                                      TextFormField(
+                                        controller: _commentsController,
+                                        focusNode: _commentsFocusNode,
+                                        decoration: const InputDecoration(
+                                          labelText: 'הערות',
+                                          hintText: 'הערות על חבר הצוות',
+                                          prefixIcon: Icon(Icons.comment),
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        minLines: 1,
+                                        maxLines: 3,
+                                        scrollPadding:
+                                            const EdgeInsets.only(bottom: 300),
+                                        onChanged: (_) =>
+                                            setState(() => _isDirty = true),
                                       ),
+
+                                      // Dynamic bottom spacing for keyboard
+                                      SizedBox(
+                                          height: MediaQuery.of(context)
+                                                  .viewInsets
+                                                  .bottom +
+                                              80),
                                     ],
                                   ),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
+                                );
+                              },
+                            ),
+                          ),
 
-                              const Divider(height: 32),
-
-                              // Comments field
-                              TextFormField(
-                                controller: _commentsController,
-                                focusNode: _commentsFocusNode,
-                                decoration: const InputDecoration(
-                                  labelText: 'הערות',
-                                  hintText: 'הערות על חבר הצוות',
-                                  prefixIcon: Icon(Icons.comment),
-                                  border: OutlineInputBorder(),
-                                ),
-                                minLines: 1,
-                                maxLines: 3,
-                                scrollPadding: const EdgeInsets.only(bottom: 300),
-                                onChanged: (_) => setState(() => _isDirty = true),
+                          // Modal Footer (Fixed at bottom)
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                top: BorderSide(color: Colors.grey.shade300),
                               ),
-
-                              // Dynamic bottom spacing for keyboard
-                              SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 80),
-                            ],
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: _handleClose,
+                                    child: const Text('ביטול'),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: _isSaving ? null : _saveMember,
+                                    child: const Text('שמור'),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        );
-                      },
-                    ),
-                  ),
-
-                  // Modal Footer (Fixed at bottom)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(color: Colors.grey.shade300),
+                        ],
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _handleClose,
-                            child: const Text('ביטול'),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _isSaving ? null : _saveMember,
-                            child: const Text('שמור'),
-                          ),
-                        ),
-                      ],
+                    // Loading overlay
+                    LoadingOverlay(
+                      isLoading: _isSaving || _isDeleting,
+                      message: _isDeleting
+                          ? 'מוחק איש צוות...'
+                          : (_isEditMode
+                              ? 'שומר איש צוות...'
+                              : 'יוצר איש צוות...'),
                     ),
-                  ),
-                      ],
-                    ),
-                  ),
-                      // Loading overlay
-                      LoadingOverlay(
-                        isLoading: _isSaving || _isDeleting,
-                        message: _isDeleting ? 'מוחק איש צוות...' : (_isEditMode ? 'שומר איש צוות...' : 'יוצר איש צוות...'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          );
-        },
-      );
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildConstraintCard(DateConstraint constraint) {
@@ -2235,16 +2590,24 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         children: [
           ListTile(
             leading: Icon(
-              effectiveStatus == ConstraintStatus.pending ? Icons.hourglass_empty :
-              effectiveStatus == ConstraintStatus.approved ? Icons.check_circle : Icons.cancel,
-              color: effectiveStatus == ConstraintStatus.pending ? Colors.amber :
-                     effectiveStatus == ConstraintStatus.approved ? Colors.green : Colors.red,
+              effectiveStatus == ConstraintStatus.pending
+                  ? Icons.hourglass_empty
+                  : effectiveStatus == ConstraintStatus.approved
+                      ? Icons.check_circle
+                      : Icons.cancel,
+              color: effectiveStatus == ConstraintStatus.pending
+                  ? Colors.amber
+                  : effectiveStatus == ConstraintStatus.approved
+                      ? Colors.green
+                      : Colors.red,
             ),
             title: Row(
               children: [
                 Expanded(
                   child: Text(
-                    constraint.endDate != null && !_isSameDay(constraint.startDate, constraint.endDate!)
+                    constraint.endDate != null &&
+                            !_isSameDay(
+                                constraint.startDate, constraint.endDate!)
                         ? '${_formatDate(constraint.startDate)} - ${_formatDate(constraint.endDate!)}'
                         : _formatDate(constraint.startDate),
                   ),
@@ -2260,11 +2623,13 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                     padding: const EdgeInsets.only(top: 2),
                     child: Row(
                       children: [
-                        Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
+                        Icon(Icons.access_time,
+                            size: 14, color: Colors.grey[600]),
                         const SizedBox(width: 4),
                         Text(
                           'שעות: ${constraint.startTime ?? '---'} - ${constraint.endTime ?? '---'}',
-                          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.grey[600]),
                         ),
                       ],
                     ),
@@ -2320,32 +2685,41 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                   // Pending: Right = Accept
                   TextButton.icon(
                     onPressed: () => _approveConstraint(constraint.id),
-                    icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
-                    label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                    icon: const Icon(Icons.check_circle,
+                        color: Colors.green, size: 20),
+                    label: const Text('אשר',
+                        style: TextStyle(color: Colors.green)),
                     style: TextButton.styleFrom(
                       backgroundColor: Colors.green[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                     ),
                   )
                 else if (effectiveStatus == ConstraintStatus.approved)
                   // Approved: Right = Pending
                   TextButton.icon(
                     onPressed: () => _setPendingConstraint(constraint.id),
-                    icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 20),
-                    label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                    icon: const Icon(Icons.hourglass_empty,
+                        color: Colors.amber, size: 20),
+                    label: const Text('החזר לממתין',
+                        style: TextStyle(color: Colors.amber)),
                     style: TextButton.styleFrom(
                       backgroundColor: Colors.amber[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                     ),
                   )
                 else // Rejected: Right = Pending
                   TextButton.icon(
                     onPressed: () => _setPendingConstraint(constraint.id),
-                    icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 20),
-                    label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                    icon: const Icon(Icons.hourglass_empty,
+                        color: Colors.amber, size: 20),
+                    label: const Text('החזר לממתין',
+                        style: TextStyle(color: Colors.amber)),
                     style: TextButton.styleFrom(
                       backgroundColor: Colors.amber[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                     ),
                   ),
 
@@ -2357,10 +2731,12 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                   TextButton.icon(
                     onPressed: () => _rejectConstraint(constraint.id),
                     icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
-                    label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                    label:
+                        const Text('דחה', style: TextStyle(color: Colors.red)),
                     style: TextButton.styleFrom(
                       backgroundColor: Colors.red[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                     ),
                   )
                 else if (effectiveStatus == ConstraintStatus.approved)
@@ -2368,20 +2744,25 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                   TextButton.icon(
                     onPressed: () => _rejectConstraint(constraint.id),
                     icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
-                    label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                    label:
+                        const Text('דחה', style: TextStyle(color: Colors.red)),
                     style: TextButton.styleFrom(
                       backgroundColor: Colors.red[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                     ),
                   )
                 else // Rejected: Left = Accept
                   TextButton.icon(
                     onPressed: () => _approveConstraint(constraint.id),
-                    icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
-                    label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                    icon: const Icon(Icons.check_circle,
+                        color: Colors.green, size: 20),
+                    label: const Text('אשר',
+                        style: TextStyle(color: Colors.green)),
                     style: TextButton.styleFrom(
                       backgroundColor: Colors.green[50],
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                     ),
                   ),
               ],
@@ -2450,7 +2831,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    availability.endDate != null && !_isSameDay(availability.startDate, availability.endDate!)
+                    availability.endDate != null &&
+                            !_isSameDay(
+                                availability.startDate, availability.endDate!)
                         ? '${_formatDate(availability.startDate)} - ${_formatDate(availability.endDate!)}'
                         : _formatDate(availability.startDate),
                     style: Theme.of(context).textTheme.titleMedium,
@@ -2467,14 +2850,16 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 const SizedBox(width: 8),
                 IconButton(
                   icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                  onPressed: () => _deleteConstraintOrAvailability(availability),
+                  onPressed: () =>
+                      _deleteConstraintOrAvailability(availability),
                   tooltip: 'מחק',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
               ],
             ),
-            if (availability.startTime != null || availability.endTime != null) ...[
+            if (availability.startTime != null ||
+                availability.endTime != null) ...[
               const SizedBox(height: 4),
               Row(
                 children: [
@@ -2507,8 +2892,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                       child: Text(
                         availability.note!,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.green[700],
-                        ),
+                              color: Colors.green[700],
+                            ),
                       ),
                     ),
                   ],
@@ -2531,15 +2916,36 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         date1.day == date2.day;
   }
 
-  void _approveConstraint(String constraintId) {
+  Future<void> _approveConstraint(String constraintId) async {
     if (widget.member == null) return;
 
     // Find and update the constraint directly in the constraints list
-    final constraintIndex = _constraints.indexWhere((c) => c.id == constraintId);
+    final constraintIndex =
+        _constraints.indexWhere((c) => c.id == constraintId);
     if (constraintIndex != -1) {
+      final targetConstraint = _constraints[constraintIndex];
+      final events = await _loadEventsForConstraintWarnings(context);
+      if (!mounted) return;
+
+      final shouldProceed = await _confirmConstraintOverlapWarning(
+        context: context,
+        constraint:
+            targetConstraint.copyWith(status: ConstraintStatus.approved),
+        events: events,
+        title: 'אזהרה לפני אישור מגבלה',
+        message: 'שים לב: במועדים הללו קיימים אירועים:',
+        confirmText: 'אשר בכל זאת',
+        showMissingTimeNote: true,
+      );
+
+      if (!shouldProceed || !mounted) {
+        return;
+      }
+
       _constraints[constraintIndex] = _constraints[constraintIndex].copyWith(
         status: ConstraintStatus.approved,
-        wasAutoRejectedFromCalendar: false, // Reset auto-rejection flag when approved
+        wasAutoRejectedFromCalendar:
+            false, // Reset auto-rejection flag when approved
       );
       _isDirty = true;
       setState(() {});
@@ -2550,7 +2956,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     if (widget.member == null) return;
 
     // Find and update the constraint directly in the constraints list
-    final constraintIndex = _constraints.indexWhere((c) => c.id == constraintId);
+    final constraintIndex =
+        _constraints.indexWhere((c) => c.id == constraintId);
     if (constraintIndex != -1) {
       _constraints[constraintIndex] = _constraints[constraintIndex].copyWith(
         status: ConstraintStatus.rejected,
@@ -2565,11 +2972,13 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     if (widget.member == null) return;
 
     // Find and update the constraint directly in the constraints list
-    final constraintIndex = _constraints.indexWhere((c) => c.id == constraintId);
+    final constraintIndex =
+        _constraints.indexWhere((c) => c.id == constraintId);
     if (constraintIndex != -1) {
       _constraints[constraintIndex] = _constraints[constraintIndex].copyWith(
         status: ConstraintStatus.pending,
-        wasAutoRejectedFromCalendar: false, // Reset auto-rejection flag when set to pending
+        wasAutoRejectedFromCalendar:
+            false, // Reset auto-rejection flag when set to pending
       );
       _isDirty = true;
       setState(() {});
@@ -2579,8 +2988,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   List<Widget> _buildVisibleConstraintsList() {
     final visibleConstraints = _constraints.where((constraint) {
       // Filter by constraint type based on permanent status
-      if (_isPermanent && constraint.isAvailability) return false; // Permanent members only see unavailability
-      if (!_isPermanent && constraint.isUnavailability) return false; // Non-permanent members only see availability
+      if (_isPermanent && constraint.isAvailability)
+        return false; // Permanent members only see unavailability
+      if (!_isPermanent && constraint.isUnavailability)
+        return false; // Non-permanent members only see availability
 
       // Hide rejected constraints from admin view (they'll have a separate button)
       if (constraint.status == ConstraintStatus.rejected) return false;
@@ -2661,7 +3072,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     final today = DateTime(now.year, now.month, now.day);
 
     final futureEvents = eventState.events.where((event) {
-      final eventEndDate = DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
+      final eventEndDate =
+          DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
       return !eventEndDate.isBefore(today);
     }).toList()
       ..sort((a, b) => a.startDate.compareTo(b.startDate));
@@ -2719,8 +3131,19 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
   String _getHebrewMonthName(int month) {
     const months = [
-      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
-      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+      '',
+      'ינואר',
+      'פברואר',
+      'מרץ',
+      'אפריל',
+      'מאי',
+      'יוני',
+      'יולי',
+      'אוגוסט',
+      'ספטמבר',
+      'אוקטובר',
+      'נובמבר',
+      'דצמבר'
     ];
     return months[month];
   }
@@ -2743,9 +3166,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         child: _RejectedConstraintsDialog(
           teamMemberId: widget.member!.id,
           getEffectiveConstraints: () => _constraints,
-          onApproveConstraint: (constraintId) => _approveConstraint(constraintId),
+          onApproveConstraint: (constraintId) =>
+              _approveConstraint(constraintId),
           onRejectConstraint: (constraintId) => _rejectConstraint(constraintId),
-          onSetPendingConstraint: (constraintId) => _setPendingConstraint(constraintId),
+          onSetPendingConstraint: (constraintId) =>
+              _setPendingConstraint(constraintId),
           onDeleteConstraint: (constraintId) {
             setState(() {
               _constraints.removeWhere((c) => c.id == constraintId);
@@ -2992,56 +3417,56 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-            // Date selection button
-            OutlinedButton.icon(
-              onPressed: _pickDates,
-              icon: const Icon(Icons.calendar_month),
-              label: Text(
-                _startDate == null
-                    ? 'בחר תאריכים'
-                    : _endDate != null
-                        ? '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}'
-                        : _formatDate(_startDate!),
-              ),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                alignment: Alignment.centerRight,
-              ),
-            ),
-
-            if (_startDate != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: TextButton.icon(
-                  onPressed: () => setState(() {
-                    _startDate = null;
-                    _endDate = null;
-                  }),
-                  icon: const Icon(Icons.clear, size: 16),
-                  label: const Text('נקה'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.red,
-                  ),
+              // Date selection button
+              OutlinedButton.icon(
+                onPressed: _pickDates,
+                icon: const Icon(Icons.calendar_month),
+                label: Text(
+                  _startDate == null
+                      ? 'בחר תאריכים'
+                      : _endDate != null
+                          ? '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}'
+                          : _formatDate(_startDate!),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.all(16),
+                  alignment: Alignment.centerRight,
                 ),
               ),
 
-            // Note text field
-            const SizedBox(height: 16),
-            TextField(
-              controller: _noteController,
-              focusNode: _noteFocusNode,
-              decoration: const InputDecoration(
-                labelText: 'הערה',
-                hintText: 'הוסף הערה למגבלה',
-                prefixIcon: Icon(Icons.note),
-                border: OutlineInputBorder(),
-                alignLabelWithHint: true,
+              if (_startDate != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: TextButton.icon(
+                    onPressed: () => setState(() {
+                      _startDate = null;
+                      _endDate = null;
+                    }),
+                    icon: const Icon(Icons.clear, size: 16),
+                    label: const Text('נקה'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red,
+                    ),
+                  ),
+                ),
+
+              // Note text field
+              const SizedBox(height: 16),
+              TextField(
+                controller: _noteController,
+                focusNode: _noteFocusNode,
+                decoration: const InputDecoration(
+                  labelText: 'הערה',
+                  hintText: 'הוסף הערה למגבלה',
+                  prefixIcon: Icon(Icons.note),
+                  border: OutlineInputBorder(),
+                  alignLabelWithHint: true,
+                ),
+                maxLines: 3,
+                minLines: 1,
+                textDirection: TextDirection.rtl,
+                textAlignVertical: TextAlignVertical.center,
               ),
-              maxLines: 3,
-              minLines: 1,
-              textDirection: TextDirection.rtl,
-              textAlignVertical: TextAlignVertical.center,
-            ),
             ],
           ),
         ),
@@ -3058,12 +3483,18 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
                     Navigator.pop(
                       context,
                       DateConstraint(
-                        id: widget.constraint?.id ?? const Uuid().v4(), // Use existing ID or generate new one
+                        id: widget.constraint?.id ??
+                            const Uuid()
+                                .v4(), // Use existing ID or generate new one
                         startDate: _startDate!,
                         endDate: _endDate,
                         note: noteText.isEmpty ? null : noteText,
-                        status: widget.constraint?.status ?? ConstraintStatus.approved, // Use existing status or default to approved
-                        constraintType: widget.constraint?.constraintType ?? ConstraintType.unavailability, // Use existing type or default to unavailability
+                        status: widget.constraint?.status ??
+                            ConstraintStatus
+                                .approved, // Use existing status or default to approved
+                        constraintType: widget.constraint?.constraintType ??
+                            ConstraintType
+                                .unavailability, // Use existing type or default to unavailability
                       ),
                     );
                   },
@@ -3078,7 +3509,8 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
 // Admin Constraint/Availability Dialog Widget
 class _AdminConstraintDialog extends StatefulWidget {
   final DateConstraint? constraint;
-  final bool isPermanent; // true = constraint (permanent member), false = availability (non-permanent)
+  final bool
+      isPermanent; // true = constraint (permanent member), false = availability (non-permanent)
 
   const _AdminConstraintDialog({
     this.constraint,
@@ -3092,6 +3524,7 @@ class _AdminConstraintDialog extends StatefulWidget {
 class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
   DateTime? _startDate;
   DateTime? _endDate;
+  List<Event> _events = [];
   final TextEditingController _noteController = TextEditingController();
   final TextEditingController _startTimeController = TextEditingController();
   final TextEditingController _endTimeController = TextEditingController();
@@ -3112,6 +3545,7 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
     _noteController.addListener(_updateCanSubmit);
     _startTimeController.addListener(_updateCanSubmit);
     _endTimeController.addListener(_updateCanSubmit);
+    _initializeEvents();
   }
 
   @override
@@ -3132,7 +3566,8 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
       // For non-permanent members (availability), note is optional
       bool dateValid;
       if (widget.isPermanent) {
-        dateValid = _startDate != null && _noteController.text.trim().isNotEmpty;
+        dateValid =
+            _startDate != null && _noteController.text.trim().isNotEmpty;
       } else {
         dateValid = _startDate != null;
       }
@@ -3154,6 +3589,56 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
 
       _canSubmit = dateValid && timeValid;
     });
+  }
+
+  Future<void> _initializeEvents() async {
+    final events = await _loadEventsForConstraintWarnings(context);
+    if (!mounted) return;
+    setState(() {
+      _events = events;
+    });
+  }
+
+  bool _isEditingDateOrTime() {
+    if (widget.constraint == null) return true;
+
+    final existing = widget.constraint!;
+    final startDateChanged = !_isSameDay(_startDate!, existing.startDate);
+    final endDateChanged = (_endDate == null) != (existing.endDate == null) ||
+        (_endDate != null &&
+            existing.endDate != null &&
+            !_isSameDay(_endDate!, existing.endDate!));
+    final startTimeChanged =
+        _startTimeController.text != (existing.startTime ?? '');
+    final endTimeChanged = _endTimeController.text != (existing.endTime ?? '');
+
+    return startDateChanged ||
+        endDateChanged ||
+        startTimeChanged ||
+        endTimeChanged;
+  }
+
+  DateConstraint _buildDraftConstraint() {
+    return DateConstraint(
+      id: widget.constraint?.id ?? const Uuid().v4(),
+      startDate: _startDate!,
+      endDate: _endDate != null && !_isSameDay(_startDate!, _endDate!)
+          ? _endDate
+          : null,
+      note: _noteController.text.trim().isEmpty
+          ? null
+          : _noteController.text.trim(),
+      status: ConstraintStatus.approved,
+      constraintType: widget.isPermanent
+          ? ConstraintType.unavailability
+          : ConstraintType.availability,
+      wasAutoRejectedFromCalendar: false,
+      startTime: _startTimeController.text.isNotEmpty
+          ? _startTimeController.text
+          : null,
+      endTime:
+          _endTimeController.text.isNotEmpty ? _endTimeController.text : null,
+    );
   }
 
   /// Show time picker (Cupertino style)
@@ -3193,7 +3678,8 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -3216,7 +3702,8 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
 
     if (result != null) {
       setState(() {
-        controller.text = '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
+        controller.text =
+            '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
       });
     }
   }
@@ -3224,6 +3711,8 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
   Future<void> _pickDates() async {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
+    final highlightedDates =
+        widget.isPermanent ? getAllEventDates(_events) : <DateTime>{};
 
     final result = await showDialog<Map<String, DateTime?>>(
       context: context,
@@ -3233,6 +3722,7 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
         initialEndDate: _endDate,
         title: widget.isPermanent ? 'בחר תאריכי מגבלה' : 'בחר תאריכי זמינות',
         minDate: todayDate, // Prevent selecting dates before today
+        highlightedDates: highlightedDates,
       ),
     );
 
@@ -3268,139 +3758,144 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
           width: 400,
           child: SingleChildScrollView(
             child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('תאריכים:'),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: _pickDates,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.calendar_today),
-                      const SizedBox(width: 8),
-                      Text(
-                        _startDate != null
-                            ? (_endDate != null && !_isSameDay(_startDate!, _endDate!)
-                                ? '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}'
-                                : _formatDate(_startDate!))
-                            : 'בחר תאריכים',
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text('טווח שעות (אופציונלי):'),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _startTimeController,
-                      readOnly: true,
-                      onTap: () => _showTimePickerFor(_startTimeController),
-                      decoration: InputDecoration(
-                        labelText: 'שעת התחלה',
-                        hintText: 'לדוגמה: 09:00',
-                        prefixIcon: const Icon(Icons.access_time),
-                        border: const OutlineInputBorder(),
-                        suffixIcon: _startTimeController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear, color: Colors.grey),
-                                onPressed: () {
-                                  setState(() {
-                                    _startTimeController.clear();
-                                  });
-                                },
-                              )
-                            : null,
-                      ),
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('תאריכים:'),
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: _pickDates,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.calendar_today),
+                        const SizedBox(width: 8),
+                        Text(
+                          _startDate != null
+                              ? (_endDate != null &&
+                                      !_isSameDay(_startDate!, _endDate!)
+                                  ? '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}'
+                                  : _formatDate(_startDate!))
+                              : 'בחר תאריכים',
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _endTimeController,
-                      readOnly: true,
-                      onTap: () => _showTimePickerFor(_endTimeController),
-                      decoration: InputDecoration(
-                        labelText: 'שעת סיום',
-                        hintText: 'לדוגמה: 17:00',
-                        prefixIcon: const Icon(Icons.access_time),
-                        border: const OutlineInputBorder(),
-                        suffixIcon: _endTimeController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear, color: Colors.grey),
-                                onPressed: () {
-                                  setState(() {
-                                    _endTimeController.clear();
-                                  });
-                                },
-                              )
-                            : null,
+                ),
+                const SizedBox(height: 16),
+                const Text('טווח שעות (אופציונלי):'),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _startTimeController,
+                        readOnly: true,
+                        onTap: () => _showTimePickerFor(_startTimeController),
+                        decoration: InputDecoration(
+                          labelText: 'שעת התחלה',
+                          hintText: 'לדוגמה: 09:00',
+                          prefixIcon: const Icon(Icons.access_time),
+                          border: const OutlineInputBorder(),
+                          suffixIcon: _startTimeController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear,
+                                      color: Colors.grey),
+                                  onPressed: () {
+                                    setState(() {
+                                      _startTimeController.clear();
+                                    });
+                                  },
+                                )
+                              : null,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              // Validation warnings
-              if (_startTimeController.text.isNotEmpty != _endTimeController.text.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'יש להזין גם שעת התחלה וגם שעת סיום',
-                    style: TextStyle(color: Colors.red[700], fontSize: 12),
-                  ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _endTimeController,
+                        readOnly: true,
+                        onTap: () => _showTimePickerFor(_endTimeController),
+                        decoration: InputDecoration(
+                          labelText: 'שעת סיום',
+                          hintText: 'לדוגמה: 17:00',
+                          prefixIcon: const Icon(Icons.access_time),
+                          border: const OutlineInputBorder(),
+                          suffixIcon: _endTimeController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear,
+                                      color: Colors.grey),
+                                  onPressed: () {
+                                    setState(() {
+                                      _endTimeController.clear();
+                                    });
+                                  },
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              if (_startTimeController.text.isNotEmpty &&
-                  _endTimeController.text.isNotEmpty &&
-                  !TimeRangeUtils.isValidTimeRange(
-                    _startTimeController.text,
-                    _endTimeController.text,
-                  ))
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'שעת סיום חייבת להיות אחרי שעת התחלה',
-                    style: TextStyle(color: Colors.red[700], fontSize: 12),
+                // Validation warnings
+                if (_startTimeController.text.isNotEmpty !=
+                    _endTimeController.text.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'יש להזין גם שעת התחלה וגם שעת סיום',
+                      style: TextStyle(color: Colors.red[700], fontSize: 12),
+                    ),
                   ),
-                ),
-              const SizedBox(height: 16),
-              Text(
-                widget.isPermanent ? 'סיבה (חובה):' : 'הערה (אופציונלי):',
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _noteController,
-                focusNode: _noteFocusNode,
-                textAlign: TextAlign.right,
-                textAlignVertical: TextAlignVertical.top,
-                decoration: InputDecoration(
-                  hintText: widget.isPermanent
-                      ? 'יש להזין סיבה למגבלה...'
-                      : 'פרטים נוספים על הזמינות...',
-                  border: const OutlineInputBorder(),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                  hintStyle: TextStyle(
-                    color: Colors.grey[600],
-                    height: 1.5,
+                if (_startTimeController.text.isNotEmpty &&
+                    _endTimeController.text.isNotEmpty &&
+                    !TimeRangeUtils.isValidTimeRange(
+                      _startTimeController.text,
+                      _endTimeController.text,
+                    ))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'שעת סיום חייבת להיות אחרי שעת התחלה',
+                      style: TextStyle(color: Colors.red[700], fontSize: 12),
+                    ),
                   ),
-                  hintTextDirection: TextDirection.rtl,
+                const SizedBox(height: 16),
+                Text(
+                  widget.isPermanent ? 'סיבה (חובה):' : 'הערה (אופציונלי):',
                 ),
-                maxLines: 3,
-                minLines: 3,
-                style: const TextStyle(height: 1.5),
-                scrollPhysics: const BouncingScrollPhysics(),
-              ),
-            ],
-          ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _noteController,
+                  focusNode: _noteFocusNode,
+                  textAlign: TextAlign.right,
+                  textAlignVertical: TextAlignVertical.top,
+                  decoration: InputDecoration(
+                    hintText: widget.isPermanent
+                        ? 'יש להזין סיבה למגבלה...'
+                        : 'פרטים נוספים על הזמינות...',
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 16),
+                    hintStyle: TextStyle(
+                      color: Colors.grey[600],
+                      height: 1.5,
+                    ),
+                    hintTextDirection: TextDirection.rtl,
+                  ),
+                  maxLines: 3,
+                  minLines: 3,
+                  style: const TextStyle(height: 1.5),
+                  scrollPhysics: const BouncingScrollPhysics(),
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -3410,29 +3905,25 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
           ),
           ElevatedButton(
             onPressed: _canSubmit
-                ? () {
-                    final noteText = _noteController.text.trim();
-                    final startTime = _startTimeController.text.isNotEmpty
-                        ? _startTimeController.text
-                        : null;
-                    final endTime = _endTimeController.text.isNotEmpty
-                        ? _endTimeController.text
-                        : null;
-                    Navigator.of(context).pop(
-                      DateConstraint(
-                        id: widget.constraint?.id ?? const Uuid().v4(),
-                        startDate: _startDate!,
-                        endDate: _endDate != null && !_isSameDay(_startDate!, _endDate!) ? _endDate : null,
-                        note: noteText.isEmpty ? null : noteText,
-                        status: ConstraintStatus.approved, // Admin creates are always auto-approved
-                        constraintType: widget.isPermanent
-                            ? ConstraintType.unavailability
-                            : ConstraintType.availability,
-                        wasAutoRejectedFromCalendar: false,
-                        startTime: startTime,
-                        endTime: endTime,
-                      ),
-                    );
+                ? () async {
+                    final draftConstraint = _buildDraftConstraint();
+
+                    if (widget.isPermanent && _isEditingDateOrTime()) {
+                      final shouldProceed =
+                          await _confirmConstraintOverlapWarning(
+                        context: context,
+                        constraint: draftConstraint,
+                        events: _events,
+                        title: 'אזהרה - קיימים אירועים בתאריכים אלה',
+                        message: 'שים לב: בטווח התאריכים שבחרת קיימים אירועים:',
+                        confirmText: 'המשך',
+                      );
+                      if (!shouldProceed || !context.mounted) {
+                        return;
+                      }
+                    }
+
+                    Navigator.of(context).pop(draftConstraint);
                   }
                 : null,
             child: Text(widget.constraint == null ? 'הוספה' : 'שמור שינויים'),
@@ -3461,7 +3952,8 @@ class _AdminAvailabilityDialog extends StatefulWidget {
   });
 
   @override
-  State<_AdminAvailabilityDialog> createState() => _AdminAvailabilityDialogState();
+  State<_AdminAvailabilityDialog> createState() =>
+      _AdminAvailabilityDialogState();
 }
 
 class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
@@ -3495,8 +3987,19 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
 
   String _getHebrewMonthYear(DateTime date) {
     const months = [
-      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
-      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+      '',
+      'ינואר',
+      'פברואר',
+      'מרץ',
+      'אפריל',
+      'מאי',
+      'יוני',
+      'יולי',
+      'אוגוסט',
+      'ספטמבר',
+      'אוקטובר',
+      'נובמבר',
+      'דצמבר'
     ];
     return '${months[date.month]} ${date.year}';
   }
@@ -3537,8 +4040,19 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
 
   String _getHebrewMonthName(int month) {
     const months = [
-      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
-      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+      '',
+      'ינואר',
+      'פברואר',
+      'מרץ',
+      'אפריל',
+      'מאי',
+      'יוני',
+      'יולי',
+      'אוגוסט',
+      'ספטמבר',
+      'אוקטובר',
+      'נובמבר',
+      'דצמבר'
     ];
     return months[month];
   }
@@ -3564,155 +4078,176 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
           width: 500,
           height: MediaQuery.of(context).size.height * 0.75,
           child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'ערוך זמינות לאירועים',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.green[700],
-                      fontWeight: FontWeight.bold,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ערוך זמינות לאירועים',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: Colors.green[700],
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'סמן/ה את האירועים שחבר הצוות זמין/ה להתנדב אליהם',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[600],
+                    const SizedBox(height: 4),
+                    Text(
+                      'סמן/ה את האירועים שחבר הצוות זמין/ה להתנדב אליהם',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey[600],
+                          ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
 
-            const Divider(height: 1),
+              const Divider(height: 1),
 
-            // Events list
-            Expanded(
-              child: widget.events.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Text(
-                          'אין אירועים עתידיים',
-                          style: TextStyle(color: Colors.grey[600], fontSize: 16),
+              // Events list
+              Expanded(
+                child: widget.events.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Text(
+                            'אין אירועים עתידיים',
+                            style: TextStyle(
+                                color: Colors.grey[600], fontSize: 16),
+                          ),
                         ),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: groupedEvents.length,
-                      itemBuilder: (context, index) {
-                        final monthYear = groupedEvents.keys.elementAt(index);
-                        final events = groupedEvents[monthYear]!;
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: groupedEvents.length,
+                        itemBuilder: (context, index) {
+                          final monthYear = groupedEvents.keys.elementAt(index);
+                          final events = groupedEvents[monthYear]!;
 
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Month header
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Text(
-                                monthYear,
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: Colors.grey[700],
-                                  fontWeight: FontWeight.bold,
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Month header
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
+                                child: Text(
+                                  monthYear,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(
+                                        color: Colors.grey[700],
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                 ),
                               ),
-                            ),
-                            // Event checkboxes
-                            ...events.map((event) {
-                              final isSelected = _selectedEventIds.contains(event.id);
-                              final formattedLocation = event.location.isNotEmpty
-                                  ? _formatLocationForDisplay(event.location)
-                                  : '';
+                              // Event checkboxes
+                              ...events.map((event) {
+                                final isSelected =
+                                    _selectedEventIds.contains(event.id);
+                                final formattedLocation = event
+                                        .location.isNotEmpty
+                                    ? _formatLocationForDisplay(event.location)
+                                    : '';
 
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                color: isSelected ? Colors.green[50] : Colors.white,
-                                child: CheckboxListTile(
-                                  value: isSelected,
-                                  onChanged: (_) => _toggleEvent(event.id),
-                                  controlAffinity: ListTileControlAffinity.leading,
-                                  title: Text(
-                                    event.name,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                      color: isSelected ? Colors.green[700] : Colors.black87,
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  color: isSelected
+                                      ? Colors.green[50]
+                                      : Colors.white,
+                                  child: CheckboxListTile(
+                                    value: isSelected,
+                                    onChanged: (_) => _toggleEvent(event.id),
+                                    controlAffinity:
+                                        ListTileControlAffinity.leading,
+                                    title: Text(
+                                      event.name,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        color: isSelected
+                                            ? Colors.green[700]
+                                            : Colors.black87,
+                                      ),
                                     ),
-                                  ),
-                                  subtitle: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _formatEventDates(event),
-                                        style: TextStyle(
-                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                          color: Colors.black,
-                                        ),
-                                      ),
-                                      Text(
-                                        _formatEventTimes(event),
-                                        style: TextStyle(
-                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                          color: Colors.black,
-                                        ),
-                                      ),
-                                      if (formattedLocation.isNotEmpty)
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
                                         Text(
-                                          'מיקום: $formattedLocation',
+                                          _formatEventDates(event),
                                           style: TextStyle(
-                                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                            fontWeight: isSelected
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
                                             color: Colors.black,
                                           ),
                                         ),
-                                    ],
+                                        Text(
+                                          _formatEventTimes(event),
+                                          style: TextStyle(
+                                            fontWeight: isSelected
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                            color: Colors.black,
+                                          ),
+                                        ),
+                                        if (formattedLocation.isNotEmpty)
+                                          Text(
+                                            'מיקום: $formattedLocation',
+                                            style: TextStyle(
+                                              fontWeight: isSelected
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal,
+                                              color: Colors.black,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    activeColor: Colors.green,
+                                    checkColor: Colors.white,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 8),
                                   ),
-                                  activeColor: Colors.green,
-                                  checkColor: Colors.white,
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                ),
-                              );
-                            }).toList(),
-                            const SizedBox(height: 8),
-                          ],
-                        );
-                      },
-                    ),
-            ),
-
-            const Divider(height: 1),
-
-            // Footer buttons
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('ביטול'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(_selectedEventIds.toList()),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green[600],
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('שמור'),
-                  ),
-                ],
+                                );
+                              }).toList(),
+                              const SizedBox(height: 8),
+                            ],
+                          );
+                        },
+                      ),
               ),
-            ),
-          ],
-        ),
+
+              const Divider(height: 1),
+
+              // Footer buttons
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('ביטול'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () =>
+                          Navigator.of(context).pop(_selectedEventIds.toList()),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green[600],
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('שמור'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ), // SizedBox
       ),
     );
@@ -3740,12 +4275,13 @@ class _RejectedConstraintsDialog extends StatefulWidget {
   });
 
   @override
-  State<_RejectedConstraintsDialog> createState() => _RejectedConstraintsDialogState();
+  State<_RejectedConstraintsDialog> createState() =>
+      _RejectedConstraintsDialogState();
 }
 
-class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> {
+class _RejectedConstraintsDialogState
+    extends State<_RejectedConstraintsDialog> {
   bool _isLoading = false;
-
 
   @override
   Widget build(BuildContext context) {
@@ -3799,24 +4335,35 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
                               Row(
                                 children: [
                                   Icon(
-                                    effectiveStatus == ConstraintStatus.pending ? Icons.hourglass_empty :
-                                    effectiveStatus == ConstraintStatus.approved ? Icons.check_circle : Icons.cancel,
-                                    color: effectiveStatus == ConstraintStatus.pending ? Colors.amber :
-                                           effectiveStatus == ConstraintStatus.approved ? Colors.green : Colors.red,
+                                    effectiveStatus == ConstraintStatus.pending
+                                        ? Icons.hourglass_empty
+                                        : effectiveStatus ==
+                                                ConstraintStatus.approved
+                                            ? Icons.check_circle
+                                            : Icons.cancel,
+                                    color: effectiveStatus ==
+                                            ConstraintStatus.pending
+                                        ? Colors.amber
+                                        : effectiveStatus ==
+                                                ConstraintStatus.approved
+                                            ? Colors.green
+                                            : Colors.red,
                                     size: 20,
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       constraint.toString(),
-                                      style: const TextStyle(fontWeight: FontWeight.w500),
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w500),
                                     ),
                                   ),
                                   _buildStatusBadge(effectiveStatus),
                                 ],
                               ),
                               // Note
-                              if (constraint.note != null && constraint.note!.isNotEmpty) ...[
+                              if (constraint.note != null &&
+                                  constraint.note!.isNotEmpty) ...[
                                 const SizedBox(height: 4),
                                 Text(
                                   constraint.note!,
@@ -3844,77 +4391,110 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
                                   // Right button (first in RTL)
-                                  if (effectiveStatus == ConstraintStatus.pending)
+                                  if (effectiveStatus ==
+                                      ConstraintStatus.pending)
                                     // Pending: Right = Accept
                                     TextButton.icon(
-                                      onPressed: () => _approveConstraint(constraint.id),
-                                      icon: const Icon(Icons.check_circle, color: Colors.green, size: 18),
-                                      label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                                      onPressed: () =>
+                                          _approveConstraint(constraint),
+                                      icon: const Icon(Icons.check_circle,
+                                          color: Colors.green, size: 18),
+                                      label: const Text('אשר',
+                                          style:
+                                              TextStyle(color: Colors.green)),
                                       style: TextButton.styleFrom(
                                         backgroundColor: Colors.green[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
                                         minimumSize: Size.zero,
                                       ),
                                     )
-                                  else if (effectiveStatus == ConstraintStatus.approved)
+                                  else if (effectiveStatus ==
+                                      ConstraintStatus.approved)
                                     // Approved: Right = Pending
                                     TextButton.icon(
-                                      onPressed: () => _setPendingConstraint(constraint.id),
-                                      icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 18),
-                                      label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                                      onPressed: () =>
+                                          _setPendingConstraint(constraint.id),
+                                      icon: const Icon(Icons.hourglass_empty,
+                                          color: Colors.amber, size: 18),
+                                      label: const Text('החזר לממתין',
+                                          style:
+                                              TextStyle(color: Colors.amber)),
                                       style: TextButton.styleFrom(
                                         backgroundColor: Colors.amber[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
                                         minimumSize: Size.zero,
                                       ),
                                     )
                                   else // Rejected: Right = Pending
                                     TextButton.icon(
-                                      onPressed: () => _setPendingConstraint(constraint.id),
-                                      icon: const Icon(Icons.hourglass_empty, color: Colors.amber, size: 18),
-                                      label: const Text('החזר לממתין', style: TextStyle(color: Colors.amber)),
+                                      onPressed: () =>
+                                          _setPendingConstraint(constraint.id),
+                                      icon: const Icon(Icons.hourglass_empty,
+                                          color: Colors.amber, size: 18),
+                                      label: const Text('החזר לממתין',
+                                          style:
+                                              TextStyle(color: Colors.amber)),
                                       style: TextButton.styleFrom(
                                         backgroundColor: Colors.amber[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
                                         minimumSize: Size.zero,
                                       ),
                                     ),
 
-                                  const SizedBox(width: 8), // Consistent spacing
+                                  const SizedBox(
+                                      width: 8), // Consistent spacing
 
                                   // Left button (last in RTL)
-                                  if (effectiveStatus == ConstraintStatus.pending)
+                                  if (effectiveStatus ==
+                                      ConstraintStatus.pending)
                                     // Pending: Left = Reject
                                     TextButton.icon(
-                                      onPressed: () => _rejectConstraint(constraint.id),
-                                      icon: const Icon(Icons.cancel, color: Colors.red, size: 18),
-                                      label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                                      onPressed: () =>
+                                          _rejectConstraint(constraint.id),
+                                      icon: const Icon(Icons.cancel,
+                                          color: Colors.red, size: 18),
+                                      label: const Text('דחה',
+                                          style: TextStyle(color: Colors.red)),
                                       style: TextButton.styleFrom(
                                         backgroundColor: Colors.red[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
                                         minimumSize: Size.zero,
                                       ),
                                     )
-                                  else if (effectiveStatus == ConstraintStatus.approved)
+                                  else if (effectiveStatus ==
+                                      ConstraintStatus.approved)
                                     // Approved: Left = Reject
                                     TextButton.icon(
-                                      onPressed: () => _rejectConstraint(constraint.id),
-                                      icon: const Icon(Icons.cancel, color: Colors.red, size: 18),
-                                      label: const Text('דחה', style: TextStyle(color: Colors.red)),
+                                      onPressed: () =>
+                                          _rejectConstraint(constraint.id),
+                                      icon: const Icon(Icons.cancel,
+                                          color: Colors.red, size: 18),
+                                      label: const Text('דחה',
+                                          style: TextStyle(color: Colors.red)),
                                       style: TextButton.styleFrom(
                                         backgroundColor: Colors.red[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
                                         minimumSize: Size.zero,
                                       ),
                                     )
                                   else // Rejected: Left = Accept
                                     TextButton.icon(
-                                      onPressed: () => _approveConstraint(constraint.id),
-                                      icon: const Icon(Icons.check_circle, color: Colors.green, size: 18),
-                                      label: const Text('אשר', style: TextStyle(color: Colors.green)),
+                                      onPressed: () =>
+                                          _approveConstraint(constraint),
+                                      icon: const Icon(Icons.check_circle,
+                                          color: Colors.green, size: 18),
+                                      label: const Text('אשר',
+                                          style:
+                                              TextStyle(color: Colors.green)),
                                       style: TextButton.styleFrom(
                                         backgroundColor: Colors.green[50],
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
                                         minimumSize: Size.zero,
                                       ),
                                     ),
@@ -3923,7 +4503,8 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
 
                                   // Edit button
                                   IconButton(
-                                    onPressed: () => _editConstraint(constraint),
+                                    onPressed: () =>
+                                        _editConstraint(constraint),
                                     icon: const Icon(Icons.edit, size: 18),
                                     color: Colors.blue,
                                     tooltip: 'ערוך',
@@ -3935,7 +4516,8 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
 
                                   // Delete button
                                   IconButton(
-                                    onPressed: () => _deleteConstraint(constraint),
+                                    onPressed: () =>
+                                        _deleteConstraint(constraint),
                                     icon: const Icon(Icons.delete, size: 18),
                                     color: Colors.red,
                                     tooltip: 'מחק',
@@ -3951,16 +4533,16 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
                     },
                   ),
                 ),
-              ],
-            ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('סגור'),
-            ),
-          ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('סגור'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3975,9 +4557,26 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
       ..sort((a, b) => a.startDate.compareTo(b.startDate));
   }
 
-  void _approveConstraint(String constraintId) {
+  Future<void> _approveConstraint(DateConstraint constraint) async {
+    final events = await _loadEventsForConstraintWarnings(context);
+    if (!mounted) return;
+
+    final shouldProceed = await _confirmConstraintOverlapWarning(
+      context: context,
+      constraint: constraint.copyWith(status: ConstraintStatus.approved),
+      events: events,
+      title: 'אזהרה לפני אישור מגבלה',
+      message: 'שים לב: במועדים הללו קיימים אירועים:',
+      confirmText: 'אשר בכל זאת',
+      showMissingTimeNote: true,
+    );
+
+    if (!shouldProceed || !mounted) {
+      return;
+    }
+
     // Call parent callback to update LocalConstraintManager
-    widget.onApproveConstraint(constraintId);
+    widget.onApproveConstraint(constraint.id);
     setState(() {}); // Refresh dialog
   }
 
@@ -4027,7 +4626,8 @@ class _RejectedConstraintsDialogState extends State<_RejectedConstraintsDialog> 
       context: context,
       builder: (context) => _AdminConstraintDialog(
         constraint: constraint,
-        isPermanent: true, // Rejected constraints dialog is for permanent members only
+        isPermanent:
+            true, // Rejected constraints dialog is for permanent members only
       ),
     );
 
@@ -4230,7 +4830,8 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
               DropdownButtonFormField<int>(
                 value: _selectedYear,
                 decoration: _buildFieldDecoration('שנה', _selectedYear),
-                items: List.generate(widget.maxYear - widget.minYear + 1, (index) {
+                items:
+                    List.generate(widget.maxYear - widget.minYear + 1, (index) {
                   final year = widget.maxYear - index;
                   return DropdownMenuItem(
                     value: year,
@@ -4251,7 +4852,9 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
                   style: TextStyle(color: Colors.red, fontSize: 13),
                 ),
               ],
-              if (_selectedDay != null || _selectedMonth != null || _selectedYear != null) ...[
+              if (_selectedDay != null ||
+                  _selectedMonth != null ||
+                  _selectedYear != null) ...[
                 const SizedBox(height: 12),
                 TextButton.icon(
                   onPressed: () {
@@ -4264,7 +4867,8 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
                     });
                   },
                   icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                  label: const Text('נקה תאריך', style: TextStyle(color: Colors.red)),
+                  label: const Text('נקה תאריך',
+                      style: TextStyle(color: Colors.red)),
                 ),
               ],
             ],
@@ -4276,20 +4880,22 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: _isDirty ? () {
-              // Validate: either all fields filled or all empty
-              if (_hasPartialSelection) {
-                setState(() {
-                  _showValidationErrors = true;
-                });
-                return;
-              }
-              Navigator.of(context).pop({
-                'day': _selectedDay,
-                'month': _selectedMonth,
-                'year': _selectedYear,
-              });
-            } : null,
+            onPressed: _isDirty
+                ? () {
+                    // Validate: either all fields filled or all empty
+                    if (_hasPartialSelection) {
+                      setState(() {
+                        _showValidationErrors = true;
+                      });
+                      return;
+                    }
+                    Navigator.of(context).pop({
+                      'day': _selectedDay,
+                      'month': _selectedMonth,
+                      'year': _selectedYear,
+                    });
+                  }
+                : null,
             child: const Text('שמור'),
           ),
         ],
@@ -4311,7 +4917,8 @@ class _VehicleInfoDialog extends StatefulWidget {
 }
 
 class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
-  final TextEditingController _vehicleNumberController = TextEditingController();
+  final TextEditingController _vehicleNumberController =
+      TextEditingController();
   final TextEditingController _colorController = TextEditingController();
   final TextEditingController _modelController = TextEditingController();
   late final FocusNode _modelFocusNode;
@@ -4334,7 +4941,8 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
   }
 
   void _initializeFields() {
-    if (widget.initialVehicleInfo != null && widget.initialVehicleInfo!.isComplete) {
+    if (widget.initialVehicleInfo != null &&
+        widget.initialVehicleInfo!.isComplete) {
       _vehicleNumberController.text = widget.initialVehicleInfo!.vehicleNumber;
       _selectedManufacturer = widget.initialVehicleInfo!.manufacturer;
       _modelController.text = widget.initialVehicleInfo!.model;
@@ -4374,14 +4982,19 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
     final color = _colorController.text.trim();
 
     // If all empty, return null (clear vehicle info)
-    if (number.isEmpty && (manufacturer == null || manufacturer.isEmpty) &&
-        model.isEmpty && color.isEmpty) {
+    if (number.isEmpty &&
+        (manufacturer == null || manufacturer.isEmpty) &&
+        model.isEmpty &&
+        color.isEmpty) {
       return null;
     }
 
     // All fields must be filled
-    if (number.isEmpty || manufacturer == null || manufacturer.isEmpty ||
-        model.isEmpty || color.isEmpty) {
+    if (number.isEmpty ||
+        manufacturer == null ||
+        manufacturer.isEmpty ||
+        model.isEmpty ||
+        color.isEmpty) {
       return null;
     }
 
@@ -4432,9 +5045,10 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
                   labelText: 'מספר רכב',
                   hintText: '7-8 ספרות',
                   prefixIcon: const Icon(Icons.numbers),
-                  errorText: _showValidationErrors && _vehicleNumberError != null
-                      ? _vehicleNumberError
-                      : null,
+                  errorText:
+                      _showValidationErrors && _vehicleNumberError != null
+                          ? _vehicleNumberError
+                          : null,
                   border: const OutlineInputBorder(),
                 ),
                 onChanged: (value) {
@@ -4548,7 +5162,8 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
                     });
                   },
                   icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                  label: const Text('נקה פרטים', style: TextStyle(color: Colors.red)),
+                  label: const Text('נקה פרטים',
+                      style: TextStyle(color: Colors.red)),
                 ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),

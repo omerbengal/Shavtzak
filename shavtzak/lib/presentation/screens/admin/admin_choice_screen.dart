@@ -99,7 +99,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
 
                   // Determine if we need compact mode based on available height
                   final isCompact = cardCount > 2 && screenHeight < 600;
-                  final cardSpacing = isCompact ? 12.0 : (cardCount > 2 ? 16.0 : 24.0);
+                  final cardSpacing = isCompact ? 8.0 : (cardCount > 2 ? 12.0 : 16.0);
 
                   return Center(
                     child: SingleChildScrollView(
@@ -321,9 +321,9 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                   icon: const Icon(Icons.calendar_month),
                   tooltip: 'הגדרות יומן גוגל',
                   onPressed: () => _showGoogleCalendarSettingsDialog(context),
-                  iconSize: 24,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+                  iconSize: 22,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
                 ),
               ],
               // Export buttons (admin only, when Drive is initialized)
@@ -333,27 +333,27 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                   icon: const Icon(Icons.storage),
                   tooltip: 'ייצוא בסיס נתונים',
                   onPressed: () => _showFullExportDialog(context),
-                  iconSize: 24,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+                  iconSize: 22,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
                 ),
                 // Assignments-only export button (cloud icon)
                 IconButton(
                   icon: const Icon(Icons.cloud),
                   tooltip: 'ייצוא שיבוצים',
                   onPressed: () => _showAssignmentsExportDialog(context),
-                  iconSize: 24,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+                  iconSize: 22,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
                 ),
               ],
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתקות',
                 onPressed: () => _showLogoutDialog(context),
-                iconSize: 24,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
               ),
             ],
           );
@@ -725,132 +725,174 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                   ],
                 ),
                 actions: [
-                  // Refresh status button (always visible)
-                  TextButton.icon(
-                    onPressed: () => setState(() {}),
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text('רענן סטטוס'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: const Text('סגירה'),
-                  ),
-                  if (isConnected)
-                    TextButton(
-                      onPressed: () async {
-                        // Close main dialog first
-                        Navigator.of(dialogContext).pop();
-
-                        // Show loading indicator with context capture
-                        BuildContext? loadingContext;
-                        showDialog(
-                          context: context,
-                          barrierDismissible: false,
-                          builder: (ctx) {
-                            loadingContext = ctx;
-                            return Directionality(
-                              textDirection: TextDirection.rtl,
-                              child: const AlertDialog(
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    CircularProgressIndicator(),
-                                    SizedBox(height: 16),
-                                    Text('מתנתק...'),
-                                  ],
-                                ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 52,
+                            child: TextButton(
+                              onPressed: () => setState(() {}),
+                              child: const Text(
+                                'רענן סטטוס',
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                            );
-                          },
-                        );
-
-                        // Sign out with error handling
-                        try {
-                          await oauthService.signOut().timeout(
-                            const Duration(seconds: 30),
-                          );
-                        } catch (e) {
-                          // Ignore sign-out errors
-                        }
-
-                        // Close loading dialog using captured context
-                        if (loadingContext != null && loadingContext!.mounted) {
-                          Navigator.of(loadingContext!).pop();
-                        }
-
-                        // Show success dialog
-                        if (context.mounted) {
-                          _showDisconnectSuccessDialog(context);
-                        }
-                      },
-                      child: const Text(
-                        'התנתק',
-                        style: TextStyle(color: Colors.red),
-                      ),
-                    ),
-                  if (!isConnected)
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        // Close main dialog first
-                        Navigator.of(dialogContext).pop();
-
-                        // Show loading indicator with context capture
-                        BuildContext? loadingContext;
-                        showDialog(
-                          context: context,
-                          barrierDismissible: false,
-                          builder: (ctx) {
-                            loadingContext = ctx;
-                            return Directionality(
-                              textDirection: TextDirection.rtl,
-                              child: const AlertDialog(
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    CircularProgressIndicator(),
-                                    SizedBox(height: 16),
-                                    Text('מתחבר ליומן גוגל...'),
-                                  ],
-                                ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: SizedBox(
+                            height: 52,
+                            child: TextButton(
+                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              child: const Text(
+                                'סגירה',
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                            );
-                          },
-                        );
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: SizedBox(
+                            height: 52,
+                            child: isConnected
+                                ? TextButton(
+                                    onPressed: () async {
+                                      // Close main dialog first
+                                      Navigator.of(dialogContext).pop();
 
-                        // Attempt sign in with error handling
-                        bool success = false;
-                        try {
-                          success = await oauthService.signIn().timeout(
-                            const Duration(seconds: 60),
-                            onTimeout: () {
-                              return false;
-                            },
-                          );
-                        } catch (e) {
-                          success = false;
-                        }
+                                      // Show loading indicator with context capture
+                                      BuildContext? loadingContext;
+                                      showDialog(
+                                        context: context,
+                                        barrierDismissible: false,
+                                        builder: (ctx) {
+                                          loadingContext = ctx;
+                                          return Directionality(
+                                            textDirection: TextDirection.rtl,
+                                            child: const AlertDialog(
+                                              content: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  CircularProgressIndicator(),
+                                                  SizedBox(height: 16),
+                                                  Text('מתנתק...'),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      );
 
-                        // Close loading dialog using captured context
-                        if (loadingContext != null && loadingContext!.mounted) {
-                          Navigator.of(loadingContext!).pop();
-                        }
+                                      // Sign out with error handling
+                                      try {
+                                        await oauthService.signOut().timeout(
+                                          const Duration(seconds: 30),
+                                        );
+                                      } catch (e) {
+                                        // Ignore sign-out errors
+                                      }
 
-                        // Show result dialog
-                        if (context.mounted) {
-                          if (success) {
-                            _showConnectSuccessDialog(context);
-                          } else {
-                            _showConnectErrorDialog(context);
-                          }
-                        }
-                      },
-                      icon: const Icon(Icons.login, size: 18),
-                      label: const Text('התחבר ליומן גוגל'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                      ),
+                                      // Close loading dialog using captured context
+                                      if (loadingContext != null &&
+                                          loadingContext!.mounted) {
+                                        Navigator.of(loadingContext!).pop();
+                                      }
+
+                                      // Show success dialog
+                                      if (context.mounted) {
+                                        _showDisconnectSuccessDialog(context);
+                                      }
+                                    },
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.red,
+                                    ),
+                                    child: const Text(
+                                      'התנתק',
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  )
+                                : ElevatedButton(
+                                    onPressed: () async {
+                                      // Close main dialog first
+                                      Navigator.of(dialogContext).pop();
+
+                                      // Show loading indicator with context capture
+                                      BuildContext? loadingContext;
+                                      showDialog(
+                                        context: context,
+                                        barrierDismissible: false,
+                                        builder: (ctx) {
+                                          loadingContext = ctx;
+                                          return Directionality(
+                                            textDirection: TextDirection.rtl,
+                                            child: const AlertDialog(
+                                              content: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  CircularProgressIndicator(),
+                                                  SizedBox(height: 16),
+                                                  Text('מתחבר ליומן גוגל...'),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      );
+
+                                      // Attempt sign in with error handling
+                                      bool success = false;
+                                      try {
+                                        success = await oauthService.signIn().timeout(
+                                          const Duration(seconds: 60),
+                                          onTimeout: () {
+                                            return false;
+                                          },
+                                        );
+                                      } catch (e) {
+                                        success = false;
+                                      }
+
+                                      // Close loading dialog using captured context
+                                      if (loadingContext != null &&
+                                          loadingContext!.mounted) {
+                                        Navigator.of(loadingContext!).pop();
+                                      }
+
+                                      // Show result dialog
+                                      if (context.mounted) {
+                                        if (success) {
+                                          _showConnectSuccessDialog(context);
+                                        } else {
+                                          _showConnectErrorDialog(context);
+                                        }
+                                      }
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.blue,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: const Text(
+                                      'התחבר ליומן גוגל',
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
                     ),
+                  ),
                 ],
               );
             },

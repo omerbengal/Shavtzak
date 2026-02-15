@@ -23,9 +23,8 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     this._calendarSyncBloc, [
     TeamMember? preAuthenticatedUser,
   ]) : super(preAuthenticatedUser != null
-      ? UserAuthenticated(preAuthenticatedUser)
-      : const UserSelectionInitial()) {
-
+            ? UserAuthenticated(preAuthenticatedUser)
+            : const UserSelectionInitial()) {
     on<CheckCachedUser>(_onCheckCachedUser);
     on<SelectUser>(_onSelectUser);
     on<SearchTeamMembers>(_onSearchTeamMembers);
@@ -38,7 +37,8 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     on<UpdateEmail>(_onUpdateEmail);
 
     // Listen to team member changes and refresh current user if needed
-    _teamStreamSubscription = _teamRepository.watchTeamMembers().listen((teamMembers) {
+    _teamStreamSubscription =
+        _teamRepository.watchTeamMembers().listen((teamMembers) {
       final currentState = state;
       if (currentState is UserAuthenticated) {
         // Find if current user was updated
@@ -47,8 +47,9 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
           orElse: () => currentState.user,
         );
 
-        // Check if any user data changed
-        if (updatedUser != currentState.user) {
+        // Avoid shell-level rebuilds for constraint-only or profile-noncritical updates.
+        // Constraint data is consumed from TeamBloc in user/admin screens.
+        if (_hasAuthRelevantUserChanges(updatedUser, currentState.user)) {
           developer.log(
             'team stream detected user change for ${updatedUser.id} -> emitting UserAuthenticated',
             name: 'UserSelectionBloc',
@@ -74,6 +75,20 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     return super.close();
   }
 
+  bool _hasAuthRelevantUserChanges(TeamMember next, TeamMember current) {
+    // Only fields that affect auth, routing, passcode gating, or primary shell identity.
+    return next.id != current.id ||
+        next.uniqueKey != current.uniqueKey ||
+        next.isAdmin != current.isAdmin ||
+        next.canAccessSummaryScreen != current.canAccessSummaryScreen ||
+        next.isPermanent != current.isPermanent ||
+        next.isActive != current.isActive ||
+        next.isArchived != current.isArchived ||
+        next.passcode != current.passcode ||
+        next.passcodeLength != current.passcodeLength ||
+        next.name != current.name;
+  }
+
   /// Check if user is already cached and authenticate them
   Future<void> _onCheckCachedUser(
     CheckCachedUser event,
@@ -90,7 +105,8 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
       }
 
       // Validate cached user exists and is valid
-      final isValid = await _userSelectionRepository.validateUserSelection(cachedUser.uniqueKey);
+      final isValid = await _userSelectionRepository
+          .validateUserSelection(cachedUser.uniqueKey);
 
       if (isValid) {
         emit(UserAuthenticated(cachedUser));
@@ -127,7 +143,8 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     Emitter<UserSelectionState> emit,
   ) async {
     try {
-      final teamMembers = await _userSelectionRepository.searchTeamMembers(event.query);
+      final teamMembers =
+          await _userSelectionRepository.searchTeamMembers(event.query);
       emit(TeamMembersLoaded(teamMembers, searchQuery: event.query));
     } catch (e) {
       emit(UserSelectionError('שגיאה בחיפוש חברי צוות: $e'));
@@ -184,7 +201,8 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
           // User is still valid, get updated data
           final allMembers = await _userSelectionRepository.getAllTeamMembers();
           final refreshedUser = allMembers
-              .where((member) => member.uniqueKey == currentState.user.uniqueKey)
+              .where(
+                  (member) => member.uniqueKey == currentState.user.uniqueKey)
               .firstOrNull;
 
           if (refreshedUser != null) {

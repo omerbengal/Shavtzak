@@ -22,6 +22,12 @@ class DualCalendarDatePicker extends StatefulWidget {
   /// Minimum selectable date (optional)
   final DateTime? minDate;
 
+  /// Optional dates to render with a red frame (typically dates that contain events)
+  final Set<DateTime> highlightedDates;
+
+  /// Border color for highlighted dates
+  final Color highlightedBorderColor;
+
   const DualCalendarDatePicker({
     super.key,
     required this.isSingleDate,
@@ -29,6 +35,8 @@ class DualCalendarDatePicker extends StatefulWidget {
     this.initialEndDate,
     required this.title,
     this.minDate,
+    this.highlightedDates = const {},
+    this.highlightedBorderColor = Colors.red,
   });
 
   @override
@@ -39,13 +47,17 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
   List<DateTime?> _selectedDates = [];
   String? _errorMessage;
 
+  DateTime _normalizeDate(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
+
   @override
   void initState() {
     super.initState();
 
     // Initialize selected dates based on mode and initial values
     if (widget.isSingleDate) {
-      _selectedDates = widget.initialStartDate != null ? [widget.initialStartDate] : [];
+      _selectedDates =
+          widget.initialStartDate != null ? [widget.initialStartDate] : [];
     } else {
       // For range mode, initialize with both dates if available
       if (widget.initialStartDate != null && widget.initialEndDate != null) {
@@ -115,9 +127,10 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
         ? (screenWidth < 360 ? screenWidth * 0.95 : screenWidth * 0.9)
         : 700.0;
 
-    final horizontalPadding = isMobile
-        ? (screenWidth < 360 ? 8.0 : 12.0)
-        : 24.0;
+    final horizontalPadding =
+        isMobile ? (screenWidth < 360 ? 8.0 : 12.0) : 24.0;
+    final normalizedHighlightedDates =
+        widget.highlightedDates.map(_normalizeDate).toSet();
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -152,13 +165,15 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.calendar_today, size: 16, color: Colors.blue.shade700),
+                      Icon(Icons.calendar_today,
+                          size: 16, color: Colors.blue.shade700),
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
                           widget.isSingleDate
                               ? _formatDate(_selectedDates.first!)
-                              : _selectedDates.length > 1 && _selectedDates[1] != null
+                              : _selectedDates.length > 1 &&
+                                      _selectedDates[1] != null
                                   ? '${_formatDate(_selectedDates.first!)} - ${_formatDate(_selectedDates[1]!)}'
                                   : 'מ-${_formatDate(_selectedDates.first!)} (בחר תאריך סיום)',
                           style: TextStyle(
@@ -174,6 +189,35 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                     ],
                   ),
                 ),
+
+              if (normalizedHighlightedDates.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: widget.highlightedBorderColor,
+                          width: 1.6,
+                        ),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'מסגרת אדומה = יש אירוע בתאריך זה',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
 
               const SizedBox(height: 16),
 
@@ -204,7 +248,15 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                             ? CalendarDatePicker2Type.single
                             : CalendarDatePicker2Type.range,
                         selectedDayHighlightColor: Colors.blue,
-                        weekdayLabels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+                        weekdayLabels: [
+                          'Sun',
+                          'Mon',
+                          'Tue',
+                          'Wed',
+                          'Thu',
+                          'Fri',
+                          'Sat'
+                        ],
                         weekdayLabelTextStyle: TextStyle(
                           color: Colors.black87,
                           fontWeight: FontWeight.bold,
@@ -231,8 +283,40 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                         // Set the current date to initially display
                         currentDate: widget.minDate ?? DateTime.now(),
                         selectableDayPredicate: widget.minDate != null
-          ? (day) => !day.isBefore(widget.minDate!)
-          : (day) => true,
+                            ? (day) => !day.isBefore(widget.minDate!)
+                            : (day) => true,
+                        dayBuilder: ({
+                          required date,
+                          textStyle,
+                          decoration,
+                          isSelected,
+                          isDisabled,
+                          isToday,
+                        }) {
+                          final normalized = _normalizeDate(date);
+                          final isHighlighted =
+                              normalizedHighlightedDates.contains(normalized);
+
+                          return Container(
+                            decoration: isHighlighted
+                                ? BoxDecoration(
+                                    border: Border.all(
+                                      color: widget.highlightedBorderColor,
+                                      width: 1.6,
+                                    ),
+                                    borderRadius: BorderRadius.circular(999),
+                                  )
+                                : null,
+                            child: Container(
+                              decoration: decoration,
+                              alignment: Alignment.center,
+                              child: Text(
+                                '${date.day}',
+                                style: textStyle,
+                              ),
+                            ),
+                          );
+                        },
                         lastMonthIcon: Icon(
                           Icons.chevron_left,
                           size: isMobile ? 18 : 24,

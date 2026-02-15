@@ -717,6 +717,11 @@ lib/
 **Issue**: Constraint not working as expected
 - **Solution**: Verify team member isPermanent field, check constraint type (unavailability vs availability)
 
+**Issue**: Screen appears to "rebuild" with a brief white flash after pressing save in a dialog
+- **Likely Cause**: A save dialog renders a full-screen `LoadingOverlay` (`Colors.white.withOpacity(...)`) right before closing, which looks like a full app rebuild.
+- **Solution**: Do not show a white full-screen overlay on save for short local operations. Prefer closing the dialog immediately after dispatching the action, and rely on real-time stream updates + snackbar feedback.
+- **Additional Check**: If a real rebuild is suspected, verify that `UserSelectionBloc` is not emitting `UserAuthenticated` for non-auth-relevant changes (e.g., constraints-only updates), and ensure `/user/*` widgets use scoped `buildWhen` / `BlocSelector` to avoid unrelated rebuilds.
+
 ## Best Practices Summary
 
 1. **Always use RTL**: Wrap screens with `Directionality(textDirection: TextDirection.rtl)`

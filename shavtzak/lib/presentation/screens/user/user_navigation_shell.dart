@@ -38,7 +38,8 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
   void _checkAndShowPasscodeDialog(BuildContext context) {
     final state = context.read<UserSelectionBloc>().state;
     if (state is UserAuthenticated) {
-      final hasPasscode = state.user.passcode != null && state.user.passcode!.isNotEmpty;
+      final hasPasscode =
+          state.user.passcode != null && state.user.passcode!.isNotEmpty;
       if (!hasPasscode) {
         final cacheService = UserCacheService();
         if (!cacheService.hasPasscodeDialogBeenShownThisSession()) {
@@ -61,7 +62,9 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
     final currentIndex = widget.navigationShell.currentIndex;
 
     // Check if we just navigated to the constraints page (index 1)
-    if (_previousIndex != null && _previousIndex != currentIndex && currentIndex == 1) {
+    if (_previousIndex != null &&
+        _previousIndex != currentIndex &&
+        currentIndex == 1) {
       // Just navigated to constraints page
       WidgetsBinding.instance.addPostFrameCallback((_) {
         onConstraintsPageVisible?.call();
