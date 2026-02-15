@@ -243,6 +243,27 @@ class UserSelectionRepository {
       throw UserSelectionException('Failed to update vehicle info: $e');
     }
   }
+
+  /// Update email for a team member
+  Future<void> updateTeamMemberEmail(String uniqueKey, String? email) async {
+    try {
+      final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
+      if (teamMember == null) {
+        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+      }
+
+      final updatedMember = teamMember.copyWith(
+        email: email,
+        clearEmail: email == null,
+        updatedAt: DateTime.now(),
+      );
+
+      await _database.updateTeamMember(updatedMember);
+    } catch (e) {
+      if (e is UserSelectionException) rethrow;
+      throw UserSelectionException('Failed to update email: $e');
+    }
+  }
 }
 
 /// Custom exception for user selection errors

@@ -69,13 +69,6 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
           final active = categories.where((c) => !c.isArchived).toList();
           final archived = categories.where((c) => c.isArchived).toList();
 
-          if (kDebugMode) {
-            developer.log(
-              'CategoryBloc: Categories updated - ${categories.length} total, ${active.length} active, ${archived.length} archived',
-              name: 'CategoryBloc',
-            );
-          }
-
           return CategoriesLoaded(
             activeCategories: active,
             archivedCategories: archived,

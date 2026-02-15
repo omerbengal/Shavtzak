@@ -862,27 +862,16 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// Handle dismissing a slot - removes role slot from event (reduces capacity)
   /// If the slot is filled, also deletes the assignment
   Future<void> _handleSlotDismiss(AssignmentSlot slot) async {
-    print('🗑️ [DELETE_DEBUG] _handleSlotDismiss START');
-    print('  Event: ${slot.event.name}');
-    print('  Role: ${slot.role.hebrewName}');
-    print('  Slot Index: ${slot.slotIndex}');
-    print('  Is Filled: ${slot.isFilled}');
-    print('  Assignment ID: ${slot.currentAssignment?.id ?? "none"}');
-
     try {
       final assignmentRepo = context.read<AssignmentRepository>();
       final eventBloc = context.read<EventBloc>();
 
       // Step 1: Delete the assignment if it exists (filled slot)
       if (slot.currentAssignment != null) {
-        print('  💾 Deleting assignment from DB...');
         await assignmentRepo.deleteAssignment(slot.currentAssignment!.id);
 
         // CRITICAL: Clear the cache to prevent stale data
-        print('  🧹 Clearing repository cache...');
         assignmentRepo.clearCache();
-        print('  ✅ Assignment deleted and cache cleared');
-        print('  🔄 Real-time stream should trigger automatically...');
       }
 
       // Step 2: Get all remaining assignments for this event and role

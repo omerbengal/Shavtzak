@@ -32,52 +32,36 @@ class FirestoreDatabase implements DatabaseInterface {
 
   // Collection names with environment prefix
   String get _teamMembersCollection {
-    final collection = '${EnvironmentService.instance.collectionPrefix}teamMembers';
-    developer.log('FirestoreDatabase._teamMembersCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
-    return collection;
+    return '${EnvironmentService.instance.collectionPrefix}teamMembers';
   }
 
   String get _eventsCollection {
-    final collection = '${EnvironmentService.instance.collectionPrefix}events';
-    developer.log('FirestoreDatabase._eventsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
-    return collection;
+    return '${EnvironmentService.instance.collectionPrefix}events';
   }
 
   String get _assignmentsCollection {
-    final collection = '${EnvironmentService.instance.collectionPrefix}assignments';
-    developer.log('FirestoreDatabase._assignmentsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
-    return collection;
+    return '${EnvironmentService.instance.collectionPrefix}assignments';
   }
 
   String get _calendarSyncCollection {
-    final collection = '${EnvironmentService.instance.collectionPrefix}calendar_sync';
-    developer.log('FirestoreDatabase._calendarSyncCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
-    return collection;
+    return '${EnvironmentService.instance.collectionPrefix}calendar_sync';
   }
 
   String get _eventCalendarSyncCollection {
-    final collection = '${EnvironmentService.instance.collectionPrefix}event_calendar_sync';
-    developer.log('FirestoreDatabase._eventCalendarSyncCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
-    return collection;
+    return '${EnvironmentService.instance.collectionPrefix}event_calendar_sync';
   }
 
   String get _checklistItemsCollection {
-    final collection = '${EnvironmentService.instance.collectionPrefix}checklist_items';
-    developer.log('FirestoreDatabase._checklistItemsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
-    return collection;
+    return '${EnvironmentService.instance.collectionPrefix}checklist_items';
   }
 
   String get _presetsCollection {
-    final collection = '${EnvironmentService.instance.collectionPrefix}checklist_presets';
-    developer.log('FirestoreDatabase._presetsCollection: instance=$_instanceId, collection=$collection', name: 'Firestore');
-    return collection;
+    return '${EnvironmentService.instance.collectionPrefix}checklist_presets';
   }
 
   FirestoreDatabase({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance,
-        _instanceId = DateTime.now().millisecondsSinceEpoch.toString() {
-    developer.log('FirestoreDatabase.constructor: instance=$_instanceId created', name: 'Firestore');
-  }
+        _instanceId = DateTime.now().millisecondsSinceEpoch.toString();
 
   @override
   Future<void> initialize() async {
@@ -112,16 +96,11 @@ class FirestoreDatabase implements DatabaseInterface {
 
   /// Watch team members in real-time
   Stream<List<TeamMember>> watchTeamMembers() {
-    final collection = _teamMembersCollection;
-    developer.log('FirestoreDatabase.watchTeamMembers: instance=$_instanceId, creating stream for collection=$collection', name: 'Firestore');
-
     return _firestore
-        .collection(collection)
+        .collection(_teamMembersCollection)
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
-      final count = snapshot.docs.length;
-      developer.log('FirestoreDatabase.watchTeamMembers: instance=$_instanceId, received snapshot with $count documents from $collection', name: 'Firestore');
       return snapshot.docs
           .map((doc) => TeamMemberModel.fromFirestore(doc).toEntity())
           .toList();
@@ -967,12 +946,18 @@ class FirestoreDatabase implements DatabaseInterface {
       final latestValues = <List<Assignment>>[];
       final receivedCount = <int>{};
 
+      // Track subscriptions so we can cancel them
+      final subscriptions = <StreamSubscription>[];
+
       // Subscribe to each stream
       for (int i = 0; i < allStreams.length; i++) {
         final stream = allStreams[i];
         final index = i; // Capture for closure
-        stream.listen(
+        final subscription = stream.listen(
           (data) {
+            // Don't add to closed controller
+            if (controller.isClosed) return;
+
             // Replace old value at this index instead of appending
             while (latestValues.length <= index) {
               latestValues.add([]);
@@ -992,14 +977,19 @@ class FirestoreDatabase implements DatabaseInterface {
             controller.add(combined);
           },
           onError: (error) {
-            controller.addError(error);
+            if (!controller.isClosed) {
+              controller.addError(error);
+            }
           },
         );
+        subscriptions.add(subscription);
       }
 
-      // Close controller and cancel subscriptions when done
+      // Cancel subscriptions when stream is canceled
       controller.onCancel = () async {
-        await controller.close();
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
       };
 
       // Emit the merged stream
@@ -1051,12 +1041,9 @@ class FirestoreDatabase implements DatabaseInterface {
 
   @override
   Future<void> deleteAssignment(String id) async {
-    print('🗑️ [FIRESTORE_DB] Deleting assignment: $id');
     try {
       await _firestore.collection(_assignmentsCollection).doc(id).delete();
-      print('✅ [FIRESTORE_DB] Assignment deleted successfully - Firestore stream should fire');
     } catch (e) {
-      print('❌ [FIRESTORE_DB] Failed to delete assignment: $e');
       throw DatabaseException('Failed to delete assignment: $e');
     }
   }
@@ -2014,7 +2001,6 @@ class FirestoreDatabase implements DatabaseInterface {
       }
 
       await batch.commit();
-      developer.log('FirestoreDatabase.loadPresetIntoEvent: Loaded ${preset.items.length} items from preset "${preset.name}" into event $eventId', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to load preset into event: $e');
     }
@@ -2048,7 +2034,6 @@ class FirestoreDatabase implements DatabaseInterface {
       // Sort by sortOrder
       roles.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
-      developer.log('FirestoreDatabase.getRoles: Retrieved ${roles.length} roles', name: 'Firestore');
       return roles;
     } catch (e) {
       throw DatabaseException('Failed to get roles: $e');
@@ -2104,7 +2089,6 @@ class FirestoreDatabase implements DatabaseInterface {
         });
       }
 
-      developer.log('FirestoreDatabase.insertRole: Inserted role "${role.hebrewName}" (${role.key})', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to insert role: $e');
     }
@@ -2131,7 +2115,6 @@ class FirestoreDatabase implements DatabaseInterface {
         'Roles': rolesData,
       });
 
-      developer.log('FirestoreDatabase.updateRole: Updated role "${role.hebrewName}" (${role.key})', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to update role: $e');
     }
@@ -2151,7 +2134,6 @@ class FirestoreDatabase implements DatabaseInterface {
       );
 
       await updateRole(updatedRole);
-      developer.log('FirestoreDatabase.archiveRole: Archived role $id', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to archive role: $e');
     }
@@ -2172,7 +2154,6 @@ class FirestoreDatabase implements DatabaseInterface {
       );
 
       await updateRole(updatedRole);
-      developer.log('FirestoreDatabase.restoreRole: Restored role $id', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to restore role: $e');
     }
@@ -2209,7 +2190,6 @@ class FirestoreDatabase implements DatabaseInterface {
       // Update the entire array
       await docRef.update({'Roles': updatedRolesData});
 
-      developer.log('FirestoreDatabase.deleteRole: Permanently deleted role $id', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to delete role: $e');
     }
@@ -2290,7 +2270,6 @@ class FirestoreDatabase implements DatabaseInterface {
         'Roles': rolesData,
       }, SetOptions(merge: true));
 
-      developer.log('FirestoreDatabase.seedRolesFromEnum: Seeded ${RoleType.values.length} roles', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to seed roles from enum: $e');
     }
@@ -2320,7 +2299,6 @@ class FirestoreDatabase implements DatabaseInterface {
         'Roles': rolesData,
       });
 
-      developer.log('FirestoreDatabase.updateRolesSortOrder: Updated sort order for ${roleIdToSortOrder.length} roles', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to update roles sort order: $e');
     }
@@ -2354,7 +2332,6 @@ class FirestoreDatabase implements DatabaseInterface {
       // Sort by sortOrder
       categories.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
-      developer.log('FirestoreDatabase.getCategories: Retrieved ${categories.length} categories', name: 'Firestore');
       return categories;
     } catch (e) {
       throw DatabaseException('Failed to get categories: $e');
@@ -2366,7 +2343,6 @@ class FirestoreDatabase implements DatabaseInterface {
     try {
       final allCategories = await getCategories();
       final activeCategories = allCategories.where((cat) => !cat.isArchived).toList();
-      developer.log('FirestoreDatabase.getActiveCategories: Retrieved ${activeCategories.length} active categories', name: 'Firestore');
       return activeCategories;
     } catch (e) {
       throw DatabaseException('Failed to get active categories: $e');
@@ -2415,7 +2391,6 @@ class FirestoreDatabase implements DatabaseInterface {
         'Categories': categoriesData,
       }, SetOptions(merge: true));
 
-      developer.log('FirestoreDatabase.insertCategory: Inserted category "${category.name}"', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to insert category: $e');
     }
@@ -2443,7 +2418,6 @@ class FirestoreDatabase implements DatabaseInterface {
         'Categories': categoriesData,
       }, SetOptions(merge: true));
 
-      developer.log('FirestoreDatabase.updateCategory: Updated category "${category.name}"', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to update category: $e');
     }
@@ -2486,7 +2460,6 @@ class FirestoreDatabase implements DatabaseInterface {
         'Categories': updatedCategoriesData,
       }, SetOptions(merge: true));
 
-      developer.log('FirestoreDatabase.deleteCategory: Soft deleted category $id', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to delete category: $e');
     }
@@ -2519,7 +2492,6 @@ class FirestoreDatabase implements DatabaseInterface {
         'Categories': updatedCategories,
       }, SetOptions(merge: true));
 
-      developer.log('FirestoreDatabase.permanentlyDeleteCategory: Permanently deleted category $id', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to permanently delete category: $e');
     }
@@ -2562,7 +2534,6 @@ class FirestoreDatabase implements DatabaseInterface {
         'Categories': updatedCategoriesData,
       }, SetOptions(merge: true));
 
-      developer.log('FirestoreDatabase.restoreCategory: Restored category $id', name: 'Firestore');
     } catch (e) {
       throw DatabaseException('Failed to restore category: $e');
     }
@@ -2595,7 +2566,6 @@ class FirestoreDatabase implements DatabaseInterface {
       // Sort by sortOrder
       categories.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
-      developer.log('FirestoreDatabase.watchCategories: Stream emitted ${categories.length} categories', name: 'Firestore');
       return categories;
     }).handleError((error) {
       throw DatabaseException('Failed to watch categories: $error');
@@ -2606,7 +2576,6 @@ class FirestoreDatabase implements DatabaseInterface {
   Stream<List<Category>> watchActiveCategories() {
     return watchCategories().map((categories) {
       final activeCategories = categories.where((cat) => !cat.isArchived).toList();
-      developer.log('FirestoreDatabase.watchActiveCategories: Stream emitted ${activeCategories.length} active categories', name: 'Firestore');
       return activeCategories;
     });
   }

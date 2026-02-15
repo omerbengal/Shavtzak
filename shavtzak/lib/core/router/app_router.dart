@@ -161,6 +161,21 @@ class AppRouter {
           // Check if we should be in test environment based on captured initial hash
           final isTestFromHash = capturedInitialHash != null && capturedInitialHash!.contains('/test/');
           final envPrefix = isTestFromHash ? '/test' : '';
+
+          // Check for pre-authenticated user BEFORE deciding on whoami
+          if (_userSelectionBloc != null) {
+            final currentState = _userSelectionBloc!.state;
+            if (currentState is UserAuthenticated) {
+              if (currentState.isAdmin) {
+                return '$envPrefix/admin';
+              } else if (currentState.user.canAccessSummaryScreen) {
+                return '$envPrefix/choice';
+              } else {
+                return '$envPrefix/user/assignments';
+              }
+            }
+          }
+
           return '$envPrefix/whoami';
         }
 
@@ -241,8 +256,11 @@ class AppRouter {
         // Admin routes shell - uses existing SwipeablePageView
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
-            final userSelectionState = context.watch<UserSelectionBloc>().state;
-            if (userSelectionState is! UserAuthenticated || !userSelectionState.isAdmin) {
+            final canAccessAdminShell = context.select<UserSelectionBloc, bool>((bloc) {
+              final blocState = bloc.state;
+              return blocState is UserAuthenticated && blocState.isAdmin;
+            });
+            if (!canAccessAdminShell) {
               return const Scaffold(
                 body: Center(child: Text('גישה לא מורשית - דרוש הרשאות מנהל')),
               );
@@ -261,8 +279,8 @@ class AppRouter {
         // User routes shell
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
-            final userSelectionState = context.watch<UserSelectionBloc>().state;
-            if (userSelectionState is! UserAuthenticated) {
+            final isAuthenticated = context.select<UserSelectionBloc, bool>((bloc) => bloc.state is UserAuthenticated);
+            if (!isAuthenticated) {
               return const Scaffold(body: Center(child: Text('גישה לא מורשית - דרוש אימות')));
             }
             return UserNavigationShell(navigationShell: navigationShell);
@@ -283,8 +301,11 @@ class AppRouter {
 
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
-            final userSelectionState = context.watch<UserSelectionBloc>().state;
-            if (userSelectionState is! UserAuthenticated || !userSelectionState.isAdmin) {
+            final canAccessAdminShell = context.select<UserSelectionBloc, bool>((bloc) {
+              final blocState = bloc.state;
+              return blocState is UserAuthenticated && blocState.isAdmin;
+            });
+            if (!canAccessAdminShell) {
               return const Scaffold(body: Center(child: Text('גישה לא מורשית - דרוש הרשאות מנהל')));
             }
             return SwipeablePageView(navigationShell: navigationShell);
@@ -300,8 +321,8 @@ class AppRouter {
 
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
-            final userSelectionState = context.watch<UserSelectionBloc>().state;
-            if (userSelectionState is! UserAuthenticated) {
+            final isAuthenticated = context.select<UserSelectionBloc, bool>((bloc) => bloc.state is UserAuthenticated);
+            if (!isAuthenticated) {
               return const Scaffold(body: Center(child: Text('גישה לא מורשית - דרוש אימות')));
             }
             return UserNavigationShell(navigationShell: navigationShell);

@@ -15,6 +15,8 @@ import '../../../domain/entities/team_member.dart';
 import 'assignment_event.dart';
 import 'assignment_state.dart';
 import '../../screens/assignment/models/assignment_slot.dart';
+import '../calendar_sync/calendar_sync_bloc.dart';
+import '../calendar_sync/calendar_sync_event.dart';
 
 /// BLoC for managing assignments
 /// This is the KEY BLoC that solves the V1 sync problem
@@ -23,6 +25,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   final EventRepository _eventRepository;
   final TeamRepository _teamRepository;
   final RoleRepository _roleRepository;
+  final CalendarSyncBloc? _calendarSyncBloc;
 
   // Stream subscriptions for manual control
   StreamSubscription? _assignmentSubscription;
@@ -45,6 +48,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     this._eventRepository,
     this._teamRepository,
     this._roleRepository,
+    this._calendarSyncBloc,
   ) : super(const AssignmentInitial()) {
     // Register event handlers
     on<LoadAssignments>(_onLoadAssignments);
@@ -323,8 +327,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentOperating('deleting'));
 
     try {
+      // IMPORTANT: Get assignment BEFORE deleting to sync calendar attendees
+      final assignmentToDelete = await _repository.getAssignmentById(event.id);
 
       await _repository.deleteAssignment(event.id);
+
+      // Sync attendees for calendar event (will remove the deleted attendee)
+      if (assignmentToDelete != null) {
+        _calendarSyncBloc?.add(SyncAttendeesForAppEvent(eventId: assignmentToDelete.eventId));
+      }
+
       emit(const AssignmentOperationSuccess('השיבוץ נמחק בהצלחה'));
 
       // Check if we need to reload based on view type
@@ -957,9 +969,24 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       } else {
         await _repository.createAssignment(event.assignment);
       }
+
+      // Add attendee to calendar event if team member has email
+      final teamMember = event.assignment.teamMember;
+      if (teamMember != null && teamMember.email != null && teamMember.email!.isNotEmpty) {
+        _calendarSyncBloc?.add(AddAttendeeToAppEvent(
+          eventId: event.assignment.eventId,
+          email: teamMember.email!,
+        ));
+      }
+
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
-      // Firestore stream will emit fresh state automatically
+      emit(AssignmentSlotsLoaded(
+        updatedSlots,
+        selectedEventIds: currentState.selectedEventIds,
+        pendingOperations: _pendingOperations,
+      ));
+      add(RebuildAssignmentSlots(preservedFilter: currentState.selectedEventIds));
     } catch (e) {
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
@@ -1014,7 +1041,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _repository.updateAssignment(event.assignment);
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
-      // Firestore stream will emit fresh state automatically
+      emit(AssignmentSlotsLoaded(
+        updatedSlots,
+        selectedEventIds: currentState.selectedEventIds,
+        pendingOperations: _pendingOperations,
+      ));
+      add(RebuildAssignmentSlots(preservedFilter: currentState.selectedEventIds));
     } catch (e) {
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
@@ -1064,10 +1096,27 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     // Execute database operation
     try {
+      // Get assignment info BEFORE deleting for calendar sync
+      final assignmentToDelete = await _repository.getAssignmentById(event.assignmentId);
+
       await _repository.deleteAssignment(event.assignmentId);
+
+      // CRITICAL: Clear the cache to prevent stale data (same as swipe-to-delete)
+      _repository.clearCache();
+
+      // Sync calendar attendees (will remove the deleted attendee)
+      if (assignmentToDelete != null) {
+        _calendarSyncBloc?.add(SyncAttendeesForAppEvent(eventId: assignmentToDelete.eventId));
+      }
+
       // CRITICAL FIX: Remove pending operation after successful delete
       _pendingOperations.remove(event.slotKey);
-      // Firestore stream will emit fresh state automatically
+      emit(AssignmentSlotsLoaded(
+        updatedSlots,
+        selectedEventIds: currentState.selectedEventIds,
+        pendingOperations: _pendingOperations,
+      ));
+      add(RebuildAssignmentSlots(preservedFilter: currentState.selectedEventIds));
     } catch (e) {
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
@@ -1574,9 +1623,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         pendingOperations: _pendingOperations,
       ));
     } catch (e) {
-      if (kDebugMode) {
-        print('❌ ERROR in rebuild: $e');
-      }
       emit(AssignmentError('שגיאה בבניית שיבוצים: $e'));
     }
   }
@@ -1594,6 +1640,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     try {
       // Skip conflict checks for bypass assignments
       await _repository.createAssignmentWithBypass(event.assignment);
+
+      // Add attendee to calendar event if team member has email
+      final teamMember = event.assignment.teamMember;
+      if (teamMember != null && teamMember.email != null && teamMember.email!.isNotEmpty) {
+        _calendarSyncBloc?.add(AddAttendeeToAppEvent(
+          eventId: event.assignment.eventId,
+          email: teamMember.email!,
+        ));
+      }
+
       emit(const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
 
       // Check if we need to reload based on view type

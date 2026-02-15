@@ -569,7 +569,26 @@ class _TeamListScreenState extends State<TeamListScreen> {
                         ),
                       ),
                     ),
-                  // Birthday if available
+                  // Email if available
+                  if (member.email != null && member.email!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.email, size: 14, color: Colors.blue),
+                            const SizedBox(width: 4),
+                            Text(
+                              member.email!,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    // Birthday if available
                   if (member.birthday != null)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -969,6 +988,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
   final _commentsController = TextEditingController();
   final _birthdayController = TextEditingController();
   final _vehicleInfoController = TextEditingController();
@@ -1021,6 +1041,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     if (_isEditMode) {
       _nameController.text = widget.member!.name;
       _phoneController.text = widget.member!.phoneNumber ?? '';
+      _emailController.text = widget.member!.email ?? '';
       _commentsController.text = widget.member!.comments;
       _isActive = widget.member!.isActive;
       _isPermanent = widget.member!.isPermanent;
@@ -1071,6 +1092,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _emailController.dispose();
     _commentsController.dispose();
     _birthdayController.dispose();
     _vehicleInfoController.dispose();
@@ -1110,6 +1132,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       phoneNumber: _phoneController.text.trim().isEmpty
         ? null
         : _phoneController.text.trim(),
+      email: _emailController.text.trim().isEmpty
+        ? null
+        : _emailController.text.trim(),
       birthday: birthday,
       vehicleInfo: _vehicleInfo,
       isActive: _isActive,
@@ -1598,6 +1623,28 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                 inputFormatters: [
                                   PhoneNumberTextInputFormatter(),
                                 ],
+                                onChanged: (_) => setState(() => _isDirty = true),
+                              ),
+
+                              const SizedBox(height: 16),
+
+                              // Email field
+                              TextFormField(
+                                controller: _emailController,
+                                decoration: const InputDecoration(
+                                  labelText: 'כתובת אימייל',
+                                  hintText: 'example@mail.com',
+                                  prefixIcon: Icon(Icons.email),
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                ),
+                                validator: Validators.validateEmail,
+                                keyboardType: TextInputType.emailAddress,
+                                textDirection: TextDirection.ltr, // LTR for email input
+                                smartQuotesType: SmartQuotesType.disabled,
+                                smartDashesType: SmartDashesType.disabled,
+                                textAlign: TextAlign.start, // Left-aligned for email
                                 onChanged: (_) => setState(() => _isDirty = true),
                               ),
 

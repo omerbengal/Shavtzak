@@ -78,3 +78,13 @@ class UpdateVehicleInfo extends UserSelectionEvent {
   @override
   List<Object?> get props => [vehicleInfo];
 }
+
+/// Update user's email address
+class UpdateEmail extends UserSelectionEvent {
+  final String? email;
+
+  const UpdateEmail(this.email);
+
+  @override
+  List<Object?> get props => [email];
+}

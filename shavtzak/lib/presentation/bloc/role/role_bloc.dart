@@ -34,7 +34,6 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     // If already subscribed, don't start another subscription
     if (_isSubscribed) {
-      developer.log('RoleBloc._onLoadRoles: Already subscribed, skipping', name: 'RoleBloc');
       return;
     }
 
@@ -45,7 +44,6 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
       // First, check if we need to seed the database
       final existingRoles = await _repository.getAllRoles();
       if (existingRoles.isEmpty) {
-        developer.log('RoleBloc._onLoadRoles: No roles found, seeding from enum', name: 'RoleBloc');
         await _repository.seedRolesFromEnum();
       }
 
@@ -56,11 +54,10 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
           if (roles.isEmpty) {
             return const RolesEmpty('אין תפקידים זמינים');
           }
-          developer.log('RoleBloc._onLoadRoles: Loaded ${roles.length} roles', name: 'RoleBloc');
           return RolesLoaded(roles);
         },
         onError: (error, stackTrace) {
-          developer.log('RoleBloc._onLoadRoles: Error loading roles: $error', name: 'RoleBloc');
+          developer.log('RoleBloc._onLoadRoles: Error loading roles: $error', name: 'RoleBloc', error: error, stackTrace: stackTrace);
           return RoleError('שגיאה בטעינת תפקידים: $error');
         },
       ).then((_) {
@@ -69,7 +66,7 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
       });
     } catch (e) {
       _isSubscribed = false;
-      developer.log('RoleBloc._onLoadRoles: Error: $e', name: 'RoleBloc');
+      developer.log('RoleBloc._onLoadRoles: Error: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בטעינת תפקידים: $e'));
     }
   }
@@ -84,10 +81,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
         hebrewName: event.hebrewName,
         isVisible: event.isVisible,
       );
-      developer.log('RoleBloc._onCreateRole: Created role "${event.hebrewName}"', name: 'RoleBloc');
       // Real-time stream will trigger UI update
     } catch (e) {
-      developer.log('RoleBloc._onCreateRole: Error creating role: $e', name: 'RoleBloc');
+      developer.log('RoleBloc._onCreateRole: Error creating role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה ביצירת תפקיד: $e'));
     }
   }
@@ -99,10 +95,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.updateRole(event.role);
-      developer.log('RoleBloc._onUpdateRole: Updated role "${event.role.hebrewName}"', name: 'RoleBloc');
       // Real-time stream will trigger UI update
     } catch (e) {
-      developer.log('RoleBloc._onUpdateRole: Error updating role: $e', name: 'RoleBloc');
+      developer.log('RoleBloc._onUpdateRole: Error updating role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בעדכון תפקיד: $e'));
     }
   }
@@ -114,10 +109,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.renameRole(event.roleId, event.newHebrewName);
-      developer.log('RoleBloc._onRenameRole: Renamed role to "${event.newHebrewName}"', name: 'RoleBloc');
       // Real-time stream will trigger UI update
     } catch (e) {
-      developer.log('RoleBloc._onRenameRole: Error renaming role: $e', name: 'RoleBloc');
+      developer.log('RoleBloc._onRenameRole: Error renaming role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בשינוי שם תפקיד: $e'));
     }
   }
@@ -129,10 +123,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.toggleVisibility(event.roleId);
-      developer.log('RoleBloc._onToggleVisibility: Toggled visibility for role ${event.roleId}', name: 'RoleBloc');
       // Real-time stream will trigger UI update
     } catch (e) {
-      developer.log('RoleBloc._onToggleVisibility: Error toggling visibility: $e', name: 'RoleBloc');
+      developer.log('RoleBloc._onToggleVisibility: Error toggling visibility: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בשינוי נראות תפקיד: $e'));
     }
   }
@@ -144,10 +137,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.archiveRole(event.roleId);
-      developer.log('RoleBloc._onArchiveRole: Archived role ${event.roleId}', name: 'RoleBloc');
       // Real-time stream will trigger UI update
     } catch (e) {
-      developer.log('RoleBloc._onArchiveRole: Error archiving role: $e', name: 'RoleBloc');
+      developer.log('RoleBloc._onArchiveRole: Error archiving role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בהעברת תפקיד לארכיון: $e'));
     }
   }
@@ -159,10 +151,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.restoreRole(event.roleId);
-      developer.log('RoleBloc._onRestoreRole: Restored role ${event.roleId}', name: 'RoleBloc');
       // Real-time stream will trigger UI update
     } catch (e) {
-      developer.log('RoleBloc._onRestoreRole: Error restoring role: $e', name: 'RoleBloc');
+      developer.log('RoleBloc._onRestoreRole: Error restoring role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בשחזור תפקיד מהארכיון: $e'));
     }
   }
@@ -174,10 +165,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.deleteRole(event.roleId);
-      developer.log('RoleBloc._onDeleteRole: Permanently deleted role ${event.roleId}', name: 'RoleBloc');
       // Real-time stream will trigger UI update
     } catch (e) {
-      developer.log('RoleBloc._onDeleteRole: Error deleting role: $e', name: 'RoleBloc');
+      developer.log('RoleBloc._onDeleteRole: Error deleting role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה במחיקת תפקיד: $e'));
     }
   }
@@ -211,14 +201,12 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
         }).toList();
 
         emit(RolesLoaded(allRoles));
-        developer.log('RoleBloc._onReorderRoles: Optimistically updated UI with new sortOrder', name: 'RoleBloc');
       }
 
       // Then update Firestore (stream will eventually emit the same order)
       await _repository.reorderRoles(event.reorderedRoles);
-      developer.log('RoleBloc._onReorderRoles: Reordered ${event.reorderedRoles.length} roles in Firestore', name: 'RoleBloc');
     } catch (e) {
-      developer.log('RoleBloc._onReorderRoles: Error reordering roles: $e', name: 'RoleBloc');
+      developer.log('RoleBloc._onReorderRoles: Error reordering roles: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בעדכון סדר תפקידים: $e'));
       // Note: On error, the real-time stream will revert to the correct order from Firestore
     }
@@ -231,10 +219,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.seedRolesFromEnum();
-      developer.log('RoleBloc._onSeedRolesFromEnum: Seeded roles from enum', name: 'RoleBloc');
       // Real-time stream will trigger UI update
     } catch (e) {
-      developer.log('RoleBloc._onSeedRolesFromEnum: Error seeding roles: $e', name: 'RoleBloc');
+      developer.log('RoleBloc._onSeedRolesFromEnum: Error seeding roles: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה ביצירת תפקידים מהמערכת: $e'));
     }
   }

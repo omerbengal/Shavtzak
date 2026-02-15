@@ -127,8 +127,6 @@ class _UserChecklistScreenState extends State<UserChecklistScreen>
                       }
 
                       if (state is UserChecklistLoaded) {
-                        developer.log('UserChecklistScreen: Received UserChecklistLoaded with ${state.responsibleItems.length} responsible and ${state.ccItems.length} CC items', name: 'Checklist');
-
                         return TabBarView(
                           controller: _tabController,
                           children: [

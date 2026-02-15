@@ -28,8 +28,6 @@ class ChecklistRepository {
           .orderBy('updatedAt', descending: true)
           .snapshots()
           .asyncMap((snapshot) async {
-        developer.log('ChecklistRepository: Processing ${snapshot.docs.length} checklist items', name: 'Checklist');
-
         final items = <ChecklistItem>[];
 
         // Get all related data once for efficiency
@@ -114,8 +112,6 @@ class ChecklistRepository {
           .orderBy('name')
           .snapshots()
           .asyncMap((snapshot) async {
-        developer.log('ChecklistRepository: Processing ${snapshot.docs.length} items for event $eventId', name: 'Checklist');
-
         final items = <ChecklistItem>[];
 
         // Get related data once
@@ -152,7 +148,6 @@ class ChecklistRepository {
   /// Watch checklist items for a specific team member (both responsible and CC'd)
   Stream<Map<String, List<ChecklistItem>>> watchChecklistItemsForUser(String teamMemberId) {
     final collectionName = '${_getEnvironmentPrefix()}checklist_items';
-    developer.log('ChecklistRepository: Starting watchChecklistItemsForUser for $teamMemberId from collection $collectionName', name: 'Checklist');
 
     // Get all checklist items and filter on client side (more reliable than Filter.or)
     return FirebaseFirestore.instance
@@ -160,8 +155,6 @@ class ChecklistRepository {
         .orderBy('updatedAt', descending: true)
         .snapshots()
         .asyncMap((snapshot) async {
-          developer.log('ChecklistRepository: Received snapshot with ${snapshot.docs.length} total items', name: 'Checklist');
-
           final responsibleItems = <ChecklistItem>[];
           final ccItems = <ChecklistItem>[];
 
@@ -171,8 +164,6 @@ class ChecklistRepository {
             final allTeamMembers = await _database.getTeamMembers();
             final eventMap = {for (var event in allEvents) event.id: event};
             final memberMap = {for (var member in allTeamMembers) member.id: member};
-
-            developer.log('ChecklistRepository: Found ${allEvents.length} events and ${allTeamMembers.length} team members', name: 'Checklist');
 
           for (final doc in snapshot.docs) {
             final data = doc.data() as Map<String, dynamic>;
@@ -207,7 +198,6 @@ class ChecklistRepository {
             'cc': ccItems,
           };
 
-          developer.log('ChecklistRepository: Returning ${responsibleItems.length} responsible and ${ccItems.length} CC items for user $teamMemberId', name: 'Checklist');
           return result;
           } catch (e) {
             developer.log('Error processing checklist data: $e', name: 'Checklist', error: e);

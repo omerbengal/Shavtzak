@@ -51,16 +51,15 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       await emit.forEach(
         _repository.watchChecklistItems(),
         onData: (items) {
-          developer.log('ChecklistBloc: Loaded ${items.length} items', name: 'Checklist');
           return ChecklistLoaded(items);
         },
         onError: (error, stackTrace) {
-          developer.log('Error loading checklist items: $error', name: 'Checklist', error: error, stackTrace: stackTrace);
+          developer.log('ChecklistBloc: Error loading checklist items: $error', name: 'Checklist', error: error, stackTrace: stackTrace);
           return ChecklistError('Failed to load checklist items: $error');
         },
       );
     } catch (e) {
-      developer.log('Error in _onLoadChecklistItems: $e', name: 'Checklist');
+      developer.log('ChecklistBloc: Error in _onLoadChecklistItems: $e', name: 'Checklist', error: e);
       emit(ChecklistError('Failed to load checklist items: $e'));
     }
   }
@@ -76,16 +75,15 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       await emit.forEach(
         _repository.watchChecklistItemsByEvent(event.eventId),
         onData: (items) {
-          developer.log('ChecklistBloc: Loaded ${items.length} items for event ${event.eventId}', name: 'Checklist');
           return ChecklistLoaded(items);
         },
         onError: (error, stackTrace) {
-          developer.log('Error loading checklist items for event: $error', name: 'Checklist', error: error, stackTrace: stackTrace);
+          developer.log('ChecklistBloc: Error loading checklist items for event: $error', name: 'Checklist', error: error, stackTrace: stackTrace);
           return ChecklistError('Failed to load checklist items for event: $error');
         },
       );
     } catch (e) {
-      developer.log('Error in _onLoadChecklistItemsByEvent: $e', name: 'Checklist');
+      developer.log('ChecklistBloc: Error in _onLoadChecklistItemsByEvent: $e', name: 'Checklist', error: e);
       emit(ChecklistError('Failed to load checklist items for event: $e'));
     }
   }
@@ -104,20 +102,18 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
           final responsibleItems = result['responsible'] as List<ChecklistItem>;
           final ccItems = result['cc'] as List<ChecklistItem>;
 
-          developer.log('ChecklistBloc: Loaded ${responsibleItems.length} responsible and ${ccItems.length} CC items for user ${event.teamMemberId}', name: 'Checklist');
-
           return UserChecklistLoaded(
             responsibleItems: responsibleItems,
             ccItems: ccItems,
           );
         },
         onError: (error, stackTrace) {
-          developer.log('Error loading user checklist items: $error', name: 'Checklist', error: error, stackTrace: stackTrace);
+          developer.log('ChecklistBloc: Error loading user checklist items: $error', name: 'Checklist', error: error, stackTrace: stackTrace);
           return ChecklistError('Failed to load your checklist items: $error');
         },
       );
     } catch (e) {
-      developer.log('Error in _onLoadUserChecklistItems: $e', name: 'Checklist');
+      developer.log('ChecklistBloc: Error in _onLoadUserChecklistItems: $e', name: 'Checklist', error: e);
       emit(ChecklistError('Failed to load your checklist items: $e'));
     }
   }
@@ -142,9 +138,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       );
 
       await _repository.createChecklistItem(item);
-      developer.log('ChecklistBloc: Created checklist item ${item.id}', name: 'Checklist');
     } catch (e) {
-      developer.log('Error adding checklist item: $e', name: 'Checklist');
+      developer.log('ChecklistBloc: Error adding checklist item: $e', name: 'Checklist', error: e);
       emit(ChecklistError('Failed to add checklist item: $e'));
     }
   }
@@ -171,9 +166,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       );
 
       await _repository.updateChecklistItem(updatedItem);
-      developer.log('ChecklistBloc: Updated checklist item ${updatedItem.id}', name: 'Checklist');
     } catch (e) {
-      developer.log('Error updating checklist item: $e', name: 'Checklist');
+      developer.log('ChecklistBloc: Error updating checklist item: $e', name: 'Checklist', error: e);
       emit(ChecklistError('Failed to update checklist item: $e'));
     }
   }
@@ -204,9 +198,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
 
       final updatedItem = item.withUpdatedStatus(event.newStatus);
       await _repository.updateChecklistItem(updatedItem);
-      developer.log('ChecklistBloc: Updated status for item ${event.itemId} to ${event.newStatus}', name: 'Checklist');
     } catch (e) {
-      developer.log('Error updating checklist item status: $e', name: 'Checklist');
+      developer.log('ChecklistBloc: Error updating checklist item status: $e', name: 'Checklist', error: e);
       emit(ChecklistError('Failed to update status: $e'));
     }
   }
@@ -231,9 +224,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
         teamMemberName: currentUser.name,
         authorRole: event.authorRole,
       );
-      developer.log('ChecklistBloc: Added note to item ${event.itemId}', name: 'Checklist');
     } catch (e) {
-      developer.log('Error adding note to checklist item: $e', name: 'Checklist');
+      developer.log('ChecklistBloc: Error adding note to checklist item: $e', name: 'Checklist', error: e);
       emit(ChecklistError('Failed to add note: $e'));
     }
   }
@@ -264,9 +256,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
 
       final updatedItem = item.withAddedCc(event.ccMemberId);
       await _repository.updateChecklistItem(updatedItem);
-      developer.log('ChecklistBloc: Added CC member ${event.ccMemberId} to item ${event.itemId}', name: 'Checklist');
     } catch (e) {
-      developer.log('Error adding CC member: $e', name: 'Checklist');
+      developer.log('ChecklistBloc: Error adding CC member: $e', name: 'Checklist', error: e);
       emit(ChecklistError('Failed to add CC member: $e'));
     }
   }
@@ -297,9 +288,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
 
       final updatedItem = item.withRemovedCc(event.ccMemberId);
       await _repository.updateChecklistItem(updatedItem);
-      developer.log('ChecklistBloc: Removed CC member ${event.ccMemberId} from item ${event.itemId}', name: 'Checklist');
     } catch (e) {
-      developer.log('Error removing CC member: $e', name: 'Checklist');
+      developer.log('ChecklistBloc: Error removing CC member: $e', name: 'Checklist', error: e);
       emit(ChecklistError('Failed to remove CC member: $e'));
     }
   }
@@ -316,9 +306,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       }
 
       await _repository.deleteChecklistItem(event.itemId);
-      developer.log('ChecklistBloc: Deleted checklist item ${event.itemId}', name: 'Checklist');
     } catch (e) {
-      developer.log('Error deleting checklist item: $e', name: 'Checklist');
+      developer.log('ChecklistBloc: Error deleting checklist item: $e', name: 'Checklist', error: e);
       emit(ChecklistError('Failed to delete checklist item: $e'));
     }
   }

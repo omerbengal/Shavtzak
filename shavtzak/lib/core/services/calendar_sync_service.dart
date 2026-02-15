@@ -54,11 +54,6 @@ class CalendarSyncService {
     // Cancel any pending debounced sync for this constraint
     _cancelDebounce(constraintId);
 
-    developer.log(
-      'CalendarSyncService: Starting ATOMIC sync for constraint $constraintId',
-      name: 'CalendarSync',
-    );
-
     try {
       // Atomically check and set sync state to prevent race conditions
       final syncAction = await _database.atomicCheckAndSetSyncState(
@@ -83,11 +78,6 @@ class CalendarSyncService {
           throw StateError('Update action requested but no calendar event ID found');
         }
 
-        developer.log(
-          'CalendarSyncService: Constraint $constraintId already synced, updating existing event $calendarEventId',
-          name: 'CalendarSync',
-        );
-
         await _calendarService.updateConstraintEvent(
           calendarEventId: calendarEventId,
           constraintId: constraintId,
@@ -98,11 +88,6 @@ class CalendarSyncService {
         return SyncResult.success(calendarEventId);
       } else if (action == 'create') {
         // Create new calendar event
-        developer.log(
-          'CalendarSyncService: Creating new calendar event for constraint $constraintId',
-          name: 'CalendarSync',
-        );
-
         final newCalendarEventId = await _calendarService.createConstraintEvent(
           constraintId: constraintId,
           teamMember: teamMember,
@@ -115,11 +100,6 @@ class CalendarSyncService {
           calendarEventId: newCalendarEventId,
           teamMemberId: teamMember.id,
           status: CalendarSyncStatus.synced,
-        );
-
-        developer.log(
-          'CalendarSyncService: Successfully synced constraint $constraintId -> new event $newCalendarEventId',
-          name: 'CalendarSync',
         );
 
         return SyncResult.success(newCalendarEventId);
@@ -161,19 +141,10 @@ class CalendarSyncService {
 
   /// Remove a constraint from the calendar
   Future<SyncResult> removeConstraintFromCalendar(String constraintId) async {
-    developer.log(
-      'CalendarSyncService: Removing constraint $constraintId from calendar',
-      name: 'CalendarSync',
-    );
-
     try {
       // Get existing sync state
       final existingState = await _database.getCalendarSyncState(constraintId);
       if (existingState == null) {
-        developer.log(
-          'CalendarSyncService: No sync state found for constraint $constraintId',
-          name: 'CalendarSync',
-        );
         return const SyncResult.success(null);
       }
 
@@ -185,11 +156,6 @@ class CalendarSyncService {
 
       // Remove sync state from database
       await _database.removeCalendarSyncState(constraintId);
-
-      developer.log(
-        'CalendarSyncService: Successfully removed constraint $constraintId from calendar',
-        name: 'CalendarSync',
-      );
 
       return const SyncResult.success(null);
     } catch (e) {
@@ -229,11 +195,6 @@ class CalendarSyncService {
           CalendarSyncConfig.initialRetryDelayMs,
           CalendarSyncConfig.maxRetryDelayMs,
         );
-
-    developer.log(
-      'CalendarSyncService: Retrying sync for $constraintId in ${delayMs}ms (attempt ${currentRetryCount + 1})',
-      name: 'CalendarSync',
-    );
 
     await Future.delayed(Duration(milliseconds: delayMs));
 
@@ -308,11 +269,6 @@ class CalendarSyncService {
   /// Check synced events in Google Calendar and update constraint status if events were deleted
   /// Returns the number of constraints that were rejected due to deleted calendar events
   Future<int> validateSyncedEventsWithCalendar() async {
-    developer.log(
-      'CalendarSyncService: Starting validation of synced events with Google Calendar',
-      name: 'CalendarSync',
-    );
-
     try {
       // Get all synced constraints
       final syncedStates = await _database.getSyncedConstraintsForAllMembers();
@@ -323,10 +279,6 @@ class CalendarSyncService {
         final calendarEventId = syncState['calendarEventId'] as String?;
 
         if (calendarEventId == null || calendarEventId.isEmpty) {
-          developer.log(
-            'CalendarSyncService: Constraint $constraintId has empty calendar event ID, skipping validation',
-            name: 'CalendarSync',
-          );
           continue;
         }
 
@@ -335,11 +287,6 @@ class CalendarSyncService {
         final eventExists = await _calendarService.eventExists(calendarEventId);
 
         if (!eventExists) {
-          developer.log(
-            'CalendarSyncService: Event $calendarEventId not found in Google Calendar, rejecting constraint $constraintId',
-            name: 'CalendarSync',
-          );
-
           // Update the constraint status to rejected and mark as auto-rejected from calendar
           await _database.updateConstraintStatus(
             constraintId,
@@ -352,14 +299,8 @@ class CalendarSyncService {
           await _database.removeCalendarSyncState(constraintId);
 
           rejectedCount++;
-        } else {
         }
       }
-
-      developer.log(
-        'CalendarSyncService: Validation complete - rejected $rejectedCount constraints due to deleted calendar events',
-        name: 'CalendarSync',
-      );
 
       return rejectedCount;
     } catch (e) {
@@ -391,21 +332,15 @@ class CalendarSyncService {
     // Cancel any pending debounced sync for this event
     _cancelDebounce(eventId);
 
-    developer.log(
-      'CalendarSyncService: Starting sync for app event $eventId',
-      name: 'CalendarSync',
-    );
-
     try {
       // Use startTime as fallback if actualShowStartTime is empty
       final separatorTime = actualShowStartTime.isNotEmpty ? actualShowStartTime : startTime;
 
-      // Determine which events should exist based on time fields
-      // Assembly event requires: assemblyTime AND separator
-      // Main event requires: separator AND endTime
-      // Special case: if assemblyTime and endTime exist but no separator → single main event
-      final shouldHaveAssembly = assemblyTime.isNotEmpty && separatorTime.isNotEmpty;
-      final shouldHaveMain = endTime.isNotEmpty && (separatorTime.isNotEmpty || assemblyTime.isNotEmpty);
+      // Determine which events should exist based on time fields.
+      // If either assemblyTime or endTime is missing, sync as a single all-day main event.
+      final shouldUseAllDay = assemblyTime.isEmpty || endTime.isEmpty;
+      final shouldHaveAssembly = !shouldUseAllDay && assemblyTime.isNotEmpty && separatorTime.isNotEmpty;
+      final shouldHaveMain = shouldUseAllDay || (endTime.isNotEmpty && (separatorTime.isNotEmpty || assemblyTime.isNotEmpty));
 
       // Check if already synced
       final existingState = await _database.getEventCalendarSyncState(eventId);
@@ -415,18 +350,9 @@ class CalendarSyncService {
         final existingAssemblyId = existingState['assemblyCalendarEventId'] as String? ?? '';
         final existingMainId = existingState['mainCalendarEventId'] as String? ?? '';
 
-        developer.log(
-          'CalendarSyncService: Event $eventId already synced, checking for changes',
-          name: 'CalendarSync',
-        );
-
         // Handle assembly event: delete if it should not exist but does
         String newAssemblyId = existingAssemblyId;
         if (!shouldHaveAssembly && existingAssemblyId.isNotEmpty) {
-          developer.log(
-            'CalendarSyncService: Deleting assembly event $existingAssemblyId (time fields removed)',
-            name: 'CalendarSync',
-          );
           await _calendarService.deleteAppEventCalendarEvents(
             assemblyCalendarEventId: existingAssemblyId,
           );
@@ -436,10 +362,6 @@ class CalendarSyncService {
         // Handle main event: delete if it should not exist but does
         String newMainId = existingMainId;
         if (!shouldHaveMain && existingMainId.isNotEmpty) {
-          developer.log(
-            'CalendarSyncService: Deleting main event $existingMainId (time fields removed)',
-            name: 'CalendarSync',
-          );
           await _calendarService.deleteAppEventCalendarEvents(
             mainCalendarEventId: existingMainId,
           );
@@ -448,10 +370,6 @@ class CalendarSyncService {
 
         // If both events should be deleted, remove sync state entirely
         if (!shouldHaveAssembly && !shouldHaveMain) {
-          developer.log(
-            'CalendarSyncService: No calendar events needed, removing sync state',
-            name: 'CalendarSync',
-          );
           await _database.removeEventCalendarSyncState(eventId);
           return const SyncResult.success(null);
         }
@@ -473,10 +391,6 @@ class CalendarSyncService {
 
           // If events were recreated (deleted from calendar), use new IDs
           if (recreatedIds != null) {
-            developer.log(
-              'CalendarSyncService: Calendar events were recreated, updating sync state with new IDs',
-              name: 'CalendarSync',
-            );
             newAssemblyId = recreatedIds['assembly'] ?? newAssemblyId;
             newMainId = recreatedIds['main'] ?? newMainId;
           }
@@ -489,6 +403,10 @@ class CalendarSyncService {
             status: CalendarSyncStatus.synced,
           );
 
+          // Ensure attendees are preserved when events are updated/recreated
+          // (including transitions between timed and all-day representations).
+          await syncAttendeesForAppEvent(eventId);
+
           return SyncResult.success('$newAssemblyId,$newMainId');
         }
 
@@ -497,17 +415,8 @@ class CalendarSyncService {
         // No existing sync state - create new calendar events if needed
         if (!shouldHaveAssembly && !shouldHaveMain) {
           // No events needed, don't create sync state
-          developer.log(
-            'CalendarSyncService: No calendar events needed for event $eventId (no time fields)',
-            name: 'CalendarSync',
-          );
           return const SyncResult.success(null);
         }
-
-        developer.log(
-          'CalendarSyncService: Creating new calendar events for app event $eventId',
-          name: 'CalendarSync',
-        );
 
         final calendarEventIds = await _calendarService.createAppEventCalendarEvents(
           eventId: eventId,
@@ -528,10 +437,8 @@ class CalendarSyncService {
           status: CalendarSyncStatus.synced,
         );
 
-        developer.log(
-          'CalendarSyncService: Successfully synced app event $eventId',
-          name: 'CalendarSync',
-        );
+        // Sync attendees from existing assignments
+        await syncAttendeesForAppEvent(eventId);
 
         return SyncResult.success('${calendarEventIds['assembly']},${calendarEventIds['main']}');
       }
@@ -565,19 +472,10 @@ class CalendarSyncService {
   /// Remove an app event from the calendar
   /// Deletes both assembly and main calendar events
   Future<SyncResult> removeAppEventFromCalendar(String eventId) async {
-    developer.log(
-      'CalendarSyncService: Removing app event $eventId from calendar',
-      name: 'CalendarSync',
-    );
-
     try {
       // Get existing sync state
       final existingState = await _database.getEventCalendarSyncState(eventId);
       if (existingState == null) {
-        developer.log(
-          'CalendarSyncService: No sync state found for app event $eventId',
-          name: 'CalendarSync',
-        );
         return const SyncResult.success(null);
       }
 
@@ -593,11 +491,6 @@ class CalendarSyncService {
       // Remove sync state from database
       await _database.removeEventCalendarSyncState(eventId);
 
-      developer.log(
-        'CalendarSyncService: Successfully removed app event $eventId from calendar',
-        name: 'CalendarSync',
-      );
-
       return const SyncResult.success(null);
     } catch (e) {
       developer.log(
@@ -607,6 +500,202 @@ class CalendarSyncService {
       );
 
       return SyncResult.failure(e.toString());
+    }
+  }
+
+  /// Add attendee to app event calendar event
+  /// Used when assignment is created for team member with email
+  Future<void> addAttendeeToAppEvent({
+    required String eventId,
+    required String email,
+  }) async {
+    try {
+      // Get event sync state
+      final syncState = await _database.getEventCalendarSyncState(eventId);
+      if (syncState == null) {
+        return;
+      }
+
+      final assemblyId = syncState['assemblyCalendarEventId'] as String?;
+      final mainId = syncState['mainCalendarEventId'] as String?;
+
+      // Add attendee to both events if they exist
+      if (assemblyId != null && assemblyId.isNotEmpty) {
+        try {
+          await _calendarService.addAttendeeToEvent(assemblyId, email);
+        } catch (e) {
+          developer.log(
+            'CalendarSyncService: Failed to add attendee to assembly event $assemblyId - $e',
+            name: 'CalendarSync',
+            error: e,
+          );
+        }
+      }
+
+      if (mainId != null && mainId.isNotEmpty) {
+        try {
+          await _calendarService.addAttendeeToEvent(mainId, email);
+        } catch (e) {
+          developer.log(
+            'CalendarSyncService: Failed to add attendee to main event $mainId - $e',
+            name: 'CalendarSync',
+            error: e,
+          );
+        }
+      }
+    } catch (e) {
+      developer.log(
+        'CalendarSyncService: Failed to add attendee to app event $eventId - $e',
+        name: 'CalendarSync',
+        error: e,
+      );
+    }
+  }
+
+  /// Remove attendee from app event calendar event
+  /// Used when assignment is deleted
+  Future<void> removeAttendeeFromAppEvent({
+    required String eventId,
+    required String email,
+  }) async {
+    try {
+      // Get event sync state
+      final syncState = await _database.getEventCalendarSyncState(eventId);
+      if (syncState == null) {
+        return;
+      }
+
+      final assemblyId = syncState['assemblyCalendarEventId'] as String?;
+      final mainId = syncState['mainCalendarEventId'] as String?;
+
+      // Remove attendee from both events if they exist
+      if (assemblyId != null && assemblyId.isNotEmpty) {
+        try {
+          await _calendarService.removeAttendeeFromEvent(assemblyId, email);
+        } catch (e) {
+          developer.log(
+            'CalendarSyncService: Failed to remove attendee from assembly event $assemblyId - $e',
+            name: 'CalendarSync',
+            error: e,
+          );
+        }
+      }
+
+      if (mainId != null && mainId.isNotEmpty) {
+        try {
+          await _calendarService.removeAttendeeFromEvent(mainId, email);
+        } catch (e) {
+          developer.log(
+            'CalendarSyncService: Failed to remove attendee from main event $mainId - $e',
+            name: 'CalendarSync',
+            error: e,
+          );
+        }
+      }
+    } catch (e) {
+      developer.log(
+        'CalendarSyncService: Failed to remove attendee from app event $eventId - $e',
+        name: 'CalendarSync',
+        error: e,
+      );
+    }
+  }
+
+  /// Sync all attendees for app event
+  /// Fetches all assignments for event and adds all team member emails as attendees
+  Future<void> syncAttendeesForAppEvent(String eventId) async {
+    try {
+      // Get event sync state
+      final syncState = await _database.getEventCalendarSyncState(eventId);
+      if (syncState == null) {
+        return;
+      }
+
+      final assemblyId = syncState['assemblyCalendarEventId'] as String?;
+      final mainId = syncState['mainCalendarEventId'] as String?;
+
+      // Get all assignments for this event
+      final assignments = await _database.getAssignmentsByEvent(eventId);
+
+      // Collect all unique emails from assignments
+      final emails = <String>{};
+      for (final assignment in assignments) {
+        final teamMember = await _database.getTeamMemberById(assignment.teamMemberId);
+        if (teamMember != null &&
+            teamMember.email != null &&
+            teamMember.email!.isNotEmpty) {
+          emails.add(teamMember.email!);
+        }
+      }
+
+      // Update attendees for both events if they exist
+      if (assemblyId != null && assemblyId.isNotEmpty) {
+        try {
+          await _calendarService.updateEventAttendees(assemblyId, emails.toList());
+        } catch (e) {
+          developer.log(
+            'CalendarSyncService: Failed to sync attendees for assembly event $assemblyId - $e',
+            name: 'CalendarSync',
+            error: e,
+          );
+        }
+      }
+
+      if (mainId != null && mainId.isNotEmpty) {
+        try {
+          await _calendarService.updateEventAttendees(mainId, emails.toList());
+        } catch (e) {
+          developer.log(
+            'CalendarSyncService: Failed to sync attendees for main event $mainId - $e',
+            name: 'CalendarSync',
+            error: e,
+          );
+        }
+      }
+    } catch (e) {
+      developer.log(
+        'CalendarSyncService: Failed to sync attendees for app event $eventId - $e',
+        name: 'CalendarSync',
+        error: e,
+      );
+    }
+  }
+
+  /// Handle team member email change
+  /// Updates attendee email in all future events where this member is assigned
+  Future<void> onTeamMemberEmailChanged({
+    required String teamMemberId,
+    required String oldEmail,
+    required String newEmail,
+  }) async {
+    try {
+      // Get all assignments for this team member
+      final assignments = await _database.getAssignmentsByPerson(teamMemberId);
+
+      // Get event IDs for all assignments
+      final eventIds = assignments.map((a) => a.eventId).toSet();
+
+      // For each event, update the attendee
+      for (final eventId in eventIds) {
+        try {
+          // Remove old email
+          await removeAttendeeFromAppEvent(eventId: eventId, email: oldEmail);
+          // Add new email
+          await addAttendeeToAppEvent(eventId: eventId, email: newEmail);
+        } catch (e) {
+          developer.log(
+            'CalendarSyncService: Failed to update attendee for event $eventId - $e',
+            name: 'CalendarSync',
+            error: e,
+          );
+        }
+      }
+    } catch (e) {
+      developer.log(
+        'CalendarSyncService: Failed to handle email change for team member $teamMemberId - $e',
+        name: 'CalendarSync',
+        error: e,
+      );
     }
   }
 

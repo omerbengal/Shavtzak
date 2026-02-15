@@ -31,6 +31,9 @@ class TeamMemberModel {
   // Phone number field
   final String? phoneNumber; // Optional Israeli phone number
 
+  // Email field
+  final String? email; // Optional email address
+
   // Birthday field
   final DateTime? birthday; // Optional birthday date
 
@@ -60,6 +63,7 @@ class TeamMemberModel {
     this.passcodeLength,
     this.allowMultipleAssignments = false,
     this.phoneNumber,
+    this.email,
     this.birthday,
     this.canAccessSummaryScreen = false,
     this.vehicleInfo,
@@ -92,6 +96,7 @@ class TeamMemberModel {
       passcodeLength: entity.passcodeLength,
       allowMultipleAssignments: entity.allowMultipleAssignments,
       phoneNumber: entity.phoneNumber,
+      email: entity.email,
       birthday: entity.birthday,
       canAccessSummaryScreen: entity.canAccessSummaryScreen,
       vehicleInfo: entity.vehicleInfo != null
@@ -120,6 +125,7 @@ class TeamMemberModel {
       passcodeLength: passcodeLength,
       allowMultipleAssignments: allowMultipleAssignments,
       phoneNumber: phoneNumber,
+      email: email,
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
       vehicleInfo: vehicleInfo?.toEntity(),
@@ -147,6 +153,9 @@ class TeamMemberModel {
 
     // Handle migration - phone number is optional, default to null for existing members
     final phoneNumber = data['phoneNumber'] as String?;
+
+    // Handle migration - email is optional, default to null for existing members
+    final email = data['email'] as String?;
 
     // Handle migration - birthday is optional, default to null for existing members
     final birthday = data['birthday'] != null
@@ -195,6 +204,7 @@ class TeamMemberModel {
       passcodeLength: passcodeLength,
       allowMultipleAssignments: allowMultipleAssignments,
       phoneNumber: phoneNumber,
+      email: email,
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
       vehicleInfo: vehicleInfo,
@@ -240,6 +250,7 @@ class TeamMemberModel {
       'passcodeLength': passcodeLength,
       'allowMultipleAssignments': allowMultipleAssignments,
       'phoneNumber': phoneNumber,
+      'email': email,
       'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
       'canAccessSummaryScreen': canAccessSummaryScreen,
       'vehicleInfo': vehicleInfo?.toJson(),
@@ -265,6 +276,9 @@ class TeamMemberModel {
 
     // Handle migration - phone number is optional, default to null for existing members
     final phoneNumber = json['phoneNumber'] as String?;
+
+    // Handle migration - email is optional, default to null for existing members
+    final email = json['email'] as String?;
 
     // Handle migration - birthday is optional, default to null for existing members
     final birthday = json['birthday'] != null
@@ -309,6 +323,7 @@ class TeamMemberModel {
       passcodeLength: passcodeLength,
       allowMultipleAssignments: allowMultipleAssignments,
       phoneNumber: phoneNumber,
+      email: email,
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
       vehicleInfo: vehicleInfo,
@@ -335,6 +350,7 @@ class TeamMemberModel {
       'passcodeLength': passcodeLength,
       'allowMultipleAssignments': allowMultipleAssignments,
       'phoneNumber': phoneNumber,
+      'email': email,
       'birthday': birthday?.toIso8601String(),
       'canAccessSummaryScreen': canAccessSummaryScreen,
       'vehicleInfo': vehicleInfo?.toJson(),

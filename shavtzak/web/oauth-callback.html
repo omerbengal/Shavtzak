@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>OAuth Callback</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        .message {
+            text-align: center;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="message">
+        <h3>מאמת חיבור...</h3>
+        <p>חלון זה ייסגר אוטומטית</p>
+    </div>
+    <script>
+        // Extract OAuth code from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const error = urlParams.get('error');
+
+        if (window.opener) {
+            if (code) {
+                // Send code to parent window
+                window.opener.postMessage({
+                    type: 'oauth_callback',
+                    code: code
+                }, '*');
+
+                // Close popup after a short delay
+                setTimeout(() => window.close(), 500);
+            } else if (error) {
+                // Send error to parent
+                window.opener.postMessage({
+                    type: 'oauth_error',
+                    error: error
+                }, '*');
+
+                setTimeout(() => window.close(), 1000);
+            } else {
+                // No code or error, user might have cancelled
+                setTimeout(() => window.close(), 500);
+            }
+        } else {
+            // Not in a popup, redirect to home
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>

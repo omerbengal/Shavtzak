@@ -51,16 +51,15 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
       await emit.forEach(
         _repository.watchPresets(),
         onData: (presets) {
-          developer.log('PresetBloc: Loaded ${presets.length} presets', name: 'Preset');
           return PresetsLoaded(presets);
         },
         onError: (error, stackTrace) {
-          developer.log('Error loading presets: $error', name: 'Preset', error: error, stackTrace: stackTrace);
+          developer.log('PresetBloc: Error loading presets: $error', name: 'Preset', error: error, stackTrace: stackTrace);
           return PresetError('נכשל בטעינת פריסטים: $error');
         },
       );
     } catch (e) {
-      developer.log('Error in _onLoadPresets: $e', name: 'Preset');
+      developer.log('PresetBloc: Error in _onLoadPresets: $e', name: 'Preset', error: e);
       emit(PresetError('נכשל בטעינת פריסטים: $e'));
     }
   }
@@ -86,11 +85,10 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
       );
 
       await _repository.createPreset(preset);
-      developer.log('PresetBloc: Created preset ${preset.id} (${preset.name})', name: 'Preset');
 
       // Re-emit current state to trigger UI update (the stream will handle the rest)
     } catch (e) {
-      developer.log('Error creating preset: $e', name: 'Preset');
+      developer.log('PresetBloc: Error creating preset: $e', name: 'Preset', error: e);
       emit(PresetError('נכשל ביצירת פריסט: $e'));
     }
   }
@@ -108,9 +106,8 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
 
       final preset = event.preset.copyWith(updatedAt: DateTime.now());
       await _repository.updatePreset(preset);
-      developer.log('PresetBloc: Updated preset ${preset.id} (${preset.name})', name: 'Preset');
     } catch (e) {
-      developer.log('Error updating preset: $e', name: 'Preset');
+      developer.log('PresetBloc: Error updating preset: $e', name: 'Preset', error: e);
       emit(PresetError('נכשל בעדכון פריסט: $e'));
     }
   }
@@ -127,9 +124,8 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
       }
 
       await _repository.deletePreset(event.presetId);
-      developer.log('PresetBloc: Deleted preset ${event.presetId}', name: 'Preset');
     } catch (e) {
-      developer.log('Error deleting preset: $e', name: 'Preset');
+      developer.log('PresetBloc: Error deleting preset: $e', name: 'Preset', error: e);
       emit(PresetError('נכשל במחיקת פריסט: $e'));
     }
   }
@@ -164,15 +160,13 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
         currentUser.id,
       );
 
-      developer.log('PresetBloc: Loaded preset "${preset.name}" into event "${targetEvent.name}"', name: 'Preset');
-
       emit(PresetLoadedIntoEvent(
         presetName: preset.name,
         eventName: targetEvent.name,
         itemCount: preset.items.length,
       ));
     } catch (e) {
-      developer.log('Error loading preset into event: $e', name: 'Preset');
+      developer.log('PresetBloc: Error loading preset into event: $e', name: 'Preset', error: e);
       emit(PresetError('נכשל בטעינת פריסט לאירוע: $e'));
     }
   }

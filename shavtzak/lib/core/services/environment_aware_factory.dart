@@ -9,6 +9,8 @@ import '../../../presentation/bloc/team/team_bloc.dart';
 import '../../../presentation/bloc/event/event_bloc.dart';
 import '../../../presentation/bloc/assignment/assignment_bloc.dart';
 import '../../../presentation/bloc/user_selection/user_selection_bloc.dart';
+import '../../../presentation/bloc/calendar_sync/calendar_sync_bloc.dart';
+import '../../../domain/entities/team_member.dart';
 import 'user_cache_service.dart';
 
 /// Factory that creates environment-aware instances
@@ -70,19 +72,28 @@ class EnvironmentAwareFactory {
   }
 
   /// Create assignment BLoC based on environment
-  static AssignmentBloc createAssignmentBloc() {
+  static AssignmentBloc createAssignmentBloc({CalendarSyncBloc? calendarSyncBloc}) {
     // For now, return standard bloc. Test blocs can be added later.
     return AssignmentBloc(
       createAssignmentRepository(),
       createEventRepository(),
       createTeamRepository(),
       createRoleRepository(),
+      calendarSyncBloc,
     );
   }
 
   /// Create user selection BLoC (same for both environments)
-  static UserSelectionBloc createUserSelectionBloc() {
-    return UserSelectionBloc(createUserSelectionRepository(), createTeamRepository());
+  static UserSelectionBloc createUserSelectionBloc({
+    CalendarSyncBloc? calendarSyncBloc,
+    TeamMember? preAuthenticatedUser,
+  }) {
+    return UserSelectionBloc(
+      createUserSelectionRepository(),
+      createTeamRepository(),
+      calendarSyncBloc,
+      preAuthenticatedUser,
+    );
   }
 
   /// Reset all cached instances (useful for testing or environment switching)

@@ -166,6 +166,9 @@ class TeamMember extends Equatable {
   // Phone number field
   final String? phoneNumber; // Optional Israeli phone number
 
+  // Email field
+  final String? email; // Optional email address
+
   // Birthday field
   final DateTime? birthday; // Optional birthday date
 
@@ -195,6 +198,7 @@ class TeamMember extends Equatable {
     this.passcodeLength,
     this.allowMultipleAssignments = false,
     this.phoneNumber,
+    this.email,
     this.birthday,
     this.canAccessSummaryScreen = false,
     this.vehicleInfo,
@@ -363,6 +367,8 @@ class TeamMember extends Equatable {
     bool? allowMultipleAssignments,
     String? phoneNumber,
     bool clearPhone = false,
+    String? email,
+    bool clearEmail = false,
     DateTime? birthday,
     bool clearBirthday = false,
     bool? canAccessSummaryScreen,
@@ -387,6 +393,7 @@ class TeamMember extends Equatable {
       passcodeLength: clearPasscode ? null : (passcodeLength ?? this.passcodeLength),
       allowMultipleAssignments: allowMultipleAssignments ?? this.allowMultipleAssignments,
       phoneNumber: clearPhone ? null : (phoneNumber ?? this.phoneNumber),
+      email: clearEmail ? null : (email ?? this.email),
       birthday: clearBirthday ? null : (birthday ?? this.birthday),
       canAccessSummaryScreen: canAccessSummaryScreen ?? this.canAccessSummaryScreen,
       vehicleInfo: clearVehicleInfo ? null : (vehicleInfo ?? this.vehicleInfo),
@@ -412,6 +419,7 @@ class TeamMember extends Equatable {
         passcodeLength,
         allowMultipleAssignments,
         phoneNumber,
+        email,
         birthday,
         canAccessSummaryScreen,
         vehicleInfo,

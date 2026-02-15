@@ -11,16 +11,14 @@ abstract class CalendarSyncEvent extends Equatable {
 
 /// Initialize the calendar sync service
 class InitializeCalendarSync extends CalendarSyncEvent {
-  final String? serviceAccountJson;
   final String? calendarId;
 
   const InitializeCalendarSync({
-    this.serviceAccountJson,
     this.calendarId,
   });
 
   @override
-  List<Object?> get props => [serviceAccountJson, calendarId];
+  List<Object?> get props => [calendarId];
 }
 
 /// Sync a constraint to the calendar when it's approved
@@ -166,4 +164,60 @@ class RemoveAppEventFromCalendar extends CalendarSyncEvent {
 
   @override
   List<Object?> get props => [eventId];
+}
+
+/// Add attendee to app event
+class AddAttendeeToAppEvent extends CalendarSyncEvent {
+  final String eventId;
+  final String email;
+
+  const AddAttendeeToAppEvent({
+    required this.eventId,
+    required this.email,
+  });
+
+  @override
+  List<Object?> get props => [eventId, email];
+}
+
+/// Remove attendee from app event
+class RemoveAttendeeFromAppEvent extends CalendarSyncEvent {
+  final String eventId;
+  final String email;
+
+  const RemoveAttendeeFromAppEvent({
+    required this.eventId,
+    required this.email,
+  });
+
+  @override
+  List<Object?> get props => [eventId, email];
+}
+
+/// Sync all attendees for app event
+class SyncAttendeesForAppEvent extends CalendarSyncEvent {
+  final String eventId;
+
+  const SyncAttendeesForAppEvent({
+    required this.eventId,
+  });
+
+  @override
+  List<Object?> get props => [eventId];
+}
+
+/// Handle team member email changed
+class OnTeamMemberEmailChanged extends CalendarSyncEvent {
+  final String teamMemberId;
+  final String oldEmail;
+  final String newEmail;
+
+  const OnTeamMemberEmailChanged({
+    required this.teamMemberId,
+    required this.oldEmail,
+    required this.newEmail,
+  });
+
+  @override
+  List<Object?> get props => [teamMemberId, oldEmail, newEmail];
 }

@@ -27,7 +27,6 @@ class PresetRepository {
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
-      developer.log('PresetRepository: Processing ${snapshot.docs.length} presets', name: 'Preset');
       return snapshot.docs
           .map((doc) => PresetModel.fromFirestore(doc))
           .toList();
@@ -45,25 +44,21 @@ class PresetRepository {
   /// Create a new preset
   Future<void> createPreset(Preset preset) async {
     await _database.insertPreset(preset);
-    developer.log('PresetRepository: Created preset ${preset.id} (${preset.name})', name: 'Preset');
   }
 
   /// Update an existing preset
   Future<void> updatePreset(Preset preset) async {
     await _database.updatePreset(preset);
-    developer.log('PresetRepository: Updated preset ${preset.id} (${preset.name})', name: 'Preset');
   }
 
   /// Delete a preset
   Future<void> deletePreset(String id) async {
     await _database.deletePreset(id);
-    developer.log('PresetRepository: Deleted preset $id', name: 'Preset');
   }
 
   /// Load a preset into an event (creates checklist items from template)
   Future<void> loadPresetIntoEvent(String presetId, String eventId, String creatorAdminId) async {
     await _database.loadPresetIntoEvent(presetId, eventId, creatorAdminId);
-    developer.log('PresetRepository: Loaded preset $presetId into event $eventId', name: 'Preset');
   }
 
   void dispose() {

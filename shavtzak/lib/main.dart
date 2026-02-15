@@ -25,6 +25,7 @@ import 'domain/entities/team_member.dart';
 import 'core/services/user_cache_service.dart';
 import 'core/services/environment_service.dart';
 import 'core/services/connectivity_service.dart';
+import 'core/services/service_locator.dart';
 import 'core/services/drive_service.dart';
 import 'core/services/config_cache_service.dart';
 import 'presentation/widgets/offline_blocking_overlay.dart';
@@ -337,7 +338,6 @@ class MyApp extends StatelessWidget {
               BlocProvider.value(value: calendarSyncBloc),
               BlocProvider(
                 create: (context) {
-                  developer.log('main.dart: Creating TeamBloc for $env environment', name: 'Main');
                   final teamBloc = TeamBloc(
                     context.read<TeamRepository>(),
                     context.read<AssignmentRepository>(),
@@ -350,7 +350,6 @@ class MyApp extends StatelessWidget {
               ),
               BlocProvider(
                 create: (context) {
-                  developer.log('main.dart: Creating EventBloc for $env environment', name: 'Main');
                   return EventBloc(
                     context.read<EventRepository>(),
                     context.read<AssignmentRepository>(),
@@ -360,28 +359,21 @@ class MyApp extends StatelessWidget {
               ),
               BlocProvider(
                 create: (context) {
-                  developer.log('main.dart: Creating AssignmentBloc for $env environment', name: 'Main');
-                  return AssignmentBloc(
-                    context.read<AssignmentRepository>(),
-                    context.read<EventRepository>(),
-                    context.read<TeamRepository>(),
-                    context.read<RoleRepository>(),
+                  return serviceLocator.createAssignmentBloc(
+                    calendarSyncBloc: context.read<CalendarSyncBloc>(),
                   );
                 },
               ),
               BlocProvider(
                 create: (context) {
-                  developer.log('main.dart: Creating UserSelectionBloc for $env environment', name: 'Main');
-                  return UserSelectionBloc(
-                    userSelectionRepository,
-                    context.read<TeamRepository>(),
-                    preAuthenticatedUser,
+                  return serviceLocator.createUserSelectionBloc(
+                    calendarSyncBloc: context.read<CalendarSyncBloc>(),
+                    preAuthenticatedUser: preAuthenticatedUser,
                   );
                 },
               ),
               BlocProvider(
                 create: (context) {
-                  developer.log('main.dart: Creating ChecklistBloc for $env environment', name: 'Main');
                   return ChecklistBloc(
                     repository: context.read<ChecklistRepository>(),
                     userSelectionBloc: context.read<UserSelectionBloc>(),
@@ -390,7 +382,6 @@ class MyApp extends StatelessWidget {
               ),
               BlocProvider(
                 create: (context) {
-                  developer.log('main.dart: Creating PresetBloc for $env environment', name: 'Main');
                   return PresetBloc(
                     repository: context.read<PresetRepository>(),
                     eventRepository: context.read<EventRepository>(),
@@ -400,7 +391,6 @@ class MyApp extends StatelessWidget {
               ),
               BlocProvider(
                 create: (context) {
-                  developer.log('main.dart: Creating RoleBloc for $env environment', name: 'Main');
                   final roleBloc = RoleBloc(context.read<RoleRepository>());
                   // Start loading roles immediately
                   roleBloc.add(const LoadRoles());
@@ -409,7 +399,6 @@ class MyApp extends StatelessWidget {
               ),
               BlocProvider(
                 create: (context) {
-                  developer.log('main.dart: Creating CategoryBloc for $env environment', name: 'Main');
                   final categoryBloc = CategoryBloc(
                     context.read<CategoryRepository>(),
                   );
@@ -478,14 +467,12 @@ void _initializeCalendarBlocWithConfig(
   Map<String, String?> config,
 ) {
   try {
-    if (config['serviceAccountJson'] != null && config['calendarId'] != null) {
+    if (config['calendarId'] != null) {
       bloc.add(InitializeCalendarSync(
-        serviceAccountJson: config['serviceAccountJson']!,
         calendarId: config['calendarId']!,
       ));
     } else {
       bloc.add(const InitializeCalendarSync(
-        serviceAccountJson: null,
         calendarId: null,
       ));
     }
@@ -548,12 +535,10 @@ void _refreshConfigCacheInBackground(
 
       if (driveConfig != null) {
         await configCache.saveDriveConfig(driveConfig);
-        developer.log('main.dart: Background: Drive config cached', name: 'Main');
       }
 
       if (calendarConfig != null) {
         await configCache.saveCalendarConfig(calendarConfig);
-        developer.log('main.dart: Background: Calendar config cached', name: 'Main');
       }
     } catch (e) {
       developer.log(

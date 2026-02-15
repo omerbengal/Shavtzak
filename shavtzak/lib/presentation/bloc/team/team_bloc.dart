@@ -69,10 +69,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     LoadTeamMembers event,
     Emitter<TeamState> emit,
   ) async {
-    developer.log('TeamBloc._onLoadTeamMembers: Starting to load team members', name: 'TeamBloc');
-    final currentEnv = EnvironmentService.instance.isTestMode ? 'TEST' : 'PROD';
-    developer.log('TeamBloc._onLoadTeamMembers: Current environment is $currentEnv', name: 'TeamBloc');
-
     emit(const TeamLoading());
 
     try {
@@ -82,7 +78,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       // Use explicit subscription management instead of emit.forEach
       _teamSubscription = _repository.watchTeamMembers().listen(
         (members) {
-          developer.log('TeamBloc._onLoadTeamMembers: Received ${members.length} team members', name: 'TeamBloc');
           add(_TeamMembersUpdated(members, activeOnly: false));
         },
         onError: (error, stackTrace) {

@@ -34,6 +34,10 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     on<PerformBidirectionalSync>(_onPerformBidirectionalSync);
     on<SyncAppEventToCalendar>(_onSyncAppEvent);
     on<RemoveAppEventFromCalendar>(_onRemoveAppEvent);
+    on<AddAttendeeToAppEvent>(_onAddAttendeeToAppEvent);
+    on<RemoveAttendeeFromAppEvent>(_onRemoveAttendeeFromAppEvent);
+    on<SyncAttendeesForAppEvent>(_onSyncAttendeesForAppEvent);
+    on<OnTeamMemberEmailChanged>(_onTeamMemberEmailChanged);
   }
 
   /// Initialize the calendar sync service
@@ -44,22 +48,20 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     emit(const CalendarSyncInitializing());
 
     try {
-      // Check if credentials are provided
-      if (event.serviceAccountJson == null || event.calendarId == null) {
+      // Check if calendar ID is provided
+      if (event.calendarId == null) {
         developer.log(
-          'CalendarSyncBloc: No credentials provided, sync disabled',
+          'CalendarSyncBloc: No calendar ID provided, sync disabled',
           name: 'CalendarSyncBloc',
         );
         emit(const CalendarSyncDisabled(
-          reason: 'לא הוגדרו פרטי התחברות ליומן גוגל',
+          reason: 'לא הוגדר מזהה יומן גוגל',
         ));
         return;
       }
 
-
-      // Initialize Google Calendar service
+      // Initialize Google Calendar service with OAuth
       await _calendarService.initialize(
-        serviceAccountJson: event.serviceAccountJson!,
         calendarId: event.calendarId!,
       );
 
@@ -642,6 +644,116 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         constraintId: event.eventId,
         errorMessage: e.toString(),
       ));
+    }
+  }
+
+  /// Add attendee to app event
+  Future<void> _onAddAttendeeToAppEvent(
+    AddAttendeeToAppEvent event,
+    Emitter<CalendarSyncState> emit,
+  ) async {
+    if (_syncService == null) {
+      developer.log(
+        'CalendarSyncBloc: Sync service not initialized, skipping attendee add',
+        name: 'CalendarSyncBloc',
+      );
+      return;
+    }
+
+    try {
+      await _syncService!.addAttendeeToAppEvent(
+        eventId: event.eventId,
+        email: event.email,
+      );
+    } catch (e) {
+      developer.log(
+        'CalendarSyncBloc: Failed to add attendee - $e',
+        name: 'CalendarSyncBloc',
+        error: e,
+      );
+      // Best-effort: don't rethrow
+    }
+  }
+
+  /// Remove attendee from app event
+  Future<void> _onRemoveAttendeeFromAppEvent(
+    RemoveAttendeeFromAppEvent event,
+    Emitter<CalendarSyncState> emit,
+  ) async {
+    if (_syncService == null) {
+      developer.log(
+        'CalendarSyncBloc: Sync service not initialized, skipping attendee remove',
+        name: 'CalendarSyncBloc',
+      );
+      return;
+    }
+
+    try {
+      await _syncService!.removeAttendeeFromAppEvent(
+        eventId: event.eventId,
+        email: event.email,
+      );
+    } catch (e) {
+      developer.log(
+        'CalendarSyncBloc: Failed to remove attendee - $e',
+        name: 'CalendarSyncBloc',
+        error: e,
+      );
+      // Best-effort: don't rethrow
+    }
+  }
+
+  /// Sync all attendees for app event
+  Future<void> _onSyncAttendeesForAppEvent(
+    SyncAttendeesForAppEvent event,
+    Emitter<CalendarSyncState> emit,
+  ) async {
+    if (_syncService == null) {
+      developer.log(
+        'CalendarSyncBloc: Sync service not initialized, skipping attendee sync',
+        name: 'CalendarSyncBloc',
+      );
+      return;
+    }
+
+    try {
+      await _syncService!.syncAttendeesForAppEvent(event.eventId);
+    } catch (e) {
+      developer.log(
+        'CalendarSyncBloc: Failed to sync attendees - $e',
+        name: 'CalendarSyncBloc',
+        error: e,
+      );
+      // Best-effort: don't rethrow
+    }
+  }
+
+  /// Handle team member email changed
+  Future<void> _onTeamMemberEmailChanged(
+    OnTeamMemberEmailChanged event,
+    Emitter<CalendarSyncState> emit,
+  ) async {
+    if (_syncService == null) {
+      developer.log(
+        'CalendarSyncBloc: Sync service not initialized, skipping email change',
+        name: 'CalendarSyncBloc',
+      );
+      return;
+    }
+
+    try {
+      await _syncService!.onTeamMemberEmailChanged(
+        teamMemberId: event.teamMemberId,
+        oldEmail: event.oldEmail,
+        newEmail: event.newEmail,
+      );
+    } catch (e) {
+      developer.log(
+        'CalendarSyncBloc: Failed to handle email change - $e',
+        name: 'CalendarSyncBloc',
+        error: e,
+      );
+      // Best-effort: don't rethrow
     }
   }
 

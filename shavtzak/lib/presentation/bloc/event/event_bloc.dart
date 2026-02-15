@@ -575,7 +575,9 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   /// Always syncs to handle both creation/update AND deletion of calendar events
   void _syncEventToCalendar(Event event) {
     // Only sync if calendar sync bloc is available
-    if (_calendarSyncBloc == null) return;
+    if (_calendarSyncBloc == null) {
+      return;
+    }
 
     // Extract clean location name (remove coordinates if present)
     String? cleanLocation;

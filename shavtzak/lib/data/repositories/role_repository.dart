@@ -84,9 +84,8 @@ class RoleRepository {
       );
 
       await _database.insertRole(role);
-      developer.log('RoleRepository.createRole: Created role "$hebrewName"', name: 'RoleRepository');
     } catch (e) {
-      developer.log('RoleRepository.createRole: Error creating role: $e', name: 'RoleRepository');
+      developer.log('RoleRepository.createRole: Error creating role: $e', name: 'RoleRepository', error: e);
       rethrow;
     }
   }
@@ -96,9 +95,8 @@ class RoleRepository {
     try {
       final updatedRole = role.copyWith(updatedAt: DateTime.now());
       await _database.updateRole(updatedRole);
-      developer.log('RoleRepository.updateRole: Updated role "${role.hebrewName}"', name: 'RoleRepository');
     } catch (e) {
-      developer.log('RoleRepository.updateRole: Error updating role: $e', name: 'RoleRepository');
+      developer.log('RoleRepository.updateRole: Error updating role: $e', name: 'RoleRepository', error: e);
       rethrow;
     }
   }
@@ -117,9 +115,8 @@ class RoleRepository {
       );
 
       await _database.updateRole(updatedRole);
-      developer.log('RoleRepository.renameRole: Renamed role to "$newHebrewName"', name: 'RoleRepository');
     } catch (e) {
-      developer.log('RoleRepository.renameRole: Error renaming role: $e', name: 'RoleRepository');
+      developer.log('RoleRepository.renameRole: Error renaming role: $e', name: 'RoleRepository', error: e);
       rethrow;
     }
   }
@@ -138,9 +135,8 @@ class RoleRepository {
       );
 
       await _database.updateRole(updatedRole);
-      developer.log('RoleRepository.toggleVisibility: Toggled visibility for "${role.hebrewName}" to ${!role.isVisible}', name: 'RoleRepository');
     } catch (e) {
-      developer.log('RoleRepository.toggleVisibility: Error toggling visibility: $e', name: 'RoleRepository');
+      developer.log('RoleRepository.toggleVisibility: Error toggling visibility: $e', name: 'RoleRepository', error: e);
       rethrow;
     }
   }
@@ -149,9 +145,8 @@ class RoleRepository {
   Future<void> archiveRole(String roleId) async {
     try {
       await _database.archiveRole(roleId);
-      developer.log('RoleRepository.archiveRole: Archived role $roleId', name: 'RoleRepository');
     } catch (e) {
-      developer.log('RoleRepository.archiveRole: Error archiving role: $e', name: 'RoleRepository');
+      developer.log('RoleRepository.archiveRole: Error archiving role: $e', name: 'RoleRepository', error: e);
       rethrow;
     }
   }
@@ -160,9 +155,8 @@ class RoleRepository {
   Future<void> restoreRole(String roleId) async {
     try {
       await _database.restoreRole(roleId);
-      developer.log('RoleRepository.restoreRole: Restored role $roleId', name: 'RoleRepository');
     } catch (e) {
-      developer.log('RoleRepository.restoreRole: Error restoring role: $e', name: 'RoleRepository');
+      developer.log('RoleRepository.restoreRole: Error restoring role: $e', name: 'RoleRepository', error: e);
       rethrow;
     }
   }
@@ -171,9 +165,8 @@ class RoleRepository {
   Future<void> deleteRole(String roleId) async {
     try {
       await _database.deleteRole(roleId);
-      developer.log('RoleRepository.deleteRole: Permanently deleted role $roleId', name: 'RoleRepository');
     } catch (e) {
-      developer.log('RoleRepository.deleteRole: Error deleting role: $e', name: 'RoleRepository');
+      developer.log('RoleRepository.deleteRole: Error deleting role: $e', name: 'RoleRepository', error: e);
       rethrow;
     }
   }
@@ -188,9 +181,8 @@ class RoleRepository {
       }
 
       await _database.updateRolesSortOrder(roleIdToSortOrder);
-      developer.log('RoleRepository.reorderRoles: Updated sort order for ${roleIdToSortOrder.length} roles', name: 'RoleRepository');
     } catch (e) {
-      developer.log('RoleRepository.reorderRoles: Error reordering roles: $e', name: 'RoleRepository');
+      developer.log('RoleRepository.reorderRoles: Error reordering roles: $e', name: 'RoleRepository', error: e);
       rethrow;
     }
   }
@@ -199,9 +191,8 @@ class RoleRepository {
   Future<void> seedRolesFromEnum() async {
     try {
       await _database.seedRolesFromEnum();
-      developer.log('RoleRepository.seedRolesFromEnum: Completed seed operation', name: 'RoleRepository');
     } catch (e) {
-      developer.log('RoleRepository.seedRolesFromEnum: Error seeding roles: $e', name: 'RoleRepository');
+      developer.log('RoleRepository.seedRolesFromEnum: Error seeding roles: $e', name: 'RoleRepository', error: e);
       rethrow;
     }
   }

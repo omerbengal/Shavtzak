@@ -46,8 +46,6 @@ class ExportService {
     }
 
     try {
-      developer.log('ExportService: Starting full DB export...', name: 'Export');
-
       // 1. Fetch all raw documents in parallel
       final results = await Future.wait([
         _firestore.collection(_teamMembers).get(),    // 0
@@ -157,8 +155,6 @@ class ExportService {
         },
       };
 
-      developer.log('ExportService: Sending data to Apps Script...', name: 'Export');
-
       final response = await http.post(
         Uri.parse(drive.scriptUrl!),
         headers: {'Content-Type': 'text/plain;charset=UTF-8'},
@@ -168,10 +164,6 @@ class ExportService {
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         if (body['success'] == true) {
-          developer.log(
-            'ExportService: Export succeeded, URL=${body['spreadsheetUrl']}',
-            name: 'Export',
-          );
           return ExportResult(
             success: true,
             spreadsheetUrl: body['spreadsheetUrl'] as String?,
@@ -205,8 +197,6 @@ class ExportService {
     }
 
     try {
-      developer.log('ExportService: Starting assignments-only export...', name: 'Export');
-
       // Fetch only needed collections
       final results = await Future.wait([
         _firestore.collection(_assignments).get(),
@@ -253,8 +243,6 @@ class ExportService {
         'exportData': {'sheets': [sheet]},
       };
 
-      developer.log('ExportService: Sending assignments data to Apps Script...', name: 'Export');
-
       final response = await http.post(
         Uri.parse(drive.scriptUrl!),
         headers: {'Content-Type': 'text/plain;charset=UTF-8'},
@@ -264,10 +252,6 @@ class ExportService {
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         if (body['success'] == true) {
-          developer.log(
-            'ExportService: Assignments export succeeded, URL=${body['spreadsheetUrl']}',
-            name: 'Export',
-          );
           return ExportResult(
             success: true,
             spreadsheetUrl: body['spreadsheetUrl'] as String?,

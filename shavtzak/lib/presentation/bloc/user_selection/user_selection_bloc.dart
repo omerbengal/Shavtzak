@@ -6,16 +6,20 @@ import '../../../core/services/user_cache_service.dart';
 import 'user_selection_event.dart';
 import 'user_selection_state.dart';
 import 'dart:async';
+import '../calendar_sync/calendar_sync_bloc.dart';
+import '../calendar_sync/calendar_sync_event.dart';
 
 /// BLoC for managing user selection and authentication
 class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
   final UserSelectionRepository _userSelectionRepository;
   final TeamRepository _teamRepository;
+  final CalendarSyncBloc? _calendarSyncBloc;
   StreamSubscription? _teamStreamSubscription;
 
   UserSelectionBloc(
     this._userSelectionRepository,
-    this._teamRepository, [
+    this._teamRepository,
+    this._calendarSyncBloc, [
     TeamMember? preAuthenticatedUser,
   ]) : super(preAuthenticatedUser != null
       ? UserAuthenticated(preAuthenticatedUser)
@@ -30,6 +34,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     on<UpdatePhoneNumber>(_onUpdatePhoneNumber);
     on<UpdateBirthday>(_onUpdateBirthday);
     on<UpdateVehicleInfo>(_onUpdateVehicleInfo);
+    on<UpdateEmail>(_onUpdateEmail);
 
     // Listen to team member changes and refresh current user if needed
     _teamStreamSubscription = _teamRepository.watchTeamMembers().listen((teamMembers) {
@@ -95,7 +100,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     try {
       final user = await _userSelectionRepository.selectUser(event.uniqueKey);
 
-      // selectUser already caches the user and throws exceptions for invalid users
+      // selectUser already caches user and throws exceptions for invalid users
       emit(UserAuthenticated(user));
     } catch (e) {
       emit(UserSelectionValidationError('שגיאה בבחירת משתמש: $e'));
@@ -244,6 +249,40 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
         add(const RefreshUserData());
       } catch (e) {
         emit(UserSelectionError('שגיאה בעדכון פרטי רכב: $e'));
+      }
+    }
+  }
+
+  /// Update user's email address
+  Future<void> _onUpdateEmail(
+    UpdateEmail event,
+    Emitter<UserSelectionState> emit,
+  ) async {
+    final currentState = state;
+
+    if (currentState is UserAuthenticated) {
+      try {
+        final oldEmail = currentState.user.email ?? '';
+
+        await _userSelectionRepository.updateTeamMemberEmail(
+          currentState.user.uniqueKey,
+          event.email,
+        );
+
+        // Refresh user data to get updated email
+        add(const RefreshUserData());
+
+        // Dispatch OnTeamMemberEmailChanged to CalendarSyncBloc
+        // This will trigger calendar invite updates for future events
+        if (oldEmail != null && oldEmail.isNotEmpty && event.email != null && event.email!.isNotEmpty) {
+          _calendarSyncBloc?.add(OnTeamMemberEmailChanged(
+            teamMemberId: currentState.user.id,
+            oldEmail: oldEmail,
+            newEmail: event.email!,
+          ));
+        }
+      } catch (e) {
+        emit(UserSelectionError('שגיאה בעדכון כתובת אימייל: $e'));
       }
     }
   }

@@ -15,6 +15,7 @@ import '../../../core/services/drive_service.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/export_service.dart';
 import '../../../core/services/user_cache_service.dart';
+import '../../../core/services/google_oauth_service.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
 import '../../widgets/settings_dialog.dart';
 
@@ -314,6 +315,17 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
             centerTitle: true,
             leading: const SizedBox.shrink(), // Prevent automatic back arrow
             actions: [
+              // Google Calendar settings (admin only)
+              if (state.isAdmin) ...[
+                IconButton(
+                  icon: const Icon(Icons.calendar_month),
+                  tooltip: 'הגדרות יומן גוגל',
+                  onPressed: () => _showGoogleCalendarSettingsDialog(context),
+                  iconSize: 24,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+                ),
+              ],
               // Export buttons (admin only, when Drive is initialized)
               if (state.isAdmin && DriveService.instance.isInitialized) ...[
                 // Full DB export button (database icon)
@@ -625,6 +637,314 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                   'התנתקות',
                   style: TextStyle(color: Colors.red),
                 ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Show Google Calendar OAuth settings dialog
+  void _showGoogleCalendarSettingsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              final oauthService = GoogleOAuthService.instance;
+              final isConnected = oauthService.isAuthenticated;
+              final userEmail = oauthService.authenticatedUserEmail;
+
+              // Auto-refresh dialog every 2 seconds while initializing
+              if (!isConnected && oauthService.isInitialized) {
+                Future.delayed(const Duration(seconds: 2), () {
+                  if (context.mounted) {
+                    setState(() {});
+                  }
+                });
+              }
+
+              return AlertDialog(
+                title: const Row(
+                  children: [
+                    Icon(Icons.calendar_month, color: Colors.blue),
+                    SizedBox(width: 8),
+                    Text('הגדרות יומן גוגל'),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Connection status
+                    Row(
+                      children: [
+                        const Text(
+                          'מצב חיבור:',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          isConnected ? Icons.check_circle : Icons.cancel,
+                          color: isConnected ? Colors.green : Colors.red,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          isConnected ? 'מחובר' : 'לא מחובר',
+                          style: TextStyle(
+                            color: isConnected ? Colors.green : Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // Authenticated user email
+                    if (isConnected && userEmail != null) ...[
+                      const Text(
+                        'משתמש:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        userEmail,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    // Explanation
+                    if (!isConnected)
+                      const Text(
+                        'התחבר/י ליומן גוגל כדי לאפשר הוספת משתתפים לאירועי יומן באופן אוטומטי.',
+                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                  ],
+                ),
+                actions: [
+                  // Refresh status button (always visible)
+                  TextButton.icon(
+                    onPressed: () => setState(() {}),
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('רענן סטטוס'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('סגירה'),
+                  ),
+                  if (isConnected)
+                    TextButton(
+                      onPressed: () async {
+                        // Close main dialog first
+                        Navigator.of(dialogContext).pop();
+
+                        // Show loading indicator with context capture
+                        BuildContext? loadingContext;
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (ctx) {
+                            loadingContext = ctx;
+                            return Directionality(
+                              textDirection: TextDirection.rtl,
+                              child: const AlertDialog(
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(),
+                                    SizedBox(height: 16),
+                                    Text('מתנתק...'),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        );
+
+                        // Sign out with error handling
+                        try {
+                          await oauthService.signOut().timeout(
+                            const Duration(seconds: 30),
+                          );
+                        } catch (e) {
+                          // Ignore sign-out errors
+                        }
+
+                        // Close loading dialog using captured context
+                        if (loadingContext != null && loadingContext!.mounted) {
+                          Navigator.of(loadingContext!).pop();
+                        }
+
+                        // Show success dialog
+                        if (context.mounted) {
+                          _showDisconnectSuccessDialog(context);
+                        }
+                      },
+                      child: const Text(
+                        'התנתק',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  if (!isConnected)
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        // Close main dialog first
+                        Navigator.of(dialogContext).pop();
+
+                        // Show loading indicator with context capture
+                        BuildContext? loadingContext;
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (ctx) {
+                            loadingContext = ctx;
+                            return Directionality(
+                              textDirection: TextDirection.rtl,
+                              child: const AlertDialog(
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(),
+                                    SizedBox(height: 16),
+                                    Text('מתחבר ליומן גוגל...'),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        );
+
+                        // Attempt sign in with error handling
+                        bool success = false;
+                        try {
+                          success = await oauthService.signIn().timeout(
+                            const Duration(seconds: 60),
+                            onTimeout: () {
+                              return false;
+                            },
+                          );
+                        } catch (e) {
+                          success = false;
+                        }
+
+                        // Close loading dialog using captured context
+                        if (loadingContext != null && loadingContext!.mounted) {
+                          Navigator.of(loadingContext!).pop();
+                        }
+
+                        // Show result dialog
+                        if (context.mounted) {
+                          if (success) {
+                            _showConnectSuccessDialog(context);
+                          } else {
+                            _showConnectErrorDialog(context);
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.login, size: 18),
+                      label: const Text('התחבר ליומן גוגל'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  /// Show success dialog after connecting to Google Calendar
+  void _showConnectSuccessDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                SizedBox(width: 8),
+                Text('חיבור הצליח'),
+              ],
+            ),
+            content: const Text(
+              'החיבור ליומן גוגל הצליח!\n'
+              'כעת ניתן להוסיף משתתפים לאירועי יומן באופן אוטומטי.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('סגירה'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Show error dialog after failed connection attempt
+  void _showConnectErrorDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.error, color: Colors.red),
+                SizedBox(width: 8),
+                Text('שגיאה בחיבור'),
+              ],
+            ),
+            content: const Text(
+              'החיבור ליומן גוגל נכשל.\n'
+              'ייתכן שביטלת את התהליך או שאין הרשאות מתאימות.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('סגירה'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Show success dialog after disconnecting from Google Calendar
+  void _showDisconnectSuccessDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                SizedBox(width: 8),
+                Text('התנתקות הצליחה'),
+              ],
+            ),
+            content: const Text(
+              'ההתנתקות מיומן גוגל הצליחה.\n'
+              'הוסרו כל האסימונים השמורים.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('סגירה'),
               ),
             ],
           ),

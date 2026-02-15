@@ -209,6 +209,21 @@ class Validators {
     return null;
   }
 
+  /// Validate email address
+  static String? validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return null; // Email is optional
+    }
+
+    // Basic email regex pattern
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(value.trim())) {
+      return 'כתובת אימייל לא תקינה';
+    }
+
+    return null;
+  }
+
   /// Format Israeli phone number for display
   static String formatPhoneNumber(String? phoneNumber) {
     if (phoneNumber == null || phoneNumber.isEmpty) return '';

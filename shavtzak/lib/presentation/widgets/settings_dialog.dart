@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
@@ -8,6 +9,7 @@ import '../../core/utils/validators.dart';
 import 'passcode_setup_dialog.dart';
 import 'passcode_change_dialog.dart';
 import 'phone_edit_dialog.dart';
+import 'email_edit_dialog.dart';
 import 'birthday_edit_dialog.dart';
 import 'vehicle_info_edit_dialog.dart';
 
@@ -206,6 +208,132 @@ class _SettingsDialogState extends State<SettingsDialog> {
                               icon: Icon(Icons.add, color: Colors.white, size: iconSize),
                               label: Text(
                                 'הוסף מספר טלפון',
+                                style: TextStyle(fontSize: fontSize * 0.85),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                    },
+                  ),
+                ),
+              ),
+              SizedBox(height: MediaQuery.of(context).size.height * 0.02),
+              // Email section
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: EdgeInsets.all(_getResponsivePadding(context, 8)),
+                  child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
+                    builder: (context, state) {
+                      if (state is! UserAuthenticated) {
+                        return const SizedBox.shrink();
+                      }
+
+                      final email = state.user.email;
+                      final hasEmail = email != null && email.isNotEmpty;
+                      final iconSize = _getResponsiveIconSize(context, 18);
+                      final fontSize = _getResponsiveFontSize(context, 16);
+                      final titleFontSize = _getResponsiveFontSize(context, 18);
+                      final buttonPadding = _getResponsivePadding(context, 16);
+                      final spacing = _getResponsivePadding(context, 8);
+                      final iconSpacing = _getResponsivePadding(context, 4);
+
+                      if (hasEmail) {
+                        return Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.email,
+                                  color: Colors.blue,
+                                  size: iconSize,
+                                ),
+                                SizedBox(width: iconSpacing),
+                                Text(
+                                  'כתובת אימייל',
+                                  style: TextStyle(fontSize: titleFontSize, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.01),
+                            Text(
+                              email,
+                              style: TextStyle(
+                                fontSize: fontSize,
+                                color: Colors.blue,
+                              ),
+                            ),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.015),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: () => _showEmailEditDialog(context),
+                                  icon: Icon(Icons.edit, size: iconSize, color: Colors.white),
+                                  label: Text('ערוך', style: TextStyle(fontSize: fontSize * 0.75)),
+                                  style: ElevatedButton.styleFrom(
+                                    minimumSize: Size(0, 36 * (MediaQuery.of(context).size.width / 400).clamp(0.7, 1.0)),
+                                    padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
+                                  ),
+                                ),
+                                SizedBox(width: spacing),
+                                OutlinedButton.icon(
+                                  onPressed: _isDeleting ? null : () => _deleteEmail(context),
+                                  icon: _isDeleting
+                                      ? SizedBox(
+                                          width: iconSize,
+                                          height: iconSize,
+                                          child: CircularProgressIndicator(strokeWidth: 2, valueColor: const AlwaysStoppedAnimation<Color>(Colors.red)),
+                                        )
+                                      : Icon(Icons.delete, size: iconSize, color: Colors.red),
+                                  label: Text(
+                                    _isDeleting ? 'מוחק...' : 'מחק',
+                                    style: TextStyle(color: Colors.red, fontSize: fontSize * 0.75),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize: Size(0, 36 * (MediaQuery.of(context).size.width / 400).clamp(0.7, 1.0)),
+                                    side: const BorderSide(color: Colors.red),
+                                    padding: EdgeInsets.symmetric(horizontal: buttonPadding, vertical: buttonPadding * 0.5),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        );
+                      } else {
+                        return Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.email_outlined,
+                                  color: Colors.grey[400],
+                                  size: iconSize,
+                                ),
+                                SizedBox(width: iconSpacing),
+                                Text(
+                                  'כתובת אימייל',
+                                  style: TextStyle(fontSize: titleFontSize, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.01),
+                            Text(
+                              'לא הוגדרה כתובת אימייל',
+                              style: TextStyle(fontSize: fontSize, color: Colors.grey),
+                            ),
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.015),
+                            ElevatedButton.icon(
+                              onPressed: () => _showEmailEditDialog(context),
+                              icon: Icon(Icons.add, color: Colors.white, size: iconSize),
+                              label: Text(
+                                'הוסף כתובת אימייל',
                                 style: TextStyle(fontSize: fontSize * 0.85),
                               ),
                               style: ElevatedButton.styleFrom(
@@ -801,6 +929,56 @@ class _SettingsDialogState extends State<SettingsDialog> {
         // Add the update event to delete the phone number
         bloc.add(const UpdatePhoneNumber(null));
       }
+    }
+  }
+
+  void _showEmailEditDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => const EmailEditDialog(),
+    );
+  }
+
+  void _deleteEmail(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('מחיקת כתובת אימייל'),
+          content: const Text('האם אתה בטוח/ה בטוח/ה שברצונך למחוק את כתובת האימייל?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('ביטול'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+              ),
+              child: const Text('מחק'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      final bloc = context.read<UserSelectionBloc>();
+      final currentState = bloc.state;
+
+      if (currentState is UserAuthenticated) {
+        // Add UpdateEmail event to delete the email
+        bloc.add(const UpdateEmail(null));
+      }
+    }
+  }
+
+  void _launchEmail(String email) async {
+    final Uri emailUri = Uri(scheme: 'mailto', path: email);
+    if (await canLaunchUrl(emailUri)) {
+      await launchUrl(emailUri);
     }
   }
 
