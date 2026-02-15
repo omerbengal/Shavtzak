@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:html' as html;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:googleapis_auth/auth_io.dart';
 import 'package:http/http.dart' as http;
@@ -7,6 +6,7 @@ import 'dart:developer' as developer;
 import 'dart:async';
 
 import 'environment_service.dart';
+import 'oauth_popup_bridge.dart';
 
 /// Service for handling Google OAuth 2.0 authentication with refresh tokens
 /// Properly implements OAuth 2.0 flow to get long-lived refresh tokens
@@ -164,9 +164,7 @@ class GoogleOAuthService {
       );
 
       // Get the current origin for redirect URI (using dedicated callback page)
-      final currentUrl = html.window.location.href;
-      final uri = Uri.parse(currentUrl);
-      final origin = '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
+      final origin = getOAuthCurrentOrigin();
       final redirectUri = '$origin/oauth-callback.html';
 
       // Build OAuth 2.0 authorization URL with offline access
@@ -187,69 +185,8 @@ class GoogleOAuthService {
         name: 'GoogleOAuth',
       );
 
-      // Open OAuth consent screen in popup
-      final width = 600;
-      final height = 700;
-      final left = (html.window.screen!.width! - width) ~/ 2;
-      final top = (html.window.screen!.height! - height) ~/ 2;
-
-      final popup = html.window.open(
-        authUrl.toString(),
-        'Google OAuth',
-        'width=$width,height=$height,left=$left,top=$top,toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes',
-      );
-
-      if (popup == null) {
-        developer.log(
-          'GoogleOAuthService: Failed to open popup - blocked by browser',
-          name: 'GoogleOAuth',
-        );
-        return false;
-      }
-
-      // Wait for the popup to send back auth code via postMessage
-      final completer = Completer<String?>();
-      StreamSubscription? messageSubscription;
-
-      // Listen for postMessage from popup callback page
-      messageSubscription = html.window.onMessage.listen((html.MessageEvent event) {
-        final data = event.data;
-        if (data is Map) {
-          if (data['type'] == 'oauth_callback') {
-            final code = data['code'] as String?;
-            if (code != null && !completer.isCompleted) {
-              developer.log(
-                'GoogleOAuthService: Received auth code from popup',
-                name: 'GoogleOAuth',
-              );
-              completer.complete(code);
-            }
-          } else if (data['type'] == 'oauth_error') {
-            if (!completer.isCompleted) {
-              developer.log(
-                'GoogleOAuthService: OAuth error - ${data['error']}',
-                name: 'GoogleOAuth',
-              );
-              completer.complete(null);
-            }
-          }
-        }
-      });
-
-      // Wait for authorization code with timeout
-      final authCode = await completer.future.timeout(
-        const Duration(minutes: 5),
-        onTimeout: () {
-          developer.log(
-            'GoogleOAuthService: OAuth flow timed out',
-            name: 'GoogleOAuth',
-          );
-          return null;
-        },
-      );
-
-      // Cleanup
-      await messageSubscription.cancel();
+      // Open OAuth consent screen in popup and wait for callback code.
+      final authCode = await openOAuthPopupAndWaitForCode(authUrl.toString());
 
       if (authCode == null) {
         developer.log(
@@ -514,6 +451,29 @@ class GoogleOAuthService {
       name: 'GoogleOAuth',
     );
     return null;
+  }
+
+  /// Force refresh the access token even if current token is not marked as expired.
+  /// Returns true if a valid access token is available after refresh.
+  Future<bool> forceRefreshAccessToken() async {
+    if (!_isInitialized) {
+      developer.log(
+        'GoogleOAuthService: Cannot force refresh before initialization',
+        name: 'GoogleOAuth',
+      );
+      return false;
+    }
+
+    if (_refreshToken == null) {
+      developer.log(
+        'GoogleOAuthService: Cannot force refresh without refresh token',
+        name: 'GoogleOAuth',
+      );
+      return false;
+    }
+
+    await _refreshAccessToken();
+    return _accessToken != null;
   }
 
   /// Get authenticated HTTP client for API calls

@@ -5,7 +5,6 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/validators.dart';
-import '../../../../domain/entities/category.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../data/repositories/assignment_repository.dart';
 import '../../../../data/repositories/event_repository.dart';
@@ -24,7 +23,6 @@ import '../../../widgets/loading_overlay.dart';
 import '../quota_reduction_analyzer.dart';
 import 'quota_reduction_dialog.dart';
 import 'duplication_conflict_resolution_dialog.dart';
-import 'event_drive_files_section.dart';
 
 /// Public Event Form Modal Widget for creating/editing events
 /// Can be used from any screen that needs to create or edit events
@@ -32,7 +30,8 @@ class EventFormModal extends StatefulWidget {
   final Event? event; // null for create, non-null for edit
   final VoidCallback onSuccess;
   final String? selectedRoleKey; // Optional role key to highlight/scroll to
-  final int filterIndex; // Filter index to reload with after operations (0=all, 1=future, 2=past)
+  final int
+      filterIndex; // Filter index to reload with after operations (0=all, 1=future, 2=past)
   final bool isDuplication; // true if this is a duplication modal
 
   const EventFormModal({
@@ -71,16 +70,22 @@ class _EventFormModalState extends State<EventFormModal> {
   late final FocusNode _parkingLocationFocusNode;
   late final FocusNode _commentsFocusNode;
   bool _duplicateAssignments = false; // For duplication mode checkbox
-  String? _rawLocationValue; // Stores location with hidden coordinates (Name||lat,lng)
-  String? _rawParkingLocationValue; // Stores parking location with hidden coordinates
-  List<String> _parkingEditorIds = const []; // IDs of team members who can edit parking
+  String?
+      _rawLocationValue; // Stores location with hidden coordinates (Name||lat,lng)
+  String?
+      _rawParkingLocationValue; // Stores parking location with hidden coordinates
+  List<String> _parkingEditorIds =
+      const []; // IDs of team members who can edit parking
   String? _selectedCategoryId; // Selected category ID for the event
-  bool _relevantForExtendedTeam = true; // Event is relevant for extended team (UI is inverted)
+  bool _relevantForExtendedTeam =
+      true; // Event is relevant for extended team (UI is inverted)
 
   // For highlighting selected role
-  ScrollController? _scrollController; // Will be set from DraggableScrollableSheet
+  ScrollController?
+      _scrollController; // Will be set from DraggableScrollableSheet
   bool _isSaving = false; // Loading state during save
-  final _sheetController = DraggableScrollableController(); // Controller to expand sheet
+  final _sheetController =
+      DraggableScrollableController(); // Controller to expand sheet
   final Map<RoleType, GlobalKey> _roleKeys = {};
   RoleType? _highlightedRole;
   double _highlightOpacity = 1.0; // For fade animation
@@ -111,7 +116,8 @@ class _EventFormModalState extends State<EventFormModal> {
       _nameController.text = widget.event!.name;
       // Store raw location value and display stripped version
       _rawLocationValue = widget.event!.location;
-      _locationController.text = MapLocationResult.stripCoordinates(widget.event!.location);
+      _locationController.text =
+          MapLocationResult.stripCoordinates(widget.event!.location);
       _rawParkingLocationValue = widget.event!.parkingLocation;
       _parkingLocationController.text = widget.event!.parkingLocation != null
           ? MapLocationResult.stripCoordinates(widget.event!.parkingLocation!)
@@ -150,7 +156,8 @@ class _EventFormModalState extends State<EventFormModal> {
     // RTL cursor fix for all text fields
     addRtlCursorFix(_nameFocusNode, _nameController);
     _locationFocusNode = createRtlCursorFixedFocusNode(_locationController);
-    _parkingLocationFocusNode = createRtlCursorFixedFocusNode(_parkingLocationController);
+    _parkingLocationFocusNode =
+        createRtlCursorFixedFocusNode(_parkingLocationController);
     _commentsFocusNode = createRtlCursorFixedFocusNode(_commentsController);
 
     // Enable validation when name field loses focus
@@ -278,7 +285,8 @@ class _EventFormModalState extends State<EventFormModal> {
               ),
               // Footer with cancel/confirm buttons
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -301,7 +309,8 @@ class _EventFormModalState extends State<EventFormModal> {
 
     if (result != null) {
       setState(() {
-        controller.text = '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
+        controller.text =
+            '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
         _isDirty = true;
       });
     }
@@ -348,29 +357,31 @@ class _EventFormModalState extends State<EventFormModal> {
       // Use raw location value (with hidden coordinates) if available and unchanged
       String dupLocationValue = _locationController.text.trim();
       if (_rawLocationValue != null) {
-        final strippedRaw = MapLocationResult.stripCoordinates(_rawLocationValue!);
+        final strippedRaw =
+            MapLocationResult.stripCoordinates(_rawLocationValue!);
         if (strippedRaw == dupLocationValue) {
           dupLocationValue = _rawLocationValue!;
         }
       }
 
       context.read<EventBloc>().add(DuplicateEvent(
-        eventId: widget.event!.id,
-        newName: _nameController.text,
-        newLocation: dupLocationValue,
-        newComments: _commentsController.text,
-        newStartDate: _startDate!,
-        newEndDate: _endDate!,
-        newStartTime: _startTimeController.text,
-        newEndTime: _endTimeController.text,
-        newAssemblyTime: _assemblyTimeController.text,
-        newActualShowStartTime: _actualShowStartTimeController.text,
-        newRequiresArmed: _requiresArmed,
-        newRoleRequirements: Map.from(_roleRequirements),
-        duplicateAssignments: _duplicateAssignments,
-        categoryId: _selectedCategoryId,
-        newRelevantForExtendedTeam: !_relevantForExtendedTeam, // Invert back for database
-      ));
+            eventId: widget.event!.id,
+            newName: _nameController.text,
+            newLocation: dupLocationValue,
+            newComments: _commentsController.text,
+            newStartDate: _startDate!,
+            newEndDate: _endDate!,
+            newStartTime: _startTimeController.text,
+            newEndTime: _endTimeController.text,
+            newAssemblyTime: _assemblyTimeController.text,
+            newActualShowStartTime: _actualShowStartTimeController.text,
+            newRequiresArmed: _requiresArmed,
+            newRoleRequirements: Map.from(_roleRequirements),
+            duplicateAssignments: _duplicateAssignments,
+            categoryId: _selectedCategoryId,
+            newRelevantForExtendedTeam:
+                !_relevantForExtendedTeam, // Invert back for database
+          ));
 
       // If duplicating WITH assignments, DON'T close immediately!
       // The BlocListener will handle showing conflict dialog or closing on success.
@@ -388,7 +399,8 @@ class _EventFormModalState extends State<EventFormModal> {
       try {
         final conflicts = await QuotaReductionAnalyzer.analyzeQuotaReductions(
           originalEvent: widget.event!,
-          newRoleRequirements: _roleRequirements, // Directly pass String-keyed map
+          newRoleRequirements:
+              _roleRequirements, // Directly pass String-keyed map
           assignmentRepo: context.read<AssignmentRepository>(),
         );
 
@@ -428,7 +440,8 @@ class _EventFormModalState extends State<EventFormModal> {
                   .toList();
 
               // Sort by current slotIndex to maintain relative order
-              remainingAssignments.sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+              remainingAssignments
+                  .sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
 
               // Reassign sequential slot indices starting from 0
               for (int i = 0; i < remainingAssignments.length; i++) {
@@ -471,9 +484,8 @@ class _EventFormModalState extends State<EventFormModal> {
             if (newQuota >= oldQuota) continue;
 
             // Get all assignments for this role
-            final roleAssignments = allAssignments
-                .where((a) => a.roleType == roleKey)
-                .toList();
+            final roleAssignments =
+                allAssignments.where((a) => a.roleType == roleKey).toList();
 
             // Sort by current slotIndex to maintain relative order
             roleAssignments.sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
@@ -517,7 +529,8 @@ class _EventFormModalState extends State<EventFormModal> {
     // Otherwise use the text field value (user typed manually)
     String locationValue = _locationController.text.trim();
     if (_rawLocationValue != null) {
-      final strippedRaw = MapLocationResult.stripCoordinates(_rawLocationValue!);
+      final strippedRaw =
+          MapLocationResult.stripCoordinates(_rawLocationValue!);
       if (strippedRaw == locationValue) {
         // User didn't manually edit, use raw value with coordinates
         locationValue = _rawLocationValue!;
@@ -546,7 +559,8 @@ class _EventFormModalState extends State<EventFormModal> {
       driveFolderId: _isEditMode ? widget.event!.driveFolderId : null,
       driveFolderLink: _isEditMode ? widget.event!.driveFolderLink : null,
       isArchived: _isEditMode ? widget.event!.isArchived : false,
-      relevantForExtendedTeam: !_relevantForExtendedTeam, // Invert back for database
+      relevantForExtendedTeam:
+          !_relevantForExtendedTeam, // Invert back for database
     );
 
     if (!mounted) return;
@@ -557,7 +571,6 @@ class _EventFormModalState extends State<EventFormModal> {
       bloc.add(CreateEvent(event));
     }
 
-  
     // Close modal after save operation
     widget.onSuccess();
   }
@@ -570,7 +583,8 @@ class _EventFormModalState extends State<EventFormModal> {
           textDirection: TextDirection.rtl,
           child: AlertDialog(
             title: const Text('שינויים לא נשמרו'),
-            content: const Text('האם אתה בטוח שברצונך לצאת? השינויים לא יישמרו.'),
+            content:
+                const Text('האם אתה בטוח שברצונך לצאת? השינויים לא יישמרו.'),
             actions: [
               TextButton(
                 child: const Text('ביטול'),
@@ -596,1146 +610,1529 @@ class _EventFormModalState extends State<EventFormModal> {
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
-        controller: _sheetController,
-        initialChildSize: 0.85,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) {
-          // Capture the scroll controller from DraggableScrollableSheet
-          _scrollController = scrollController;
+      controller: _sheetController,
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        // Capture the scroll controller from DraggableScrollableSheet
+        _scrollController = scrollController;
 
-          return Directionality(
-              textDirection: TextDirection.rtl,
-              child: LayoutBuilder(
-              builder: (context, constraints) {
-                final maxWidth = constraints.maxWidth;
-                final horizontalPadding = maxWidth > 1000
-                  ? (maxWidth - 1000) / 2
-                  : 0.0;
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final maxWidth = constraints.maxWidth;
+              final horizontalPadding =
+                  maxWidth > 1000 ? (maxWidth - 1000) / 2 : 0.0;
 
-                return Padding(
-                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-                  child: Stack(
-                    children: [
-                      Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                        ),
-                        child: Column(
-                    children: [
-                  // Modal Header
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(color: Colors.grey.shade300),
+              return Padding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                child: Stack(
+                  children: [
+                    Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(20)),
                       ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: widget.isDuplication
-                              ? RichText(
-                                  text: TextSpan(
-                                    children: [
-                                      const TextSpan(
-                                        text: 'שכפול אירוע: ',
-                                        style: TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.red,
-                                        ),
-                                      ),
-                                      TextSpan(
-                                        text: widget.event?.name ?? '',
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : Text(
-                                  _isEditMode ? 'עריכת אירוע' : 'הוספת אירוע',
-                                  style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                        ),
-                        if (_isEditMode)
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () {
-                              showDialog(
-                                context: context,
-                                builder: (dialogContext) => Directionality(
-                                  textDirection: TextDirection.rtl,
-                                  child: AlertDialog(
-                                    title: const Text('מחיקת אירוע'),
-                                    content: Text(
-                                      'האם אתה בטוח שברצונך למחוק את ${widget.event!.name}?\nפעולה זו תמחק גם את כל השיבוצים.',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        child: const Text('ביטול'),
-                                        onPressed: () => Navigator.of(dialogContext).pop(),
-                                      ),
-                                      TextButton(
-                                        child: const Text('מחק', style: TextStyle(color: Colors.red)),
-                                        onPressed: () {
-                                          final bloc = context.read<EventBloc>();
-                                          bloc.add(DeleteEvent(widget.event!.id));
-                                          Navigator.of(dialogContext).pop(); // Close dialog
-                                          widget.onSuccess(); // Close modal
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                            tooltip: 'מחק',
-                          ),
-                        if (_isEditMode && !widget.isDuplication)
-                          IconButton(
-                            icon: const Icon(Icons.copy, color: Colors.blue),
-                            onPressed: () {
-                              // Close the current modal and signal duplication intent
-                              Navigator.of(context).pop({'action': 'duplicate', 'event': widget.event});
-                            },
-                            tooltip: 'שכפל אירוע',
-                          ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: _handleClose,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Modal Body (Scrollable)
-                  Expanded(
-                    child: BlocConsumer<EventBloc, EventState>(
-                      listener: (context, state) async {
-                        // Only handle duplication-related states when in duplication mode
-                        if (!widget.isDuplication) return;
-
-                        // Handle duplication conflict resolution state (NEW FLOW)
-                        // This is triggered BEFORE any database writes
-                        if (state is DuplicationRequiresConflictResolution) {
-                          // Show the unified conflict resolution dialog
-                          final excludedIds = await DuplicationConflictResolutionDialog.show(
-                            context,
-                            state,
-                          );
-
-                          if (excludedIds != null) {
-                            // User confirmed - dispatch confirmation event with exclusions
-                            if (context.mounted) {
-                              context.read<EventBloc>().add(ConfirmDuplicationWithExclusions(
-                                originalEvent: state.originalEvent,
-                                proposedEvent: state.proposedEvent,
-                                assignmentIdsToExclude: excludedIds,
-                                originalAssignmentIds: state.assignmentInfos
-                                    .map((info) => info.assignment.id)
-                                    .toList(),
-                              ));
-                            }
-                          } else {
-                            // User cancelled - close the modal
-                            if (context.mounted) {
-                              widget.onSuccess();
-                            }
-                          }
-                        }
-
-                        // Handle success state - close modal when duplication completes
-                        if (state is EventOperationSuccess) {
-                          if (context.mounted) {
-                            widget.onSuccess();
-                          }
-                        }
-
-                        // Handle old quota conflicts state (LEGACY - kept for backwards compatibility)
-                        if (state is EventDuplicatedWithQuotaConflicts) {
-                          // Show the quota reduction dialog
-                          final assignmentIdsToRemove = await QuotaReductionDialog.show(
-                            context,
-                            state.quotaConflicts,
-                          );
-
-                          // If user made selections, remove the selected assignments
-                          if (assignmentIdsToRemove != null) {
-                            // Convert old assignment IDs to new assignment IDs
-                            final newAssignmentIdsToRemove = assignmentIdsToRemove
-                                .map((oldId) => state.oldToNewAssignmentIds[oldId])
-                                .where((id) => id != null)
-                                .cast<String>()
-                                .toList();
-
-                            // Remove the assignments using the repository
-                            if (context.mounted) {
-                              final repository = context.read<EventRepository>();
-                              await repository.removeAssignmentsAfterDuplication(newAssignmentIdsToRemove);
-                            }
-                          }
-
-                          // Close the modal after handling quota reduction
-                          if (context.mounted) {
-                            widget.onSuccess();
-                          }
-                        }
-                      },
-                      builder: (context, state) {
-                        return Form(
-                          key: _formKey,
-                          child: SingleChildScrollView(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.only(
-                              left: 16,
-                              right: 16,
-                              bottom: 16,
+                      child: Column(
+                        children: [
+                          // Modal Header
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(color: Colors.grey.shade300),
+                              ),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                            child: Row(
                               children: [
-                              const SizedBox(height: 16),
-
-                              // Category Dropdown (first field)
-                              BlocBuilder<CategoryBloc, CategoryState>(
-                                builder: (context, state) {
-                                  if (state is CategoriesLoaded) {
-                                    final categories = state.activeCategories;
-
-                                    // If the event's original category is archived, keep it
-                                    // in the dropdown for the entire modal session so the user
-                                    // can switch back to it after changing away.
-                                    final originalCategoryId = widget.event?.categoryId;
-                                    final archivedOriginal = originalCategoryId != null
-                                        && !categories.any((c) => c.id == originalCategoryId)
-                                        ? state.archivedCategories.where((c) => c.id == originalCategoryId).firstOrNull
-                                        : null;
-
-                                    return DropdownButtonFormField<String?>(
-                                      value: _selectedCategoryId,
-                                      decoration: const InputDecoration(
-                                        labelText: 'קטגוריה',
-                                        hintText: 'בחר קטגוריה (אופציונלי)',
-                                        prefixIcon: Icon(Icons.category),
-                                        border: OutlineInputBorder(),
-                                      ),
-                                      selectedItemBuilder: (context) {
-                                        // Build items for display when selected
-                                        final items = <Widget>[];
-
-                                        // Null option
-                                        items.add(const DropdownMenuItem<String?>(
-                                          value: null,
-                                          child: Directionality(
-                                            textDirection: TextDirection.rtl,
-                                            child: Center(
-                                              child: Text('ללא קטגוריה'),
-                                            ),
-                                          ),
-                                        ));
-
-                                        // Archived original (if exists)
-                                        if (archivedOriginal != null) {
-                                          items.add(DropdownMenuItem<String?>(
-                                            value: archivedOriginal.id,
-                                            child: Directionality(
-                                              textDirection: TextDirection.rtl,
-                                              child: Center(
-                                                child: Text(
-                                                  '${archivedOriginal.name} (בארכיון)',
-                                                  style: TextStyle(color: Colors.grey),
-                                                ),
-                                              ),
-                                            ),
-                                          ));
-                                        }
-
-                                        // Active categories
-                                        for (final category in categories) {
-                                          items.add(DropdownMenuItem<String?>(
-                                            value: category.id,
-                                            child: Directionality(
-                                              textDirection: TextDirection.rtl,
-                                              child: Center(
-                                                child: Text(category.name),
-                                              ),
-                                            ),
-                                          ));
-                                        }
-
-                                        // For "New Category" button index - repeat the first item as fallback
-                                        // This prevents empty display when the button is clicked
-                                        if (items.isNotEmpty) {
-                                          items.add(items.first);
-                                        } else {
-                                          items.add(const DropdownMenuItem<String?>(
-                                            value: null,
-                                            child: Directionality(
-                                              textDirection: TextDirection.rtl,
-                                              child: Center(
-                                                child: Text('ללא קטגוריה'),
-                                              ),
-                                            ),
-                                          ));
-                                        }
-
-                                        return items;
-                                      },
-                                      items: [
-                                        // Null option for uncategorized
-                                        const DropdownMenuItem<String?>(
-                                          value: null,
-                                          child: Directionality(
-                                            textDirection: TextDirection.rtl,
-                                            child: Center(
-                                              child: Text('ללא קטגוריה'),
-                                            ),
-                                          ),
-                                        ),
-                                        // If the event's original category is archived, show it
-                                        // greyed out so the user can see and re-select it
-                                        if (archivedOriginal != null)
-                                          DropdownMenuItem<String?>(
-                                            value: archivedOriginal.id,
-                                            child: Directionality(
-                                              textDirection: TextDirection.rtl,
-                                              child: Center(
-                                                child: Text(
-                                                  '${archivedOriginal.name} (בארכיון)',
-                                                  style: TextStyle(color: Colors.grey),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        // Active category options
-                                        ...categories.map((category) {
-                                          return DropdownMenuItem<String?>(
-                                            value: category.id,
-                                            child: Directionality(
-                                              textDirection: TextDirection.rtl,
-                                              child: Center(
-                                                child: Text(category.name),
-                                              ),
-                                            ),
-                                          );
-                                        }),
-                                        // "New Category" button at the end
-                                        DropdownMenuItem<String?>(
-                                          value: '__create_new_category__',
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
+                                Expanded(
+                                  child: widget.isDuplication
+                                      ? RichText(
+                                          text: TextSpan(
                                             children: [
-                                              // Divider line - shifted up by 4px to counteract DropdownMenuItem's top padding
-                                              Transform.translate(
-                                                offset: const Offset(0, -4),
-                                                child: Container(
-                                                  height: 1,
-                                                  color: Colors.grey.shade300,
+                                              const TextSpan(
+                                                text: 'שכפול אירוע: ',
+                                                style: TextStyle(
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.red,
                                                 ),
                                               ),
-                                              // Content
-                                              Padding(
-                                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                                child: Directionality(
-                                                  textDirection: TextDirection.rtl,
-                                                  child: Center(
-                                                    child: Row(
-                                                      mainAxisAlignment: MainAxisAlignment.center,
-                                                      children: [
-                                                        Icon(Icons.add_circle, size: 16, color: Colors.green.shade700),
-                                                        const SizedBox(width: 8),
-                                                        Flexible(
-                                                          child: Text(
-                                                            'קטגוריה חדשה',
-                                                            textAlign: TextAlign.center,
-                                                            style: TextStyle(
-                                                              color: Colors.green.shade700,
-                                                              fontWeight: FontWeight.w500,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
+                                              TextSpan(
+                                                text: widget.event?.name ?? '',
+                                                style: const TextStyle(
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.black,
                                                 ),
                                               ),
                                             ],
                                           ),
+                                        )
+                                      : Text(
+                                          _isEditMode
+                                              ? 'עריכת אירוע'
+                                              : 'הוספת אירוע',
+                                          style: const TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
-                                      ],
-                                      onChanged: (value) {
-                                        if (value == '__create_new_category__') {
-                                          // Don't update state, just show dialog
-                                          _showCreateCategoryDialog();
-                                          return;
-                                        }
-                                        setState(() {
-                                          _selectedCategoryId = value;
-                                          _isDirty = true;
-                                        });
-                                      },
-                                    );
-                                  } else {
-                                    // Loading state or error
-                                    return DropdownButtonFormField<String?>(
-                                      value: null,
-                                      decoration: InputDecoration(
-                                        labelText: 'קטגוריה',
-                                        prefixIcon: const Icon(Icons.category),
-                                        border: OutlineInputBorder(),
-                                      ),
-                                      items: [],
-                                      onChanged: null,
-                                    );
-                                  }
-                                },
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Name field
-                              TextFormField(
-                                controller: _nameController,
-                                focusNode: _nameFocusNode,
-                                decoration: InputDecoration(
-                                  labelText: 'שם האירוע',
-                                  hintText: 'לדוגמה: חתונת כהן',
-                                  prefixIcon: const Icon(Icons.abc_rounded),
-                                  border: const OutlineInputBorder(),
-                                  helperText: widget.isDuplication && _nameController.text.isNotEmpty && !_validateName
-                                      ? '↑ ניתן לערוך את שם האירוע המשוכפל ↑'
-                                      : null,
-                                  helperStyle: widget.isDuplication && _nameController.text.isNotEmpty && !_validateName
-                                      ? const TextStyle(color: Colors.green)
-                                      : null,
-                                  errorText: _validateName && _nameController.text.isEmpty
-                                      ? 'שדה חובה'
-                                      : null,
                                 ),
-                                autovalidateMode: _validateName
-                                    ? AutovalidateMode.onUserInteraction
-                                    : AutovalidateMode.disabled,
-                                validator: Validators.validateName,
-                                onChanged: (_) => setState(() => _isDirty = true),
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Location field
-                              TextFormField(
-                                controller: _locationController,
-                                focusNode: _locationFocusNode,
-                                decoration: InputDecoration(
-                                  labelText: 'מיקום',
-                                  hintText: 'לדוגמה: אולמי ורסאי',
-                                  prefixIcon: const Icon(Icons.location_on),
-                                  border: const OutlineInputBorder(),
-                                  // Map picker button and clear button
-                                  suffixIcon: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      // Map picker button
-                                      IconButton(
-                                        icon: const Icon(Icons.map, color: Colors.blue),
-                                        tooltip: 'בחר מיקום במפה',
-                                        onPressed: () async {
-                                          // Try to parse existing coordinates from raw location value
-                                          // Only use if user hasn't manually edited the field
-                                          double? initialLat;
-                                          double? initialLng;
-                                          String? initialName;
-
-                                          final currentText = _locationController.text.trim();
-                                          final rawLocation = _rawLocationValue;
-
-                                          // Check if user manually edited the field
-                                          if (rawLocation != null && currentText.isNotEmpty) {
-                                            final strippedRaw = MapLocationResult.stripCoordinates(rawLocation);
-                                            if (strippedRaw == currentText) {
-                                              // User didn't edit, use saved coordinates
-                                              final (lat, lng) = MapLocationResult.parseCoordinates(rawLocation);
-                                              initialLat = lat;
-                                              initialLng = lng;
-                                              initialName = strippedRaw;
-                                              // Only use name if it's not just coordinates
-                                              if (initialName == rawLocation && lat != null) {
-                                                initialName = null;
-                                              }
-                                            }
-                                            // If user edited, leave initialLat/Lng/Name as null (fresh start)
-                                          }
-
-                                          final result = await MapLocationPicker.show(
-                                            context,
-                                            title: 'בחר מיקום לאירוע',
-                                            initialLatitude: initialLat,
-                                            initialLongitude: initialLng,
-                                            initialLocationName: initialName,
-                                          );
-                                          if (result != null) {
-                                            setState(() {
-                                              // Store raw value with coordinates for later use
-                                              _rawLocationValue = result.toDisplayString();
-                                              // Display stripped version (name only, no coordinates)
-                                              _locationController.text = MapLocationResult.stripCoordinates(result.toDisplayString());
-                                              _isDirty = true;
-                                            });
-                                          }
-                                        },
-                                      ),
-                                      // Clear button (only show if there's a value)
-                                      if (_locationController.text.isNotEmpty)
-                                        IconButton(
-                                          icon: const Icon(Icons.clear, color: Colors.grey),
-                                          tooltip: 'נקה מיקום',
-                                          onPressed: () {
-                                            setState(() {
-                                              _rawLocationValue = null;
-                                              _locationController.clear();
-                                              _isDirty = true;
-                                            });
-                                          },
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'נא למלא מיקום';
-                                  }
-                                  return null;
-                                },
-                                onChanged: (_) => setState(() => _isDirty = true),
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Parking Location field
-                              TextFormField(
-                                controller: _parkingLocationController,
-                                focusNode: _parkingLocationFocusNode,
-                                decoration: InputDecoration(
-                                  labelText: 'מיקום חנייה',
-                                  hintText: 'לדוגמה: חניון יקב',
-                                  prefixIcon: const Icon(Icons.local_parking, color: Colors.purple),
-                                  border: const OutlineInputBorder(),
-                                  // Parking picker button, editors button, and clear button
-                                  suffixIcon: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      // Parking picker button (map)
-                                      IconButton(
-                                        icon: const Icon(Icons.map, color: Colors.blue),
-                                        tooltip: 'בחר מיקום חנייה במפה',
-                                        onPressed: () async {
-                                          // Get current event location from form (not from DB)
-                                          String currentEventLocation = _locationController.text.trim();
-                                          if (_rawLocationValue != null) {
-                                            final strippedRaw = MapLocationResult.stripCoordinates(_rawLocationValue!);
-                                            if (strippedRaw == currentEventLocation) {
-                                              // User didn't edit, use raw value with coordinates
-                                              currentEventLocation = _rawLocationValue!;
-                                            }
-                                          }
-
-                                          final result = await ParkingLocationPickerDialog.show(
-                                            context,
-                                            eventLocation: currentEventLocation,
-                                            initialParkingLocation: _rawParkingLocationValue,
-                                          );
-
-                                          if (result != null) {
-                                            // Convert empty string to null (user clicked "Clear")
-                                            final parkingLocation = result.parkingLocation.isEmpty ? null : result.parkingLocation;
-                                            setState(() {
-                                              _rawParkingLocationValue = parkingLocation;
-                                              _parkingLocationController.text = parkingLocation != null
-                                                  ? MapLocationResult.stripCoordinates(parkingLocation)
-                                                  : '';
-                                              _isDirty = true;
-                                            });
-                                          }
-                                        },
-                                      ),
-                                      // Parking editors button (people)
-                                      IconButton(
-                                        icon: Icon(
-                                          Icons.people,
-                                          color: _parkingEditorIds.isNotEmpty ? Colors.green : Colors.grey,
-                                        ),
-                                        tooltip: 'עורכים מורשים למיקום חנייה',
-                                        onPressed: () async {
-                                          final result = await ParkingEditorsDialog.show(
-                                            context,
-                                            initialEditorIds: _parkingEditorIds,
-                                          );
-
-                                          if (result != null) {
-                                            setState(() {
-                                              _parkingEditorIds = result;
-                                              _isDirty = true;
-                                            });
-                                          }
-                                        },
-                                      ),
-                                      // Clear button (only show if there's a value)
-                                      if (_parkingLocationController.text.isNotEmpty)
-                                        IconButton(
-                                          icon: const Icon(Icons.clear, color: Colors.grey),
-                                          tooltip: 'נקה מיקום חנייה',
-                                          onPressed: () {
-                                            setState(() {
-                                              _rawParkingLocationValue = null;
-                                              _parkingLocationController.clear();
-                                              _parkingEditorIds = const [];
-                                              _isDirty = true;
-                                            });
-                                          },
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _isDirty = true;
-                                    // Update raw value when user types directly
-                                    // (without coordinates since they're typing manually)
-                                    _rawParkingLocationValue = value.trim().isEmpty ? null : value.trim();
-                                  });
-                                },
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Date Selection (Dual Calendar)
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // Label for dates field
-                                  const Text(
-                                    'תאריכי האירוע',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      // Date picker button
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          onPressed: () async {
-                                            final result = await showDialog<Map<String, DateTime?>>(
-                                              context: context,
-                                              builder: (context) => DualCalendarDatePicker(
-                                                isSingleDate: false,
-                                                initialStartDate: _startDate,
-                                                initialEndDate: _endDate,
-                                                title: 'בחר תאריכי אירוע',
+                                if (_isEditMode)
+                                  IconButton(
+                                    icon: const Icon(Icons.delete,
+                                        color: Colors.red),
+                                    onPressed: () {
+                                      showDialog(
+                                        context: context,
+                                        builder: (dialogContext) =>
+                                            Directionality(
+                                          textDirection: TextDirection.rtl,
+                                          child: AlertDialog(
+                                            title: const Text('מחיקת אירוע'),
+                                            content: Text(
+                                              'האם אתה בטוח שברצונך למחוק את ${widget.event!.name}?\nפעולה זו תמחק גם את כל השיבוצים.',
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                child: const Text('ביטול'),
+                                                onPressed: () =>
+                                                    Navigator.of(dialogContext)
+                                                        .pop(),
                                               ),
-                                            );
-
-                                            if (result != null) {
-                                              final selectedStartDate = result['startDate'];
-                                              final selectedEndDate = result['endDate'];
-
-                                              // Check if only start date was selected
-                                              if (selectedStartDate != null && selectedEndDate == null) {
-                                                // Single day event - no confirmation needed
-                                                setState(() {
-                                                  _startDate = selectedStartDate;
-                                                  _endDate = selectedStartDate; // For single day event
-                                                  _dateError = null;
-                                                  _isDirty = true;
-                                                });
-                                              } else if (selectedStartDate != null && selectedEndDate != null) {
-                                                // Check if start and end dates are the same
-                                                final isSameDate = selectedStartDate.year == selectedEndDate.year &&
-                                                    selectedStartDate.month == selectedEndDate.month &&
-                                                    selectedStartDate.day == selectedEndDate.day;
-
-                                                if (isSameDate) {
-                                                  // Single day event - no confirmation needed
-                                                  setState(() {
-                                                    _startDate = selectedStartDate;
-                                                    _endDate = selectedStartDate; // For single day event
-                                                    _dateError = null;
-                                                    _isDirty = true;
-                                                  });
-                                                } else {
-                                                  // Multi-day event
-                                                  setState(() {
-                                                    _startDate = selectedStartDate;
-                                                    _endDate = selectedEndDate;
-                                                    _dateError = null;
-                                                    _isDirty = true;
-                                                  });
-                                                }
-                                              }
-                                            }
-                                          },
-                                          icon: const Icon(Icons.calendar_month),
-                                          label: Text(
-                                            _startDate == null
-                                                ? 'בחר תאריכי אירוע'
-                                                : (_endDate != null && _isSameDay(_startDate!, _endDate!))
-                                                    ? _formatDate(_startDate!)
-                                                    : _endDate == null
-                                                        ? 'מ-${_formatDate(_startDate!)}'
-                                                        : '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}',
-                                          ),
-                                          style: OutlinedButton.styleFrom(
-                                            padding: const EdgeInsets.all(16),
-                                            alignment: Alignment.centerRight,
-                                            side: BorderSide(
-                                              color: _dateError != null ? Colors.red.shade700 : Colors.grey,
-                                              width: _dateError != null ? 2 : 1,
-                                            ),
-                                            backgroundColor: _dateError != null ? Colors.red.shade50 : null,
-                                          ),
-                                        ),
-                                      ),
-                                      // Clear button (only show if dates are selected)
-                                      if (_startDate != null)
-                                        Padding(
-                                          padding: const EdgeInsets.only(right: 8),
-                                          child: IconButton(
-                                            onPressed: () => setState(() {
-                                              _startDate = null;
-                                              _endDate = null;
-                                              _isDirty = true;
-                                            }),
-                                            icon: const Icon(Icons.clear, color: Colors.red),
-                                            tooltip: 'נקה תאריכים',
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  if (widget.isDuplication && _startDate == null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: 16, top: 4, bottom: 8),
-                                      child: Text(
-                                        _dateError ?? '↑ יש לבחור תאריכים חדשים לאירוע המשוכפל ↑',
-                                        style: TextStyle(
-                                          color: _dateError != null ? Colors.red.shade700 : Colors.green,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                  if (!widget.isDuplication && _dateError != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: 16, top: 4, bottom: 8),
-                                      child: Text(
-                                        _dateError!,
-                                        style: TextStyle(
-                                          color: Colors.red.shade700,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Assembly Time
-                              TextFormField(
-                                controller: _assemblyTimeController,
-                                readOnly: true,
-                                onTap: () => _showTimePickerFor(_assemblyTimeController),
-                                decoration: InputDecoration(
-                                  labelText: 'שעת התייצבות (אופציונלי)',
-                                  hintText: 'לדוגמה: 17:00',
-                                  prefixIcon: const Icon(Icons.access_time),
-                                  border: const OutlineInputBorder(),
-                                  suffixIcon: _assemblyTimeController.text.isNotEmpty
-                                      ? IconButton(
-                                          icon: const Icon(Icons.clear, color: Colors.grey),
-                                          onPressed: () {
-                                            setState(() {
-                                              _assemblyTimeController.clear();
-                                              _isDirty = true;
-                                            });
-                                          },
-                                        )
-                                      : null,
-                                ),
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Start Time (Audience Gathering Time)
-                              TextFormField(
-                                controller: _startTimeController,
-                                readOnly: true,
-                                onTap: () => _showTimePickerFor(_startTimeController),
-                                decoration: InputDecoration(
-                                  labelText: 'שעת התכנסות קהל (אופציונלי)',
-                                  hintText: 'לדוגמה: 18:00',
-                                  prefixIcon: const Icon(Icons.access_time),
-                                  border: const OutlineInputBorder(),
-                                  suffixIcon: _startTimeController.text.isNotEmpty
-                                      ? IconButton(
-                                          icon: const Icon(Icons.clear, color: Colors.grey),
-                                          onPressed: () {
-                                            setState(() {
-                                              _startTimeController.clear();
-                                              _isDirty = true;
-                                            });
-                                          },
-                                        )
-                                      : null,
-                                ),
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Actual Show Start Time
-                              TextFormField(
-                                controller: _actualShowStartTimeController,
-                                readOnly: true,
-                                onTap: () => _showTimePickerFor(_actualShowStartTimeController),
-                                decoration: InputDecoration(
-                                  labelText: 'שעת תחילת המופע בפועל (אופציונלי)',
-                                  hintText: 'לדוגמה: 19:00',
-                                  prefixIcon: const Icon(Icons.play_circle_outline),
-                                  border: const OutlineInputBorder(),
-                                  suffixIcon: _actualShowStartTimeController.text.isNotEmpty
-                                      ? IconButton(
-                                          icon: const Icon(Icons.clear, color: Colors.grey),
-                                          onPressed: () {
-                                            setState(() {
-                                              _actualShowStartTimeController.clear();
-                                              _isDirty = true;
-                                            });
-                                          },
-                                        )
-                                      : null,
-                                ),
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // End Time
-                              TextFormField(
-                                controller: _endTimeController,
-                                readOnly: true,
-                                onTap: () => _showTimePickerFor(_endTimeController),
-                                decoration: InputDecoration(
-                                  labelText: 'שעת סיום (אופציונלי)',
-                                  hintText: 'לדוגמה: 23:00',
-                                  prefixIcon: const Icon(Icons.access_time),
-                                  border: const OutlineInputBorder(),
-                                  suffixIcon: _endTimeController.text.isNotEmpty
-                                      ? IconButton(
-                                          icon: const Icon(Icons.clear, color: Colors.grey),
-                                          onPressed: () {
-                                            setState(() {
-                                              _endTimeController.clear();
-                                              _isDirty = true;
-                                            });
-                                          },
-                                        )
-                                      : null,
-                                ),
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Requires Armed
-                              SwitchListTile(
-                                title: const Text('דרוש חמוש'),
-                                value: _requiresArmed,
-                                onChanged: (v) => setState(() {
-                                  _requiresArmed = v;
-                                  _isDirty = true;
-                                }),
-                              ),
-
-                              // Permanent Team Only (inverted logic for UI)
-                              SwitchListTile(
-                                title: const Text('צוות קבוע בלבד?'),
-                                subtitle: const Text('האם האירוע מיועד לצוות הקבוע בלבד (לא לצוות המורחב)?'),
-                                value: _relevantForExtendedTeam,
-                                onChanged: (v) => setState(() {
-                                  _relevantForExtendedTeam = v;
-                                  _isDirty = true;
-                                }),
-                              ),
-
-                              // Duplicate Assignments (only show in duplication mode)
-                              if (widget.isDuplication) ...[
-                                const SizedBox(height: 8),
-                                SwitchListTile(
-                                  title: const Text('שכפל גם את השיבוצים'),
-                                  subtitle: Text(
-                                    _duplicateAssignments
-                                      ? 'כל השיבוצים יועברו לאירוע החדש (בהתחשב בזמינות)'
-                                      : 'רק פרטי האירוע ישוכפלו, ללא שיבוצים',
-                                  ),
-                                  value: _duplicateAssignments,
-                                  onChanged: (v) => setState(() {
-                                    _duplicateAssignments = v;
-                                    _isDirty = true;
-                                  }),
-                                ),
-                                const SizedBox(height: 8),
-                              ],
-
-                              const Divider(height: 32),
-
-                              // Role Requirements
-                              const Text(
-                                'תפקידים נדרשים',
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 8),
-                              BlocBuilder<RoleBloc, RoleState>(
-                                builder: (context, roleState) {
-                                  // Handle different states
-                                  if (roleState is! RolesLoaded) {
-                                    // Show loading or fallback to RoleType.values during initial load
-                                    return Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: RoleType.values.map((role) {
-                                        final isHighlighted = _highlightedRole == role;
-                                        return AnimatedContainer(
-                                          key: _roleKeys[role],
-                                          duration: const Duration(milliseconds: 500),
-                                          decoration: BoxDecoration(
-                                            color: isHighlighted
-                                                ? Colors.blue.shade100.withValues(alpha: _highlightOpacity)
-                                                : null,
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: isHighlighted
-                                                ? Border.all(
-                                                    color: Colors.blue.shade700.withValues(alpha: _highlightOpacity),
-                                                    width: 2,
-                                                  )
-                                                : null,
-                                          ),
-                                          child: ListTile(
-                                            title: Text(
-                                              role.hebrewName,
-                                              style: TextStyle(
-                                                fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
-                                                color: isHighlighted ? Colors.blue.shade900 : null,
-                                              ),
-                                            ),
-                                            trailing: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                IconButton(
-                                                  icon: const Icon(Icons.remove_circle_outline),
-                                                  onPressed: () {
-                                                    if ((_roleRequirements[role.key] ?? 0) > 0) {
-                                                      setState(() {
-                                                        _roleRequirements[role.key] = (_roleRequirements[role.key] ?? 0) - 1;
-                                                        _isDirty = true;
-                                                      });
-                                                    }
-                                                  },
-                                                ),
-                                                SizedBox(
-                                                  width: 40,
-                                                  child: Text(
-                                                    (_roleRequirements[role.key] ?? 0).toString(),
-                                                    textAlign: TextAlign.center,
-                                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                                  ),
-                                                ),
-                                                IconButton(
-                                                  icon: const Icon(Icons.add_circle_outline),
-                                                  onPressed: () {
-                                                    setState(() {
-                                                      _roleRequirements[role.key] = (_roleRequirements[role.key] ?? 0) + 1;
-                                                      _isDirty = true;
-                                                    });
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      }).toList(),
-                                    );
-                                  }
-
-                                  // Use roles from RoleBloc
-                                  final roles = (roleState as RolesLoaded).visibleRoles;
-
-                                  return Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: roles.map((roleObj) {
-                                      // Use role key (String) directly as the map key
-                                      final roleKey = roleObj.key;
-
-                                      // Map role.key to RoleType enum for highlighting (legacy support)
-                                      final RoleType? roleType = _tryParseRoleType(roleKey);
-                                      final isHighlighted = roleType != null && _highlightedRole == roleType;
-
-                                      return AnimatedContainer(
-                                        key: roleType != null ? _roleKeys[roleType] : null,
-                                        duration: const Duration(milliseconds: 500),
-                                        decoration: BoxDecoration(
-                                          color: isHighlighted
-                                              ? Colors.blue.shade100.withValues(alpha: _highlightOpacity)
-                                              : null,
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: isHighlighted
-                                              ? Border.all(
-                                                  color: Colors.blue.shade700.withValues(alpha: _highlightOpacity),
-                                                  width: 2,
-                                                )
-                                              : null,
-                                        ),
-                                        child: ListTile(
-                                          title: Text(
-                                            roleObj.hebrewName,
-                                            style: TextStyle(
-                                              fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
-                                              color: isHighlighted ? Colors.blue.shade900 : null,
-                                            ),
-                                          ),
-                                          trailing: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                icon: const Icon(Icons.remove_circle_outline),
+                                              TextButton(
+                                                child: const Text('מחק',
+                                                    style: TextStyle(
+                                                        color: Colors.red)),
                                                 onPressed: () {
-                                                  if (_roleRequirements[roleKey]! > 0) {
-                                                    setState(() {
-                                                      _roleRequirements[roleKey] = _roleRequirements[roleKey]! - 1;
-                                                      _isDirty = true;
-                                                    });
-                                                  }
-                                                },
-                                              ),
-                                              SizedBox(
-                                                width: 40,
-                                                child: Text(
-                                                  (_roleRequirements[roleKey] ?? 0).toString(),
-                                                  textAlign: TextAlign.center,
-                                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                                ),
-                                              ),
-                                              IconButton(
-                                                icon: const Icon(Icons.add_circle_outline),
-                                                onPressed: () {
-                                                  setState(() {
-                                                    _roleRequirements[roleKey] = (_roleRequirements[roleKey] ?? 0) + 1;
-                                                    _isDirty = true;
-                                                  });
+                                                  final bloc =
+                                                      context.read<EventBloc>();
+                                                  bloc.add(DeleteEvent(
+                                                      widget.event!.id));
+                                                  Navigator.of(dialogContext)
+                                                      .pop(); // Close dialog
+                                                  widget
+                                                      .onSuccess(); // Close modal
                                                 },
                                               ),
                                             ],
                                           ),
                                         ),
                                       );
-                                    }).toList(),
-                                  );
-                                },
-                              ),
-
-                              // Drive Files Section (only in edit mode, not duplication)
-                              // Show immediately even if drive folder doesn't exist yet - section handles pending state
-                              if (_isEditMode && !widget.isDuplication) ...[
-                                  EventDriveFilesSection(
-                                    eventId: widget.event!.id,
-                                    driveFolderId: widget.event?.driveFolderId,
-                                    driveFolderLink: widget.event?.driveFolderLink,
-                                    eventName: widget.event!.name,
+                                    },
+                                    tooltip: 'מחק',
                                   ),
-                                  const Divider(height: 32),
-                                ],
-
-                              // Comments
-                              TextFormField(
-                                controller: _commentsController,
-                                focusNode: _commentsFocusNode,
-                                decoration: const InputDecoration(
-                                  labelText: 'הערות',
-                                  hintText: 'הערות על האירוע',
-                                  prefixIcon: Icon(Icons.comment),
-                                  border: OutlineInputBorder(),
+                                if (_isEditMode && !widget.isDuplication)
+                                  IconButton(
+                                    icon: const Icon(Icons.copy,
+                                        color: Colors.blue),
+                                    onPressed: () {
+                                      // Close the current modal and signal duplication intent
+                                      Navigator.of(context).pop({
+                                        'action': 'duplicate',
+                                        'event': widget.event
+                                      });
+                                    },
+                                    tooltip: 'שכפל אירוע',
+                                  ),
+                                IconButton(
+                                  icon: const Icon(Icons.close),
+                                  onPressed: _handleClose,
                                 ),
-                                minLines: 1,
-                                maxLines: 3,
-                                scrollPadding: const EdgeInsets.only(bottom: 300),
-                                onChanged: (_) => setState(() => _isDirty = true),
-                              ),
-
-                              // Dynamic bottom spacing for keyboard
-                              SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
-                            ],
-                          ),
+                              ],
                             ),
-                        );
-                      },
-                    ),
-                  ),
+                          ),
 
-                  // Modal Footer (Fixed at bottom)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(color: Colors.grey.shade300),
+                          // Modal Body (Scrollable)
+                          Expanded(
+                            child: BlocConsumer<EventBloc, EventState>(
+                              listener: (context, state) async {
+                                // Only handle duplication-related states when in duplication mode
+                                if (!widget.isDuplication) return;
+
+                                // Handle duplication conflict resolution state (NEW FLOW)
+                                // This is triggered BEFORE any database writes
+                                if (state
+                                    is DuplicationRequiresConflictResolution) {
+                                  // Show the unified conflict resolution dialog
+                                  final excludedIds =
+                                      await DuplicationConflictResolutionDialog
+                                          .show(
+                                    context,
+                                    state,
+                                  );
+
+                                  if (excludedIds != null) {
+                                    // User confirmed - dispatch confirmation event with exclusions
+                                    if (context.mounted) {
+                                      context
+                                          .read<EventBloc>()
+                                          .add(ConfirmDuplicationWithExclusions(
+                                            originalEvent: state.originalEvent,
+                                            proposedEvent: state.proposedEvent,
+                                            assignmentIdsToExclude: excludedIds,
+                                            originalAssignmentIds: state
+                                                .assignmentInfos
+                                                .map((info) =>
+                                                    info.assignment.id)
+                                                .toList(),
+                                          ));
+                                    }
+                                  } else {
+                                    // User cancelled - close the modal
+                                    if (context.mounted) {
+                                      widget.onSuccess();
+                                    }
+                                  }
+                                }
+
+                                // Handle success state - close modal when duplication completes
+                                if (state is EventOperationSuccess) {
+                                  if (context.mounted) {
+                                    widget.onSuccess();
+                                  }
+                                }
+
+                                // Handle old quota conflicts state (LEGACY - kept for backwards compatibility)
+                                if (state
+                                    is EventDuplicatedWithQuotaConflicts) {
+                                  // Show the quota reduction dialog
+                                  final assignmentIdsToRemove =
+                                      await QuotaReductionDialog.show(
+                                    context,
+                                    state.quotaConflicts,
+                                  );
+
+                                  // If user made selections, remove the selected assignments
+                                  if (assignmentIdsToRemove != null) {
+                                    // Convert old assignment IDs to new assignment IDs
+                                    final newAssignmentIdsToRemove =
+                                        assignmentIdsToRemove
+                                            .map((oldId) => state
+                                                .oldToNewAssignmentIds[oldId])
+                                            .where((id) => id != null)
+                                            .cast<String>()
+                                            .toList();
+
+                                    // Remove the assignments using the repository
+                                    if (context.mounted) {
+                                      final repository =
+                                          context.read<EventRepository>();
+                                      await repository
+                                          .removeAssignmentsAfterDuplication(
+                                              newAssignmentIdsToRemove);
+                                    }
+                                  }
+
+                                  // Close the modal after handling quota reduction
+                                  if (context.mounted) {
+                                    widget.onSuccess();
+                                  }
+                                }
+                              },
+                              builder: (context, state) {
+                                return Form(
+                                  key: _formKey,
+                                  child: SingleChildScrollView(
+                                    controller: _scrollController,
+                                    padding: const EdgeInsets.only(
+                                      left: 16,
+                                      right: 16,
+                                      bottom: 16,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        const SizedBox(height: 16),
+
+                                        // Category Dropdown (first field)
+                                        BlocBuilder<CategoryBloc,
+                                            CategoryState>(
+                                          builder: (context, state) {
+                                            if (state is CategoriesLoaded) {
+                                              final categories =
+                                                  state.activeCategories;
+
+                                              // If the event's original category is archived, keep it
+                                              // in the dropdown for the entire modal session so the user
+                                              // can switch back to it after changing away.
+                                              final originalCategoryId =
+                                                  widget.event?.categoryId;
+                                              final archivedOriginal =
+                                                  originalCategoryId != null &&
+                                                          !categories.any((c) =>
+                                                              c.id ==
+                                                              originalCategoryId)
+                                                      ? state.archivedCategories
+                                                          .where((c) =>
+                                                              c.id ==
+                                                              originalCategoryId)
+                                                          .firstOrNull
+                                                      : null;
+
+                                              return DropdownButtonFormField<
+                                                  String?>(
+                                                value: _selectedCategoryId,
+                                                decoration:
+                                                    const InputDecoration(
+                                                  labelText: 'קטגוריה',
+                                                  hintText:
+                                                      'בחר קטגוריה (אופציונלי)',
+                                                  prefixIcon:
+                                                      Icon(Icons.category),
+                                                  border: OutlineInputBorder(),
+                                                ),
+                                                selectedItemBuilder: (context) {
+                                                  // Build items for display when selected
+                                                  final items = <Widget>[];
+
+                                                  // Null option
+                                                  items.add(
+                                                      const DropdownMenuItem<
+                                                          String?>(
+                                                    value: null,
+                                                    child: Directionality(
+                                                      textDirection:
+                                                          TextDirection.rtl,
+                                                      child: Center(
+                                                        child:
+                                                            Text('ללא קטגוריה'),
+                                                      ),
+                                                    ),
+                                                  ));
+
+                                                  // Archived original (if exists)
+                                                  if (archivedOriginal !=
+                                                      null) {
+                                                    items.add(DropdownMenuItem<
+                                                        String?>(
+                                                      value:
+                                                          archivedOriginal.id,
+                                                      child: Directionality(
+                                                        textDirection:
+                                                            TextDirection.rtl,
+                                                        child: Center(
+                                                          child: Text(
+                                                            '${archivedOriginal.name} (בארכיון)',
+                                                            style: TextStyle(
+                                                                color: Colors
+                                                                    .grey),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ));
+                                                  }
+
+                                                  // Active categories
+                                                  for (final category
+                                                      in categories) {
+                                                    items.add(DropdownMenuItem<
+                                                        String?>(
+                                                      value: category.id,
+                                                      child: Directionality(
+                                                        textDirection:
+                                                            TextDirection.rtl,
+                                                        child: Center(
+                                                          child: Text(
+                                                              category.name),
+                                                        ),
+                                                      ),
+                                                    ));
+                                                  }
+
+                                                  // For "New Category" button index - repeat the first item as fallback
+                                                  // This prevents empty display when the button is clicked
+                                                  if (items.isNotEmpty) {
+                                                    items.add(items.first);
+                                                  } else {
+                                                    items.add(
+                                                        const DropdownMenuItem<
+                                                            String?>(
+                                                      value: null,
+                                                      child: Directionality(
+                                                        textDirection:
+                                                            TextDirection.rtl,
+                                                        child: Center(
+                                                          child: Text(
+                                                              'ללא קטגוריה'),
+                                                        ),
+                                                      ),
+                                                    ));
+                                                  }
+
+                                                  return items;
+                                                },
+                                                items: [
+                                                  // Null option for uncategorized
+                                                  const DropdownMenuItem<
+                                                      String?>(
+                                                    value: null,
+                                                    child: Directionality(
+                                                      textDirection:
+                                                          TextDirection.rtl,
+                                                      child: Center(
+                                                        child:
+                                                            Text('ללא קטגוריה'),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  // If the event's original category is archived, show it
+                                                  // greyed out so the user can see and re-select it
+                                                  if (archivedOriginal != null)
+                                                    DropdownMenuItem<String?>(
+                                                      value:
+                                                          archivedOriginal.id,
+                                                      child: Directionality(
+                                                        textDirection:
+                                                            TextDirection.rtl,
+                                                        child: Center(
+                                                          child: Text(
+                                                            '${archivedOriginal.name} (בארכיון)',
+                                                            style: TextStyle(
+                                                                color: Colors
+                                                                    .grey),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  // Active category options
+                                                  ...categories.map((category) {
+                                                    return DropdownMenuItem<
+                                                        String?>(
+                                                      value: category.id,
+                                                      child: Directionality(
+                                                        textDirection:
+                                                            TextDirection.rtl,
+                                                        child: Center(
+                                                          child: Text(
+                                                              category.name),
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }),
+                                                  // "New Category" button at the end
+                                                  DropdownMenuItem<String?>(
+                                                    value:
+                                                        '__create_new_category__',
+                                                    child: Column(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        // Divider line - shifted up by 4px to counteract DropdownMenuItem's top padding
+                                                        Transform.translate(
+                                                          offset: const Offset(
+                                                              0, -4),
+                                                          child: Container(
+                                                            height: 1,
+                                                            color: Colors
+                                                                .grey.shade300,
+                                                          ),
+                                                        ),
+                                                        // Content
+                                                        Padding(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  vertical: 8),
+                                                          child: Directionality(
+                                                            textDirection:
+                                                                TextDirection
+                                                                    .rtl,
+                                                            child: Center(
+                                                              child: Row(
+                                                                mainAxisAlignment:
+                                                                    MainAxisAlignment
+                                                                        .center,
+                                                                children: [
+                                                                  Icon(
+                                                                      Icons
+                                                                          .add_circle,
+                                                                      size: 16,
+                                                                      color: Colors
+                                                                          .green
+                                                                          .shade700),
+                                                                  const SizedBox(
+                                                                      width: 8),
+                                                                  Flexible(
+                                                                    child: Text(
+                                                                      'קטגוריה חדשה',
+                                                                      textAlign:
+                                                                          TextAlign
+                                                                              .center,
+                                                                      style:
+                                                                          TextStyle(
+                                                                        color: Colors
+                                                                            .green
+                                                                            .shade700,
+                                                                        fontWeight:
+                                                                            FontWeight.w500,
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                                onChanged: (value) {
+                                                  if (value ==
+                                                      '__create_new_category__') {
+                                                    // Don't update state, just show dialog
+                                                    _showCreateCategoryDialog();
+                                                    return;
+                                                  }
+                                                  setState(() {
+                                                    _selectedCategoryId = value;
+                                                    _isDirty = true;
+                                                  });
+                                                },
+                                              );
+                                            } else {
+                                              // Loading state or error
+                                              return DropdownButtonFormField<
+                                                  String?>(
+                                                value: null,
+                                                decoration: InputDecoration(
+                                                  labelText: 'קטגוריה',
+                                                  prefixIcon: const Icon(
+                                                      Icons.category),
+                                                  border: OutlineInputBorder(),
+                                                ),
+                                                items: [],
+                                                onChanged: null,
+                                              );
+                                            }
+                                          },
+                                        ),
+
+                                        const SizedBox(height: 16),
+
+                                        // Name field
+                                        TextFormField(
+                                          controller: _nameController,
+                                          focusNode: _nameFocusNode,
+                                          decoration: InputDecoration(
+                                            labelText: 'שם האירוע',
+                                            hintText: 'לדוגמה: חתונת כהן',
+                                            prefixIcon:
+                                                const Icon(Icons.abc_rounded),
+                                            border: const OutlineInputBorder(),
+                                            helperText: widget.isDuplication &&
+                                                    _nameController
+                                                        .text.isNotEmpty &&
+                                                    !_validateName
+                                                ? '↑ ניתן לערוך את שם האירוע המשוכפל ↑'
+                                                : null,
+                                            helperStyle: widget.isDuplication &&
+                                                    _nameController
+                                                        .text.isNotEmpty &&
+                                                    !_validateName
+                                                ? const TextStyle(
+                                                    color: Colors.green)
+                                                : null,
+                                            errorText: _validateName &&
+                                                    _nameController.text.isEmpty
+                                                ? 'שדה חובה'
+                                                : null,
+                                          ),
+                                          autovalidateMode: _validateName
+                                              ? AutovalidateMode
+                                                  .onUserInteraction
+                                              : AutovalidateMode.disabled,
+                                          validator: Validators.validateName,
+                                          onChanged: (_) =>
+                                              setState(() => _isDirty = true),
+                                        ),
+
+                                        const SizedBox(height: 16),
+
+                                        // Location field
+                                        TextFormField(
+                                          controller: _locationController,
+                                          focusNode: _locationFocusNode,
+                                          decoration: InputDecoration(
+                                            labelText: 'מיקום',
+                                            hintText: 'לדוגמה: אולמי ורסאי',
+                                            prefixIcon:
+                                                const Icon(Icons.location_on),
+                                            border: const OutlineInputBorder(),
+                                            // Map picker button and clear button
+                                            suffixIcon: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                // Map picker button
+                                                IconButton(
+                                                  icon: const Icon(Icons.map,
+                                                      color: Colors.blue),
+                                                  tooltip: 'בחר מיקום במפה',
+                                                  onPressed: () async {
+                                                    // Try to parse existing coordinates from raw location value
+                                                    // Only use if user hasn't manually edited the field
+                                                    double? initialLat;
+                                                    double? initialLng;
+                                                    String? initialName;
+
+                                                    final currentText =
+                                                        _locationController.text
+                                                            .trim();
+                                                    final rawLocation =
+                                                        _rawLocationValue;
+
+                                                    // Check if user manually edited the field
+                                                    if (rawLocation != null &&
+                                                        currentText
+                                                            .isNotEmpty) {
+                                                      final strippedRaw =
+                                                          MapLocationResult
+                                                              .stripCoordinates(
+                                                                  rawLocation);
+                                                      if (strippedRaw ==
+                                                          currentText) {
+                                                        // User didn't edit, use saved coordinates
+                                                        final (
+                                                          lat,
+                                                          lng
+                                                        ) = MapLocationResult
+                                                            .parseCoordinates(
+                                                                rawLocation);
+                                                        initialLat = lat;
+                                                        initialLng = lng;
+                                                        initialName =
+                                                            strippedRaw;
+                                                        // Only use name if it's not just coordinates
+                                                        if (initialName ==
+                                                                rawLocation &&
+                                                            lat != null) {
+                                                          initialName = null;
+                                                        }
+                                                      }
+                                                      // If user edited, leave initialLat/Lng/Name as null (fresh start)
+                                                    }
+
+                                                    final result =
+                                                        await MapLocationPicker
+                                                            .show(
+                                                      context,
+                                                      title: 'בחר מיקום לאירוע',
+                                                      initialLatitude:
+                                                          initialLat,
+                                                      initialLongitude:
+                                                          initialLng,
+                                                      initialLocationName:
+                                                          initialName,
+                                                    );
+                                                    if (result != null) {
+                                                      setState(() {
+                                                        // Store raw value with coordinates for later use
+                                                        _rawLocationValue = result
+                                                            .toDisplayString();
+                                                        // Display stripped version (name only, no coordinates)
+                                                        _locationController
+                                                                .text =
+                                                            MapLocationResult
+                                                                .stripCoordinates(
+                                                                    result
+                                                                        .toDisplayString());
+                                                        _isDirty = true;
+                                                      });
+                                                    }
+                                                  },
+                                                ),
+                                                // Clear button (only show if there's a value)
+                                                if (_locationController
+                                                    .text.isNotEmpty)
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                        Icons.clear,
+                                                        color: Colors.grey),
+                                                    tooltip: 'נקה מיקום',
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        _rawLocationValue =
+                                                            null;
+                                                        _locationController
+                                                            .clear();
+                                                        _isDirty = true;
+                                                      });
+                                                    },
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          validator: (value) {
+                                            if (value == null ||
+                                                value.trim().isEmpty) {
+                                              return 'נא למלא מיקום';
+                                            }
+                                            return null;
+                                          },
+                                          onChanged: (_) =>
+                                              setState(() => _isDirty = true),
+                                        ),
+
+                                        const SizedBox(height: 16),
+
+                                        // Parking Location field
+                                        TextFormField(
+                                          controller:
+                                              _parkingLocationController,
+                                          focusNode: _parkingLocationFocusNode,
+                                          decoration: InputDecoration(
+                                            labelText: 'מיקום חנייה',
+                                            hintText: 'לדוגמה: חניון יקב',
+                                            prefixIcon: const Icon(
+                                                Icons.local_parking,
+                                                color: Colors.purple),
+                                            border: const OutlineInputBorder(),
+                                            // Parking picker button, editors button, and clear button
+                                            suffixIcon: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                // Parking picker button (map)
+                                                IconButton(
+                                                  icon: const Icon(Icons.map,
+                                                      color: Colors.blue),
+                                                  tooltip:
+                                                      'בחר מיקום חנייה במפה',
+                                                  onPressed: () async {
+                                                    // Get current event location from form (not from DB)
+                                                    String
+                                                        currentEventLocation =
+                                                        _locationController.text
+                                                            .trim();
+                                                    if (_rawLocationValue !=
+                                                        null) {
+                                                      final strippedRaw =
+                                                          MapLocationResult
+                                                              .stripCoordinates(
+                                                                  _rawLocationValue!);
+                                                      if (strippedRaw ==
+                                                          currentEventLocation) {
+                                                        // User didn't edit, use raw value with coordinates
+                                                        currentEventLocation =
+                                                            _rawLocationValue!;
+                                                      }
+                                                    }
+
+                                                    final result =
+                                                        await ParkingLocationPickerDialog
+                                                            .show(
+                                                      context,
+                                                      eventLocation:
+                                                          currentEventLocation,
+                                                      initialParkingLocation:
+                                                          _rawParkingLocationValue,
+                                                    );
+
+                                                    if (result != null) {
+                                                      // Convert empty string to null (user clicked "Clear")
+                                                      final parkingLocation =
+                                                          result.parkingLocation
+                                                                  .isEmpty
+                                                              ? null
+                                                              : result
+                                                                  .parkingLocation;
+                                                      setState(() {
+                                                        _rawParkingLocationValue =
+                                                            parkingLocation;
+                                                        _parkingLocationController
+                                                            .text = parkingLocation !=
+                                                                null
+                                                            ? MapLocationResult
+                                                                .stripCoordinates(
+                                                                    parkingLocation)
+                                                            : '';
+                                                        _isDirty = true;
+                                                      });
+                                                    }
+                                                  },
+                                                ),
+                                                // Parking editors button (people)
+                                                IconButton(
+                                                  icon: Icon(
+                                                    Icons.people,
+                                                    color: _parkingEditorIds
+                                                            .isNotEmpty
+                                                        ? Colors.green
+                                                        : Colors.grey,
+                                                  ),
+                                                  tooltip:
+                                                      'עורכים מורשים למיקום חנייה',
+                                                  onPressed: () async {
+                                                    final result =
+                                                        await ParkingEditorsDialog
+                                                            .show(
+                                                      context,
+                                                      initialEditorIds:
+                                                          _parkingEditorIds,
+                                                    );
+
+                                                    if (result != null) {
+                                                      setState(() {
+                                                        _parkingEditorIds =
+                                                            result;
+                                                        _isDirty = true;
+                                                      });
+                                                    }
+                                                  },
+                                                ),
+                                                // Clear button (only show if there's a value)
+                                                if (_parkingLocationController
+                                                    .text.isNotEmpty)
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                        Icons.clear,
+                                                        color: Colors.grey),
+                                                    tooltip: 'נקה מיקום חנייה',
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        _rawParkingLocationValue =
+                                                            null;
+                                                        _parkingLocationController
+                                                            .clear();
+                                                        _parkingEditorIds =
+                                                            const [];
+                                                        _isDirty = true;
+                                                      });
+                                                    },
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          onChanged: (value) {
+                                            setState(() {
+                                              _isDirty = true;
+                                              // Update raw value when user types directly
+                                              // (without coordinates since they're typing manually)
+                                              _rawParkingLocationValue =
+                                                  value.trim().isEmpty
+                                                      ? null
+                                                      : value.trim();
+                                            });
+                                          },
+                                        ),
+
+                                        const SizedBox(height: 16),
+
+                                        // Date Selection (Dual Calendar)
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            // Label for dates field
+                                            const Text(
+                                              'תאריכי האירוע',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              children: [
+                                                // Date picker button
+                                                Expanded(
+                                                  child: OutlinedButton.icon(
+                                                    onPressed: () async {
+                                                      final result =
+                                                          await showDialog<
+                                                              Map<String,
+                                                                  DateTime?>>(
+                                                        context: context,
+                                                        builder: (context) =>
+                                                            DualCalendarDatePicker(
+                                                          isSingleDate: false,
+                                                          initialStartDate:
+                                                              _startDate,
+                                                          initialEndDate:
+                                                              _endDate,
+                                                          title:
+                                                              'בחר תאריכי אירוע',
+                                                        ),
+                                                      );
+
+                                                      if (result != null) {
+                                                        final selectedStartDate =
+                                                            result['startDate'];
+                                                        final selectedEndDate =
+                                                            result['endDate'];
+
+                                                        // Check if only start date was selected
+                                                        if (selectedStartDate !=
+                                                                null &&
+                                                            selectedEndDate ==
+                                                                null) {
+                                                          // Single day event - no confirmation needed
+                                                          setState(() {
+                                                            _startDate =
+                                                                selectedStartDate;
+                                                            _endDate =
+                                                                selectedStartDate; // For single day event
+                                                            _dateError = null;
+                                                            _isDirty = true;
+                                                          });
+                                                        } else if (selectedStartDate !=
+                                                                null &&
+                                                            selectedEndDate !=
+                                                                null) {
+                                                          // Check if start and end dates are the same
+                                                          final isSameDate = selectedStartDate
+                                                                      .year ==
+                                                                  selectedEndDate
+                                                                      .year &&
+                                                              selectedStartDate
+                                                                      .month ==
+                                                                  selectedEndDate
+                                                                      .month &&
+                                                              selectedStartDate
+                                                                      .day ==
+                                                                  selectedEndDate
+                                                                      .day;
+
+                                                          if (isSameDate) {
+                                                            // Single day event - no confirmation needed
+                                                            setState(() {
+                                                              _startDate =
+                                                                  selectedStartDate;
+                                                              _endDate =
+                                                                  selectedStartDate; // For single day event
+                                                              _dateError = null;
+                                                              _isDirty = true;
+                                                            });
+                                                          } else {
+                                                            // Multi-day event
+                                                            setState(() {
+                                                              _startDate =
+                                                                  selectedStartDate;
+                                                              _endDate =
+                                                                  selectedEndDate;
+                                                              _dateError = null;
+                                                              _isDirty = true;
+                                                            });
+                                                          }
+                                                        }
+                                                      }
+                                                    },
+                                                    icon: const Icon(
+                                                        Icons.calendar_month),
+                                                    label: Text(
+                                                      _startDate == null
+                                                          ? 'בחר תאריכי אירוע'
+                                                          : (_endDate != null &&
+                                                                  _isSameDay(
+                                                                      _startDate!,
+                                                                      _endDate!))
+                                                              ? _formatDate(
+                                                                  _startDate!)
+                                                              : _endDate == null
+                                                                  ? 'מ-${_formatDate(_startDate!)}'
+                                                                  : '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}',
+                                                    ),
+                                                    style: OutlinedButton
+                                                        .styleFrom(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                              16),
+                                                      alignment:
+                                                          Alignment.centerRight,
+                                                      side: BorderSide(
+                                                        color:
+                                                            _dateError != null
+                                                                ? Colors.red
+                                                                    .shade700
+                                                                : Colors.grey,
+                                                        width:
+                                                            _dateError != null
+                                                                ? 2
+                                                                : 1,
+                                                      ),
+                                                      backgroundColor:
+                                                          _dateError != null
+                                                              ? Colors
+                                                                  .red.shade50
+                                                              : null,
+                                                    ),
+                                                  ),
+                                                ),
+                                                // Clear button (only show if dates are selected)
+                                                if (_startDate != null)
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                            right: 8),
+                                                    child: IconButton(
+                                                      onPressed: () =>
+                                                          setState(() {
+                                                        _startDate = null;
+                                                        _endDate = null;
+                                                        _isDirty = true;
+                                                      }),
+                                                      icon: const Icon(
+                                                          Icons.clear,
+                                                          color: Colors.red),
+                                                      tooltip: 'נקה תאריכים',
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                            if (widget.isDuplication &&
+                                                _startDate == null)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    right: 16,
+                                                    top: 4,
+                                                    bottom: 8),
+                                                child: Text(
+                                                  _dateError ??
+                                                      '↑ יש לבחור תאריכים חדשים לאירוע המשוכפל ↑',
+                                                  style: TextStyle(
+                                                    color: _dateError != null
+                                                        ? Colors.red.shade700
+                                                        : Colors.green,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ),
+                                            if (!widget.isDuplication &&
+                                                _dateError != null)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    right: 16,
+                                                    top: 4,
+                                                    bottom: 8),
+                                                child: Text(
+                                                  _dateError!,
+                                                  style: TextStyle(
+                                                    color: Colors.red.shade700,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+
+                                        const SizedBox(height: 16),
+
+                                        // Assembly Time
+                                        TextFormField(
+                                          controller: _assemblyTimeController,
+                                          readOnly: true,
+                                          onTap: () => _showTimePickerFor(
+                                              _assemblyTimeController),
+                                          decoration: InputDecoration(
+                                            labelText:
+                                                'שעת התייצבות (אופציונלי)',
+                                            hintText: 'לדוגמה: 17:00',
+                                            prefixIcon:
+                                                const Icon(Icons.access_time),
+                                            border: const OutlineInputBorder(),
+                                            suffixIcon: _assemblyTimeController
+                                                    .text.isNotEmpty
+                                                ? IconButton(
+                                                    icon: const Icon(
+                                                        Icons.clear,
+                                                        color: Colors.grey),
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        _assemblyTimeController
+                                                            .clear();
+                                                        _isDirty = true;
+                                                      });
+                                                    },
+                                                  )
+                                                : null,
+                                          ),
+                                        ),
+
+                                        const SizedBox(height: 16),
+
+                                        // Start Time (Audience Gathering Time)
+                                        TextFormField(
+                                          controller: _startTimeController,
+                                          readOnly: true,
+                                          onTap: () => _showTimePickerFor(
+                                              _startTimeController),
+                                          decoration: InputDecoration(
+                                            labelText:
+                                                'שעת התכנסות קהל (אופציונלי)',
+                                            hintText: 'לדוגמה: 18:00',
+                                            prefixIcon:
+                                                const Icon(Icons.access_time),
+                                            border: const OutlineInputBorder(),
+                                            suffixIcon: _startTimeController
+                                                    .text.isNotEmpty
+                                                ? IconButton(
+                                                    icon: const Icon(
+                                                        Icons.clear,
+                                                        color: Colors.grey),
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        _startTimeController
+                                                            .clear();
+                                                        _isDirty = true;
+                                                      });
+                                                    },
+                                                  )
+                                                : null,
+                                          ),
+                                        ),
+
+                                        const SizedBox(height: 16),
+
+                                        // Actual Show Start Time
+                                        TextFormField(
+                                          controller:
+                                              _actualShowStartTimeController,
+                                          readOnly: true,
+                                          onTap: () => _showTimePickerFor(
+                                              _actualShowStartTimeController),
+                                          decoration: InputDecoration(
+                                            labelText:
+                                                'שעת תחילת המופע בפועל (אופציונלי)',
+                                            hintText: 'לדוגמה: 19:00',
+                                            prefixIcon: const Icon(
+                                                Icons.play_circle_outline),
+                                            border: const OutlineInputBorder(),
+                                            suffixIcon:
+                                                _actualShowStartTimeController
+                                                        .text.isNotEmpty
+                                                    ? IconButton(
+                                                        icon: const Icon(
+                                                            Icons.clear,
+                                                            color: Colors.grey),
+                                                        onPressed: () {
+                                                          setState(() {
+                                                            _actualShowStartTimeController
+                                                                .clear();
+                                                            _isDirty = true;
+                                                          });
+                                                        },
+                                                      )
+                                                    : null,
+                                          ),
+                                        ),
+
+                                        const SizedBox(height: 16),
+
+                                        // End Time
+                                        TextFormField(
+                                          controller: _endTimeController,
+                                          readOnly: true,
+                                          onTap: () => _showTimePickerFor(
+                                              _endTimeController),
+                                          decoration: InputDecoration(
+                                            labelText: 'שעת סיום (אופציונלי)',
+                                            hintText: 'לדוגמה: 23:00',
+                                            prefixIcon:
+                                                const Icon(Icons.access_time),
+                                            border: const OutlineInputBorder(),
+                                            suffixIcon: _endTimeController
+                                                    .text.isNotEmpty
+                                                ? IconButton(
+                                                    icon: const Icon(
+                                                        Icons.clear,
+                                                        color: Colors.grey),
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        _endTimeController
+                                                            .clear();
+                                                        _isDirty = true;
+                                                      });
+                                                    },
+                                                  )
+                                                : null,
+                                          ),
+                                        ),
+
+                                        const SizedBox(height: 16),
+
+                                        // Requires Armed
+                                        SwitchListTile(
+                                          title: const Text('דרוש חמוש'),
+                                          value: _requiresArmed,
+                                          onChanged: (v) => setState(() {
+                                            _requiresArmed = v;
+                                            _isDirty = true;
+                                          }),
+                                        ),
+
+                                        // Permanent Team Only (inverted logic for UI)
+                                        SwitchListTile(
+                                          title: const Text('צוות קבוע בלבד?'),
+                                          subtitle: const Text(
+                                              'האם האירוע מיועד לצוות הקבוע בלבד (לא לצוות המורחב)?'),
+                                          value: _relevantForExtendedTeam,
+                                          onChanged: (v) => setState(() {
+                                            _relevantForExtendedTeam = v;
+                                            _isDirty = true;
+                                          }),
+                                        ),
+
+                                        // Duplicate Assignments (only show in duplication mode)
+                                        if (widget.isDuplication) ...[
+                                          const SizedBox(height: 8),
+                                          SwitchListTile(
+                                            title: const Text(
+                                                'שכפל גם את השיבוצים'),
+                                            subtitle: Text(
+                                              _duplicateAssignments
+                                                  ? 'כל השיבוצים יועברו לאירוע החדש (בהתחשב בזמינות)'
+                                                  : 'רק פרטי האירוע ישוכפלו, ללא שיבוצים',
+                                            ),
+                                            value: _duplicateAssignments,
+                                            onChanged: (v) => setState(() {
+                                              _duplicateAssignments = v;
+                                              _isDirty = true;
+                                            }),
+                                          ),
+                                          const SizedBox(height: 8),
+                                        ],
+
+                                        const Divider(height: 32),
+
+                                        // Role Requirements
+                                        const Text(
+                                          'תפקידים נדרשים',
+                                          style: TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        BlocBuilder<RoleBloc, RoleState>(
+                                          builder: (context, roleState) {
+                                            // Handle different states
+                                            if (roleState is! RolesLoaded) {
+                                              // Show loading or fallback to RoleType.values during initial load
+                                              return Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children:
+                                                    RoleType.values.map((role) {
+                                                  final isHighlighted =
+                                                      _highlightedRole == role;
+                                                  return AnimatedContainer(
+                                                    key: _roleKeys[role],
+                                                    duration: const Duration(
+                                                        milliseconds: 500),
+                                                    decoration: BoxDecoration(
+                                                      color: isHighlighted
+                                                          ? Colors.blue.shade100
+                                                              .withValues(
+                                                                  alpha:
+                                                                      _highlightOpacity)
+                                                          : null,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              8),
+                                                      border: isHighlighted
+                                                          ? Border.all(
+                                                              color: Colors
+                                                                  .blue.shade700
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          _highlightOpacity),
+                                                              width: 2,
+                                                            )
+                                                          : null,
+                                                    ),
+                                                    child: ListTile(
+                                                      title: Text(
+                                                        role.hebrewName,
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              isHighlighted
+                                                                  ? FontWeight
+                                                                      .bold
+                                                                  : FontWeight
+                                                                      .normal,
+                                                          color: isHighlighted
+                                                              ? Colors
+                                                                  .blue.shade900
+                                                              : null,
+                                                        ),
+                                                      ),
+                                                      trailing: Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          IconButton(
+                                                            icon: const Icon(Icons
+                                                                .remove_circle_outline),
+                                                            onPressed: () {
+                                                              if ((_roleRequirements[
+                                                                          role.key] ??
+                                                                      0) >
+                                                                  0) {
+                                                                setState(() {
+                                                                  _roleRequirements[
+                                                                          role.key] =
+                                                                      (_roleRequirements[role.key] ??
+                                                                              0) -
+                                                                          1;
+                                                                  _isDirty =
+                                                                      true;
+                                                                });
+                                                              }
+                                                            },
+                                                          ),
+                                                          SizedBox(
+                                                            width: 40,
+                                                            child: Text(
+                                                              (_roleRequirements[
+                                                                          role.key] ??
+                                                                      0)
+                                                                  .toString(),
+                                                              textAlign:
+                                                                  TextAlign
+                                                                      .center,
+                                                              style: const TextStyle(
+                                                                  fontSize: 18,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold),
+                                                            ),
+                                                          ),
+                                                          IconButton(
+                                                            icon: const Icon(Icons
+                                                                .add_circle_outline),
+                                                            onPressed: () {
+                                                              setState(() {
+                                                                _roleRequirements[
+                                                                        role.key] =
+                                                                    (_roleRequirements[role.key] ??
+                                                                            0) +
+                                                                        1;
+                                                                _isDirty = true;
+                                                              });
+                                                            },
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  );
+                                                }).toList(),
+                                              );
+                                            }
+
+                                            // Use roles from RoleBloc
+                                            final roles =
+                                                (roleState as RolesLoaded)
+                                                    .visibleRoles;
+
+                                            return Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: roles.map((roleObj) {
+                                                // Use role key (String) directly as the map key
+                                                final roleKey = roleObj.key;
+
+                                                // Map role.key to RoleType enum for highlighting (legacy support)
+                                                final RoleType? roleType =
+                                                    _tryParseRoleType(roleKey);
+                                                final isHighlighted =
+                                                    roleType != null &&
+                                                        _highlightedRole ==
+                                                            roleType;
+
+                                                return AnimatedContainer(
+                                                  key: roleType != null
+                                                      ? _roleKeys[roleType]
+                                                      : null,
+                                                  duration: const Duration(
+                                                      milliseconds: 500),
+                                                  decoration: BoxDecoration(
+                                                    color: isHighlighted
+                                                        ? Colors.blue.shade100
+                                                            .withValues(
+                                                                alpha:
+                                                                    _highlightOpacity)
+                                                        : null,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                    border: isHighlighted
+                                                        ? Border.all(
+                                                            color: Colors
+                                                                .blue.shade700
+                                                                .withValues(
+                                                                    alpha:
+                                                                        _highlightOpacity),
+                                                            width: 2,
+                                                          )
+                                                        : null,
+                                                  ),
+                                                  child: ListTile(
+                                                    title: Text(
+                                                      roleObj.hebrewName,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            isHighlighted
+                                                                ? FontWeight
+                                                                    .bold
+                                                                : FontWeight
+                                                                    .normal,
+                                                        color: isHighlighted
+                                                            ? Colors
+                                                                .blue.shade900
+                                                            : null,
+                                                      ),
+                                                    ),
+                                                    trailing: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        IconButton(
+                                                          icon: const Icon(Icons
+                                                              .remove_circle_outline),
+                                                          onPressed: () {
+                                                            if (_roleRequirements[
+                                                                    roleKey]! >
+                                                                0) {
+                                                              setState(() {
+                                                                _roleRequirements[
+                                                                        roleKey] =
+                                                                    _roleRequirements[
+                                                                            roleKey]! -
+                                                                        1;
+                                                                _isDirty = true;
+                                                              });
+                                                            }
+                                                          },
+                                                        ),
+                                                        SizedBox(
+                                                          width: 40,
+                                                          child: Text(
+                                                            (_roleRequirements[
+                                                                        roleKey] ??
+                                                                    0)
+                                                                .toString(),
+                                                            textAlign: TextAlign
+                                                                .center,
+                                                            style: const TextStyle(
+                                                                fontSize: 18,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold),
+                                                          ),
+                                                        ),
+                                                        IconButton(
+                                                          icon: const Icon(Icons
+                                                              .add_circle_outline),
+                                                          onPressed: () {
+                                                            setState(() {
+                                                              _roleRequirements[
+                                                                      roleKey] =
+                                                                  (_roleRequirements[
+                                                                              roleKey] ??
+                                                                          0) +
+                                                                      1;
+                                                              _isDirty = true;
+                                                            });
+                                                          },
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            );
+                                          },
+                                        ),
+
+                                        // Comments
+                                        TextFormField(
+                                          controller: _commentsController,
+                                          focusNode: _commentsFocusNode,
+                                          decoration: const InputDecoration(
+                                            labelText: 'הערות',
+                                            hintText: 'הערות על האירוע',
+                                            prefixIcon: Icon(Icons.comment),
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          minLines: 1,
+                                          maxLines: 3,
+                                          scrollPadding: const EdgeInsets.only(
+                                              bottom: 300),
+                                          onChanged: (_) =>
+                                              setState(() => _isDirty = true),
+                                        ),
+
+                                        // Dynamic bottom spacing for keyboard
+                                        SizedBox(
+                                            height: MediaQuery.of(context)
+                                                .viewInsets
+                                                .bottom),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+
+                          // Modal Footer (Fixed at bottom)
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                top: BorderSide(color: Colors.grey.shade300),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: _handleClose,
+                                    child: const Text('ביטול'),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: _isSaving ? null : _saveEvent,
+                                    child: _isSaving
+                                        ? const SizedBox(
+                                            height: 20,
+                                            width: 20,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
+                                          )
+                                        : Text(widget.isDuplication
+                                            ? 'שכפל אירוע'
+                                            : 'שמור'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _handleClose,
-                            child: const Text('ביטול'),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _isSaving ? null : _saveEvent,
-                            child: _isSaving
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : Text(widget.isDuplication ? 'שכפל אירוע' : 'שמור'),
-                          ),
-                        ),
-                      ],
+                    // Loading overlay
+                    LoadingOverlay(
+                      isLoading: _isSaving,
+                      message:
+                          widget.isDuplication ? 'משכפל אירוע...' : 'שומר...',
                     ),
-                  ),
-                ],
-              ),
-            ),
-            // Loading overlay
-            LoadingOverlay(
-              isLoading: _isSaving,
-              message: widget.isDuplication ? 'משכפל אירוע...' : 'שומר...',
-            ),
-          ],
-        ),
-                );
-              },
-            ),
-          );
-        }, // Close DraggableScrollableSheet builder
-      ); // Close DraggableScrollableSheet
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      }, // Close DraggableScrollableSheet builder
+    ); // Close DraggableScrollableSheet
   }
-
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';

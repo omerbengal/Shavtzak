@@ -19,6 +19,7 @@ import '../../widgets/map_location_picker.dart';
 import 'widgets/category_filter_modal.dart';
 import 'widgets/category_management_dialog.dart';
 import 'widgets/event_form_modal.dart';
+import 'widgets/event_drive_files_section.dart';
 import 'widgets/role_management_dialog.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import 'dart:async';
@@ -41,7 +42,10 @@ class _EventListScreenState extends State<EventListScreen> {
   Set<String> _selectedCategoryIds = {};
 
   /// Build a compact icon button for the leading AppBar section
-  Widget _buildCompactIcon({required IconData icon, required VoidCallback onPressed, Widget? badge}) {
+  Widget _buildCompactIcon(
+      {required IconData icon,
+      required VoidCallback onPressed,
+      Widget? badge}) {
     return InkWell(
       onTap: onPressed,
       customBorder: const CircleBorder(),
@@ -146,7 +150,8 @@ class _EventListScreenState extends State<EventListScreen> {
             children: [
               // Centered title
               const Expanded(
-                child: Center(child: Text('אירועים', style: TextStyle(fontSize: 20))),
+                child: Center(
+                    child: Text('אירועים', style: TextStyle(fontSize: 20))),
               ),
               // Trailing icons
               IconButton(
@@ -262,11 +267,13 @@ class _EventListScreenState extends State<EventListScreen> {
     // Calculate past events count
     final today = DateTime.now();
     final pastCount = state.events.where((event) {
-      return event.endDate.isBefore(DateTime(today.year, today.month, today.day));
+      return event.endDate
+          .isBefore(DateTime(today.year, today.month, today.day));
     }).length;
 
     // Filter events based on selected filter
-    final filteredEvents = _filterEvents(state.events, FilterPersistence.eventFilterIndex);
+    final filteredEvents =
+        _filterEvents(state.events, FilterPersistence.eventFilterIndex);
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -279,7 +286,8 @@ class _EventListScreenState extends State<EventListScreen> {
           InteractiveFilterBar(
             options: [
               FilterOption(label: 'סה״כ', count: state.totalCount.toString()),
-              FilterOption(label: 'עתידיים', count: state.upcomingCount.toString()),
+              FilterOption(
+                  label: 'עתידיים', count: state.upcomingCount.toString()),
               FilterOption(label: 'עברו', count: pastCount.toString()),
             ],
             selectedIndex: FilterPersistence.eventFilterIndex,
@@ -334,7 +342,8 @@ class _EventListScreenState extends State<EventListScreen> {
                   ),
                   filled: true,
                   fillColor: Colors.grey.shade50,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
                 onChanged: _onSearchChanged,
               ),
@@ -371,7 +380,7 @@ class _EventListScreenState extends State<EventListScreen> {
       case 1: // Future (עתידיים) - endDate >= today
         result = events.where((event) {
           return event.endDate.isAfter(todayDate) ||
-                 event.endDate.isAtSameMomentAs(todayDate);
+              event.endDate.isAtSameMomentAs(todayDate);
         }).toList();
         break;
       case 2: // Past (עברו) - endDate < today
@@ -387,7 +396,7 @@ class _EventListScreenState extends State<EventListScreen> {
     if (_selectedCategoryIds.isNotEmpty) {
       result = result.where((event) {
         return event.categoryId != null &&
-               _selectedCategoryIds.contains(event.categoryId);
+            _selectedCategoryIds.contains(event.categoryId);
       }).toList();
     }
 
@@ -398,7 +407,7 @@ class _EventListScreenState extends State<EventListScreen> {
         final normalizedName = normalizeForSearch(event.name);
         final normalizedLocation = normalizeForSearch(event.location);
         return normalizedName.contains(normalizedQuery) ||
-               normalizedLocation.contains(normalizedQuery);
+            normalizedLocation.contains(normalizedQuery);
       }).toList();
     }
 
@@ -485,7 +494,8 @@ class _EventListScreenState extends State<EventListScreen> {
                 children: [
                   CircleAvatar(
                     backgroundColor: Colors.blue,
-                    child: Text(event.name.isNotEmpty ? event.name[0] : '?', style: const TextStyle(color: Colors.white)),
+                    child: Text(event.name.isNotEmpty ? event.name[0] : '?',
+                        style: const TextStyle(color: Colors.white)),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -494,7 +504,8 @@ class _EventListScreenState extends State<EventListScreen> {
                         children: [
                           TextSpan(
                             text: event.name,
-                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 16),
                           ),
                           if (categoryName != null) ...[
                             const TextSpan(text: '  '),
@@ -510,6 +521,12 @@ class _EventListScreenState extends State<EventListScreen> {
                         ],
                       ),
                     ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    tooltip: 'קבצים בגוגל דרייב',
+                    onPressed: () => _showDriveFilesDialog(context, event),
+                    icon: const Icon(Icons.folder_open),
                   ),
                 ],
               ),
@@ -529,17 +546,24 @@ class _EventListScreenState extends State<EventListScreen> {
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          _buildFieldItem('תאריך התחלה', _formatDate(event.startDate)),
+                          _buildFieldItem(
+                              'תאריך התחלה', _formatDate(event.startDate)),
                           const SizedBox(width: 16),
-                          _buildFieldItem('תאריך סיום', _formatDate(event.endDate)),
+                          _buildFieldItem(
+                              'תאריך סיום', _formatDate(event.endDate)),
                         ],
                       ),
                     // Line 2: Location with old styling (only if not empty)
                     if (event.location.isNotEmpty)
-                      _buildFieldItem('מיקום', _formatLocationForDisplay(event.location)),
+                      _buildFieldItem(
+                          'מיקום', _formatLocationForDisplay(event.location)),
                     // Line 3: Time fields with old styling and responsive font size
-                    if (event.assemblyTime.isNotEmpty || event.startTime.isNotEmpty || event.actualShowStartTime.isNotEmpty || event.endTime.isNotEmpty)
-                      _buildFieldItemWithResponsiveFont('שעות', _formatTimeFields(event)),
+                    if (event.assemblyTime.isNotEmpty ||
+                        event.startTime.isNotEmpty ||
+                        event.actualShowStartTime.isNotEmpty ||
+                        event.endTime.isNotEmpty)
+                      _buildFieldItemWithResponsiveFont(
+                          'שעות', _formatTimeFields(event)),
                   ],
                 ),
               ),
@@ -549,7 +573,8 @@ class _EventListScreenState extends State<EventListScreen> {
                 _buildFieldItem('הערות', event.comments),
               ],
               // Birthday indicators (if any team member has birthday during event)
-              if (eventBirthdays[event.id] != null && eventBirthdays[event.id]!.isNotEmpty) ...[
+              if (eventBirthdays[event.id] != null &&
+                  eventBirthdays[event.id]!.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 ...eventBirthdays[event.id]!.map((name) => Padding(
                       padding: const EdgeInsets.only(top: 2),
@@ -601,7 +626,9 @@ class _EventListScreenState extends State<EventListScreen> {
     );
 
     // Check if the modal was closed with a duplication intent
-    if (result is Map && result['action'] == 'duplicate' && result['event'] != null) {
+    if (result is Map &&
+        result['action'] == 'duplicate' &&
+        result['event'] != null) {
       // Open the duplication modal after the original modal is fully closed
       if (mounted) {
         _showEventFormModal(result['event'] as Event, isDuplication: true);
@@ -632,6 +659,63 @@ class _EventListScreenState extends State<EventListScreen> {
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showDriveFilesDialog(BuildContext context, Event event) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final dialogHeight = (screenHeight * 0.72).clamp(420.0, 760.0);
+    final filesListHeight = (dialogHeight - 170).clamp(200.0, 580.0);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: Dialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: SizedBox(
+            width: 560,
+            height: dialogHeight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.folder_open, color: Colors.blue),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'קבצים בגוגל דרייב - ${event.name}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'סגור',
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 12),
+                  EventDriveFilesSection(
+                    eventId: event.id,
+                    driveFolderId: event.driveFolderId,
+                    driveFolderLink: event.driveFolderLink,
+                    eventName: event.name,
+                    showHeader: false,
+                    scrollableFilesOnly: true,
+                    filesListHeight: filesListHeight,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -669,7 +753,8 @@ class _EventListScreenState extends State<EventListScreen> {
         children: [
           Text(
             label,
-            style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+                fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 2),
           Text(
@@ -692,7 +777,8 @@ class _EventListScreenState extends State<EventListScreen> {
         children: [
           Text(
             label,
-            style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+                fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 2),
           FittedBox(
@@ -727,9 +813,12 @@ class _EventListScreenState extends State<EventListScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.event_outlined, size: 80, color: Colors.grey.shade400),
+                Icon(Icons.event_outlined,
+                    size: 80, color: Colors.grey.shade400),
                 const SizedBox(height: 16),
-                Text(state.message, style: TextStyle(fontSize: 18, color: Colors.grey.shade600)),
+                Text(state.message,
+                    style:
+                        TextStyle(fontSize: 18, color: Colors.grey.shade600)),
                 const SizedBox(height: 24),
                 // Only show "add first" button if database is truly empty (not filtered)
                 if (!state.isFiltered)
@@ -755,7 +844,9 @@ class _EventListScreenState extends State<EventListScreen> {
         children: [
           const Icon(Icons.error_outline, size: 80, color: Colors.red),
           const SizedBox(height: 16),
-          Text(message, style: const TextStyle(fontSize: 18, color: Colors.red), textAlign: TextAlign.center),
+          Text(message,
+              style: const TextStyle(fontSize: 18, color: Colors.red),
+              textAlign: TextAlign.center),
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () => context.read<EventBloc>().add(const LoadEvents()),

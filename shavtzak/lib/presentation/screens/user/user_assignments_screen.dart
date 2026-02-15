@@ -16,6 +16,7 @@ import '../../bloc/role/role_state.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/parking_location_picker_dialog.dart';
 import '../../widgets/event_team_members_dialog.dart';
+import '../event/widgets/event_drive_files_section.dart';
 
 /// Screen for non-admin users to view their event assignments
 class UserAssignmentsScreen extends StatefulWidget {
@@ -40,7 +41,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
   /// Calculate responsive font size based on screen width
   /// Returns a value between minSize and maxSize, scaled proportionally
-  double _getResponsiveFontSize(BuildContext context, {double minSize = 14.0, double maxSize = 20.0}) {
+  double _getResponsiveFontSize(BuildContext context,
+      {double minSize = 14.0, double maxSize = 20.0}) {
     final screenWidth = MediaQuery.of(context).size.width;
     // Map screen width range [320, 768] to font size range [minSize, maxSize]
     final clampedWidth = screenWidth.clamp(320.0, 768.0);
@@ -50,7 +52,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
   /// Calculate responsive icon size based on screen width
   /// Returns a value between minSize and maxSize, scaled proportionally
-  double _getResponsiveIconSize(BuildContext context, {double minSize = 16.0, double maxSize = 24.0}) {
+  double _getResponsiveIconSize(BuildContext context,
+      {double minSize = 16.0, double maxSize = 24.0}) {
     final screenWidth = MediaQuery.of(context).size.width;
     // Map screen width range [320, 768] to icon size range [minSize, maxSize]
     final clampedWidth = screenWidth.clamp(320.0, 768.0);
@@ -64,8 +67,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       // Use LoadUserAssignments which watches both assignments AND events
       // This ensures real-time updates when event details change or events are deleted
       context.read<AssignmentBloc>().add(
-        LoadUserAssignments(userState.user.id),
-      );
+            LoadUserAssignments(userState.user.id),
+          );
     }
   }
 
@@ -86,7 +89,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               return BlocConsumer<AssignmentBloc, AssignmentState>(
                 listener: (context, state) {
                   // Save the last loaded state with data
-                  if (state is! AssignmentLoading && state is! AssignmentError) {
+                  if (state is! AssignmentLoading &&
+                      state is! AssignmentError) {
                     _lastLoadedState = state;
                   }
 
@@ -107,9 +111,10 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                 },
                 builder: (context, state) {
                   // Use last loaded state during loading to prevent flickering
-                  final displayState = state is AssignmentLoading && _lastLoadedState != null
-                      ? _lastLoadedState!
-                      : state;
+                  final displayState =
+                      state is AssignmentLoading && _lastLoadedState != null
+                          ? _lastLoadedState!
+                          : state;
 
                   if (state is AssignmentLoading && _lastLoadedState == null) {
                     return const Center(
@@ -125,7 +130,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     // Wrap with BlocBuilder to rebuild when role order changes
                     return BlocBuilder<RoleBloc, RoleState>(
                       builder: (context, roleState) {
-                        return _buildAssignmentsContent(context, displayState.assignments);
+                        return _buildAssignmentsContent(
+                            context, displayState.assignments);
                       },
                     );
                   }
@@ -147,7 +153,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     );
   }
 
-  Widget _buildAssignmentsContent(BuildContext context, List<Assignment> assignments) {
+  Widget _buildAssignmentsContent(
+      BuildContext context, List<Assignment> assignments) {
     // Group assignments by event ID to consolidate multiple roles per event
     final Map<String, List<Assignment>> assignmentsByEvent = {};
     for (final assignment in assignments) {
@@ -235,15 +242,15 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                 Text(
                   'המשימות שלי',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'כאן מופיעים כל האירועים שאליהם שובצת',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
-                  ),
+                        color: Colors.grey[600],
+                      ),
                 ),
               ],
             ),
@@ -260,8 +267,10 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           if (upcomingGroups.isEmpty)
             _buildEmptySectionMessage('אין אירועים קרובים כרגע')
           else
-            ...upcomingGroups.map((assignmentGroup) =>
-              _buildAssignmentCard(context, assignmentGroup, isUpcoming: true),
+            ...upcomingGroups.map(
+              (assignmentGroup) => _buildAssignmentCard(
+                  context, assignmentGroup,
+                  isUpcoming: true),
             ),
 
           const SizedBox(height: 16),
@@ -277,15 +286,18 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           if (pastGroups.isEmpty)
             _buildEmptySectionMessage('אין אירועים קודמים')
           else
-            ...pastGroups.map((assignmentGroup) =>
-              _buildAssignmentCard(context, assignmentGroup, isUpcoming: false),
+            ...pastGroups.map(
+              (assignmentGroup) => _buildAssignmentCard(
+                  context, assignmentGroup,
+                  isUpcoming: false),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildSectionHeader(BuildContext context, String title, int count, Color color) {
+  Widget _buildSectionHeader(
+      BuildContext context, String title, int count, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -342,7 +354,9 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
   /// Builds a card for an event with all assigned roles
   /// [assignmentGroup] contains all assignments for the same event (multiple roles)
-  Widget _buildAssignmentCard(BuildContext context, List<Assignment> assignmentGroup, {required bool isUpcoming}) {
+  Widget _buildAssignmentCard(
+      BuildContext context, List<Assignment> assignmentGroup,
+      {required bool isUpcoming}) {
     if (assignmentGroup.isEmpty) return const SizedBox.shrink();
 
     // Use the first assignment to get event details (all share the same event)
@@ -360,27 +374,21 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
         .map((a) => MapEntry(a.roleType, a.notes))
         .toList();
 
-    final backgroundColor = isUpcoming
-        ? Colors.blue.shade50
-        : Colors.grey.shade100;
-    final borderColor = isUpcoming
-        ? Colors.blue.shade200
-        : Colors.grey.shade300;
-    final iconColor = isUpcoming
-        ? Colors.blue.shade700
-        : Colors.grey.shade500;
-    final textColor = isUpcoming
-        ? Colors.grey.shade900
-        : Colors.grey.shade600;
-    final secondaryTextColor = isUpcoming
-        ? Colors.grey.shade700
-        : Colors.grey.shade500;
+    final backgroundColor =
+        isUpcoming ? Colors.blue.shade50 : Colors.grey.shade100;
+    final borderColor =
+        isUpcoming ? Colors.blue.shade200 : Colors.grey.shade300;
+    final iconColor = isUpcoming ? Colors.blue.shade700 : Colors.grey.shade500;
+    final textColor = isUpcoming ? Colors.grey.shade900 : Colors.grey.shade600;
+    final secondaryTextColor =
+        isUpcoming ? Colors.grey.shade700 : Colors.grey.shade500;
 
     // Check if event is today or tomorrow for special highlighting
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final tomorrow = today.add(const Duration(days: 1));
-    final eventStart = DateTime(event.startDate.year, event.startDate.month, event.startDate.day);
+    final eventStart = DateTime(
+        event.startDate.year, event.startDate.month, event.startDate.day);
     final isToday = eventStart.isAtSameMomentAs(today);
     final isTomorrow = eventStart.isAtSameMomentAs(tomorrow);
 
@@ -400,16 +408,35 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Event name - now first
-            Text(
-              event.name,
-              style: TextStyle(
-                fontSize: _getResponsiveFontSize(context, minSize: 16.0, maxSize: 18.0),
-                fontWeight: FontWeight.bold,
-                color: textColor,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            // Event title row with drive folder button
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    event.name,
+                    style: TextStyle(
+                      fontSize: _getResponsiveFontSize(context,
+                          minSize: 16.0, maxSize: 18.0),
+                      fontWeight: FontWeight.bold,
+                      color: textColor,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'קבצים בגוגל דרייב',
+                  onPressed: () => _showDriveFilesDialog(context, event),
+                  icon: Icon(
+                    Icons.folder_open,
+                    color: isUpcoming
+                        ? Colors.blue.shade700
+                        : Colors.grey.shade600,
+                  ),
+                ),
+              ],
             ),
 
             // Event comments (moved to just below title)
@@ -427,7 +454,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   children: [
                     Icon(
                       Icons.info_outline,
-                      size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
+                      size: _getResponsiveIconSize(context,
+                          minSize: 16.0, maxSize: 18.0),
                       color: Colors.amber.shade700,
                     ),
                     const SizedBox(width: 8),
@@ -435,7 +463,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       child: Text(
                         event.comments,
                         style: TextStyle(
-                          fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                          fontSize: _getResponsiveFontSize(context,
+                              minSize: 12.0, maxSize: 13.0),
                           fontStyle: FontStyle.italic,
                           color: Colors.amber.shade900,
                         ),
@@ -452,7 +481,9 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             Wrap(
               spacing: 8,
               runSpacing: 6,
-              children: roles.map((roleKey) => _buildRoleBadge(roleKey, isUpcoming)).toList(),
+              children: roles
+                  .map((roleKey) => _buildRoleBadge(roleKey, isUpcoming))
+                  .toList(),
             ),
 
             const SizedBox(height: 12),
@@ -466,7 +497,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     : Colors.grey.shade200,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: isUpcoming ? Colors.blue.shade300 : Colors.grey.shade400,
+                  color:
+                      isUpcoming ? Colors.blue.shade300 : Colors.grey.shade400,
                 ),
               ),
               child: Column(
@@ -480,14 +512,18 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       children: [
                         Icon(
                           Icons.calendar_today,
-                          size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
-                          color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                          size: _getResponsiveIconSize(context,
+                              minSize: 18.0, maxSize: 22.0),
+                          color: isUpcoming
+                              ? Colors.blue.shade800
+                              : Colors.grey.shade600,
                         ),
                         const SizedBox(width: 10),
                         Text(
                           'תאריך:',
                           style: TextStyle(
-                            fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+                            fontSize: _getResponsiveFontSize(context,
+                                minSize: 14.0, maxSize: 16.0),
                             fontWeight: FontWeight.w500,
                             color: secondaryTextColor,
                           ),
@@ -499,7 +535,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                             alignment: AlignmentDirectional.centerStart,
                             child: RichText(
                               text: _formatDateWithHighlight(
-                                _formatSingleDayDisplay(event.startDate, isToday, isTomorrow),
+                                _formatSingleDayDisplay(
+                                    event.startDate, isToday, isTomorrow),
                                 isUpcoming,
                                 context,
                               ),
@@ -518,14 +555,18 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                           children: [
                             Icon(
                               Icons.calendar_today,
-                              size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
-                              color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                              size: _getResponsiveIconSize(context,
+                                  minSize: 18.0, maxSize: 22.0),
+                              color: isUpcoming
+                                  ? Colors.blue.shade800
+                                  : Colors.grey.shade600,
                             ),
                             const SizedBox(width: 10),
                             Text(
                               'תאריך התחלה:',
                               style: TextStyle(
-                                fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+                                fontSize: _getResponsiveFontSize(context,
+                                    minSize: 14.0, maxSize: 16.0),
                                 fontWeight: FontWeight.w500,
                                 color: secondaryTextColor,
                               ),
@@ -537,7 +578,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                 alignment: AlignmentDirectional.centerStart,
                                 child: RichText(
                                   text: _formatDateWithHighlight(
-                                    _formatSingleDayDisplay(event.startDate, isToday, isTomorrow),
+                                    _formatSingleDayDisplay(
+                                        event.startDate, isToday, isTomorrow),
                                     isUpcoming,
                                     context,
                                   ),
@@ -552,14 +594,18 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                           children: [
                             Icon(
                               Icons.calendar_today,
-                              size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
-                              color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                              size: _getResponsiveIconSize(context,
+                                  minSize: 18.0, maxSize: 22.0),
+                              color: isUpcoming
+                                  ? Colors.blue.shade800
+                                  : Colors.grey.shade600,
                             ),
                             const SizedBox(width: 10),
                             Text(
                               'תאריך סיום:',
                               style: TextStyle(
-                                fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+                                fontSize: _getResponsiveFontSize(context,
+                                    minSize: 14.0, maxSize: 16.0),
                                 fontWeight: FontWeight.w500,
                                 color: secondaryTextColor,
                               ),
@@ -571,7 +617,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                 alignment: AlignmentDirectional.centerStart,
                                 child: RichText(
                                   text: _formatDateWithHighlight(
-                                    _formatSingleDayDisplay(event.endDate, false, false),
+                                    _formatSingleDayDisplay(
+                                        event.endDate, false, false),
                                     isUpcoming,
                                     context,
                                   ),
@@ -587,22 +634,28 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   if (event.location.isNotEmpty) ...[
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        final locationText = MapLocationResult.stripCoordinates(event.location);
-                        final hasMapIcons = _isLocationPickedFromMap(event.location);
+                        final locationText =
+                            MapLocationResult.stripCoordinates(event.location);
+                        final hasMapIcons =
+                            _isLocationPickedFromMap(event.location);
 
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Icon(
                               Icons.location_on,
-                              size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
-                              color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                              size: _getResponsiveIconSize(context,
+                                  minSize: 18.0, maxSize: 22.0),
+                              color: isUpcoming
+                                  ? Colors.blue.shade800
+                                  : Colors.grey.shade600,
                             ),
                             const SizedBox(width: 8),
                             Text(
                               'מיקום:',
                               style: TextStyle(
-                                fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+                                fontSize: _getResponsiveFontSize(context,
+                                    minSize: 14.0, maxSize: 16.0),
                                 fontWeight: FontWeight.w500,
                                 color: secondaryTextColor,
                               ),
@@ -619,12 +672,17 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                     style: TextStyle(
                                       fontSize: _getResponsiveFontSize(context),
                                       fontWeight: FontWeight.bold,
-                                      color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
+                                      color: isUpcoming
+                                          ? Colors.blue.shade900
+                                          : Colors.grey.shade700,
                                     ),
                                   ),
                                   if (hasMapIcons) ...[
-                                    _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.location)),
-                                    _buildWazeButton(onTap: () => _openWaze(event.location)),
+                                    _buildGoogleMapsButton(
+                                        onTap: () =>
+                                            _openGoogleMaps(event.location)),
+                                    _buildWazeButton(
+                                        onTap: () => _openWaze(event.location)),
                                   ],
                                 ],
                               ),
@@ -639,11 +697,14 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   // Show if: (1) parking location exists, OR (2) user can edit parking (show "לא מוגדרת")
                   Builder(
                     builder: (context) {
-                      final userState = context.watch<UserSelectionBloc>().state;
+                      final userState =
+                          context.watch<UserSelectionBloc>().state;
                       final canEditParking = userState is UserAuthenticated &&
                           _canUserEditParking(event, userState);
 
-                      final hasParkingLocation = event.parkingLocation != null && event.parkingLocation!.isNotEmpty;
+                      final hasParkingLocation =
+                          event.parkingLocation != null &&
+                              event.parkingLocation!.isNotEmpty;
 
                       // Only show if there's a parking location OR user can edit
                       if (!hasParkingLocation && !canEditParking) {
@@ -651,9 +712,11 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       }
 
                       final parkingText = hasParkingLocation
-                          ? MapLocationResult.stripCoordinates(event.parkingLocation!)
+                          ? MapLocationResult.stripCoordinates(
+                              event.parkingLocation!)
                           : 'לא מוגדרת';
-                      final hasMapIcons = hasParkingLocation && _isLocationPickedFromMap(event.parkingLocation!);
+                      final hasMapIcons = hasParkingLocation &&
+                          _isLocationPickedFromMap(event.parkingLocation!);
 
                       return Column(
                         children: [
@@ -664,14 +727,16 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                 children: [
                                   Icon(
                                     Icons.local_parking,
-                                    size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
+                                    size: _getResponsiveIconSize(context,
+                                        minSize: 18.0, maxSize: 22.0),
                                     color: iconColor,
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
                                     'חנייה:',
                                     style: TextStyle(
-                                      fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+                                      fontSize: _getResponsiveFontSize(context,
+                                          minSize: 14.0, maxSize: 16.0),
                                       fontWeight: FontWeight.w500,
                                       color: secondaryTextColor,
                                     ),
@@ -681,26 +746,43 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                     child: Wrap(
                                       spacing: 8,
                                       runSpacing: 4,
-                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
                                       children: [
                                         GestureDetector(
-                                          onTap: canEditParking ? () => _editParkingLocation(context, event) : null,
+                                          onTap: canEditParking
+                                              ? () => _editParkingLocation(
+                                                  context, event)
+                                              : null,
                                           child: Text(
                                             parkingText,
                                             style: TextStyle(
-                                              fontSize: _getResponsiveFontSize(context),
+                                              fontSize: _getResponsiveFontSize(
+                                                  context),
                                               fontWeight: FontWeight.bold,
                                               color: hasParkingLocation
-                                                  ? (isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700)
-                                                  : (isUpcoming ? Colors.grey.shade600 : Colors.grey.shade400),
-                                              fontStyle: hasParkingLocation ? FontStyle.normal : FontStyle.italic,
-                                              decoration: canEditParking ? TextDecoration.underline : null,
+                                                  ? (isUpcoming
+                                                      ? Colors.blue.shade900
+                                                      : Colors.grey.shade700)
+                                                  : (isUpcoming
+                                                      ? Colors.grey.shade600
+                                                      : Colors.grey.shade400),
+                                              fontStyle: hasParkingLocation
+                                                  ? FontStyle.normal
+                                                  : FontStyle.italic,
+                                              decoration: canEditParking
+                                                  ? TextDecoration.underline
+                                                  : null,
                                             ),
                                           ),
                                         ),
                                         if (hasMapIcons) ...[
-                                          _buildGoogleMapsButton(onTap: () => _openGoogleMaps(event.parkingLocation!)),
-                                          _buildWazeButton(onTap: () => _openWaze(event.parkingLocation!)),
+                                          _buildGoogleMapsButton(
+                                              onTap: () => _openGoogleMaps(
+                                                  event.parkingLocation!)),
+                                          _buildWazeButton(
+                                              onTap: () => _openWaze(
+                                                  event.parkingLocation!)),
                                         ],
                                       ],
                                     ),
@@ -720,25 +802,33 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     children: [
                       Icon(
                         Icons.access_time_filled,
-                        size: _getResponsiveIconSize(context, minSize: 18.0, maxSize: 22.0),
-                        color: isUpcoming ? Colors.blue.shade800 : Colors.grey.shade600,
+                        size: _getResponsiveIconSize(context,
+                            minSize: 18.0, maxSize: 22.0),
+                        color: isUpcoming
+                            ? Colors.blue.shade800
+                            : Colors.grey.shade600,
                       ),
                       const SizedBox(width: 10),
                       Text(
                         'שעת התייצבות:',
                         style: TextStyle(
-                          fontSize: _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0),
+                          fontSize: _getResponsiveFontSize(context,
+                              minSize: 14.0, maxSize: 16.0),
                           fontWeight: FontWeight.w500,
                           color: secondaryTextColor,
                         ),
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        event.assemblyTime.isNotEmpty ? event.assemblyTime : 'טרם נקבעה',
+                        event.assemblyTime.isNotEmpty
+                            ? event.assemblyTime
+                            : 'טרם נקבעה',
                         style: TextStyle(
                           fontSize: _getResponsiveFontSize(context),
                           fontWeight: FontWeight.bold,
-                          color: isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700,
+                          color: isUpcoming
+                              ? Colors.blue.shade900
+                              : Colors.grey.shade700,
                         ),
                       ),
                     ],
@@ -758,14 +848,16 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   children: [
                     Icon(
                       Icons.groups_outlined,
-                      size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
+                      size: _getResponsiveIconSize(context,
+                          minSize: 16.0, maxSize: 18.0),
                       color: iconColor,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       'התכנסות קהל:',
                       style: TextStyle(
-                        fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                        fontSize: _getResponsiveFontSize(context,
+                            minSize: 12.0, maxSize: 13.0),
                         color: secondaryTextColor,
                       ),
                     ),
@@ -773,7 +865,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     Text(
                       event.startTime,
                       style: TextStyle(
-                        fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
+                        fontSize: _getResponsiveFontSize(context,
+                            minSize: 13.0, maxSize: 14.0),
                         fontWeight: FontWeight.w500,
                         color: textColor,
                       ),
@@ -790,14 +883,16 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   children: [
                     Icon(
                       Icons.play_circle_outline,
-                      size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
+                      size: _getResponsiveIconSize(context,
+                          minSize: 16.0, maxSize: 18.0),
                       color: iconColor,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       'תחילת המופע:',
                       style: TextStyle(
-                        fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                        fontSize: _getResponsiveFontSize(context,
+                            minSize: 12.0, maxSize: 13.0),
                         color: secondaryTextColor,
                       ),
                     ),
@@ -805,7 +900,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     Text(
                       event.actualShowStartTime,
                       style: TextStyle(
-                        fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
+                        fontSize: _getResponsiveFontSize(context,
+                            minSize: 13.0, maxSize: 14.0),
                         fontWeight: FontWeight.w500,
                         color: textColor,
                       ),
@@ -822,14 +918,16 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   children: [
                     Icon(
                       Icons.flag_outlined,
-                      size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
+                      size: _getResponsiveIconSize(context,
+                          minSize: 16.0, maxSize: 18.0),
                       color: iconColor,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       'סיום:',
                       style: TextStyle(
-                        fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                        fontSize: _getResponsiveFontSize(context,
+                            minSize: 12.0, maxSize: 13.0),
                         color: secondaryTextColor,
                       ),
                     ),
@@ -837,7 +935,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     Text(
                       event.endTime,
                       style: TextStyle(
-                        fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
+                        fontSize: _getResponsiveFontSize(context,
+                            minSize: 13.0, maxSize: 14.0),
                         fontWeight: FontWeight.w500,
                         color: textColor,
                       ),
@@ -851,15 +950,18 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () => _showEventTeamMembers(context, event.id, event.name),
+                onPressed: () =>
+                    _showEventTeamMembers(context, event.id, event.name),
                 icon: Icon(
                   Icons.groups,
-                  size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
+                  size: _getResponsiveIconSize(context,
+                      minSize: 16.0, maxSize: 18.0),
                 ),
                 label: Text(
                   'מי איתי באירוע?',
                   style: TextStyle(
-                    fontSize: _getResponsiveFontSize(context, minSize: 13.0, maxSize: 14.0),
+                    fontSize: _getResponsiveFontSize(context,
+                        minSize: 13.0, maxSize: 14.0),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -867,7 +969,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   backgroundColor: Colors.blue.shade100,
                   foregroundColor: Colors.blue.shade700,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                     side: BorderSide(color: Colors.blue.shade200),
@@ -896,7 +999,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     children: [
                       Icon(
                         Icons.note_alt_outlined,
-                        size: _getResponsiveIconSize(context, minSize: 16.0, maxSize: 18.0),
+                        size: _getResponsiveIconSize(context,
+                            minSize: 16.0, maxSize: 18.0),
                         color: Colors.purple.shade700,
                       ),
                       const SizedBox(width: 8),
@@ -904,16 +1008,21 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                         child: assignmentNotes.length > 1
                             ? BlocBuilder<RoleBloc, RoleState>(
                                 builder: (context, roleState) {
-                                  final roleHebrewName = roleState is RolesLoaded
+                                  final roleHebrewName = roleState
+                                          is RolesLoaded
                                       ? roleState.getRoleHebrewName(entry.key)
                                       : entry.key;
                                   return Text.rich(
                                     TextSpan(
                                       children: [
                                         TextSpan(
-                                          text: 'הערות לשיבוץ ($roleHebrewName): ',
+                                          text:
+                                              'הערות לשיבוץ ($roleHebrewName): ',
                                           style: TextStyle(
-                                            fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                                            fontSize: _getResponsiveFontSize(
+                                                context,
+                                                minSize: 12.0,
+                                                maxSize: 13.0),
                                             fontWeight: FontWeight.w600,
                                             color: Colors.purple.shade800,
                                           ),
@@ -921,7 +1030,10 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                         TextSpan(
                                           text: entry.value,
                                           style: TextStyle(
-                                            fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                                            fontSize: _getResponsiveFontSize(
+                                                context,
+                                                minSize: 12.0,
+                                                maxSize: 13.0),
                                             color: Colors.purple.shade900,
                                           ),
                                         ),
@@ -936,7 +1048,10 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                     TextSpan(
                                       text: 'הערות לשיבוץ: ',
                                       style: TextStyle(
-                                        fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                                        fontSize: _getResponsiveFontSize(
+                                            context,
+                                            minSize: 12.0,
+                                            maxSize: 13.0),
                                         fontWeight: FontWeight.w600,
                                         color: Colors.purple.shade800,
                                       ),
@@ -944,7 +1059,10 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                     TextSpan(
                                       text: noteText,
                                       style: TextStyle(
-                                        fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+                                        fontSize: _getResponsiveFontSize(
+                                            context,
+                                            minSize: 12.0,
+                                            maxSize: 13.0),
                                         color: Colors.purple.shade900,
                                       ),
                                     ),
@@ -969,9 +1087,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
         final roleHebrewName = roleState is RolesLoaded
             ? roleState.getRoleHebrewName(roleKey)
             : roleKey;
-        final backgroundColor = isUpcoming
-            ? _getRoleColor()
-            : Colors.grey.shade400;
+        final backgroundColor =
+            isUpcoming ? _getRoleColor() : Colors.grey.shade400;
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -982,7 +1099,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           child: Text(
             roleHebrewName,
             style: TextStyle(
-              fontSize: _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
+              fontSize:
+                  _getResponsiveFontSize(context, minSize: 12.0, maxSize: 13.0),
               fontWeight: FontWeight.w600,
               color: isUpcoming ? Colors.white : Colors.grey.shade800,
             ),
@@ -1003,7 +1121,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
     // Check if same day
     if (_isSameDay(startDate, endDate)) {
-      final dateStr = 'יום ${_getFullHebrewDayName(startDate.weekday)} ${startDate.day} ב${_getHebrewMonthName(startDate.month)}';
+      final dateStr =
+          'יום ${_getFullHebrewDayName(startDate.weekday)} ${startDate.day} ב${_getHebrewMonthName(startDate.month)}';
 
       if (isToday) {
         return '$dateStr (היום)';
@@ -1015,8 +1134,10 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     }
 
     // Multi-day event
-    final startDateStr = 'יום ${_getFullHebrewDayName(startDate.weekday)} ${startDate.day} ב${_getHebrewMonthName(startDate.month)}';
-    final endDateStr = 'יום ${_getFullHebrewDayName(endDate.weekday)} ${endDate.day} ב${_getHebrewMonthName(endDate.month)}';
+    final startDateStr =
+        'יום ${_getFullHebrewDayName(startDate.weekday)} ${startDate.day} ב${_getHebrewMonthName(startDate.month)}';
+    final endDateStr =
+        'יום ${_getFullHebrewDayName(endDate.weekday)} ${endDate.day} ב${_getHebrewMonthName(endDate.month)}';
 
     if (isToday) {
       return '$startDateStr (היום) --> $endDateStr';
@@ -1028,7 +1149,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   }
 
   String _formatSingleDayDisplay(DateTime date, bool isToday, bool isTomorrow) {
-    final dateStr = 'יום ${_getFullHebrewDayName(date.weekday)} ${date.day} ב${_getHebrewMonthName(date.month)}';
+    final dateStr =
+        'יום ${_getFullHebrewDayName(date.weekday)} ${date.day} ב${_getHebrewMonthName(date.month)}';
 
     if (isToday) {
       return '$dateStr (היום)';
@@ -1046,7 +1168,16 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   }
 
   String _getHebrewDayName(int weekday) {
-    const days = ['', 'יום ב\'', 'יום ג\'', 'יום ד\'', 'יום ה\'', 'יום ו\'', 'שבת', 'יום א\''];
+    const days = [
+      '',
+      'יום ב\'',
+      'יום ג\'',
+      'יום ד\'',
+      'יום ה\'',
+      'יום ו\'',
+      'שבת',
+      'יום א\''
+    ];
     return days[weekday];
   }
 
@@ -1055,7 +1186,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     return days[weekday];
   }
 
-  TextSpan _formatDateWithHighlight(String dateText, bool isUpcoming, BuildContext context) {
+  TextSpan _formatDateWithHighlight(
+      String dateText, bool isUpcoming, BuildContext context) {
     final color = isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700;
     final responsiveFontSize = _getResponsiveFontSize(context);
 
@@ -1138,8 +1270,19 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
   String _getHebrewMonthName(int month) {
     const months = [
-      '', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
-      'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+      '',
+      'ינואר',
+      'פברואר',
+      'מרץ',
+      'אפריל',
+      'מאי',
+      'יוני',
+      'יולי',
+      'אוגוסט',
+      'ספטמבר',
+      'אוקטובר',
+      'נובמבר',
+      'דצמבר'
     ];
     return months[month];
   }
@@ -1185,13 +1328,16 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           ),
           child: Image.asset(
             'assets/images/google_maps.png',
-            width: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
-            height: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
+            width:
+                _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
+            height:
+                _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) {
               return Icon(
                 Icons.map_outlined,
-                size: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
+                size: _getResponsiveIconSize(context,
+                    minSize: 22.0, maxSize: 28.0),
                 color: Colors.red.shade600,
               );
             },
@@ -1216,13 +1362,16 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           ),
           child: Image.asset(
             'assets/images/waze.png',
-            width: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
-            height: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
+            width:
+                _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
+            height:
+                _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) {
               return Icon(
                 Icons.navigation_outlined,
-                size: _getResponsiveIconSize(context, minSize: 22.0, maxSize: 28.0),
+                size: _getResponsiveIconSize(context,
+                    minSize: 22.0, maxSize: 28.0),
                 color: Colors.blue.shade600,
               );
             },
@@ -1243,7 +1392,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     } else {
       // Fall back to search by location name
       final query = MapLocationResult.stripCoordinates(location);
-      url = 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}';
+      url =
+          'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}';
     }
 
     launchUrlWithAutoClose(url);
@@ -1297,7 +1447,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       parkingLocation: newParkingLocation,
       parkingEditorIds: newEditorIds,
       updatedAt: DateTime.now(),
-      clearParkingLocation: newParkingLocation == null, // Explicitly clear when null
+      clearParkingLocation:
+          newParkingLocation == null, // Explicitly clear when null
     );
 
     context.read<EventBloc>().add(UpdateEvent(updatedEvent));
@@ -1315,13 +1466,15 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
     if (result != null && mounted) {
       // Handle empty parking location (user clicked "Clear")
-      final newLocation = result.parkingLocation.isEmpty ? null : result.parkingLocation;
+      final newLocation =
+          result.parkingLocation.isEmpty ? null : result.parkingLocation;
 
       await _updateParkingLocation(
         context,
         event,
         newLocation,
-        event.parkingEditorIds, // Keep original editor IDs (users can't change them)
+        event
+            .parkingEditorIds, // Keep original editor IDs (users can't change them)
       );
 
       // Show success message
@@ -1418,7 +1571,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   }
 
   /// Show dialog with all team members assigned to the event
-  void _showEventTeamMembers(BuildContext context, String eventId, String eventName) {
+  void _showEventTeamMembers(
+      BuildContext context, String eventId, String eventName) {
     final userState = context.read<UserSelectionBloc>().state;
     if (userState is! UserAuthenticated) return;
 
@@ -1431,5 +1585,55 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       ),
     );
   }
-}
 
+  void _showDriveFilesDialog(BuildContext context, Event event) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final dialogHeight = (screenHeight * 0.72).clamp(420.0, 760.0);
+    final filesListHeight = (dialogHeight - 170).clamp(200.0, 580.0);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: Dialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: SizedBox(
+            width: 560,
+            height: dialogHeight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.folder_open, color: Colors.blue),
+                      const SizedBox(width: 8),
+                      const Expanded(child: Text('קבצים בגוגל דרייב')),
+                      IconButton(
+                        tooltip: 'סגור',
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 12),
+                  EventDriveFilesSection(
+                    eventId: event.id,
+                    driveFolderId: event.driveFolderId,
+                    driveFolderLink: event.driveFolderLink,
+                    eventName: event.name,
+                    showHeader: false,
+                    scrollableFilesOnly: true,
+                    filesListHeight: filesListHeight,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -24,7 +24,7 @@ jobs:
 
       - name: Build for web
         working-directory: shavtzak
-        run: flutter build web --release --wasm --pwa-strategy=offline-first
+        run: flutter build web --release --pwa-strategy=offline-first
 
       - name: Fix base href for GitHub Pages
         working-directory: shavtzak

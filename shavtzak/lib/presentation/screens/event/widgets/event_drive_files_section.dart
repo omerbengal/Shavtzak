@@ -10,6 +10,9 @@ class EventDriveFilesSection extends StatefulWidget {
   final String? driveFolderId;
   final String? driveFolderLink;
   final String eventName;
+  final bool showHeader;
+  final bool scrollableFilesOnly;
+  final double filesListHeight;
 
   const EventDriveFilesSection({
     super.key,
@@ -17,6 +20,9 @@ class EventDriveFilesSection extends StatefulWidget {
     this.driveFolderId,
     this.driveFolderLink,
     required this.eventName,
+    this.showHeader = true,
+    this.scrollableFilesOnly = false,
+    this.filesListHeight = 320,
   });
 
   @override
@@ -27,6 +33,7 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
   List<DriveFile> _files = [];
   bool _isLoading = false;
   bool _isWaitingForFolder = false;
+  bool _isRecreatingFolder = false;
   String? _error;
   Timer? _pollTimer;
 
@@ -112,7 +119,10 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
   }
 
   Future<void> _loadFiles() async {
-    if (!DriveService.instance.isInitialized || _currentFolderId == null) return;
+    if (!DriveService.instance.isInitialized || _currentFolderId == null) {
+      return;
+    }
+    if (_isRecreatingFolder) return;
 
     setState(() {
       _isLoading = true;
@@ -120,7 +130,13 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
     });
 
     try {
-      final result = await DriveService.instance.listFiles(folderId: _currentFolderId!);
+      final result =
+          await DriveService.instance.listFiles(folderId: _currentFolderId!);
+
+      if (result.success && result.folderNotFound) {
+        await _recreateFolder();
+        return;
+      }
 
       if (mounted) {
         setState(() {
@@ -136,6 +152,72 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _error = e.toString();
+        });
+      }
+    }
+  }
+
+  /// Recreate folder when the old Drive folder was deleted manually
+  Future<void> _recreateFolder() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+      _isRecreatingFolder = true;
+      _error = null;
+      _files = [];
+    });
+
+    try {
+      final database = FirestoreDatabase();
+      final event = await database.getEventById(widget.eventId);
+
+      if (event == null) {
+        if (mounted) {
+          setState(() {
+            _isRecreatingFolder = false;
+            _error = 'האירוע לא נמצא';
+          });
+        }
+        return;
+      }
+
+      final createResult = await DriveService.instance.createFolder(
+        eventName: event.name,
+        date: event.startDate,
+        endDate: event.endDate,
+      );
+
+      if (!createResult.success || createResult.folderId == null) {
+        if (mounted) {
+          setState(() {
+            _isRecreatingFolder = false;
+            _error = createResult.error ?? 'שגיאה ביצירת תיקייה מחדש';
+          });
+        }
+        return;
+      }
+
+      final updatedEvent = event.copyWith(
+        driveFolderId: createResult.folderId,
+        driveFolderLink: createResult.folderLink,
+      );
+      await database.updateEvent(updatedEvent);
+
+      if (mounted) {
+        setState(() {
+          _currentFolderId = createResult.folderId;
+          _currentFolderLink = createResult.folderLink;
+          _isRecreatingFolder = false;
+        });
+      }
+
+      await _loadFiles();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isRecreatingFolder = false;
           _error = e.toString();
         });
       }
@@ -159,23 +241,165 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> filesAndStatusWidgets = [
+      // Waiting for folder creation state
+      if (_isWaitingForFolder)
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            border: Border.all(color: Colors.blue.shade200),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            textDirection: TextDirection.rtl,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.blue.shade600,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'תיקיית דרייב נוצרת...',
+                style: TextStyle(
+                  color: Colors.blue.shade800,
+                  fontWeight: FontWeight.w500,
+                ),
+                textDirection: TextDirection.rtl,
+              ),
+            ],
+          ),
+        ),
+
+      // Recreating folder indicator
+      if (!_isWaitingForFolder && _isRecreatingFolder)
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            border: Border.all(color: Colors.blue.shade200),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            textDirection: TextDirection.rtl,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.blue.shade600,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'יוצר תיקייה מחדש...',
+                style: TextStyle(
+                  color: Colors.blue.shade800,
+                  fontWeight: FontWeight.w500,
+                ),
+                textDirection: TextDirection.rtl,
+              ),
+            ],
+          ),
+        ),
+
+      // Loading files indicator
+      if (!_isWaitingForFolder && !_isRecreatingFolder && _isLoading)
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: CircularProgressIndicator(),
+          ),
+        ),
+
+      // Error message
+      if (!_isWaitingForFolder && !_isRecreatingFolder && _error != null)
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+            color: Colors.red.shade50,
+            border: Border.all(color: Colors.red.shade200),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            textDirection: TextDirection.rtl,
+            children: [
+              Icon(Icons.error_outline, color: Colors.red.shade600),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'שגיאה בטעינת הקבצים: $_error',
+                  style: TextStyle(color: Colors.red.shade800),
+                  textDirection: TextDirection.rtl,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _loadFiles,
+                color: Colors.red.shade600,
+              ),
+            ],
+          ),
+        ),
+
+      // Files list
+      if (!_isWaitingForFolder &&
+          !_isRecreatingFolder &&
+          !_isLoading &&
+          _error == null) ...[
+        if (_files.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              'אין קבצים בתיקייה',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontStyle: FontStyle.italic,
+              ),
+              textDirection: TextDirection.rtl,
+              textAlign: TextAlign.center,
+            ),
+          )
+        else
+          ..._files.map((file) => _FileTile(file: file)),
+      ],
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 16),
-        const Divider(),
-        const SizedBox(height: 16),
+        if (widget.showHeader) ...[
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 16),
+        ],
 
         // Section title
         Row(
           children: [
-            const Icon(Icons.folder_open, color: Colors.blue),
-            const SizedBox(width: 8),
-            const Text(
-              'קבצים בגוגל דרייב',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const Spacer(),
+            if (widget.showHeader) ...[
+              const Icon(Icons.folder_open, color: Colors.blue),
+              const SizedBox(width: 8),
+              const Text(
+                'קבצים בגוגל דרייב',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+            ],
             // Only show refresh and open buttons when folder exists
             if (_currentFolderId != null && _currentFolderId!.isNotEmpty) ...[
               // Manual refresh button
@@ -202,106 +426,22 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
 
         const SizedBox(height: 8),
 
-        // Waiting for folder creation state
-        if (_isWaitingForFolder)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              border: Border.all(color: Colors.blue.shade200),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              textDirection: TextDirection.rtl,
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.blue.shade600,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'תיקיית דרייב נוצרת...',
-                  style: TextStyle(
-                    color: Colors.blue.shade800,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textDirection: TextDirection.rtl,
-                ),
-              ],
-            ),
-          ),
-
-        // Loading files indicator
-        if (!_isWaitingForFolder && _isLoading)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ),
-          ),
-
-        // Error message
-        if (!_isWaitingForFolder && _error != null)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              border: Border.all(color: Colors.red.shade200),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              textDirection: TextDirection.rtl,
-              children: [
-                Icon(Icons.error_outline, color: Colors.red.shade600),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'שגיאה בטעינת הקבצים: $_error',
-                    style: TextStyle(color: Colors.red.shade800),
-                    textDirection: TextDirection.rtl,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.refresh),
-                  onPressed: _loadFiles,
-                  color: Colors.red.shade600,
-                ),
-              ],
-            ),
-          ),
-
-        // Files list
-        if (!_isWaitingForFolder && !_isLoading && _error == null) ...[
-          if (_files.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
+        if (widget.scrollableFilesOnly)
+          SizedBox(
+            height: widget.filesListHeight,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: filesAndStatusWidgets,
               ),
-              child: Text(
-                'אין קבצים בתיקייה',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontStyle: FontStyle.italic,
-                ),
-                textDirection: TextDirection.rtl,
-                textAlign: TextAlign.center,
-              ),
-            )
-          else
-            ..._files.map((file) => _FileTile(file: file)),
-        ],
+            ),
+          )
+        else
+          ...filesAndStatusWidgets,
 
-        const SizedBox(height: 16), // Add space before comments field
+        if (widget.showHeader)
+          const SizedBox(
+              height: 16), // Add space before comments field in admin modal
       ],
     );
   }
@@ -315,6 +455,7 @@ class _FileTile extends StatelessWidget {
 
   Future<void> _launchUrl(BuildContext context, String url) async {
     final success = await launchUrlWithAutoClose(url);
+    if (!context.mounted) return;
     if (!success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

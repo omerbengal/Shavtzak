@@ -74,6 +74,7 @@ function handleCreateFolder(request) {
   }
 
   const newFolder = parentFolder.createFolder(folderName);
+  newFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
   console.log('Created folder:', folderName, 'with ID:', newFolder.getId());
 
   return jsonResponse({

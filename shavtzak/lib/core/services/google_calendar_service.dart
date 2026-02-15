@@ -121,6 +121,95 @@ class GoogleCalendarService {
     }
   }
 
+  /// Run a Calendar API call and retry once on 401 by forcing token refresh.
+  Future<T> _withCalendarAuthRetry<T>(
+    Future<T> Function() operation, {
+    required String operationName,
+  }) async {
+    await _ensureAuthenticated();
+
+    try {
+      return await operation();
+    } on calendar.DetailedApiRequestError catch (e) {
+      if (e.status == 401) {
+        developer.log(
+          'GoogleCalendarService: 401 during $operationName, forcing token refresh and retrying once',
+          name: 'GoogleCalendar',
+        );
+
+        final refreshed = await _oauthService.forceRefreshAccessToken();
+        if (!refreshed) {
+          rethrow;
+        }
+
+        await _refreshAuthClient();
+        if (_calendarApi == null) {
+          rethrow;
+        }
+
+        return await operation();
+      }
+      rethrow;
+    }
+  }
+
+  Future<calendar.Event> _eventsInsert(calendar.Event event) {
+    return _withCalendarAuthRetry(
+      () => _calendarApi!.events.insert(event, _calendarId!),
+      operationName: 'events.insert',
+    );
+  }
+
+  Future<calendar.Event> _eventsUpdate(
+    calendar.Event event,
+    String eventId, {
+    int? conferenceDataVersion,
+    String? sendUpdates,
+  }) {
+    return _withCalendarAuthRetry(
+      () => _calendarApi!.events.update(
+        event,
+        _calendarId!,
+        eventId,
+        conferenceDataVersion: conferenceDataVersion,
+        sendUpdates: sendUpdates,
+      ),
+      operationName: 'events.update',
+    );
+  }
+
+  Future<void> _eventsDelete(String eventId) {
+    return _withCalendarAuthRetry(
+      () => _calendarApi!.events.delete(_calendarId!, eventId),
+      operationName: 'events.delete',
+    );
+  }
+
+  Future<calendar.Event> _eventsGet(String eventId) {
+    return _withCalendarAuthRetry(
+      () => _calendarApi!.events.get(_calendarId!, eventId),
+      operationName: 'events.get',
+    );
+  }
+
+  Future<calendar.Events> _eventsList({
+    DateTime? timeMin,
+    DateTime? timeMax,
+    bool? singleEvents,
+    String? orderBy,
+  }) {
+    return _withCalendarAuthRetry(
+      () => _calendarApi!.events.list(
+        _calendarId!,
+        timeMin: timeMin,
+        timeMax: timeMax,
+        singleEvents: singleEvents,
+        orderBy: orderBy,
+      ),
+      operationName: 'events.list',
+    );
+  }
+
   /// Dispose of resources
   void dispose() {
     _authClient?.close();
@@ -205,7 +294,7 @@ class GoogleCalendarService {
         ),
       );
 
-      final createdEvent = await _calendarApi!.events.insert(event, _calendarId!);
+      final createdEvent = await _eventsInsert(event);
 
 
       developer.log(
@@ -298,7 +387,7 @@ class GoogleCalendarService {
         ),
       );
 
-      await _calendarApi!.events.update(event, _calendarId!, calendarEventId);
+      await _eventsUpdate(event, calendarEventId);
 
       developer.log(
         'GoogleCalendarService: Updated event $calendarEventId for constraint $constraintId${_isTestMode ? ' [TEST MODE]' : ''}',
@@ -319,7 +408,7 @@ class GoogleCalendarService {
     await _ensureAuthenticated();
 
     try {
-      await _calendarApi!.events.delete(_calendarId!, calendarEventId);
+      await _eventsDelete(calendarEventId);
 
       developer.log(
         'GoogleCalendarService: Deleted event $calendarEventId${_isTestMode ? ' [TEST MODE]' : ''}',
@@ -355,8 +444,7 @@ class GoogleCalendarService {
 
     try {
       final now = DateTime.now();
-      final events = await _calendarApi!.events.list(
-        _calendarId!,
+      final events = await _eventsList(
         timeMin: DateTime(now.year, now.month, 1),
         timeMax: DateTime(now.year, now.month + 1, 0),
         singleEvents: true,
@@ -380,7 +468,7 @@ class GoogleCalendarService {
     await _ensureAuthenticated();
 
     try {
-      final event = await _calendarApi!.events.get(_calendarId!, calendarEventId);
+      final event = await _eventsGet(calendarEventId);
 
       // Consider cancelled events as non-existent
       if (event.status == 'cancelled') {
@@ -487,7 +575,7 @@ class GoogleCalendarService {
           ),
         );
 
-        final createdEvent = await _calendarApi!.events.insert(allDayEvent, _calendarId!);
+        final createdEvent = await _eventsInsert(allDayEvent);
         result['main'] = createdEvent.id!;
 
         developer.log(
@@ -524,7 +612,7 @@ class GoogleCalendarService {
             ),
           );
 
-          final createdAssembly = await _calendarApi!.events.insert(assemblyEvent, _calendarId!);
+          final createdAssembly = await _eventsInsert(assemblyEvent);
           result['assembly'] = createdAssembly.id!;
 
           developer.log(
@@ -576,7 +664,7 @@ class GoogleCalendarService {
           ),
         );
 
-        final createdMain = await _calendarApi!.events.insert(mainEvent, _calendarId!);
+        final createdMain = await _eventsInsert(mainEvent);
         result['main'] = createdMain.id!;
 
         developer.log(
@@ -635,7 +723,7 @@ class GoogleCalendarService {
         // Handle all-day event: delete any existing timed events and create all-day event
         if (assemblyCalendarEventId.isNotEmpty) {
           try {
-            await _calendarApi!.events.delete(_calendarId!, assemblyCalendarEventId);
+            await _eventsDelete(assemblyCalendarEventId);
             developer.log(
               'GoogleCalendarService: Deleted assembly event $assemblyCalendarEventId (switching to all-day)',
               name: 'GoogleCalendar',
@@ -671,7 +759,7 @@ class GoogleCalendarService {
           );
 
           try {
-            await _calendarApi!.events.update(allDayEvent, _calendarId!, mainCalendarEventId);
+            await _eventsUpdate(allDayEvent, mainCalendarEventId);
             developer.log(
               'GoogleCalendarService: Updated all-day event $mainCalendarEventId for event $eventId',
               name: 'GoogleCalendar',
@@ -709,7 +797,7 @@ class GoogleCalendarService {
             ),
           );
 
-          final createdEvent = await _calendarApi!.events.insert(allDayEvent, _calendarId!);
+          final createdEvent = await _eventsInsert(allDayEvent);
           recreatedIds = recreatedIds ?? {};
           recreatedIds['main'] = createdEvent.id!;
           recreatedIds['assembly'] = '';
@@ -763,7 +851,7 @@ class GoogleCalendarService {
           );
 
           try {
-            await _calendarApi!.events.update(assemblyEvent, _calendarId!, assemblyCalendarEventId);
+            await _eventsUpdate(assemblyEvent, assemblyCalendarEventId);
 
             developer.log(
               'GoogleCalendarService: Updated assembly event $assemblyCalendarEventId for event $eventId${_isTestMode ? ' [TEST MODE]' : ''}',
@@ -828,7 +916,7 @@ class GoogleCalendarService {
           );
 
           try {
-            await _calendarApi!.events.update(mainEvent, _calendarId!, mainCalendarEventId);
+            await _eventsUpdate(mainEvent, mainCalendarEventId);
 
             developer.log(
               'GoogleCalendarService: Updated main event $mainCalendarEventId for event $eventId${_isTestMode ? ' [TEST MODE]' : ''}',
@@ -886,7 +974,7 @@ class GoogleCalendarService {
             ),
           );
 
-          final createdAssembly = await _calendarApi!.events.insert(assemblyEvent, _calendarId!);
+          final createdAssembly = await _eventsInsert(assemblyEvent);
           recreatedIds['assembly'] = createdAssembly.id!;
 
           developer.log(
@@ -933,7 +1021,7 @@ class GoogleCalendarService {
             ),
           );
 
-          final createdMain = await _calendarApi!.events.insert(mainEvent, _calendarId!);
+          final createdMain = await _eventsInsert(mainEvent);
           recreatedIds['main'] = createdMain.id!;
 
           developer.log(
@@ -967,7 +1055,7 @@ class GoogleCalendarService {
       // Delete assembly event if ID is provided
       if (assemblyCalendarEventId != null && assemblyCalendarEventId.isNotEmpty) {
         try {
-          await _calendarApi!.events.delete(_calendarId!, assemblyCalendarEventId);
+          await _eventsDelete(assemblyCalendarEventId);
           developer.log(
             'GoogleCalendarService: Deleted assembly event $assemblyCalendarEventId${_isTestMode ? ' [TEST MODE]' : ''}',
             name: 'GoogleCalendar',
@@ -988,7 +1076,7 @@ class GoogleCalendarService {
       // Delete main event if ID is provided
       if (mainCalendarEventId != null && mainCalendarEventId.isNotEmpty) {
         try {
-          await _calendarApi!.events.delete(_calendarId!, mainCalendarEventId);
+          await _eventsDelete(mainCalendarEventId);
           developer.log(
             'GoogleCalendarService: Deleted main event $mainCalendarEventId${_isTestMode ? ' [TEST MODE]' : ''}',
             name: 'GoogleCalendar',
@@ -1021,7 +1109,7 @@ class GoogleCalendarService {
 
     try {
       // Get current event
-      final event = await _calendarApi!.events.get(_calendarId!, calendarEventId);
+      final event = await _eventsGet(calendarEventId);
 
       // Add attendee if not already present
       final currentAttendees = event.attendees ?? [];
@@ -1036,9 +1124,8 @@ class GoogleCalendarService {
         // Update the existing event object to preserve all fields
         event.attendees = updatedAttendees;
 
-        await _calendarApi!.events.update(
+        await _eventsUpdate(
           event,
-          _calendarId!,
           calendarEventId,
           conferenceDataVersion: 1,
           sendUpdates: 'none', // Don't send email invites (requires Domain-Wide Delegation)
@@ -1079,7 +1166,7 @@ class GoogleCalendarService {
 
     try {
       // Get current event
-      final event = await _calendarApi!.events.get(_calendarId!, calendarEventId);
+      final event = await _eventsGet(calendarEventId);
 
       // Remove attendee if present
       final currentAttendees = event.attendees ?? [];
@@ -1091,9 +1178,8 @@ class GoogleCalendarService {
         // Update the existing event object to preserve all fields
         event.attendees = filteredAttendees.isNotEmpty ? filteredAttendees : null;
 
-        await _calendarApi!.events.update(
+        await _eventsUpdate(
           event,
-          _calendarId!,
           calendarEventId,
           conferenceDataVersion: 1,
           sendUpdates: 'none', // Don't send email invites (requires Domain-Wide Delegation)
@@ -1134,7 +1220,7 @@ class GoogleCalendarService {
 
     try {
       // Get current event
-      final event = await _calendarApi!.events.get(_calendarId!, calendarEventId);
+      final event = await _eventsGet(calendarEventId);
 
       // Build attendee list from emails
       final attendees = emails
@@ -1144,9 +1230,8 @@ class GoogleCalendarService {
       // Update the existing event object to preserve all fields
       event.attendees = attendees.isNotEmpty ? attendees : null;
 
-      await _calendarApi!.events.update(
+      await _eventsUpdate(
         event,
-        _calendarId!,
         calendarEventId,
         conferenceDataVersion: 1,
         sendUpdates: 'none', // Don't send email invites (requires Domain-Wide Delegation)
