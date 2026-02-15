@@ -24,16 +24,7 @@ jobs:
 
       - name: Build for web
         working-directory: shavtzak
-        run: flutter build web --release --pwa-strategy=offline-first
-
-      - name: Fix base href for GitHub Pages
-        working-directory: shavtzak
-        run: |
-          # Comment out base href line if it exists uncommented
-          sed -i 's|<base href="/">|<!-- <base href="/"> -->|g' build/web/index.html
-          # Verify the change
-          echo "Checking base href in index.html:"
-          grep -n "base href" build/web/index.html || echo "No base href found"
+        run: flutter build web --release --base-href /Shavtzak/ --pwa-strategy=none
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4
