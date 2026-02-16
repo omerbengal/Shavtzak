@@ -7,6 +7,10 @@ class WebHelper {
     return web.window.location.hash;
   }
 
+  static void reloadPage() {
+    web.window.location.reload();
+  }
+
   static void hideSplashScreen() {
     try {
       final splash = web.document.getElementById('splash-screen');

@@ -2,5 +2,6 @@
 /// This file is imported on non-web platforms
 class WebHelper {
   static String getWindowLocationHash() => '';
+  static void reloadPage() {}
   static void hideSplashScreen() {}
 }

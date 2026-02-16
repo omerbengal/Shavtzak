@@ -28,13 +28,14 @@ import 'core/services/service_locator.dart';
 import 'core/services/drive_service.dart';
 import 'core/services/config_cache_service.dart';
 import 'core/services/audit_context_service.dart';
+import 'core/services/app_version_service.dart';
 import 'presentation/widgets/offline_blocking_overlay.dart';
+import 'presentation/widgets/version_blocking_overlay.dart';
 
 // Presentation layer
 import 'presentation/bloc/team/team_bloc.dart';
 import 'presentation/bloc/team/team_event.dart';
 import 'presentation/bloc/event/event_bloc.dart';
-import 'presentation/bloc/assignment/assignment_bloc.dart';
 import 'presentation/bloc/user_selection/user_selection_bloc.dart';
 import 'presentation/bloc/user_selection/user_selection_state.dart';
 import 'presentation/bloc/calendar_sync/calendar_sync_bloc.dart';
@@ -141,6 +142,10 @@ Future<void> _initialize() async {
         options: DefaultFirebaseOptions.currentPlatform,
       );
     });
+
+    // Initialize realtime app version guard (non-blocking).
+    _timed('AppVersionService.init',
+        () => AppVersionService.instance.initialize());
 
     final database =
         _timed('FirestoreDatabase creation', () => FirestoreDatabase());
@@ -457,14 +462,16 @@ class MyApp extends StatelessWidget {
                       // TODO: Add similar clear events for EventBloc and AssignmentBloc
                     }
                   },
-                  child: OfflineBlockingOverlay(
-                    child: MaterialApp.router(
-                      title: 'שבצק - ניהול צוות',
-                      theme: AppTheme.lightTheme,
-                      debugShowCheckedModeBanner: false,
-                      routerConfig: AppRouter.router(
-                        userSelectionBloc: userSelectionBloc,
-                        userSelectionRepository: userSelectionRepository,
+                  child: VersionBlockingOverlay(
+                    child: OfflineBlockingOverlay(
+                      child: MaterialApp.router(
+                        title: 'שבצק - ניהול צוות',
+                        theme: AppTheme.lightTheme,
+                        debugShowCheckedModeBanner: false,
+                        routerConfig: AppRouter.router(
+                          userSelectionBloc: userSelectionBloc,
+                          userSelectionRepository: userSelectionRepository,
+                        ),
                       ),
                     ),
                   ),
