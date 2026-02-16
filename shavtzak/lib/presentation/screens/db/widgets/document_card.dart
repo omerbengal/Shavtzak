@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'json_tree_view.dart';
 import '../../../../core/constants/role_types.dart';
 import 'assignment_preview.dart';
@@ -116,6 +118,8 @@ class DocumentCard extends StatelessWidget {
   }
 
   Widget _buildExpandedContent() {
+    final jsonData = _getExpandedJsonData();
+    final isLog = collectionName != null && collectionName!.contains('log');
     return Container(
       decoration: BoxDecoration(
         border: Border(
@@ -127,11 +131,37 @@ class DocumentCard extends StatelessWidget {
       child: Directionality(
         textDirection: TextDirection.ltr, // JSON is LTR
         child: JsonTreeView(
-          data: {'id': documentId, ...data},
-          initiallyExpanded: true,
+          data: jsonData,
+          initiallyExpanded: !isLog,
         ),
       ),
     );
+  }
+
+  Map<String, dynamic> _getExpandedJsonData() {
+    final isLog = collectionName != null && collectionName!.contains('log');
+    if (!isLog) {
+      return {'id': documentId, ...data};
+    }
+
+    final ordered = <String, dynamic>{
+      'id': documentId,
+      'timestampLocalIsrael': data['timestampLocalIsrael'],
+      'performerName': data['performerName'],
+      'actionType': data['actionType'],
+      'entityId': data['entityId'],
+      'entityType': data['entityType'],
+      'entityName': data['entityName'],
+      'changes': data['changes'],
+      'oldValue': data['oldValue'],
+      'newValue': data['newValue'],
+      'details': data['details'],
+      'operationId': data['operationId'],
+      'parentOperationId': data['parentOperationId'],
+    };
+
+    // Keep only the fields relevant for DB log view and preserve the exact order.
+    return ordered;
   }
 
   String? _getPrimaryFieldValue() {
@@ -200,6 +230,22 @@ class DocumentCard extends StatelessWidget {
         if (name != null) return name;
       }
 
+      // Logs: "<performerName> <actionType> <entityType> | <timestampLocalIsrael>"
+      if (collectionName!.contains('log')) {
+        final performerName = (data['performerName'] as String?)?.trim();
+        final actionTypeRaw = data['actionType'] as String?;
+        final entityTypeRaw = data['entityType'] as String?;
+
+        final actor = (performerName != null && performerName.isNotEmpty)
+            ? performerName
+            : 'לא ידוע';
+        final actionType = _getActionTypeHebrew(actionTypeRaw);
+        final entityType = _getEntityTypeHebrew(entityTypeRaw);
+        final timestampText = _formatLogTimestamp();
+
+        return '$actor $actionType $entityType | $timestampText';
+      }
+
       // Utilities, Keys, and others: Show field names
       if (collectionName!.contains('utilit') || collectionName!.contains('key')) {
         final fieldNames = data.keys.where((k) => k != 'id').toList();
@@ -223,6 +269,83 @@ class DocumentCard extends StatelessWidget {
       }
     }
     return null;
+  }
+
+  String _getActionTypeHebrew(String? actionType) {
+    switch ((actionType ?? '').toLowerCase()) {
+      case 'create':
+        return 'יצר';
+      case 'edit':
+      case 'update':
+        return 'עדכן';
+      case 'delete':
+        return 'מחק';
+      default:
+        return actionType ?? 'לא ידוע';
+    }
+  }
+
+  String _getEntityTypeHebrew(String? entityType) {
+    switch ((entityType ?? '').toLowerCase()) {
+      case 'event':
+        return 'אירוע';
+      case 'teammember':
+        return 'חבר צוות';
+      case 'checklistitem':
+        return 'פריט צ\'קליסט';
+      case 'constraint':
+        return 'מגבלה';
+      case 'availability':
+        return 'זמינות';
+      case 'assignment':
+        return 'שיבוץ';
+      case 'checklistnote':
+        return 'הערת צ\'קליסט';
+      case 'preset':
+        return 'תבנית צ\'קליסט';
+      case 'role':
+        return 'תפקיד';
+      case 'category':
+        return 'קטגוריה';
+      case 'teammemberbatch':
+        return 'חברי צוות (פעולה קיבוצית)';
+      case 'eventbatch':
+        return 'אירועים (פעולה קיבוצית)';
+      case 'assignmentbatch':
+        return 'שיבוצים (פעולה קיבוצית)';
+      case 'checklistitembatch':
+        return 'פריטי צ\'קליסט (פעולה קיבוצית)';
+      case 'rolebatch':
+        return 'תפקידים (פעולה קיבוצית)';
+      default:
+        return entityType ?? 'ישות לא ידועה';
+    }
+  }
+
+  String _formatLogTimestamp() {
+    final timestampLocalIsrael = data['timestampLocalIsrael'];
+    if (timestampLocalIsrael is String) {
+      final parsed = DateTime.tryParse(timestampLocalIsrael);
+      if (parsed != null) {
+        return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(parsed);
+      }
+    }
+
+    final timestampUtc = data['timestampUtc'];
+    if (timestampUtc is Timestamp) {
+      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc.toDate());
+    }
+    if (timestampUtc is DateTime) {
+      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc);
+    }
+    if (timestampUtc is String) {
+      final parsed = DateTime.tryParse(timestampUtc);
+      if (parsed != null) {
+        return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(parsed);
+      }
+    }
+
+    return 'תאריך לא זמין';
   }
 
   void _copyId(BuildContext context) {

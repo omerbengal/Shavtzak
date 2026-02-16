@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/services/environment_service.dart';
 import '../../../../core/constants/role_types.dart';
 import 'document_card.dart';
@@ -34,6 +37,30 @@ class CollectionViewer extends StatefulWidget {
 }
 
 class _CollectionViewerState extends State<CollectionViewer> {
+  static const int _lazyPageSize = 10;
+  late int _visibleDocumentsCount;
+
+  bool get _isLazyCollection =>
+      widget.collectionName == 'assignments' ||
+      widget.collectionName == 'logs' ||
+      widget.collectionName == 'events';
+
+  int get _initialVisibleCount => _isLazyCollection ? _lazyPageSize : 999999;
+
+  @override
+  void initState() {
+    super.initState();
+    _visibleDocumentsCount = _initialVisibleCount;
+  }
+
+  @override
+  void didUpdateWidget(covariant CollectionViewer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.collectionName != widget.collectionName ||
+        oldWidget.searchQuery != widget.searchQuery) {
+      _visibleDocumentsCount = _initialVisibleCount;
+    }
+  }
 
   String get _fullCollectionName {
     if (widget.useEnvironmentPrefix) {
@@ -138,6 +165,22 @@ class _CollectionViewerState extends State<CollectionViewer> {
       return '$member | $roleName | $event';
     }
 
+    // Logs: "<performerName> <actionType> <entityType> | <timestampLocalIsrael>"
+    if (widget.collectionName.contains('log')) {
+      final performerName = (data['performerName'] as String?)?.trim();
+      final actionTypeRaw = data['actionType'] as String?;
+      final entityTypeRaw = data['entityType'] as String?;
+
+      final actor = (performerName != null && performerName.isNotEmpty)
+          ? performerName
+          : 'לא ידוע';
+      final actionType = _getActionTypeHebrew(actionTypeRaw);
+      final entityType = _getEntityTypeHebrew(entityTypeRaw);
+      final timestampText = _formatLogTimestamp(data);
+
+      return '$actor $actionType $entityType | $timestampText';
+    }
+
     // Team members: Show name + capability count
     if (widget.collectionName.contains('teamMember')) {
       final name = data['name'] as String?;
@@ -173,6 +216,83 @@ class _CollectionViewerState extends State<CollectionViewer> {
       }
     }
     return null;
+  }
+
+  String _getActionTypeHebrew(String? actionType) {
+    switch ((actionType ?? '').toLowerCase()) {
+      case 'create':
+        return 'יצר';
+      case 'edit':
+      case 'update':
+        return 'עדכן';
+      case 'delete':
+        return 'מחק';
+      default:
+        return actionType ?? 'לא ידוע';
+    }
+  }
+
+  String _getEntityTypeHebrew(String? entityType) {
+    switch ((entityType ?? '').toLowerCase()) {
+      case 'event':
+        return 'אירוע';
+      case 'teammember':
+        return 'חבר צוות';
+      case 'checklistitem':
+        return 'פריט צ\'קליסט';
+      case 'constraint':
+        return 'מגבלה';
+      case 'availability':
+        return 'זמינות';
+      case 'assignment':
+        return 'שיבוץ';
+      case 'checklistnote':
+        return 'הערת צ\'קליסט';
+      case 'preset':
+        return 'תבנית צ\'קליסט';
+      case 'role':
+        return 'תפקיד';
+      case 'category':
+        return 'קטגוריה';
+      case 'teammemberbatch':
+        return 'חברי צוות (פעולה קיבוצית)';
+      case 'eventbatch':
+        return 'אירועים (פעולה קיבוצית)';
+      case 'assignmentbatch':
+        return 'שיבוצים (פעולה קיבוצית)';
+      case 'checklistitembatch':
+        return 'פריטי צ\'קליסט (פעולה קיבוצית)';
+      case 'rolebatch':
+        return 'תפקידים (פעולה קיבוצית)';
+      default:
+        return entityType ?? 'ישות לא ידועה';
+    }
+  }
+
+  String _formatLogTimestamp(Map<String, dynamic> data) {
+    final timestampLocalIsrael = data['timestampLocalIsrael'];
+    if (timestampLocalIsrael is String) {
+      final parsed = DateTime.tryParse(timestampLocalIsrael);
+      if (parsed != null) {
+        return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(parsed);
+      }
+    }
+
+    final timestampUtc = data['timestampUtc'];
+    if (timestampUtc is Timestamp) {
+      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc.toDate());
+    }
+    if (timestampUtc is DateTime) {
+      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc);
+    }
+    if (timestampUtc is String) {
+      final parsed = DateTime.tryParse(timestampUtc);
+      if (parsed != null) {
+        return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(parsed);
+      }
+    }
+
+    return 'תאריך לא זמין';
   }
 
   @override
@@ -266,6 +386,12 @@ class _CollectionViewerState extends State<CollectionViewer> {
   }
 
   Widget _buildDocumentsList(List<QueryDocumentSnapshot<Map<String, dynamic>>> filteredDocs) {
+    final totalDocuments = filteredDocs.length;
+    final visibleCount = _isLazyCollection
+        ? math.min(_visibleDocumentsCount, totalDocuments)
+        : totalDocuments;
+    final visibleDocuments = filteredDocs.take(visibleCount).toList();
+
     // Build all documents as a Column - no internal scrolling
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -286,7 +412,9 @@ class _CollectionViewerState extends State<CollectionViewer> {
               ),
               const Spacer(),
               Text(
-                '${filteredDocs.length} מסמכים',
+                _isLazyCollection
+                    ? '$visibleCount מתוך $totalDocuments מסמכים'
+                    : '$totalDocuments מסמכים',
                 style: TextStyle(
                   color: Colors.grey.shade600,
                   fontSize: 12,
@@ -296,7 +424,7 @@ class _CollectionViewerState extends State<CollectionViewer> {
           ),
         ),
         // All documents as a Column
-        ...filteredDocs.map((doc) {
+        ...visibleDocuments.map((doc) {
           final data = doc.data();
           final isExpanded = widget.expandedDocIds.contains(doc.id);
 
@@ -309,7 +437,27 @@ class _CollectionViewerState extends State<CollectionViewer> {
             collectionsData: widget.collectionsData?.cast<String, Map<String, Map<String, dynamic>>>(),
             onToggle: () => widget.onToggleDocument(doc.id),
           );
-        }).toList(),
+        }),
+        if (_isLazyCollection && visibleCount < totalDocuments)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Align(
+              alignment: Alignment.center,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _visibleDocumentsCount += _lazyPageSize;
+                  });
+                },
+                icon: const Icon(Icons.expand_more),
+                label: const Text('טען עוד'),
+              ),
+            ),
+          ),
       ],
     );
   }

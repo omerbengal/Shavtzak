@@ -241,6 +241,46 @@ class FirestoreDatabase implements DatabaseInterface {
     return RoleModel.fromEntity(role).toJson();
   }
 
+  Future<Map<String, String>> _getRoleKeyToHebrewMap() async {
+    final roleMap = <String, String>{};
+
+    // Built-in enum roles
+    for (final roleType in RoleType.values) {
+      roleMap[roleType.key] = roleType.hebrewName;
+    }
+
+    // Dynamic/custom roles from utilities/Lists (override enum if changed)
+    try {
+      final doc = await _firestore.collection('utilities').doc('Lists').get();
+      final data = doc.data();
+      final roles = data?['Roles'];
+      if (roles is List) {
+        for (final item in roles) {
+          if (item is Map<String, dynamic>) {
+            final key = item['key'] as String?;
+            final hebrewName = item['hebrewName'] as String?;
+            if (key != null &&
+                key.isNotEmpty &&
+                hebrewName != null &&
+                hebrewName.isNotEmpty) {
+              roleMap[key] = hebrewName;
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // Fall back to enum map only.
+    }
+
+    return roleMap;
+  }
+
+  String _assignmentRoleDisplayName(
+      String? roleKey, Map<String, String> roleKeyToHebrewMap) {
+    if (roleKey == null || roleKey.isEmpty) return 'לא ידוע';
+    return roleKeyToHebrewMap[roleKey] ?? roleKey;
+  }
+
   Map<String, dynamic> _categoryEntityToMap(Category category) {
     return CategoryModel.fromEntity(category).toJson();
   }
@@ -338,6 +378,9 @@ class FirestoreDatabase implements DatabaseInterface {
           .collection(_teamMembersCollection)
           .doc(member.id)
           .get();
+      final oldValue = existingDoc.exists
+          ? Map<String, dynamic>.from(existingDoc.data()!)
+          : null;
 
       final model = TeamMemberModel.fromEntity(member);
       final data = model.toFirestore();
@@ -352,16 +395,23 @@ class FirestoreDatabase implements DatabaseInterface {
       final docRef =
           _firestore.collection(_teamMembersCollection).doc(member.id);
       batch.update(docRef, data);
+
+      // Build the expected post-update document from the existing DB value plus
+      // the exact fields sent in this update (passcode fields are intentionally
+      // excluded above and therefore remain unchanged here as well).
+      final newValueForLog = oldValue != null
+          ? Map<String, dynamic>.from(oldValue)
+          : <String, dynamic>{};
+      newValueForLog.addAll(data);
+
       await _addAuditLogToBatch(
         batch: batch,
         actionType: 'edit',
         entityType: 'teamMember',
         entityId: member.id,
         entityName: member.name,
-        oldValue: existingDoc.exists
-            ? Map<String, dynamic>.from(existingDoc.data()!)
-            : null,
-        newValue: _teamMemberEntityToMap(member),
+        oldValue: oldValue,
+        newValue: newValueForLog,
       );
       await batch.commit();
     } catch (e) {
@@ -1421,6 +1471,7 @@ class FirestoreDatabase implements DatabaseInterface {
       final firestoreData = model.toFirestore();
       final cleanData = Map<String, dynamic>.from(firestoreData)
         ..removeWhere((key, value) => value is FieldValue);
+      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
 
       final batch = _firestore.batch();
       final docRef =
@@ -1431,7 +1482,8 @@ class FirestoreDatabase implements DatabaseInterface {
         actionType: 'create',
         entityType: 'assignment',
         entityId: assignment.id,
-        entityName: assignment.roleType,
+        entityName:
+            _assignmentRoleDisplayName(assignment.roleType, roleKeyToHebrewMap),
         newValue: _assignmentEntityToMap(assignment),
       );
       await batch.commit();
@@ -1451,6 +1503,7 @@ class FirestoreDatabase implements DatabaseInterface {
       final docRef =
           _firestore.collection(_assignmentsCollection).doc(assignment.id);
       final oldDoc = await docRef.get();
+      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
       final batch = _firestore.batch();
       batch.update(docRef, model.toFirestore());
       await _addAuditLogToBatch(
@@ -1458,7 +1511,8 @@ class FirestoreDatabase implements DatabaseInterface {
         actionType: 'edit',
         entityType: 'assignment',
         entityId: assignment.id,
-        entityName: assignment.roleType,
+        entityName:
+            _assignmentRoleDisplayName(assignment.roleType, roleKeyToHebrewMap),
         oldValue:
             oldDoc.exists ? Map<String, dynamic>.from(oldDoc.data()!) : null,
         newValue: _assignmentEntityToMap(assignment),
@@ -1474,6 +1528,7 @@ class FirestoreDatabase implements DatabaseInterface {
     try {
       final docRef = _firestore.collection(_assignmentsCollection).doc(id);
       final oldDoc = await docRef.get();
+      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
       final batch = _firestore.batch();
       batch.delete(docRef);
       await _addAuditLogToBatch(
@@ -1481,7 +1536,8 @@ class FirestoreDatabase implements DatabaseInterface {
         actionType: 'delete',
         entityType: 'assignment',
         entityId: id,
-        entityName: oldDoc.data()?['roleType'] as String?,
+        entityName: _assignmentRoleDisplayName(
+            oldDoc.data()?['roleType'] as String?, roleKeyToHebrewMap),
         oldValue:
             oldDoc.exists ? Map<String, dynamic>.from(oldDoc.data()!) : null,
       );
@@ -1500,6 +1556,7 @@ class FirestoreDatabase implements DatabaseInterface {
           .get();
 
       final batch = _firestore.batch();
+      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
       final operationId = const Uuid().v4();
       for (final doc in snapshot.docs) {
         batch.delete(doc.reference);
@@ -1508,7 +1565,8 @@ class FirestoreDatabase implements DatabaseInterface {
           actionType: 'delete',
           entityType: 'assignment',
           entityId: doc.id,
-          entityName: doc.data()['roleType'] as String?,
+          entityName: _assignmentRoleDisplayName(
+              doc.data()['roleType'] as String?, roleKeyToHebrewMap),
           oldValue: Map<String, dynamic>.from(doc.data()),
           parentOperationId: operationId,
           operationId: const Uuid().v4(),
@@ -1537,6 +1595,7 @@ class FirestoreDatabase implements DatabaseInterface {
           .get();
 
       final batch = _firestore.batch();
+      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
       final operationId = const Uuid().v4();
       for (final doc in snapshot.docs) {
         batch.delete(doc.reference);
@@ -1545,7 +1604,8 @@ class FirestoreDatabase implements DatabaseInterface {
           actionType: 'delete',
           entityType: 'assignment',
           entityId: doc.id,
-          entityName: doc.data()['roleType'] as String?,
+          entityName: _assignmentRoleDisplayName(
+              doc.data()['roleType'] as String?, roleKeyToHebrewMap),
           oldValue: Map<String, dynamic>.from(doc.data()),
           parentOperationId: operationId,
           operationId: const Uuid().v4(),
@@ -1574,6 +1634,7 @@ class FirestoreDatabase implements DatabaseInterface {
       if (assignmentIds.isEmpty) return;
 
       final batch = _firestore.batch();
+      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
       final operationId = const Uuid().v4();
       final oldDocs = await Future.wait(
         assignmentIds.map((id) =>
@@ -1589,7 +1650,8 @@ class FirestoreDatabase implements DatabaseInterface {
           actionType: 'delete',
           entityType: 'assignment',
           entityId: doc.id,
-          entityName: doc.data()?['roleType'] as String?,
+          entityName: _assignmentRoleDisplayName(
+              doc.data()?['roleType'] as String?, roleKeyToHebrewMap),
           oldValue: Map<String, dynamic>.from(doc.data()!),
           parentOperationId: operationId,
           operationId: const Uuid().v4(),

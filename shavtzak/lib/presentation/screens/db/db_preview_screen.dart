@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import '../../../core/services/environment_service.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
@@ -53,6 +54,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     _CollectionConfig('teamMembers', 'חברי צוות', Icons.people, true),
     _CollectionConfig('events', 'אירועים', Icons.event, true),
     _CollectionConfig('assignments', 'שיבוצים', Icons.assignment_ind, true),
+    _CollectionConfig('logs', 'לוגים', Icons.receipt_long, true),
     _CollectionConfig('checklist_items', 'פריטי צ\'קליסט', Icons.checklist, true),
     _CollectionConfig('checklist_presets', 'תבניות צ\'קליסט', Icons.list_alt, true),
     _CollectionConfig('utilities', 'כלים (גלובלי)', Icons.build, false),
@@ -109,7 +111,12 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       final collectionName = config.useEnvironmentPrefix ? '$prefix${config.name}' : config.name;
 
       // Create ValueNotifier for collections that need sorting
-      if (config.name == 'events' || config.name == 'assignments' || config.name == 'checklist_items' || config.name == 'teamMembers' || config.name == 'checklist_presets') {
+      if (config.name == 'events' ||
+          config.name == 'assignments' ||
+          config.name == 'logs' ||
+          config.name == 'checklist_items' ||
+          config.name == 'teamMembers' ||
+          config.name == 'checklist_presets') {
         _sortedCollectionNotifiers.putIfAbsent(
           config.name,
           () => ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>([]),
@@ -130,6 +137,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
         // Client-side sorting
         if (config.name == 'assignments') {
           docs = _sortAssignments(docs);
+        } else if (config.name == 'logs') {
+          docs = _sortLogs(docs);
         } else if (config.name == 'checklist_items') {
           docs = _sortChecklistItems(docs);
         } else if (config.name == 'events') {
@@ -216,6 +225,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> sorted;
     if (collectionName == 'assignments') {
       sorted = _sortAssignments(docs);
+    } else if (collectionName == 'logs') {
+      sorted = _sortLogs(docs);
     } else if (collectionName == 'checklist_items') {
       sorted = _sortChecklistItems(docs);
     } else {
@@ -371,6 +382,55 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     });
 
     return sortedDocs;
+  }
+
+  /// Sort logs by timestamp descending (newest first)
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortLogs(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+    sortedDocs.sort((a, b) {
+      final aData = a.data();
+      final bData = b.data();
+
+      final aLocal = aData['timestampLocalIsrael'] as String?;
+      final bLocal = bData['timestampLocalIsrael'] as String?;
+
+      // Primary sort: timestampLocalIsrael string descending (ISO string).
+      if (aLocal != null && bLocal != null) {
+        final localCompare = bLocal.compareTo(aLocal);
+        if (localCompare != 0) return localCompare;
+      } else if (aLocal != null) {
+        return -1;
+      } else if (bLocal != null) {
+        return 1;
+      }
+
+      // Fallback only when local timestamp is missing/equal.
+      final aDate = _extractLogTimestamp(aData);
+      final bDate = _extractLogTimestamp(bData);
+      return bDate.compareTo(aDate);
+    });
+    return sortedDocs;
+  }
+
+  DateTime _extractLogTimestamp(Map<String, dynamic> data) {
+    final timestampLocalIsrael = data['timestampLocalIsrael'];
+    if (timestampLocalIsrael is String) {
+      final parsed = DateTime.tryParse(timestampLocalIsrael);
+      if (parsed != null) return parsed;
+    }
+
+    final timestampUtc = data['timestampUtc'];
+    if (timestampUtc is Timestamp) {
+      return timestampUtc.toDate();
+    }
+    if (timestampUtc is DateTime) {
+      return timestampUtc;
+    }
+    if (timestampUtc is String) {
+      final parsed = DateTime.tryParse(timestampUtc);
+      if (parsed != null) return parsed;
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
   /// Filter a collection's documents and update the filtered count
@@ -532,6 +592,22 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       return '$member | $roleName | $event';
     }
 
+    // Logs: "<performerName> <actionType> <entityType> | <timestampLocalIsrael>"
+    if (collectionName.contains('log')) {
+      final performerName = (data['performerName'] as String?)?.trim();
+      final actionTypeRaw = data['actionType'] as String?;
+      final entityTypeRaw = data['entityType'] as String?;
+
+      final actor = (performerName != null && performerName.isNotEmpty)
+          ? performerName
+          : 'לא ידוע';
+      final actionType = _getActionTypeHebrew(actionTypeRaw);
+      final entityType = _getEntityTypeHebrew(entityTypeRaw);
+      final timestampText = _formatLogTimestamp(data);
+
+      return '$actor $actionType $entityType | $timestampText';
+    }
+
     // Team members: Show name + capability count
     if (collectionName.contains('teamMember')) {
       final name = data['name'] as String?;
@@ -567,6 +643,83 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       }
     }
     return null;
+  }
+
+  String _getActionTypeHebrew(String? actionType) {
+    switch ((actionType ?? '').toLowerCase()) {
+      case 'create':
+        return 'יצר';
+      case 'edit':
+      case 'update':
+        return 'עדכן';
+      case 'delete':
+        return 'מחק';
+      default:
+        return actionType ?? 'לא ידוע';
+    }
+  }
+
+  String _getEntityTypeHebrew(String? entityType) {
+    switch ((entityType ?? '').toLowerCase()) {
+      case 'event':
+        return 'אירוע';
+      case 'teammember':
+        return 'חבר צוות';
+      case 'checklistitem':
+        return 'פריט צ\'קליסט';
+      case 'constraint':
+        return 'מגבלה';
+      case 'availability':
+        return 'זמינות';
+      case 'assignment':
+        return 'שיבוץ';
+      case 'checklistnote':
+        return 'הערת צ\'קליסט';
+      case 'preset':
+        return 'תבנית צ\'קליסט';
+      case 'role':
+        return 'תפקיד';
+      case 'category':
+        return 'קטגוריה';
+      case 'teammemberbatch':
+        return 'חברי צוות (פעולה קיבוצית)';
+      case 'eventbatch':
+        return 'אירועים (פעולה קיבוצית)';
+      case 'assignmentbatch':
+        return 'שיבוצים (פעולה קיבוצית)';
+      case 'checklistitembatch':
+        return 'פריטי צ\'קליסט (פעולה קיבוצית)';
+      case 'rolebatch':
+        return 'תפקידים (פעולה קיבוצית)';
+      default:
+        return entityType ?? 'ישות לא ידועה';
+    }
+  }
+
+  String _formatLogTimestamp(Map<String, dynamic> data) {
+    final timestampLocalIsrael = data['timestampLocalIsrael'];
+    if (timestampLocalIsrael is String) {
+      final parsed = DateTime.tryParse(timestampLocalIsrael);
+      if (parsed != null) {
+        return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(parsed);
+      }
+    }
+
+    final timestampUtc = data['timestampUtc'];
+    if (timestampUtc is Timestamp) {
+      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc.toDate());
+    }
+    if (timestampUtc is DateTime) {
+      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc);
+    }
+    if (timestampUtc is String) {
+      final parsed = DateTime.tryParse(timestampUtc);
+      if (parsed != null) {
+        return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(parsed);
+      }
+    }
+
+    return 'תאריך לא זמין';
   }
 
   /// Update filtered counts for all collections when search query changes
