@@ -69,7 +69,8 @@ class _ChecklistNotesModalState extends State<ChecklistNotesModal> {
   }
 
   String _getMemberName(String memberId) {
-    final member = widget.allTeamMembers.where((m) => m.id == memberId).firstOrNull;
+    final member =
+        widget.allTeamMembers.where((m) => m.id == memberId).firstOrNull;
     return member?.name ?? 'לא ידוע';
   }
 
@@ -164,13 +165,17 @@ class _ChecklistNotesModalState extends State<ChecklistNotesModal> {
                           itemCount: notes.length,
                           itemBuilder: (context, index) {
                             final note = notes[index];
-                            final isOwn = note.createdByTeamMemberId == widget.currentUserId;
+                            final isOwn = note.createdByTeamMemberId ==
+                                widget.currentUserId;
                             final authorName = note.createdByTeamMemberName ??
                                 _getMemberName(note.createdByTeamMemberId);
+                            final baseName = isOwn ? 'אני' : authorName;
+                            final displayName = note.authorRole != null
+                                ? '$baseName (${note.authorRole})'
+                                : baseName;
 
-                            final displayName = isOwn ? 'אני' : authorName;
-
-                            final timestamp = DateFormat('HH:mm, dd/MM').format(note.createdAt);
+                            final timestamp = DateFormat('HH:mm, dd/MM')
+                                .format(note.createdAt);
 
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 4),
@@ -194,7 +199,8 @@ class _ChecklistNotesModalState extends State<ChecklistNotesModal> {
                 if (widget.onAddNote != null) ...[
                   const Divider(height: 1),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     child: Row(
                       children: [
                         Expanded(

@@ -8,8 +8,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 // Conditional imports for web-specific functionality
-import 'core/web/web_stub.dart'
-    if (dart.library.js) 'core/web/web_helper.dart';
+import 'core/web/web_stub.dart' if (dart.library.js) 'core/web/web_helper.dart';
 
 // Data layer
 import 'data/data_sources/firestore_database.dart';
@@ -28,6 +27,7 @@ import 'core/services/connectivity_service.dart';
 import 'core/services/service_locator.dart';
 import 'core/services/drive_service.dart';
 import 'core/services/config_cache_service.dart';
+import 'core/services/audit_context_service.dart';
 import 'presentation/widgets/offline_blocking_overlay.dart';
 
 // Presentation layer
@@ -99,28 +99,34 @@ Future<void> _initialize() async {
 
   try {
     // Initialize environment service (detects test vs production from URL)
-    _timed('EnvironmentService.init', () => EnvironmentService.instance.initialize());
+    _timed('EnvironmentService.init',
+        () => EnvironmentService.instance.initialize());
 
     // For web, capture initial URL hash for environment detection
     if (kIsWeb) {
       _timed('EnvironmentServiceWeb.detectFromUrlHash', () {
         final hash = WebHelper.getWindowLocationHash();
-        EnvironmentService.instance.updateFromPath(hash.isNotEmpty ? hash.substring(1) : '');
+        EnvironmentService.instance
+            .updateFromPath(hash.isNotEmpty ? hash.substring(1) : '');
       });
     }
 
     // Initialize connectivity service (for offline detection in test mode)
-    _timed('ConnectivityService.init', () => ConnectivityService.instance.initialize());
+    _timed('ConnectivityService.init',
+        () => ConnectivityService.instance.initialize());
 
     // Initialize config cache service
-    final configCache = _timed('ConfigCacheService.init', () => ConfigCacheService());
+    final configCache =
+        _timed('ConfigCacheService.init', () => ConfigCacheService());
 
     // Initialize services
-    final userCacheService = _timed('UserCacheService creation', () => UserCacheService());
+    final userCacheService =
+        _timed('UserCacheService creation', () => UserCacheService());
 
     // OPTIMIZATION: Check cache FIRST (async, but fast)
     // If no cached user, we can show whoami immediately without waiting for Firebase
-    final cachedUserKey = await _timedAsync('UserCacheService.getSelectedUser', () async {
+    final cachedUserKey =
+        await _timedAsync('UserCacheService.getSelectedUser', () async {
       return await userCacheService.getSelectedUser();
     });
 
@@ -136,11 +142,14 @@ Future<void> _initialize() async {
       );
     });
 
-    final database = _timed('FirestoreDatabase creation', () => FirestoreDatabase());
-    await _timedAsync('FirestoreDatabase.initialize', () => database.initialize());
+    final database =
+        _timed('FirestoreDatabase creation', () => FirestoreDatabase());
+    await _timedAsync(
+        'FirestoreDatabase.initialize', () => database.initialize());
 
     // Config cache checks (instant) - run in parallel with font completion
-    final cacheResults = await _timedAsync('ConfigCacheService.getBoth', () async {
+    final cacheResults =
+        await _timedAsync('ConfigCacheService.getBoth', () async {
       return await Future.wait([
         configCache.getDriveConfig(),
         configCache.getCalendarConfig(),
@@ -159,7 +168,8 @@ Future<void> _initialize() async {
       });
     }
 
-    final bloc = _timed('CalendarSyncBloc creation', () => CalendarSyncBloc(database: database));
+    final bloc = _timed('CalendarSyncBloc creation',
+        () => CalendarSyncBloc(database: database));
     if (cachedCalendarConfig != null) {
       _timed('CalendarSyncBloc.init (from cache)', () {
         _initializeCalendarBlocWithConfig(bloc, cachedCalendarConfig);
@@ -168,17 +178,21 @@ Future<void> _initialize() async {
 
     // Fetch missing configs from Firestore if needed (blocking)
     if (cachedDriveConfig == null || cachedCalendarConfig == null) {
-      final configResults = await _timedAsync('Firestore.configFetch', () async {
+      final configResults =
+          await _timedAsync('Firestore.configFetch', () async {
         return await Future.wait([
-          if (cachedDriveConfig == null) _fetchDriveConfigFromFirestore(database),
-          if (cachedCalendarConfig == null) _fetchCalendarConfigFromFirestore(database),
+          if (cachedDriveConfig == null)
+            _fetchDriveConfigFromFirestore(database),
+          if (cachedCalendarConfig == null)
+            _fetchCalendarConfigFromFirestore(database),
         ]);
       });
 
       int resultIndex = 0;
 
       if (cachedDriveConfig == null) {
-        final driveConfig = configResults[resultIndex++] as Map<String, String?>?;
+        final driveConfig =
+            configResults[resultIndex++] as Map<String, String?>?;
         if (driveConfig != null) {
           _initializeDriveServiceWithConfig(driveConfig);
           await configCache.saveDriveConfig(driveConfig);
@@ -186,7 +200,8 @@ Future<void> _initialize() async {
       }
 
       if (cachedCalendarConfig == null) {
-        final calendarConfig = configResults[resultIndex++] as Map<String, String?>?;
+        final calendarConfig =
+            configResults[resultIndex++] as Map<String, String?>?;
         if (calendarConfig != null) {
           _initializeCalendarBlocWithConfig(bloc, calendarConfig);
           await configCache.saveCalendarConfig(calendarConfig);
@@ -215,7 +230,8 @@ Future<void> _initialize() async {
     TeamMember? preAuthenticatedUser;
     if (hasCachedUser) {
       try {
-        final validatedUser = await _timedAsync('Database.getTeamMemberByUniqueKey', () async {
+        final validatedUser =
+            await _timedAsync('Database.getTeamMemberByUniqueKey', () async {
           return await database.getTeamMemberByUniqueKey(cachedUserKey);
         });
         if (validatedUser != null) {
@@ -273,7 +289,8 @@ void _hideSplashScreen() {
 Future<void> _preloadFont() async {
   try {
     // Load font bytes from assets
-    final fontData = await rootBundle.load('assets/fonts/Rubik-VariableFont_wght.ttf');
+    final fontData =
+        await rootBundle.load('assets/fonts/Rubik-VariableFont_wght.ttf');
     // Register font with Flutter's rendering engine
     await ui.loadFontFromList(
       fontData.buffer.asUint8List(),
@@ -317,6 +334,10 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (preAuthenticatedUser != null) {
+      AuditContextService.instance.setCurrentUser(preAuthenticatedUser);
+    }
+
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider.value(value: teamRepository),
@@ -418,11 +439,18 @@ class MyApp extends StatelessWidget {
             child: Builder(
               builder: (context) {
                 final userSelectionBloc = context.read<UserSelectionBloc>();
-                final userSelectionRepository = context.read<UserSelectionRepository>();
+                final userSelectionRepository =
+                    context.read<UserSelectionRepository>();
                 final teamBloc = context.read<TeamBloc>();
 
                 return BlocListener<UserSelectionBloc, UserSelectionState>(
                   listener: (context, state) {
+                    if (state is UserAuthenticated) {
+                      AuditContextService.instance.setCurrentUser(state.user);
+                    } else if (state is UserSignedOut) {
+                      AuditContextService.instance.clear();
+                    }
+
                     // Clear all BLoC states when user signs out
                     if (state is UserSignedOut) {
                       teamBloc.add(const ClearTeamState());

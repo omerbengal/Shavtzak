@@ -23,7 +23,9 @@ class PresetFormModal extends StatefulWidget {
 
 class _PresetFormModalState extends State<PresetFormModal> {
   final _formKey = GlobalKey<FormState>();
+  final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   final _nameController = TextEditingController();
+  final _itemsScrollController = ScrollController();
   late final FocusNode _nameFocusNode;
   List<PresetItem> _items = [];
 
@@ -39,6 +41,7 @@ class _PresetFormModalState extends State<PresetFormModal> {
 
   @override
   void dispose() {
+    _itemsScrollController.dispose();
     _nameFocusNode.dispose();
     _nameController.dispose();
     super.dispose();
@@ -73,7 +76,7 @@ class _PresetFormModalState extends State<PresetFormModal> {
   void _save() {
     if (!_formKey.currentState!.validate()) return;
     if (_items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _scaffoldMessengerKey.currentState?.showSnackBar(
         const SnackBar(
           content: Text('יש להוסיף לפחות פריט אחד'),
           backgroundColor: Colors.orange,
@@ -95,194 +98,227 @@ class _PresetFormModalState extends State<PresetFormModal> {
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: DraggableScrollableSheet(
-        initialChildSize: 0.85,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              children: [
-                // Handle
-                Container(
-                  margin: const EdgeInsets.only(top: 12),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
+    final screenSize = MediaQuery.of(context).size;
+    final dialogWidth =
+        screenSize.width < 700 ? screenSize.width * 0.92 : 640.0;
+    final dialogHeight =
+        screenSize.height < 820 ? screenSize.height * 0.86 : 700.0;
 
-                // Header
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        widget.preset == null ? 'יצירת פריסט' : 'עריכת פריסט',
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Content
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Name field
-                        TextFormField(
-                          controller: _nameController,
-                          focusNode: _nameFocusNode,
-                          decoration: const InputDecoration(
-                            labelText: 'שם הפריסט *',
-                            border: OutlineInputBorder(),
-                            hintText: 'לדוגמה: אירוע רגיל',
+    return ScaffoldMessenger(
+      key: _scaffoldMessengerKey,
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Dialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: SizedBox(
+            width: dialogWidth,
+            height: dialogHeight,
+            child: Scaffold(
+              backgroundColor: Colors.transparent,
+              body: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    // Header
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            widget.preset == null
+                                ? 'יצירת פריסט'
+                                : 'עריכת פריסט',
+                            style: const TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.bold),
                           ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'אנא הזן שם לפריסט';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 24),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
+                    ),
 
-                        // Items section header
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    // Content
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Text(
-                              'פריטים בתבנית (${_items.length})',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                            // Name field
+                            TextFormField(
+                              controller: _nameController,
+                              focusNode: _nameFocusNode,
+                              decoration: const InputDecoration(
+                                labelText: 'שם הפריסט *',
+                                border: OutlineInputBorder(),
+                                hintText: 'לדוגמה: אירוע רגיל',
                               ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'אנא הזן שם לפריסט';
+                                }
+                                return null;
+                              },
                             ),
-                            ElevatedButton.icon(
-                              onPressed: _addItem,
-                              icon: const Icon(Icons.add, color: Colors.white),
-                              label: const Text('הוסף פריט'),
+                            const SizedBox(height: 24),
+
+                            // Items section header
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'פריטים בתבנית (${_items.length})',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: _addItem,
+                                  icon: const Icon(Icons.add,
+                                      color: Colors.white),
+                                  label: const Text('הוסף פריט'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Items list
+                            Expanded(
+                              child: _items.isEmpty
+                                  ? Center(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.list_alt,
+                                              size: 64,
+                                              color: Colors.grey[400]),
+                                          const SizedBox(height: 16),
+                                          Text(
+                                            'אין פריטים בתבנית',
+                                            style: TextStyle(
+                                                color: Colors.grey[600]),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'לחץ על "הוסף פריט" להוספת פריט חדש',
+                                            style: TextStyle(
+                                                color: Colors.grey[500],
+                                                fontSize: 12),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : BlocBuilder<TeamBloc, TeamState>(
+                                      builder: (context, teamState) {
+                                        final members = teamState is TeamLoaded
+                                            ? teamState.members
+                                            : <TeamMember>[];
+                                        final memberMap = {
+                                          for (var m in members) m.id: m
+                                        };
+
+                                        return ReorderableListView.builder(
+                                          scrollController:
+                                              _itemsScrollController,
+                                          itemCount: _items.length,
+                                          onReorder: (oldIndex, newIndex) {
+                                            setState(() {
+                                              if (newIndex > oldIndex) {
+                                                newIndex -= 1;
+                                              }
+                                              final item =
+                                                  _items.removeAt(oldIndex);
+                                              _items.insert(newIndex, item);
+                                            });
+                                          },
+                                          itemBuilder: (context, index) {
+                                            final item = _items[index];
+                                            final responsible =
+                                                memberMap[item.responsibleId];
+                                            final ccCount = item.ccIds.length;
+                                            final responsibleLabel =
+                                                responsible?.name.isNotEmpty ==
+                                                        true
+                                                    ? responsible!.name
+                                                    : 'לא הוגדר';
+
+                                            return Card(
+                                              key: ValueKey('item_$index'),
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 4),
+                                              child: ListTile(
+                                                leading: CircleAvatar(
+                                                  child: Text('${index + 1}'),
+                                                ),
+                                                title: Text(item.name),
+                                                subtitle: Text(
+                                                  'אחראי: $responsibleLabel'
+                                                  '${ccCount > 0 ? " | $ccCount מיודעים" : ""}',
+                                                ),
+                                                trailing: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    IconButton(
+                                                      icon: const Icon(
+                                                          Icons.edit,
+                                                          size: 20),
+                                                      onPressed: () =>
+                                                          _editItem(index),
+                                                      tooltip: 'ערוך',
+                                                    ),
+                                                    IconButton(
+                                                      icon: const Icon(
+                                                          Icons.delete,
+                                                          size: 20,
+                                                          color: Colors.red),
+                                                      onPressed: () =>
+                                                          _removeItem(index),
+                                                      tooltip: 'הסר',
+                                                    ),
+                                                    const Icon(
+                                                        Icons.drag_handle,
+                                                        color: Colors.grey),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        );
+                                      },
+                                    ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-
-                        // Items list
-                        Expanded(
-                          child: _items.isEmpty
-                              ? Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.list_alt, size: 64, color: Colors.grey[400]),
-                                      const SizedBox(height: 16),
-                                      Text(
-                                        'אין פריטים בתבנית',
-                                        style: TextStyle(color: Colors.grey[600]),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'לחץ על "הוסף פריט" להוספת פריט חדש',
-                                        style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : BlocBuilder<TeamBloc, TeamState>(
-                                  builder: (context, teamState) {
-                                    final members = teamState is TeamLoaded
-                                        ? teamState.members
-                                        : <TeamMember>[];
-                                    final memberMap = {for (var m in members) m.id: m};
-
-                                    return ReorderableListView.builder(
-                                      scrollController: scrollController,
-                                      itemCount: _items.length,
-                                      onReorder: (oldIndex, newIndex) {
-                                        setState(() {
-                                          if (newIndex > oldIndex) newIndex -= 1;
-                                          final item = _items.removeAt(oldIndex);
-                                          _items.insert(newIndex, item);
-                                        });
-                                      },
-                                      itemBuilder: (context, index) {
-                                        final item = _items[index];
-                                        final responsible = memberMap[item.responsibleId];
-                                        final ccCount = item.ccIds.length;
-
-                                        return Card(
-                                          key: ValueKey('item_$index'),
-                                          margin: const EdgeInsets.symmetric(vertical: 4),
-                                          child: ListTile(
-                                            leading: CircleAvatar(
-                                              child: Text('${index + 1}'),
-                                            ),
-                                            title: Text(item.name),
-                                            subtitle: Text(
-                                              'אחראי: ${responsible?.name ?? "לא ידוע"}'
-                                              '${ccCount > 0 ? " | $ccCount מיודעים" : ""}',
-                                            ),
-                                            trailing: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                IconButton(
-                                                  icon: const Icon(Icons.edit, size: 20),
-                                                  onPressed: () => _editItem(index),
-                                                  tooltip: 'ערוך',
-                                                ),
-                                                IconButton(
-                                                  icon: const Icon(Icons.delete, size: 20, color: Colors.red),
-                                                  onPressed: () => _removeItem(index),
-                                                  tooltip: 'הסר',
-                                                ),
-                                                const Icon(Icons.drag_handle, color: Colors.grey),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    );
-                                  },
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Save button
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _save,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.all(16),
                       ),
-                      child: Text(widget.preset == null ? 'צור פריסט' : 'שמור שינויים'),
                     ),
-                  ),
+
+                    // Save button
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _save,
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.all(16),
+                          ),
+                          child: Text(widget.preset == null
+                              ? 'צור פריסט'
+                              : 'שמור שינויים'),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -340,29 +376,22 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
     _initialized = true;
 
     try {
-      _selectedResponsible = members.firstWhere((m) => m.id == item.responsibleId);
+      _selectedResponsible =
+          members.firstWhere((m) => m.id == item.responsibleId);
     } catch (e) {
       _selectedResponsible = null;
     }
 
-    _selectedCcMembers = members.where((m) => item.ccIds.contains(m.id)).toList();
+    _selectedCcMembers =
+        members.where((m) => item.ccIds.contains(m.id)).toList();
   }
 
   void _save() {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedResponsible == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('יש לבחור אחראי'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
 
     widget.onSave(PresetItem(
       name: _nameController.text.trim(),
-      responsibleId: _selectedResponsible!.id,
+      responsibleId: _selectedResponsible?.id ?? '',
       ccIds: _selectedCcMembers.map((m) => m.id).toList(),
       adminNote: _adminNoteController.text.trim(),
     ));
@@ -371,6 +400,10 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final itemDialogWidth =
+        screenSize.width < 700 ? screenSize.width * 0.9 : 460.0;
+
     return BlocBuilder<TeamBloc, TeamState>(
       builder: (context, teamState) {
         final members = teamState is TeamLoaded
@@ -383,113 +416,123 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
         }
 
         // Filter out responsible from CC options
-        final ccOptions = members.where((m) => m.id != _selectedResponsible?.id).toList();
+        final ccOptions =
+            members.where((m) => m.id != _selectedResponsible?.id).toList();
 
         return Directionality(
           textDirection: TextDirection.rtl,
           child: AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
             title: Text(widget.item == null ? 'הוסף פריט' : 'ערוך פריט'),
-            content: Form(
-              key: _formKey,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Name field
-                    TextFormField(
-                      controller: _nameController,
-                      focusNode: _nameFocusNode,
-                      decoration: const InputDecoration(
-                        labelText: 'שם הפריט *',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'אנא הזן שם לפריט';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Responsible dropdown
-                    DropdownButtonFormField<TeamMember>(
-                      value: _selectedResponsible,
-                      decoration: const InputDecoration(
-                        labelText: 'אחראי *',
-                        border: OutlineInputBorder(),
-                      ),
-                      isExpanded: true,
-                      items: members.map((m) => DropdownMenuItem(
-                        value: m,
-                        child: Text(m.name),
-                      )).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedResponsible = value;
-                          // Remove from CC if selected as responsible
-                          if (value != null) {
-                            _selectedCcMembers.removeWhere((m) => m.id == value.id);
+            content: SizedBox(
+              width: itemDialogWidth,
+              child: Form(
+                key: _formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Name field
+                      TextFormField(
+                        controller: _nameController,
+                        focusNode: _nameFocusNode,
+                        decoration: const InputDecoration(
+                          labelText: 'שם הפריט *',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'אנא הזן שם לפריט';
                           }
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Admin note field
-                    TextFormField(
-                      controller: _adminNoteController,
-                      focusNode: _adminNoteFocusNode,
-                      decoration: const InputDecoration(
-                        labelText: 'הערת מנהל',
-                        border: OutlineInputBorder(),
-                        hintText: 'הערה שתועתק לכל פריט שנוצר מהפריסט',
+                          return null;
+                        },
                       ),
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                    // CC members
-                    const Text(
-                      'מיודעים:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      child: ccOptions.isEmpty
-                          ? const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Text(
-                                'אין חברי צוות זמינים',
-                                style: TextStyle(color: Colors.grey),
+                      // Responsible dropdown
+                      DropdownButtonFormField<TeamMember>(
+                        value: _selectedResponsible,
+                        decoration: const InputDecoration(
+                          labelText: 'אחראי (אופציונלי)',
+                          border: OutlineInputBorder(),
+                        ),
+                        isExpanded: true,
+                        items: members
+                            .map((m) => DropdownMenuItem(
+                                  value: m,
+                                  child: Text(m.name),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedResponsible = value;
+                            // Remove from CC if selected as responsible
+                            if (value != null) {
+                              _selectedCcMembers
+                                  .removeWhere((m) => m.id == value.id);
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Admin note field
+                      TextFormField(
+                        controller: _adminNoteController,
+                        focusNode: _adminNoteFocusNode,
+                        decoration: const InputDecoration(
+                          labelText: 'הערת מנהל',
+                          border: OutlineInputBorder(),
+                          hintText: 'הערה שתועתק לכל פריט שנוצר מהפריסט',
+                        ),
+                        maxLines: 2,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // CC members
+                      const Text(
+                        'מיודעים:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 200),
+                        child: ccOptions.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Text(
+                                  'אין חברי צוות זמינים',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              )
+                            : SingleChildScrollView(
+                                child: Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children: ccOptions.map((m) {
+                                    final isSelected =
+                                        _selectedCcMembers.contains(m);
+                                    return FilterChip(
+                                      label: Text(m.name),
+                                      selected: isSelected,
+                                      onSelected: (selected) {
+                                        setState(() {
+                                          if (selected) {
+                                            _selectedCcMembers.add(m);
+                                          } else {
+                                            _selectedCcMembers.remove(m);
+                                          }
+                                        });
+                                      },
+                                    );
+                                  }).toList(),
+                                ),
                               ),
-                            )
-                          : SingleChildScrollView(
-                              child: Wrap(
-                                spacing: 4,
-                                runSpacing: 4,
-                                children: ccOptions.map((m) {
-                                  final isSelected = _selectedCcMembers.contains(m);
-                                  return FilterChip(
-                                    label: Text(m.name),
-                                    selected: isSelected,
-                                    onSelected: (selected) {
-                                      setState(() {
-                                        if (selected) {
-                                          _selectedCcMembers.add(m);
-                                        } else {
-                                          _selectedCcMembers.remove(m);
-                                        }
-                                      });
-                                    },
-                                  );
-                                }).toList(),
-                              ),
-                            ),
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

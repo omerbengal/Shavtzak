@@ -28,8 +28,10 @@ class PresetsDialog extends StatefulWidget {
   State<PresetsDialog> createState() => _PresetsDialogState();
 }
 
-class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProviderStateMixin {
+class _PresetsDialogState extends State<PresetsDialog>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   Preset? _selectedPreset;
   Event? _selectedEvent;
 
@@ -49,53 +51,65 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Dialog(
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.85,
-          height: MediaQuery.of(context).size.height * 0.75,
-          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 600),
-          child: Column(
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'פריסטים',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
+    final screenSize = MediaQuery.of(context).size;
+    final dialogWidth =
+        screenSize.width < 700 ? screenSize.width * 0.85 : 560.0;
+    final dialogHeight =
+        screenSize.height < 820 ? screenSize.height * 0.75 : 600.0;
 
-              // Tabs
-              TabBar(
-                controller: _tabController,
-                tabs: const [
-                  Tab(text: 'ניהול פריסטים'),
-                  Tab(text: 'טעינה לאירוע'),
+    return ScaffoldMessenger(
+      key: _scaffoldMessengerKey,
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Dialog(
+          child: SizedBox(
+            width: dialogWidth,
+            height: dialogHeight,
+            child: Scaffold(
+              backgroundColor: Colors.transparent,
+              body: Column(
+                children: [
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'פריסטים',
+                          style: TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Tabs
+                  TabBar(
+                    controller: _tabController,
+                    tabs: const [
+                      Tab(text: 'ניהול פריסטים'),
+                      Tab(text: 'טעינה לאירוע'),
+                    ],
+                  ),
+
+                  // Tab content
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildManagePresetsTab(),
+                        _buildLoadPresetTab(),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-
-              // Tab content
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildManagePresetsTab(),
-                    _buildLoadPresetTab(),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -116,7 +130,8 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
                 Text(state.message, style: const TextStyle(color: Colors.red)),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: () => context.read<PresetBloc>().add(LoadPresets()),
+                  onPressed: () =>
+                      context.read<PresetBloc>().add(LoadPresets()),
                   child: const Text('נסה שוב'),
                 ),
               ],
@@ -165,12 +180,15 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
                               children: [
                                 IconButton(
                                   icon: const Icon(Icons.edit),
-                                  onPressed: () => _showPresetFormModal(context, preset),
+                                  onPressed: () =>
+                                      _showPresetFormModal(context, preset),
                                   tooltip: 'ערוך',
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () => _confirmDelete(context, preset),
+                                  icon: const Icon(Icons.delete,
+                                      color: Colors.red),
+                                  onPressed: () =>
+                                      _confirmDelete(context, preset),
                                   tooltip: 'מחק',
                                 ),
                               ],
@@ -190,15 +208,16 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
     return BlocConsumer<PresetBloc, PresetState>(
       listener: (context, state) {
         if (state is PresetLoadedIntoEvent) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          _scaffoldMessengerKey.currentState?.showSnackBar(
             SnackBar(
-              content: Text('נטענו ${state.itemCount} פריטים מ-"${state.presetName}" לאירוע "${state.eventName}"'),
+              content: Text(
+                  'נטענו ${state.itemCount} פריטים מ-"${state.presetName}" לאירוע "${state.eventName}"'),
               backgroundColor: Colors.green,
             ),
           );
           Navigator.pop(context);
         } else if (state is PresetError) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          _scaffoldMessengerKey.currentState?.showSnackBar(
             SnackBar(
               content: Text(state.message),
               backgroundColor: Colors.red,
@@ -211,12 +230,18 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
           builder: (context, eventState) {
             return BlocBuilder<TeamBloc, TeamState>(
               builder: (context, teamState) {
-                final presets = presetState is PresetsLoaded ? presetState.presets : <Preset>[];
+                final presets = presetState is PresetsLoaded
+                    ? presetState.presets
+                    : <Preset>[];
                 final now = DateTime.now();
                 final events = eventState is EventsLoaded
-                    ? eventState.events.where((e) => e.endDate.isAfter(now)).toList()
+                    ? eventState.events
+                        .where((e) => e.endDate.isAfter(now))
+                        .toList()
                     : <Event>[];
-                final members = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
+                final members = teamState is TeamLoaded
+                    ? teamState.members
+                    : <TeamMember>[];
                 final memberMap = {for (var m in members) m.id: m};
 
                 return Padding(
@@ -232,11 +257,15 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
                           border: OutlineInputBorder(),
                         ),
                         isExpanded: true,
-                        items: presets.map((p) => DropdownMenuItem(
-                          value: p,
-                          child: Text('${p.name} (${p.items.length} פריטים)'),
-                        )).toList(),
-                        onChanged: (value) => setState(() => _selectedPreset = value),
+                        items: presets
+                            .map((p) => DropdownMenuItem(
+                                  value: p,
+                                  child: Text(
+                                      '${p.name} (${p.items.length} פריטים)'),
+                                ))
+                            .toList(),
+                        onChanged: (value) =>
+                            setState(() => _selectedPreset = value),
                       ),
                       const SizedBox(height: 16),
 
@@ -248,11 +277,15 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
                           border: OutlineInputBorder(),
                         ),
                         isExpanded: true,
-                        items: events.map((e) => DropdownMenuItem(
-                          value: e,
-                          child: Text('${e.name} (${e.startDate.day}/${e.startDate.month}/${e.startDate.year})'),
-                        )).toList(),
-                        onChanged: (value) => setState(() => _selectedEvent = value),
+                        items: events
+                            .map((e) => DropdownMenuItem(
+                                  value: e,
+                                  child: Text(
+                                      '${e.name} (${e.startDate.day}/${e.startDate.month}/${e.startDate.year})'),
+                                ))
+                            .toList(),
+                        onChanged: (value) =>
+                            setState(() => _selectedEvent = value),
                       ),
                       const SizedBox(height: 24),
 
@@ -274,8 +307,13 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
                               itemCount: _selectedPreset!.items.length,
                               itemBuilder: (context, index) {
                                 final item = _selectedPreset!.items[index];
-                                final responsible = memberMap[item.responsibleId];
+                                final responsible =
+                                    memberMap[item.responsibleId];
                                 final ccCount = item.ccIds.length;
+                                final responsibleLabel =
+                                    responsible?.name.isNotEmpty == true
+                                        ? responsible!.name
+                                        : 'לא הוגדר';
                                 return ListTile(
                                   dense: true,
                                   leading: CircleAvatar(
@@ -284,7 +322,7 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
                                   ),
                                   title: Text(item.name),
                                   subtitle: Text(
-                                    'אחראי: ${responsible?.name ?? "לא ידוע"}'
+                                    'אחראי: $responsibleLabel'
                                     '${ccCount > 0 ? " | $ccCount מיודעים" : ""}',
                                   ),
                                 );
@@ -306,14 +344,17 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
 
                       // Load button
                       ElevatedButton.icon(
-                        onPressed: _selectedPreset != null && _selectedEvent != null
-                            ? () {
-                                context.read<PresetBloc>().add(LoadPresetIntoEvent(
-                                  presetId: _selectedPreset!.id,
-                                  eventId: _selectedEvent!.id,
-                                ));
-                              }
-                            : null,
+                        onPressed:
+                            _selectedPreset != null && _selectedEvent != null
+                                ? () {
+                                    context
+                                        .read<PresetBloc>()
+                                        .add(LoadPresetIntoEvent(
+                                          presetId: _selectedPreset!.id,
+                                          eventId: _selectedEvent!.id,
+                                        ));
+                                  }
+                                : null,
                         icon: const Icon(Icons.download, color: Colors.white),
                         label: const Text('טען לאירוע'),
                         style: ElevatedButton.styleFrom(
@@ -332,10 +373,9 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
   }
 
   void _showPresetFormModal(BuildContext context, Preset? preset) {
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      useRootNavigator: true,
       builder: (modalContext) => PresetFormModal(
         preset: preset,
         onSave: (savedPreset) {
@@ -344,7 +384,7 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
           } else {
             context.read<PresetBloc>().add(UpdatePreset(savedPreset));
           }
-          Navigator.pop(modalContext);
+          Navigator.of(modalContext).pop();
         },
       ),
     );
@@ -357,7 +397,8 @@ class _PresetsDialogState extends State<PresetsDialog> with SingleTickerProvider
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           title: const Text('מחיקת פריסט'),
-          content: Text('האם אתה בטוח שברצונך למחוק את הפריסט "${preset.name}"?'),
+          content:
+              Text('האם אתה בטוח שברצונך למחוק את הפריסט "${preset.name}"?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),

@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/services/drive_service.dart';
 import '../../../../core/utils/web_url_launcher.dart';
-import '../../../../data/data_sources/firestore_database.dart';
+import '../../../../data/repositories/event_repository.dart';
 
 /// Widget to display Drive files for an event
 class EventDriveFilesSection extends StatefulWidget {
@@ -98,8 +99,8 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
     if (!mounted) return;
 
     try {
-      final database = FirestoreDatabase();
-      final event = await database.getEventById(widget.eventId);
+      final eventRepository = context.read<EventRepository>();
+      final event = await eventRepository.getEventById(widget.eventId);
 
       if (event != null && event.hasDriveFolder) {
         // Folder was created!
@@ -170,8 +171,8 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
     });
 
     try {
-      final database = FirestoreDatabase();
-      final event = await database.getEventById(widget.eventId);
+      final eventRepository = context.read<EventRepository>();
+      final event = await eventRepository.getEventById(widget.eventId);
 
       if (event == null) {
         if (mounted) {
@@ -203,7 +204,7 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
         driveFolderId: createResult.folderId,
         driveFolderLink: createResult.folderLink,
       );
-      await database.updateEvent(updatedEvent);
+      await eventRepository.updateEvent(updatedEvent);
 
       if (mounted) {
         setState(() {
