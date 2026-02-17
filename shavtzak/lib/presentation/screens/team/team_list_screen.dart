@@ -191,37 +191,6 @@ class _TeamListScreenState extends State<TeamListScreen> {
     });
   }
 
-  Future<void> _showConstraintAttendeeBackfillDialog() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('עדכון משתתפים זמני'),
-          content: const Text(
-            'להריץ כעת עדכון חד-פעמי של משתתפים לאירועי מגבלות קיימים ביומן?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('ביטול'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('הרץ עדכון'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmed == true && mounted) {
-      context
-          .read<CalendarSyncBloc>()
-          .add(const BackfillConstraintEventAttendees());
-    }
-  }
-
   /// Build a compact icon button for the leading AppBar section
   Widget _buildCompactIcon(
       {required IconData icon, required VoidCallback onPressed}) {
@@ -348,11 +317,6 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     ),
                   );
                 },
-              ),
-              // TEMP: Manual one-time backfill for constraint-event attendees.
-              _buildCompactIcon(
-                icon: Icons.person_add_alt_1,
-                onPressed: _showConstraintAttendeeBackfillDialog,
               ),
               // Centered title
               const Expanded(
