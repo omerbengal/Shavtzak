@@ -38,6 +38,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     on<RemoveAttendeeFromAppEvent>(_onRemoveAttendeeFromAppEvent);
     on<SyncAttendeesForAppEvent>(_onSyncAttendeesForAppEvent);
     on<OnTeamMemberEmailChanged>(_onTeamMemberEmailChanged);
+    on<BackfillConstraintEventAttendees>(_onBackfillConstraintEventAttendees);
   }
 
   /// Initialize the calendar sync service
@@ -64,7 +65,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
       await _calendarService.initialize(
         calendarId: event.calendarId!,
       );
-
 
       // Create sync service
       _syncService = CalendarSyncService(
@@ -99,7 +99,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     SyncConstraintToCalendar event,
     Emitter<CalendarSyncState> emit,
   ) async {
-
     if (_syncService == null) {
       developer.log(
         'CalendarSyncBloc: Sync service not initialized, skipping sync',
@@ -119,7 +118,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         teamMember: event.teamMember,
         constraint: event.constraint,
       );
-
 
       if (result.success) {
         emit(CalendarSyncSuccess(
@@ -152,7 +150,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     RemoveConstraintFromCalendar event,
     Emitter<CalendarSyncState> emit,
   ) async {
-
     if (_syncService == null) {
       developer.log(
         'CalendarSyncBloc: Sync service not initialized, skipping removal',
@@ -170,7 +167,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
       final result = await _syncService!.removeConstraintFromCalendar(
         event.constraintId,
       );
-
 
       if (result.success) {
         emit(CalendarSyncRemovalSuccess(
@@ -210,9 +206,8 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
       return;
     }
 
-    final approvedConstraints = event.teamMember.constraints
-        .where((c) => c.isApproved())
-        .toList();
+    final approvedConstraints =
+        event.teamMember.constraints.where((c) => c.isApproved()).toList();
 
     if (approvedConstraints.isEmpty) {
       emit(const CalendarSyncBatchComplete(
@@ -229,7 +224,8 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     for (final constraint in approvedConstraints) {
       emit(CalendarSyncInProgress(
         constraintId: constraint.id,
-        message: 'מסנכרן מגבלות ליומן גוגל... (${successCount + failureCount + 1}/${approvedConstraints.length})',
+        message:
+            'מסנכרן מגבלות ליומן גוגל... (${successCount + failureCount + 1}/${approvedConstraints.length})',
       ));
 
       try {
@@ -364,7 +360,8 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     Emitter<CalendarSyncState> emit,
   ) async {
     try {
-      final syncState = await _database.getCalendarSyncState(event.constraintId);
+      final syncState =
+          await _database.getCalendarSyncState(event.constraintId);
 
       if (syncState == null) {
         emit(ConstraintSyncStatus(
@@ -410,12 +407,14 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     ));
 
     try {
-      final rejectedCount = await _syncService!.validateSyncedEventsWithCalendar();
+      final rejectedCount =
+          await _syncService!.validateSyncedEventsWithCalendar();
 
       if (rejectedCount > 0) {
         emit(CalendarSyncValidationComplete(
           rejectedCount: rejectedCount,
-          message: 'נמצאו $rejectedCount מגבלות שאירועי היומן שלהן נמחקו וסטטוסן עודכן ל"דחוי"',
+          message:
+              'נמצאו $rejectedCount מגבלות שאירועי היומן שלהן נמחקו וסטטוסן עודכן ל"דחוי"',
         ));
       } else {
         emit(const CalendarSyncValidationComplete(
@@ -461,7 +460,8 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
 
     try {
       // Step 1: Validate synced events and update constraints if calendar events were deleted
-      final rejectedCount = await _syncService!.validateSyncedEventsWithCalendar();
+      final rejectedCount =
+          await _syncService!.validateSyncedEventsWithCalendar();
 
       // Step 2: Get all failed syncs and retry them
       final failedSyncs = await _syncService!.getFailedSyncs();
@@ -477,9 +477,9 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
           // Get team member from database
           final teamMembers = await _database.getTeamMembers();
           final teamMember = teamMembers.cast<TeamMember?>().firstWhere(
-            (m) => m?.id == teamMemberId,
-            orElse: () => null,
-          );
+                (m) => m?.id == teamMemberId,
+                orElse: () => null,
+              );
 
           if (teamMember == null) {
             continue;
@@ -503,13 +503,11 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
           retriedCount++;
           if (result.success) {
             successCount++;
-          } else {
-          }
+          } else {}
         } catch (e) {
           // Ignore individual constraint sync errors during batch sync
         }
       }
-
 
       // Step 3: Emit completion state
       String message = 'הסנכרון הדו-כיווני הושלם. ';
@@ -529,7 +527,6 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         successCount: successCount,
         message: message,
       ));
-
     } catch (e) {
       developer.log(
         'CalendarSyncBloc: Bidirectional sync failed - $e',
@@ -620,7 +617,8 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     ));
 
     try {
-      final result = await _syncService!.removeAppEventFromCalendar(event.eventId);
+      final result =
+          await _syncService!.removeAppEventFromCalendar(event.eventId);
 
       if (result.success) {
         emit(CalendarSyncRemovalSuccess(
@@ -754,6 +752,47 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         error: e,
       );
       // Best-effort: don't rethrow
+    }
+  }
+
+  /// TEMP: Manually backfill attendee emails for existing constraint events.
+  Future<void> _onBackfillConstraintEventAttendees(
+    BackfillConstraintEventAttendees event,
+    Emitter<CalendarSyncState> emit,
+  ) async {
+    if (_syncService == null) {
+      developer.log(
+        'CalendarSyncBloc: Sync service not initialized, skipping backfill',
+        name: 'CalendarSyncBloc',
+      );
+      return;
+    }
+
+    emit(const CalendarSyncInProgress(
+      constraintId: 'constraint_attendee_backfill',
+      message: 'מבצע עדכון זמני של משתתפים במגבלות מסונכרנות...',
+    ));
+
+    try {
+      final result = await _syncService!.backfillConstraintEventAttendees();
+      emit(ConstraintAttendeeBackfillComplete(
+        scannedCount: result.scannedCount,
+        updatedCount: result.updatedCount,
+        skippedCount: result.skippedCount,
+        failedCount: result.failedCount,
+        message:
+            'הושלם עדכון משתתפים: נסרקו ${result.scannedCount}, עודכנו ${result.updatedCount}, דולגו ${result.skippedCount}, נכשלו ${result.failedCount}',
+      ));
+    } catch (e) {
+      developer.log(
+        'CalendarSyncBloc: Backfill failed - $e',
+        name: 'CalendarSyncBloc',
+        error: e,
+      );
+      emit(CalendarSyncFailure(
+        constraintId: 'constraint_attendee_backfill',
+        errorMessage: 'עדכון המשתתפים הזמני נכשל: $e',
+      ));
     }
   }
 

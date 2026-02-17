@@ -92,7 +92,8 @@ class CalendarSyncFailure extends CalendarSyncState {
   });
 
   @override
-  List<Object?> get props => [constraintId, errorMessage, isRetryable, retryCount];
+  List<Object?> get props =>
+      [constraintId, errorMessage, isRetryable, retryCount];
 }
 
 /// Multiple syncs completed (batch operation)
@@ -204,5 +205,27 @@ class CalendarSyncBidirectionalComplete extends CalendarSyncState {
   });
 
   @override
-  List<Object?> get props => [rejectedCount, retriedCount, successCount, message];
+  List<Object?> get props =>
+      [rejectedCount, retriedCount, successCount, message];
+}
+
+/// TEMP: Summary of manual attendee backfill for existing constraint events.
+class ConstraintAttendeeBackfillComplete extends CalendarSyncState {
+  final int scannedCount;
+  final int updatedCount;
+  final int skippedCount;
+  final int failedCount;
+  final String message;
+
+  const ConstraintAttendeeBackfillComplete({
+    required this.scannedCount,
+    required this.updatedCount,
+    required this.skippedCount,
+    required this.failedCount,
+    required this.message,
+  });
+
+  @override
+  List<Object?> get props =>
+      [scannedCount, updatedCount, skippedCount, failedCount, message];
 }

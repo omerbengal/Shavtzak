@@ -191,6 +191,37 @@ class _TeamListScreenState extends State<TeamListScreen> {
     });
   }
 
+  Future<void> _showConstraintAttendeeBackfillDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('עדכון משתתפים זמני'),
+          content: const Text(
+            'להריץ כעת עדכון חד-פעמי של משתתפים לאירועי מגבלות קיימים ביומן?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('ביטול'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('הרץ עדכון'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      context
+          .read<CalendarSyncBloc>()
+          .add(const BackfillConstraintEventAttendees());
+    }
+  }
+
   /// Build a compact icon button for the leading AppBar section
   Widget _buildCompactIcon(
       {required IconData icon, required VoidCallback onPressed}) {
@@ -230,8 +261,25 @@ class _TeamListScreenState extends State<TeamListScreen> {
                           duration: const Duration(seconds: 3),
                         ),
                       );
+                  } else if (state is ConstraintAttendeeBackfillComplete) {
+                    ScaffoldMessenger.of(context)
+                      ..clearSnackBars()
+                      ..showSnackBar(
+                        SnackBar(
+                          content: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Text(state.message),
+                          ),
+                          backgroundColor: state.failedCount > 0
+                              ? Colors.orange
+                              : Colors.green,
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
                   } else if (state is CalendarSyncFailure &&
-                      state.constraintId == 'bidirectional') {
+                      (state.constraintId == 'bidirectional' ||
+                          state.constraintId ==
+                              'constraint_attendee_backfill')) {
                     ScaffoldMessenger.of(context)
                       ..clearSnackBars()
                       ..showSnackBar(
@@ -246,9 +294,14 @@ class _TeamListScreenState extends State<TeamListScreen> {
                             label: 'נסה שוב',
                             textColor: Colors.white,
                             onPressed: () {
-                              context
-                                  .read<CalendarSyncBloc>()
-                                  .add(const PerformBidirectionalSync());
+                              if (state.constraintId == 'bidirectional') {
+                                context
+                                    .read<CalendarSyncBloc>()
+                                    .add(const PerformBidirectionalSync());
+                              } else {
+                                context.read<CalendarSyncBloc>().add(
+                                    const BackfillConstraintEventAttendees());
+                              }
                             },
                           ),
                         ),
@@ -295,6 +348,11 @@ class _TeamListScreenState extends State<TeamListScreen> {
                     ),
                   );
                 },
+              ),
+              // TEMP: Manual one-time backfill for constraint-event attendees.
+              _buildCompactIcon(
+                icon: Icons.person_add_alt_1,
+                onPressed: _showConstraintAttendeeBackfillDialog,
               ),
               // Centered title
               const Expanded(
@@ -4277,11 +4335,13 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
       note: _noteController.text.trim().isEmpty
           ? null
           : _noteController.text.trim(),
-      status: ConstraintStatus.approved,
+      // Preserve status when editing; only new admin-created constraints are auto-approved.
+      status: widget.constraint?.status ?? ConstraintStatus.approved,
       constraintType: widget.isPermanent
           ? ConstraintType.unavailability
           : ConstraintType.availability,
-      wasAutoRejectedFromCalendar: false,
+      wasAutoRejectedFromCalendar:
+          widget.constraint?.wasAutoRejectedFromCalendar ?? false,
       startTime: _startTimeController.text.isNotEmpty
           ? _startTimeController.text
           : null,

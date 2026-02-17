@@ -32,6 +32,7 @@ class AppVersionService extends ChangeNotifier {
   static const String _collection = 'utilities';
   static const String _document = 'information';
   static const String _field = 'version';
+  static const String _whatsNewField = 'WhatsNew';
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -41,10 +42,12 @@ class AppVersionService extends ChangeNotifier {
   bool _isBlocked = false;
   String? _cachedVersion;
   String? _remoteVersion;
+  List<String> _whatsNewItems = const [];
 
   bool get isBlocked => _isBlocked;
   String? get cachedVersion => _cachedVersion;
   String? get remoteVersion => _remoteVersion;
+  List<String> get whatsNewItems => List.unmodifiable(_whatsNewItems);
 
   void initialize() {
     if (_initialized) return;
@@ -87,6 +90,7 @@ class AppVersionService extends ChangeNotifier {
           stackTrace: stackTrace,
         );
         _remoteVersion = null;
+        _setWhatsNewItems(const []);
         _setBlocked(false);
       },
     );
@@ -96,6 +100,8 @@ class AppVersionService extends ChangeNotifier {
     DocumentSnapshot<Map<String, dynamic>> snapshot,
   ) async {
     final data = snapshot.data();
+    _setWhatsNewItems(_parseWhatsNewItems(data?[_whatsNewField]));
+
     final rawVersion = data?[_field];
     final version = rawVersion is String ? rawVersion.trim() : '';
 
@@ -115,6 +121,27 @@ class AppVersionService extends ChangeNotifier {
     }
 
     _setBlocked(_cachedVersion != version);
+  }
+
+  List<String> _parseWhatsNewItems(dynamic raw) {
+    if (raw is! List) return const [];
+
+    final items = <String>[];
+    for (final item in raw) {
+      if (item is String) {
+        final normalized = item.trim();
+        if (normalized.isNotEmpty) {
+          items.add(normalized);
+        }
+      }
+    }
+    return items;
+  }
+
+  void _setWhatsNewItems(List<String> items) {
+    if (listEquals(_whatsNewItems, items)) return;
+    _whatsNewItems = List.unmodifiable(items);
+    notifyListeners();
   }
 
   Future<void> _saveCachedVersion(String version) async {

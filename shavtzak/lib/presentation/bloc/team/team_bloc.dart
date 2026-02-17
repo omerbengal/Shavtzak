@@ -564,6 +564,13 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     Emitter<TeamState> emit,
   ) async {
     try {
+      // Read current constraint before writing, so status transitions are detected correctly.
+      final memberBeforeEdit =
+          await _repository.getTeamMemberById(event.teamMemberId);
+      final oldConstraint = memberBeforeEdit?.constraints
+          .where((c) => c.id == event.constraintId)
+          .firstOrNull;
+
       // Build the updated constraint
       final updatedConstraint = DateConstraint(
         id: event.constraintId,
@@ -588,30 +595,26 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       );
 
       // Handle calendar sync for status changes
-      if (_calendarSyncBloc != null) {
-        // Get the old constraint to detect status changes
-        final currentMember =
-            await _repository.getTeamMemberById(event.teamMemberId);
-        if (currentMember != null) {
-          final oldConstraint = currentMember.constraints
-              .where((c) => c.id == event.constraintId)
-              .firstOrNull;
-
-          if (oldConstraint != null && oldConstraint.status != event.status) {
-            if (event.status == ConstraintStatus.approved &&
-                updatedConstraint.isUnavailability) {
-              _calendarSyncBloc!.add(SyncConstraintToCalendar(
-                constraintId: event.constraintId,
-                teamMember: currentMember,
-                constraint: updatedConstraint,
-              ));
-            } else if (oldConstraint.status == ConstraintStatus.approved &&
-                oldConstraint.isUnavailability) {
-              _calendarSyncBloc!.add(RemoveConstraintFromCalendar(
-                constraintId: event.constraintId,
-              ));
-            }
+      final calendarSyncBloc = _calendarSyncBloc;
+      if (calendarSyncBloc != null &&
+          oldConstraint != null &&
+          oldConstraint.status != event.status) {
+        if (event.status == ConstraintStatus.approved &&
+            updatedConstraint.isUnavailability) {
+          final currentMember =
+              await _repository.getTeamMemberById(event.teamMemberId);
+          if (currentMember != null) {
+            calendarSyncBloc.add(SyncConstraintToCalendar(
+              constraintId: event.constraintId,
+              teamMember: currentMember,
+              constraint: updatedConstraint,
+            ));
           }
+        } else if (oldConstraint.status == ConstraintStatus.approved &&
+            oldConstraint.isUnavailability) {
+          calendarSyncBloc.add(RemoveConstraintFromCalendar(
+            constraintId: event.constraintId,
+          ));
         }
       }
 

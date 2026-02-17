@@ -294,6 +294,10 @@ class GoogleCalendarService {
         start: eventStart,
         end: eventEnd,
         recurrence: recurrenceRule != null ? [recurrenceRule] : null,
+        attendees:
+            (teamMember.email != null && teamMember.email!.trim().isNotEmpty)
+                ? [calendar.EventAttendee(email: teamMember.email!.trim())]
+                : null,
         colorId: colorId,
         extendedProperties: calendar.EventExtendedProperties(
           private: {
@@ -400,6 +404,10 @@ class GoogleCalendarService {
         start: eventStart,
         end: eventEnd,
         recurrence: recurrenceRule != null ? [recurrenceRule] : null,
+        attendees:
+            (teamMember.email != null && teamMember.email!.trim().isNotEmpty)
+                ? [calendar.EventAttendee(email: teamMember.email!.trim())]
+                : null,
         colorId: colorId,
         extendedProperties: calendar.EventExtendedProperties(
           private: {

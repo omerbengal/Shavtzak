@@ -221,3 +221,8 @@ class OnTeamMemberEmailChanged extends CalendarSyncEvent {
   @override
   List<Object?> get props => [teamMemberId, oldEmail, newEmail];
 }
+
+/// TEMP: Manual one-time backfill for attendee emails on existing constraint events.
+class BackfillConstraintEventAttendees extends CalendarSyncEvent {
+  const BackfillConstraintEventAttendees();
+}
