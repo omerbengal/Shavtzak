@@ -18,7 +18,7 @@ class NavigationMenu extends StatelessWidget {
     final userState = context.watch<UserSelectionBloc>().state;
     final isAdmin = userState is UserAuthenticated && userState.user.isAdmin;
 
-    // Determine home route: /admin for admins, /choice for non-admins with summary access
+    // Determine home route: /admin for admins, /choice for non-admins with choice-screen access
     final homeRoute = isAdmin ? 'admin' : 'choice';
 
     return Row(

@@ -43,6 +43,10 @@ class TeamMemberModel {
   final bool
       canAccessSummaryScreen; // Whether non-admin can access summary screen
 
+  // Shamap export access field
+  final bool
+      canAccessShamapExport; // Whether team member can access shamap export flow
+
   // Vehicle info field
   final VehicleInfoModel? vehicleInfo; // Optional vehicle information
 
@@ -70,6 +74,7 @@ class TeamMemberModel {
     this.email,
     this.birthday,
     this.canAccessSummaryScreen = false,
+    this.canAccessShamapExport = false,
     this.vehicleInfo,
     this.availableEventIds = const [],
   });
@@ -103,6 +108,7 @@ class TeamMemberModel {
       email: entity.email,
       birthday: entity.birthday,
       canAccessSummaryScreen: entity.canAccessSummaryScreen,
+      canAccessShamapExport: entity.canAccessShamapExport,
       vehicleInfo: entity.vehicleInfo != null
           ? VehicleInfoModel.fromEntity(entity.vehicleInfo!)
           : null,
@@ -132,6 +138,7 @@ class TeamMemberModel {
       email: email,
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
+      canAccessShamapExport: canAccessShamapExport,
       vehicleInfo: vehicleInfo?.toEntity(),
       availableEventIds: List<String>.from(availableEventIds),
     );
@@ -170,6 +177,10 @@ class TeamMemberModel {
     // Handle migration - default to false for existing members missing canAccessSummaryScreen
     final canAccessSummaryScreen =
         data['canAccessSummaryScreen'] as bool? ?? false;
+
+    // Handle migration - default to false for existing members missing canAccessShamapExport
+    final canAccessShamapExport =
+        data['canAccessShamapExport'] as bool? ?? false;
 
     // Handle migration - vehicleInfo is optional, default to null for existing members
     final vehicleInfoData = data['vehicleInfo'] as Map<String, dynamic>?;
@@ -216,6 +227,7 @@ class TeamMemberModel {
       email: email,
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
+      canAccessShamapExport: canAccessShamapExport,
       vehicleInfo: vehicleInfo,
       availableEventIds: availableEventIds,
     );
@@ -263,6 +275,7 @@ class TeamMemberModel {
       'email': email,
       'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
       'canAccessSummaryScreen': canAccessSummaryScreen,
+      'canAccessShamapExport': canAccessShamapExport,
       'vehicleInfo': vehicleInfo?.toJson(),
       'availableEventIds': availableEventIds,
     };
@@ -299,6 +312,10 @@ class TeamMemberModel {
     // Handle migration - default to false for existing members missing canAccessSummaryScreen
     final canAccessSummaryScreen =
         json['canAccessSummaryScreen'] as bool? ?? false;
+
+    // Handle migration - default to false for existing members missing canAccessShamapExport
+    final canAccessShamapExport =
+        json['canAccessShamapExport'] as bool? ?? false;
 
     // Handle migration - vehicleInfo is optional, default to null for existing members
     final vehicleInfoData = json['vehicleInfo'] as Map<String, dynamic>?;
@@ -341,6 +358,7 @@ class TeamMemberModel {
       email: email,
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
+      canAccessShamapExport: canAccessShamapExport,
       vehicleInfo: vehicleInfo,
       availableEventIds: availableEventIds,
     );
@@ -368,6 +386,7 @@ class TeamMemberModel {
       'email': email,
       'birthday': birthday?.toIso8601String(),
       'canAccessSummaryScreen': canAccessSummaryScreen,
+      'canAccessShamapExport': canAccessShamapExport,
       'vehicleInfo': vehicleInfo?.toJson(),
       'availableEventIds': availableEventIds,
     };

@@ -101,7 +101,9 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
             return previous.user.name != current.user.name ||
                 previous.user.isAdmin != current.user.isAdmin ||
                 previous.user.canAccessSummaryScreen !=
-                    current.user.canAccessSummaryScreen;
+                    current.user.canAccessSummaryScreen ||
+                previous.user.canAccessShamapExport !=
+                    current.user.canAccessShamapExport;
           }
           return previous.runtimeType != current.runtimeType;
         },
@@ -133,8 +135,10 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
               constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
             ),
             actions: [
-              // Show navigation menu (home + logout) for admin users or users with summary access
-              if (state.user.isAdmin || state.user.canAccessSummaryScreen)
+              // Show navigation menu (home + logout) for users with choice-screen access
+              if (state.user.isAdmin ||
+                  state.user.canAccessSummaryScreen ||
+                  state.user.canAccessShamapExport)
                 const NavigationMenu()
               else
                 // Regular users get logout button with padding to balance the settings icon

@@ -81,6 +81,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
         next.uniqueKey != current.uniqueKey ||
         next.isAdmin != current.isAdmin ||
         next.canAccessSummaryScreen != current.canAccessSummaryScreen ||
+        next.canAccessShamapExport != current.canAccessShamapExport ||
         next.isPermanent != current.isPermanent ||
         next.isActive != current.isActive ||
         next.isArchived != current.isArchived ||

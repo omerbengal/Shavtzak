@@ -289,6 +289,10 @@ class TeamMember extends Equatable {
   final bool
       canAccessSummaryScreen; // Whether non-admin can access summary screen
 
+  // Shamap export access field
+  final bool
+      canAccessShamapExport; // Whether team member can access shamap export flow
+
   // Vehicle info field
   final VehicleInfo? vehicleInfo; // Optional vehicle information
 
@@ -316,6 +320,7 @@ class TeamMember extends Equatable {
     this.email,
     this.birthday,
     this.canAccessSummaryScreen = false,
+    this.canAccessShamapExport = false,
     this.vehicleInfo,
     this.availableEventIds = const [],
   });
@@ -489,6 +494,7 @@ class TeamMember extends Equatable {
     DateTime? birthday,
     bool clearBirthday = false,
     bool? canAccessSummaryScreen,
+    bool? canAccessShamapExport,
     VehicleInfo? vehicleInfo,
     bool clearVehicleInfo = false,
     List<String>? availableEventIds,
@@ -516,6 +522,8 @@ class TeamMember extends Equatable {
       birthday: clearBirthday ? null : (birthday ?? this.birthday),
       canAccessSummaryScreen:
           canAccessSummaryScreen ?? this.canAccessSummaryScreen,
+      canAccessShamapExport:
+          canAccessShamapExport ?? this.canAccessShamapExport,
       vehicleInfo: clearVehicleInfo ? null : (vehicleInfo ?? this.vehicleInfo),
       availableEventIds: availableEventIds ?? this.availableEventIds,
     );
@@ -542,6 +550,7 @@ class TeamMember extends Equatable {
         email,
         birthday,
         canAccessSummaryScreen,
+        canAccessShamapExport,
         vehicleInfo,
         availableEventIds,
       ];

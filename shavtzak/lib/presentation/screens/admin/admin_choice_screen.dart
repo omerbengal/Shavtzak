@@ -17,11 +17,12 @@ import '../../../core/services/export_service.dart';
 import '../../../core/services/user_cache_service.dart';
 import '../../../core/services/google_oauth_service.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
+import '../../widgets/shamap_export_dialog.dart';
 import '../../widgets/settings_dialog.dart';
 
 /// Choice screen - allows users to choose between available areas
-/// For admins: Personal area, Management, and Summary screen
-/// For non-admins with summary access: Personal area and Summary screen
+/// For admins: Personal area, Management, Summary, and optional export screen
+/// For non-admins with summary/export access: Personal area + allowed cards
 class AdminChoiceScreen extends StatefulWidget {
   const AdminChoiceScreen({super.key});
 
@@ -88,8 +89,11 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
               final showManagementCard = isAdmin;
               final showSummaryCard =
                   isAdmin || state.user.canAccessSummaryScreen;
-              final cardCount =
-                  1 + (showManagementCard ? 1 : 0) + (showSummaryCard ? 1 : 0);
+              final showShamapExportCard = state.user.canAccessShamapExport;
+              final cardCount = 1 +
+                  (showManagementCard ? 1 : 0) +
+                  (showSummaryCard ? 1 : 0) +
+                  (showShamapExportCard ? 1 : 0);
 
               return LayoutBuilder(
                 builder: (context, constraints) {
@@ -180,6 +184,29 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                 isCompact: isCompact,
                                 onTap: () => context.go('$envPrefix/summary'),
                               ),
+
+                            // Shamap export card
+                            if (showShamapExportCard) ...[
+                              if (showSummaryCard)
+                                SizedBox(height: cardSpacing),
+                              _buildChoiceCard(
+                                width: cardWidth,
+                                icon: Icons.content_paste,
+                                iconColor: Colors.teal,
+                                title: 'ייצוא שמפים',
+                                subtitle: 'העתקת פרטי שמ"פ ללוח',
+                                isCompact: isCompact,
+                                onTap: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => const Directionality(
+                                      textDirection: TextDirection.rtl,
+                                      child: ShamapExportDialog(),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
                           ],
                         ),
                       ),

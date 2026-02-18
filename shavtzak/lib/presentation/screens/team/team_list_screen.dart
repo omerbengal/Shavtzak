@@ -1139,6 +1139,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   bool _isPermanent = false;
   bool _allowMultipleAssignments = false;
   bool _canAccessSummaryScreen = false;
+  bool _canAccessShamapExport = false;
   Map<String, bool> _roleCapabilities = {};
 
   late TeamBloc _teamBloc;
@@ -1173,6 +1174,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       _isPermanent = widget.member!.isPermanent;
       _allowMultipleAssignments = widget.member!.allowMultipleAssignments;
       _canAccessSummaryScreen = widget.member!.canAccessSummaryScreen;
+      _canAccessShamapExport = widget.member!.canAccessShamapExport;
       _roleCapabilities = Map.from(widget.member!.roleCapabilities);
       _constraints = List.from(widget.member!.constraints);
       _availableEventIds = List.from(widget.member!.availableEventIds);
@@ -1272,6 +1274,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       isPermanent: _isPermanent,
       allowMultipleAssignments: _allowMultipleAssignments,
       canAccessSummaryScreen: _canAccessSummaryScreen,
+      canAccessShamapExport: _canAccessShamapExport,
       constraints: finalConstraints,
       roleCapabilities: _roleCapabilities,
       comments: _commentsController.text.trim(),
@@ -2006,6 +2009,21 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         onChanged: (value) {
                                           setState(() {
                                             _canAccessSummaryScreen = value;
+                                            _isDirty = true;
+                                          });
+                                        },
+                                      ),
+
+                                      // Shamap export access switch
+                                      SwitchListTile(
+                                        title: const Text('גישה לייצוא שמפים'),
+                                        subtitle: const Text(
+                                          'מאפשר לחבר צוות לייצא פרטי שמ"פ ללוח',
+                                        ),
+                                        value: _canAccessShamapExport,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _canAccessShamapExport = value;
                                             _isDirty = true;
                                           });
                                         },
