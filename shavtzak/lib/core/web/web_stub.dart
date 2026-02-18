@@ -4,4 +4,5 @@ class WebHelper {
   static String getWindowLocationHash() => '';
   static void reloadPage() {}
   static void hideSplashScreen() {}
+  static void removeLocalStorageItem(String key) {}
 }

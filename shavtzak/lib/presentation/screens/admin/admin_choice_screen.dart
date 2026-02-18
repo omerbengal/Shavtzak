@@ -11,7 +11,6 @@ import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart' as team;
 import '../../bloc/team/team_state.dart';
 import '../../../core/constants/constraint_status.dart';
-import '../../../core/services/drive_service.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/export_service.dart';
 import '../../../core/services/user_cache_service.dart';
@@ -341,8 +340,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
           }
 
           final hasLeadingCalendar = state.isAdmin;
-          final hasLeadingFullExport =
-              state.isAdmin && DriveService.instance.isInitialized;
+          final hasLeadingFullExport = state.isAdmin;
           final leadingIconCount =
               (hasLeadingCalendar ? 1 : 0) + (hasLeadingFullExport ? 1 : 0);
 
@@ -387,8 +385,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                     ],
                   ),
             actions: [
-              // Export buttons (admin only, when Drive is initialized)
-              if (state.isAdmin && DriveService.instance.isInitialized) ...[
+              // Export buttons (admin only)
+              if (state.isAdmin) ...[
                 // Assignments-only export button (cloud icon)
                 IconButton(
                   icon: const Icon(Icons.cloud),

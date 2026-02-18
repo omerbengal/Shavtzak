@@ -423,6 +423,7 @@ function handleExportAssignmentsOnly(request) {
     var file = DriveApp.getFileById(spreadsheet.getId());
     var folder = DriveApp.getFolderById(CONFIG.EXPORTED_FILES_FOLDER_ID);
     file.moveTo(folder);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   } catch (e) {
     console.log('Could not move spreadsheet to Shavtzak folder: ' + e.message);
   }

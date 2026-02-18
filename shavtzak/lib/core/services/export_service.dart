@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
-import 'drive_service.dart';
 
 /// Result of an export operation
 class ExportResult {
@@ -37,11 +36,11 @@ class ExportService {
 
   /// Export all production data to a new Google Sheet (full DB export).
   Future<ExportResult> exportToSheets() async {
-    final drive = DriveService.instance;
-    if (!drive.isInitialized) {
+    final driveConfig = await _fetchLiveDriveConfig();
+    if (driveConfig == null) {
       return const ExportResult(
         success: false,
-        error: 'DriveService is not initialized',
+        error: 'Missing Google Drive export config in keys/googleDrive',
       );
     }
 
@@ -149,14 +148,14 @@ class ExportService {
       // 3. Build payload and POST to Apps Script
       final payload = {
         'action': 'exportToSheets',
-        'apiKey': drive.apiKey,
+        'apiKey': driveConfig.apiKey,
         'exportData': {
           'sheets': sheets,
         },
       };
 
       final response = await http.post(
-        Uri.parse(drive.scriptUrl!),
+        Uri.parse(driveConfig.scriptUrl),
         headers: {'Content-Type': 'text/plain;charset=UTF-8'},
         body: jsonEncode(payload),
       );
@@ -188,11 +187,11 @@ class ExportService {
 
   /// Export only assignments to a new Google Sheet (simplified export).
   Future<ExportResult> exportAssignmentsOnly() async {
-    final drive = DriveService.instance;
-    if (!drive.isInitialized) {
+    final driveConfig = await _fetchLiveDriveConfig();
+    if (driveConfig == null) {
       return const ExportResult(
         success: false,
-        error: 'DriveService is not initialized',
+        error: 'Missing Google Drive export config in keys/googleDrive',
       );
     }
 
@@ -239,12 +238,12 @@ class ExportService {
       // Build payload
       final payload = {
         'action': 'exportAssignmentsOnly',
-        'apiKey': drive.apiKey,
+        'apiKey': driveConfig.apiKey,
         'exportData': {'sheets': [sheet]},
       };
 
       final response = await http.post(
-        Uri.parse(drive.scriptUrl!),
+        Uri.parse(driveConfig.scriptUrl),
         headers: {'Content-Type': 'text/plain;charset=UTF-8'},
         body: jsonEncode(payload),
       );
@@ -271,6 +270,39 @@ class ExportService {
     } catch (e) {
       developer.log('ExportService: Assignments export failed: $e', name: 'Export', error: e);
       return ExportResult(success: false, error: e.toString());
+    }
+  }
+
+  /// Always read the latest Google Drive export config from Firestore.
+  Future<_DriveExportConfig?> _fetchLiveDriveConfig() async {
+    try {
+      final doc = await _firestore.collection(_keys).doc('googleDrive').get();
+      if (!doc.exists) return null;
+
+      final data = doc.data();
+      if (data == null) return null;
+
+      final scriptUrl = (data['scriptUrl'] as String?)?.trim();
+      final apiKey = (data['apiKey'] as String?)?.trim();
+
+      if (scriptUrl == null ||
+          scriptUrl.isEmpty ||
+          apiKey == null ||
+          apiKey.isEmpty) {
+        return null;
+      }
+
+      return _DriveExportConfig(
+        scriptUrl: scriptUrl,
+        apiKey: apiKey,
+      );
+    } catch (e) {
+      developer.log(
+        'ExportService: Failed to fetch drive config: $e',
+        name: 'Export',
+        error: e,
+      );
+      return null;
     }
   }
 
@@ -987,4 +1019,14 @@ class ExportService {
 
     return loc.trim();
   }
+}
+
+class _DriveExportConfig {
+  final String scriptUrl;
+  final String apiKey;
+
+  const _DriveExportConfig({
+    required this.scriptUrl,
+    required this.apiKey,
+  });
 }

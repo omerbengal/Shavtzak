@@ -24,4 +24,12 @@ class WebHelper {
       // Ignore errors
     }
   }
+
+  static void removeLocalStorageItem(String key) {
+    try {
+      web.window.localStorage.removeItem(key);
+    } catch (e) {
+      // Ignore errors
+    }
+  }
 }

@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'dart:developer' as developer;
 import 'dart:ui' as ui;
@@ -26,7 +27,6 @@ import 'core/services/environment_service.dart';
 import 'core/services/connectivity_service.dart';
 import 'core/services/service_locator.dart';
 import 'core/services/drive_service.dart';
-import 'core/services/config_cache_service.dart';
 import 'core/services/audit_context_service.dart';
 import 'core/services/app_version_service.dart';
 import 'presentation/widgets/offline_blocking_overlay.dart';
@@ -119,9 +119,10 @@ Future<void> _initialize() async {
     _timed('ConnectivityService.init',
         () => ConnectivityService.instance.initialize());
 
-    // Initialize config cache service
-    final configCache =
-        _timed('ConfigCacheService.init', () => ConfigCacheService());
+    // Remove legacy cached config keys. Config now always comes from Firestore.
+    await _timedAsync('ConfigCache.legacyCleanup', () async {
+      await _clearLegacyConfigCacheKeys();
+    });
 
     // Initialize services
     final userCacheService =
@@ -152,63 +153,35 @@ Future<void> _initialize() async {
     await _timedAsync(
         'FirestoreDatabase.initialize', () => database.initialize());
 
-    // Config cache checks (instant)
-    final cacheResults =
-        await _timedAsync('ConfigCacheService.getBoth', () async {
-      return await Future.wait([
-        configCache.getDriveConfig(),
-        configCache.getCalendarConfig(),
-      ]);
-    });
-    final cachedDriveConfig = cacheResults[0] as Map<String, String?>?;
-    final cachedCalendarConfig = cacheResults[1] as Map<String, String?>?;
-
-    // Initialize services with cached configs
-    if (cachedDriveConfig != null) {
-      _timed('DriveService.init (from cache)', () {
-        _initializeDriveServiceWithConfig(cachedDriveConfig);
-      });
-    }
-
     final bloc = _timed('CalendarSyncBloc creation',
         () => CalendarSyncBloc(database: database));
-    if (cachedCalendarConfig != null) {
-      _timed('CalendarSyncBloc.init (from cache)', () {
-        _initializeCalendarBlocWithConfig(bloc, cachedCalendarConfig);
+
+    // Always fetch latest configs directly from Firestore.
+    final configResults =
+        await _timedAsync<List<Map<String, String?>?>>('Firestore.configFetch',
+            () async {
+      return await Future.wait([
+        _fetchDriveConfigFromFirestore(database),
+        _fetchCalendarConfigFromFirestore(database),
+      ]);
+    });
+
+    final driveConfig = configResults[0];
+    if (driveConfig != null) {
+      _timed('DriveService.init (from firestore)', () {
+        _initializeDriveServiceWithConfig(driveConfig);
       });
     }
 
-    // Fetch missing configs from Firestore if needed (blocking)
-    if (cachedDriveConfig == null || cachedCalendarConfig == null) {
-      final configResults =
-          await _timedAsync('Firestore.configFetch', () async {
-        return await Future.wait([
-          if (cachedDriveConfig == null)
-            _fetchDriveConfigFromFirestore(database),
-          if (cachedCalendarConfig == null)
-            _fetchCalendarConfigFromFirestore(database),
-        ]);
+    final calendarConfig = configResults[1];
+    if (calendarConfig != null) {
+      _timed('CalendarSyncBloc.init (from firestore)', () {
+        _initializeCalendarBlocWithConfig(bloc, calendarConfig);
       });
-
-      int resultIndex = 0;
-
-      if (cachedDriveConfig == null) {
-        final driveConfig =
-            configResults[resultIndex++] as Map<String, String?>?;
-        if (driveConfig != null) {
-          _initializeDriveServiceWithConfig(driveConfig);
-          await configCache.saveDriveConfig(driveConfig);
-        }
-      }
-
-      if (cachedCalendarConfig == null) {
-        final calendarConfig =
-            configResults[resultIndex++] as Map<String, String?>?;
-        if (calendarConfig != null) {
-          _initializeCalendarBlocWithConfig(bloc, calendarConfig);
-          await configCache.saveCalendarConfig(calendarConfig);
-        }
-      }
+    } else {
+      _timed('CalendarSyncBloc.init (disabled)', () {
+        _initializeCalendarBlocWithConfig(bloc, const {'calendarId': null});
+      });
     }
 
     // Initialize repositories
@@ -270,9 +243,6 @@ Future<void> _initialize() async {
         _hideSplashScreen();
       });
     }
-
-    // Refresh cache in background (non-blocking)
-    _refreshConfigCacheInBackground(database, configCache);
 
     // Run archive check in background (non-blocking)
     _runArchiveCheckInBackground(repositories.event);
@@ -562,37 +532,31 @@ Future<Map<String, String?>?> _fetchCalendarConfigFromFirestore(
   }
 }
 
-/// Refresh config cache in background after app renders
-void _refreshConfigCacheInBackground(
-  FirestoreDatabase database,
-  ConfigCacheService configCache,
-) {
-  // Run after a short delay to not interfere with initial render
-  Future.delayed(const Duration(seconds: 2), () async {
-    try {
-      final results = await Future.wait([
-        database.getDriveConfig(),
-        database.getGoogleCalendarConfig(),
-      ]);
+/// Remove legacy cached config keys from browser storage.
+Future<void> _clearLegacyConfigCacheKeys() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await Future.wait([
+      prefs.remove('drive_config'),
+      prefs.remove('calendar_config'),
+      prefs.remove('test_drive_config'),
+      prefs.remove('test_calendar_config'),
+    ]);
 
-      final driveConfig = results[0] as Map<String, String?>?;
-      final calendarConfig = results[1] as Map<String, String?>?;
-
-      if (driveConfig != null) {
-        await configCache.saveDriveConfig(driveConfig);
-      }
-
-      if (calendarConfig != null) {
-        await configCache.saveCalendarConfig(calendarConfig);
-      }
-    } catch (e) {
-      developer.log(
-        'main.dart: Background config refresh failed: $e',
-        name: 'Main',
-        error: e,
-      );
+    if (kIsWeb) {
+      // Explicit cleanup of raw browser keys (SharedPreferences web prefix: "flutter.").
+      WebHelper.removeLocalStorageItem('flutter.drive_config');
+      WebHelper.removeLocalStorageItem('flutter.calendar_config');
+      WebHelper.removeLocalStorageItem('flutter.test_drive_config');
+      WebHelper.removeLocalStorageItem('flutter.test_calendar_config');
     }
-  });
+  } catch (e) {
+    developer.log(
+      'main.dart: Failed to clear legacy config cache keys: $e',
+      name: 'Main',
+      error: e,
+    );
+  }
 }
 
 /// Run archive check in background after app renders
