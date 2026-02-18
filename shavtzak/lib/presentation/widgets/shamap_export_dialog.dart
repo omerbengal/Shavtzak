@@ -44,6 +44,8 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
   bool _isFutureExpanded = true;
   bool _isPastExpanded = false;
 
+  final TextEditingController _shamapLocationController =
+      TextEditingController();
   final ScrollController _eventStepScrollController = ScrollController();
   final ScrollController _memberStepScrollController = ScrollController();
 
@@ -55,6 +57,7 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
 
   @override
   void dispose() {
+    _shamapLocationController.dispose();
     _eventStepScrollController.dispose();
     _memberStepScrollController.dispose();
     super.dispose();
@@ -119,9 +122,9 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
         ),
       ],
       child: AlertDialog(
-        actionsAlignment: _currentStep == 0
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.spaceBetween,
+        actionsAlignment: _currentStep == 2
+            ? MainAxisAlignment.spaceBetween
+            : MainAxisAlignment.end,
         title: Text(
           'ייצוא שמפים',
           textAlign: TextAlign.center,
@@ -155,7 +158,26 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
           child: const Text('ביטול', style: TextStyle(color: Colors.red)),
         ),
         ElevatedButton(
-          onPressed: _selectedEvent == null ? null : _goToMembersStep,
+          onPressed: _selectedEvent == null ? null : _goToLocationStep,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.teal,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('המשך'),
+        ),
+      ];
+    }
+
+    if (_currentStep == 1) {
+      final hasShamapLocation =
+          _shamapLocationController.text.trim().isNotEmpty;
+      return [
+        TextButton(
+          onPressed: () => _goToStep(0),
+          child: const Text('אחורה'),
+        ),
+        ElevatedButton(
+          onPressed: hasShamapLocation ? _goToMembersStep : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.teal,
             foregroundColor: Colors.white,
@@ -168,7 +190,7 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
     final selectedCount = _selectedMemberIds.length;
     return [
       TextButton(
-        onPressed: () => _goToStep(0),
+        onPressed: () => _goToStep(1),
         child: const Text('אחורה'),
       ),
       TextButton(
@@ -194,9 +216,9 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
   Widget _buildProgressIndicator() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(2, (index) {
+      children: List.generate(3, (index) {
         return Container(
-          width: 90,
+          width: 60,
           height: 4,
           margin: const EdgeInsets.symmetric(horizontal: 4),
           decoration: BoxDecoration(
@@ -213,6 +235,8 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
       case 0:
         return _buildEventSelectionStep();
       case 1:
+        return _buildShamapLocationStep();
+      case 2:
         return _buildTeamMemberSelectionStep();
       default:
         return const SizedBox.shrink();
@@ -236,7 +260,7 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'שלב 1 מתוך 2: בחירת אירוע',
+          'שלב 1 מתוך 3: בחירת אירוע',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -290,6 +314,61 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
               ],
             ),
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildShamapLocationStep() {
+    if (_selectedEvent == null) {
+      return _buildEmptyState(
+        icon: Icons.event_note,
+        message: 'יש לבחור אירוע לפני הזנת מיקום שמ"פ',
+      );
+    }
+
+    final eventLocation = _formatLocationForDisplay(_selectedEvent!.location);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'שלב 2 מתוך 3: מיקום שמ"פ',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.teal.shade700,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _buildSelectedEventSummary(_selectedEvent!),
+        const SizedBox(height: 14),
+        Text(
+          'מיקום האירוע הינו: $eventLocation\nמה מיקום השמ"פ?',
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.grey.shade800,
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _shamapLocationController,
+          autofocus: false,
+          maxLines: 1,
+          decoration: InputDecoration(
+            hintText: 'הקלד/י מיקום שמ"פ',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            isDense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+          onChanged: (_) {
+            setState(() {
+              _copied = false;
+            });
+          },
         ),
       ],
     );
@@ -428,8 +507,13 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
           ],
         ),
         onTap: () {
+          final isDifferentEvent = _selectedEvent?.id != event.id;
           setState(() {
             _selectedEvent = event;
+            if (isDifferentEvent) {
+              _shamapLocationController.clear();
+              _selectedMemberIds.clear();
+            }
             _copied = false;
           });
         },
@@ -456,7 +540,7 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'שלב 2 מתוך 2: בחירת אנשי צוות',
+          'שלב 3 מתוך 3: בחירת אנשי צוות',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -555,8 +639,14 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
     );
   }
 
+  void _goToLocationStep() {
+    if (_selectedEvent == null) return;
+    _goToStep(1);
+  }
+
   void _goToMembersStep() {
     if (_selectedEvent == null) return;
+    if (_shamapLocationController.text.trim().isEmpty) return;
 
     final selectedIds = _getAssignedMemberIdsForEvent(_selectedEvent!.id);
     setState(() {
@@ -566,7 +656,7 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
       _copied = false;
     });
 
-    _goToStep(1);
+    _goToStep(2);
   }
 
   void _goToStep(int step) {
@@ -578,7 +668,7 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
       if (!mounted) return;
       if (step == 0 && _eventStepScrollController.hasClients) {
         _eventStepScrollController.jumpTo(0);
-      } else if (step == 1 && _memberStepScrollController.hasClients) {
+      } else if (step == 2 && _memberStepScrollController.hasClients) {
         _memberStepScrollController.jumpTo(0);
       }
     });
@@ -632,9 +722,7 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
 
     if (selectedMembers.isEmpty) return;
 
-    final location = _sanitizeCell(_formatLocationForClipboard(
-      _selectedEvent!.location,
-    ));
+    final location = _sanitizeCell(_shamapLocationController.text);
     final startDate =
         app_date_utils.DateUtils.formatDate(_selectedEvent!.startDate);
     final endDate =
@@ -715,9 +803,10 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
     }
 
     _selectedEvent = null;
+    _shamapLocationController.clear();
     _selectedMemberIds.clear();
     _copied = false;
-    if (_currentStep == 1) {
+    if (_currentStep > 0) {
       _currentStep = 0;
     }
   }
