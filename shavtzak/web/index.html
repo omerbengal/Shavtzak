@@ -34,6 +34,10 @@
 
   <title>שבצק - ניהול צוות</title>
   <link rel="manifest" href="manifest.json">
+  <link rel="preload" href="assets/assets/fonts/Rubik-Regular.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="assets/assets/fonts/Rubik-Medium.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="assets/assets/fonts/Rubik-Bold.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="assets/fonts/MaterialIcons-Regular.otf" as="font" type="font/otf" crossorigin>
 
   <!-- Splash Screen Styles (inline for instant display) -->
   <style>
@@ -238,6 +242,50 @@
     <div class="splash-loading-text">טוען...</div>
   </div>
 
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    (async function bootstrapFlutterWithPreloadedRubik() {
+      if ('fonts' in document && 'FontFace' in window) {
+        const rubikFaces = [
+          { url: 'assets/assets/fonts/Rubik-Regular.ttf', weight: '400' },
+          { url: 'assets/assets/fonts/Rubik-Medium.ttf', weight: '500' },
+          { url: 'assets/assets/fonts/Rubik-Medium.ttf', weight: '600' },
+          { url: 'assets/assets/fonts/Rubik-Bold.ttf', weight: '700' },
+        ];
+        const materialIconsFace = {
+          url: 'assets/fonts/MaterialIcons-Regular.otf',
+          family: 'MaterialIcons',
+        };
+
+        try {
+          await Promise.all(rubikFaces.map(async (entry) => {
+            const face = new FontFace('Rubik', `url(${entry.url})`, {
+              weight: entry.weight,
+              style: 'normal',
+            });
+            await face.load();
+            document.fonts.add(face);
+          }));
+          const iconsFace = new FontFace(materialIconsFace.family, `url(${materialIconsFace.url})`);
+          await iconsFace.load();
+          document.fonts.add(iconsFace);
+
+          await Promise.all([
+            document.fonts.load('400 16px Rubik'),
+            document.fonts.load('500 16px Rubik'),
+            document.fonts.load('600 16px Rubik'),
+            document.fonts.load('700 16px Rubik'),
+            document.fonts.load('400 24px MaterialIcons'),
+          ]);
+        } catch (error) {
+          console.warn('Rubik web preload failed:', error);
+        }
+      }
+
+      const script = document.createElement('script');
+      script.src = 'flutter_bootstrap.js';
+      script.async = true;
+      document.body.appendChild(script);
+    })();
+  </script>
 </body>
 </html>

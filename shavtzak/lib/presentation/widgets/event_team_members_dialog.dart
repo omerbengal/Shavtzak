@@ -14,7 +14,6 @@ import '../bloc/role/role_state.dart';
 import '../../../core/services/service_locator.dart';
 
 /// Dialog showing all team members assigned to an event, grouped by role
-/// Excludes the current user from the list
 /// Uses the same UI layout as EventAssignmentsDialog
 class EventTeamMembersDialog extends StatefulWidget {
   final String eventId;
@@ -126,15 +125,12 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                       builder: (context, state) {
                         // If we have cached data and are still loading, show the cached data
                         if (state is AssignmentLoading && _cachedAssignments != null) {
-                          final filtered = _cachedAssignments!
-                              .where((a) => a.teamMemberId != widget.currentUserId)
-                              .toList();
-                          if (filtered.isEmpty) {
+                          if (_cachedAssignments!.isEmpty) {
                             return _hasShownData
                                 ? const Center(child: CircularProgressIndicator())
                                 : _buildEmptyState();
                           }
-                          return _buildAssignmentsList(context, filtered);
+                          return _buildAssignmentsList(context, _cachedAssignments!);
                         }
 
                         if (state is AssignmentLoading && _cachedAssignments == null) {
@@ -142,14 +138,13 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                         }
 
                         if (state is AssignmentsLoaded) {
-                          final filtered = state.assignments
+                          final assignments = state.assignments
                               .where((a) => a.eventId == widget.eventId)
-                              .where((a) => a.teamMemberId != widget.currentUserId)
                               .toList();
-                          if (filtered.isEmpty) {
+                          if (assignments.isEmpty) {
                             return _buildEmptyState();
                           }
-                          return _buildAssignmentsList(context, filtered);
+                          return _buildAssignmentsList(context, assignments);
                         }
 
                         if (state is AssignmentError) {
@@ -273,6 +268,11 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
             ...assignments.map((assignment) {
               final member = assignment.teamMember;
               if (member == null) return const SizedBox.shrink();
+              final isCurrentUser = member.id == widget.currentUserId;
+              final hasPhoneNumber =
+                  (member.phoneNumber != null && member.phoneNumber!.isNotEmpty) ||
+                      (assignment.alternativePhoneNumber != null &&
+                          assignment.alternativePhoneNumber!.isNotEmpty);
 
               return Padding(
                 padding: const EdgeInsets.only(right: 28, bottom: 6),
@@ -284,18 +284,36 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                         Icon(
                           Icons.person_outline,
                           size: 18,
-                          color: Colors.grey.shade600,
+                          color: isCurrentUser
+                              ? Colors.green.shade700
+                              : Colors.grey.shade600,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            member.name,
-                            style: const TextStyle(fontSize: 16),
+                            isCurrentUser ? 'אני' : member.name,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight:
+                                  isCurrentUser ? FontWeight.bold : FontWeight.w400,
+                              color:
+                                  isCurrentUser ? Colors.green.shade700 : null,
+                            ),
                           ),
                         ),
-                        // Phone icon with fallback: member phone → assignment alternative phone
-                        if ((member.phoneNumber != null && member.phoneNumber!.isNotEmpty) ||
-                            (assignment.alternativePhoneNumber != null && assignment.alternativePhoneNumber!.isNotEmpty)) ...[
+                        // Current user: disabled phone icon.
+                        if (isCurrentUser) ...[
+                          Tooltip(
+                            message: 'לא ניתן להתקשר לעצמך 🙈',
+                            child: Icon(
+                              Icons.phone,
+                              size: 22,
+                              color: Colors.grey.shade400,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ] else if (hasPhoneNumber) ...[
+                          // Phone icon with fallback: member phone → assignment alternative phone
                           InkWell(
                             onTap: () => _makePhoneCall(
                               (member.phoneNumber != null && member.phoneNumber!.isNotEmpty)

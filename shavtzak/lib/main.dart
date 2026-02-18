@@ -53,7 +53,7 @@ import 'core/router/app_router.dart';
 // Theme
 import 'core/theme/app_theme.dart';
 
-void main() {
+Future<void> main() async {
   // CRITICAL: Capture the initial URL hash BEFORE any Flutter code runs (web only)
   // This is needed for the /db route to work correctly
   if (kIsWeb) {
@@ -61,6 +61,9 @@ void main() {
   }
 
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Ensure Rubik glyphs are registered before any Flutter text renders.
+  await _preloadStartupFonts();
 
   // Show loading screen immediately
   runApp(const LoadingApp());
@@ -133,9 +136,6 @@ Future<void> _initialize() async {
 
     final hasCachedUser = cachedUserKey != null && cachedUserKey.isNotEmpty;
 
-    // OPTIMIZATION 2: Run independent operations in parallel with Firebase/DB
-    final fontFuture = _preloadFont();
-
     // Firebase and DB must be sequential (DB depends on Firebase)
     await _timedAsync('Firebase.initializeApp', () async {
       await Firebase.initializeApp(
@@ -152,7 +152,7 @@ Future<void> _initialize() async {
     await _timedAsync(
         'FirestoreDatabase.initialize', () => database.initialize());
 
-    // Config cache checks (instant) - run in parallel with font completion
+    // Config cache checks (instant)
     final cacheResults =
         await _timedAsync('ConfigCacheService.getBoth', () async {
       return await Future.wait([
@@ -162,9 +162,6 @@ Future<void> _initialize() async {
     });
     final cachedDriveConfig = cacheResults[0] as Map<String, String?>?;
     final cachedCalendarConfig = cacheResults[1] as Map<String, String?>?;
-
-    // Ensure font is loaded
-    await _timedAsync('Font preload (await)', () => fontFuture);
 
     // Initialize services with cached configs
     if (cachedDriveConfig != null) {
@@ -267,9 +264,11 @@ Future<void> _initialize() async {
 
     totalSw.stop();
 
-    // Hide the HTML splash screen after Flutter renders (web only)
+    // Hide the HTML splash screen only after first Flutter frame.
     if (kIsWeb) {
-      _hideSplashScreen();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _hideSplashScreen();
+      });
     }
 
     // Refresh cache in background (non-blocking)
@@ -284,29 +283,33 @@ Future<void> _initialize() async {
   }
 }
 
+/// Preload critical fonts before first frame to avoid temporary tofu boxes.
+Future<void> _preloadStartupFonts() async {
+  const fontsToPreload = <({String assetPath, String family})>[
+    (assetPath: 'assets/fonts/Rubik-Regular.ttf', family: 'Rubik'),
+    (assetPath: 'assets/fonts/Rubik-Medium.ttf', family: 'Rubik'),
+    (assetPath: 'assets/fonts/Rubik-Bold.ttf', family: 'Rubik'),
+    (assetPath: 'fonts/MaterialIcons-Regular.otf', family: 'MaterialIcons'),
+  ];
+
+  try {
+    final futures = fontsToPreload.map((font) async {
+      final fontData = await rootBundle.load(font.assetPath);
+      await ui.loadFontFromList(
+        fontData.buffer.asUint8List(),
+        fontFamily: font.family,
+      );
+    });
+    await Future.wait(futures);
+  } catch (e) {
+    developer.log('Startup font preload failed: $e', name: 'Main');
+  }
+}
+
 /// Hide the HTML splash screen with a fade-out animation (web only)
 void _hideSplashScreen() {
   if (!kIsWeb) return;
   WebHelper.hideSplashScreen();
-}
-
-/// Preload custom Rubik font to prevent FOUT (Flash of Unstyled Text)
-Future<void> _preloadFont() async {
-  try {
-    // Load font bytes from assets
-    final fontData =
-        await rootBundle.load('assets/fonts/Rubik-VariableFont_wght.ttf');
-    // Register font with Flutter's rendering engine
-    await ui.loadFontFromList(
-      fontData.buffer.asUint8List(),
-      fontFamily: 'Rubik',
-    );
-    // Wait for font to be fully registered with rendering pipeline
-    await Future.delayed(const Duration(milliseconds: 50));
-  } catch (e) {
-    // Font loading failed, app will fall back to default system font
-    developer.log('Font preload failed: $e', name: 'Main');
-  }
 }
 
 class MyApp extends StatelessWidget {

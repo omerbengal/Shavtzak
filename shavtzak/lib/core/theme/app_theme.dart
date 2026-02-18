@@ -28,12 +28,18 @@ class AppTheme {
   static const Color textSecondary = Color(0xFF757575);
   static const Color textDisabled = Color(0xFFBDBDBD);
   static const Color textOnPrimary = Color(0xFFFFFFFF);
+  static const List<String> hebrewFontFallback = [
+    'Noto Sans Hebrew',
+    'Arial',
+    'sans-serif',
+  ];
 
   /// Light theme with RTL support
   static ThemeData get lightTheme {
     return ThemeData(
       // Font family for Hebrew support
       fontFamily: 'Rubik',
+      fontFamilyFallback: hebrewFontFallback,
 
       // Color scheme
       colorScheme: ColorScheme.light(

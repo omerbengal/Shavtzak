@@ -45,10 +45,47 @@ class _SummaryScreenState extends State<SummaryScreen> {
   }
 
   void _loadData() {
-    context.read<EventBloc>().add(const LoadEvents());
-    context.read<AssignmentBloc>().add(const LoadAssignments());
-    context.read<ChecklistBloc>().add(LoadChecklistItems());
-    context.read<CategoryBloc>().add(const LoadCategories());
+    final eventBloc = context.read<EventBloc>();
+    final assignmentBloc = context.read<AssignmentBloc>();
+    final checklistBloc = context.read<ChecklistBloc>();
+    final categoryBloc = context.read<CategoryBloc>();
+
+    if (_shouldLoadEvents(eventBloc.state)) {
+      eventBloc.add(const LoadEvents());
+    }
+    if (_shouldLoadAssignments(assignmentBloc.state)) {
+      assignmentBloc.add(const LoadAssignments());
+    }
+    if (_shouldLoadChecklistItems(checklistBloc.state)) {
+      checklistBloc.add(LoadChecklistItems());
+    }
+    if (_shouldLoadCategories(categoryBloc.state)) {
+      categoryBloc.add(const LoadCategories());
+    }
+  }
+
+  bool _shouldLoadEvents(EventState state) {
+    if (state is EventLoading) return false;
+    if (state is EventsLoaded) return state.searchQuery != null;
+    if (state is EventsEmpty) return state.isFiltered;
+    return true;
+  }
+
+  bool _shouldLoadAssignments(AssignmentState state) {
+    if (state is AssignmentLoading) return false;
+    if (state is AssignmentsLoaded) return state.filterType != 'all';
+    if (state is AssignmentsEmpty) return state.message != 'אין שיבוצים במערכת';
+    return true;
+  }
+
+  bool _shouldLoadChecklistItems(ChecklistState state) {
+    if (state is ChecklistLoading) return false;
+    return state is! ChecklistLoaded;
+  }
+
+  bool _shouldLoadCategories(CategoryState state) {
+    if (state is CategoryLoading) return false;
+    return state is! CategoriesLoaded;
   }
 
   @override

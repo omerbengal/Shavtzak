@@ -529,19 +529,17 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                             color: secondaryTextColor,
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 4),
                         Expanded(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: AlignmentDirectional.centerStart,
-                            child: RichText(
-                              text: _formatDateWithHighlight(
-                                _formatSingleDayDisplay(
-                                    event.startDate, isToday, isTomorrow),
-                                isUpcoming,
-                                context,
-                              ),
+                          child: Text.rich(
+                            _formatDateWithHighlight(
+                              _formatSingleDayDisplay(
+                                  event.startDate, isToday, isTomorrow),
+                              isUpcoming,
+                              context,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -572,19 +570,17 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                 color: secondaryTextColor,
                               ),
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 4),
                             Expanded(
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: AlignmentDirectional.centerStart,
-                                child: RichText(
-                                  text: _formatDateWithHighlight(
-                                    _formatSingleDayDisplay(
-                                        event.startDate, isToday, isTomorrow),
-                                    isUpcoming,
-                                    context,
-                                  ),
+                              child: Text.rich(
+                                _formatDateWithHighlight(
+                                  _formatSingleDayDisplay(
+                                      event.startDate, isToday, isTomorrow),
+                                  isUpcoming,
+                                  context,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
@@ -611,19 +607,17 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                 color: secondaryTextColor,
                               ),
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 4),
                             Expanded(
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: AlignmentDirectional.centerStart,
-                                child: RichText(
-                                  text: _formatDateWithHighlight(
-                                    _formatSingleDayDisplay(
-                                        event.endDate, false, false),
-                                    isUpcoming,
-                                    context,
-                                  ),
+                              child: Text.rich(
+                                _formatDateWithHighlight(
+                                  _formatSingleDayDisplay(
+                                      event.endDate, false, false),
+                                  isUpcoming,
+                                  context,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
@@ -671,8 +665,9 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                   Text(
                                     locationText,
                                     style: TextStyle(
-                                      fontSize: _getResponsiveFontSize(context),
-                                      fontWeight: FontWeight.bold,
+                                      fontSize: _getResponsiveFontSize(context,
+                                          minSize: 14.0, maxSize: 16.0),
+                                      fontWeight: FontWeight.w600,
                                       color: isUpcoming
                                           ? Colors.blue.shade900
                                           : Colors.grey.shade700,
@@ -821,14 +816,15 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                           color: secondaryTextColor,
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 4),
                       Text(
                         event.assemblyTime.isNotEmpty
                             ? event.assemblyTime
                             : 'טרם נקבעה',
                         style: TextStyle(
-                          fontSize: _getResponsiveFontSize(context),
-                          fontWeight: FontWeight.bold,
+                          fontSize: _getResponsiveFontSize(context,
+                              minSize: 14.0, maxSize: 16.0),
+                          fontWeight: FontWeight.w600,
                           color: isUpcoming
                               ? Colors.blue.shade900
                               : Colors.grey.shade700,
@@ -860,11 +856,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       'התכנסות קהל:',
                       style: TextStyle(
                         fontSize: _getResponsiveFontSize(context,
-                            minSize: 12.0, maxSize: 13.0),
-                        color: secondaryTextColor,
+                            minSize: 13.0, maxSize: 14.0),
+                        fontWeight: FontWeight.w600,
+                        color: textColor,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     Text(
                       event.startTime,
                       style: TextStyle(
@@ -895,11 +892,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       'תחילת המופע:',
                       style: TextStyle(
                         fontSize: _getResponsiveFontSize(context,
-                            minSize: 12.0, maxSize: 13.0),
-                        color: secondaryTextColor,
+                            minSize: 13.0, maxSize: 14.0),
+                        fontWeight: FontWeight.w600,
+                        color: textColor,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     Text(
                       event.actualShowStartTime,
                       style: TextStyle(
@@ -930,11 +928,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       'סיום:',
                       style: TextStyle(
                         fontSize: _getResponsiveFontSize(context,
-                            minSize: 12.0, maxSize: 13.0),
-                        color: secondaryTextColor,
+                            minSize: 13.0, maxSize: 14.0),
+                        fontWeight: FontWeight.w600,
+                        color: textColor,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     Text(
                       event.endTime,
                       style: TextStyle(
@@ -1192,7 +1191,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   TextSpan _formatDateWithHighlight(
       String dateText, bool isUpcoming, BuildContext context) {
     final color = isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700;
-    final responsiveFontSize = _getResponsiveFontSize(context);
+    final responsiveFontSize = _getResponsiveFontSize(context,
+        minSize: 14.0, maxSize: 16.0);
 
     if (dateText.contains('(היום)')) {
       final parts = dateText.split('(היום)');
@@ -1202,7 +1202,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             text: parts[0],
             style: TextStyle(
               fontSize: responsiveFontSize,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
               color: color,
             ),
           ),
@@ -1210,7 +1210,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             text: '(היום)',
             style: TextStyle(
               fontSize: responsiveFontSize,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
               color: Colors.red,
             ),
           ),
@@ -1219,7 +1219,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               text: parts[1],
               style: TextStyle(
                 fontSize: responsiveFontSize,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
                 color: color,
               ),
             ),
@@ -1235,7 +1235,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             text: parts[0],
             style: TextStyle(
               fontSize: responsiveFontSize,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
               color: color,
             ),
           ),
@@ -1243,7 +1243,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             text: '(מחר)',
             style: TextStyle(
               fontSize: responsiveFontSize,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
               color: Colors.red,
             ),
           ),
@@ -1252,7 +1252,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               text: parts[1],
               style: TextStyle(
                 fontSize: responsiveFontSize,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
                 color: color,
               ),
             ),
@@ -1265,7 +1265,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       text: dateText,
       style: TextStyle(
         fontSize: responsiveFontSize,
-        fontWeight: FontWeight.bold,
+        fontWeight: FontWeight.w600,
         color: color,
       ),
     );
