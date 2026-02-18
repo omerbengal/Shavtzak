@@ -40,7 +40,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
   void _checkAndShowPasscodeDialog(BuildContext context) {
     final state = context.read<UserSelectionBloc>().state;
     if (state is UserAuthenticated) {
-      final hasPasscode = state.user.passcode != null && state.user.passcode!.isNotEmpty;
+      final hasPasscode =
+          state.user.passcode != null && state.user.passcode!.isNotEmpty;
       if (!hasPasscode) {
         final cacheService = UserCacheService();
         if (!cacheService.hasPasscodeDialogBeenShownThisSession()) {
@@ -85,8 +86,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
 
               final isAdmin = state.isAdmin;
               final showManagementCard = isAdmin;
-              final showSummaryCard = isAdmin || state.user.canAccessSummaryScreen;
-              final cardCount = 1 + (showManagementCard ? 1 : 0) + (showSummaryCard ? 1 : 0);
+              final showSummaryCard =
+                  isAdmin || state.user.canAccessSummaryScreen;
+              final cardCount =
+                  1 + (showManagementCard ? 1 : 0) + (showSummaryCard ? 1 : 0);
 
               return LayoutBuilder(
                 builder: (context, constraints) {
@@ -95,11 +98,13 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                   final screenHeight = constraints.maxHeight;
 
                   // Responsive card width
-                  final cardWidth = screenWidth > 400 ? 350.0 : screenWidth * 0.85;
+                  final cardWidth =
+                      screenWidth > 400 ? 350.0 : screenWidth * 0.85;
 
                   // Determine if we need compact mode based on available height
                   final isCompact = cardCount > 2 && screenHeight < 600;
-                  final cardSpacing = isCompact ? 8.0 : (cardCount > 2 ? 12.0 : 16.0);
+                  final cardSpacing =
+                      isCompact ? 8.0 : (cardCount > 2 ? 12.0 : 16.0);
 
                   return Center(
                     child: SingleChildScrollView(
@@ -136,7 +141,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                               title: 'איזור אישי',
                               subtitle: 'צפה בשיבוצים ובקשות מגבלות',
                               isCompact: isCompact,
-                              onTap: () => context.go('$envPrefix/user/assignments'),
+                              onTap: () =>
+                                  context.go('$envPrefix/user/assignments'),
                             ),
 
                             SizedBox(height: cardSpacing),
@@ -145,7 +151,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                             if (showManagementCard) ...[
                               BlocBuilder<TeamBloc, TeamState>(
                                 builder: (context, teamState) {
-                                  final pendingCount = _countPendingConstraints(teamState);
+                                  final pendingCount =
+                                      _countPendingConstraints(teamState);
                                   return _buildChoiceCard(
                                     width: cardWidth,
                                     icon: Icons.admin_panel_settings,
@@ -153,7 +160,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                     title: 'ניהול שבצק',
                                     subtitle: 'ניהול צוות, אירועים ושיבוצים',
                                     isCompact: isCompact,
-                                    onTap: () => context.go('$envPrefix/admin/team-members'),
+                                    onTap: () => context
+                                        .go('$envPrefix/admin/team-members'),
                                     badgeCount: pendingCount,
                                   );
                                 },
@@ -305,7 +313,15 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
             );
           }
 
+          final hasLeadingCalendar = state.isAdmin;
+          final hasLeadingFullExport =
+              state.isAdmin && DriveService.instance.isInitialized;
+          final leadingIconCount =
+              (hasLeadingCalendar ? 1 : 0) + (hasLeadingFullExport ? 1 : 0);
+
           return AppBar(
+            leadingWidth:
+                leadingIconCount == 0 ? 0 : (leadingIconCount * 40.0) + 8.0,
             title: Text(
               'שלום, ${state.user.name}',
               textAlign: TextAlign.center,
@@ -313,38 +329,49 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
               overflow: TextOverflow.ellipsis,
             ),
             centerTitle: true,
-            leading: const SizedBox.shrink(), // Prevent automatic back arrow
+            leading: leadingIconCount == 0
+                ? const SizedBox.shrink()
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (hasLeadingCalendar)
+                        IconButton(
+                          icon: const Icon(Icons.calendar_month),
+                          tooltip: 'הגדרות יומן גוגל',
+                          onPressed: () =>
+                              _showGoogleCalendarSettingsDialog(context),
+                          iconSize: 22,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 6),
+                          constraints:
+                              const BoxConstraints(minWidth: 40, minHeight: 44),
+                        ),
+                      if (hasLeadingFullExport)
+                        IconButton(
+                          icon: const Icon(Icons.storage),
+                          tooltip: 'ייצוא בסיס נתונים',
+                          onPressed: () => _showFullExportDialog(context),
+                          iconSize: 22,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 6),
+                          constraints:
+                              const BoxConstraints(minWidth: 40, minHeight: 44),
+                        ),
+                    ],
+                  ),
             actions: [
-              // Google Calendar settings (admin only)
-              if (state.isAdmin) ...[
-                IconButton(
-                  icon: const Icon(Icons.calendar_month),
-                  tooltip: 'הגדרות יומן גוגל',
-                  onPressed: () => _showGoogleCalendarSettingsDialog(context),
-                  iconSize: 22,
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                  constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
-                ),
-              ],
               // Export buttons (admin only, when Drive is initialized)
               if (state.isAdmin && DriveService.instance.isInitialized) ...[
-                // Full DB export button (database icon)
-                IconButton(
-                  icon: const Icon(Icons.storage),
-                  tooltip: 'ייצוא בסיס נתונים',
-                  onPressed: () => _showFullExportDialog(context),
-                  iconSize: 22,
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                  constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
-                ),
                 // Assignments-only export button (cloud icon)
                 IconButton(
                   icon: const Icon(Icons.cloud),
                   tooltip: 'ייצוא שיבוצים',
                   onPressed: () => _showAssignmentsExportDialog(context),
                   iconSize: 22,
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                  constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  constraints:
+                      const BoxConstraints(minWidth: 40, minHeight: 44),
                 ),
               ],
               IconButton(
@@ -426,7 +453,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
   }
 
   /// Perform the actual export
-  Future<void> _performExport(BuildContext context, {required bool isFullExport}) async {
+  Future<void> _performExport(BuildContext context,
+      {required bool isFullExport}) async {
     // Show loading dialog and capture its context
     if (!context.mounted) return;
     BuildContext? dialogContext;
@@ -444,7 +472,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
               children: [
                 const CircularProgressIndicator(),
                 const SizedBox(height: 16),
-                Text(isFullExport ? 'מייצא בסיס נתונים...' : 'מייצא שיבוצים...'),
+                Text(
+                    isFullExport ? 'מייצא בסיס נתונים...' : 'מייצא שיבוצים...'),
               ],
             ),
           ),
@@ -491,23 +520,28 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                     Icon(Icons.check_circle, color: Colors.green),
                     SizedBox(width: 8),
                     Expanded(
-                      child: Text('הייצוא הושלם בהצלחה', overflow: TextOverflow.ellipsis),
+                      child: Text('הייצוא הושלם בהצלחה',
+                          overflow: TextOverflow.ellipsis),
                     ),
                   ],
                 ),
-                content: const Text('הגיליון נוצר בתיקיית שבצק ב-Google Drive.'),
+                content:
+                    const Text('הגיליון נוצר בתיקיית שבצק ב-Google Drive.'),
                 actions: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8.0, vertical: 8.0),
                     child: Row(
                       children: [
                         Expanded(
                           child: SizedBox(
                             height: 48,
                             child: TextButton(
-                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(),
                               style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
                               ),
                               child: const Text(
                                 'סגירה',
@@ -524,7 +558,9 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                             child: ElevatedButton.icon(
                               icon: Icon(
                                 _copied ? Icons.check_circle : Icons.copy,
-                                color: _copied ? const Color(0xFF00E676) : Colors.white,
+                                color: _copied
+                                    ? const Color(0xFF00E676)
+                                    : Colors.white,
                                 size: 16,
                               ),
                               label: const Text(
@@ -532,7 +568,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                 style: TextStyle(fontSize: 12),
                               ),
                               onPressed: () async {
-                                await Clipboard.setData(ClipboardData(text: url));
+                                await Clipboard.setData(
+                                    ClipboardData(text: url));
                                 setState(() => _copied = true);
                                 // Reset after 2 seconds
                                 Future.delayed(const Duration(seconds: 2), () {
@@ -544,7 +581,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
                               ),
                             ),
                           ),
@@ -556,12 +594,14 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                             child: ElevatedButton(
                               onPressed: () {
                                 Navigator.of(dialogContext).pop();
-                                launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                                launchUrl(Uri.parse(url),
+                                    mode: LaunchMode.externalApplication);
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
                               ),
                               child: const Text(
                                 'פתח גיליון',
@@ -726,7 +766,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                 ),
                 actions: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     child: Row(
                       children: [
                         Expanded(
@@ -748,7 +789,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                           child: SizedBox(
                             height: 52,
                             child: TextButton(
-                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(),
                               child: const Text(
                                 'סגירה',
                                 textAlign: TextAlign.center,
@@ -794,8 +836,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                       // Sign out with error handling
                                       try {
                                         await oauthService.signOut().timeout(
-                                          const Duration(seconds: 30),
-                                        );
+                                              const Duration(seconds: 30),
+                                            );
                                       } catch (e) {
                                         // Ignore sign-out errors
                                       }
@@ -852,7 +894,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                       // Attempt sign in with error handling
                                       bool success = false;
                                       try {
-                                        success = await oauthService.signIn().timeout(
+                                        success =
+                                            await oauthService.signIn().timeout(
                                           const Duration(seconds: 60),
                                           onTimeout: () {
                                             return false;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../domain/entities/assignment.dart';
+import '../../../../domain/entities/event.dart';
 import 'event_summary_tile.dart';
 
 /// Card widget showing a category with aggregated status data.
@@ -11,6 +12,7 @@ class CategorySummaryCard extends StatefulWidget {
   final String categoryName;
   final List<EventSummaryData> eventSummaries;
   final List<Assignment> allAssignments;
+  final List<Event> allEvents;
 
   const CategorySummaryCard({
     super.key,
@@ -18,6 +20,7 @@ class CategorySummaryCard extends StatefulWidget {
     required this.categoryName,
     required this.eventSummaries,
     required this.allAssignments,
+    required this.allEvents,
   });
 
   @override
@@ -29,19 +32,35 @@ class _CategorySummaryCardState extends State<CategorySummaryCard> {
 
   int get _totalUnfilledSlots =>
       widget.eventSummaries.fold(0, (sum, s) => sum + s.unfilledSlots);
+  int get _eventsWithMissingRolesCount =>
+      widget.eventSummaries.where((s) => s.unfilledSlots > 0).length;
   int get _totalPendingChecklist =>
       widget.eventSummaries.fold(0, (sum, s) => sum + s.pendingChecklistItems);
   int get _totalChecklistItems =>
       widget.eventSummaries.fold(0, (sum, s) => sum + s.totalChecklistItems);
-  bool get _hasIssues =>
-      widget.eventSummaries.any((s) => !s.isFullyStaffed || s.pendingChecklistItems > 0);
+  bool get _hasIssues => widget.eventSummaries
+      .any((s) => !s.isFullyStaffed || s.pendingChecklistItems > 0);
   bool get _allFullyStaffed =>
       widget.eventSummaries.every((s) => s.isFullyStaffed);
   bool get _hasChecklistItems => _totalChecklistItems > 0;
 
+  // Progress calculation
+  int get _totalSlots =>
+      widget.eventSummaries.fold(0, (sum, s) => sum + s.totalSlots);
+  int get _totalFilledSlots =>
+      widget.eventSummaries.fold(0, (sum, s) => sum + s.filledSlots);
+  double get _staffingPercentage {
+    if (_totalSlots == 0) return 100.0; // No quotas = 100%
+    return (_totalFilledSlots / _totalSlots) * 100;
+  }
+
+  int get _readyEventsCount =>
+      widget.eventSummaries.where((s) => s.isFullyStaffed).length;
+
   @override
   Widget build(BuildContext context) {
-    final headerColor = _hasIssues ? Colors.orange.shade50 : Colors.green.shade50;
+    final headerColor =
+        _hasIssues ? Colors.orange.shade50 : Colors.green.shade50;
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -54,14 +73,16 @@ class _CategorySummaryCardState extends State<CategorySummaryCard> {
             child: InkWell(
               onTap: () => setState(() => _isExpanded = !_isExpanded),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Title row
                     Row(
                       children: [
-                        Icon(Icons.folder, size: 20, color: Colors.grey.shade700),
+                        Icon(Icons.folder,
+                            size: 20, color: Colors.grey.shade700),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -74,13 +95,15 @@ class _CategorySummaryCardState extends State<CategorySummaryCard> {
                         ),
                         Text(
                           '${widget.eventSummaries.length} ${widget.eventSummaries.length == 1 ? "אירוע" : "אירועים"}',
-                          style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                          style: TextStyle(
+                              fontSize: 13, color: Colors.grey.shade700),
                         ),
                         const SizedBox(width: 8),
                         AnimatedRotation(
                           turns: _isExpanded ? 0.5 : 0.0,
                           duration: const Duration(milliseconds: 200),
-                          child: Icon(Icons.expand_more, color: Colors.grey.shade600),
+                          child: Icon(Icons.expand_more,
+                              color: Colors.grey.shade600),
                         ),
                       ],
                     ),
@@ -103,13 +126,18 @@ class _CategorySummaryCardState extends State<CategorySummaryCard> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                         child: Column(
-                          children: widget.eventSummaries.map((summary) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: EventSummaryTile(
-                              data: summary,
-                              allAssignments: widget.allAssignments,
-                            ),
-                          )).toList(),
+                          children: widget.eventSummaries
+                              .map((summary) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: EventSummaryTile(
+                                      key: ValueKey(
+                                          'summary_event_${summary.event.id}'),
+                                      data: summary,
+                                      allAssignments: widget.allAssignments,
+                                      allEvents: widget.allEvents,
+                                    ),
+                                  ))
+                              .toList(),
                         ),
                       ),
                     ],
@@ -122,27 +150,78 @@ class _CategorySummaryCardState extends State<CategorySummaryCard> {
   }
 
   Widget _buildStatusRow() {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 4,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Staffing status
-        _buildStatusChip(
-          icon: _allFullyStaffed ? Icons.check_circle : Icons.person_off,
-          label: _allFullyStaffed
-              ? 'כל האירועים מאוישים'
-              : '$_totalUnfilledSlots תפקידים חסרים',
-          color: _allFullyStaffed ? Colors.green : Colors.orange,
+        // Status chips row
+        Wrap(
+          spacing: 12,
+          runSpacing: 4,
+          children: [
+            // Staffing status
+            _buildStatusChip(
+              icon: _allFullyStaffed ? Icons.check_circle : Icons.person_off,
+              label: _allFullyStaffed
+                  ? 'כל האירועים מאוישים'
+                  : _eventsWithMissingRolesCount == 1
+                      ? '$_totalUnfilledSlots תפקידים חסרים באירוע אחד'
+                      : '$_totalUnfilledSlots תפקידים חסרים ב-$_eventsWithMissingRolesCount אירועים',
+              color: _allFullyStaffed ? Colors.green : Colors.orange,
+            ),
+            // Checklist status
+            if (_hasChecklistItems)
+              _buildStatusChip(
+                icon: _totalPendingChecklist == 0
+                    ? Icons.check_circle
+                    : Icons.pending,
+                label: _totalPendingChecklist == 0
+                    ? 'צ\'קליסט הושלם'
+                    : '$_totalPendingChecklist/$_totalChecklistItems פריטים ממתינים',
+                color:
+                    _totalPendingChecklist == 0 ? Colors.green : Colors.orange,
+              ),
+          ],
         ),
-        // Checklist status
-        if (_hasChecklistItems)
-          _buildStatusChip(
-            icon: _totalPendingChecklist == 0 ? Icons.check_circle : Icons.pending,
-            label: _totalPendingChecklist == 0
-                ? 'צ\'קליסט הושלם'
-                : '$_totalPendingChecklist/$_totalChecklistItems פריטים ממתינים',
-            color: _totalPendingChecklist == 0 ? Colors.green : Colors.orange,
+        const SizedBox(height: 8),
+        // Progress bar
+        _buildProgressBar(),
+        const SizedBox(height: 4),
+        // Quick stats
+        _buildQuickStats(),
+      ],
+    );
+  }
+
+  Widget _buildProgressBar() {
+    final percentage = _staffingPercentage;
+    final color = percentage >= 100
+        ? Colors.green
+        : percentage > 0
+            ? Colors.orange
+            : Colors.red;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(2),
+      child: LinearProgressIndicator(
+        value: percentage / 100,
+        backgroundColor: Colors.grey.shade200,
+        valueColor: AlwaysStoppedAnimation<Color>(color),
+        minHeight: 4,
+      ),
+    );
+  }
+
+  Widget _buildQuickStats() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          '$_readyEventsCount מתוך ${widget.eventSummaries.length} אירועים מוכנים',
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey.shade700,
           ),
+        ),
       ],
     );
   }

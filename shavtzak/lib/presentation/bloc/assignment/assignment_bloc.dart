@@ -87,6 +87,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentLoading());
 
     try {
+      // Stop slot-mode subscriptions to prevent mixed AssignmentSlotsLoaded
+      // updates while in "all assignments" mode.
+      await _assignmentSubscription?.cancel();
+      await _teamMemberSubscription?.cancel();
+      await _eventSubscription?.cancel();
+      await _roleSubscription?.cancel();
+
       // Use emit.forEach to subscribe to real-time stream
       await emit.forEach<List<Assignment>>(
         _repository.watchAssignments(),
@@ -245,9 +252,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       if (previousState is AssignmentsLoaded) {
         // Restart real-time listener based on current filter
         final currentState = previousState;
-        if (currentState.filterType == 'event' && currentState.filterId != null) {
+        if (currentState.filterType == 'event' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByEvent(currentState.filterId!));
-        } else if (currentState.filterType == 'person' && currentState.filterId != null) {
+        } else if (currentState.filterType == 'person' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByPerson(currentState.filterId!));
         } else {
           add(const LoadAssignments());
@@ -295,9 +304,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       if (previousState is AssignmentsLoaded) {
         // Restart real-time listener based on current filter
         final currentState = previousState;
-        if (currentState.filterType == 'event' && currentState.filterId != null) {
+        if (currentState.filterType == 'event' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByEvent(currentState.filterId!));
-        } else if (currentState.filterType == 'person' && currentState.filterId != null) {
+        } else if (currentState.filterType == 'person' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByPerson(currentState.filterId!));
         } else {
           add(const LoadAssignments());
@@ -334,7 +345,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Sync attendees for calendar event (will remove the deleted attendee)
       if (assignmentToDelete != null) {
-        _calendarSyncBloc?.add(SyncAttendeesForAppEvent(eventId: assignmentToDelete.eventId));
+        _calendarSyncBloc?.add(
+            SyncAttendeesForAppEvent(eventId: assignmentToDelete.eventId));
       }
 
       emit(const AssignmentOperationSuccess('השיבוץ נמחק בהצלחה'));
@@ -345,9 +357,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       if (previousState is AssignmentsLoaded) {
         // Restart real-time listener based on current filter
         final currentState = previousState;
-        if (currentState.filterType == 'event' && currentState.filterId != null) {
+        if (currentState.filterType == 'event' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByEvent(currentState.filterId!));
-        } else if (currentState.filterType == 'person' && currentState.filterId != null) {
+        } else if (currentState.filterType == 'person' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByPerson(currentState.filterId!));
         } else {
           add(const LoadAssignments());
@@ -376,9 +390,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Restart real-time listener based on current filter
       if (state is AssignmentsLoaded) {
         final currentState = state as AssignmentsLoaded;
-        if (currentState.filterType == 'event' && currentState.filterId != null) {
+        if (currentState.filterType == 'event' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByEvent(currentState.filterId!));
-        } else if (currentState.filterType == 'person' && currentState.filterId != null) {
+        } else if (currentState.filterType == 'person' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByPerson(currentState.filterId!));
         } else {
           add(const LoadAssignments());
@@ -452,7 +468,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final currentState = state as AssignmentsLoaded;
       if (currentState.filterType == 'event' && currentState.filterId != null) {
         add(LoadAssignmentsByEvent(currentState.filterId!));
-      } else if (currentState.filterType == 'person' && currentState.filterId != null) {
+      } else if (currentState.filterType == 'person' &&
+          currentState.filterId != null) {
         add(LoadAssignmentsByPerson(currentState.filterId!));
       } else {
         add(const LoadAssignments());
@@ -487,7 +504,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // OPTIMIZATION: Use time window instead of loading all events/assignments
       // This reduces initial load from 5000+ assignments to ~500 (90% reduction)
-      const pastWindow = Duration(days: 90);  // 3 months back
+      const pastWindow = Duration(days: 90); // 3 months back
       const futureWindow = Duration(days: 180); // 6 months forward
 
       final now = DateTime.now();
@@ -517,18 +534,22 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _repository.cacheCurrentAssignments(initialAssignments);
 
       // Emit the loaded state immediately with initial data
-      add(RebuildAssignmentSlotsFromData(initialAssignments, cachedEventsMap, cachedMembersMap, currentFilter));
+      add(RebuildAssignmentSlotsFromData(initialAssignments, cachedEventsMap,
+          cachedMembersMap, currentFilter));
 
       // Subscribe to real-time updates on assignments within time window
-      _assignmentSubscription = _repository.watchAssignmentsInTimeWindow(
+      _assignmentSubscription = _repository
+          .watchAssignmentsInTimeWindow(
         windowStart: windowStart,
         windowEnd: windowEnd,
-      ).listen(
+      )
+          .listen(
         (assignments) {
           // Cache current assignments for rebuild purposes
           _repository.cacheCurrentAssignments(assignments);
           // Rebuild slots using cached data - use _currentEventFilter to preserve user's filter
-          add(RebuildAssignmentSlotsFromData(assignments, cachedEventsMap, cachedMembersMap, _currentEventFilter));
+          add(RebuildAssignmentSlotsFromData(assignments, cachedEventsMap,
+              cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
           emit(AssignmentError('שגיאה בהאזנה לשיבוצים: $e'));
@@ -550,7 +571,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Update cache with fresh data
           _repository.cacheCurrentAssignments(freshAssignments);
           // Trigger rebuild with fresh data - use _currentEventFilter to preserve user's filter
-          add(RebuildAssignmentSlotsFromData(freshAssignments, cachedEventsMap, cachedMembersMap, _currentEventFilter));
+          add(RebuildAssignmentSlotsFromData(freshAssignments, cachedEventsMap,
+              cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
           emit(AssignmentError('שגיאה בהאזנה לחברי צוות: $e'));
@@ -558,10 +580,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       );
 
       // Also listen for event changes within time window
-      _eventSubscription = _eventRepository.watchEventsByDateRange(
+      _eventSubscription = _eventRepository
+          .watchEventsByDateRange(
         windowStart,
         windowEnd,
-      ).listen(
+      )
+          .listen(
         (updatedEvents) async {
           // Update event cache
           cachedEventsMap.clear();
@@ -580,7 +604,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Update cache with fresh data
           _repository.cacheCurrentAssignments(freshAssignments);
           // Trigger rebuild with fresh data - use _currentEventFilter to preserve user's filter
-          add(RebuildAssignmentSlotsFromData(freshAssignments, cachedEventsMap, cachedMembersMap, _currentEventFilter));
+          add(RebuildAssignmentSlotsFromData(freshAssignments, cachedEventsMap,
+              cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
           emit(AssignmentError('שגיאה בהאזנה לאירועים: $e'));
@@ -598,7 +623,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Update cache with fresh data
           _repository.cacheCurrentAssignments(freshAssignments);
           // Trigger rebuild with fresh data - use _currentEventFilter to preserve user's filter
-          add(RebuildAssignmentSlotsFromData(freshAssignments, cachedEventsMap, cachedMembersMap, _currentEventFilter));
+          add(RebuildAssignmentSlotsFromData(freshAssignments, cachedEventsMap,
+              cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
           emit(AssignmentError('שגיאה בהאזנה לתפקידים: $e'));
@@ -679,7 +705,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       if (operation.type == PendingOperationType.deleteAssignment) {
         deletedSlots.add(operation.slotKey);
       } else if (operation.type == PendingOperationType.createAssignment ||
-                 operation.type == PendingOperationType.updateAssignment) {
+          operation.type == PendingOperationType.updateAssignment) {
         // Slot has CREATE/UPDATE, so it's NOT deleted (remove from set if present)
         deletedSlots.remove(operation.slotKey);
       }
@@ -696,7 +722,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // This ensures member lists are recalculated even after operations expire
     for (final slotKey in deletedSlots) {
       final eventId = slotKey.split('_')[0];
-      operationsByEvent.putIfAbsent(eventId, () => []); // Add empty list if not present
+      operationsByEvent.putIfAbsent(
+          eventId, () => []); // Add empty list if not present
     }
 
     // Build a map of slots by event for efficient updates
@@ -733,9 +760,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         if (operation.type == PendingOperationType.deleteAssignment) {
           slotAssignments[slotKey] = null; // Slot is now empty
         } else if (operation.type == PendingOperationType.createAssignment ||
-                   operation.type == PendingOperationType.updateAssignment) {
+            operation.type == PendingOperationType.updateAssignment) {
           if (operation.optimisticAssignment != null) {
-            slotAssignments[slotKey] = operation.optimisticAssignment!.teamMemberId;
+            slotAssignments[slotKey] =
+                operation.optimisticAssignment!.teamMemberId;
           }
         }
       }
@@ -792,8 +820,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           currentAssignment: slot.currentAssignment,
           availableMembers: availableMembersMap.values.toList(),
           alreadyAssignedMembers: alreadyAssignedMembersMap.values.toList(),
-          hasDoubleAssignment: false,  // Will be recomputed
-          otherRoles: const [],  // Will be recomputed
+          hasDoubleAssignment: false, // Will be recomputed
+          otherRoles: const [], // Will be recomputed
         );
       }
     }
@@ -810,7 +838,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final eventSlots = slotsByEvent[dbSlot.event.id];
         final baseSlot = eventSlots != null
             ? eventSlots.firstWhere(
-                (s) => s.role.key == dbSlot.role.key && s.slotIndex == dbSlot.slotIndex,
+                (s) =>
+                    s.role.key == dbSlot.role.key &&
+                    s.slotIndex == dbSlot.slotIndex,
                 orElse: () => dbSlot,
               )
             : dbSlot;
@@ -831,7 +861,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final eventSlots = slotsByEvent[dbSlot.event.id];
         if (eventSlots != null) {
           final updatedSlot = eventSlots.firstWhere(
-            (s) => s.role.key == dbSlot.role.key && s.slotIndex == dbSlot.slotIndex,
+            (s) =>
+                s.role.key == dbSlot.role.key &&
+                s.slotIndex == dbSlot.slotIndex,
             orElse: () => dbSlot,
           );
           return updatedSlot;
@@ -844,7 +876,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final eventSlots = slotsByEvent[dbSlot.event.id];
         final baseSlot = eventSlots != null
             ? eventSlots.firstWhere(
-                (s) => s.role.key == dbSlot.role.key && s.slotIndex == dbSlot.slotIndex,
+                (s) =>
+                    s.role.key == dbSlot.role.key &&
+                    s.slotIndex == dbSlot.slotIndex,
                 orElse: () => dbSlot,
               )
             : dbSlot;
@@ -863,7 +897,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final eventSlots = slotsByEvent[dbSlot.event.id];
         final baseSlot = eventSlots != null
             ? eventSlots.firstWhere(
-                (s) => s.role.key == dbSlot.role.key && s.slotIndex == dbSlot.slotIndex,
+                (s) =>
+                    s.role.key == dbSlot.role.key &&
+                    s.slotIndex == dbSlot.slotIndex,
                 orElse: () => dbSlot,
               )
             : dbSlot;
@@ -883,21 +919,25 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // Re-run double assignment detection for affected events
     // This ensures hasDoubleAssignment and otherRoles are correct after optimistic updates
     for (final eventId in operationsByEvent.keys) {
-      final eventResultSlots = resultSlots.where((s) => s.event.id == eventId).toList();
+      final eventResultSlots =
+          resultSlots.where((s) => s.event.id == eventId).toList();
 
       for (final slot in eventResultSlots) {
         if (slot.isFilled) {
           // Check if member has allowMultipleAssignments - skip double assignment warning
           final teamMember = slot.currentAssignment!.teamMember;
-          final skipDoubleAssignmentWarning = teamMember?.allowMultipleAssignments ?? false;
+          final skipDoubleAssignmentWarning =
+              teamMember?.allowMultipleAssignments ?? false;
 
           // Check if this person has other assignments in the same event
-          final otherAssignments = eventResultSlots.where((s) =>
-              s.event.id == slot.event.id &&
-              s.isFilled &&
-              s.currentAssignment!.teamMemberId ==
-                  slot.currentAssignment!.teamMemberId &&
-              s.role.key != slot.role.key).toList();
+          final otherAssignments = eventResultSlots
+              .where((s) =>
+                  s.event.id == slot.event.id &&
+                  s.isFilled &&
+                  s.currentAssignment!.teamMemberId ==
+                      slot.currentAssignment!.teamMemberId &&
+                  s.role.key != slot.role.key)
+              .toList();
 
           if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
             // This person has multiple roles in this event
@@ -972,7 +1012,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Add attendee to calendar event if team member has email
       final teamMember = event.assignment.teamMember;
-      if (teamMember != null && teamMember.email != null && teamMember.email!.isNotEmpty) {
+      if (teamMember != null &&
+          teamMember.email != null &&
+          teamMember.email!.isNotEmpty) {
         _calendarSyncBloc?.add(AddAttendeeToAppEvent(
           eventId: event.assignment.eventId,
           email: teamMember.email!,
@@ -986,7 +1028,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: currentState.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
-      add(RebuildAssignmentSlots(preservedFilter: currentState.selectedEventIds));
+      add(RebuildAssignmentSlots(
+          preservedFilter: currentState.selectedEventIds));
     } catch (e) {
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
@@ -1046,7 +1089,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: currentState.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
-      add(RebuildAssignmentSlots(preservedFilter: currentState.selectedEventIds));
+      add(RebuildAssignmentSlots(
+          preservedFilter: currentState.selectedEventIds));
     } catch (e) {
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
@@ -1097,7 +1141,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // Execute database operation
     try {
       // Get assignment info BEFORE deleting for calendar sync
-      final assignmentToDelete = await _repository.getAssignmentById(event.assignmentId);
+      final assignmentToDelete =
+          await _repository.getAssignmentById(event.assignmentId);
 
       await _repository.deleteAssignment(event.assignmentId);
 
@@ -1106,7 +1151,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Sync calendar attendees (will remove the deleted attendee)
       if (assignmentToDelete != null) {
-        _calendarSyncBloc?.add(SyncAttendeesForAppEvent(eventId: assignmentToDelete.eventId));
+        _calendarSyncBloc?.add(
+            SyncAttendeesForAppEvent(eventId: assignmentToDelete.eventId));
       }
 
       // CRITICAL FIX: Remove pending operation after successful delete
@@ -1116,7 +1162,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: currentState.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
-      add(RebuildAssignmentSlots(preservedFilter: currentState.selectedEventIds));
+      add(RebuildAssignmentSlots(
+          preservedFilter: currentState.selectedEventIds));
     } catch (e) {
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
@@ -1142,7 +1189,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final now = DateTime.now();
       // Only include events where end date >= today (start of day)
       final todayStart = DateTime(now.year, now.month, now.day);
-      events = events.where((event) => event.endDate.isAfter(todayStart.subtract(const Duration(days: 1)))).toList();
+      events = events
+          .where((event) => event.endDate
+              .isAfter(todayStart.subtract(const Duration(days: 1))))
+          .toList();
     }
 
     // 3. Load all active team members
@@ -1162,167 +1212,171 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // 5. Build slots
     final slots = <AssignmentSlot>[];
 
-      for (final event in events) {
-        // Iterate through roles in sortOrder (not enum order)
-        for (final role in sortedRoles) {
-          final requiredCount = event.roleRequirements[role.key] ?? 0;
-          if (requiredCount == 0) continue; // Skip roles with 0 requirement
+    for (final event in events) {
+      // Iterate through roles in sortOrder (not enum order)
+      for (final role in sortedRoles) {
+        final requiredCount = event.roleRequirements[role.key] ?? 0;
+        if (requiredCount == 0) continue; // Skip roles with 0 requirement
 
-          // Get assignments for this event+role
-          final roleAssignments = assignments
-              .where((a) => a.eventId == event.id && a.roleType == role.key)
-              .toList();
+        // Get assignments for this event+role
+        final roleAssignments = assignments
+            .where((a) => a.eventId == event.id && a.roleType == role.key)
+            .toList();
 
-          // Create slots (one per required count)
-          for (int i = 0; i < requiredCount; i++) {
-            // Find if this slot is filled (match by slotIndex, not array position)
-            final assignment = roleAssignments
-                .cast<Assignment?>()
-                .firstWhere((a) => a?.slotIndex == i, orElse: () => null);
+        // Create slots (one per required count)
+        for (int i = 0; i < requiredCount; i++) {
+          // Find if this slot is filled (match by slotIndex, not array position)
+          final assignment = roleAssignments
+              .cast<Assignment?>()
+              .firstWhere((a) => a?.slotIndex == i, orElse: () => null);
 
-            // CRITICAL: Verify the assignment still exists in the fresh assignment list
-            // This prevents showing deleted assignments from stale cache
-            if (assignment != null) {
-              final stillExists = assignments.any((a) => a.id == assignment.id);
-              if (!stillExists) {
-                // Assignment was deleted, treat this slot as empty
-                continue;
-              }
+          // CRITICAL: Verify the assignment still exists in the fresh assignment list
+          // This prevents showing deleted assignments from stale cache
+          if (assignment != null) {
+            final stillExists = assignments.any((a) => a.id == assignment.id);
+            if (!stillExists) {
+              // Assignment was deleted, treat this slot as empty
+              continue;
             }
+          }
 
-            // Get all assignments for this event to check who's already assigned
-            final eventAssignments = assignments
-                .where((a) => a.eventId == event.id)
-                .toList();
-            final assignedMemberIds = eventAssignments
-                .map((a) => a.teamMemberId)
-                .toSet();
+          // Get all assignments for this event to check who's already assigned
+          final eventAssignments =
+              assignments.where((a) => a.eventId == event.id).toList();
+          final assignedMemberIds =
+              eventAssignments.map((a) => a.teamMemberId).toSet();
 
-            // Detect same-day assignments (members assigned to OTHER events on same day(s))
-            final sameDayAssignedMembersMap = <String, TeamMember>{};
-            final sameDayEventInfoMap = <String, List<String>>{};
+          // Detect same-day assignments (members assigned to OTHER events on same day(s))
+          final sameDayAssignedMembersMap = <String, TeamMember>{};
+          final sameDayEventInfoMap = <String, List<String>>{};
 
-            for (final otherAssignment in assignments) {
-              // Skip assignments to THIS event
-              if (otherAssignment.eventId == event.id) continue;
+          for (final otherAssignment in assignments) {
+            // Skip assignments to THIS event
+            if (otherAssignment.eventId == event.id) continue;
 
-              // Find the other event
-              final otherEvent = events.firstWhere(
-                (e) => e.id == otherAssignment.eventId,
-                orElse: () => event, // Fallback (shouldn't happen)
+            // Find the other event
+            final otherEvent = events.firstWhere(
+              (e) => e.id == otherAssignment.eventId,
+              orElse: () => event, // Fallback (shouldn't happen)
+            );
+
+            // Skip if event not found or is the same event
+            if (otherEvent.id == event.id) continue;
+
+            // Check if events share dates
+            if (_eventsShareDate(event, otherEvent)) {
+              final memberId = otherAssignment.teamMemberId;
+              final member = allMembers.firstWhere(
+                (m) => m.id == memberId,
+                orElse: () => allMembers.first, // Fallback
               );
 
-              // Skip if event not found or is the same event
-              if (otherEvent.id == event.id) continue;
-
-              // Check if events share dates
-              if (_eventsShareDate(event, otherEvent)) {
-                final memberId = otherAssignment.teamMemberId;
-                final member = allMembers.firstWhere(
-                  (m) => m.id == memberId,
-                  orElse: () => allMembers.first, // Fallback
-                );
-
-                // Only add if member has the capability for current role and doesn't allow multiple assignments
-                if (member.canPerformRole(role.key) && !member.allowMultipleAssignments) {
-                  // Check availability (same logic as normal available members)
-                  final isAvailable = member.isAvailableForEventWithTime(event);
-                  if (isAvailable) {
-                    sameDayAssignedMembersMap[memberId] = member;
-                    sameDayEventInfoMap.putIfAbsent(memberId, () => []);
-                    sameDayEventInfoMap[memberId]!.add(otherEvent.name);
-                  }
+              // Only add if member has the capability for current role and doesn't allow multiple assignments
+              if (member.canPerformRole(role.key) &&
+                  !member.allowMultipleAssignments) {
+                // Check availability (same logic as normal available members)
+                final isAvailable = member.isAvailableForEventWithTime(event);
+                if (isAvailable) {
+                  sameDayAssignedMembersMap[memberId] = member;
+                  sameDayEventInfoMap.putIfAbsent(memberId, () => []);
+                  sameDayEventInfoMap[memberId]!.add(otherEvent.name);
                 }
               }
             }
+          }
 
-            // Separate members into available (not assigned to this event)
-            // and already assigned (assigned to this event)
-            // Use Maps to prevent duplicates
-            final availableMembersMap = <String, TeamMember>{};
-            final alreadyAssignedMembersMap = <String, TeamMember>{};
+          // Separate members into available (not assigned to this event)
+          // and already assigned (assigned to this event)
+          // Use Maps to prevent duplicates
+          final availableMembersMap = <String, TeamMember>{};
+          final alreadyAssignedMembersMap = <String, TeamMember>{};
 
-            for (final member in allMembers) {
-              // Check capability
-              if (!member.canPerformRole(role.key)) continue;
+          for (final member in allMembers) {
+            // Check capability
+            if (!member.canPerformRole(role.key)) continue;
 
-              // Check availability for entire event duration (including time-based constraints)
-              // Skip availability check for members with allowMultipleAssignments
-              final isAvailable = member.isAvailableForEventWithTime(event);
-              if (!member.allowMultipleAssignments && !isAvailable) {
-                continue;
-              }
-
-              // Separate based on whether already assigned to this event
-              // Members with allowMultipleAssignments always go to available list
-              if (member.allowMultipleAssignments) {
-                availableMembersMap[member.id] = member;
-              } else if (assignedMemberIds.contains(member.id)) {
-                alreadyAssignedMembersMap[member.id] = member;
-              } else if (sameDayAssignedMembersMap.containsKey(member.id)) {
-                // Member is assigned to another event on the same day - don't add to available
-                continue;
-              } else {
-                availableMembersMap[member.id] = member;
-              }
+            // Check availability for entire event duration (including time-based constraints)
+            // Skip availability check for members with allowMultipleAssignments
+            final isAvailable = member.isAvailableForEventWithTime(event);
+            if (!member.allowMultipleAssignments && !isAvailable) {
+              continue;
             }
 
-            final availableMembers = availableMembersMap.values.toList();
-            final alreadyAssignedMembers = alreadyAssignedMembersMap.values.toList();
-            final sameDayAssignedMembers = sameDayAssignedMembersMap.values.toList();
-
-            slots.add(AssignmentSlot(
-              event: event,
-              role: role,
-              slotIndex: i,
-              currentAssignment: assignment,
-              availableMembers: availableMembers,
-              alreadyAssignedMembers: alreadyAssignedMembers,
-              sameDayAssignedMembers: sameDayAssignedMembers,
-              sameDayEventInfo: sameDayEventInfoMap,
-            ));
+            // Separate based on whether already assigned to this event
+            // Members with allowMultipleAssignments always go to available list
+            if (member.allowMultipleAssignments) {
+              availableMembersMap[member.id] = member;
+            } else if (assignedMemberIds.contains(member.id)) {
+              alreadyAssignedMembersMap[member.id] = member;
+            } else if (sameDayAssignedMembersMap.containsKey(member.id)) {
+              // Member is assigned to another event on the same day - don't add to available
+              continue;
+            } else {
+              availableMembersMap[member.id] = member;
+            }
           }
+
+          final availableMembers = availableMembersMap.values.toList();
+          final alreadyAssignedMembers =
+              alreadyAssignedMembersMap.values.toList();
+          final sameDayAssignedMembers =
+              sameDayAssignedMembersMap.values.toList();
+
+          slots.add(AssignmentSlot(
+            event: event,
+            role: role,
+            slotIndex: i,
+            currentAssignment: assignment,
+            availableMembers: availableMembers,
+            alreadyAssignedMembers: alreadyAssignedMembers,
+            sameDayAssignedMembers: sameDayAssignedMembers,
+            sameDayEventInfo: sameDayEventInfoMap,
+          ));
         }
       }
+    }
 
-      // 6. Detect double assignments (person assigned to multiple roles in same event)
-      // Skip for members with allowMultipleAssignments since it's expected behavior
-      final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
-      for (final slot in slots) {
-        if (slot.isFilled) {
-          // Check if member has allowMultipleAssignments - skip double assignment warning
-          final teamMember = slot.currentAssignment!.teamMember;
-          final skipDoubleAssignmentWarning = teamMember?.allowMultipleAssignments ?? false;
+    // 6. Detect double assignments (person assigned to multiple roles in same event)
+    // Skip for members with allowMultipleAssignments since it's expected behavior
+    final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
+    for (final slot in slots) {
+      if (slot.isFilled) {
+        // Check if member has allowMultipleAssignments - skip double assignment warning
+        final teamMember = slot.currentAssignment!.teamMember;
+        final skipDoubleAssignmentWarning =
+            teamMember?.allowMultipleAssignments ?? false;
 
-          // Check if this person has other assignments in the same event
-          final otherAssignments = slots.where((s) =>
-              s.event.id == slot.event.id &&
-              s.isFilled &&
-              s.currentAssignment!.teamMemberId ==
-                  slot.currentAssignment!.teamMemberId &&
-              s.role.key != slot.role.key).toList();
+        // Check if this person has other assignments in the same event
+        final otherAssignments = slots
+            .where((s) =>
+                s.event.id == slot.event.id &&
+                s.isFilled &&
+                s.currentAssignment!.teamMemberId ==
+                    slot.currentAssignment!.teamMemberId &&
+                s.role.key != slot.role.key)
+            .toList();
 
-          if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
-            // This person has multiple roles in this event
-            final otherRoleNames =
-                otherAssignments.map((s) => s.role.hebrewName).toList();
-            slotsWithDoubleAssignmentDetection.add(AssignmentSlot(
-              event: slot.event,
-              role: slot.role,
-              slotIndex: slot.slotIndex,
-              currentAssignment: slot.currentAssignment,
-              availableMembers: slot.availableMembers,
-              alreadyAssignedMembers: slot.alreadyAssignedMembers,
-              hasDoubleAssignment: true,
-              otherRoles: otherRoleNames,
-            ));
-          } else {
-            slotsWithDoubleAssignmentDetection.add(slot);
-          }
+        if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
+          // This person has multiple roles in this event
+          final otherRoleNames =
+              otherAssignments.map((s) => s.role.hebrewName).toList();
+          slotsWithDoubleAssignmentDetection.add(AssignmentSlot(
+            event: slot.event,
+            role: slot.role,
+            slotIndex: slot.slotIndex,
+            currentAssignment: slot.currentAssignment,
+            availableMembers: slot.availableMembers,
+            alreadyAssignedMembers: slot.alreadyAssignedMembers,
+            hasDoubleAssignment: true,
+            otherRoles: otherRoleNames,
+          ));
         } else {
           slotsWithDoubleAssignmentDetection.add(slot);
         }
+      } else {
+        slotsWithDoubleAssignmentDetection.add(slot);
       }
+    }
 
     // 7. Sort slots by event date, then event name, then role sortOrder
     slotsWithDoubleAssignmentDetection.sort((a, b) {
@@ -1432,7 +1486,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       if (!FilterPersistence.showPastEvents) {
         final now = DateTime.now();
         final todayStart = DateTime(now.year, now.month, now.day);
-        filteredEvents = filteredEvents.where((e) => e.endDate.isAfter(todayStart.subtract(const Duration(days: 1)))).toList();
+        filteredEvents = filteredEvents
+            .where((e) =>
+                e.endDate.isAfter(todayStart.subtract(const Duration(days: 1))))
+            .toList();
       }
 
       // Build slots using the existing method
@@ -1447,9 +1504,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           final roleAssignments = rebuildEvent.assignments
               .where((a) => a.eventId == eventData.id && a.roleType == role.key)
               .map((a) => a.withRelations(
-                event: eventData,
-                teamMember: teamMembersMap[a.teamMemberId],
-              ))
+                    event: eventData,
+                    teamMember: teamMembersMap[a.teamMemberId],
+                  ))
               .toList();
 
           // Create slots (one per required count)
@@ -1463,9 +1520,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             final eventAssignments = rebuildEvent.assignments
                 .where((a) => a.eventId == eventData.id)
                 .toList();
-            final assignedMemberIds = eventAssignments
-                .map((a) => a.teamMemberId)
-                .toSet();
+            final assignedMemberIds =
+                eventAssignments.map((a) => a.teamMemberId).toSet();
 
             // Detect same-day assignments (members assigned to OTHER events on same day(s))
             final sameDayAssignedMembersMap = <String, TeamMember>{};
@@ -1490,9 +1546,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 if (member == null) continue;
 
                 // Only add if member has the capability for current role and doesn't allow multiple assignments
-                if (member.canPerformRole(role.key) && !member.allowMultipleAssignments) {
+                if (member.canPerformRole(role.key) &&
+                    !member.allowMultipleAssignments) {
                   // Check availability (same logic as normal available members)
-                  final isAvailable = member.isAvailableForEventWithTime(eventData);
+                  final isAvailable =
+                      member.isAvailableForEventWithTime(eventData);
                   if (isAvailable) {
                     sameDayAssignedMembersMap[memberId] = member;
                     sameDayEventInfoMap.putIfAbsent(memberId, () => []);
@@ -1536,8 +1594,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             }
 
             final availableMembers = availableMembersMap.values.toList();
-            final alreadyAssignedMembers = alreadyAssignedMembersMap.values.toList();
-            final sameDayAssignedMembers = sameDayAssignedMembersMap.values.toList();
+            final alreadyAssignedMembers =
+                alreadyAssignedMembersMap.values.toList();
+            final sameDayAssignedMembers =
+                sameDayAssignedMembersMap.values.toList();
 
             slots.add(AssignmentSlot(
               event: eventData,
@@ -1559,15 +1619,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         if (slot.isFilled) {
           // Check if member has allowMultipleAssignments - skip double assignment warning
           final teamMember = slot.currentAssignment!.teamMember;
-          final skipDoubleAssignmentWarning = teamMember?.allowMultipleAssignments ?? false;
+          final skipDoubleAssignmentWarning =
+              teamMember?.allowMultipleAssignments ?? false;
 
           // Check if this person has other assignments in the same event
-          final otherAssignments = slots.where((s) =>
-              s.event.id == slot.event.id &&
-              s.isFilled &&
-              s.currentAssignment!.teamMemberId ==
-                  slot.currentAssignment!.teamMemberId &&
-              s.role.key != slot.role.key).toList();
+          final otherAssignments = slots
+              .where((s) =>
+                  s.event.id == slot.event.id &&
+                  s.isFilled &&
+                  s.currentAssignment!.teamMemberId ==
+                      slot.currentAssignment!.teamMemberId &&
+                  s.role.key != slot.role.key)
+              .toList();
 
           if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
             // This person has multiple roles in this event
@@ -1605,7 +1668,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Apply filter if needed
       final filteredSlots = rebuildEvent.selectedEventIds.isNotEmpty
-          ? slotsWithDoubleAssignmentDetection.where((slot) => rebuildEvent.selectedEventIds.contains(slot.event.id)).toList()
+          ? slotsWithDoubleAssignmentDetection
+              .where((slot) =>
+                  rebuildEvent.selectedEventIds.contains(slot.event.id))
+              .toList()
           : slotsWithDoubleAssignmentDetection;
 
       // Remember the filter
@@ -1643,7 +1709,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Add attendee to calendar event if team member has email
       final teamMember = event.assignment.teamMember;
-      if (teamMember != null && teamMember.email != null && teamMember.email!.isNotEmpty) {
+      if (teamMember != null &&
+          teamMember.email != null &&
+          teamMember.email!.isNotEmpty) {
         _calendarSyncBloc?.add(AddAttendeeToAppEvent(
           eventId: event.assignment.eventId,
           email: teamMember.email!,
@@ -1658,9 +1726,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       if (previousState is AssignmentsLoaded) {
         // Restart real-time listener based on current filter
         final currentState = previousState;
-        if (currentState.filterType == 'event' && currentState.filterId != null) {
+        if (currentState.filterType == 'event' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByEvent(currentState.filterId!));
-        } else if (currentState.filterType == 'person' && currentState.filterId != null) {
+        } else if (currentState.filterType == 'person' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByPerson(currentState.filterId!));
         } else {
           add(const LoadAssignments());
@@ -1693,7 +1763,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _userEventSubscription?.cancel();
 
       // Subscribe to assignments stream for this user
-      _userAssignmentSubscription = _repository.watchAssignmentsByPerson(event.teamMemberId).listen(
+      _userAssignmentSubscription =
+          _repository.watchAssignmentsByPerson(event.teamMemberId).listen(
         (_) {
           add(RebuildUserAssignments(event.teamMemberId));
         },
@@ -1727,7 +1798,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   ) async {
     try {
       // Fetch fresh data from repository (with populated relations)
-      final assignments = await _repository.getAssignmentsByPerson(event.teamMemberId);
+      final assignments =
+          await _repository.getAssignmentsByPerson(event.teamMemberId);
 
       if (assignments.isEmpty) {
         emit(const AssignmentsEmpty('אין שיבוצים לחבר צוות זה'));
@@ -1752,7 +1824,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final previousState = state;
 
     try {
-      await _repository.updateAssignmentNotes(event.id, event.notes, alternativePhoneNumber: event.alternativePhoneNumber);
+      await _repository.updateAssignmentNotes(event.id, event.notes,
+          alternativePhoneNumber: event.alternativePhoneNumber);
       emit(const AssignmentOperationSuccess('הערות עודכנו בהצלחה'));
 
       // Trigger rebuild based on current view type
@@ -1762,9 +1835,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       } else if (previousState is AssignmentsLoaded) {
         // For list view, restart listener
         final currentState = previousState;
-        if (currentState.filterType == 'event' && currentState.filterId != null) {
+        if (currentState.filterType == 'event' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByEvent(currentState.filterId!));
-        } else if (currentState.filterType == 'person' && currentState.filterId != null) {
+        } else if (currentState.filterType == 'person' &&
+            currentState.filterId != null) {
           add(LoadAssignmentsByPerson(currentState.filterId!));
         } else {
           add(const LoadAssignments());
@@ -1781,13 +1856,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// Helper function to check if two events share at least one day
   bool _eventsShareDate(Event a, Event b) {
     // Normalize dates to day precision (ignore time)
-    final aStart = DateTime(a.startDate.year, a.startDate.month, a.startDate.day);
+    final aStart =
+        DateTime(a.startDate.year, a.startDate.month, a.startDate.day);
     final aEnd = DateTime(a.endDate.year, a.endDate.month, a.endDate.day);
-    final bStart = DateTime(b.startDate.year, b.startDate.month, b.startDate.day);
+    final bStart =
+        DateTime(b.startDate.year, b.startDate.month, b.startDate.day);
     final bEnd = DateTime(b.endDate.year, b.endDate.month, b.endDate.day);
 
     // Check for overlap: events overlap if one starts before the other ends
     return aStart.isBefore(bEnd.add(const Duration(days: 1))) &&
-           bStart.isBefore(aEnd.add(const Duration(days: 1)));
+        bStart.isBefore(aEnd.add(const Duration(days: 1)));
   }
 }

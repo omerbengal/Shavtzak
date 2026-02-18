@@ -20,6 +20,7 @@ import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/checklist/checklist_bloc.dart';
+import 'widgets/summary_header_cards.dart';
 import 'widgets/events_overview_chart.dart';
 import 'widgets/staffing_status_chart.dart';
 import 'widgets/checklist_compliance_chart.dart';
@@ -36,6 +37,7 @@ class SummaryScreen extends StatefulWidget {
 }
 
 class _SummaryScreenState extends State<SummaryScreen> {
+  List<Assignment> _lastKnownAssignments = const [];
 
   @override
   void initState() {
@@ -115,8 +117,10 @@ class _SummaryScreenState extends State<SummaryScreen> {
                     }
                   },
                   iconSize: 24,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  constraints:
+                      const BoxConstraints(minWidth: 56, minHeight: 44),
                 );
               },
             ),
@@ -150,13 +154,24 @@ class _SummaryScreenState extends State<SummaryScreen> {
               builder: (context, assignmentState) {
                 return BlocBuilder<ChecklistBloc, ChecklistState>(
                   builder: (context, checklistState) {
-                    // Check if data is still loading
-                    if (eventState is EventLoading ||
-                        eventState is EventInitial ||
-                        assignmentState is AssignmentLoading ||
-                        assignmentState is AssignmentInitial ||
+                    final isEventBlocking = eventState is EventLoading ||
+                        eventState is EventInitial;
+                    final isChecklistBlocking =
                         checklistState is ChecklistLoading ||
-                        checklistState is ChecklistInitial) {
+                            checklistState is ChecklistInitial;
+                    final hasAssignmentData =
+                        assignmentState is AssignmentsLoaded ||
+                            assignmentState is AssignmentSlotsLoaded ||
+                            _lastKnownAssignments.isNotEmpty;
+                    final isAssignmentBlocking =
+                        (assignmentState is AssignmentLoading ||
+                                assignmentState is AssignmentInitial) &&
+                            !hasAssignmentData;
+
+                    // Show loading only when we truly don't have data yet.
+                    if (isEventBlocking ||
+                        isChecklistBlocking ||
+                        isAssignmentBlocking) {
                       return const Center(
                         child: CircularProgressIndicator(),
                       );
@@ -166,9 +181,19 @@ class _SummaryScreenState extends State<SummaryScreen> {
                     final events = eventState is EventsLoaded
                         ? eventState.events
                         : <Event>[];
-                    final assignments = assignmentState is AssignmentsLoaded
-                        ? assignmentState.assignments
-                        : <Assignment>[];
+                    List<Assignment> assignments;
+                    if (assignmentState is AssignmentsLoaded) {
+                      assignments = assignmentState.assignments;
+                      _lastKnownAssignments = assignments;
+                    } else if (assignmentState is AssignmentSlotsLoaded) {
+                      assignments = assignmentState.slots
+                          .where((slot) => slot.currentAssignment != null)
+                          .map((slot) => slot.currentAssignment!)
+                          .toList();
+                      _lastKnownAssignments = assignments;
+                    } else {
+                      assignments = _lastKnownAssignments;
+                    }
                     final checklistItems = checklistState is ChecklistLoaded
                         ? checklistState.items
                         : <ChecklistItem>[];
@@ -198,7 +223,15 @@ class _SummaryScreenState extends State<SummaryScreen> {
                       checklistItems,
                     );
 
-                    return _buildContent(metrics, assignments, categories);
+                    // Compute summary cards data
+                    final summaryCardsData = computeSummaryCardsData(
+                      events,
+                      assignments,
+                      checklistItems,
+                    );
+
+                    return _buildContent(metrics, assignments, upcomingEvents,
+                        categories, summaryCardsData);
                   },
                 );
               },
@@ -209,12 +242,27 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
-  Widget _buildContent(_SummaryMetrics metrics, List<Assignment> assignments, List<Category> categories) {
+  Widget _buildContent(
+      _SummaryMetrics metrics,
+      List<Assignment> assignments,
+      List<Event> events,
+      List<Category> categories,
+      SummaryCardsData summaryCardsData) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isWideScreen = screenWidth >= 600;
 
     return CustomScrollView(
       slivers: [
+        // Section 0: Summary Cards (NEW - before charts)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: SummaryHeaderCards(data: summaryCardsData),
+          ),
+        ),
+        const SliverToBoxAdapter(
+          child: SizedBox(height: 8),
+        ),
         // Section 1: Charts
         SliverToBoxAdapter(
           child: Padding(
@@ -228,7 +276,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
           ),
         ),
         // Section 2: Event Tiles grouped by category
-        ..._buildGroupedEventTiles(metrics.eventSummaries, assignments, categories),
+        ..._buildGroupedEventTiles(
+            metrics.eventSummaries, assignments, events, categories),
         // Bottom padding
         const SliverToBoxAdapter(
           child: SizedBox(height: 16),
@@ -242,6 +291,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
   List<Widget> _buildGroupedEventTiles(
     List<EventSummaryData> eventSummaries,
     List<Assignment> assignments,
+    List<Event> events,
     List<Category> categories,
   ) {
     // Group event summaries by category
@@ -267,10 +317,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: CategorySummaryCard(
+            key: ValueKey('summary_category_${category.id}'),
             categoryId: category.id,
             categoryName: category.name,
             eventSummaries: summaries,
             allAssignments: assignments,
+            allEvents: events,
           ),
         ),
       ));
@@ -278,7 +330,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
     // Uncategorized events section (always last)
     if (groupedSummaries.containsKey(null) ||
-        groupedSummaries.keys.any((id) => id != null && !activeCategoryIds.contains(id))) {
+        groupedSummaries.keys
+            .any((id) => id != null && !activeCategoryIds.contains(id))) {
       final uncategorizedSummaries = <EventSummaryData>[
         ...groupedSummaries[null] ?? [],
         ...groupedSummaries.entries
@@ -290,10 +343,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: CategorySummaryCard(
+              key: const ValueKey('summary_category___uncategorized__'),
               categoryId: '__uncategorized__',
               categoryName: 'אירועים ללא קטגוריה',
               eventSummaries: uncategorizedSummaries,
               allAssignments: assignments,
+              allEvents: events,
             ),
           ),
         ));
