@@ -226,3 +226,9 @@ class OnTeamMemberEmailChanged extends CalendarSyncEvent {
 class BackfillConstraintEventAttendees extends CalendarSyncEvent {
   const BackfillConstraintEventAttendees();
 }
+
+/// Check calendar authentication on admin app entry.
+/// Runs once when the admin shell loads to detect manual reconnect needs early.
+class CheckCalendarAuthOnAdminAppLoad extends CalendarSyncEvent {
+  const CheckCalendarAuthOnAdminAppLoad();
+}

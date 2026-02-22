@@ -37,9 +37,11 @@ class GoogleOAuthService {
   /// Check if the service is initialized
   bool get isInitialized => _isInitialized;
 
-  /// Check if user is authenticated (has valid tokens)
+  /// Check if user is authenticated.
+  /// A stored refresh token means we can auto-refresh access tokens.
   bool get isAuthenticated {
-    return _accessToken != null && _refreshToken != null;
+    if (_refreshToken != null) return true;
+    return _accessToken != null && !_isTokenExpired();
   }
 
   /// Get authenticated user email
@@ -62,7 +64,10 @@ class GoogleOAuthService {
       );
 
       // Load OAuth credentials from Firestore
-      final doc = await _firestore.collection(_keysCollection).doc('googleCalendar').get();
+      final doc = await _firestore
+          .collection(_keysCollection)
+          .doc('googleCalendar')
+          .get();
 
       if (!doc.exists) {
         throw Exception('Google Calendar credentials not found in Firestore');
@@ -98,7 +103,10 @@ class GoogleOAuthService {
   /// Load stored OAuth tokens from Firestore
   Future<void> _loadStoredTokens() async {
     try {
-      final doc = await _firestore.collection(_keysCollection).doc('googleCalendarOAuth').get();
+      final doc = await _firestore
+          .collection(_keysCollection)
+          .doc('googleCalendarOAuth')
+          .get();
 
       if (doc.exists) {
         final data = doc.data()!;
@@ -154,7 +162,8 @@ class GoogleOAuthService {
   /// Returns true if successful, false otherwise
   Future<bool> signIn() async {
     if (!_isInitialized) {
-      throw StateError('GoogleOAuthService not initialized. Call initialize() first.');
+      throw StateError(
+          'GoogleOAuthService not initialized. Call initialize() first.');
     }
 
     try {
@@ -173,8 +182,10 @@ class GoogleOAuthService {
         'redirect_uri': redirectUri,
         'response_type': 'code',
         'scope': 'https://www.googleapis.com/auth/calendar email',
-        'access_type': 'offline', // CRITICAL: Request offline access for refresh token
-        'prompt': 'consent', // Force consent screen to ensure refresh token is issued
+        'access_type':
+            'offline', // CRITICAL: Request offline access for refresh token
+        'prompt':
+            'consent', // Force consent screen to ensure refresh token is issued
         'state': 'oauth_state_${DateTime.now().millisecondsSinceEpoch}',
       });
 
@@ -203,7 +214,6 @@ class GoogleOAuthService {
 
       // Exchange authorization code for tokens
       return await _exchangeCodeForTokens(authCode, redirectUri);
-
     } catch (e) {
       developer.log(
         'GoogleOAuthService: Sign-in failed - $e',
@@ -240,7 +250,8 @@ class GoogleOAuthService {
       final data = json.decode(response.body);
 
       _accessToken = data['access_token'] as String?;
-      _refreshToken = data['refresh_token'] as String?; // CRITICAL: Store refresh token
+      _refreshToken =
+          data['refresh_token'] as String?; // CRITICAL: Store refresh token
       final expiresIn = data['expires_in'] as int?;
 
       if (expiresIn != null) {
@@ -265,7 +276,6 @@ class GoogleOAuthService {
       await _storeTokens();
 
       return _accessToken != null && _refreshToken != null;
-
     } catch (e) {
       developer.log(
         'GoogleOAuthService: Token exchange failed - $e',
@@ -332,10 +342,16 @@ class GoogleOAuthService {
           error: response.body,
         );
 
-        // If refresh token is invalid, clear tokens
+        // Drop only the access token on refresh failure.
+        // Keep refresh token unless Google explicitly says it is invalid/revoked.
+        final isInvalidGrant = _isInvalidRefreshTokenResponse(response.body);
         _accessToken = null;
-        _refreshToken = null;
         _expiresAt = null;
+        if (isInvalidGrant) {
+          _refreshToken = null;
+          _authenticatedUserEmail = null;
+          await _clearStoredTokens();
+        }
         return;
       }
 
@@ -358,7 +374,6 @@ class GoogleOAuthService {
 
       // Store updated tokens
       await _storeTokens();
-
     } catch (e) {
       developer.log(
         'GoogleOAuthService: Token refresh failed - $e',
@@ -366,10 +381,89 @@ class GoogleOAuthService {
         error: e,
       );
 
-      // Clear invalid tokens
+      // Network/intermittent failure: keep refresh token for next automatic retry.
       _accessToken = null;
-      _refreshToken = null;
       _expiresAt = null;
+    }
+  }
+
+  bool _isInvalidRefreshTokenResponse(String responseBody) {
+    try {
+      final decoded = json.decode(responseBody);
+      if (decoded is Map<String, dynamic>) {
+        final error = (decoded['error'] as String?)?.toLowerCase();
+        final description =
+            (decoded['error_description'] as String?)?.toLowerCase();
+        if (error == 'invalid_grant') {
+          return true;
+        }
+        if ((description?.contains('revoked') ?? false) ||
+            (description?.contains('expired') ?? false)) {
+          return true;
+        }
+      }
+    } catch (_) {
+      // Ignore parse errors and fallback to string matching.
+    }
+
+    final lower = responseBody.toLowerCase();
+    return lower.contains('invalid_grant') ||
+        lower.contains('revoked') ||
+        lower.contains('expired');
+  }
+
+  Future<void> _clearStoredTokens() async {
+    try {
+      await _firestore
+          .collection(_keysCollection)
+          .doc('googleCalendarOAuth')
+          .delete();
+      developer.log(
+        'GoogleOAuthService: Cleared invalid stored OAuth tokens',
+        name: 'GoogleOAuth',
+      );
+    } catch (e) {
+      developer.log(
+        'GoogleOAuthService: Failed to clear stored OAuth tokens - $e',
+        name: 'GoogleOAuth',
+        error: e,
+      );
+    }
+  }
+
+  /// Attempt to restore tokens from Firestore in case current in-memory tokens
+  /// were dropped due a transient issue in this runtime.
+  Future<bool> _tryRestoreTokensFromFirestore() async {
+    try {
+      final doc = await _firestore
+          .collection(_keysCollection)
+          .doc('googleCalendarOAuth')
+          .get();
+      if (!doc.exists) {
+        return false;
+      }
+
+      final data = doc.data()!;
+      _accessToken = data['accessToken'] as String?;
+      _refreshToken = data['refreshToken'] as String?;
+      final expiresAtTimestamp = data['expiresAt'] as Timestamp?;
+      _expiresAt = expiresAtTimestamp?.toDate().toUtc();
+      _authenticatedUserEmail = data['authenticatedBy'] as String?;
+
+      developer.log(
+        'GoogleOAuthService: Recovered tokens from Firestore '
+        '(hasRefreshToken=${_refreshToken != null})',
+        name: 'GoogleOAuth',
+      );
+
+      return _accessToken != null || _refreshToken != null;
+    } catch (e) {
+      developer.log(
+        'GoogleOAuthService: Failed token recovery from Firestore - $e',
+        name: 'GoogleOAuth',
+        error: e,
+      );
+      return false;
     }
   }
 
@@ -379,7 +473,10 @@ class GoogleOAuthService {
       return;
     }
 
-    await _firestore.collection(_keysCollection).doc('googleCalendarOAuth').set({
+    await _firestore
+        .collection(_keysCollection)
+        .doc('googleCalendarOAuth')
+        .set({
       'accessToken': _accessToken,
       'refreshToken': _refreshToken,
       'expiresAt': _expiresAt != null ? Timestamp.fromDate(_expiresAt!) : null,
@@ -412,7 +509,10 @@ class GoogleOAuthService {
       _authenticatedUserEmail = null;
 
       // Delete stored tokens from Firestore
-      await _firestore.collection(_keysCollection).doc('googleCalendarOAuth').delete();
+      await _firestore
+          .collection(_keysCollection)
+          .doc('googleCalendarOAuth')
+          .delete();
 
       developer.log(
         'GoogleOAuthService: Signed out and cleared tokens',
@@ -431,7 +531,8 @@ class GoogleOAuthService {
   /// This is the magic - it auto-refreshes so the app always has a valid token!
   Future<String?> getAccessToken() async {
     if (!_isInitialized) {
-      throw StateError('GoogleOAuthService not initialized. Call initialize() first.');
+      throw StateError(
+          'GoogleOAuthService not initialized. Call initialize() first.');
     }
 
     // Check if we have a valid token
@@ -443,6 +544,18 @@ class GoogleOAuthService {
     if (_refreshToken != null) {
       await _refreshAccessToken();
       return _accessToken;
+    }
+
+    // Try recovering tokens from Firestore once before giving up.
+    final recovered = await _tryRestoreTokensFromFirestore();
+    if (recovered) {
+      if (_accessToken != null && !_isTokenExpired()) {
+        return _accessToken;
+      }
+      if (_refreshToken != null) {
+        await _refreshAccessToken();
+        return _accessToken;
+      }
     }
 
     // No refresh token, user needs to sign in again

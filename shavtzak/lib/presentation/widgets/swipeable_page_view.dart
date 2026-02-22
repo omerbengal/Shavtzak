@@ -53,7 +53,9 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
     final currentIndex = widget.navigationShell.currentIndex;
 
     // Check if we just navigated to the team page (index 1)
-    if (_previousIndex != null && _previousIndex != currentIndex && currentIndex == 1) {
+    if (_previousIndex != null &&
+        _previousIndex != currentIndex &&
+        currentIndex == 1) {
       // Just navigated to team page
       WidgetsBinding.instance.addPostFrameCallback((_) {
         onTeamPageVisible?.call();

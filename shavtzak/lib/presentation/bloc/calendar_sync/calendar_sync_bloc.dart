@@ -15,6 +15,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
   final DatabaseInterface _database;
   CalendarSyncService? _syncService;
   final GoogleCalendarService _calendarService;
+  bool _pendingAdminStartupAuthCheck = false;
 
   CalendarSyncBloc({
     required DatabaseInterface database,
@@ -39,6 +40,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     on<SyncAttendeesForAppEvent>(_onSyncAttendeesForAppEvent);
     on<OnTeamMemberEmailChanged>(_onTeamMemberEmailChanged);
     on<BackfillConstraintEventAttendees>(_onBackfillConstraintEventAttendees);
+    on<CheckCalendarAuthOnAdminAppLoad>(_onCheckCalendarAuthOnAdminAppLoad);
   }
 
   /// Initialize the calendar sync service
@@ -55,6 +57,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
           'CalendarSyncBloc: No calendar ID provided, sync disabled',
           name: 'CalendarSyncBloc',
         );
+        _pendingAdminStartupAuthCheck = false;
         emit(const CalendarSyncDisabled(
           reason: 'לא הוגדר מזהה יומן גוגל',
         ));
@@ -84,12 +87,20 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         isTestMode: _calendarService.isTestMode,
         failedSyncs: failedSyncs.length,
       ));
+
+      // If admin startup check was requested before initialization completed,
+      // run it now once the sync service is ready.
+      if (_pendingAdminStartupAuthCheck) {
+        _pendingAdminStartupAuthCheck = false;
+        add(const CheckCalendarAuthOnAdminAppLoad());
+      }
     } catch (e) {
       developer.log(
         'CalendarSyncBloc: Initialization failed - $e',
         name: 'CalendarSyncBloc',
         error: e,
       );
+      _pendingAdminStartupAuthCheck = false;
       emit(CalendarSyncInitializationFailed(errorMessage: e.toString()));
     }
   }
@@ -792,6 +803,35 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
       emit(CalendarSyncFailure(
         constraintId: 'constraint_attendee_backfill',
         errorMessage: 'עדכון המשתתפים הזמני נכשל: $e',
+      ));
+    }
+  }
+
+  /// Check calendar auth once when admin enters the app.
+  Future<void> _onCheckCalendarAuthOnAdminAppLoad(
+    CheckCalendarAuthOnAdminAppLoad event,
+    Emitter<CalendarSyncState> emit,
+  ) async {
+    // If calendar sync is not configured/initialized, skip the check silently.
+    if (_syncService == null) {
+      _pendingAdminStartupAuthCheck = true;
+      return;
+    }
+
+    try {
+      await _calendarService.ensureAuthenticatedForBatchOperation();
+    } catch (e) {
+      final rawError = e.toString();
+      final isAuthError = rawError.contains(
+        'Not authenticated. User must sign in with Google.',
+      );
+
+      emit(CalendarSyncFailure(
+        constraintId: 'calendar_startup_auth_check',
+        errorMessage: isAuthError
+            ? 'נדרש חיבור מחדש לגוגל קלנדר. יש להיכנס להגדרות יומן גוגל במסך הבית ולהתחבר מחדש.'
+            : 'בדיקת חיבור לגוגל קלנדר נכשלה: $rawError',
+        isRetryable: !isAuthError,
       ));
     }
   }

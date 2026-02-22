@@ -10,6 +10,9 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart' as team;
 import '../../bloc/team/team_state.dart';
+import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
+import '../../bloc/calendar_sync/calendar_sync_event.dart';
+import '../../bloc/calendar_sync/calendar_sync_state.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/export_service.dart';
@@ -30,11 +33,48 @@ class AdminChoiceScreen extends StatefulWidget {
 }
 
 class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
+  bool _hasRequestedAdminCalendarStartupCheck = false;
+  bool _hasAutoOpenedCalendarReconnectDialog = false;
+
   @override
   void initState() {
     super.initState();
     // Load team members to get pending constraint count for notification badge
     context.read<TeamBloc>().add(const team.LoadTeamMembers());
+  }
+
+  void _scheduleAdminCalendarStartupCheckIfNeeded() {
+    final authState = context.read<UserSelectionBloc>().state;
+
+    if (authState is UserAuthenticated && authState.isAdmin) {
+      if (_hasRequestedAdminCalendarStartupCheck) return;
+      _hasRequestedAdminCalendarStartupCheck = true;
+
+      final calendarState = context.read<CalendarSyncBloc>().state;
+      final shouldAutoOpenFromExistingState =
+          calendarState is CalendarSyncFailure &&
+              calendarState.constraintId == 'calendar_startup_auth_check' &&
+              !calendarState.isRetryable &&
+              !_hasAutoOpenedCalendarReconnectDialog;
+      if (shouldAutoOpenFromExistingState) {
+        _hasAutoOpenedCalendarReconnectDialog = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _showGoogleCalendarSettingsDialog(context);
+        });
+      }
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context
+            .read<CalendarSyncBloc>()
+            .add(const CheckCalendarAuthOnAdminAppLoad());
+      });
+      return;
+    }
+
+    _hasRequestedAdminCalendarStartupCheck = false;
+    _hasAutoOpenedCalendarReconnectDialog = false;
   }
 
   void _checkAndShowPasscodeDialog(BuildContext context) {
@@ -72,148 +112,166 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
   Widget build(BuildContext context) {
     // Check and show passcode dialog if user doesn't have one
     _checkAndShowPasscodeDialog(context);
+    _scheduleAdminCalendarStartupCheckIfNeeded();
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: _buildAppBar(context),
-        body: SafeArea(
-          child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
-            builder: (context, state) {
-              if (state is! UserAuthenticated) {
-                return const Center(child: CircularProgressIndicator());
-              }
+      child: BlocListener<CalendarSyncBloc, CalendarSyncState>(
+        listenWhen: (previous, current) =>
+            current is CalendarSyncFailure &&
+            current.constraintId == 'calendar_startup_auth_check',
+        listener: (context, state) {
+          if (state is! CalendarSyncFailure) return;
+          if (state.isRetryable) return;
+          if (_hasAutoOpenedCalendarReconnectDialog) return;
 
-              final isAdmin = state.isAdmin;
-              final showManagementCard = isAdmin;
-              final showSummaryCard =
-                  isAdmin || state.user.canAccessSummaryScreen;
-              final showShamapExportCard = state.user.canAccessShamapExport;
-              final cardCount = 1 +
-                  (showManagementCard ? 1 : 0) +
-                  (showSummaryCard ? 1 : 0) +
-                  (showShamapExportCard ? 1 : 0);
+          final authState = context.read<UserSelectionBloc>().state;
+          if (authState is! UserAuthenticated || !authState.isAdmin) return;
 
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  final envPrefix = EnvironmentService.instance.routePrefix;
-                  final screenWidth = constraints.maxWidth;
-                  final screenHeight = constraints.maxHeight;
+          _hasAutoOpenedCalendarReconnectDialog = true;
+          _showGoogleCalendarSettingsDialog(context);
+        },
+        child: Scaffold(
+          appBar: _buildAppBar(context),
+          body: SafeArea(
+            child: BlocBuilder<UserSelectionBloc, UserSelectionState>(
+              builder: (context, state) {
+                if (state is! UserAuthenticated) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-                  // Responsive card width
-                  final cardWidth =
-                      screenWidth > 400 ? 350.0 : screenWidth * 0.85;
+                final isAdmin = state.isAdmin;
+                final showManagementCard = isAdmin;
+                final showSummaryCard =
+                    isAdmin || state.user.canAccessSummaryScreen;
+                final showShamapExportCard = state.user.canAccessShamapExport;
+                final cardCount = 1 +
+                    (showManagementCard ? 1 : 0) +
+                    (showSummaryCard ? 1 : 0) +
+                    (showShamapExportCard ? 1 : 0);
 
-                  // Determine if we need compact mode based on available height
-                  final isCompact = cardCount > 2 && screenHeight < 600;
-                  final cardSpacing =
-                      isCompact ? 8.0 : (cardCount > 2 ? 12.0 : 16.0);
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final envPrefix = EnvironmentService.instance.routePrefix;
+                    final screenWidth = constraints.maxWidth;
+                    final screenHeight = constraints.maxHeight;
 
-                  return Center(
-                    child: SingleChildScrollView(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: isCompact ? 16 : 24,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'ברוכים הבאים לשבצק',
-                              style: TextStyle(
-                                fontSize: isCompact ? 26 : 32,
-                                fontWeight: FontWeight.bold,
+                    // Responsive card width
+                    final cardWidth =
+                        screenWidth > 400 ? 350.0 : screenWidth * 0.85;
+
+                    // Determine if we need compact mode based on available height
+                    final isCompact = cardCount > 2 && screenHeight < 600;
+                    final cardSpacing =
+                        isCompact ? 8.0 : (cardCount > 2 ? 12.0 : 16.0);
+
+                    return Center(
+                      child: SingleChildScrollView(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: isCompact ? 16 : 24,
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'ברוכים הבאים לשבצק',
+                                style: TextStyle(
+                                  fontSize: isCompact ? 26 : 32,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
-                            SizedBox(height: isCompact ? 8 : 16),
-                            Text(
-                              'באיזה כובע תרצה/י להיכנס?',
-                              style: TextStyle(
-                                fontSize: isCompact ? 16 : 18,
-                                color: Colors.grey,
+                              SizedBox(height: isCompact ? 8 : 16),
+                              Text(
+                                'באיזה כובע תרצה/י להיכנס?',
+                                style: TextStyle(
+                                  fontSize: isCompact ? 16 : 18,
+                                  color: Colors.grey,
+                                ),
                               ),
-                            ),
-                            SizedBox(height: isCompact ? 16 : 32),
+                              SizedBox(height: isCompact ? 16 : 32),
 
-                            // Personal Area Card (always shown)
-                            _buildChoiceCard(
-                              width: cardWidth,
-                              icon: Icons.person,
-                              iconColor: Colors.blue,
-                              title: 'איזור אישי',
-                              subtitle: 'צפה בשיבוצים ובקשות מגבלות',
-                              isCompact: isCompact,
-                              onTap: () =>
-                                  context.go('$envPrefix/user/assignments'),
-                            ),
-
-                            SizedBox(height: cardSpacing),
-
-                            // Management Card (admin only)
-                            if (showManagementCard) ...[
-                              BlocBuilder<TeamBloc, TeamState>(
-                                builder: (context, teamState) {
-                                  final pendingCount =
-                                      _countPendingConstraints(teamState);
-                                  return _buildChoiceCard(
-                                    width: cardWidth,
-                                    icon: Icons.admin_panel_settings,
-                                    iconColor: Colors.green,
-                                    title: 'ניהול שבצק',
-                                    subtitle: 'ניהול צוות, אירועים ושיבוצים',
-                                    isCompact: isCompact,
-                                    onTap: () => context
-                                        .go('$envPrefix/admin/team-members'),
-                                    badgeCount: pendingCount,
-                                  );
-                                },
+                              // Personal Area Card (always shown)
+                              _buildChoiceCard(
+                                width: cardWidth,
+                                icon: Icons.person,
+                                iconColor: Colors.blue,
+                                title: 'איזור אישי',
+                                subtitle: 'צפה בשיבוצים ובקשות מגבלות',
+                                isCompact: isCompact,
+                                onTap: () =>
+                                    context.go('$envPrefix/user/assignments'),
                               ),
+
                               SizedBox(height: cardSpacing),
-                            ],
 
-                            // Summary/Manager Screen Card
-                            if (showSummaryCard)
-                              _buildChoiceCard(
-                                width: cardWidth,
-                                icon: Icons.dashboard,
-                                iconColor: Colors.purple,
-                                title: 'מסך מנהלים',
-                                subtitle: 'צפה בסיכום כללי',
-                                isCompact: isCompact,
-                                onTap: () => context.go('$envPrefix/summary'),
-                              ),
-
-                            // Shamap export card
-                            if (showShamapExportCard) ...[
-                              if (showSummaryCard)
+                              // Management Card (admin only)
+                              if (showManagementCard) ...[
+                                BlocBuilder<TeamBloc, TeamState>(
+                                  builder: (context, teamState) {
+                                    final pendingCount =
+                                        _countPendingConstraints(teamState);
+                                    return _buildChoiceCard(
+                                      width: cardWidth,
+                                      icon: Icons.admin_panel_settings,
+                                      iconColor: Colors.green,
+                                      title: 'ניהול שבצק',
+                                      subtitle: 'ניהול צוות, אירועים ושיבוצים',
+                                      isCompact: isCompact,
+                                      onTap: () => context
+                                          .go('$envPrefix/admin/team-members'),
+                                      badgeCount: pendingCount,
+                                    );
+                                  },
+                                ),
                                 SizedBox(height: cardSpacing),
-                              _buildChoiceCard(
-                                width: cardWidth,
-                                icon: Icons.content_paste,
-                                iconColor: Colors.teal,
-                                title: 'ייצוא שמפים',
-                                subtitle: 'העתקת פרטי שמ"פ ללוח',
-                                isCompact: isCompact,
-                                onTap: () {
-                                  showDialog(
-                                    context: context,
-                                    builder: (context) => const Directionality(
-                                      textDirection: TextDirection.rtl,
-                                      child: ShamapExportDialog(),
-                                    ),
-                                  );
-                                },
-                              ),
+                              ],
+
+                              // Summary/Manager Screen Card
+                              if (showSummaryCard)
+                                _buildChoiceCard(
+                                  width: cardWidth,
+                                  icon: Icons.dashboard,
+                                  iconColor: Colors.purple,
+                                  title: 'מסך מנהלים',
+                                  subtitle: 'צפה בסיכום כללי',
+                                  isCompact: isCompact,
+                                  onTap: () => context.go('$envPrefix/summary'),
+                                ),
+
+                              // Shamap export card
+                              if (showShamapExportCard) ...[
+                                if (showSummaryCard)
+                                  SizedBox(height: cardSpacing),
+                                _buildChoiceCard(
+                                  width: cardWidth,
+                                  icon: Icons.content_paste,
+                                  iconColor: Colors.teal,
+                                  title: 'ייצוא שמפים',
+                                  subtitle: 'העתקת פרטי שמ"פ ללוח',
+                                  isCompact: isCompact,
+                                  onTap: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) =>
+                                          const Directionality(
+                                        textDirection: TextDirection.rtl,
+                                        child: ShamapExportDialog(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              );
-            },
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ),
       ),

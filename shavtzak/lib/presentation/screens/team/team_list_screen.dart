@@ -259,20 +259,21 @@ class _TeamListScreenState extends State<TeamListScreen> {
                           ),
                           backgroundColor: Colors.red,
                           duration: const Duration(seconds: 3),
-                          action: SnackBarAction(
-                            label: 'נסה שוב',
-                            textColor: Colors.white,
-                            onPressed: () {
-                              if (state.constraintId == 'bidirectional') {
-                                context
-                                    .read<CalendarSyncBloc>()
-                                    .add(const PerformBidirectionalSync());
-                              } else {
-                                context.read<CalendarSyncBloc>().add(
-                                    const BackfillConstraintEventAttendees());
-                              }
-                            },
-                          ),
+                          action: state.isRetryable
+                              ? SnackBarAction(
+                                  label: 'נסה שוב',
+                                  textColor: Colors.white,
+                                  onPressed: () {
+                                    if (state.constraintId == 'bidirectional') {
+                                      context.read<CalendarSyncBloc>().add(
+                                          const PerformBidirectionalSync());
+                                    } else {
+                                      context.read<CalendarSyncBloc>().add(
+                                          const BackfillConstraintEventAttendees());
+                                    }
+                                  },
+                                )
+                              : null,
                         ),
                       );
                   }

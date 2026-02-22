@@ -123,6 +123,11 @@ class GoogleCalendarService {
     }
   }
 
+  /// Public auth preflight for maintenance/batch operations.
+  Future<void> ensureAuthenticatedForBatchOperation() async {
+    await _ensureAuthenticated();
+  }
+
   /// Run a Calendar API call and retry once on 401 by forcing token refresh.
   Future<T> _withCalendarAuthRetry<T>(
     Future<T> Function() operation, {
@@ -155,9 +160,16 @@ class GoogleCalendarService {
     }
   }
 
-  Future<calendar.Event> _eventsInsert(calendar.Event event) {
+  Future<calendar.Event> _eventsInsert(
+    calendar.Event event, {
+    String? sendUpdates,
+  }) {
     return _withCalendarAuthRetry(
-      () => _calendarApi!.events.insert(event, _calendarId!),
+      () => _calendarApi!.events.insert(
+        event,
+        _calendarId!,
+        sendUpdates: sendUpdates,
+      ),
       operationName: 'events.insert',
     );
   }
@@ -294,6 +306,7 @@ class GoogleCalendarService {
         start: eventStart,
         end: eventEnd,
         recurrence: recurrenceRule != null ? [recurrenceRule] : null,
+        reminders: _buildConstraintEventReminders(),
         attendees:
             (teamMember.email != null && teamMember.email!.trim().isNotEmpty)
                 ? [calendar.EventAttendee(email: teamMember.email!.trim())]
@@ -312,7 +325,7 @@ class GoogleCalendarService {
         ),
       );
 
-      final createdEvent = await _eventsInsert(event);
+      final createdEvent = await _eventsInsert(event, sendUpdates: 'none');
 
       developer.log(
         'GoogleCalendarService: Created event ${createdEvent.id} for constraint $constraintId${_isTestMode ? ' [TEST MODE]' : ''}',
@@ -404,6 +417,7 @@ class GoogleCalendarService {
         start: eventStart,
         end: eventEnd,
         recurrence: recurrenceRule != null ? [recurrenceRule] : null,
+        reminders: _buildConstraintEventReminders(),
         attendees:
             (teamMember.email != null && teamMember.email!.trim().isNotEmpty)
                 ? [calendar.EventAttendee(email: teamMember.email!.trim())]
@@ -422,7 +436,7 @@ class GoogleCalendarService {
         ),
       );
 
-      await _eventsUpdate(event, calendarEventId);
+      await _eventsUpdate(event, calendarEventId, sendUpdates: 'none');
 
       developer.log(
         'GoogleCalendarService: Updated event $calendarEventId for constraint $constraintId${_isTestMode ? ' [TEST MODE]' : ''}',
@@ -538,6 +552,14 @@ class GoogleCalendarService {
           minutes: _allDayReminderMinutesBefore,
         ),
       ],
+    );
+  }
+
+  /// Constraint events should not trigger calendar reminders.
+  calendar.EventReminders _buildConstraintEventReminders() {
+    return calendar.EventReminders(
+      useDefault: false,
+      overrides: [],
     );
   }
 
