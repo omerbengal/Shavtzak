@@ -13,6 +13,7 @@ import '../bloc/team/team_state.dart';
 import '../bloc/assignment/assignment_bloc.dart';
 import '../bloc/assignment/assignment_event.dart';
 import '../bloc/assignment/assignment_state.dart';
+import 'map_location_picker.dart';
 
 /// Dialog for copying vehicle information to clipboard
 /// Allows admins to select team members and copy their vehicle details
@@ -196,6 +197,8 @@ class _VehicleInfoCopyDialogState extends State<VehicleInfoCopyDialog> {
                   itemBuilder: (context, index) {
                     final event = _futureEvents[index];
                     final isSelected = _selectedEvent?.id == event.id;
+                    final formattedLocation =
+                        _formatLocationForDisplay(event.location);
 
                     return Card(
                       elevation: isSelected ? 4 : 1,
@@ -212,7 +215,10 @@ class _VehicleInfoCopyDialogState extends State<VehicleInfoCopyDialog> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(event.dateRangeString),
-                            if (event.location.isNotEmpty) Text('מיקום: ${event.location}'),
+                            if (formattedLocation.isNotEmpty)
+                              Text(
+                                'מיקום: $formattedLocation',
+                              ),
                           ],
                         ),
                         onTap: () {
@@ -414,6 +420,36 @@ class _VehicleInfoCopyDialogState extends State<VehicleInfoCopyDialog> {
         },
       ),
     );
+  }
+
+  String _formatLocationForDisplay(String location) {
+    if (location.isEmpty) return '';
+
+    final strippedLocation = MapLocationResult.stripCoordinates(location).trim();
+    if (strippedLocation.isEmpty) return '';
+
+    // Remove trailing coordinate suffix in the format: "Name (lat, lng)"
+    final withoutTrailingCoordinates = strippedLocation
+        .replaceFirst(
+          RegExp(
+            r'\s*\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)\s*$',
+          ),
+          '',
+        )
+        .trim();
+    if (withoutTrailingCoordinates.isNotEmpty) {
+      return withoutTrailingCoordinates;
+    }
+
+    // If location is coordinates-only, keep display clean without lat/lng.
+    final isCoordinatesOnly = RegExp(
+      r'^\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*$',
+    ).hasMatch(strippedLocation);
+    if (isCoordinatesOnly) {
+      return 'נקודה במפה';
+    }
+
+    return strippedLocation;
   }
 
   void _copyToClipboard() {
