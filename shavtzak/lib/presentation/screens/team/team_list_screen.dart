@@ -107,6 +107,43 @@ class _TeamListScreenState extends State<TeamListScreen> {
     });
   }
 
+  DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+
+  bool _isConstraintPast(DateConstraint constraint) {
+    final todayDate = _dateOnly(DateTime.now());
+
+    if (constraint.repeatType != null && constraint.repeatEndDate != null) {
+      return _dateOnly(constraint.repeatEndDate!).isBefore(todayDate);
+    }
+
+    if (constraint.endDate != null) {
+      return _dateOnly(constraint.endDate!).isBefore(todayDate);
+    }
+
+    return _dateOnly(constraint.startDate).isBefore(todayDate);
+  }
+
+  bool _isConstraintFutureOrToday(DateConstraint constraint) {
+    return !_isConstraintPast(constraint);
+  }
+
+  bool _isConstraintRelevantForMember(
+    TeamMember member,
+    DateConstraint constraint,
+  ) {
+    if (member.isPermanent && constraint.isAvailability) return false;
+    if (!member.isPermanent && constraint.isUnavailability) return false;
+    return true;
+  }
+
+  bool _hasFuturePendingConstraints(TeamMember member) {
+    return member.constraints.any((constraint) {
+      return constraint.isPending() &&
+          _isConstraintRelevantForMember(member, constraint) &&
+          _isConstraintFutureOrToday(constraint);
+    });
+  }
+
   /// Handle phone number click with device-specific behavior
   Future<void> onPhoneClicked(String phoneNumber) async {
     // Remove any formatting characters (dashes, spaces)
@@ -388,13 +425,11 @@ class _TeamListScreenState extends State<TeamListScreen> {
 
     // Split into members with pending constraints and without
     final membersWithPending = filteredMembers
-        .where((m) =>
-            m.constraints.any((c) => c.status == ConstraintStatus.pending))
+        .where(_hasFuturePendingConstraints)
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
     final membersWithoutPending = filteredMembers
-        .where((m) =>
-            !m.constraints.any((c) => c.status == ConstraintStatus.pending))
+        .where((m) => !_hasFuturePendingConstraints(m))
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
 
@@ -690,38 +725,6 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   // Uses BlocBuilder<EventBloc> so the count updates in real time when event dates change
                   BlocBuilder<EventBloc, EventState>(
                     builder: (context, eventState) {
-                      // Helper function to check if constraint is past (same logic as admin modal)
-                      bool isPastConstraint(DateConstraint constraint) {
-                        if (constraint.endDate != null) {
-                          final today = DateTime.now();
-                          final constraintEndDate = DateTime(
-                            constraint.endDate!.year,
-                            constraint.endDate!.month,
-                            constraint.endDate!.day,
-                          );
-                          final todayDate = DateTime(
-                            today.year,
-                            today.month,
-                            today.day,
-                          );
-                          return constraintEndDate.isBefore(todayDate);
-                        } else {
-                          // For single-day constraints (no endDate), check if startDate is before today
-                          final today = DateTime.now();
-                          final constraintStartDate = DateTime(
-                            constraint.startDate.year,
-                            constraint.startDate.month,
-                            constraint.startDate.day,
-                          );
-                          final todayDate = DateTime(
-                            today.year,
-                            today.month,
-                            today.day,
-                          );
-                          return constraintStartDate.isBefore(todayDate);
-                        }
-                      }
-
                       // Non-permanent members: event-based availability (future events only)
                       if (!member.isPermanent) {
                         final now = DateTime.now();
@@ -759,7 +762,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
 
                       // Permanent members: constraint-based logic (exclude rejected)
                       final activeConstraints = member.constraints
-                          .where((c) => !isPastConstraint(c))
+                          .where((c) => !_isConstraintPast(c))
                           .where((c) => c.isUnavailability)
                           .where((c) => !c.isRejected())
                           .toList();
@@ -3090,51 +3093,52 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     }
   }
 
+  bool _isConstraintPast(DateConstraint constraint) {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+
+    if (constraint.repeatType != null && constraint.repeatEndDate != null) {
+      final repeatEndDate = DateTime(
+        constraint.repeatEndDate!.year,
+        constraint.repeatEndDate!.month,
+        constraint.repeatEndDate!.day,
+      );
+      return repeatEndDate.isBefore(todayDate);
+    }
+
+    if (constraint.endDate != null) {
+      final endDate = DateTime(
+        constraint.endDate!.year,
+        constraint.endDate!.month,
+        constraint.endDate!.day,
+      );
+      return endDate.isBefore(todayDate);
+    }
+
+    final startDate = DateTime(
+      constraint.startDate.year,
+      constraint.startDate.month,
+      constraint.startDate.day,
+    );
+    return startDate.isBefore(todayDate);
+  }
+
   List<Widget> _buildVisibleConstraintsList() {
     final visibleConstraints = _constraints.where((constraint) {
       // Filter by constraint type based on permanent status
-      if (_isPermanent && constraint.isAvailability)
+      if (_isPermanent && constraint.isAvailability) {
         return false; // Permanent members only see unavailability
-      if (!_isPermanent && constraint.isUnavailability)
+      }
+      if (!_isPermanent && constraint.isUnavailability) {
         return false; // Non-permanent members only see availability
+      }
 
       // Hide rejected constraints from admin view (they'll have a separate button)
       if (constraint.status == ConstraintStatus.rejected) return false;
 
       // Filter out past constraints (endDate < today) from admin view
       // These constraints don't need admin inspection
-      if (constraint.endDate != null) {
-        final today = DateTime.now();
-        final constraintEndDate = DateTime(
-          constraint.endDate!.year,
-          constraint.endDate!.month,
-          constraint.endDate!.day,
-        );
-        final todayDate = DateTime(
-          today.year,
-          today.month,
-          today.day,
-        );
-        if (constraintEndDate.isBefore(todayDate)) {
-          return false;
-        }
-      } else {
-        // For single-day constraints (no endDate), check if startDate is before today
-        final today = DateTime.now();
-        final constraintStartDate = DateTime(
-          constraint.startDate.year,
-          constraint.startDate.month,
-          constraint.startDate.day,
-        );
-        final todayDate = DateTime(
-          today.year,
-          today.month,
-          today.day,
-        );
-        if (constraintStartDate.isBefore(todayDate)) {
-          return false;
-        }
-      }
+      if (_isConstraintPast(constraint)) return false;
 
       return true;
     }).toList()

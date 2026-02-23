@@ -13,11 +13,11 @@ import '../../bloc/team/team_state.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../bloc/calendar_sync/calendar_sync_state.dart';
-import '../../../core/constants/constraint_status.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/export_service.dart';
 import '../../../core/services/user_cache_service.dart';
 import '../../../core/services/google_oauth_service.dart';
+import '../../../domain/entities/team_member.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
 import '../../widgets/shamap_export_dialog.dart';
 import '../../widgets/settings_dialog.dart';
@@ -319,13 +319,54 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
     if (teamState is! TeamLoaded) return 0;
     int count = 0;
     for (final member in teamState.members) {
+      if (member.isArchived) continue;
       for (final constraint in member.constraints) {
-        if (constraint.status == ConstraintStatus.pending) {
-          count++;
-        }
+        if (!constraint.isPending()) continue;
+        if (!_isConstraintRelevantForMember(member, constraint)) continue;
+        if (!_isFutureOrTodayConstraint(constraint)) continue;
+        count++;
       }
     }
     return count;
+  }
+
+  bool _isConstraintRelevantForMember(
+    TeamMember member,
+    DateConstraint constraint,
+  ) {
+    if (member.isPermanent && constraint.isAvailability) return false;
+    if (!member.isPermanent && constraint.isUnavailability) return false;
+    return true;
+  }
+
+  bool _isFutureOrTodayConstraint(DateConstraint constraint) {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+
+    if (constraint.repeatType != null && constraint.repeatEndDate != null) {
+      final repeatEndDate = DateTime(
+        constraint.repeatEndDate!.year,
+        constraint.repeatEndDate!.month,
+        constraint.repeatEndDate!.day,
+      );
+      return !repeatEndDate.isBefore(todayDate);
+    }
+
+    if (constraint.endDate != null) {
+      final endDate = DateTime(
+        constraint.endDate!.year,
+        constraint.endDate!.month,
+        constraint.endDate!.day,
+      );
+      return !endDate.isBefore(todayDate);
+    }
+
+    final startDate = DateTime(
+      constraint.startDate.year,
+      constraint.startDate.month,
+      constraint.startDate.day,
+    );
+    return !startDate.isBefore(todayDate);
   }
 
   /// Build a choice card - no fixed height, content-sized

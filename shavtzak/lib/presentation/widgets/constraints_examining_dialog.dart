@@ -98,9 +98,7 @@ class _ConstraintsExaminingDialogState
               final filteredMembers = _filterMembersBySearch(allMembers);
 
               final pendingCount = filteredMembers
-                  .expand((member) => _getRelevantConstraints(member))
-                  .where((constraint) =>
-                      constraint.status == ConstraintStatus.pending)
+                  .expand((member) => _getPendingConstraints(member))
                   .length;
 
               final membersWithPending = filteredMembers
@@ -712,6 +710,15 @@ class _ConstraintsExaminingDialogState
   bool _isPastConstraint(DateConstraint constraint) {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
+
+    if (constraint.repeatType != null && constraint.repeatEndDate != null) {
+      final constraintEndDate = DateTime(
+        constraint.repeatEndDate!.year,
+        constraint.repeatEndDate!.month,
+        constraint.repeatEndDate!.day,
+      );
+      return constraintEndDate.isBefore(todayDate);
+    }
 
     if (constraint.endDate != null) {
       final constraintEndDate = DateTime(
