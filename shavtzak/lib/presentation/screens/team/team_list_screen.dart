@@ -44,65 +44,18 @@ import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/swipeable_page_view.dart';
 import '../../widgets/admin_passcode_dialog.dart';
 import '../../widgets/vehicle_info_copy_dialog.dart';
-import '../../widgets/constraint_event_warning_dialog.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
-import '../../../data/repositories/event_repository.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../bloc/calendar_sync/calendar_sync_state.dart';
 import '../../widgets/archived_members_dialog.dart';
+import '../../utils/constraint_warning_actions.dart';
 import 'dart:async';
 
 // Filter enum for team members (0=all non-archived, 1=permanent, 2=non-permanent)
 enum TeamFilter { all, permanent, nonPermanent }
-
-Future<List<Event>> _loadEventsForConstraintWarnings(
-    BuildContext context) async {
-  final eventState = context.read<EventBloc>().state;
-  if (eventState is EventsLoaded) {
-    return eventState.events;
-  }
-
-  try {
-    return await context.read<EventRepository>().getAllEvents();
-  } catch (_) {
-    return [];
-  }
-}
-
-Future<bool> _confirmConstraintOverlapWarning({
-  required BuildContext context,
-  required DateConstraint constraint,
-  required List<Event> events,
-  required String title,
-  required String message,
-  required String confirmText,
-  bool showMissingTimeNote = false,
-}) async {
-  if (!constraint.isUnavailability) {
-    return true;
-  }
-
-  final overlaps = getConstraintEventOverlaps(
-    constraint: constraint,
-    events: events,
-  );
-
-  if (overlaps.isEmpty) {
-    return true;
-  }
-
-  return ConstraintEventWarningDialog.show(
-    context,
-    title: title,
-    message: message,
-    confirmText: confirmText,
-    overlaps: overlaps,
-    showMissingTimeNote: showMissingTimeNote,
-  );
-}
 
 class TeamListScreen extends StatefulWidget {
   const TeamListScreen({super.key});
@@ -1141,6 +1094,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   bool _allowMultipleAssignments = false;
   bool _canAccessSummaryScreen = false;
   bool _canAccessShamapExport = false;
+  bool _canAccessConstraintsExamining = false;
   Map<String, bool> _roleCapabilities = {};
 
   late TeamBloc _teamBloc;
@@ -1176,6 +1130,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       _allowMultipleAssignments = widget.member!.allowMultipleAssignments;
       _canAccessSummaryScreen = widget.member!.canAccessSummaryScreen;
       _canAccessShamapExport = widget.member!.canAccessShamapExport;
+      _canAccessConstraintsExamining =
+          widget.member!.canAccessConstraintsExamining;
       _roleCapabilities = Map.from(widget.member!.roleCapabilities);
       _constraints = List.from(widget.member!.constraints);
       _availableEventIds = List.from(widget.member!.availableEventIds);
@@ -1276,6 +1232,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       allowMultipleAssignments: _allowMultipleAssignments,
       canAccessSummaryScreen: _canAccessSummaryScreen,
       canAccessShamapExport: _canAccessShamapExport,
+      canAccessConstraintsExamining: _canAccessConstraintsExamining,
       constraints: finalConstraints,
       roleCapabilities: _roleCapabilities,
       comments: _commentsController.text.trim(),
@@ -2025,6 +1982,22 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         onChanged: (value) {
                                           setState(() {
                                             _canAccessShamapExport = value;
+                                            _isDirty = true;
+                                          });
+                                        },
+                                      ),
+
+                                      // Constraints examining access switch
+                                      SwitchListTile(
+                                        title: const Text('גישה לבחינת מגבלות'),
+                                        subtitle: const Text(
+                                          'מאפשר לחבר צוות לבחון ולעדכן סטטוסי מגבלות',
+                                        ),
+                                        value: _canAccessConstraintsExamining,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _canAccessConstraintsExamining =
+                                                value;
                                             _isDirty = true;
                                           });
                                         },
@@ -3056,10 +3029,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
         _constraints.indexWhere((c) => c.id == constraintId);
     if (constraintIndex != -1) {
       final targetConstraint = _constraints[constraintIndex];
-      final events = await _loadEventsForConstraintWarnings(context);
+      final events = await loadEventsForConstraintWarnings(context);
       if (!mounted) return;
 
-      final shouldProceed = await _confirmConstraintOverlapWarning(
+      final shouldProceed = await confirmConstraintOverlapWarning(
         context: context,
         constraint:
             targetConstraint.copyWith(status: ConstraintStatus.approved),
@@ -3801,7 +3774,7 @@ class _AdminRepeatingConstraintDialogState
   }
 
   Future<void> _initializeEvents() async {
-    final events = await _loadEventsForConstraintWarnings(context);
+    final events = await loadEventsForConstraintWarnings(context);
     if (!mounted) return;
     setState(() {
       _events = events;
@@ -4176,8 +4149,7 @@ class _AdminRepeatingConstraintDialogState
                 ? null
                 : () async {
                     final draft = _buildDraftConstraint();
-                    final shouldProceed =
-                        await _confirmConstraintOverlapWarning(
+                    final shouldProceed = await confirmConstraintOverlapWarning(
                       context: context,
                       constraint: draft,
                       events: _events,
@@ -4282,7 +4254,7 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
   }
 
   Future<void> _initializeEvents() async {
-    final events = await _loadEventsForConstraintWarnings(context);
+    final events = await loadEventsForConstraintWarnings(context);
     if (!mounted) return;
     setState(() {
       _events = events;
@@ -4605,7 +4577,7 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
 
                     if (widget.isPermanent && _isEditingDateOrTime()) {
                       final shouldProceed =
-                          await _confirmConstraintOverlapWarning(
+                          await confirmConstraintOverlapWarning(
                         context: context,
                         constraint: draftConstraint,
                         events: _events,
@@ -5253,10 +5225,10 @@ class _RejectedConstraintsDialogState
   }
 
   Future<void> _approveConstraint(DateConstraint constraint) async {
-    final events = await _loadEventsForConstraintWarnings(context);
+    final events = await loadEventsForConstraintWarnings(context);
     if (!mounted) return;
 
-    final shouldProceed = await _confirmConstraintOverlapWarning(
+    final shouldProceed = await confirmConstraintOverlapWarning(
       context: context,
       constraint: constraint.copyWith(status: ConstraintStatus.approved),
       events: events,

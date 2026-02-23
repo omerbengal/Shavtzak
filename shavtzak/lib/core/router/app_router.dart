@@ -124,7 +124,7 @@ class AppRouter {
           String currentSignature;
           if (state is UserAuthenticated) {
             currentSignature =
-                'auth:${state.user.id}:${state.isAdmin}:${state.user.canAccessSummaryScreen}:${state.user.canAccessShamapExport}';
+                'auth:${state.user.id}:${state.isAdmin}:${state.user.canAccessSummaryScreen}:${state.user.canAccessShamapExport}:${state.user.canAccessConstraintsExamining}';
           } else if (state is UserSignedOut) {
             currentSignature = 'signed_out';
           } else {
@@ -161,7 +161,8 @@ class AppRouter {
               if (state.isAdmin) {
                 _instance?.go('$envPrefix/admin');
               } else if (state.user.canAccessSummaryScreen ||
-                  state.user.canAccessShamapExport) {
+                  state.user.canAccessShamapExport ||
+                  state.user.canAccessConstraintsExamining) {
                 _instance?.go('$envPrefix/choice');
               } else {
                 _instance?.go('$envPrefix/user/assignments');
@@ -226,7 +227,8 @@ class AppRouter {
               if (currentState.isAdmin) {
                 return '$envPrefix/admin';
               } else if (currentState.user.canAccessSummaryScreen ||
-                  currentState.user.canAccessShamapExport) {
+                  currentState.user.canAccessShamapExport ||
+                  currentState.user.canAccessConstraintsExamining) {
                 return '$envPrefix/choice';
               } else {
                 return '$envPrefix/user/assignments';
@@ -264,7 +266,8 @@ class AppRouter {
           } else {
             if (strippedRoute.startsWith('/whoami')) {
               if (currentState.user.canAccessSummaryScreen ||
-                  currentState.user.canAccessShamapExport) {
+                  currentState.user.canAccessShamapExport ||
+                  currentState.user.canAccessConstraintsExamining) {
                 return '$envPrefix/choice';
               }
               return '$envPrefix/user/assignments';
@@ -280,7 +283,8 @@ class AppRouter {
             if (strippedRoute.startsWith('/choice')) {
               final canAccessChoice =
                   currentState.user.canAccessSummaryScreen ||
-                      currentState.user.canAccessShamapExport;
+                      currentState.user.canAccessShamapExport ||
+                      currentState.user.canAccessConstraintsExamining;
               if (!canAccessChoice) {
                 return '$envPrefix/user/assignments';
               }
@@ -324,7 +328,7 @@ class AppRouter {
           ),
         ),
 
-        // Choice route for non-admin users with summary/export access
+        // Choice route for non-admin users with extra access flags
         GoRoute(
           path: '/choice',
           pageBuilder: (context, state) => const NoTransitionPage(

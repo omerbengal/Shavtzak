@@ -21,10 +21,11 @@ import '../../../core/services/google_oauth_service.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
 import '../../widgets/shamap_export_dialog.dart';
 import '../../widgets/settings_dialog.dart';
+import '../../widgets/constraints_examining_dialog.dart';
 
 /// Choice screen - allows users to choose between available areas
 /// For admins: Personal area, Management, Summary, and optional export screen
-/// For non-admins with summary/export access: Personal area + allowed cards
+/// For non-admins with optional access flags: Personal area + allowed cards
 class AdminChoiceScreen extends StatefulWidget {
   const AdminChoiceScreen({super.key});
 
@@ -145,10 +146,13 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                 final showSummaryCard =
                     isAdmin || state.user.canAccessSummaryScreen;
                 final showShamapExportCard = state.user.canAccessShamapExport;
+                final showConstraintsExaminingCard =
+                    state.user.canAccessConstraintsExamining;
                 final cardCount = 1 +
                     (showManagementCard ? 1 : 0) +
                     (showSummaryCard ? 1 : 0) +
-                    (showShamapExportCard ? 1 : 0);
+                    (showShamapExportCard ? 1 : 0) +
+                    (showConstraintsExaminingCard ? 1 : 0);
 
                 return LayoutBuilder(
                   builder: (context, constraints) {
@@ -259,6 +263,38 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                         textDirection: TextDirection.rtl,
                                         child: ShamapExportDialog(),
                                       ),
+                                    );
+                                  },
+                                ),
+                              ],
+
+                              // Constraints examining card
+                              if (showConstraintsExaminingCard) ...[
+                                if (showShamapExportCard || showSummaryCard)
+                                  SizedBox(height: cardSpacing),
+                                BlocBuilder<TeamBloc, TeamState>(
+                                  builder: (context, teamState) {
+                                    final pendingCount =
+                                        _countPendingConstraints(teamState);
+                                    return _buildChoiceCard(
+                                      width: cardWidth,
+                                      icon: Icons.fact_check,
+                                      iconColor: Colors.deepOrange,
+                                      title: 'בחינת מגבלות',
+                                      subtitle:
+                                          'צפייה ועדכון סטטוס מגבלות צוות',
+                                      isCompact: isCompact,
+                                      onTap: () {
+                                        showDialog(
+                                          context: context,
+                                          builder: (context) =>
+                                              const Directionality(
+                                            textDirection: TextDirection.rtl,
+                                            child: ConstraintsExaminingDialog(),
+                                          ),
+                                        );
+                                      },
+                                      badgeCount: pendingCount,
                                     );
                                   },
                                 ),

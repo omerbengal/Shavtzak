@@ -47,6 +47,10 @@ class TeamMemberModel {
   final bool
       canAccessShamapExport; // Whether team member can access shamap export flow
 
+  // Constraints examining access field
+  final bool
+      canAccessConstraintsExamining; // Whether team member can access constraints examining flow
+
   // Vehicle info field
   final VehicleInfoModel? vehicleInfo; // Optional vehicle information
 
@@ -75,6 +79,7 @@ class TeamMemberModel {
     this.birthday,
     this.canAccessSummaryScreen = false,
     this.canAccessShamapExport = false,
+    this.canAccessConstraintsExamining = false,
     this.vehicleInfo,
     this.availableEventIds = const [],
   });
@@ -109,6 +114,7 @@ class TeamMemberModel {
       birthday: entity.birthday,
       canAccessSummaryScreen: entity.canAccessSummaryScreen,
       canAccessShamapExport: entity.canAccessShamapExport,
+      canAccessConstraintsExamining: entity.canAccessConstraintsExamining,
       vehicleInfo: entity.vehicleInfo != null
           ? VehicleInfoModel.fromEntity(entity.vehicleInfo!)
           : null,
@@ -139,6 +145,7 @@ class TeamMemberModel {
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
       canAccessShamapExport: canAccessShamapExport,
+      canAccessConstraintsExamining: canAccessConstraintsExamining,
       vehicleInfo: vehicleInfo?.toEntity(),
       availableEventIds: List<String>.from(availableEventIds),
     );
@@ -181,6 +188,10 @@ class TeamMemberModel {
     // Handle migration - default to false for existing members missing canAccessShamapExport
     final canAccessShamapExport =
         data['canAccessShamapExport'] as bool? ?? false;
+
+    // Handle migration - default to false for existing members missing canAccessConstraintsExamining
+    final canAccessConstraintsExamining =
+        data['canAccessConstraintsExamining'] as bool? ?? false;
 
     // Handle migration - vehicleInfo is optional, default to null for existing members
     final vehicleInfoData = data['vehicleInfo'] as Map<String, dynamic>?;
@@ -228,6 +239,7 @@ class TeamMemberModel {
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
       canAccessShamapExport: canAccessShamapExport,
+      canAccessConstraintsExamining: canAccessConstraintsExamining,
       vehicleInfo: vehicleInfo,
       availableEventIds: availableEventIds,
     );
@@ -276,6 +288,7 @@ class TeamMemberModel {
       'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
       'canAccessSummaryScreen': canAccessSummaryScreen,
       'canAccessShamapExport': canAccessShamapExport,
+      'canAccessConstraintsExamining': canAccessConstraintsExamining,
       'vehicleInfo': vehicleInfo?.toJson(),
       'availableEventIds': availableEventIds,
     };
@@ -316,6 +329,10 @@ class TeamMemberModel {
     // Handle migration - default to false for existing members missing canAccessShamapExport
     final canAccessShamapExport =
         json['canAccessShamapExport'] as bool? ?? false;
+
+    // Handle migration - default to false for existing members missing canAccessConstraintsExamining
+    final canAccessConstraintsExamining =
+        json['canAccessConstraintsExamining'] as bool? ?? false;
 
     // Handle migration - vehicleInfo is optional, default to null for existing members
     final vehicleInfoData = json['vehicleInfo'] as Map<String, dynamic>?;
@@ -359,6 +376,7 @@ class TeamMemberModel {
       birthday: birthday,
       canAccessSummaryScreen: canAccessSummaryScreen,
       canAccessShamapExport: canAccessShamapExport,
+      canAccessConstraintsExamining: canAccessConstraintsExamining,
       vehicleInfo: vehicleInfo,
       availableEventIds: availableEventIds,
     );
@@ -387,6 +405,7 @@ class TeamMemberModel {
       'birthday': birthday?.toIso8601String(),
       'canAccessSummaryScreen': canAccessSummaryScreen,
       'canAccessShamapExport': canAccessShamapExport,
+      'canAccessConstraintsExamining': canAccessConstraintsExamining,
       'vehicleInfo': vehicleInfo?.toJson(),
       'availableEventIds': availableEventIds,
     };
