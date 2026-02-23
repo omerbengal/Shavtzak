@@ -64,9 +64,10 @@ class _ConstraintsExaminingDialogState
         }
       },
       child: AlertDialog(
+        contentPadding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
         title: const Text('בחינת מגבלות צוות'),
         content: SizedBox(
-          width: 900,
+          width: 1120,
           height: 620,
           child: BlocBuilder<TeamBloc, TeamState>(
             builder: (context, state) {
@@ -184,7 +185,7 @@ class _ConstraintsExaminingDialogState
                                   index == membersWithPending.length) {
                                 return Padding(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 8),
+                                      horizontal: 8, vertical: 8),
                                   child: Divider(
                                     thickness: 2,
                                     color: Colors.grey[700],
@@ -228,6 +229,7 @@ class _ConstraintsExaminingDialogState
     final pendingCount = pendingConstraints.length;
 
     return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       elevation: 1,
       child: ExpansionTile(
         key: PageStorageKey('member_${member.id}_$resetToken'),
@@ -488,66 +490,67 @@ class _ConstraintsExaminingDialogState
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   )
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (effectiveStatus == ConstraintStatus.pending)
-                        _buildActionButton(
-                          icon: Icons.check_circle,
-                          label: 'אשר',
-                          color: Colors.green,
-                          onPressed: () => _onConstraintAction(
-                            member: member,
-                            constraint: constraint,
-                            newStatus: ConstraintStatus.approved,
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isCompact = constraints.maxWidth < 420;
+                      final pendingLabel = isCompact ? 'לממתין' : 'החזר לממתין';
+
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: effectiveStatus == ConstraintStatus.pending
+                                ? _buildActionButton(
+                                    icon: Icons.check_circle,
+                                    label: 'אשר',
+                                    color: Colors.green,
+                                    isCompact: isCompact,
+                                    onPressed: () => _onConstraintAction(
+                                      member: member,
+                                      constraint: constraint,
+                                      newStatus: ConstraintStatus.approved,
+                                    ),
+                                  )
+                                : _buildActionButton(
+                                    icon: Icons.hourglass_empty,
+                                    label: pendingLabel,
+                                    color: Colors.amber,
+                                    isCompact: isCompact,
+                                    onPressed: () => _onConstraintAction(
+                                      member: member,
+                                      constraint: constraint,
+                                      newStatus: ConstraintStatus.pending,
+                                    ),
+                                  ),
                           ),
-                        )
-                      else if (effectiveStatus == ConstraintStatus.approved)
-                        _buildActionButton(
-                          icon: Icons.hourglass_empty,
-                          label: 'החזר לממתין',
-                          color: Colors.amber,
-                          onPressed: () => _onConstraintAction(
-                            member: member,
-                            constraint: constraint,
-                            newStatus: ConstraintStatus.pending,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: effectiveStatus == ConstraintStatus.rejected
+                                ? _buildActionButton(
+                                    icon: Icons.check_circle,
+                                    label: 'אשר',
+                                    color: Colors.green,
+                                    isCompact: isCompact,
+                                    onPressed: () => _onConstraintAction(
+                                      member: member,
+                                      constraint: constraint,
+                                      newStatus: ConstraintStatus.approved,
+                                    ),
+                                  )
+                                : _buildActionButton(
+                                    icon: Icons.cancel,
+                                    label: 'דחה',
+                                    color: Colors.red,
+                                    isCompact: isCompact,
+                                    onPressed: () => _onConstraintAction(
+                                      member: member,
+                                      constraint: constraint,
+                                      newStatus: ConstraintStatus.rejected,
+                                    ),
+                                  ),
                           ),
-                        )
-                      else
-                        _buildActionButton(
-                          icon: Icons.hourglass_empty,
-                          label: 'החזר לממתין',
-                          color: Colors.amber,
-                          onPressed: () => _onConstraintAction(
-                            member: member,
-                            constraint: constraint,
-                            newStatus: ConstraintStatus.pending,
-                          ),
-                        ),
-                      const SizedBox(width: 8),
-                      if (effectiveStatus == ConstraintStatus.rejected)
-                        _buildActionButton(
-                          icon: Icons.check_circle,
-                          label: 'אשר',
-                          color: Colors.green,
-                          onPressed: () => _onConstraintAction(
-                            member: member,
-                            constraint: constraint,
-                            newStatus: ConstraintStatus.approved,
-                          ),
-                        )
-                      else
-                        _buildActionButton(
-                          icon: Icons.cancel,
-                          label: 'דחה',
-                          color: Colors.red,
-                          onPressed: () => _onConstraintAction(
-                            member: member,
-                            constraint: constraint,
-                            newStatus: ConstraintStatus.rejected,
-                          ),
-                        ),
-                    ],
+                        ],
+                      );
+                    },
                   ),
           ),
         ],
@@ -559,18 +562,29 @@ class _ConstraintsExaminingDialogState
     required IconData icon,
     required String label,
     required Color color,
+    required bool isCompact,
     required VoidCallback onPressed,
   }) {
     return TextButton.icon(
       onPressed: onPressed,
-      icon: Icon(icon, color: color, size: 20),
+      icon: Icon(icon, color: color, size: isCompact ? 16 : 18),
       label: Text(
         label,
-        style: TextStyle(color: color),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: color,
+          fontSize: isCompact ? 11 : 13,
+          fontWeight: FontWeight.w600,
+        ),
       ),
       style: TextButton.styleFrom(
         backgroundColor: color.withValues(alpha: 0.08),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding:
+            EdgeInsets.symmetric(horizontal: isCompact ? 4 : 10, vertical: 6),
+        visualDensity: VisualDensity.compact,
+        minimumSize: Size(0, isCompact ? 32 : 34),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
   }
