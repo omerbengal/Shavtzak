@@ -3,9 +3,15 @@ import 'dart:html' as html;
 import 'dart:developer' as developer;
 
 String getOAuthCurrentOrigin() {
-  final currentUrl = html.window.location.href;
-  final uri = Uri.parse(currentUrl);
-  return '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
+  // Use document.baseUri so subdirectory deployments (e.g. GitHub Pages /Shavtzak/)
+  // are included in the redirect URI, matching what is registered in Google Cloud Console.
+  final baseUri = Uri.parse(html.document.baseUri ?? html.window.location.href);
+  final origin = '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
+  var basePath = baseUri.path;
+  if (basePath.endsWith('/')) {
+    basePath = basePath.substring(0, basePath.length - 1);
+  }
+  return '$origin$basePath';
 }
 
 Future<String?> openOAuthPopupAndWaitForCode(String authUrl) async {
