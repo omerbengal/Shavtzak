@@ -3,12 +3,10 @@ import 'passcode_digit_field.dart';
 
 /// Dialog for changing an existing passcode
 class PasscodeChangeDialog extends StatefulWidget {
-  final String currentPasscode;
   final int currentLength;
 
   const PasscodeChangeDialog({
     super.key,
-    required this.currentPasscode,
     required this.currentLength,
   });
 
@@ -29,7 +27,6 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
   final List<FocusNode> _confirmFocusNodes = [];
   bool _obscureCurrent = true;
   bool _obscureNew = true;
-  bool _isError = false;
 
   @override
   void initState() {
@@ -120,17 +117,6 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
           style: const TextStyle(fontSize: 16),
           textAlign: TextAlign.center,
         ),
-        if (_isError) ...[
-          const SizedBox(height: 8),
-          Text(
-            'קוד גישה שגוי',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.red[600],
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
         const SizedBox(height: 24),
         PasscodeInputRow(
           digitCount: widget.currentLength,
@@ -314,20 +300,9 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       return;
     }
 
-    if (enteredPasscode != widget.currentPasscode) {
-      setState(() => _isError = true);
-      // Clear all fields
-      for (var controller in _currentControllers) {
-        controller.clear();
-      }
-      _currentFocusNodes[0].requestFocus();
-      return;
-    }
-
     // Success, proceed to length selection
     setState(() {
       _currentStep = 1;
-      _isError = false;
     });
   }
 
@@ -379,6 +354,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
 
     // Success! Return the new passcode
     Navigator.of(context).pop({
+      'currentPasscode': _getEnteredPasscode(_currentControllers, widget.currentLength),
       'passcode': passcode,
       'length': _selectedLength,
     });

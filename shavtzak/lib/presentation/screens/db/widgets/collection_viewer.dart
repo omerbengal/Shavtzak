@@ -73,13 +73,16 @@ class _CollectionViewerState extends State<CollectionViewer> {
   Stream<QuerySnapshot<Map<String, dynamic>>> _getCollectionStream() {
     return FirebaseFirestore.instance
         .collection(_fullCollectionName)
-        .limit(100)
         .snapshots();
   }
 
   /// Get the primary field value for a document (insightful preview text)
   /// This is the same logic used in DocumentCard._getPrimaryFieldValue()
   String? _getPrimaryFieldValue(Map<String, dynamic> data) {
+    if (widget.collectionName.contains('event')) {
+      return _formatEventPreview(data);
+    }
+
     // Collection-specific hints
     // Checklist items: Show "EventName | ItemName | ResponsibleName"
     if (widget.collectionName.contains('checklist_item')) {
@@ -216,6 +219,39 @@ class _CollectionViewerState extends State<CollectionViewer> {
       }
     }
     return null;
+  }
+
+  String? _formatEventPreview(Map<String, dynamic> data) {
+    final name = data['name'] as String?;
+    final start = _asDateTime(data['startDate']);
+    final end = _asDateTime(data['endDate']);
+
+    if (name == null || name.trim().isEmpty) {
+      return null;
+    }
+
+    if (start == null) {
+      return name;
+    }
+
+    final startText = DateFormat('dd/MM/yyyy').format(start);
+    if (end == null || _isSameDate(start, end)) {
+      return '$name | $startText';
+    }
+
+    final endText = DateFormat('dd/MM/yyyy').format(end);
+    return '$name | $startText --> $endText';
+  }
+
+  DateTime? _asDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  bool _isSameDate(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   String _getActionTypeHebrew(String? actionType) {

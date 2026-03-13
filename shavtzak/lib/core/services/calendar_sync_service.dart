@@ -165,9 +165,13 @@ class CalendarSyncService {
       }
 
       final calendarEventId = existingState['calendarEventId'] as String?;
+      final teamMemberId = existingState['teamMemberId'] as String?;
       if (calendarEventId != null && calendarEventId.isNotEmpty) {
         // Delete from Google Calendar
-        await _calendarService.deleteConstraintEvent(calendarEventId);
+        await _calendarService.deleteConstraintEvent(
+          calendarEventId,
+          teamMemberId: teamMemberId,
+        );
       }
 
       // Remove sync state from database

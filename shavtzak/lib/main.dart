@@ -26,6 +26,7 @@ import 'core/services/user_cache_service.dart';
 import 'core/services/environment_service.dart';
 import 'core/services/connectivity_service.dart';
 import 'core/services/service_locator.dart';
+import 'core/services/backend_api_service.dart';
 import 'core/services/drive_service.dart';
 import 'core/services/audit_context_service.dart';
 import 'core/services/app_version_service.dart';
@@ -119,7 +120,7 @@ Future<void> _initialize() async {
     _timed('ConnectivityService.init',
         () => ConnectivityService.instance.initialize());
 
-    // Remove legacy cached config keys. Config now always comes from Firestore.
+    // Remove legacy cached config keys. Drive config is backend-only now.
     await _timedAsync('ConfigCache.legacyCleanup', () async {
       await _clearLegacyConfigCacheKeys();
     });
@@ -130,12 +131,10 @@ Future<void> _initialize() async {
 
     // OPTIMIZATION: Check cache FIRST (async, but fast)
     // If no cached user, we can show whoami immediately without waiting for Firebase
-    final cachedUserKey =
-        await _timedAsync('UserCacheService.getSelectedUser', () async {
-      return await userCacheService.getSelectedUser();
+    final hasCachedUser =
+        await _timedAsync('UserCacheService.hasCachedUser', () async {
+      return await userCacheService.hasCachedUser();
     });
-
-    final hasCachedUser = cachedUserKey != null && cachedUserKey.isNotEmpty;
 
     // Firebase and DB must be sequential (DB depends on Firebase)
     await _timedAsync('Firebase.initializeApp', () async {
@@ -156,24 +155,16 @@ Future<void> _initialize() async {
     final bloc = _timed('CalendarSyncBloc creation',
         () => CalendarSyncBloc(database: database));
 
-    // Always fetch latest configs directly from Firestore.
-    final configResults =
-        await _timedAsync<List<Map<String, String?>?>>('Firestore.configFetch',
-            () async {
-      return await Future.wait([
-        _fetchDriveConfigFromFirestore(database),
-        _fetchCalendarConfigFromFirestore(database),
-      ]);
+    _timed('DriveService.init (backend)', () {
+      DriveService.instance.initialize();
     });
 
-    final driveConfig = configResults[0];
-    if (driveConfig != null) {
-      _timed('DriveService.init (from firestore)', () {
-        _initializeDriveServiceWithConfig(driveConfig);
-      });
-    }
+    final calendarConfig =
+        await _timedAsync<Map<String, String?>?>('Backend.calendarConfigFetch',
+            () async {
+      return await _fetchCalendarConfigFromBackend();
+    });
 
-    final calendarConfig = configResults[1];
     if (calendarConfig != null) {
       _timed('CalendarSyncBloc.init (from firestore)', () {
         _initializeCalendarBlocWithConfig(bloc, calendarConfig);
@@ -203,12 +194,17 @@ Future<void> _initialize() async {
 
     // Validate cached user if exists (requires Firebase to be ready)
     TeamMember? preAuthenticatedUser;
-    if (hasCachedUser) {
-      try {
-        final validatedUser =
-            await _timedAsync('Database.getTeamMemberByUniqueKey', () async {
-          return await database.getTeamMemberByUniqueKey(cachedUserKey);
+    final shouldAttemptSessionRestore = hasCachedUser ||
+        await _timedAsync('UserSelectionRepository.hasCachedUser', () async {
+          return await repositories.userSelection.hasCachedUser();
         });
+
+    if (shouldAttemptSessionRestore) {
+      try {
+        final validatedUser = await _timedAsync(
+          'UserSelectionRepository.getCachedUser',
+          () async => await repositories.userSelection.getCachedUser(),
+        );
         if (validatedUser != null) {
           preAuthenticatedUser = validatedUser;
         } else {
@@ -349,8 +345,9 @@ class MyApp extends StatelessWidget {
                     context.read<AssignmentRepository>(),
                     calendarSyncBloc: context.read<CalendarSyncBloc>(),
                   );
-                  // Start loading team members immediately to avoid loading screen in WhoamiScreen
-                  teamBloc.add(const LoadTeamMembers());
+                  if (preAuthenticatedUser != null) {
+                    teamBloc.add(const LoadTeamMembers());
+                  }
                   return teamBloc;
                 },
               ),
@@ -398,8 +395,9 @@ class MyApp extends StatelessWidget {
               BlocProvider(
                 create: (context) {
                   final roleBloc = RoleBloc(context.read<RoleRepository>());
-                  // Start loading roles immediately
-                  roleBloc.add(const LoadRoles());
+                  if (preAuthenticatedUser != null) {
+                    roleBloc.add(const LoadRoles());
+                  }
                   return roleBloc;
                 },
               ),
@@ -408,8 +406,9 @@ class MyApp extends StatelessWidget {
                   final categoryBloc = CategoryBloc(
                     context.read<CategoryRepository>(),
                   );
-                  // Start loading categories immediately
-                  categoryBloc.add(const LoadCategories());
+                  if (preAuthenticatedUser != null) {
+                    categoryBloc.add(const LoadCategories());
+                  }
                   return categoryBloc;
                 },
               ),
@@ -420,11 +419,16 @@ class MyApp extends StatelessWidget {
                 final userSelectionRepository =
                     context.read<UserSelectionRepository>();
                 final teamBloc = context.read<TeamBloc>();
+                final roleBloc = context.read<RoleBloc>();
+                final categoryBloc = context.read<CategoryBloc>();
 
                 return BlocListener<UserSelectionBloc, UserSelectionState>(
                   listener: (context, state) {
                     if (state is UserAuthenticated) {
                       AuditContextService.instance.setCurrentUser(state.user);
+                      teamBloc.add(const LoadTeamMembers());
+                      roleBloc.add(const LoadRoles());
+                      categoryBloc.add(const LoadCategories());
                     } else if (state is UserSignedOut) {
                       AuditContextService.instance.clear();
                     }
@@ -458,24 +462,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Initialize DriveService with a pre-fetched config
-void _initializeDriveServiceWithConfig(Map<String, String?> config) {
-  try {
-    if (config['scriptUrl'] != null && config['apiKey'] != null) {
-      DriveService.instance.initialize(
-        scriptUrl: config['scriptUrl']!,
-        apiKey: config['apiKey']!,
-      );
-    }
-  } catch (e) {
-    developer.log(
-      'main.dart: Failed to initialize DriveService: $e',
-      name: 'Main',
-      error: e,
-    );
-  }
-}
-
 /// Initialize CalendarSyncBloc with a pre-fetched config
 void _initializeCalendarBlocWithConfig(
   CalendarSyncBloc bloc,
@@ -500,31 +486,16 @@ void _initializeCalendarBlocWithConfig(
   }
 }
 
-/// Fetch Drive config from Firestore
-Future<Map<String, String?>?> _fetchDriveConfigFromFirestore(
-  FirestoreDatabase database,
-) async {
+/// Fetch Calendar config from backend.
+Future<Map<String, String?>?> _fetchCalendarConfigFromBackend() async {
   try {
-    return await database.getDriveConfig();
+    final response = await BackendApiService().getCalendarConfig();
+    return {
+      'calendarId': response['calendarId'] as String?,
+    };
   } catch (e) {
     developer.log(
-      'main.dart: Failed to fetch Drive config: $e',
-      name: 'Main',
-      error: e,
-    );
-    return null;
-  }
-}
-
-/// Fetch Calendar config from Firestore
-Future<Map<String, String?>?> _fetchCalendarConfigFromFirestore(
-  FirestoreDatabase database,
-) async {
-  try {
-    return await database.getGoogleCalendarConfig();
-  } catch (e) {
-    developer.log(
-      'main.dart: Failed to fetch Calendar config: $e',
+      'main.dart: Failed to fetch Calendar config from backend: $e',
       name: 'Main',
       error: e,
     );

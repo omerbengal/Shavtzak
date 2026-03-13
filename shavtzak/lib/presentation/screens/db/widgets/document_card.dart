@@ -167,6 +167,10 @@ class DocumentCard extends StatelessWidget {
   String? _getPrimaryFieldValue() {
     // Collection-specific hints
     if (collectionName != null) {
+      if (collectionName!.contains('event')) {
+        return _formatEventPreview();
+      }
+
       // Assignments: Show role in Hebrew (no status - it's just pending/confirmed/declined)
       if (collectionName!.contains('assignment')) {
         final roleType = data['roleType'] as String?;
@@ -269,6 +273,39 @@ class DocumentCard extends StatelessWidget {
       }
     }
     return null;
+  }
+
+  String? _formatEventPreview() {
+    final name = data['name'] as String?;
+    final start = _asDateTime(data['startDate']);
+    final end = _asDateTime(data['endDate']);
+
+    if (name == null || name.trim().isEmpty) {
+      return null;
+    }
+
+    if (start == null) {
+      return name;
+    }
+
+    final startText = DateFormat('dd/MM/yyyy').format(start);
+    if (end == null || _isSameDate(start, end)) {
+      return '$name | $startText';
+    }
+
+    final endText = DateFormat('dd/MM/yyyy').format(end);
+    return '$name | $startText --> $endText';
+  }
+
+  DateTime? _asDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  bool _isSameDate(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   String _getActionTypeHebrew(String? actionType) {

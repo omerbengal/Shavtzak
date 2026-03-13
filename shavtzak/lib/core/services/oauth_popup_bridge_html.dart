@@ -8,8 +8,14 @@ String getOAuthCurrentOrigin() {
   final baseUri = Uri.parse(html.document.baseUri ?? html.window.location.href);
   final origin = '${baseUri.scheme}://${baseUri.host}${baseUri.hasPort ? ':${baseUri.port}' : ''}';
   var basePath = baseUri.path;
+  if (basePath.endsWith('index.html')) {
+    basePath = basePath.substring(0, basePath.length - 'index.html'.length);
+  }
   if (basePath.endsWith('/')) {
     basePath = basePath.substring(0, basePath.length - 1);
+  }
+  if (basePath.isEmpty || basePath == '/') {
+    return origin;
   }
   return '$origin$basePath';
 }
@@ -20,19 +26,11 @@ Future<String?> openOAuthPopupAndWaitForCode(String authUrl) async {
   final left = (html.window.screen!.width! - width) ~/ 2;
   final top = (html.window.screen!.height! - height) ~/ 2;
 
-  final popup = html.window.open(
+  html.window.open(
     authUrl,
     'Google OAuth',
     'width=$width,height=$height,left=$left,top=$top,toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes',
   );
-
-  if (popup == null) {
-    developer.log(
-      'GoogleOAuthService: Failed to open popup - blocked by browser',
-      name: 'GoogleOAuth',
-    );
-    return null;
-  }
 
   final completer = Completer<String?>();
   StreamSubscription<html.MessageEvent>? messageSubscription;

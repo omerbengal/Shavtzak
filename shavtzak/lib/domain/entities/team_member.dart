@@ -474,6 +474,8 @@ class TeamMember extends Equatable {
         .toList();
   }
 
+  bool get hasPasscode => (passcodeLength ?? 0) > 0;
+
   /// Copy with method for immutability
   TeamMember copyWith({
     String? id,

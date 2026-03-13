@@ -81,8 +81,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
   void _checkAndShowPasscodeDialog(BuildContext context) {
     final state = context.read<UserSelectionBloc>().state;
     if (state is UserAuthenticated) {
-      final hasPasscode =
-          state.user.passcode != null && state.user.passcode!.isNotEmpty;
+      final hasPasscode = state.user.hasPasscode;
       if (!hasPasscode) {
         final cacheService = UserCacheService();
         if (!cacheService.hasPasscodeDialogBeenShownThisSession()) {
@@ -615,15 +614,13 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
   /// Perform the actual export
   Future<void> _performExport(BuildContext context,
       {required bool isFullExport}) async {
-    // Show loading dialog and capture its context
+    // Show loading dialog
     if (!context.mounted) return;
-    BuildContext? dialogContext;
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext ctx) {
-        dialogContext = ctx;
         return Directionality(
           textDirection: TextDirection.rtl,
           child: AlertDialog(
@@ -646,13 +643,9 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
         ? await ExportService().exportToSheets()
         : await ExportService().exportAssignmentsOnly();
 
-    // Close loading dialog using the dialog's context
-    if (dialogContext != null) {
-      Navigator.of(dialogContext!).pop();
-    }
-
     // Show result dialog
     if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
     if (result.success && result.spreadsheetUrl != null) {
       _showExportSuccessDialog(context, result.spreadsheetUrl!);
     } else {
@@ -662,7 +655,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
 
   /// Show success dialog with link to spreadsheet
   void _showExportSuccessDialog(BuildContext context, String url) {
-    bool _copied = false;
+    bool copied = false;
 
     showDialog(
       context: context,
@@ -717,8 +710,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                             height: 48,
                             child: ElevatedButton.icon(
                               icon: Icon(
-                                _copied ? Icons.check_circle : Icons.copy,
-                                color: _copied
+                                copied ? Icons.check_circle : Icons.copy,
+                                color: copied
                                     ? const Color(0xFF00E676)
                                     : Colors.white,
                                 size: 16,
@@ -730,11 +723,11 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                               onPressed: () async {
                                 await Clipboard.setData(
                                     ClipboardData(text: url));
-                                setState(() => _copied = true);
+                                setState(() => copied = true);
                                 // Reset after 2 seconds
                                 Future.delayed(const Duration(seconds: 2), () {
                                   if (context.mounted) {
-                                    setState(() => _copied = false);
+                                    setState(() => copied = false);
                                   }
                                 });
                               },
@@ -846,7 +839,11 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
   }
 
   /// Show Google Calendar OAuth settings dialog
-  void _showGoogleCalendarSettingsDialog(BuildContext context) {
+  Future<void> _showGoogleCalendarSettingsDialog(BuildContext context) async {
+    final oauthService = GoogleOAuthService.instance;
+    await oauthService.refreshStatus();
+    if (!context.mounted) return;
+
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -854,18 +851,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
           textDirection: TextDirection.rtl,
           child: StatefulBuilder(
             builder: (context, setState) {
-              final oauthService = GoogleOAuthService.instance;
               final isConnected = oauthService.isAuthenticated;
               final userEmail = oauthService.authenticatedUserEmail;
-
-              // Auto-refresh dialog every 2 seconds while initializing
-              if (!isConnected && oauthService.isInitialized) {
-                Future.delayed(const Duration(seconds: 2), () {
-                  if (context.mounted) {
-                    setState(() {});
-                  }
-                });
-              }
 
               return AlertDialog(
                 title: const Row(
@@ -934,7 +921,12 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                           child: SizedBox(
                             height: 52,
                             child: TextButton(
-                              onPressed: () => setState(() {}),
+                              onPressed: () async {
+                                await oauthService.refreshStatus();
+                                if (context.mounted) {
+                                  setState(() {});
+                                }
+                              },
                               child: const Text(
                                 'רענן סטטוס',
                                 textAlign: TextAlign.center,

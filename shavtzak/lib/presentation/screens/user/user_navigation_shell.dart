@@ -38,8 +38,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
   void _checkAndShowPasscodeDialog(BuildContext context) {
     final state = context.read<UserSelectionBloc>().state;
     if (state is UserAuthenticated) {
-      final hasPasscode =
-          state.user.passcode != null && state.user.passcode!.isNotEmpty;
+      final hasPasscode = state.user.hasPasscode;
       if (!hasPasscode) {
         final cacheService = UserCacheService();
         if (!cacheService.hasPasscodeDialogBeenShownThisSession()) {

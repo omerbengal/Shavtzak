@@ -124,11 +124,11 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       }
 
       // Create query with appropriate orderBy
-      Query query = FirebaseFirestore.instance.collection(collectionName).limit(100);
+      Query query = FirebaseFirestore.instance.collection(collectionName);
 
       // Add orderBy based on collection type
       if (config.name == 'events') {
-        query = query.orderBy('startDate', descending: false);
+        query = query.orderBy('startDate', descending: true);
       }
 
       final subscription = query.snapshots().listen((snapshot) {
@@ -240,7 +240,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     }
   }
 
-  /// Sort events by startDate ascending, then name ascending
+  /// Sort events by startDate descending, then name ascending
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortEvents(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
     sortedDocs.sort((a, b) {
@@ -251,7 +251,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       final bDate = bData['startDate'];
       final aDateTime = aDate is Timestamp ? aDate.toDate() : DateTime(2099, 12, 31);
       final bDateTime = bDate is Timestamp ? bDate.toDate() : DateTime(2099, 12, 31);
-      final dateCompare = aDateTime.compareTo(bDateTime);
+      final dateCompare = bDateTime.compareTo(aDateTime);
       if (dateCompare != 0) return dateCompare;
 
       final aName = (aData['name'] as String? ?? '').toLowerCase();
@@ -272,7 +272,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     return sortedDocs;
   }
 
-  /// Sort assignments by event.startDate, event.name, role.sortOrder, teamMember.name
+  /// Sort assignments by event.startDate descending, then keep the existing
+  /// event/name/role/member tie-break ordering.
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortAssignments(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     final Map<String, DateTime> eventStartDates = {};
     final Map<String, String> eventNames = {};
@@ -312,10 +313,10 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       final aTeamMemberId = aData['teamMemberId'] as String?;
       final bTeamMemberId = bData['teamMemberId'] as String?;
 
-      // 1. event.startDate ascending
+      // 1. event.startDate descending
       final aEventDate = aEventId != null ? (eventStartDates[aEventId] ?? DateTime(2099, 12, 31)) : DateTime(2099, 12, 31);
       final bEventDate = bEventId != null ? (eventStartDates[bEventId] ?? DateTime(2099, 12, 31)) : DateTime(2099, 12, 31);
-      final dateCompare = aEventDate.compareTo(bEventDate);
+      final dateCompare = bEventDate.compareTo(aEventDate);
       if (dateCompare != 0) return dateCompare;
 
       // 2. event.name ascending
@@ -496,6 +497,10 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
 
   /// Get the primary field value for filtering (same logic as CollectionViewer and DocumentCard)
   String? _getPrimaryFieldValue(String collectionName, Map<String, dynamic> data) {
+    if (collectionName.contains('event')) {
+      return _formatEventPreview(data);
+    }
+
     // Checklist items: Show "EventName | ItemName | ResponsibleName"
     if (collectionName.contains('checklist_item')) {
       final name = data['name'] as String?;
@@ -643,6 +648,39 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       }
     }
     return null;
+  }
+
+  String? _formatEventPreview(Map<String, dynamic> data) {
+    final name = data['name'] as String?;
+    final start = _asDateTime(data['startDate']);
+    final end = _asDateTime(data['endDate']);
+
+    if (name == null || name.trim().isEmpty) {
+      return null;
+    }
+
+    if (start == null) {
+      return name;
+    }
+
+    final startText = DateFormat('dd/MM/yyyy').format(start);
+    if (end == null || _isSameDate(start, end)) {
+      return '$name | $startText';
+    }
+
+    final endText = DateFormat('dd/MM/yyyy').format(end);
+    return '$name | $startText --> $endText';
+  }
+
+  DateTime? _asDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  bool _isSameDate(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   String _getActionTypeHebrew(String? actionType) {

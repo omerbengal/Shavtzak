@@ -126,6 +126,10 @@ app.*.symbols
 secrets/
 **/secrets/
 
+# Firebase Functions
+functions/node_modules/
+functions/lib/
+
 # Test coverage
 test/.test_coverage.dart
 coverage/

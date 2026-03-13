@@ -1488,7 +1488,6 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       context: context,
       builder: (context) => AdminPasscodeDialog(
         teamMemberName: widget.member!.name,
-        currentPasscode: widget.member!.passcode,
         currentLength: widget.member!.passcodeLength,
       ),
     );
@@ -2480,12 +2479,12 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                           child: Row(
                                             children: [
                                               Icon(
-                                                widget.member?.passcode != null
+                                                widget.member?.hasPasscode == true
                                                     ? Icons.lock
                                                     : Icons.lock_open,
                                                 color:
-                                                    widget.member?.passcode !=
-                                                            null
+                                                    widget.member?.hasPasscode ==
+                                                            true
                                                         ? Theme.of(context)
                                                             .primaryColor
                                                         : Colors.grey[400],
@@ -2493,14 +2492,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                               const SizedBox(width: 12),
                                               Expanded(
                                                 child: Text(
-                                                  widget.member?.passcode !=
-                                                          null
+                                                  widget.member?.hasPasscode ==
+                                                          true
                                                       ? 'קוד גישה מוגדר (${widget.member?.passcodeLength} ספרות)'
                                                       : 'לא הוגדר קוד גישה',
                                                   style: TextStyle(
                                                     color: widget.member
-                                                                ?.passcode !=
-                                                            null
+                                                                ?.hasPasscode ==
+                                                            true
                                                         ? null
                                                         : Colors.grey[600],
                                                   ),

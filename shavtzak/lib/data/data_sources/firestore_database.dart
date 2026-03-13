@@ -1,14 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:collection/collection.dart';
-import 'package:uuid/uuid.dart';
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/checklist_item.dart';
-import '../../domain/entities/checklist_note.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
@@ -16,8 +12,8 @@ import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
 import '../../core/constants/role_types.dart';
+import '../../core/services/backend_api_service.dart';
 import '../../core/services/environment_service.dart';
-import '../../core/services/audit_context_service.dart';
 import '../models/assignment_model.dart';
 import '../models/category_model.dart';
 import '../models/checklist_item_model.dart';
@@ -31,7 +27,7 @@ import 'database_interface.dart';
 /// Firestore implementation of DatabaseInterface
 class FirestoreDatabase implements DatabaseInterface {
   final FirebaseFirestore _firestore;
-  final String _instanceId; // For debugging
+  final BackendApiService _backendApiService;
 
   // Collection names with environment prefix
   String get _teamMembersCollection {
@@ -62,13 +58,9 @@ class FirestoreDatabase implements DatabaseInterface {
     return '${EnvironmentService.instance.collectionPrefix}checklist_presets';
   }
 
-  String get _logsCollection {
-    return '${EnvironmentService.instance.collectionPrefix}logs';
-  }
-
   FirestoreDatabase({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance,
-        _instanceId = DateTime.now().millisecondsSinceEpoch.toString();
+        _backendApiService = BackendApiService();
 
   @override
   Future<void> initialize() async {
@@ -81,111 +73,18 @@ class FirestoreDatabase implements DatabaseInterface {
     // Firestore connections are managed automatically
   }
 
-  DateTime _lastSundayOfMonthUtc(int year, int month) {
-    final lastDay = DateTime.utc(year, month + 1, 0);
-    return lastDay.subtract(Duration(days: lastDay.weekday % 7));
-  }
-
-  DateTime _lastFridayBeforeLastSundayOfMarchUtc(int year) {
-    final lastSundayMarch = _lastSundayOfMonthUtc(year, 3);
-    return lastSundayMarch.subtract(const Duration(days: 2));
-  }
-
-  DateTime _toIsraelTime(DateTime utcNow) {
-    final dstStart = _lastFridayBeforeLastSundayOfMarchUtc(utcNow.year);
-    final dstEnd = _lastSundayOfMonthUtc(utcNow.year, 10);
-    final inDst = !utcNow.isBefore(dstStart) && utcNow.isBefore(dstEnd);
-    return utcNow.add(Duration(hours: inDst ? 3 : 2));
-  }
-
-  dynamic _normalizeForLog(dynamic value) {
-    if (value is Timestamp) {
-      return value.toDate().toIso8601String();
-    }
-    if (value is DateTime) {
-      return value.toIso8601String();
-    }
-    if (value is Map) {
-      return value.map(
-        (key, val) => MapEntry(key.toString(), _normalizeForLog(val)),
-      );
-    }
-    if (value is List) {
-      return value.map(_normalizeForLog).toList();
-    }
-    return value;
-  }
-
-  Map<String, dynamic> _buildChanges(
-    Map<String, dynamic>? oldValue,
-    Map<String, dynamic>? newValue,
-  ) {
-    if (oldValue == null || newValue == null) return {};
-
-    final changes = <String, dynamic>{};
-    final keys = <String>{...oldValue.keys, ...newValue.keys};
-    const deepEquals = DeepCollectionEquality();
-
-    for (final key in keys) {
-      final oldField = oldValue[key];
-      final newField = newValue[key];
-      if (!deepEquals.equals(oldField, newField)) {
-        changes[key] = {
-          'old': oldField,
-          'new': newField,
-        };
-      }
-    }
-
-    return changes;
-  }
-
-  Future<void> _addAuditLogToBatch({
-    required WriteBatch batch,
-    required String actionType,
-    required String entityType,
-    required String entityId,
-    String? entityName,
-    Map<String, dynamic>? oldValue,
-    Map<String, dynamic>? newValue,
-    Map<String, dynamic>? details,
-    String? operationId,
-    String? parentOperationId,
+  Future<Map<String, dynamic>> _invokeMutation(
+    String operation, {
+    Map<String, dynamic>? payload,
   }) async {
-    final actor = AuditContextService.instance.currentUser;
-    final utcNow = DateTime.now().toUtc();
-    final israelNow = _toIsraelTime(utcNow);
-    final normalizedOld = oldValue == null
-        ? null
-        : Map<String, dynamic>.from(_normalizeForLog(oldValue) as Map);
-    final normalizedNew = newValue == null
-        ? null
-        : Map<String, dynamic>.from(_normalizeForLog(newValue) as Map);
-    final normalizedDetails = details == null
-        ? null
-        : Map<String, dynamic>.from(_normalizeForLog(details) as Map);
-
-    final logRef = _firestore.collection(_logsCollection).doc();
-    batch.set(logRef, {
-      'timestampUtc': FieldValue.serverTimestamp(),
-      'timestampLocalIsrael': israelNow.toIso8601String(),
-      'timezone': 'Asia/Jerusalem',
-      'actionType': actionType,
-      'entityType': entityType,
-      'entityId': entityId,
-      'entityName': entityName,
-      'performerId': actor?.id,
-      'performerName': actor?.name,
-      'operationId': operationId ?? const Uuid().v4(),
-      'parentOperationId': parentOperationId,
-      'oldValue': normalizedOld,
-      'newValue': normalizedNew,
-      'changes': _buildChanges(normalizedOld, normalizedNew),
-      'details': normalizedDetails,
-      'status': 'success',
-      'environment':
-          EnvironmentService.instance.isTestMode ? 'test' : 'production',
-    });
+    try {
+      return await _backendApiService.mutate(
+        operation,
+        payload: payload,
+      );
+    } catch (e) {
+      throw DatabaseException('Failed backend mutation $operation: $e');
+    }
   }
 
   Map<String, dynamic> _teamMemberEntityToMap(TeamMember member) {
@@ -239,46 +138,6 @@ class FirestoreDatabase implements DatabaseInterface {
 
   Map<String, dynamic> _roleEntityToMap(Role role) {
     return RoleModel.fromEntity(role).toJson();
-  }
-
-  Future<Map<String, String>> _getRoleKeyToHebrewMap() async {
-    final roleMap = <String, String>{};
-
-    // Built-in enum roles
-    for (final roleType in RoleType.values) {
-      roleMap[roleType.key] = roleType.hebrewName;
-    }
-
-    // Dynamic/custom roles from utilities/Lists (override enum if changed)
-    try {
-      final doc = await _firestore.collection('utilities').doc('Lists').get();
-      final data = doc.data();
-      final roles = data?['Roles'];
-      if (roles is List) {
-        for (final item in roles) {
-          if (item is Map<String, dynamic>) {
-            final key = item['key'] as String?;
-            final hebrewName = item['hebrewName'] as String?;
-            if (key != null &&
-                key.isNotEmpty &&
-                hebrewName != null &&
-                hebrewName.isNotEmpty) {
-              roleMap[key] = hebrewName;
-            }
-          }
-        }
-      }
-    } catch (_) {
-      // Fall back to enum map only.
-    }
-
-    return roleMap;
-  }
-
-  String _assignmentRoleDisplayName(
-      String? roleKey, Map<String, String> roleKeyToHebrewMap) {
-    if (roleKey == null || roleKey.isEmpty) return 'לא ידוע';
-    return roleKeyToHebrewMap[roleKey] ?? roleKey;
   }
 
   Map<String, dynamic> _categoryEntityToMap(Category category) {
@@ -352,20 +211,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> insertTeamMember(TeamMember member) async {
     try {
-      final model = TeamMemberModel.fromEntity(member);
-      final batch = _firestore.batch();
-      final docRef =
-          _firestore.collection(_teamMembersCollection).doc(member.id);
-      batch.set(docRef, model.toFirestore());
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'teamMember',
-        entityId: member.id,
-        entityName: member.name,
-        newValue: _teamMemberEntityToMap(member),
+      await _invokeMutation(
+        'teamMember.insert',
+        payload: {'member': _teamMemberEntityToMap(member)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to insert team member: $e');
     }
@@ -374,46 +223,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> updateTeamMember(TeamMember member) async {
     try {
-      final existingDoc = await _firestore
-          .collection(_teamMembersCollection)
-          .doc(member.id)
-          .get();
-      final oldValue = existingDoc.exists
-          ? Map<String, dynamic>.from(existingDoc.data()!)
-          : null;
-
-      final model = TeamMemberModel.fromEntity(member);
-      final data = model.toFirestore();
-
-      // Remove passcode fields to prevent race conditions when the app is open
-      // on multiple devices. Passcode should only be updated via the dedicated
-      // updateTeamMemberPasscode/clearTeamMemberPasscode methods.
-      data.remove('passcode');
-      data.remove('passcodeLength');
-
-      final batch = _firestore.batch();
-      final docRef =
-          _firestore.collection(_teamMembersCollection).doc(member.id);
-      batch.update(docRef, data);
-
-      // Build the expected post-update document from the existing DB value plus
-      // the exact fields sent in this update (passcode fields are intentionally
-      // excluded above and therefore remain unchanged here as well).
-      final newValueForLog = oldValue != null
-          ? Map<String, dynamic>.from(oldValue)
-          : <String, dynamic>{};
-      newValueForLog.addAll(data);
-
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'teamMember',
-        entityId: member.id,
-        entityName: member.name,
-        oldValue: oldValue,
-        newValue: newValueForLog,
+      await _invokeMutation(
+        'teamMember.update',
+        payload: {'member': _teamMemberEntityToMap(member)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to update team member: $e');
     }
@@ -423,31 +236,14 @@ class FirestoreDatabase implements DatabaseInterface {
   Future<void> updateTeamMemberPasscode(
       String id, String passcode, int length) async {
     try {
-      final docRef = _firestore.collection(_teamMembersCollection).doc(id);
-      final existingDoc = await docRef.get();
-      final batch = _firestore.batch();
-      batch.update(docRef, {
-        'passcode': passcode,
-        'passcodeLength': length,
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-      });
-      final updated = existingDoc.exists
-          ? Map<String, dynamic>.from(existingDoc.data()!)
-          : <String, dynamic>{};
-      updated['passcode'] = passcode;
-      updated['passcodeLength'] = length;
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'teamMember',
-        entityId: id,
-        entityName: existingDoc.data()?['name'] as String?,
-        oldValue: existingDoc.exists
-            ? Map<String, dynamic>.from(existingDoc.data()!)
-            : null,
-        newValue: updated,
+      await _invokeMutation(
+        'teamMember.updatePasscode',
+        payload: {
+          'memberId': id,
+          'passcode': passcode,
+          'length': length,
+        },
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to update team member passcode: $e');
     }
@@ -456,31 +252,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> clearTeamMemberPasscode(String id) async {
     try {
-      final docRef = _firestore.collection(_teamMembersCollection).doc(id);
-      final existingDoc = await docRef.get();
-      final batch = _firestore.batch();
-      batch.update(docRef, {
-        'passcode': FieldValue.delete(),
-        'passcodeLength': FieldValue.delete(),
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-      });
-      final updated = existingDoc.exists
-          ? Map<String, dynamic>.from(existingDoc.data()!)
-          : <String, dynamic>{};
-      updated.remove('passcode');
-      updated.remove('passcodeLength');
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'teamMember',
-        entityId: id,
-        entityName: existingDoc.data()?['name'] as String?,
-        oldValue: existingDoc.exists
-            ? Map<String, dynamic>.from(existingDoc.data()!)
-            : null,
-        newValue: updated,
+      await _invokeMutation(
+        'teamMember.clearPasscode',
+        payload: {'memberId': id},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to clear team member passcode: $e');
     }
@@ -495,134 +270,17 @@ class FirestoreDatabase implements DatabaseInterface {
     bool? wasAutoRejectedFromCalendar,
   }) async {
     try {
-      // If constraintIndex is null, teamMemberIdOrConstraintId is actually the constraintId
-      // and we need to find which team member owns this constraint
-      if (constraintIndex == null) {
-        // Find constraint by ID across all team members
-        final teamMembersSnapshot =
-            await _firestore.collection(_teamMembersCollection).get();
-
-        bool constraintFound = false;
-        for (final teamMemberDoc in teamMembersSnapshot.docs) {
-          final teamMemberData = teamMemberDoc.data();
-          final constraints = (teamMemberData['constraints'] as List<dynamic>?);
-
-          if (constraints != null) {
-            // Find the constraint in the inline array
-            final constraintIndex = constraints.indexWhere(
-              (c) => c['id'] == teamMemberIdOrConstraintId,
-            );
-
-            if (constraintIndex != -1) {
-              constraintFound = true;
-
-              // Update the constraint status in the array
-              final updatedConstraints = List<dynamic>.from(constraints);
-              updatedConstraints[constraintIndex]['status'] = newStatus.name;
-
-              if (note != null) {
-                updatedConstraints[constraintIndex]['note'] = note;
-              }
-
-              if (wasAutoRejectedFromCalendar != null) {
-                updatedConstraints[constraintIndex]
-                        ['wasAutoRejectedFromCalendar'] =
-                    wasAutoRejectedFromCalendar;
-              }
-
-              final batch = _firestore.batch();
-              batch.update(teamMemberDoc.reference, {
-                'constraints': updatedConstraints,
-                'updatedAt': FieldValue.serverTimestamp(),
-              });
-              await _addAuditLogToBatch(
-                batch: batch,
-                actionType: 'edit',
-                entityType: 'constraint',
-                entityId: teamMemberIdOrConstraintId,
-                entityName: null,
-                oldValue: Map<String, dynamic>.from(
-                    constraints[constraintIndex] as Map),
-                newValue: Map<String, dynamic>.from(
-                    updatedConstraints[constraintIndex] as Map),
-                details: {
-                  'teamMemberId': teamMemberDoc.id,
-                  'status': newStatus.name,
-                  if (note != null) 'note': note,
-                },
-              );
-              await batch.commit();
-              return;
-            }
-          }
-        }
-
-        if (!constraintFound) {
-          throw DatabaseException(
-              'Constraint not found: $teamMemberIdOrConstraintId');
-        }
-      } else {
-        // Original logic: update constraint by index in a specific team member
-        final teamMemberId = teamMemberIdOrConstraintId;
-
-        // Get the current team member
-        final doc = await _firestore
-            .collection(_teamMembersCollection)
-            .doc(teamMemberId)
-            .get();
-
-        if (!doc.exists) {
-          throw DatabaseException('Team member not found: $teamMemberId');
-        }
-
-        final teamMember = TeamMemberModel.fromFirestore(doc).toEntity();
-
-        // Check if constraint index is valid
-        if (constraintIndex < 0 ||
-            constraintIndex >= teamMember.constraints.length) {
-          throw DatabaseException('Invalid constraint index: $constraintIndex');
-        }
-
-        // Update the constraint status
-        final updatedConstraints =
-            List<DateConstraint>.from(teamMember.constraints);
-        updatedConstraints[constraintIndex] =
-            updatedConstraints[constraintIndex].copyWith(
-          status: newStatus,
-          note: note, // Also update the note if provided
-          wasAutoRejectedFromCalendar: wasAutoRejectedFromCalendar,
-        );
-
-        // Convert DateConstraint entities to JSON
-        final constraintsJson = updatedConstraints.map((constraint) {
-          final model = DateConstraintModel.fromEntity(constraint);
-          return model.toJson();
-        }).toList();
-
-        // Update only the constraints field in Firestore
-        final docRef =
-            _firestore.collection(_teamMembersCollection).doc(teamMemberId);
-        final batch = _firestore.batch();
-        batch.update(docRef, {
-          'constraints': constraintsJson,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-        await _addAuditLogToBatch(
-          batch: batch,
-          actionType: 'edit',
-          entityType: 'constraint',
-          entityId: updatedConstraints[constraintIndex].id,
-          oldValue:
-              _constraintEntityToMap(teamMember.constraints[constraintIndex]),
-          newValue: _constraintEntityToMap(updatedConstraints[constraintIndex]),
-          details: {
-            'teamMemberId': teamMemberId,
-            'status': newStatus.name,
-            if (note != null) 'note': note,
-          },
-        );
-        await batch.commit();
-      }
+      await _invokeMutation(
+        'constraint.updateStatus',
+        payload: {
+          'teamMemberIdOrConstraintId': teamMemberIdOrConstraintId,
+          'constraintIndex': constraintIndex,
+          'newStatus': newStatus.name,
+          if (note != null) 'note': note,
+          if (wasAutoRejectedFromCalendar != null)
+            'wasAutoRejectedFromCalendar': wasAutoRejectedFromCalendar,
+        },
+      );
     } catch (e) {
       throw DatabaseException('Failed to update constraint status: $e');
     }
@@ -634,30 +292,13 @@ class FirestoreDatabase implements DatabaseInterface {
     DateConstraint newConstraint,
   ) async {
     try {
-      final model = DateConstraintModel.fromEntity(newConstraint);
-      final constraintJson = model.toJson();
-
-      // Use arrayUnion for atomic append (only writes constraints field)
-      final docRef =
-          _firestore.collection(_teamMembersCollection).doc(teamMemberId);
-      final teamDoc = await docRef.get();
-      final batch = _firestore.batch();
-      batch.update(docRef, {
-        'constraints': FieldValue.arrayUnion([constraintJson]),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'constraint',
-        entityId: newConstraint.id,
-        newValue: _constraintEntityToMap(newConstraint),
-        details: {
+      await _invokeMutation(
+        'constraint.add',
+        payload: {
           'teamMemberId': teamMemberId,
-          'teamMemberName': teamDoc.data()?['name'],
+          'constraint': _constraintEntityToMap(newConstraint),
         },
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to add constraint: $e');
     }
@@ -670,51 +311,14 @@ class FirestoreDatabase implements DatabaseInterface {
     DateConstraint updatedConstraint,
   ) async {
     try {
-      final doc = await _firestore
-          .collection(_teamMembersCollection)
-          .doc(teamMemberId)
-          .get();
-
-      if (!doc.exists) {
-        throw DatabaseException('Team member not found: $teamMemberId');
-      }
-
-      final data = doc.data() as Map<String, dynamic>;
-      final constraints = (data['constraints'] as List<dynamic>?) ?? [];
-
-      // Find the constraint by ID
-      final constraintIndex = constraints.indexWhere(
-        (c) => c['id'] == constraintId,
+      await _invokeMutation(
+        'constraint.edit',
+        payload: {
+          'teamMemberId': teamMemberId,
+          'constraintId': constraintId,
+          'constraint': _constraintEntityToMap(updatedConstraint),
+        },
       );
-
-      if (constraintIndex == -1) {
-        throw DatabaseException('Constraint not found: $constraintId');
-      }
-
-      // Replace the constraint at the found index
-      final updatedConstraints = List<dynamic>.from(constraints);
-      final model = DateConstraintModel.fromEntity(updatedConstraint);
-      updatedConstraints[constraintIndex] = model.toJson();
-
-      // Write only the constraints field (targeted update)
-      final docRef =
-          _firestore.collection(_teamMembersCollection).doc(teamMemberId);
-      final batch = _firestore.batch();
-      batch.update(docRef, {
-        'constraints': updatedConstraints,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'constraint',
-        entityId: constraintId,
-        oldValue:
-            Map<String, dynamic>.from(constraints[constraintIndex] as Map),
-        newValue: _constraintEntityToMap(updatedConstraint),
-        details: {'teamMemberId': teamMemberId},
-      );
-      await batch.commit();
     } catch (e) {
       if (e is DatabaseException) rethrow;
       throw DatabaseException('Failed to edit constraint: $e');
@@ -753,28 +357,13 @@ class FirestoreDatabase implements DatabaseInterface {
           constraints[constraintIndex] as Map<String, dynamic>;
       final removedConstraint =
           DateConstraintModel.fromJson(removedConstraintData).toEntity();
-
-      // Remove the constraint
-      final updatedConstraints = List<dynamic>.from(constraints);
-      updatedConstraints.removeAt(constraintIndex);
-
-      // Write only the constraints field (targeted update)
-      final docRef =
-          _firestore.collection(_teamMembersCollection).doc(teamMemberId);
-      final batch = _firestore.batch();
-      batch.update(docRef, {
-        'constraints': updatedConstraints,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'constraint',
-        entityId: constraintId,
-        oldValue: _constraintEntityToMap(removedConstraint),
-        details: {'teamMemberId': teamMemberId},
+      await _invokeMutation(
+        'constraint.remove',
+        payload: {
+          'teamMemberId': teamMemberId,
+          'constraintId': constraintId,
+        },
       );
-      await batch.commit();
 
       return removedConstraint;
     } catch (e) {
@@ -786,21 +375,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteTeamMember(String id) async {
     try {
-      final docRef = _firestore.collection(_teamMembersCollection).doc(id);
-      final existingDoc = await docRef.get();
-      final batch = _firestore.batch();
-      batch.delete(docRef);
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'teamMember',
-        entityId: id,
-        entityName: existingDoc.data()?['name'] as String?,
-        oldValue: existingDoc.exists
-            ? Map<String, dynamic>.from(existingDoc.data()!)
-            : null,
+      await _invokeMutation(
+        'teamMember.delete',
+        payload: {'memberId': id},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete team member: $e');
     }
@@ -809,29 +387,12 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> insertTeamMembersBatch(List<TeamMember> members) async {
     try {
-      final batch = _firestore.batch();
-      final operationId = const Uuid().v4();
-
-      for (final member in members) {
-        final model = TeamMemberModel.fromEntity(member);
-        final docRef =
-            _firestore.collection(_teamMembersCollection).doc(member.id);
-        batch.set(docRef, model.toFirestore());
-      }
-
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'teamMemberBatch',
-        entityId: operationId,
-        details: {
-          'count': members.length,
-          'ids': members.map((m) => m.id).toList(),
+      await _invokeMutation(
+        'teamMember.insertBatch',
+        payload: {
+          'members': members.map(_teamMemberEntityToMap).toList(),
         },
-        operationId: operationId,
       );
-
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to insert team members batch: $e');
     }
@@ -884,19 +445,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> insertEvent(Event event) async {
     try {
-      final model = EventModel.fromEntity(event);
-      final batch = _firestore.batch();
-      final docRef = _firestore.collection(_eventsCollection).doc(event.id);
-      batch.set(docRef, model.toFirestore());
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'event',
-        entityId: event.id,
-        entityName: event.name,
-        newValue: _eventEntityToMap(event),
+      await _invokeMutation(
+        'event.insert',
+        payload: {'event': _eventEntityToMap(event)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to insert event: $e');
     }
@@ -905,23 +457,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> updateEvent(Event event) async {
     try {
-      final oldDoc =
-          await _firestore.collection(_eventsCollection).doc(event.id).get();
-      final model = EventModel.fromEntity(event);
-      final batch = _firestore.batch();
-      final docRef = _firestore.collection(_eventsCollection).doc(event.id);
-      batch.update(docRef, model.toFirestore());
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'event',
-        entityId: event.id,
-        entityName: event.name,
-        oldValue:
-            oldDoc.exists ? Map<String, dynamic>.from(oldDoc.data()!) : null,
-        newValue: _eventEntityToMap(event),
+      await _invokeMutation(
+        'event.update',
+        payload: {'event': _eventEntityToMap(event)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to update event: $e');
     }
@@ -930,49 +469,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteEvent(String id) async {
     try {
-      final operationId = const Uuid().v4();
-      final eventDoc =
-          await _firestore.collection(_eventsCollection).doc(id).get();
-
-      // Cascade delete: first delete all checklist items for this event
-      final checklistItemsSnapshot = await _firestore
-          .collection(_checklistItemsCollection)
-          .where('eventId', isEqualTo: id)
-          .get();
-
-      final batch = _firestore.batch();
-      for (var doc in checklistItemsSnapshot.docs) {
-        batch.delete(doc.reference);
-        await _addAuditLogToBatch(
-          batch: batch,
-          actionType: 'delete',
-          entityType: 'checklistItem',
-          entityId: doc.id,
-          entityName: doc.data()['name'] as String?,
-          oldValue: Map<String, dynamic>.from(doc.data()),
-          operationId: const Uuid().v4(),
-          parentOperationId: operationId,
-        );
-      }
-
-      // Delete the event itself
-      batch.delete(_firestore.collection(_eventsCollection).doc(id));
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'event',
-        entityId: id,
-        entityName: eventDoc.data()?['name'] as String?,
-        oldValue: eventDoc.exists
-            ? Map<String, dynamic>.from(eventDoc.data()!)
-            : null,
-        operationId: operationId,
-        details: {
-          'deletedChecklistItemsCount': checklistItemsSnapshot.docs.length,
-        },
+      await _invokeMutation(
+        'event.delete',
+        payload: {'eventId': id},
       );
-
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete event: $e');
     }
@@ -1036,28 +536,12 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> insertEventsBatch(List<Event> events) async {
     try {
-      final batch = _firestore.batch();
-      final operationId = const Uuid().v4();
-
-      for (final event in events) {
-        final model = EventModel.fromEntity(event);
-        final docRef = _firestore.collection(_eventsCollection).doc(event.id);
-        batch.set(docRef, model.toFirestore());
-      }
-
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'eventBatch',
-        entityId: operationId,
-        details: {
-          'count': events.length,
-          'ids': events.map((e) => e.id).toList(),
+      await _invokeMutation(
+        'event.insertBatch',
+        payload: {
+          'events': events.map(_eventEntityToMap).toList(),
         },
-        operationId: operationId,
       );
-
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to insert events batch: $e');
     }
@@ -1145,28 +629,13 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> updateEventArchiveStatus(String eventId, bool isArchived) async {
     try {
-      final docRef = _firestore.collection(_eventsCollection).doc(eventId);
-      final oldDoc = await docRef.get();
-      final batch = _firestore.batch();
-      batch.update(docRef, {
-        'isArchived': isArchived,
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-      });
-      final newValue = oldDoc.exists
-          ? Map<String, dynamic>.from(oldDoc.data()!)
-          : <String, dynamic>{};
-      newValue['isArchived'] = isArchived;
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'event',
-        entityId: eventId,
-        entityName: oldDoc.data()?['name'] as String?,
-        oldValue:
-            oldDoc.exists ? Map<String, dynamic>.from(oldDoc.data()!) : null,
-        newValue: newValue,
+      await _invokeMutation(
+        'event.updateArchiveStatus',
+        payload: {
+          'eventId': eventId,
+          'isArchived': isArchived,
+        },
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to update event archive status: $e');
     }
@@ -1461,32 +930,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> insertAssignment(Assignment assignment) async {
     try {
-      // Validate foreign keys exist
-      await _validateAssignmentForeignKeys(
-          assignment.eventId, assignment.teamMemberId);
-
-      final model = AssignmentModel.fromEntity(assignment);
-
-      // For new documents, filter out FieldValue.delete() since set() doesn't support it
-      final firestoreData = model.toFirestore();
-      final cleanData = Map<String, dynamic>.from(firestoreData)
-        ..removeWhere((key, value) => value is FieldValue);
-      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
-
-      final batch = _firestore.batch();
-      final docRef =
-          _firestore.collection(_assignmentsCollection).doc(assignment.id);
-      batch.set(docRef, cleanData);
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'assignment',
-        entityId: assignment.id,
-        entityName:
-            _assignmentRoleDisplayName(assignment.roleType, roleKeyToHebrewMap),
-        newValue: _assignmentEntityToMap(assignment),
+      await _invokeMutation(
+        'assignment.insert',
+        payload: {'assignment': _assignmentEntityToMap(assignment)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to insert assignment: $e');
     }
@@ -1495,29 +942,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> updateAssignment(Assignment assignment) async {
     try {
-      // Validate foreign keys exist
-      await _validateAssignmentForeignKeys(
-          assignment.eventId, assignment.teamMemberId);
-
-      final model = AssignmentModel.fromEntity(assignment);
-      final docRef =
-          _firestore.collection(_assignmentsCollection).doc(assignment.id);
-      final oldDoc = await docRef.get();
-      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
-      final batch = _firestore.batch();
-      batch.update(docRef, model.toFirestore());
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'assignment',
-        entityId: assignment.id,
-        entityName:
-            _assignmentRoleDisplayName(assignment.roleType, roleKeyToHebrewMap),
-        oldValue:
-            oldDoc.exists ? Map<String, dynamic>.from(oldDoc.data()!) : null,
-        newValue: _assignmentEntityToMap(assignment),
+      await _invokeMutation(
+        'assignment.update',
+        payload: {'assignment': _assignmentEntityToMap(assignment)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to update assignment: $e');
     }
@@ -1526,22 +954,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteAssignment(String id) async {
     try {
-      final docRef = _firestore.collection(_assignmentsCollection).doc(id);
-      final oldDoc = await docRef.get();
-      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
-      final batch = _firestore.batch();
-      batch.delete(docRef);
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'assignment',
-        entityId: id,
-        entityName: _assignmentRoleDisplayName(
-            oldDoc.data()?['roleType'] as String?, roleKeyToHebrewMap),
-        oldValue:
-            oldDoc.exists ? Map<String, dynamic>.from(oldDoc.data()!) : null,
+      await _invokeMutation(
+        'assignment.delete',
+        payload: {'assignmentId': id},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete assignment: $e');
     }
@@ -1550,37 +966,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteAssignmentsByEvent(String eventId) async {
     try {
-      final snapshot = await _firestore
-          .collection(_assignmentsCollection)
-          .where('eventId', isEqualTo: eventId)
-          .get();
-
-      final batch = _firestore.batch();
-      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
-      final operationId = const Uuid().v4();
-      for (final doc in snapshot.docs) {
-        batch.delete(doc.reference);
-        await _addAuditLogToBatch(
-          batch: batch,
-          actionType: 'delete',
-          entityType: 'assignment',
-          entityId: doc.id,
-          entityName: _assignmentRoleDisplayName(
-              doc.data()['roleType'] as String?, roleKeyToHebrewMap),
-          oldValue: Map<String, dynamic>.from(doc.data()),
-          parentOperationId: operationId,
-          operationId: const Uuid().v4(),
-        );
-      }
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'assignmentBatch',
-        entityId: eventId,
-        details: {'eventId': eventId, 'deletedCount': snapshot.docs.length},
-        operationId: operationId,
+      await _invokeMutation(
+        'assignment.deleteByEvent',
+        payload: {'eventId': eventId},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete assignments by event: $e');
     }
@@ -1589,40 +978,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteAssignmentsByPerson(String teamMemberId) async {
     try {
-      final snapshot = await _firestore
-          .collection(_assignmentsCollection)
-          .where('teamMemberId', isEqualTo: teamMemberId)
-          .get();
-
-      final batch = _firestore.batch();
-      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
-      final operationId = const Uuid().v4();
-      for (final doc in snapshot.docs) {
-        batch.delete(doc.reference);
-        await _addAuditLogToBatch(
-          batch: batch,
-          actionType: 'delete',
-          entityType: 'assignment',
-          entityId: doc.id,
-          entityName: _assignmentRoleDisplayName(
-              doc.data()['roleType'] as String?, roleKeyToHebrewMap),
-          oldValue: Map<String, dynamic>.from(doc.data()),
-          parentOperationId: operationId,
-          operationId: const Uuid().v4(),
-        );
-      }
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'assignmentBatch',
-        entityId: teamMemberId,
-        details: {
-          'teamMemberId': teamMemberId,
-          'deletedCount': snapshot.docs.length
-        },
-        operationId: operationId,
+      await _invokeMutation(
+        'assignment.deleteByPerson',
+        payload: {'teamMemberId': teamMemberId},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete assignments by person: $e');
     }
@@ -1632,43 +991,10 @@ class FirestoreDatabase implements DatabaseInterface {
   Future<void> deleteAssignmentsBatch(List<String> assignmentIds) async {
     try {
       if (assignmentIds.isEmpty) return;
-
-      final batch = _firestore.batch();
-      final roleKeyToHebrewMap = await _getRoleKeyToHebrewMap();
-      final operationId = const Uuid().v4();
-      final oldDocs = await Future.wait(
-        assignmentIds.map((id) =>
-            _firestore.collection(_assignmentsCollection).doc(id).get()),
+      await _invokeMutation(
+        'assignment.deleteBatch',
+        payload: {'assignmentIds': assignmentIds},
       );
-      for (final id in assignmentIds) {
-        batch.delete(_firestore.collection(_assignmentsCollection).doc(id));
-      }
-      for (final doc in oldDocs) {
-        if (!doc.exists) continue;
-        await _addAuditLogToBatch(
-          batch: batch,
-          actionType: 'delete',
-          entityType: 'assignment',
-          entityId: doc.id,
-          entityName: _assignmentRoleDisplayName(
-              doc.data()?['roleType'] as String?, roleKeyToHebrewMap),
-          oldValue: Map<String, dynamic>.from(doc.data()!),
-          parentOperationId: operationId,
-          operationId: const Uuid().v4(),
-        );
-      }
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'assignmentBatch',
-        entityId: operationId,
-        details: {
-          'assignmentIds': assignmentIds,
-          'deletedCount': oldDocs.where((d) => d.exists).length
-        },
-        operationId: operationId,
-      );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete assignments batch: $e');
     }
@@ -1677,37 +1003,12 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> insertAssignmentsBatch(List<Assignment> assignments) async {
     try {
-      final batch = _firestore.batch();
-      final operationId = const Uuid().v4();
-
-      for (final assignment in assignments) {
-        // Validate FKs (will throw if invalid)
-        await _validateAssignmentForeignKeys(
-            assignment.eventId, assignment.teamMemberId);
-
-        final model = AssignmentModel.fromEntity(assignment);
-        // For new documents, filter out FieldValue.delete() since set() doesn't support it
-        final firestoreData = model.toFirestore();
-        final cleanData = Map<String, dynamic>.from(firestoreData)
-          ..removeWhere((key, value) => value is FieldValue);
-        final docRef =
-            _firestore.collection(_assignmentsCollection).doc(assignment.id);
-        batch.set(docRef, cleanData);
-      }
-
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'assignmentBatch',
-        entityId: operationId,
-        details: {
-          'count': assignments.length,
-          'ids': assignments.map((a) => a.id).toList(),
+      await _invokeMutation(
+        'assignment.insertBatch',
+        payload: {
+          'assignments': assignments.map(_assignmentEntityToMap).toList(),
         },
-        operationId: operationId,
       );
-
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to insert assignments batch: $e');
     }
@@ -1718,32 +1019,7 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> clearAllData() async {
     try {
-      // Delete all team members
-      final teamMembersSnapshot =
-          await _firestore.collection(_teamMembersCollection).get();
-      final teamMembersBatch = _firestore.batch();
-      for (final doc in teamMembersSnapshot.docs) {
-        teamMembersBatch.delete(doc.reference);
-      }
-      await teamMembersBatch.commit();
-
-      // Delete all events
-      final eventsSnapshot =
-          await _firestore.collection(_eventsCollection).get();
-      final eventsBatch = _firestore.batch();
-      for (final doc in eventsSnapshot.docs) {
-        eventsBatch.delete(doc.reference);
-      }
-      await eventsBatch.commit();
-
-      // Delete all assignments
-      final assignmentsSnapshot =
-          await _firestore.collection(_assignmentsCollection).get();
-      final assignmentsBatch = _firestore.batch();
-      for (final doc in assignmentsSnapshot.docs) {
-        assignmentsBatch.delete(doc.reference);
-      }
-      await assignmentsBatch.commit();
+      await _invokeMutation('utility.clearAllData');
     } catch (e) {
       throw DatabaseException('Failed to clear all data: $e');
     }
@@ -1801,20 +1077,6 @@ class FirestoreDatabase implements DatabaseInterface {
     }).toList();
   }
 
-  /// Validate that event and team member exist before creating assignment
-  Future<void> _validateAssignmentForeignKeys(
-      String eventId, String teamMemberId) async {
-    final event = await getEventById(eventId);
-    if (event == null) {
-      throw DatabaseException('Event not found: $eventId');
-    }
-
-    final member = await getTeamMemberById(teamMemberId);
-    if (member == null) {
-      throw DatabaseException('Team member not found: $teamMemberId');
-    }
-  }
-
   // ========== Calendar Sync State ==========
 
   @override
@@ -1825,18 +1087,15 @@ class FirestoreDatabase implements DatabaseInterface {
     required CalendarSyncStatus status,
   }) async {
     try {
-      await _firestore
-          .collection(_calendarSyncCollection)
-          .doc(constraintId)
-          .set({
-        'calendarEventId': calendarEventId,
-        'teamMemberId': teamMemberId,
-        'status': status.name,
-        'syncedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'retryCount': 0,
-        'errorMessage': null,
-      });
+      await _invokeMutation(
+        'calendar.saveSyncState',
+        payload: {
+          'constraintId': constraintId,
+          'calendarEventId': calendarEventId,
+          'teamMemberId': teamMemberId,
+          'status': status.name,
+        },
+      );
     } catch (e) {
       throw DatabaseException('Failed to save calendar sync state: $e');
     }
@@ -1895,23 +1154,15 @@ class FirestoreDatabase implements DatabaseInterface {
     int? retryCount,
   }) async {
     try {
-      final updates = <String, dynamic>{
-        'status': status.name,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      if (errorMessage != null) {
-        updates['errorMessage'] = errorMessage;
-      }
-
-      if (retryCount != null) {
-        updates['retryCount'] = retryCount;
-      }
-
-      await _firestore
-          .collection(_calendarSyncCollection)
-          .doc(constraintId)
-          .update(updates);
+      await _invokeMutation(
+        'calendar.updateSyncStatus',
+        payload: {
+          'constraintId': constraintId,
+          'status': status.name,
+          if (errorMessage != null) 'errorMessage': errorMessage,
+          if (retryCount != null) 'retryCount': retryCount,
+        },
+      );
     } catch (e) {
       throw DatabaseException('Failed to update calendar sync status: $e');
     }
@@ -1920,10 +1171,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> removeCalendarSyncState(String constraintId) async {
     try {
-      await _firestore
-          .collection(_calendarSyncCollection)
-          .doc(constraintId)
-          .delete();
+      await _invokeMutation(
+        'calendar.removeSyncState',
+        payload: {'constraintId': constraintId},
+      );
     } catch (e) {
       throw DatabaseException('Failed to remove calendar sync state: $e');
     }
@@ -1988,46 +1239,13 @@ class FirestoreDatabase implements DatabaseInterface {
     String teamMemberId,
   ) async {
     try {
-      return await _firestore.runTransaction((transaction) async {
-        // Get the current sync state document
-        final docRef =
-            _firestore.collection(_calendarSyncCollection).doc(constraintId);
-        final docSnapshot = await transaction.get(docRef);
-
-        if (docSnapshot.exists) {
-          final data = docSnapshot.data();
-          if (data != null &&
-              data['status'] == CalendarSyncStatus.synced.name) {
-            // Already synced - return update action with existing calendar event ID
-            return {
-              'action': 'update',
-              'calendarEventId': data['calendarEventId'],
-              'teamMemberId': data['teamMemberId'],
-            };
-          }
-        }
-
-        // Not synced or doesn't exist - set a pending state to reserve the sync
-        final now = FieldValue.serverTimestamp();
-        transaction.set(docRef, {
-          'calendarEventId': '', // Empty placeholder
+      return await _invokeMutation(
+        'calendar.atomicCheckAndSetSyncState',
+        payload: {
+          'constraintId': constraintId,
           'teamMemberId': teamMemberId,
-          'status': CalendarSyncStatus.pending.name,
-          'syncedAt': now,
-          'updatedAt': now,
-          'retryCount': 0,
-          'errorMessage': null,
-          'reservedBy': DateTime.now()
-              .millisecondsSinceEpoch, // For debugging race conditions
-        });
-
-        // Return create action
-        return {
-          'action': 'create',
-          'calendarEventId': null,
-          'teamMemberId': teamMemberId,
-        };
-      });
+        },
+      );
     } catch (e) {
       throw DatabaseException('Failed to atomic check and set sync state: $e');
     }
@@ -2068,16 +1286,15 @@ class FirestoreDatabase implements DatabaseInterface {
     required CalendarSyncStatus status,
   }) async {
     try {
-      await _firestore
-          .collection(_eventCalendarSyncCollection)
-          .doc(eventId)
-          .set({
-        'assemblyCalendarEventId': assemblyCalendarEventId,
-        'mainCalendarEventId': mainCalendarEventId,
-        'status': status.name,
-        'syncedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await _invokeMutation(
+        'calendar.saveEventSyncState',
+        payload: {
+          'eventId': eventId,
+          'assemblyCalendarEventId': assemblyCalendarEventId,
+          'mainCalendarEventId': mainCalendarEventId,
+          'status': status.name,
+        },
+      );
     } catch (e) {
       throw DatabaseException('Failed to save event calendar sync state: $e');
     }
@@ -2113,10 +1330,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> removeEventCalendarSyncState(String eventId) async {
     try {
-      await _firestore
-          .collection(_eventCalendarSyncCollection)
-          .doc(eventId)
-          .delete();
+      await _invokeMutation(
+        'calendar.removeEventSyncState',
+        payload: {'eventId': eventId},
+      );
     } catch (e) {
       throw DatabaseException('Failed to remove event calendar sync state: $e');
     }
@@ -2124,77 +1341,14 @@ class FirestoreDatabase implements DatabaseInterface {
 
   @override
   Future<Map<String, String?>?> getGoogleCalendarConfig() async {
-    try {
-      final doc =
-          await _firestore.collection('keys').doc('googleCalendar').get();
-
-      if (!doc.exists) {
-        return null;
-      }
-
-      final data = doc.data() as Map<String, dynamic>;
-
-      // Handle service account credentials - should be stored as a Map/Object
-      String? serviceAccountJson;
-      final serviceAccountData = data['serviceAccountJson'];
-
-      if (serviceAccountData is Map) {
-        // If stored as a Map, convert to JSON string
-        serviceAccountJson = _convertMapToJsonString(
-            Map<String, dynamic>.from(serviceAccountData));
-      } else if (serviceAccountData is String) {
-        // If still stored as a string, try to use it directly
-        serviceAccountJson = serviceAccountData;
-      } else {
-        serviceAccountJson = null;
-      }
-
-      final result = {
-        'serviceAccountJson': serviceAccountJson,
-        'calendarId': data['calendarId'] as String?,
-      };
-
-      return result;
-    } catch (e) {
-      throw DatabaseException('Failed to fetch Google Calendar config: $e');
-    }
+    // Google Calendar config is backend-only. The client should never read it.
+    return null;
   }
 
   @override
   Future<Map<String, String?>?> getDriveConfig() async {
-    try {
-      final doc = await _firestore.collection('keys').doc('googleDrive').get();
-
-      if (!doc.exists) {
-        return null;
-      }
-
-      final data = doc.data() as Map<String, dynamic>;
-
-      return {
-        'scriptUrl': data['scriptUrl'] as String?,
-        'apiKey': data['apiKey'] as String?,
-      };
-    } catch (e) {
-      throw DatabaseException('Failed to fetch Google Drive config: $e');
-    }
-  }
-
-  /// Helper method to convert a Map to a JSON string with properly formatted private key
-  String _convertMapToJsonString(Map<String, dynamic> map) {
-    // Create a copy to avoid modifying the original
-    final Map<String, dynamic> jsonMap = Map.from(map);
-
-    // For the private_key field, ensure newlines are preserved (NOT escaped)
-    // Firestore will handle the JSON encoding properly when storing as a Map
-    // When we retrieve it, the private_key should already have proper newlines
-    if (jsonMap.containsKey('private_key') &&
-        jsonMap['private_key'] is String) {
-      // Keep the newlines as-is - they should be stored properly in the Map
-    }
-
-    // Use jsonEncode directly without escaping newlines
-    return jsonEncode(jsonMap);
+    // Google Drive config is backend-only. The client should never read it.
+    return null;
   }
 
   // ========== Checklist Items Implementation ==========
@@ -2455,19 +1609,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> insertChecklistItem(ChecklistItem item) async {
     try {
-      final batch = _firestore.batch();
-      final docRef =
-          _firestore.collection(_checklistItemsCollection).doc(item.id);
-      batch.set(docRef, ChecklistItemModel.toFirestore(item));
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'checklistItem',
-        entityId: item.id,
-        entityName: item.name,
-        newValue: _checklistItemEntityToMap(item),
+      await _invokeMutation(
+        'checklist.insert',
+        payload: {'item': _checklistItemEntityToMap(item)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to insert checklist item: $e');
     }
@@ -2476,22 +1621,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> updateChecklistItem(ChecklistItem item) async {
     try {
-      final docRef =
-          _firestore.collection(_checklistItemsCollection).doc(item.id);
-      final oldDoc = await docRef.get();
-      final batch = _firestore.batch();
-      batch.update(docRef, ChecklistItemModel.toFirestore(item));
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'checklistItem',
-        entityId: item.id,
-        entityName: item.name,
-        oldValue:
-            oldDoc.exists ? Map<String, dynamic>.from(oldDoc.data()!) : null,
-        newValue: _checklistItemEntityToMap(item),
+      await _invokeMutation(
+        'checklist.update',
+        payload: {'item': _checklistItemEntityToMap(item)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to update checklist item: $e');
     }
@@ -2500,20 +1633,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteChecklistItem(String id) async {
     try {
-      final docRef = _firestore.collection(_checklistItemsCollection).doc(id);
-      final oldDoc = await docRef.get();
-      final batch = _firestore.batch();
-      batch.delete(docRef);
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'checklistItem',
-        entityId: id,
-        entityName: oldDoc.data()?['name'] as String?,
-        oldValue:
-            oldDoc.exists ? Map<String, dynamic>.from(oldDoc.data()!) : null,
+      await _invokeMutation(
+        'checklist.delete',
+        payload: {'itemId': id},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete checklist item: $e');
     }
@@ -2522,36 +1645,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteChecklistItemsByEvent(String eventId) async {
     try {
-      final batch = _firestore.batch();
-      final operationId = const Uuid().v4();
-      final snapshot = await _firestore
-          .collection(_checklistItemsCollection)
-          .where('eventId', isEqualTo: eventId)
-          .get();
-
-      for (final doc in snapshot.docs) {
-        batch.delete(doc.reference);
-        await _addAuditLogToBatch(
-          batch: batch,
-          actionType: 'delete',
-          entityType: 'checklistItem',
-          entityId: doc.id,
-          entityName: doc.data()['name'] as String?,
-          oldValue: Map<String, dynamic>.from(doc.data()),
-          operationId: const Uuid().v4(),
-          parentOperationId: operationId,
-        );
-      }
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'checklistItemBatch',
-        entityId: eventId,
-        details: {'eventId': eventId, 'deletedCount': snapshot.docs.length},
-        operationId: operationId,
+      await _invokeMutation(
+        'checklist.deleteByEvent',
+        payload: {'eventId': eventId},
       );
-
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete checklist items by event: $e');
     }
@@ -2561,31 +1658,13 @@ class FirestoreDatabase implements DatabaseInterface {
   Future<void> addNoteToChecklistItem(
       String checklistItemId, Map<String, dynamic> noteData) async {
     try {
-      final docRef =
-          _firestore.collection(_checklistItemsCollection).doc(checklistItemId);
-      final oldDoc = await docRef.get();
-      final oldNotes = oldDoc.exists
-          ? List<dynamic>.from(
-              (oldDoc.data()?['notes'] as List<dynamic>?) ?? const [])
-          : <dynamic>[];
-      final newNotes = List<dynamic>.from(oldNotes)..add(noteData);
-
-      final batch = _firestore.batch();
-      batch.update(docRef, {
-        'notes': FieldValue.arrayUnion([noteData]),
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-      });
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'checklistNote',
-        entityId: noteData['id']?.toString() ?? const Uuid().v4(),
-        entityName: null,
-        oldValue: {'notes': oldNotes},
-        newValue: {'notes': newNotes},
-        details: {'checklistItemId': checklistItemId},
+      await _invokeMutation(
+        'checklist.addNote',
+        payload: {
+          'checklistItemId': checklistItemId,
+          'noteData': noteData,
+        },
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to add note to checklist item: $e');
     }
@@ -2621,18 +1700,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> insertPreset(Preset preset) async {
     try {
-      final batch = _firestore.batch();
-      final docRef = _firestore.collection(_presetsCollection).doc(preset.id);
-      batch.set(docRef, PresetModel.toFirestore(preset));
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'preset',
-        entityId: preset.id,
-        entityName: preset.name,
-        newValue: _presetEntityToMap(preset),
+      await _invokeMutation(
+        'preset.insert',
+        payload: {'preset': _presetEntityToMap(preset)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to insert preset: $e');
     }
@@ -2641,21 +1712,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> updatePreset(Preset preset) async {
     try {
-      final docRef = _firestore.collection(_presetsCollection).doc(preset.id);
-      final oldDoc = await docRef.get();
-      final batch = _firestore.batch();
-      batch.update(docRef, PresetModel.toFirestore(preset));
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'preset',
-        entityId: preset.id,
-        entityName: preset.name,
-        oldValue:
-            oldDoc.exists ? Map<String, dynamic>.from(oldDoc.data()!) : null,
-        newValue: _presetEntityToMap(preset),
+      await _invokeMutation(
+        'preset.update',
+        payload: {'preset': _presetEntityToMap(preset)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to update preset: $e');
     }
@@ -2664,20 +1724,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deletePreset(String id) async {
     try {
-      final docRef = _firestore.collection(_presetsCollection).doc(id);
-      final oldDoc = await docRef.get();
-      final batch = _firestore.batch();
-      batch.delete(docRef);
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'preset',
-        entityId: id,
-        entityName: oldDoc.data()?['name'] as String?,
-        oldValue:
-            oldDoc.exists ? Map<String, dynamic>.from(oldDoc.data()!) : null,
+      await _invokeMutation(
+        'preset.delete',
+        payload: {'presetId': id},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete preset: $e');
     }
@@ -2687,77 +1737,14 @@ class FirestoreDatabase implements DatabaseInterface {
   Future<void> loadPresetIntoEvent(
       String presetId, String eventId, String creatorAdminId) async {
     try {
-      // Get the preset
-      final preset = await getPresetById(presetId);
-      if (preset == null) {
-        throw DatabaseException('Preset not found: $presetId');
-      }
-
-      // Create checklist items from preset templates
-      final now = DateTime.now();
-      final batch = _firestore.batch();
-      final operationId = const Uuid().v4();
-
-      for (final templateItem in preset.items) {
-        final checklistItemId = const Uuid().v4();
-        // Convert admin note from preset template into a ChecklistNote if present
-        final notes = <ChecklistNote>[];
-        if (templateItem.adminNote.isNotEmpty) {
-          notes.add(ChecklistNote(
-            id: const Uuid().v4(),
-            content: templateItem.adminNote,
-            createdAt: now,
-            createdByTeamMemberId: creatorAdminId,
-            createdByTeamMemberName: null,
-            authorRole: 'מנהל',
-          ));
-        }
-
-        final checklistItem = ChecklistItem(
-          id: checklistItemId,
-          eventId: eventId,
-          name: templateItem.name,
-          responsibleId: templateItem.responsibleId,
-          ccIds: templateItem.ccIds,
-          notes: notes,
-          status: false,
-          createdAt: now,
-          updatedAt: now,
-          statusLastUpdatedAt: now,
-          createdByAdminId: creatorAdminId,
-        );
-
-        final docRef = _firestore
-            .collection(_checklistItemsCollection)
-            .doc(checklistItemId);
-        batch.set(docRef, ChecklistItemModel.toFirestore(checklistItem));
-        await _addAuditLogToBatch(
-          batch: batch,
-          actionType: 'create',
-          entityType: 'checklistItem',
-          entityId: checklistItemId,
-          entityName: checklistItem.name,
-          newValue: _checklistItemEntityToMap(checklistItem),
-          parentOperationId: operationId,
-          operationId: const Uuid().v4(),
-        );
-      }
-
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'preset',
-        entityId: presetId,
-        entityName: preset.name,
-        details: {
+      await _invokeMutation(
+        'preset.loadIntoEvent',
+        payload: {
+          'presetId': presetId,
           'eventId': eventId,
           'creatorAdminId': creatorAdminId,
-          'createdChecklistItemsCount': preset.items.length,
         },
-        operationId: operationId,
       );
-
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to load preset into event: $e');
     }
@@ -2833,33 +1820,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> insertRole(Role role) async {
     try {
-      final docRef = _firestore.collection('utilities').doc('Lists');
-      final doc = await docRef.get();
-
-      final model = RoleModel.fromEntity(role);
-      final roleData = model.toJson();
-      final batch = _firestore.batch();
-
-      if (!doc.exists) {
-        // Create the document with the role
-        batch.set(docRef, {
-          'Roles': [roleData],
-        });
-      } else {
-        // Append to existing array
-        batch.update(docRef, {
-          'Roles': FieldValue.arrayUnion([roleData]),
-        });
-      }
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'role',
-        entityId: role.id,
-        entityName: role.hebrewName,
-        newValue: _roleEntityToMap(role),
+      await _invokeMutation(
+        'role.insert',
+        payload: {'role': _roleEntityToMap(role)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to insert role: $e');
     }
@@ -2868,37 +1832,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> updateRole(Role role) async {
     try {
-      final roles = await getRoles();
-      final index = roles.indexWhere((r) => r.id == role.id);
-
-      if (index == -1) {
-        throw DatabaseException('Role not found: ${role.id}');
-      }
-
-      final oldRole = roles[index];
-      // Replace the role at the index
-      roles[index] = role;
-
-      // Convert all roles to JSON
-      final rolesData =
-          roles.map((r) => RoleModel.fromEntity(r).toJson()).toList();
-
-      // Update the entire array
-      final batch = _firestore.batch();
-      final docRef = _firestore.collection('utilities').doc('Lists');
-      batch.update(docRef, {
-        'Roles': rolesData,
-      });
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'role',
-        entityId: role.id,
-        entityName: role.hebrewName,
-        oldValue: _roleEntityToMap(oldRole),
-        newValue: _roleEntityToMap(role),
+      await _invokeMutation(
+        'role.update',
+        payload: {'role': _roleEntityToMap(role)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to update role: $e');
     }
@@ -2907,17 +1844,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> archiveRole(String id) async {
     try {
-      final role = await getRoleById(id);
-      if (role == null) {
-        throw DatabaseException('Role not found: $id');
-      }
-
-      final updatedRole = role.copyWith(
-        isArchived: true,
-        updatedAt: DateTime.now(),
+      await _invokeMutation(
+        'role.archive',
+        payload: {'roleId': id},
       );
-
-      await updateRole(updatedRole);
     } catch (e) {
       throw DatabaseException('Failed to archive role: $e');
     }
@@ -2926,18 +1856,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> restoreRole(String id) async {
     try {
-      final role = await getRoleById(id);
-      if (role == null) {
-        throw DatabaseException('Role not found: $id');
-      }
-
-      final updatedRole = role.copyWith(
-        isArchived: false,
-        isVisible: true, // When restoring, also set visible to true
-        updatedAt: DateTime.now(),
+      await _invokeMutation(
+        'role.restore',
+        payload: {'roleId': id},
       );
-
-      await updateRole(updatedRole);
     } catch (e) {
       throw DatabaseException('Failed to restore role: $e');
     }
@@ -2946,43 +1868,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteRole(String id) async {
     try {
-      final oldRole = await getRoleById(id);
-      // Get the current list of roles
-      final docRef = _firestore.collection('utilities').doc('Lists');
-      final doc = await docRef.get();
-
-      if (!doc.exists || doc.data() == null) {
-        throw DatabaseException('Roles document not found');
-      }
-
-      final data = doc.data()!;
-      final List<dynamic> rolesData = data['Roles'] ?? [];
-
-      // Convert to Role entities
-      final roles = rolesData
-          .map((json) => RoleModel.fromJson(json as Map<String, dynamic>))
-          .map((model) => model.toEntity())
-          .toList();
-
-      // Remove the role with the matching id
-      final updatedRoles = roles.where((role) => role.id != id).toList();
-
-      // Convert back to JSON
-      final updatedRolesData =
-          updatedRoles.map((r) => RoleModel.fromEntity(r).toJson()).toList();
-
-      // Update the entire array
-      final batch = _firestore.batch();
-      batch.update(docRef, {'Roles': updatedRolesData});
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'role',
-        entityId: id,
-        entityName: oldRole?.hebrewName,
-        oldValue: oldRole != null ? _roleEntityToMap(oldRole) : null,
+      await _invokeMutation(
+        'role.delete',
+        payload: {'roleId': id},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete role: $e');
     }
@@ -3025,27 +1914,9 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> seedRolesFromEnum() async {
     try {
-      final doc = await _firestore.collection('utilities').doc('Lists').get();
-
-      // Check if Roles array already exists and has data
-      if (doc.exists && doc.data() != null) {
-        final data = doc.data()!;
-        final rolesArray = data['Roles'] as List<dynamic>?;
-        if (rolesArray != null && rolesArray.isNotEmpty) {
-          developer.log(
-              'FirestoreDatabase.seedRolesFromEnum: Roles array already has data, skipping seed',
-              name: 'Firestore');
-          return;
-        }
-      }
-
-      developer.log(
-          'FirestoreDatabase.seedRolesFromEnum: Seeding roles from RoleType enum',
-          name: 'Firestore');
-
       final now = DateTime.now();
       int sortOrder = 0;
-      final rolesData = <Map<String, dynamic>>[];
+      final roles = <Map<String, dynamic>>[];
 
       for (final roleType in RoleType.values) {
         final role = Role(
@@ -3059,14 +1930,12 @@ class FirestoreDatabase implements DatabaseInterface {
           updatedAt: now,
         );
 
-        final model = RoleModel.fromEntity(role);
-        rolesData.add(model.toJson());
+        roles.add(_roleEntityToMap(role));
       }
-
-      // Set or update the document
-      await _firestore.collection('utilities').doc('Lists').set({
-        'Roles': rolesData,
-      }, SetOptions(merge: true));
+      await _invokeMutation(
+        'role.seed',
+        payload: {'roles': roles},
+      );
     } catch (e) {
       throw DatabaseException('Failed to seed roles from enum: $e');
     }
@@ -3075,39 +1944,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> updateRolesSortOrder(Map<String, int> roleIdToSortOrder) async {
     try {
-      final roles = await getRoles();
-      final oldRoles = roles.map((r) => _roleEntityToMap(r)).toList();
-
-      // Update sort order for each role
-      for (final role in roles) {
-        if (roleIdToSortOrder.containsKey(role.id)) {
-          final index = roles.indexOf(role);
-          roles[index] = role.copyWith(
-            sortOrder: roleIdToSortOrder[role.id]!,
-            updatedAt: DateTime.now(),
-          );
-        }
-      }
-
-      // Convert all roles to JSON
-      final rolesData =
-          roles.map((r) => RoleModel.fromEntity(r).toJson()).toList();
-
-      // Update the entire array
-      final batch = _firestore.batch();
-      final docRef = _firestore.collection('utilities').doc('Lists');
-      batch.update(docRef, {
-        'Roles': rolesData,
-      });
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'roleBatch',
-        entityId: const Uuid().v4(),
-        oldValue: {'roles': oldRoles},
-        newValue: {'roles': roles.map(_roleEntityToMap).toList()},
+      await _invokeMutation(
+        'role.reorder',
+        payload: {'roleIdToSortOrder': roleIdToSortOrder},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to update roles sort order: $e');
     }
@@ -3182,44 +2022,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> insertCategory(Category category) async {
     try {
-      // Get the current document
-      final docRef = _firestore.collection('utilities').doc('Lists');
-      final doc = await docRef.get();
-
-      final List<Map<String, dynamic>> categoriesData = [];
-
-      // If document exists, get current categories
-      if (doc.exists && doc.data() != null) {
-        final data = doc.data()!;
-        final List<dynamic>? currentCategories =
-            data['Categories'] as List<dynamic>?;
-        if (currentCategories != null) {
-          for (final cat in currentCategories) {
-            categoriesData.add(cat as Map<String, dynamic>);
-          }
-        }
-      }
-
-      // Add new category
-      categoriesData.add(CategoryModel.fromEntity(category).toJson());
-
-      // Write back to Firestore
-      final batch = _firestore.batch();
-      batch.set(
-          docRef,
-          {
-            'Categories': categoriesData,
-          },
-          SetOptions(merge: true));
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'create',
-        entityType: 'category',
-        entityId: category.id,
-        entityName: category.name,
-        newValue: _categoryEntityToMap(category),
+      await _invokeMutation(
+        'category.insert',
+        payload: {'category': _categoryEntityToMap(category)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to insert category: $e');
     }
@@ -3228,41 +2034,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> updateCategory(Category category) async {
     try {
-      // Get the current list of categories
-      final categories = await getCategories();
-      final index = categories.indexWhere((c) => c.id == category.id);
-
-      if (index == -1) {
-        throw DatabaseException('Category not found: ${category.id}');
-      }
-
-      final oldCategory = categories[index];
-      // Update the category in the list
-      categories[index] = category;
-
-      // Convert all categories to JSON
-      final categoriesData =
-          categories.map((c) => CategoryModel.fromEntity(c).toJson()).toList();
-
-      // Write back to Firestore
-      final batch = _firestore.batch();
-      final docRef = _firestore.collection('utilities').doc('Lists');
-      batch.set(
-          docRef,
-          {
-            'Categories': categoriesData,
-          },
-          SetOptions(merge: true));
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'category',
-        entityId: category.id,
-        entityName: category.name,
-        oldValue: _categoryEntityToMap(oldCategory),
-        newValue: _categoryEntityToMap(category),
+      await _invokeMutation(
+        'category.update',
+        payload: {'category': _categoryEntityToMap(category)},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to update category: $e');
     }
@@ -3271,58 +2046,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteCategory(String id) async {
     try {
-      // Get the current document
-      final docRef = _firestore.collection('utilities').doc('Lists');
-      final doc = await docRef.get();
-
-      if (!doc.exists || doc.data() == null) {
-        throw DatabaseException('utilities/Lists document does not exist');
-      }
-
-      final data = doc.data()!;
-      final List<dynamic> categoriesData =
-          data['Categories'] as List<dynamic>? ?? [];
-
-      // Find and update the category (soft delete)
-      final categories = categoriesData
-          .map((catData) =>
-              CategoryModel.fromJson(catData as Map<String, dynamic>)
-                  .toEntity())
-          .toList();
-
-      final index = categories.indexWhere((c) => c.id == id);
-      if (index == -1) {
-        throw DatabaseException('Category not found: $id');
-      }
-      final oldCategory = categories[index];
-
-      // Soft delete: set isArchived to true
-      categories[index] = categories[index].copyWith(
-        isArchived: true,
-        updatedAt: DateTime.now(),
+      await _invokeMutation(
+        'category.delete',
+        payload: {'categoryId': id},
       );
-
-      // Convert back to JSON and write
-      final updatedCategoriesData =
-          categories.map((c) => CategoryModel.fromEntity(c).toJson()).toList();
-
-      final batch = _firestore.batch();
-      batch.set(
-          docRef,
-          {
-            'Categories': updatedCategoriesData,
-          },
-          SetOptions(merge: true));
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'category',
-        entityId: id,
-        entityName: oldCategory.name,
-        oldValue: _categoryEntityToMap(oldCategory),
-        newValue: _categoryEntityToMap(categories[index]),
-      );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to delete category: $e');
     }
@@ -3331,48 +2058,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> permanentlyDeleteCategory(String id) async {
     try {
-      // Get the current document
-      final docRef = _firestore.collection('utilities').doc('Lists');
-      final doc = await docRef.get();
-
-      if (!doc.exists || doc.data() == null) {
-        throw DatabaseException('utilities/Lists document does not exist');
-      }
-
-      final data = doc.data()!;
-      final List<dynamic> categoriesData =
-          data['Categories'] as List<dynamic>? ?? [];
-      Category? deletedCategory;
-
-      // Filter out the category to delete
-      final updatedCategories = categoriesData.where((catData) {
-        final cat =
-            CategoryModel.fromJson(catData as Map<String, dynamic>).toEntity();
-        if (cat.id == id) {
-          deletedCategory = cat;
-        }
-        return cat.id != id;
-      }).toList();
-
-      // Write back to Firestore
-      final batch = _firestore.batch();
-      batch.set(
-          docRef,
-          {
-            'Categories': updatedCategories,
-          },
-          SetOptions(merge: true));
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'delete',
-        entityType: 'category',
-        entityId: id,
-        entityName: deletedCategory?.name,
-        oldValue: deletedCategory != null
-            ? _categoryEntityToMap(deletedCategory!)
-            : null,
+      await _invokeMutation(
+        'category.permanentlyDelete',
+        payload: {'categoryId': id},
       );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to permanently delete category: $e');
     }
@@ -3381,58 +2070,10 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> restoreCategory(String id) async {
     try {
-      // Get the current document
-      final docRef = _firestore.collection('utilities').doc('Lists');
-      final doc = await docRef.get();
-
-      if (!doc.exists || doc.data() == null) {
-        throw DatabaseException('utilities/Lists document does not exist');
-      }
-
-      final data = doc.data()!;
-      final List<dynamic> categoriesData =
-          data['Categories'] as List<dynamic>? ?? [];
-
-      // Find and update the category (restore)
-      final categories = categoriesData
-          .map((catData) =>
-              CategoryModel.fromJson(catData as Map<String, dynamic>)
-                  .toEntity())
-          .toList();
-
-      final index = categories.indexWhere((c) => c.id == id);
-      if (index == -1) {
-        throw DatabaseException('Category not found: $id');
-      }
-      final oldCategory = categories[index];
-
-      // Restore: set isArchived to false
-      categories[index] = categories[index].copyWith(
-        isArchived: false,
-        updatedAt: DateTime.now(),
+      await _invokeMutation(
+        'category.restore',
+        payload: {'categoryId': id},
       );
-
-      // Convert back to JSON and write
-      final updatedCategoriesData =
-          categories.map((c) => CategoryModel.fromEntity(c).toJson()).toList();
-
-      final batch = _firestore.batch();
-      batch.set(
-          docRef,
-          {
-            'Categories': updatedCategoriesData,
-          },
-          SetOptions(merge: true));
-      await _addAuditLogToBatch(
-        batch: batch,
-        actionType: 'edit',
-        entityType: 'category',
-        entityId: id,
-        entityName: oldCategory.name,
-        oldValue: _categoryEntityToMap(oldCategory),
-        newValue: _categoryEntityToMap(categories[index]),
-      );
-      await batch.commit();
     } catch (e) {
       throw DatabaseException('Failed to restore category: $e');
     }

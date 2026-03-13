@@ -601,7 +601,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                         return const SizedBox.shrink();
                       }
 
-                      final hasPasscode = state.user.passcode != null;
+                      final hasPasscode = state.user.hasPasscode;
                       final passcodeLength = state.user.passcodeLength ?? 0;
                       final iconSize = _getResponsiveIconSize(context, 18);
                       final fontSize = _getResponsiveFontSize(context, 16);
@@ -773,7 +773,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
     final currentState = bloc.state;
 
     if (currentState is! UserAuthenticated ||
-        currentState.user.passcode == null ||
         currentState.user.passcodeLength == null) {
       return;
     }
@@ -781,12 +780,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
     final result = await showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (context) => PasscodeChangeDialog(
-        currentPasscode: currentState.user.passcode!,
         currentLength: currentState.user.passcodeLength!,
       ),
     );
 
     if (result != null && context.mounted) {
+      final currentPasscode = result['currentPasscode'] as String;
       final passcode = result['passcode'] as String;
       final length = result['length'] as int;
 
@@ -797,6 +796,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
           currentState.user.uniqueKey,
           passcode,
           length,
+          currentPasscode: currentPasscode,
         );
 
         // Refresh user data

@@ -4,13 +4,11 @@ import 'passcode_setup_dialog.dart';
 /// Dialog for admins to manage team member passcodes
 class AdminPasscodeDialog extends StatefulWidget {
   final String teamMemberName;
-  final String? currentPasscode;
   final int? currentLength;
 
   const AdminPasscodeDialog({
     super.key,
     required this.teamMemberName,
-    this.currentPasscode,
     this.currentLength,
   });
 
@@ -19,8 +17,6 @@ class AdminPasscodeDialog extends StatefulWidget {
 }
 
 class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
-  bool _showPasscode = false;
-
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -61,40 +57,11 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
                 ),
               ),
               const SizedBox(height: 24),
-              if (widget.currentPasscode != null) ...[
-                const Text(
-                  'קוד גישה נוכחי:',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _showPasscode
-                            ? widget.currentPasscode!
-                            : '•' * (widget.currentLength ?? 4),
-                        style: const TextStyle(
-                          fontSize: 20,
-                          letterSpacing: 4,
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => setState(() => _showPasscode = !_showPasscode),
-                        icon: Icon(
-                          _showPasscode ? Icons.visibility : Icons.visibility_off,
-                          color: Colors.grey[600],
-                        ),
-                        tooltip: _showPasscode ? 'הסתר קוד' : 'הצג קוד',
-                      ),
-                    ],
-                  ),
+              if (widget.currentLength != null) ...[
+                Text(
+                  'קוד גישה מוגדר (${widget.currentLength} ספרות)',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
               ] else ...[
@@ -116,15 +83,15 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
                   ElevatedButton(
                     onPressed: () => _showSetPasscodeDialog(context),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: widget.currentPasscode != null
+                      backgroundColor: widget.currentLength != null
                           ? Theme.of(context).primaryColor
                           : Colors.green,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     ),
-                    child: Text(widget.currentPasscode != null ? 'שנה קוד' : 'הגדר קוד'),
+                    child: Text(widget.currentLength != null ? 'שנה קוד' : 'הגדר קוד'),
                   ),
-                  if (widget.currentPasscode != null) ...[
+                  if (widget.currentLength != null) ...[
                     const SizedBox(width: 12),
                     ElevatedButton(
                       onPressed: () => _showRemoveConfirmation(context),

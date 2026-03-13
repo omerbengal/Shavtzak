@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
-import '../../bloc/team/team_bloc.dart';
-import '../../bloc/team/team_event.dart';
-import '../../bloc/team/team_state.dart';
-import '../../widgets/test_environment_indicator.dart';
-import '../../widgets/passcode_verification_dialog.dart';
 import '../../widgets/loading_overlay.dart';
-import '../../../core/utils/rtl_text_field_utils.dart';
+import '../../widgets/passcode_verification_dialog.dart';
+import '../../widgets/test_environment_indicator.dart';
 
 /// Screen for user selection - "מי את/ה?"
 class WhoamiScreen extends StatefulWidget {
@@ -26,7 +24,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
 
   List<TeamMember> _allTeamMembers = [];
   List<TeamMember> _filteredTeamMembers = [];
-  late bool _isLoading;
+  bool _isLoading = true;
   String _searchQuery = '';
   String? _errorMessage;
   bool _isAuthenticating = false;
@@ -36,28 +34,10 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
     super.initState();
     _searchFocusNode = createRtlCursorFixedFocusNode(_searchController);
 
-    // Check initial TeamBloc state - if already loaded, use that data immediately
-    final teamState = context.read<TeamBloc>().state;
-    if (teamState is TeamLoaded) {
-      _isLoading = false;
-      // Filter out "שיבוץ מרובה" members (allowMultipleAssignments = true)
-      _allTeamMembers = teamState.members
-          .where((m) => !m.allowMultipleAssignments)
-          .toList();
-      _filteredTeamMembers = List.from(_allTeamMembers);
-    } else {
-      _isLoading = true;
-    }
-
-    // Trigger initial check and load team members
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<UserSelectionBloc>().add(const CheckCachedUser());
-      // Only trigger LoadTeamMembers if TeamBloc is in initial state
-      // (main.dart now auto-loads team members when TeamBloc is created)
-      final currentState = context.read<TeamBloc>().state;
-      if (currentState is TeamInitial) {
-        context.read<TeamBloc>().add(const LoadTeamMembers());
-      }
+      final bloc = context.read<UserSelectionBloc>();
+      bloc.add(const CheckCachedUser());
+      bloc.add(const LoadAllTeamMembers());
     });
 
     _searchController.addListener(_onSearchChanged);
@@ -70,68 +50,133 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
     super.dispose();
   }
 
+  void _applySearchFilter() {
+    if (_searchQuery.isEmpty) {
+      _filteredTeamMembers = List.from(_allTeamMembers);
+      return;
+    }
+
+    _filteredTeamMembers = _allTeamMembers.where((member) {
+      return member.name.toLowerCase().contains(_searchQuery);
+    }).toList();
+  }
+
   void _onSearchChanged() {
     final query = _searchController.text.toLowerCase().trim();
     setState(() {
       _searchQuery = query;
-      if (query.isEmpty) {
-        _filteredTeamMembers = List.from(_allTeamMembers);
-      } else {
-        _filteredTeamMembers = _allTeamMembers.where((member) =>
-          member.name.toLowerCase().contains(query)
-        ).toList();
-      }
+      _applySearchFilter();
     });
   }
 
-  Future<void> _handleTeamMemberSelection(BuildContext context, TeamMember teamMember) async {
-    // Show loading immediately
+  void _updateMembers(List<TeamMember> members) {
+    _allTeamMembers = members.where((member) => !member.allowMultipleAssignments).toList();
+    _applySearchFilter();
+  }
+
+  Future<void> _handleTeamMemberSelection(
+    BuildContext context,
+    TeamMember teamMember,
+  ) async {
     setState(() => _isAuthenticating = true);
 
     try {
-      // Check if team member has passcode
-      if (teamMember.passcode != null && teamMember.passcodeLength != null) {
-        // Hide loading before showing dialog
+      if (teamMember.hasPasscode && teamMember.passcodeLength != null) {
         setState(() => _isAuthenticating = false);
 
-        // Show passcode verification dialog
-        final verified = await showDialog<bool>(
+        final enteredPasscode = await showDialog<String>(
           context: context,
           barrierDismissible: false,
           builder: (context) => PasscodeVerificationDialog(
             passcodeLength: teamMember.passcodeLength!,
-            correctPasscode: teamMember.passcode!,
           ),
         );
 
-        if (verified == true) {
-          // Passcode verified, proceed with selection
-          if (context.mounted) {
-            setState(() => _isAuthenticating = true);
-            context.read<UserSelectionBloc>().add(SelectUser(teamMember.uniqueKey));
-          }
+        if (enteredPasscode != null && enteredPasscode.isNotEmpty && context.mounted) {
+          setState(() => _isAuthenticating = true);
+          context
+              .read<UserSelectionBloc>()
+              .add(SelectUser(teamMember.uniqueKey, enteredPasscode));
         }
-        // If verified is false or null, do nothing (user cancelled or verification failed)
       } else {
-        // No passcode set, proceed directly
-        if (context.mounted) {
-          context.read<UserSelectionBloc>().add(SelectUser(teamMember.uniqueKey));
-        }
-      }
-    } catch (e) {
-      if (mounted) {
         setState(() => _isAuthenticating = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('שגיאה בבחירת משתמש: $e'),
-            backgroundColor: Colors.red,
+          const SnackBar(
+            content: Text('לחשבון זה לא מוגדר קוד גישה. יש לפנות למנהל/ת.'),
+            backgroundColor: Colors.orange,
           ),
         );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      setState(() => _isAuthenticating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('שגיאה בבחירת משתמש: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _handleUserSelectionState(BuildContext context, UserSelectionState state) {
+    if (state is UserSelectionLoading) {
+      if (_allTeamMembers.isEmpty && !_isAuthenticating) {
+        setState(() {
+          _isLoading = true;
+          _errorMessage = null;
+        });
+      }
+      return;
+    }
+
+    if (state is TeamMembersLoaded) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = null;
+        _updateMembers(state.teamMembers);
+      });
+      return;
+    }
+
+    if (state is UserSelectionValidationError) {
+      setState(() {
+        _isAuthenticating = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(state.message),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (state is UserSelectionError) {
+      setState(() {
+        _isLoading = false;
+        _isAuthenticating = false;
+        _errorMessage = state.message;
+      });
+      return;
+    }
+
+    if (state is UserAuthenticated) {
+      setState(() {
+        _isAuthenticating = false;
+      });
+      return;
+    }
+
+    if (state is UserSelectionRequired) {
+      if (_allTeamMembers.isNotEmpty) {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }
 
-  
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -154,45 +199,11 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
         ),
         body: TestEnvironmentIndicator(
           child: SafeArea(
-            child: MultiBlocListener(
-              listeners: [
-                BlocListener<UserSelectionBloc, UserSelectionState>(
-                  listener: (context, state) {
-                    if (state is UserAuthenticated) {
-                      // Navigate will be handled by router redirect logic
-                    }
-                  },
-                ),
-              ],
-              child: BlocBuilder<TeamBloc, TeamState>(
-                builder: (context, teamState) {
-                  // Handle team state updates
-                  if (teamState is TeamLoading) {
-                    _isLoading = true;
-                    _errorMessage = null;
-                  } else if (teamState is TeamError) {
-                    _isLoading = false;
-                    _errorMessage = teamState.message;
-                  } else if (teamState is TeamLoaded) {
-                    _isLoading = false;
-                    _errorMessage = null;
-                    // Filter out "שיבוץ מרובה" members (allowMultipleAssignments = true)
-                    _allTeamMembers = teamState.members
-                        .where((m) => !m.allowMultipleAssignments)
-                        .toList();
-                    // Apply search filter if needed
-                    if (_searchQuery.isEmpty) {
-                      _filteredTeamMembers = List.from(_allTeamMembers);
-                    } else {
-                      _filteredTeamMembers = _allTeamMembers.where((member) =>
-                        member.name.toLowerCase().contains(_searchQuery)
-                      ).toList();
-                    }
-                  }
-
-                  return _buildSingleScreenLayout();
-                },
-              ),
+            child: BlocConsumer<UserSelectionBloc, UserSelectionState>(
+              listener: _handleUserSelectionState,
+              builder: (context, state) {
+                return _buildSingleScreenLayout(context);
+              },
             ),
           ),
         ),
@@ -224,47 +235,36 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
 
     if (confirmed == true && context.mounted) {
       context.read<UserSelectionBloc>().add(const SignOut());
-      // Since we're already on whoami, we don't need to navigate
-      // The router redirect logic will handle clearing any cached state
     }
   }
 
-  Widget _buildSingleScreenLayout() {
+  Widget _buildSingleScreenLayout(BuildContext context) {
     return Stack(
       children: [
         Column(
           children: [
-            // Header with title and search
             Container(
               padding: const EdgeInsets.all(24.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 40),
-
-                  // Title
                   Text(
                     'מי את/ה?',
                     style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                          fontWeight: FontWeight.bold,
+                        ),
                     textAlign: TextAlign.center,
                   ),
-
                   const SizedBox(height: 16),
-
-                  // Subtitle
                   Text(
                     'חפש/י את עצמך ברשימת חברי הצוות',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Colors.grey[600],
-                    ),
+                          color: Colors.grey[600],
+                        ),
                     textAlign: TextAlign.center,
                   ),
-
                   const SizedBox(height: 32),
-
-                  // Search field
                   TextField(
                     controller: _searchController,
                     focusNode: _searchFocusNode,
@@ -277,14 +277,11 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
                 ],
               ),
             ),
-
-            // Team members list
             Expanded(
-              child: _buildTeamMembersListWidget(),
+              child: _buildTeamMembersListWidget(context),
             ),
           ],
         ),
-        // Loading overlay when authenticating
         LoadingOverlay(
           isLoading: _isAuthenticating,
           message: 'מאמת...',
@@ -293,7 +290,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
     );
   }
 
-  Widget _buildTeamMembersListWidget() {
+  Widget _buildTeamMembersListWidget(BuildContext context) {
     if (_isLoading) {
       return const Center(
         child: Column(
@@ -321,16 +318,16 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
             Text(
               'שגיאה בטעינת נתונים',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Colors.red[600],
-              ),
+                    color: Colors.red[600],
+                  ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               _errorMessage!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.red[400],
-              ),
+                    color: Colors.red[400],
+                  ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -338,9 +335,9 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
               onPressed: () {
                 setState(() {
                   _errorMessage = null;
+                  _isLoading = true;
                 });
-                // Retry by triggering TeamBloc to refresh
-                context.read<TeamBloc>().add(const LoadTeamMembers());
+                context.read<UserSelectionBloc>().add(const LoadAllTeamMembers());
               },
               child: const Text('נסה שוב'),
             ),
@@ -363,13 +360,16 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
             Text(
               'אין חברי צוות במערכת',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Colors.grey[600],
-              ),
+                    color: Colors.grey[600],
+                  ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: () => context.read<TeamBloc>().add(const LoadTeamMembers()),
+              onPressed: () {
+                setState(() => _isLoading = true);
+                context.read<UserSelectionBloc>().add(const LoadAllTeamMembers());
+              },
               child: const Text('רענן'),
             ),
           ],
@@ -391,16 +391,16 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
             Text(
               'לא נמצאו חברי צוות עם השם "$_searchQuery"',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Colors.grey[600],
-              ),
+                    color: Colors.grey[600],
+                  ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               'נסה/י לשנות את מונח החיפוש',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.grey[500],
-              ),
+                    color: Colors.grey[500],
+                  ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -410,7 +410,6 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
 
     return Column(
       children: [
-        // Results count (only show when searching)
         if (_searchQuery.isNotEmpty)
           Container(
             width: double.infinity,
@@ -420,13 +419,11 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
               child: Text(
                 'נמצאו ${_filteredTeamMembers.length} תוצאות',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[600],
-                ),
+                      color: Colors.grey[600],
+                    ),
               ),
             ),
           ),
-
-        // Team members list
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -467,7 +464,6 @@ class _TeamMemberCard extends StatelessWidget {
           padding: const EdgeInsets.all(16.0),
           child: Row(
             children: [
-              // Avatar
               CircleAvatar(
                 radius: 24,
                 backgroundColor: teamMember.isActive
@@ -482,10 +478,7 @@ class _TeamMemberCard extends StatelessWidget {
                   ),
                 ),
               ),
-
               const SizedBox(width: 16),
-
-              // Name and status
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -493,25 +486,23 @@ class _TeamMemberCard extends StatelessWidget {
                     Text(
                       teamMember.name,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                            fontWeight: FontWeight.w600,
+                          ),
                     ),
                     if (!teamMember.isActive)
                       Text(
                         'לא פעיל/ה',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[600],
-                        ),
+                              color: Colors.grey[600],
+                            ),
                       ),
                   ],
                 ),
               ),
-
-              // Arrow icon with optional lock indicator
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (teamMember.passcode != null) ...[
+                  if (teamMember.hasPasscode) ...[
                     Icon(
                       Icons.lock,
                       size: 16,

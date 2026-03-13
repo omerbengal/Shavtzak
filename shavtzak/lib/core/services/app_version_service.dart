@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -35,8 +36,10 @@ class AppVersionService extends ChangeNotifier {
   static const String _whatsNewField = 'WhatsNew';
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
+  StreamSubscription<User?>? _authSubscription;
 
   bool _initialized = false;
   bool _isBlocked = false;
@@ -57,7 +60,7 @@ class AppVersionService extends ChangeNotifier {
 
   Future<void> _initializeInternal() async {
     await _loadCachedVersion();
-    _startRealtimeListener();
+    _bindAuthState();
   }
 
   Future<void> _loadCachedVersion() async {
@@ -71,6 +74,38 @@ class AppVersionService extends ChangeNotifier {
         name: 'AppVersion',
       );
       _cachedVersion = null;
+    }
+  }
+
+  void _bindAuthState() {
+    _authSubscription?.cancel();
+    _authSubscription = _auth.authStateChanges().listen(
+      (user) {
+        if (user == null) {
+          _stopRealtimeListener();
+          _remoteVersion = null;
+          _setWhatsNewItems(const []);
+          _setBlocked(false);
+          return;
+        }
+        _startRealtimeListener();
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        developer.log(
+          'AppVersionService: Auth state stream error: $error',
+          name: 'AppVersion',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        _stopRealtimeListener();
+        _remoteVersion = null;
+        _setWhatsNewItems(const []);
+        _setBlocked(false);
+      },
+    );
+
+    if (_auth.currentUser != null) {
+      _startRealtimeListener();
     }
   }
 
@@ -94,6 +129,11 @@ class AppVersionService extends ChangeNotifier {
         _setBlocked(false);
       },
     );
+  }
+
+  void _stopRealtimeListener() {
+    _subscription?.cancel();
+    _subscription = null;
   }
 
   Future<void> _handleSnapshot(
@@ -176,8 +216,9 @@ class AppVersionService extends ChangeNotifier {
 
   @override
   void dispose() {
-    _subscription?.cancel();
-    _subscription = null;
+    _stopRealtimeListener();
+    _authSubscription?.cancel();
+    _authSubscription = null;
     super.dispose();
   }
 }

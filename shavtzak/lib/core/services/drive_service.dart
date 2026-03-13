@@ -1,6 +1,6 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'dart:developer' as developer;
+
+import 'backend_api_service.dart';
 
 /// Represents a file in Google Drive
 class DriveFile {
@@ -34,7 +34,6 @@ class DriveFile {
     );
   }
 
-  /// Get a human-readable file size
   String get formattedSize {
     if (size < 1024) return '$size B';
     if (size < 1024 * 1024) return '${(size / 1024).toStringAsFixed(1)} KB';
@@ -45,7 +44,6 @@ class DriveFile {
   }
 }
 
-/// Result of a Drive folder creation
 class CreateFolderResult {
   final bool success;
   final String? folderId;
@@ -60,7 +58,6 @@ class CreateFolderResult {
   });
 }
 
-/// Result of listing files in a folder
 class ListFilesResult {
   final bool success;
   final List<DriveFile> files;
@@ -75,7 +72,6 @@ class ListFilesResult {
   });
 }
 
-/// Result of archive check operation
 class ArchiveCheckResult {
   final bool success;
   final List<String> archivedFolderIds;
@@ -88,7 +84,6 @@ class ArchiveCheckResult {
   });
 }
 
-/// Event data for archive check
 class ArchiveEventData {
   final String folderId;
   final DateTime endDate;
@@ -101,17 +96,16 @@ class ArchiveEventData {
   });
 
   Map<String, dynamic> toJson() => {
-    'folderId': folderId,
-    'endDate': endDate.toIso8601String(),
-    'isArchived': isArchived,
-  };
+        'folderId': folderId,
+        'endDate': endDate.toIso8601String(),
+        'isArchived': isArchived,
+      };
 }
 
-/// Service for interacting with Google Drive via Apps Script
+/// Service for interacting with Google Drive via Cloud Functions.
 class DriveService {
   static DriveService? _instance;
 
-  /// Singleton instance
   static DriveService get instance {
     _instance ??= DriveService._();
     return _instance!;
@@ -119,71 +113,38 @@ class DriveService {
 
   DriveService._();
 
-  // Configuration - set via initialize()
-  String? _scriptUrl;
-  String? _apiKey;
+  final BackendApiService _backendApiService = BackendApiService();
   bool _isInitialized = false;
 
-  /// Initialize the service with Apps Script URL and API key
-  void initialize({
-    required String scriptUrl,
-    required String apiKey,
-  }) {
-    _scriptUrl = scriptUrl;
-    _apiKey = apiKey;
+  /// Initialize the backend-backed Drive service.
+  void initialize() {
     _isInitialized = true;
     developer.log('DriveService initialized', name: 'DriveService');
   }
 
-  /// Check if service is initialized
   bool get isInitialized => _isInitialized;
 
-  /// Expose script URL for other services (e.g. ExportService)
-  String? get scriptUrl => _scriptUrl;
-
-  /// Expose API key for other services (e.g. ExportService)
-  String? get apiKey => _apiKey;
-
-  /// Make a POST request to the Apps Script
-  /// Uses text/plain content type to avoid CORS preflight requests
   Future<Map<String, dynamic>> _post(Map<String, dynamic> body) async {
     if (!_isInitialized) {
       throw Exception('DriveService not initialized. Call initialize() first.');
     }
 
-    body['apiKey'] = _apiKey;
-
     try {
-      // Use text/plain to avoid CORS preflight (OPTIONS request)
-      // Apps Script will still receive the JSON in postData.contents
-      final response = await http.post(
-        Uri.parse(_scriptUrl!),
-        headers: {'Content-Type': 'text/plain;charset=UTF-8'},
-        body: jsonEncode(body),
+      return await _backendApiService.post(
+        'drive/action',
+        body: body,
+        requireAuth: true,
       );
-
+    } on BackendApiException catch (e) {
       developer.log(
-        'DriveService._post: action=${body['action']}, status=${response.statusCode}',
+        'DriveService._post error: ${e.message}',
         name: 'DriveService',
+        error: e,
       );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      } else {
-        // Try to parse error from response body
-        try {
-          final errorBody = jsonDecode(response.body) as Map<String, dynamic>;
-          return {
-            'success': false,
-            'error': errorBody['error'] ?? 'HTTP ${response.statusCode}',
-          };
-        } catch (_) {
-          return {
-            'success': false,
-            'error': 'HTTP ${response.statusCode}: ${response.body}',
-          };
-        }
-      }
+      return {
+        'success': false,
+        'error': e.message,
+      };
     } catch (e) {
       developer.log(
         'DriveService._post error: $e',
@@ -197,12 +158,10 @@ class DriveService {
     }
   }
 
-  /// Create a folder for an event
-  /// Returns the folder ID and link on success
   Future<CreateFolderResult> createFolder({
     required String eventName,
     required DateTime date,
-    DateTime? endDate, // Optional end date for multi-day events
+    DateTime? endDate,
   }) async {
     final result = await _post({
       'action': 'createFolder',
@@ -214,23 +173,22 @@ class DriveService {
     if (result['success'] == true) {
       return CreateFolderResult(
         success: true,
-        folderId: result['folderId'] as String,
-        folderLink: result['folderLink'] as String,
-      );
-    } else {
-      return CreateFolderResult(
-        success: false,
-        error: result['error'] as String?,
+        folderId: result['folderId'] as String?,
+        folderLink: result['folderLink'] as String?,
       );
     }
+
+    return CreateFolderResult(
+      success: false,
+      error: result['error'] as String?,
+    );
   }
 
-  /// Rename an event folder
   Future<bool> renameFolder({
     required String folderId,
     required String newName,
     required DateTime newDate,
-    DateTime? newEndDate, // Optional end date for multi-day events
+    DateTime? newEndDate,
   }) async {
     final result = await _post({
       'action': 'renameFolder',
@@ -243,7 +201,6 @@ class DriveService {
     return result['success'] == true;
   }
 
-  /// Delete (trash) an event folder
   Future<bool> deleteFolder({required String folderId}) async {
     final result = await _post({
       'action': 'deleteFolder',
@@ -253,7 +210,6 @@ class DriveService {
     return result['success'] == true;
   }
 
-  /// List files in an event folder
   Future<ListFilesResult> listFiles({required String folderId}) async {
     final result = await _post({
       'action': 'listFiles',
@@ -263,7 +219,7 @@ class DriveService {
     if (result['success'] == true) {
       final filesJson = result['files'] as List<dynamic>? ?? [];
       final files = filesJson
-          .map((f) => DriveFile.fromJson(f as Map<String, dynamic>))
+          .map((file) => DriveFile.fromJson(file as Map<String, dynamic>))
           .toList();
 
       return ListFilesResult(
@@ -271,40 +227,37 @@ class DriveService {
         files: files,
         folderNotFound: result['folderNotFound'] == true,
       );
-    } else {
-      return ListFilesResult(
-        success: false,
-        error: result['error'] as String?,
-      );
     }
+
+    return ListFilesResult(
+      success: false,
+      error: result['error'] as String?,
+    );
   }
 
-  /// Run archive check - move old event folders to archive
-  /// Pass list of events with their folder IDs, end dates, and archive status
-  /// Returns list of folder IDs that were archived
   Future<ArchiveCheckResult> archiveCheck({
     required List<ArchiveEventData> events,
   }) async {
     final result = await _post({
       'action': 'archiveCheck',
-      'events': events.map((e) => e.toJson()).toList(),
+      'events': events.map((event) => event.toJson()).toList(),
     });
 
     if (result['success'] == true) {
       final archivedList = result['archived'] as List<dynamic>? ?? [];
       final archivedIds = archivedList
-          .map((a) => (a as Map<String, dynamic>)['folderId'] as String)
+          .map((item) => (item as Map<String, dynamic>)['folderId'] as String)
           .toList();
 
       return ArchiveCheckResult(
         success: true,
         archivedFolderIds: archivedIds,
       );
-    } else {
-      return ArchiveCheckResult(
-        success: false,
-        error: result['error'] as String?,
-      );
     }
+
+    return ArchiveCheckResult(
+      success: false,
+      error: result['error'] as String?,
+    );
   }
 }

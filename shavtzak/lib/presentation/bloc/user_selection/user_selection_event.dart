@@ -17,11 +17,12 @@ class CheckCachedUser extends UserSelectionEvent {
 /// Select a user by unique key
 class SelectUser extends UserSelectionEvent {
   final String uniqueKey;
+  final String passcode;
 
-  const SelectUser(this.uniqueKey);
+  const SelectUser(this.uniqueKey, this.passcode);
 
   @override
-  List<Object?> get props => [uniqueKey];
+  List<Object?> get props => [uniqueKey, passcode];
 }
 
 /// Search team members for user selection

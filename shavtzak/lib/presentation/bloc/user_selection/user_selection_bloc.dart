@@ -35,29 +35,11 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     on<UpdateBirthday>(_onUpdateBirthday);
     on<UpdateVehicleInfo>(_onUpdateVehicleInfo);
     on<UpdateEmail>(_onUpdateEmail);
+    on<_AuthenticatedUserUpdated>(_onAuthenticatedUserUpdated);
 
-    // Listen to team member changes and refresh current user if needed
-    _teamStreamSubscription =
-        _teamRepository.watchTeamMembers().listen((teamMembers) {
-      final currentState = state;
-      if (currentState is UserAuthenticated) {
-        // Find if current user was updated
-        final updatedUser = teamMembers.firstWhere(
-          (member) => member.uniqueKey == currentState.user.uniqueKey,
-          orElse: () => currentState.user,
-        );
-
-        // Avoid shell-level rebuilds for constraint-only or profile-noncritical updates.
-        // Constraint data is consumed from TeamBloc in user/admin screens.
-        if (_hasAuthRelevantUserChanges(updatedUser, currentState.user)) {
-          developer.log(
-            'team stream detected user change for ${updatedUser.id} -> emitting UserAuthenticated',
-            name: 'UserSelectionBloc',
-          );
-          emit(UserAuthenticated(updatedUser));
-        }
-      }
-    });
+    if (preAuthenticatedUser != null) {
+      unawaited(_startTeamStream());
+    }
   }
 
   @override
@@ -75,6 +57,51 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     return super.close();
   }
 
+  Future<void> _startTeamStream() async {
+    await _teamStreamSubscription?.cancel();
+    _teamStreamSubscription = _teamRepository.watchTeamMembers().listen(
+      (teamMembers) {
+        final currentState = state;
+        if (currentState is! UserAuthenticated) {
+          return;
+        }
+
+        final updatedUser = teamMembers.firstWhere(
+          (member) => member.uniqueKey == currentState.user.uniqueKey,
+          orElse: () => currentState.user,
+        );
+
+        if (_hasAuthRelevantUserChanges(updatedUser, currentState.user)) {
+          developer.log(
+            'team stream detected user change for ${updatedUser.id} -> emitting UserAuthenticated',
+            name: 'UserSelectionBloc',
+          );
+          add(_AuthenticatedUserUpdated(updatedUser));
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        developer.log(
+          'team stream error: $error',
+          name: 'UserSelectionBloc',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      },
+    );
+  }
+
+  Future<void> _onAuthenticatedUserUpdated(
+    _AuthenticatedUserUpdated event,
+    Emitter<UserSelectionState> emit,
+  ) async {
+    emit(UserAuthenticated(event.user));
+  }
+
+  Future<void> _stopTeamStream() async {
+    await _teamStreamSubscription?.cancel();
+    _teamStreamSubscription = null;
+  }
+
   bool _hasAuthRelevantUserChanges(TeamMember next, TeamMember current) {
     // Only fields that affect auth, routing, passcode gating, or primary shell identity.
     return next.id != current.id ||
@@ -87,7 +114,6 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
         next.isPermanent != current.isPermanent ||
         next.isActive != current.isActive ||
         next.isArchived != current.isArchived ||
-        next.passcode != current.passcode ||
         next.passcodeLength != current.passcodeLength ||
         next.name != current.name;
   }
@@ -112,13 +138,16 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
           .validateUserSelection(cachedUser.uniqueKey);
 
       if (isValid) {
+        await _startTeamStream();
         emit(UserAuthenticated(cachedUser));
       } else {
         // Cached user is invalid, clear cache and show selection
+        await _stopTeamStream();
         await _userSelectionRepository.clearUserSelection();
         emit(const UserSelectionRequired());
       }
     } catch (e) {
+      await _stopTeamStream();
       emit(UserSelectionError('שגיאה בבדיקת משתמש מקומי: $e'));
     }
   }
@@ -131,9 +160,13 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     emit(const UserSelectionLoading());
 
     try {
-      final user = await _userSelectionRepository.selectUser(event.uniqueKey);
+      final user = await _userSelectionRepository.selectUser(
+        event.uniqueKey,
+        event.passcode,
+      );
 
       // selectUser already caches user and throws exceptions for invalid users
+      await _startTeamStream();
       emit(UserAuthenticated(user));
     } catch (e) {
       emit(UserSelectionValidationError('שגיאה בבחירת משתמש: $e'));
@@ -175,6 +208,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     Emitter<UserSelectionState> emit,
   ) async {
     try {
+      await _stopTeamStream();
       await _userSelectionRepository.clearUserSelection();
       UserCacheService().clearPasscodeDialogFlag();
       emit(const UserSignedOut());
@@ -213,14 +247,17 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
               'RefreshUserData emit UserAuthenticated user=${refreshedUser.id}',
               name: 'UserSelectionBloc',
             );
+            await _startTeamStream();
             emit(UserAuthenticated(refreshedUser));
           } else {
             // User not found in current members list, clear cache and require reselection
+            await _stopTeamStream();
             await _userSelectionRepository.clearUserSelection();
             emit(const UserSelectionRequired());
           }
         } else {
           // User no longer exists, sign out
+          await _stopTeamStream();
           await _userSelectionRepository.clearUserSelection();
           emit(const UserSelectionRequired());
         }
@@ -334,4 +371,13 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
       }
     }
   }
+}
+
+class _AuthenticatedUserUpdated extends UserSelectionEvent {
+  const _AuthenticatedUserUpdated(this.user);
+
+  final TeamMember user;
+
+  @override
+  List<Object?> get props => [user];
 }

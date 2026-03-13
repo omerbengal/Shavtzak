@@ -155,15 +155,12 @@ class TeamMemberModel {
   factory TeamMemberModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
-    // Handle migration - generate UUID for existing members missing uniqueKey
     final existingUniqueKey = data['uniqueKey'] as String?;
-    final generatedUniqueKey = existingUniqueKey ?? _generateUUID();
+    final generatedUniqueKey = existingUniqueKey ?? doc.id;
 
     // Handle migration - default to false for existing members missing isAdmin
     final isAdmin = data['isAdmin'] as bool? ?? false;
 
-    // Handle migration - passcode fields are optional, default to null for existing members
-    final passcode = data['passcode'] as String?;
     final passcodeLength = data['passcodeLength'] as int?;
 
     // Handle migration - default to false for existing members missing allowMultipleAssignments
@@ -231,7 +228,7 @@ class TeamMemberModel {
           : DateTime.now(),
       uniqueKey: generatedUniqueKey,
       isAdmin: isAdmin,
-      passcode: passcode,
+      passcode: null,
       passcodeLength: passcodeLength,
       allowMultipleAssignments: allowMultipleAssignments,
       phoneNumber: phoneNumber,
@@ -244,25 +241,7 @@ class TeamMemberModel {
       availableEventIds: availableEventIds,
     );
 
-    // If migration was needed (UUID was generated), update the document
-    if (existingUniqueKey == null) {
-      _updateDocumentWithMigrationFields(doc.reference, model);
-    }
-
     return model;
-  }
-
-  /// Update document with migration fields (async operation)
-  static void _updateDocumentWithMigrationFields(
-      DocumentReference ref, TeamMemberModel model) {
-    // Update asynchronously without blocking the read operation
-    ref.update({
-      'uniqueKey': model.uniqueKey,
-      'isAdmin': model.isAdmin,
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
-    }).catchError((error) {
-      // Silently handle migration errors without blocking read operation
-    });
   }
 
   /// Convert to Firestore document
@@ -280,7 +259,6 @@ class TeamMemberModel {
       'updatedAt': Timestamp.fromDate(updatedAt),
       'uniqueKey': uniqueKey,
       'isAdmin': isAdmin,
-      'passcode': passcode,
       'passcodeLength': passcodeLength,
       'allowMultipleAssignments': allowMultipleAssignments,
       'phoneNumber': phoneNumber,
@@ -296,15 +274,13 @@ class TeamMemberModel {
 
   /// Convert from JSON
   factory TeamMemberModel.fromJson(Map<String, dynamic> json) {
-    // Handle migration - generate UUID for existing members missing uniqueKey
     final existingUniqueKey = json['uniqueKey'] as String?;
-    final generatedUniqueKey = existingUniqueKey ?? _generateUUID();
+    final generatedUniqueKey =
+        existingUniqueKey ?? (json['id'] as String? ?? _generateUUID());
 
     // Handle migration - default to false for existing members missing isAdmin
     final isAdmin = json['isAdmin'] as bool? ?? false;
 
-    // Handle migration - passcode fields are optional, default to null for existing members
-    final passcode = json['passcode'] as String?;
     final passcodeLength = json['passcodeLength'] as int?;
 
     // Handle migration - default to false for existing members missing allowMultipleAssignments
@@ -368,7 +344,7 @@ class TeamMemberModel {
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       uniqueKey: generatedUniqueKey,
       isAdmin: isAdmin,
-      passcode: passcode,
+      passcode: null,
       passcodeLength: passcodeLength,
       allowMultipleAssignments: allowMultipleAssignments,
       phoneNumber: phoneNumber,

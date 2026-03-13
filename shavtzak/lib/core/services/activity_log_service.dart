@@ -1,9 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../domain/entities/team_member.dart';
-import 'environment_service.dart';
+import 'dart:developer' as developer;
 
-/// Singleton service for logging user actions to Firestore.
-/// Each log() call is awaited so the write completes before success state is emitted.
+import '../../domain/entities/team_member.dart';
+
+/// Client-side Firestore activity logs are disabled.
+/// Trusted mutation logs now belong in backend functions.
 class ActivityLogService {
   static ActivityLogService? _instance;
 
@@ -18,10 +18,7 @@ class ActivityLogService {
 
   void setCurrentUser(TeamMember? user) => _currentUser = user;
 
-  String get _collection =>
-      '${EnvironmentService.instance.collectionPrefix}activity_logs';
-
-  /// Log a user action to Firestore.
+  /// Log a user action locally until backend-backed audit log reads are added.
   Future<void> log({
     required String action,
     required String entityType,
@@ -29,15 +26,9 @@ class ActivityLogService {
     String? entityName,
     Map<String, dynamic>? details,
   }) async {
-    await FirebaseFirestore.instance.collection(_collection).add({
-      'action': action,
-      'entityType': entityType,
-      'entityId': entityId,
-      'entityName': entityName,
-      'performedBy': _currentUser?.uniqueKey,
-      'performedByName': _currentUser?.name,
-      'details': details,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+    developer.log(
+      'ActivityLogService: $action/$entityType entityId=$entityId entityName=$entityName performedBy=${_currentUser?.uniqueKey} details=$details',
+      name: 'ActivityLog',
+    );
   }
 }

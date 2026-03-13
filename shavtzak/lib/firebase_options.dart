@@ -46,8 +46,8 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyBumNcnFydJm__1E_WMIc3R3pmoVF2ABqU',
-    appId: '1:89053885327:web:8e66ba1ffe27dc0f154c8f',
-    messagingSenderId: '89053885327',
+    appId: '1:890538853278:web:8e66ba1ffe27dc0f154c8f',
+    messagingSenderId: '890538853278',
     projectId: 'tsevet-shir-shavtzak',
     authDomain: 'tsevet-shir-shavtzak.firebaseapp.com',
     storageBucket: 'tsevet-shir-shavtzak.firebasestorage.app',
@@ -56,16 +56,16 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyBumNcnFydJm__1E_WMIc3R3pmoVF2ABqU',
-    appId: '1:89053885327:android:8e66ba1ffe27dc0f154c8f',
-    messagingSenderId: '89053885327',
+    appId: '1:890538853278:android:8e66ba1ffe27dc0f154c8f',
+    messagingSenderId: '890538853278',
     projectId: 'tsevet-shir-shavtzak',
     storageBucket: 'tsevet-shir-shavtzak.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyBumNcnFydJm__1E_WMIc3R3pmoVF2ABqU',
-    appId: '1:89053885327:ios:8e66ba1ffe27dc0f154c8f',
-    messagingSenderId: '89053885327',
+    appId: '1:890538853278:ios:8e66ba1ffe27dc0f154c8f',
+    messagingSenderId: '890538853278',
     projectId: 'tsevet-shir-shavtzak',
     storageBucket: 'tsevet-shir-shavtzak.firebasestorage.app',
     iosBundleId: 'com.tsevet.shir.shavtzak',
@@ -73,8 +73,8 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyBumNcnFydJm__1E_WMIc3R3pmoVF2ABqU',
-    appId: '1:89053885327:ios:8e66ba1ffe27dc0f154c8f',
-    messagingSenderId: '89053885327',
+    appId: '1:890538853278:ios:8e66ba1ffe27dc0f154c8f',
+    messagingSenderId: '890538853278',
     projectId: 'tsevet-shir-shavtzak',
     storageBucket: 'tsevet-shir-shavtzak.firebasestorage.app',
     iosBundleId: 'com.tsevet.shir.shavtzak',

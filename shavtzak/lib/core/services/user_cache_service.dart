@@ -7,6 +7,9 @@ class UserCacheService {
   // Cache key with environment prefix
   String get _selectedUserKey =>
       '${EnvironmentService.instance.cachePrefix}selected_user_unique_key';
+  // Legacy opaque backend session cache key. Kept only for cleanup during migration.
+  String get _sessionTokenKey =>
+      '${EnvironmentService.instance.cachePrefix}selected_user_session_token';
 
   /// Save the selected user's unique key to persistent storage
   Future<void> saveSelectedUser(String uniqueKey) async {
@@ -34,6 +37,7 @@ class UserCacheService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_selectedUserKey);
+      await prefs.remove(_sessionTokenKey);
     } catch (e) {
       throw UserCacheException('Failed to clear user selection: $e');
     }
@@ -47,6 +51,34 @@ class UserCacheService {
     } catch (e) {
       // If there's an error accessing storage, assume no cached user
       return false;
+    }
+  }
+
+  /// Legacy method retained for cleanup compatibility.
+  Future<void> saveSessionToken(String token) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_sessionTokenKey, token);
+    } catch (e) {
+      throw UserCacheException('Failed to save session token: $e');
+    }
+  }
+
+  Future<String?> getSessionToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_sessionTokenKey);
+    } catch (e) {
+      throw UserCacheException('Failed to get session token: $e');
+    }
+  }
+
+  Future<void> clearSessionToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_sessionTokenKey);
+    } catch (e) {
+      throw UserCacheException('Failed to clear session token: $e');
     }
   }
 

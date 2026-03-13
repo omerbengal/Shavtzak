@@ -1,0 +1,149 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAuthorizedProdUser() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/teamMembers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/teamMembers/$(request.auth.uid)).data.isActive == true
+        && get(/databases/$(database)/documents/teamMembers/$(request.auth.uid)).data.isArchived != true;
+    }
+
+    function isAuthorizedTestUser() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/test_teamMembers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/test_teamMembers/$(request.auth.uid)).data.isActive == true
+        && get(/databases/$(database)/documents/test_teamMembers/$(request.auth.uid)).data.isArchived != true;
+    }
+
+    match /private_member_credentials/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /private_sessions/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /test_private_member_credentials/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /test_private_sessions/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /private_google_calendar_auth/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /test_private_google_calendar_auth/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /teamMembers/{document=**} {
+      allow read: if isAuthorizedProdUser();
+      allow write: if false;
+    }
+
+    match /test_teamMembers/{document=**} {
+      allow read: if isAuthorizedTestUser();
+      allow write: if false;
+    }
+
+    match /events/{document=**} {
+      allow read: if isAuthorizedProdUser();
+      allow write: if false;
+    }
+
+    match /test_events/{document=**} {
+      allow read: if isAuthorizedTestUser();
+      allow write: if false;
+    }
+
+    match /assignments/{document=**} {
+      allow read: if isAuthorizedProdUser();
+      allow write: if false;
+    }
+
+    match /test_assignments/{document=**} {
+      allow read: if isAuthorizedTestUser();
+      allow write: if false;
+    }
+
+    match /checklist_items/{document=**} {
+      allow read: if isAuthorizedProdUser();
+      allow write: if false;
+    }
+
+    match /test_checklist_items/{document=**} {
+      allow read: if isAuthorizedTestUser();
+      allow write: if false;
+    }
+
+    match /checklist_presets/{document=**} {
+      allow read: if isAuthorizedProdUser();
+      allow write: if false;
+    }
+
+    match /test_checklist_presets/{document=**} {
+      allow read: if isAuthorizedTestUser();
+      allow write: if false;
+    }
+
+    match /calendar_sync/{document=**} {
+      allow read: if isAuthorizedProdUser();
+      allow write: if false;
+    }
+
+    match /test_calendar_sync/{document=**} {
+      allow read: if isAuthorizedTestUser();
+      allow write: if false;
+    }
+
+    match /event_calendar_sync/{document=**} {
+      allow read: if isAuthorizedProdUser();
+      allow write: if false;
+    }
+
+    match /test_event_calendar_sync/{document=**} {
+      allow read: if isAuthorizedTestUser();
+      allow write: if false;
+    }
+
+    match /utilities/{document=**} {
+      allow read: if isAuthorizedProdUser();
+      allow write: if false;
+    }
+
+    match /test_utilities/{document=**} {
+      allow read: if isAuthorizedTestUser();
+      allow write: if false;
+    }
+
+    match /logs/{document=**} {
+      allow read: if isAuthorizedProdUser();
+      allow write: if false;
+    }
+
+    match /test_logs/{document=**} {
+      allow read: if isAuthorizedTestUser();
+      allow write: if false;
+    }
+
+    match /keys/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /test_keys/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read: if false;
+      allow write: if false;
+    }
+  }
+}

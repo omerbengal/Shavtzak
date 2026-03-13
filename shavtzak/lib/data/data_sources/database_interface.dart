@@ -249,12 +249,12 @@ abstract class DatabaseInterface {
   /// Get all synced constraints for a team member
   Future<List<Map<String, dynamic>>> getSyncedConstraintsForMember(String teamMemberId);
 
-  /// Get Google Calendar configuration from Firestore
-  /// Returns a map containing serviceAccountJson and calendarId
+  /// Legacy method retained for interface compatibility.
+  /// Google Calendar config is now backend-only and should not be read by clients.
   Future<Map<String, String?>?> getGoogleCalendarConfig();
 
-  /// Get Google Drive configuration from Firestore
-  /// Returns a map containing scriptUrl and apiKey
+  /// Legacy method retained for interface compatibility.
+  /// Google Drive config is now backend-only and should not be read by clients.
   Future<Map<String, String?>?> getDriveConfig();
 
   // ========== Checklist Items ==========

@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'passcode_digit_field.dart';
 
 /// Dialog for verifying passcode before allowing user selection
 class PasscodeVerificationDialog extends StatefulWidget {
   final int passcodeLength;
-  final String correctPasscode;
 
   const PasscodeVerificationDialog({
     super.key,
     required this.passcodeLength,
-    required this.correctPasscode,
   });
 
   @override
@@ -22,7 +19,6 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
 
   final List<TextEditingController> _controllers = [];
   final List<FocusNode> _focusNodes = [];
-  bool _isError = false;
   bool _obscurePasscode = true;
 
   @override
@@ -66,17 +62,6 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
                 style: const TextStyle(fontSize: 16),
                 textAlign: TextAlign.center,
               ),
-              if (_isError) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'קוד שגוי',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.red[600],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
               const SizedBox(height: 24),
               PasscodeInputRow(
                 digitCount: widget.passcodeLength,
@@ -107,7 +92,7 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(context).pop(),
             child: const Text('ביטול', textAlign: TextAlign.center),
           ),
           ElevatedButton(
@@ -127,26 +112,7 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
       return;
     }
 
-    if (enteredPasscode == widget.correctPasscode) {
-      // Success!
-      Navigator.of(context).pop(true);
-    } else {
-      // Failed attempt
-      setState(() {
-        _isError = true;
-      });
-
-      // Clear all fields
-      for (var controller in _controllers) {
-        controller.clear();
-      }
-
-      // Focus back to first field
-      _focusNodes[0].requestFocus();
-
-      // Haptic feedback
-      HapticFeedback.lightImpact();
-    }
+    Navigator.of(context).pop(enteredPasscode);
   }
 
   String _getEnteredPasscode() {
