@@ -107,7 +107,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
     });
   }
 
-  DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+  DateTime _dateOnly(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
 
   bool _isConstraintPast(DateConstraint constraint) {
     final todayDate = _dateOnly(DateTime.now());
@@ -1276,7 +1277,23 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
     final bloc = context.read<TeamBloc>();
     if (_isEditMode) {
-      bloc.add(team.UpdateTeamMember(member));
+      final originalMember = widget.member!;
+      final constraintsChanged = _constraintsChanged();
+      final memberWithoutConstraintChanges = constraintsChanged
+          ? member.copyWith(constraints: originalMember.constraints)
+          : member;
+
+      if (memberWithoutConstraintChanges != originalMember) {
+        bloc.add(team.UpdateTeamMember(memberWithoutConstraintChanges));
+      }
+
+      if (constraintsChanged) {
+        _dispatchConstraintMutationEvents(
+          bloc,
+          originalMember.constraints,
+          finalConstraints,
+        );
+      }
     } else {
       bloc.add(team.CreateTeamMember(member));
     }
@@ -1309,6 +1326,69 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     }
 
     return false;
+  }
+
+  void _dispatchConstraintMutationEvents(
+    TeamBloc bloc,
+    List<DateConstraint> originalConstraints,
+    List<DateConstraint> updatedConstraints,
+  ) {
+    final originalById = {
+      for (final constraint in originalConstraints) constraint.id: constraint,
+    };
+    final updatedById = {
+      for (final constraint in updatedConstraints) constraint.id: constraint,
+    };
+
+    for (final originalConstraint in originalConstraints) {
+      if (!updatedById.containsKey(originalConstraint.id)) {
+        bloc.add(team.RemoveConstraintRequest(
+          teamMemberId: widget.member!.id,
+          constraintId: originalConstraint.id,
+        ));
+      }
+    }
+
+    for (final updatedConstraint in updatedConstraints) {
+      final originalConstraint = originalById[updatedConstraint.id];
+      if (originalConstraint == null) {
+        bloc.add(team.AddConstraintRequest(
+          teamMemberId: widget.member!.id,
+          startDate: updatedConstraint.startDate,
+          endDate: updatedConstraint.endDate,
+          note: updatedConstraint.note,
+          status: updatedConstraint.status,
+          constraintType: updatedConstraint.constraintType,
+          startTime: updatedConstraint.startTime,
+          endTime: updatedConstraint.endTime,
+          wasAutoRejectedFromCalendar:
+              updatedConstraint.wasAutoRejectedFromCalendar,
+          repeatType: updatedConstraint.repeatType,
+          repeatDay: updatedConstraint.repeatDay,
+          repeatEndDate: updatedConstraint.repeatEndDate,
+        ));
+        continue;
+      }
+
+      if (originalConstraint != updatedConstraint) {
+        bloc.add(team.EditConstraintRequest(
+          teamMemberId: widget.member!.id,
+          constraintId: updatedConstraint.id,
+          startDate: updatedConstraint.startDate,
+          endDate: updatedConstraint.endDate,
+          note: updatedConstraint.note,
+          status: updatedConstraint.status,
+          constraintType: updatedConstraint.constraintType,
+          startTime: updatedConstraint.startTime,
+          endTime: updatedConstraint.endTime,
+          wasAutoRejectedFromCalendar:
+              updatedConstraint.wasAutoRejectedFromCalendar,
+          repeatType: updatedConstraint.repeatType,
+          repeatDay: updatedConstraint.repeatDay,
+          repeatEndDate: updatedConstraint.repeatEndDate,
+        ));
+      }
+    }
   }
 
   /// Get assignments that conflict with the new constraints
@@ -2479,11 +2559,13 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                           child: Row(
                                             children: [
                                               Icon(
-                                                widget.member?.hasPasscode == true
+                                                widget.member?.hasPasscode ==
+                                                        true
                                                     ? Icons.lock
                                                     : Icons.lock_open,
                                                 color:
-                                                    widget.member?.hasPasscode ==
+                                                    widget.member
+                                                                ?.hasPasscode ==
                                                             true
                                                         ? Theme.of(context)
                                                             .primaryColor

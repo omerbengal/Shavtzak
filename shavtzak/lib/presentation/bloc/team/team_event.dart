@@ -117,8 +117,11 @@ class AddConstraintRequest extends TeamEvent {
   final DateTime startDate;
   final DateTime? endDate;
   final String? note;
+  final ConstraintStatus status;
+  final ConstraintType constraintType;
   final String? startTime; // Start time in "HH:mm" format (optional)
   final String? endTime; // End time in "HH:mm" format (optional)
+  final bool wasAutoRejectedFromCalendar;
   final RepeatType? repeatType; // null = one-time
   final int? repeatDay; // weekly weekday (1..7) / monthly day-of-month (1..31)
   final DateTime? repeatEndDate; // end date for recurring constraints
@@ -128,8 +131,11 @@ class AddConstraintRequest extends TeamEvent {
     required this.startDate,
     this.endDate,
     this.note,
+    this.status = ConstraintStatus.pending,
+    this.constraintType = ConstraintType.unavailability,
     this.startTime,
     this.endTime,
+    this.wasAutoRejectedFromCalendar = false,
     this.repeatType,
     this.repeatDay,
     this.repeatEndDate,
@@ -141,8 +147,11 @@ class AddConstraintRequest extends TeamEvent {
         startDate,
         endDate,
         note,
+        status,
+        constraintType,
         startTime,
         endTime,
+        wasAutoRejectedFromCalendar,
         repeatType,
         repeatDay,
         repeatEndDate,

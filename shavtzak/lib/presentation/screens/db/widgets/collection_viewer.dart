@@ -14,11 +14,15 @@ class CollectionViewer extends StatefulWidget {
   final String collectionName;
   final bool useEnvironmentPrefix;
   final String searchQuery;
-  final Map<String, Map<String, Map<String, dynamic>>>? collectionsData; // Data from other collections for lookups
-  final ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>? documentsNotifier; // Receive sorted documents from parent
-  final bool isLoaded; // Whether the collection has received its first data snapshot
+  final Map<String, Map<String, Map<String, dynamic>>>?
+      collectionsData; // Data from other collections for lookups
+  final ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>?
+      documentsNotifier; // Receive sorted documents from parent
+  final bool
+      isLoaded; // Whether the collection has received its first data snapshot
   final Set<String> expandedDocIds; // Expanded document IDs (managed by parent)
-  final Function(String documentId) onToggleDocument; // Callback to toggle document expansion
+  final Function(String documentId)
+      onToggleDocument; // Callback to toggle document expansion
 
   const CollectionViewer({
     super.key,
@@ -44,6 +48,8 @@ class _CollectionViewerState extends State<CollectionViewer> {
       widget.collectionName == 'assignments' ||
       widget.collectionName == 'logs' ||
       widget.collectionName == 'events';
+
+  bool get _isLogCollection => widget.collectionName.contains('log');
 
   int get _initialVisibleCount => _isLazyCollection ? _lazyPageSize : 999999;
 
@@ -170,26 +176,27 @@ class _CollectionViewerState extends State<CollectionViewer> {
 
     // Logs: "<performerName> <actionType> <entityType> | <timestampLocalIsrael>"
     if (widget.collectionName.contains('log')) {
-      final performerName = (data['performerName'] as String?)?.trim();
       final actionTypeRaw = data['actionType'] as String?;
       final entityTypeRaw = data['entityType'] as String?;
+      final entityName = _getLogEntityName(data);
+      final entityNameSuffix = entityName != null ? ' "$entityName"' : '';
 
-      final actor = (performerName != null && performerName.isNotEmpty)
-          ? performerName
-          : 'לא ידוע';
+      final actor = _getLogActor(data);
       final actionType = _getActionTypeHebrew(actionTypeRaw);
       final entityType = _getEntityTypeHebrew(entityTypeRaw);
       final timestampText = _formatLogTimestamp(data);
 
-      return '$actor $actionType $entityType | $timestampText';
+      return '$actor $actionType $entityType$entityNameSuffix | $timestampText';
     }
 
     // Team members: Show name + capability count
     if (widget.collectionName.contains('teamMember')) {
       final name = data['name'] as String?;
-      final roleCapabilities = data['roleCapabilities'] as Map<String, dynamic>?;
+      final roleCapabilities =
+          data['roleCapabilities'] as Map<String, dynamic>?;
       if (name != null && roleCapabilities != null) {
-        final enabledCount = roleCapabilities.values.where((v) => v == true).length;
+        final enabledCount =
+            roleCapabilities.values.where((v) => v == true).length;
         return '$name ($enabledCount תפקידים)';
       }
       if (name != null) {
@@ -198,7 +205,8 @@ class _CollectionViewerState extends State<CollectionViewer> {
     }
 
     // Utilities, Keys, and others: Show field names
-    if (widget.collectionName.contains('utilit') || widget.collectionName.contains('key')) {
+    if (widget.collectionName.contains('utilit') ||
+        widget.collectionName.contains('key')) {
       final fieldNames = data.keys.where((k) => k != 'id').toList();
       if (fieldNames.isNotEmpty) {
         return fieldNames.join(', ');
@@ -206,7 +214,14 @@ class _CollectionViewerState extends State<CollectionViewer> {
     }
 
     // Default: Try common primary field names
-    final primaryKeys = ['name', 'title', 'firstName', 'displayName', 'label', 'hebrewName'];
+    final primaryKeys = [
+      'name',
+      'title',
+      'firstName',
+      'displayName',
+      'label',
+      'hebrewName'
+    ];
     for (final key in primaryKeys) {
       if (data.containsKey(key) && data[key] != null) {
         return data[key].toString();
@@ -254,15 +269,95 @@ class _CollectionViewerState extends State<CollectionViewer> {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
+  String _normalizeActionType(String? actionType) {
+    final raw = (actionType ?? '').trim().toLowerCase();
+    if (raw.isEmpty) return '';
+    final parts = raw.split('.');
+    final normalized = parts.isNotEmpty ? parts.last : raw;
+    switch (normalized) {
+      case 'deletebyevent':
+      case 'deletebyperson':
+      case 'deletebatch':
+        return 'delete';
+      case 'insertbatch':
+        return 'create';
+      default:
+        return normalized;
+    }
+  }
+
+  String? _readTrimmedString(dynamic value) {
+    if (value is! String) {
+      return null;
+    }
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  String _getLogActor(Map<String, dynamic> data) {
+    for (final candidate in [
+      data['performerName'],
+      data['performerUniqueKey'],
+      data['performerId'],
+    ]) {
+      if (candidate is String && candidate.trim().isNotEmpty) {
+        return candidate.trim();
+      }
+    }
+    return 'לא ידוע';
+  }
+
+  String? _getLogEntityName(Map<String, dynamic> data) {
+    final topLevelName = data['entityName'];
+    if (topLevelName is String && topLevelName.trim().isNotEmpty) {
+      return topLevelName.trim();
+    }
+
+    final details = data['details'];
+    if (details is Map) {
+      for (final key in ['name', 'entityName']) {
+        final value = details[key];
+        if (value is String && value.trim().isNotEmpty) {
+          return value.trim();
+        }
+      }
+    }
+
+    return null;
+  }
+
   String _getActionTypeHebrew(String? actionType) {
-    switch ((actionType ?? '').toLowerCase()) {
+    switch (_normalizeActionType(actionType)) {
       case 'create':
+      case 'insert':
         return 'יצר';
       case 'edit':
       case 'update':
         return 'עדכן';
       case 'delete':
         return 'מחק';
+      case 'add':
+        return 'הוסיף';
+      case 'remove':
+        return 'הסיר';
+      case 'archive':
+        return 'העביר לארכיון';
+      case 'restore':
+        return 'שחזר';
+      case 'reorder':
+        return 'סידר מחדש';
+      case 'loadintoevent':
+        return 'טען לאירוע';
+      case 'clearalldata':
+        return 'ניקה נתונים';
+      case 'updatepasscode':
+        return 'עדכן קוד גישה';
+      case 'clearpasscode':
+        return 'איפס קוד גישה';
+      case 'updatearchivestatus':
+        return 'עדכן ארכיון';
+      case 'seed':
+        return 'אתחל';
       default:
         return actionType ?? 'לא ידוע';
     }
@@ -316,7 +411,8 @@ class _CollectionViewerState extends State<CollectionViewer> {
 
     final timestampUtc = data['timestampUtc'];
     if (timestampUtc is Timestamp) {
-      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc.toDate());
+      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS')
+          .format(timestampUtc.toDate());
     }
     if (timestampUtc is DateTime) {
       return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc);
@@ -336,9 +432,39 @@ class _CollectionViewerState extends State<CollectionViewer> {
     // If a documentsNotifier is provided (from parent with sorting), use it
     // Otherwise, fall back to our own Firestore query
     if (widget.documentsNotifier != null) {
-      return ValueListenableBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+      return ValueListenableBuilder<
+          List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
         valueListenable: widget.documentsNotifier!,
         builder: (context, docs, _) {
+          if (_isLogCollection) {
+            final logGroups = _buildLogGroups(docs);
+
+            if (logGroups.isEmpty) {
+              if (docs.isEmpty && !widget.isLoaded) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
+              if (docs.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Center(
+                    child: Text(
+                      'אין מסמכים',
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            }
+
+            return _buildLogGroupsList(logGroups, docs.length);
+          }
+
           // Filter documents based on search query
           final filteredDocs = _filterDocuments(docs);
 
@@ -400,13 +526,23 @@ class _CollectionViewerState extends State<CollectionViewer> {
 
         final docs = snapshot.data?.docs ?? [];
 
-        if (snapshot.connectionState == ConnectionState.waiting && docs.isEmpty) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            docs.isEmpty) {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(32),
               child: CircularProgressIndicator(),
             ),
           );
+        }
+
+        if (_isLogCollection) {
+          final logGroups = _buildLogGroups(docs);
+          if (logGroups.isEmpty) {
+            return const SizedBox.shrink();
+          }
+
+          return _buildLogGroupsList(logGroups, docs.length);
         }
 
         // Filter documents based on search query
@@ -421,7 +557,8 @@ class _CollectionViewerState extends State<CollectionViewer> {
     );
   }
 
-  Widget _buildDocumentsList(List<QueryDocumentSnapshot<Map<String, dynamic>>> filteredDocs) {
+  Widget _buildDocumentsList(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> filteredDocs) {
     final totalDocuments = filteredDocs.length;
     final visibleCount = _isLazyCollection
         ? math.min(_visibleDocumentsCount, totalDocuments)
@@ -470,7 +607,8 @@ class _CollectionViewerState extends State<CollectionViewer> {
             data: data,
             isExpanded: isExpanded,
             collectionName: widget.collectionName,
-            collectionsData: widget.collectionsData?.cast<String, Map<String, Map<String, dynamic>>>(),
+            collectionsData: widget.collectionsData
+                ?.cast<String, Map<String, Map<String, dynamic>>>(),
             onToggle: () => widget.onToggleDocument(doc.id),
           );
         }),
@@ -482,7 +620,8 @@ class _CollectionViewerState extends State<CollectionViewer> {
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   backgroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                 ),
                 onPressed: () {
                   setState(() {
@@ -498,26 +637,239 @@ class _CollectionViewerState extends State<CollectionViewer> {
     );
   }
 
+  List<_LogDocumentGroup> _buildLogGroups(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final matchesSearch = <String, bool>{
+      for (final doc in docs) doc.id: _documentMatchesSearch(doc),
+    };
+    final docsByOperationId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+    for (final doc in docs) {
+      final operationId = _readTrimmedString(doc.data()['operationId']);
+      if (operationId != null) {
+        docsByOperationId[operationId] = doc;
+      }
+    }
+
+    final childrenByParentOperationId =
+        <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
+    final topLevelDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+
+    for (final doc in docs) {
+      final parentOperationId =
+          _readTrimmedString(doc.data()['parentOperationId']);
+      if (parentOperationId != null &&
+          docsByOperationId.containsKey(parentOperationId)) {
+        childrenByParentOperationId
+            .putIfAbsent(parentOperationId, () => [])
+            .add(doc);
+        continue;
+      }
+      topLevelDocs.add(doc);
+    }
+
+    final groups = <_LogDocumentGroup>[];
+    final isSearching = widget.searchQuery.isNotEmpty;
+
+    for (final parentDoc in topLevelDocs) {
+      final operationId = _readTrimmedString(parentDoc.data()['operationId']);
+      final allChildren = operationId == null
+          ? const <QueryDocumentSnapshot<Map<String, dynamic>>>[]
+          : (childrenByParentOperationId[operationId] ?? const []);
+      final parentMatches = matchesSearch[parentDoc.id] ?? false;
+      final matchingChildren = isSearching
+          ? allChildren.where((child) => matchesSearch[child.id] ?? false).toList()
+          : allChildren;
+
+      if (!isSearching || parentMatches || matchingChildren.isNotEmpty) {
+        groups.add(
+          _LogDocumentGroup(
+            parent: parentDoc,
+            visibleChildren:
+                isSearching && !parentMatches ? matchingChildren : allChildren,
+            matchingChildrenCount: matchingChildren.length,
+            parentMatchesSearch: parentMatches,
+          ),
+        );
+      }
+    }
+
+    return groups;
+  }
+
+  Widget _buildLogGroupsList(
+    List<_LogDocumentGroup> groups,
+    int totalLogDocuments,
+  ) {
+    final totalGroups = groups.length;
+    final visibleCount = _isLazyCollection
+        ? math.min(_visibleDocumentsCount, totalGroups)
+        : totalGroups;
+    final visibleGroups = groups.take(visibleCount).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: Colors.grey.shade100,
+          child: Row(
+            children: [
+              Text(
+                _fullCollectionName,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                _isLazyCollection
+                    ? '$visibleCount מתוך $totalGroups פעולות ($totalLogDocuments לוגים)'
+                    : '$totalGroups פעולות ($totalLogDocuments לוגים)',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        ...visibleGroups.map(_buildLogGroupItem),
+        if (_isLazyCollection && visibleCount < totalGroups)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Align(
+              alignment: Alignment.center,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _visibleDocumentsCount += _lazyPageSize;
+                  });
+                },
+                icon: const Icon(Icons.expand_more),
+                label: const Text('טען עוד'),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLogGroupItem(_LogDocumentGroup group) {
+    final parentDoc = group.parent;
+    final parentData = parentDoc.data();
+    final isParentExpanded = widget.expandedDocIds.contains(parentDoc.id);
+    final shouldShowChildren =
+        isParentExpanded ||
+        (widget.searchQuery.isNotEmpty && group.visibleChildren.isNotEmpty);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DocumentCard(
+          key: ValueKey('${widget.collectionName}_${parentDoc.id}'),
+          documentId: parentDoc.id,
+          data: parentData,
+          isExpanded: isParentExpanded,
+          collectionName: widget.collectionName,
+          collectionsData:
+              widget.collectionsData?.cast<String, Map<String, Map<String, dynamic>>>(),
+          onToggle: () => widget.onToggleDocument(parentDoc.id),
+        ),
+        if (shouldShowChildren && group.visibleChildren.isNotEmpty)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(
+              start: 24,
+              end: 8,
+              bottom: 10,
+            ),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      _buildChildLogsLabel(group),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  ...group.visibleChildren.map((childDoc) {
+                    final childData = childDoc.data();
+                    final isChildExpanded =
+                        widget.expandedDocIds.contains(childDoc.id);
+
+                    return DocumentCard(
+                      key: ValueKey(
+                          '${widget.collectionName}_${parentDoc.id}_${childDoc.id}'),
+                      documentId: childDoc.id,
+                      data: childData,
+                      isExpanded: isChildExpanded,
+                      collectionName: widget.collectionName,
+                      collectionsData: widget.collectionsData
+                          ?.cast<String, Map<String, Map<String, dynamic>>>(),
+                      onToggle: () => widget.onToggleDocument(childDoc.id),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  String _buildChildLogsLabel(_LogDocumentGroup group) {
+    if (widget.searchQuery.isNotEmpty &&
+        !group.parentMatchesSearch &&
+        group.matchingChildrenCount > 0) {
+      return 'לוגים קשורים (${group.matchingChildrenCount} תואמים לחיפוש)';
+    }
+
+    return 'לוגים קשורים (${group.visibleChildren.length})';
+  }
+
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _filterDocuments(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
     if (widget.searchQuery.isEmpty) return docs;
 
+    return docs.where(_documentMatchesSearch).toList();
+  }
+
+  bool _documentMatchesSearch(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    if (widget.searchQuery.isEmpty) return true;
+
     final query = widget.searchQuery.toLowerCase();
-    return docs.where((doc) {
-      // Search in document ID
-      if (doc.id.toLowerCase().contains(query)) return true;
+    if (doc.id.toLowerCase().contains(query)) return true;
 
-      // Search in primary field value (insightful preview text)
-      final data = doc.data();
-      final primaryValue = _getPrimaryFieldValue(data);
-      if (primaryValue != null && primaryValue.toLowerCase().contains(query)) {
-        return true;
-      }
+    final data = doc.data();
+    final primaryValue = _getPrimaryFieldValue(data);
+    if (primaryValue != null && primaryValue.toLowerCase().contains(query)) {
+      return true;
+    }
 
-      // Search in document data
-      return _searchInMap(data, query);
-    }).toList();
+    return _searchInMap(data, query);
   }
 
   bool _searchInMap(Map<String, dynamic> map, String query) {
@@ -533,7 +885,8 @@ class _CollectionViewerState extends State<CollectionViewer> {
         for (final item in value) {
           if (item is String && item.toLowerCase().contains(query)) {
             return true;
-          } else if (item is Map<String, dynamic> && _searchInMap(item, query)) {
+          } else if (item is Map<String, dynamic> &&
+              _searchInMap(item, query)) {
             return true;
           }
         }
@@ -543,4 +896,18 @@ class _CollectionViewerState extends State<CollectionViewer> {
     }
     return false;
   }
+}
+
+class _LogDocumentGroup {
+  final QueryDocumentSnapshot<Map<String, dynamic>> parent;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> visibleChildren;
+  final int matchingChildrenCount;
+  final bool parentMatchesSearch;
+
+  const _LogDocumentGroup({
+    required this.parent,
+    required this.visibleChildren,
+    required this.matchingChildrenCount,
+    required this.parentMatchesSearch,
+  });
 }

@@ -486,7 +486,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     Emitter<TeamState> emit,
   ) async {
     try {
-      // Create new constraint with pending status
+      // Create new constraint from the requested payload.
       // If endDate is null, set it to startDate (single-day constraint)
       final DateTime effectiveEndDate = event.endDate ?? event.startDate;
 
@@ -495,8 +495,9 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         startDate: event.startDate,
         endDate: effectiveEndDate,
         note: event.note,
-        status: ConstraintStatus.pending,
-        constraintType: ConstraintType.unavailability, // For permanent members
+        status: event.status,
+        constraintType: event.constraintType,
+        wasAutoRejectedFromCalendar: event.wasAutoRejectedFromCalendar,
         startTime: event.startTime,
         endTime: event.endTime,
         repeatType: event.repeatType,
@@ -510,10 +511,15 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
         newConstraint,
       );
 
+      final successMessage = newConstraint.isAvailability
+          ? 'הזמינות נוספה בהצלחה'
+          : newConstraint.status == ConstraintStatus.pending
+              ? 'בקשת מגבלה נוספה בהצלחה וממתינה לאישור'
+              : 'מגבלה נוספה בהצלחה';
+
       // Emit success to show snackbar
       // The existing stream subscription will automatically pick up the database changes
-      emit(const TeamMemberOperationSuccess(
-          'בקשת מגבלה נוספה בהצלחה וממתינה לאישור'));
+      emit(TeamMemberOperationSuccess(successMessage));
     } catch (e) {
       emit(TeamError('שגיאה בהוספת בקשת מגבלה: $e'));
     }

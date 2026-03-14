@@ -34,14 +34,18 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
   final Map<String, ValueNotifier<int>> _filteredCountNotifiers = {};
 
   // Track stream subscriptions
-  final Map<String, StreamSubscription<QuerySnapshot>> _streamSubscriptions = {};
+  final Map<String, StreamSubscription<QuerySnapshot>> _streamSubscriptions =
+      {};
   StreamSubscription? _rolesSubscription;
 
   // Track document data for filtering (cache for search)
-  final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> _collectionDataCache = {};
+  final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _collectionDataCache = {};
 
   // ValueNotifiers for collections that need sorting
-  final Map<String, ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>> _sortedCollectionNotifiers = {};
+  final Map<String,
+          ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>
+      _sortedCollectionNotifiers = {};
 
   // Track which collections have received their first data snapshot
   final Set<String> _loadedCollections = {};
@@ -55,8 +59,10 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     _CollectionConfig('events', 'אירועים', Icons.event, true),
     _CollectionConfig('assignments', 'שיבוצים', Icons.assignment_ind, true),
     _CollectionConfig('logs', 'לוגים', Icons.receipt_long, true),
-    _CollectionConfig('checklist_items', 'פריטי צ\'קליסט', Icons.checklist, true),
-    _CollectionConfig('checklist_presets', 'תבניות צ\'קליסט', Icons.list_alt, true),
+    _CollectionConfig(
+        'checklist_items', 'פריטי צ\'קליסט', Icons.checklist, true),
+    _CollectionConfig(
+        'checklist_presets', 'תבניות צ\'קליסט', Icons.list_alt, true),
     _CollectionConfig('utilities', 'כלים (גלובלי)', Icons.build, false),
     _CollectionConfig('keys', 'מפתחות (גלובלי)', Icons.key, false),
   ];
@@ -68,14 +74,16 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     // Initialize notifiers for all collections
     for (final config in _collections) {
       _docCountNotifiers.putIfAbsent(config.name, () => ValueNotifier<int>(0));
-      _filteredCountNotifiers.putIfAbsent(config.name, () => ValueNotifier<int>(0));
+      _filteredCountNotifiers.putIfAbsent(
+          config.name, () => ValueNotifier<int>(0));
     }
     // Start listening to all collections for real-time count updates
     _startListeningToAllCollections();
   }
 
   /// Get the sorted notifier for a collection
-  ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>? _getSortedNotifier(String collectionName) {
+  ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>?
+      _getSortedNotifier(String collectionName) {
     return _sortedCollectionNotifiers[collectionName];
   }
 
@@ -108,7 +116,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     final prefix = EnvironmentService.instance.collectionPrefix;
 
     for (final config in _collections) {
-      final collectionName = config.useEnvironmentPrefix ? '$prefix${config.name}' : config.name;
+      final collectionName =
+          config.useEnvironmentPrefix ? '$prefix${config.name}' : config.name;
 
       // Create ValueNotifier for collections that need sorting
       if (config.name == 'events' ||
@@ -119,7 +128,9 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
           config.name == 'checklist_presets') {
         _sortedCollectionNotifiers.putIfAbsent(
           config.name,
-          () => ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>([]),
+          () =>
+              ValueNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+                  []),
         );
       }
 
@@ -132,7 +143,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       }
 
       final subscription = query.snapshots().listen((snapshot) {
-        var docs = snapshot.docs.cast<QueryDocumentSnapshot<Map<String, dynamic>>>();
+        var docs =
+            snapshot.docs.cast<QueryDocumentSnapshot<Map<String, dynamic>>>();
 
         // Client-side sorting
         if (config.name == 'assignments') {
@@ -143,7 +155,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
           docs = _sortChecklistItems(docs);
         } else if (config.name == 'events') {
           docs = _sortEvents(docs);
-        } else if (config.name == 'teamMembers' || config.name == 'checklist_presets') {
+        } else if (config.name == 'teamMembers' ||
+            config.name == 'checklist_presets') {
           docs = _sortByName(docs);
         }
 
@@ -241,16 +254,20 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
   }
 
   /// Sort events by startDate descending, then name ascending
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortEvents(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortEvents(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final sortedDocs =
+        List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
     sortedDocs.sort((a, b) {
       final aData = a.data();
       final bData = b.data();
 
       final aDate = aData['startDate'];
       final bDate = bData['startDate'];
-      final aDateTime = aDate is Timestamp ? aDate.toDate() : DateTime(2099, 12, 31);
-      final bDateTime = bDate is Timestamp ? bDate.toDate() : DateTime(2099, 12, 31);
+      final aDateTime =
+          aDate is Timestamp ? aDate.toDate() : DateTime(2099, 12, 31);
+      final bDateTime =
+          bDate is Timestamp ? bDate.toDate() : DateTime(2099, 12, 31);
       final dateCompare = bDateTime.compareTo(aDateTime);
       if (dateCompare != 0) return dateCompare;
 
@@ -262,8 +279,10 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
   }
 
   /// Sort documents by name field ascending
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortByName(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortByName(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final sortedDocs =
+        List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
     sortedDocs.sort((a, b) {
       final aName = ((a.data())['name'] as String? ?? '').toLowerCase();
       final bName = ((b.data())['name'] as String? ?? '').toLowerCase();
@@ -274,7 +293,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
 
   /// Sort assignments by event.startDate descending, then keep the existing
   /// event/name/role/member tie-break ordering.
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortAssignments(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortAssignments(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     final Map<String, DateTime> eventStartDates = {};
     final Map<String, String> eventNames = {};
     final Map<String, String> teamMemberNames = {};
@@ -301,7 +321,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       }
     }
 
-    final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+    final sortedDocs =
+        List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
     sortedDocs.sort((a, b) {
       final aData = a.data();
       final bData = b.data();
@@ -314,8 +335,12 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       final bTeamMemberId = bData['teamMemberId'] as String?;
 
       // 1. event.startDate descending
-      final aEventDate = aEventId != null ? (eventStartDates[aEventId] ?? DateTime(2099, 12, 31)) : DateTime(2099, 12, 31);
-      final bEventDate = bEventId != null ? (eventStartDates[bEventId] ?? DateTime(2099, 12, 31)) : DateTime(2099, 12, 31);
+      final aEventDate = aEventId != null
+          ? (eventStartDates[aEventId] ?? DateTime(2099, 12, 31))
+          : DateTime(2099, 12, 31);
+      final bEventDate = bEventId != null
+          ? (eventStartDates[bEventId] ?? DateTime(2099, 12, 31))
+          : DateTime(2099, 12, 31);
       final dateCompare = bEventDate.compareTo(aEventDate);
       if (dateCompare != 0) return dateCompare;
 
@@ -326,14 +351,18 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       if (nameCompare != 0) return nameCompare;
 
       // 3. role.sortOrder ascending (from _roleSortOrders built from utilities/Lists)
-      final aRoleSort = aRoleType != null ? (_roleSortOrders[aRoleType] ?? 999) : 999;
-      final bRoleSort = bRoleType != null ? (_roleSortOrders[bRoleType] ?? 999) : 999;
+      final aRoleSort =
+          aRoleType != null ? (_roleSortOrders[aRoleType] ?? 999) : 999;
+      final bRoleSort =
+          bRoleType != null ? (_roleSortOrders[bRoleType] ?? 999) : 999;
       final roleCompare = aRoleSort.compareTo(bRoleSort);
       if (roleCompare != 0) return roleCompare;
 
       // 4. teamMember.name ascending
-      final aName = aTeamMemberId != null ? (teamMemberNames[aTeamMemberId] ?? '') : '';
-      final bName = bTeamMemberId != null ? (teamMemberNames[bTeamMemberId] ?? '') : '';
+      final aName =
+          aTeamMemberId != null ? (teamMemberNames[aTeamMemberId] ?? '') : '';
+      final bName =
+          bTeamMemberId != null ? (teamMemberNames[bTeamMemberId] ?? '') : '';
       return aName.compareTo(bName);
     });
 
@@ -341,7 +370,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
   }
 
   /// Sort checklist items by event.startDate, event.name, then item name
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortChecklistItems(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortChecklistItems(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     final Map<String, DateTime> eventStartDates = {};
     final Map<String, String> eventNames = {};
     final eventsDocs = _collectionDataCache['events'];
@@ -356,7 +386,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       }
     }
 
-    final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+    final sortedDocs =
+        List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
     sortedDocs.sort((a, b) {
       final aData = a.data();
       final bData = b.data();
@@ -365,8 +396,12 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       final bEventId = bData['eventId'] as String?;
 
       // 1. event.startDate ascending
-      final aEventDate = aEventId != null ? (eventStartDates[aEventId] ?? DateTime(2099, 12, 31)) : DateTime(2099, 12, 31);
-      final bEventDate = bEventId != null ? (eventStartDates[bEventId] ?? DateTime(2099, 12, 31)) : DateTime(2099, 12, 31);
+      final aEventDate = aEventId != null
+          ? (eventStartDates[aEventId] ?? DateTime(2099, 12, 31))
+          : DateTime(2099, 12, 31);
+      final bEventDate = bEventId != null
+          ? (eventStartDates[bEventId] ?? DateTime(2099, 12, 31))
+          : DateTime(2099, 12, 31);
       final dateCompare = aEventDate.compareTo(bEventDate);
       if (dateCompare != 0) return dateCompare;
 
@@ -386,8 +421,10 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
   }
 
   /// Sort logs by timestamp descending (newest first)
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortLogs(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    final sortedDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortLogs(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final sortedDocs =
+        List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
     sortedDocs.sort((a, b) {
       final aData = a.data();
       final bData = b.data();
@@ -435,7 +472,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
   }
 
   /// Filter a collection's documents and update the filtered count
-  void _filterAndUpdateCount(String collectionName, List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  void _filterAndUpdateCount(String collectionName,
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     if (_searchQuery.isEmpty) {
       // No search - all docs match
       _filteredCountNotifiers[collectionName]!.value = docs.length;
@@ -478,13 +516,15 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
 
       if (value is String && value.toLowerCase().contains(query)) {
         return true;
-      } else if (value is Map<String, dynamic> && _searchInDocData(value, query)) {
+      } else if (value is Map<String, dynamic> &&
+          _searchInDocData(value, query)) {
         return true;
       } else if (value is List) {
         for (final item in value) {
           if (item is String && item.toLowerCase().contains(query)) {
             return true;
-          } else if (item is Map<String, dynamic> && _searchInDocData(item, query)) {
+          } else if (item is Map<String, dynamic> &&
+              _searchInDocData(item, query)) {
             return true;
           }
         }
@@ -496,7 +536,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
   }
 
   /// Get the primary field value for filtering (same logic as CollectionViewer and DocumentCard)
-  String? _getPrimaryFieldValue(String collectionName, Map<String, dynamic> data) {
+  String? _getPrimaryFieldValue(
+      String collectionName, Map<String, dynamic> data) {
     if (collectionName.contains('event')) {
       return _formatEventPreview(data);
     }
@@ -599,26 +640,27 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
 
     // Logs: "<performerName> <actionType> <entityType> | <timestampLocalIsrael>"
     if (collectionName.contains('log')) {
-      final performerName = (data['performerName'] as String?)?.trim();
       final actionTypeRaw = data['actionType'] as String?;
       final entityTypeRaw = data['entityType'] as String?;
+      final entityName = _getLogEntityName(data);
+      final entityNameSuffix = entityName != null ? ' "$entityName"' : '';
 
-      final actor = (performerName != null && performerName.isNotEmpty)
-          ? performerName
-          : 'לא ידוע';
+      final actor = _getLogActor(data);
       final actionType = _getActionTypeHebrew(actionTypeRaw);
       final entityType = _getEntityTypeHebrew(entityTypeRaw);
       final timestampText = _formatLogTimestamp(data);
 
-      return '$actor $actionType $entityType | $timestampText';
+      return '$actor $actionType $entityType$entityNameSuffix | $timestampText';
     }
 
     // Team members: Show name + capability count
     if (collectionName.contains('teamMember')) {
       final name = data['name'] as String?;
-      final roleCapabilities = data['roleCapabilities'] as Map<String, dynamic>?;
+      final roleCapabilities =
+          data['roleCapabilities'] as Map<String, dynamic>?;
       if (name != null && roleCapabilities != null) {
-        final enabledCount = roleCapabilities.values.where((v) => v == true).length;
+        final enabledCount =
+            roleCapabilities.values.where((v) => v == true).length;
         return '$name ($enabledCount תפקידים)';
       }
       if (name != null) {
@@ -635,7 +677,14 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     }
 
     // Default: Try common primary field names
-    final primaryKeys = ['name', 'title', 'firstName', 'displayName', 'label', 'hebrewName'];
+    final primaryKeys = [
+      'name',
+      'title',
+      'firstName',
+      'displayName',
+      'label',
+      'hebrewName'
+    ];
     for (final key in primaryKeys) {
       if (data.containsKey(key) && data[key] != null) {
         return data[key].toString();
@@ -683,15 +732,77 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
+  String _normalizeActionType(String? actionType) {
+    final raw = (actionType ?? '').trim().toLowerCase();
+    if (raw.isEmpty) return '';
+    final parts = raw.split('.');
+    return parts.isNotEmpty ? parts.last : raw;
+  }
+
+  String _getLogActor(Map<String, dynamic> data) {
+    for (final candidate in [
+      data['performerName'],
+      data['performerUniqueKey'],
+      data['performerId'],
+    ]) {
+      if (candidate is String && candidate.trim().isNotEmpty) {
+        return candidate.trim();
+      }
+    }
+    return 'לא ידוע';
+  }
+
+  String? _getLogEntityName(Map<String, dynamic> data) {
+    final topLevelName = data['entityName'];
+    if (topLevelName is String && topLevelName.trim().isNotEmpty) {
+      return topLevelName.trim();
+    }
+
+    final details = data['details'];
+    if (details is Map) {
+      for (final key in ['name', 'entityName']) {
+        final value = details[key];
+        if (value is String && value.trim().isNotEmpty) {
+          return value.trim();
+        }
+      }
+    }
+
+    return null;
+  }
+
   String _getActionTypeHebrew(String? actionType) {
-    switch ((actionType ?? '').toLowerCase()) {
+    switch (_normalizeActionType(actionType)) {
       case 'create':
+      case 'insert':
         return 'יצר';
       case 'edit':
       case 'update':
         return 'עדכן';
       case 'delete':
         return 'מחק';
+      case 'add':
+        return 'הוסיף';
+      case 'remove':
+        return 'הסיר';
+      case 'archive':
+        return 'העביר לארכיון';
+      case 'restore':
+        return 'שחזר';
+      case 'reorder':
+        return 'סידר מחדש';
+      case 'loadintoevent':
+        return 'טען לאירוע';
+      case 'clearalldata':
+        return 'ניקה נתונים';
+      case 'updatepasscode':
+        return 'עדכן קוד גישה';
+      case 'clearpasscode':
+        return 'איפס קוד גישה';
+      case 'updatearchivestatus':
+        return 'עדכן ארכיון';
+      case 'seed':
+        return 'אתחל';
       default:
         return actionType ?? 'לא ידוע';
     }
@@ -745,7 +856,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
 
     final timestampUtc = data['timestampUtc'];
     if (timestampUtc is Timestamp) {
-      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc.toDate());
+      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS')
+          .format(timestampUtc.toDate());
     }
     if (timestampUtc is DateTime) {
       return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc);
@@ -800,22 +912,27 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
                   child: ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    cacheExtent: 2000, // Keep more widgets cached to prevent scroll jumping
+                    cacheExtent:
+                        2000, // Keep more widgets cached to prevent scroll jumping
                     itemCount: _collections.length,
                     itemBuilder: (context, index) {
                       final config = _collections[index];
-                      final isExpanded = _expandedCollections.contains(config.name);
-                      final filteredCountNotifier = _filteredCountNotifiers[config.name]!;
+                      final isExpanded =
+                          _expandedCollections.contains(config.name);
+                      final filteredCountNotifier =
+                          _filteredCountNotifiers[config.name]!;
 
                       // Hide collection if searching and has no matching documents (but never hide expanded collections)
                       return ValueListenableBuilder<int>(
                         valueListenable: filteredCountNotifier,
                         builder: (context, filteredCount, _) {
                           // Hide when searching, no matches (count = 0), AND not expanded
-                          if (_searchQuery.isNotEmpty && filteredCount == 0 && !isExpanded) {
+                          if (_searchQuery.isNotEmpty &&
+                              filteredCount == 0 &&
+                              !isExpanded) {
                             return const SizedBox.shrink();
                           }
-                                          return _buildCollectionCard(
+                          return _buildCollectionCard(
                             key: ValueKey(config.name),
                             config: config,
                             isExpanded: isExpanded,
@@ -898,7 +1015,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
           ),
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
         onChanged: (value) {
           setState(() {
@@ -965,7 +1083,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
           ListTile(
             leading: Icon(config.icon, color: Theme.of(context).primaryColor),
             title: ListenableBuilder(
-              listenable: Listenable.merge([countNotifier, filteredCountNotifier]),
+              listenable:
+                  Listenable.merge([countNotifier, filteredCountNotifier]),
               builder: (context, _) {
                 // Show filtered count when searching, total count otherwise
                 final displayCount = _searchQuery.isNotEmpty
@@ -1010,7 +1129,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
                 documentsNotifier: _getSortedNotifier(config.name),
                 isLoaded: _loadedCollections.contains(config.name),
                 expandedDocIds: _getExpandedDocIds(config.name),
-                onToggleDocument: (docId) => _toggleDocumentExpansion(config.name, docId),
+                onToggleDocument: (docId) =>
+                    _toggleDocumentExpansion(config.name, docId),
               ),
             ),
         ],
@@ -1026,5 +1146,6 @@ class _CollectionConfig {
   final IconData icon;
   final bool useEnvironmentPrefix;
 
-  const _CollectionConfig(this.name, this.hebrewName, this.icon, this.useEnvironmentPrefix);
+  const _CollectionConfig(
+      this.name, this.hebrewName, this.icon, this.useEnvironmentPrefix);
 }

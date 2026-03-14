@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'json_tree_view.dart';
+import 'log_document_card_view.dart';
 import '../../../../core/constants/role_types.dart';
 import 'assignment_preview.dart';
 
@@ -14,7 +15,8 @@ class DocumentCard extends StatelessWidget {
   final bool isExpanded;
   final VoidCallback onToggle;
   final String? collectionName; // Added for collection-specific hints
-  final Map<String, Map<String, Map<String, dynamic>>>? collectionsData; // For looking up related data
+  final Map<String, Map<String, Map<String, dynamic>>>?
+      collectionsData; // For looking up related data
 
   const DocumentCard({
     super.key,
@@ -28,6 +30,18 @@ class DocumentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isLog = collectionName != null && collectionName!.contains('log');
+    if (isLog) {
+      return LogDocumentCardView(
+        key: key,
+        documentId: documentId,
+        data: data,
+        isExpanded: isExpanded,
+        onToggle: onToggle,
+        collectionsData: collectionsData,
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       color: Colors.green.shade50,
@@ -50,7 +64,8 @@ class DocumentCard extends StatelessWidget {
 
   Widget _buildHeader(BuildContext context) {
     final primaryField = _getPrimaryFieldValue();
-    final isAssignment = collectionName != null && collectionName!.contains('assignment');
+    final isAssignment =
+        collectionName != null && collectionName!.contains('assignment');
 
     return InkWell(
       onTap: onToggle,
@@ -147,11 +162,17 @@ class DocumentCard extends StatelessWidget {
     final ordered = <String, dynamic>{
       'id': documentId,
       'timestampLocalIsrael': data['timestampLocalIsrael'],
+      'timestampUtc': data['timestampUtc'],
       'performerName': data['performerName'],
+      'performerId': data['performerId'],
+      'performerUniqueKey': data['performerUniqueKey'],
       'actionType': data['actionType'],
+      'operation': data['operation'],
       'entityId': data['entityId'],
       'entityType': data['entityType'],
       'entityName': data['entityName'],
+      'status': data['status'],
+      'source': data['source'],
       'changes': data['changes'],
       'oldValue': data['oldValue'],
       'newValue': data['newValue'],
@@ -187,9 +208,11 @@ class DocumentCard extends StatelessWidget {
       // Team members: Show name + capability count
       if (collectionName!.contains('teamMember')) {
         final name = data['name'] as String?;
-        final roleCapabilities = data['roleCapabilities'] as Map<String, dynamic>?;
+        final roleCapabilities =
+            data['roleCapabilities'] as Map<String, dynamic>?;
         if (name != null && roleCapabilities != null) {
-          final enabledCount = roleCapabilities.values.where((v) => v == true).length;
+          final enabledCount =
+              roleCapabilities.values.where((v) => v == true).length;
           return '$name ($enabledCount תפקידים)';
         }
         if (name != null) {
@@ -236,22 +259,22 @@ class DocumentCard extends StatelessWidget {
 
       // Logs: "<performerName> <actionType> <entityType> | <timestampLocalIsrael>"
       if (collectionName!.contains('log')) {
-        final performerName = (data['performerName'] as String?)?.trim();
         final actionTypeRaw = data['actionType'] as String?;
         final entityTypeRaw = data['entityType'] as String?;
+        final entityName = _getLogEntityName();
+        final entityNameSuffix = entityName != null ? ' "$entityName"' : '';
 
-        final actor = (performerName != null && performerName.isNotEmpty)
-            ? performerName
-            : 'לא ידוע';
+        final actor = _getLogActor();
         final actionType = _getActionTypeHebrew(actionTypeRaw);
         final entityType = _getEntityTypeHebrew(entityTypeRaw);
         final timestampText = _formatLogTimestamp();
 
-        return '$actor $actionType $entityType | $timestampText';
+        return '$actor $actionType $entityType$entityNameSuffix | $timestampText';
       }
 
       // Utilities, Keys, and others: Show field names
-      if (collectionName!.contains('utilit') || collectionName!.contains('key')) {
+      if (collectionName!.contains('utilit') ||
+          collectionName!.contains('key')) {
         final fieldNames = data.keys.where((k) => k != 'id').toList();
         if (fieldNames.isNotEmpty) {
           return fieldNames.join(', ');
@@ -260,7 +283,14 @@ class DocumentCard extends StatelessWidget {
     }
 
     // Default: Try common primary field names
-    final primaryKeys = ['name', 'title', 'firstName', 'displayName', 'label', 'hebrewName'];
+    final primaryKeys = [
+      'name',
+      'title',
+      'firstName',
+      'displayName',
+      'label',
+      'hebrewName'
+    ];
     for (final key in primaryKeys) {
       if (data.containsKey(key) && data[key] != null) {
         return data[key].toString();
@@ -308,15 +338,77 @@ class DocumentCard extends StatelessWidget {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
+  String _normalizeActionType(String? actionType) {
+    final raw = (actionType ?? '').trim().toLowerCase();
+    if (raw.isEmpty) return '';
+    final parts = raw.split('.');
+    return parts.isNotEmpty ? parts.last : raw;
+  }
+
+  String _getLogActor() {
+    for (final candidate in [
+      data['performerName'],
+      data['performerUniqueKey'],
+      data['performerId'],
+    ]) {
+      if (candidate is String && candidate.trim().isNotEmpty) {
+        return candidate.trim();
+      }
+    }
+    return 'לא ידוע';
+  }
+
+  String? _getLogEntityName() {
+    final topLevelName = data['entityName'];
+    if (topLevelName is String && topLevelName.trim().isNotEmpty) {
+      return topLevelName.trim();
+    }
+
+    final details = data['details'];
+    if (details is Map) {
+      for (final key in ['name', 'entityName']) {
+        final value = details[key];
+        if (value is String && value.trim().isNotEmpty) {
+          return value.trim();
+        }
+      }
+    }
+
+    return null;
+  }
+
   String _getActionTypeHebrew(String? actionType) {
-    switch ((actionType ?? '').toLowerCase()) {
+    switch (_normalizeActionType(actionType)) {
       case 'create':
+      case 'insert':
         return 'יצר';
       case 'edit':
       case 'update':
         return 'עדכן';
       case 'delete':
         return 'מחק';
+      case 'add':
+        return 'הוסיף';
+      case 'remove':
+        return 'הסיר';
+      case 'archive':
+        return 'העביר לארכיון';
+      case 'restore':
+        return 'שחזר';
+      case 'reorder':
+        return 'סידר מחדש';
+      case 'loadintoevent':
+        return 'טען לאירוע';
+      case 'clearalldata':
+        return 'ניקה נתונים';
+      case 'updatepasscode':
+        return 'עדכן קוד גישה';
+      case 'clearpasscode':
+        return 'איפס קוד גישה';
+      case 'updatearchivestatus':
+        return 'עדכן ארכיון';
+      case 'seed':
+        return 'אתחל';
       default:
         return actionType ?? 'לא ידוע';
     }
@@ -370,7 +462,8 @@ class DocumentCard extends StatelessWidget {
 
     final timestampUtc = data['timestampUtc'];
     if (timestampUtc is Timestamp) {
-      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc.toDate());
+      return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS')
+          .format(timestampUtc.toDate());
     }
     if (timestampUtc is DateTime) {
       return DateFormat('dd/MM/yyyy, HH:mm:ss.SSS').format(timestampUtc);
