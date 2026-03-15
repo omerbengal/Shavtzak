@@ -5,6 +5,54 @@ import 'backend_api_service.dart';
 import 'environment_service.dart';
 import 'google_oauth_service.dart';
 
+class AppEventAttendeeSyncResult {
+  final int scannedCount;
+  final int syncedCount;
+  final int skippedCount;
+  final int failedCount;
+  final List<String> failedEventIds;
+
+  const AppEventAttendeeSyncResult({
+    required this.scannedCount,
+    required this.syncedCount,
+    required this.skippedCount,
+    required this.failedCount,
+    this.failedEventIds = const [],
+  });
+}
+
+class EventsAndConstraintsSyncResult {
+  final int scannedEventCount;
+  final int syncedEventCount;
+  final int skippedEventCount;
+  final int failedEventCount;
+  final List<String> failedEventIds;
+  final int scannedConstraintCount;
+  final int rejectedConstraintCount;
+  final int retriedConstraintCount;
+  final int successfulConstraintRetryCount;
+  final int skippedConstraintCount;
+  final int failedConstraintCount;
+  final List<String> failedConstraintIds;
+  final String message;
+
+  const EventsAndConstraintsSyncResult({
+    required this.scannedEventCount,
+    required this.syncedEventCount,
+    required this.skippedEventCount,
+    required this.failedEventCount,
+    this.failedEventIds = const [],
+    required this.scannedConstraintCount,
+    required this.rejectedConstraintCount,
+    required this.retriedConstraintCount,
+    required this.successfulConstraintRetryCount,
+    required this.skippedConstraintCount,
+    required this.failedConstraintCount,
+    this.failedConstraintIds = const [],
+    required this.message,
+  });
+}
+
 /// Service for interacting with Google Calendar through backend endpoints.
 /// The browser never talks to Google Calendar directly.
 class GoogleCalendarService {
@@ -96,7 +144,8 @@ class GoogleCalendarService {
       'createConstraintEvent',
       payload: {
         'teamMember': _serializeTeamMember(teamMember),
-        'constraint': _serializeConstraint(constraint.copyWith(id: constraintId)),
+        'constraint':
+            _serializeConstraint(constraint.copyWith(id: constraintId)),
         'isTestMode': _isTestMode,
       },
     );
@@ -119,7 +168,8 @@ class GoogleCalendarService {
       payload: {
         'calendarEventId': calendarEventId,
         'teamMember': _serializeTeamMember(teamMember),
-        'constraint': _serializeConstraint(constraint.copyWith(id: constraintId)),
+        'constraint':
+            _serializeConstraint(constraint.copyWith(id: constraintId)),
         'isTestMode': _isTestMode,
       },
     );
@@ -130,7 +180,8 @@ class GoogleCalendarService {
     String? teamMemberId,
   }) async {
     if (teamMemberId == null || teamMemberId.isEmpty) {
-      throw GoogleCalendarException('Missing team member ID for constraint deletion');
+      throw GoogleCalendarException(
+          'Missing team member ID for constraint deletion');
     }
 
     await _calendarAction(
@@ -270,6 +321,72 @@ class GoogleCalendarService {
     );
   }
 
+  Future<AppEventAttendeeSyncResult> syncAppEventAttendees({
+    String? eventId,
+  }) async {
+    await _ensureAuthenticated();
+
+    final response = await _backendApiService.post(
+      'calendar/sync-app-event-attendees',
+      requireAuth: true,
+      body: {
+        if (eventId != null && eventId.isNotEmpty) 'eventId': eventId,
+      },
+    );
+
+    final failedEventIds =
+        (response['failedEventIds'] as List<dynamic>? ?? const [])
+            .map((value) => value.toString())
+            .where((value) => value.isNotEmpty)
+            .toList(growable: false);
+
+    return AppEventAttendeeSyncResult(
+      scannedCount: _readInt(response['scannedCount']),
+      syncedCount: _readInt(response['syncedCount']),
+      skippedCount: _readInt(response['skippedCount']),
+      failedCount: _readInt(response['failedCount']),
+      failedEventIds: failedEventIds,
+    );
+  }
+
+  Future<EventsAndConstraintsSyncResult> syncEventsAndConstraints() async {
+    await _ensureAuthenticated();
+
+    final response = await _backendApiService.post(
+      'calendar/sync-events-and-constraints',
+      requireAuth: true,
+    );
+
+    final failedEventIds =
+        (response['failedEventIds'] as List<dynamic>? ?? const [])
+            .map((value) => value.toString())
+            .where((value) => value.isNotEmpty)
+            .toList(growable: false);
+    final failedConstraintIds =
+        (response['failedConstraintIds'] as List<dynamic>? ?? const [])
+            .map((value) => value.toString())
+            .where((value) => value.isNotEmpty)
+            .toList(growable: false);
+
+    return EventsAndConstraintsSyncResult(
+      scannedEventCount: _readInt(response['scannedEventCount']),
+      syncedEventCount: _readInt(response['syncedEventCount']),
+      skippedEventCount: _readInt(response['skippedEventCount']),
+      failedEventCount: _readInt(response['failedEventCount']),
+      failedEventIds: failedEventIds,
+      scannedConstraintCount: _readInt(response['scannedConstraintCount']),
+      rejectedConstraintCount: _readInt(response['rejectedConstraintCount']),
+      retriedConstraintCount: _readInt(response['retriedConstraintCount']),
+      successfulConstraintRetryCount:
+          _readInt(response['successfulConstraintRetryCount']),
+      skippedConstraintCount: _readInt(response['skippedConstraintCount']),
+      failedConstraintCount: _readInt(response['failedConstraintCount']),
+      failedConstraintIds: failedConstraintIds,
+      message:
+          response['message']?.toString() ?? 'סנכרון אירועים ומגבלות הושלם.',
+    );
+  }
+
   Map<String, dynamic> _serializeTeamMember(TeamMember teamMember) {
     return {
       'id': teamMember.id,
@@ -329,6 +446,19 @@ class GoogleCalendarService {
     return value.map(
       (key, entry) => MapEntry(key.toString(), entry?.toString() ?? ''),
     );
+  }
+
+  int _readInt(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value) ?? 0;
+    }
+    return 0;
   }
 
   String _formatDateOnly(DateTime date) {

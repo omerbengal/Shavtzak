@@ -49,7 +49,6 @@ import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
-import '../../bloc/calendar_sync/calendar_sync_state.dart';
 import '../../widgets/archived_members_dialog.dart';
 import '../../utils/constraint_warning_actions.dart';
 import 'dart:async';
@@ -205,98 +204,6 @@ class _TeamListScreenState extends State<TeamListScreen> {
           titleSpacing: 0,
           title: Row(
             children: [
-              // Leading: Sync button
-              BlocListener<CalendarSyncBloc, CalendarSyncState>(
-                listener: (context, state) {
-                  if (state is CalendarSyncBidirectionalComplete) {
-                    ScaffoldMessenger.of(context)
-                      ..clearSnackBars()
-                      ..showSnackBar(
-                        SnackBar(
-                          content: Directionality(
-                            textDirection: TextDirection.rtl,
-                            child: Text(state.message),
-                          ),
-                          backgroundColor: Colors.green,
-                          duration: const Duration(seconds: 3),
-                        ),
-                      );
-                  } else if (state is ConstraintAttendeeBackfillComplete) {
-                    ScaffoldMessenger.of(context)
-                      ..clearSnackBars()
-                      ..showSnackBar(
-                        SnackBar(
-                          content: Directionality(
-                            textDirection: TextDirection.rtl,
-                            child: Text(state.message),
-                          ),
-                          backgroundColor: state.failedCount > 0
-                              ? Colors.orange
-                              : Colors.green,
-                          duration: const Duration(seconds: 4),
-                        ),
-                      );
-                  } else if (state is CalendarSyncFailure &&
-                      (state.constraintId == 'bidirectional' ||
-                          state.constraintId ==
-                              'constraint_attendee_backfill')) {
-                    ScaffoldMessenger.of(context)
-                      ..clearSnackBars()
-                      ..showSnackBar(
-                        SnackBar(
-                          content: Directionality(
-                            textDirection: TextDirection.rtl,
-                            child: Text(state.errorMessage),
-                          ),
-                          backgroundColor: Colors.red,
-                          duration: const Duration(seconds: 3),
-                          action: state.isRetryable
-                              ? SnackBarAction(
-                                  label: 'נסה שוב',
-                                  textColor: Colors.white,
-                                  onPressed: () {
-                                    if (state.constraintId == 'bidirectional') {
-                                      context.read<CalendarSyncBloc>().add(
-                                          const PerformBidirectionalSync());
-                                    } else {
-                                      context.read<CalendarSyncBloc>().add(
-                                          const BackfillConstraintEventAttendees());
-                                    }
-                                  },
-                                )
-                              : null,
-                        ),
-                      );
-                  }
-                },
-                child: BlocBuilder<CalendarSyncBloc, CalendarSyncState>(
-                  builder: (context, state) {
-                    final isInProgress = state is CalendarSyncInProgress &&
-                        state.constraintId == 'bidirectional';
-                    if (isInProgress) {
-                      return const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8),
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        ),
-                      );
-                    }
-                    return _buildCompactIcon(
-                      icon: Icons.sync,
-                      onPressed: () {
-                        context
-                            .read<CalendarSyncBloc>()
-                            .add(const PerformBidirectionalSync());
-                      },
-                    );
-                  },
-                ),
-              ),
               // Leading: Vehicle info copy button
               _buildCompactIcon(
                 icon: Icons.directions_car,

@@ -53,6 +53,32 @@ type CalendarEventPayload = {
   isTestMode: boolean;
 };
 
+type ManagedCalendarEventSummary = {
+  id: string;
+  status: string | null;
+  summary: string | null;
+  description: string | null;
+  organizerEmail: string | null;
+  location: string | null;
+  colorId: string | null;
+  startDate: string | null;
+  startDateTime: string | null;
+  endDate: string | null;
+  endDateTime: string | null;
+  recurrence: string[];
+  attendeeEmails: string[];
+  attendeesKnown: boolean;
+  eventId: string | null;
+  eventType: string | null;
+  constraintId: string | null;
+  teamMemberId: string | null;
+  constraintType: string | null;
+  repeatType: string | null;
+  repeatDay: string | null;
+  repeatEndDate: string | null;
+  isTestMode: string | null;
+};
+
 type GoogleApiOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   query?: Record<string, string | number | boolean | null | undefined>;
@@ -148,6 +174,13 @@ function optionalNumber(value: unknown): number | null {
     throw new Error('Expected number value');
   }
   return value;
+}
+
+function optionalStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => (typeof entry === 'string' ? entry : null))
+    .filter((entry): entry is string => entry != null);
 }
 
 function parseDateOnly(value: unknown, fieldName: string): Date {
@@ -1046,6 +1079,36 @@ async function createAppEventCalendarEvents(
   return result;
 }
 
+async function createAppEventCalendarEventPart(
+  firestore: Firestore,
+  environment: CalendarEnvironmentMode,
+  payload: CalendarEventPayload,
+  eventType: 'assembly' | 'main' | 'allDay',
+): Promise<string> {
+  switch (eventType) {
+    case 'assembly':
+      return await createCalendarEvent(
+        firestore,
+        environment,
+        buildAssemblyEventPayload(payload),
+      );
+    case 'main':
+      return await createCalendarEvent(
+        firestore,
+        environment,
+        buildMainEventPayload(payload),
+      );
+    case 'allDay':
+      return await createCalendarEvent(
+        firestore,
+        environment,
+        buildAllDayEventPayload(payload),
+      );
+    default:
+      throw new Error(`Unsupported app event part type: ${String(eventType)}`);
+  }
+}
+
 async function updateAppEventCalendarEvents(
   firestore: Firestore,
   environment: CalendarEnvironmentMode,
@@ -1246,6 +1309,203 @@ async function updateEventAttendees(
   }
 }
 
+function parseManagedCalendarEvent(
+  value: unknown,
+  options: {
+    requireIdentity?: boolean;
+  } = {},
+): ManagedCalendarEventSummary | null {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = optionalString(record['id']);
+  if (id == null || id.length === 0) {
+    return null;
+  }
+
+  const extendedProperties = asRecord(
+    record['extendedProperties'] ?? {},
+    'managedCalendarEvent.extendedProperties',
+  );
+  const privateProps = asRecord(
+    extendedProperties['private'] ?? {},
+    'managedCalendarEvent.extendedProperties.private',
+  );
+
+  const eventId = optionalString(privateProps['eventId']);
+  const constraintId = optionalString(privateProps['constraintId']);
+  if (
+    options.requireIdentity !== false &&
+    (eventId == null || eventId.length === 0) &&
+    (constraintId == null || constraintId.length === 0)
+  ) {
+    return null;
+  }
+
+  const attendeesRaw = Array.isArray(record['attendees'])
+    ? record['attendees'].map((entry) => asRecord(entry, 'calendarEvent.attendee'))
+    : [];
+  const attendeeEmails = attendeesRaw
+    .map((entry) => optionalString(entry['email']))
+    .filter((email): email is string => email != null && email.trim().length > 0)
+    .map((email) => email.trim());
+  const organizer = asRecord(record['organizer'] ?? {}, 'managedCalendarEvent.organizer');
+  const start = asRecord(record['start'] ?? {}, 'managedCalendarEvent.start');
+  const end = asRecord(record['end'] ?? {}, 'managedCalendarEvent.end');
+
+  return {
+    id,
+    status: optionalString(record['status']),
+    summary: optionalString(record['summary']),
+    description: optionalString(record['description']),
+    organizerEmail: optionalString(organizer['email']),
+    location: optionalString(record['location']),
+    colorId: optionalString(record['colorId']),
+    startDate: optionalString(start['date']),
+    startDateTime: optionalString(start['dateTime']),
+    endDate: optionalString(end['date']),
+    endDateTime: optionalString(end['dateTime']),
+    recurrence: optionalStringArray(record['recurrence']),
+    attendeeEmails,
+    attendeesKnown: Array.isArray(record['attendees']) || record['attendeesOmitted'] !== true,
+    eventId,
+    eventType: optionalString(privateProps['eventType']),
+    constraintId,
+    teamMemberId: optionalString(privateProps['teamMemberId']),
+    constraintType: optionalString(privateProps['constraintType']),
+    repeatType: optionalString(privateProps['repeatType']),
+    repeatDay: optionalString(privateProps['repeatDay']),
+    repeatEndDate: optionalString(privateProps['repeatEndDate']),
+    isTestMode: optionalString(privateProps['isTestMode']),
+  };
+}
+
+async function listManagedCalendarEvents(
+  firestore: Firestore,
+  environment: CalendarEnvironmentMode,
+  filters: {
+    kind?: 'app' | 'constraint';
+    eventId?: string | null;
+    constraintId?: string | null;
+  } = {},
+): Promise<ManagedCalendarEventSummary[]> {
+  const events: ManagedCalendarEventSummary[] = [];
+  let pageToken: string | null = null;
+
+  do {
+    const query: Record<string, string | number | boolean | null | undefined> = {
+      maxResults: 2500,
+      singleEvents: false,
+      showDeleted: false,
+      pageToken,
+    };
+
+    if (filters.eventId != null && filters.eventId.length > 0) {
+      query['privateExtendedProperty'] = `eventId=${filters.eventId}`;
+    } else if (filters.constraintId != null && filters.constraintId.length > 0) {
+      query['privateExtendedProperty'] = `constraintId=${filters.constraintId}`;
+    } else {
+      query['privateExtendedProperty'] = `isTestMode=${environment === 'test'}`;
+    }
+
+    const payload = asRecord(
+      await calendarApiRequest(firestore, environment, 'events', {
+        method: 'GET',
+        query,
+      }),
+      'managedCalendarEventsResponse',
+    );
+
+    const items = Array.isArray(payload['items']) ? payload['items'] : [];
+    for (const item of items) {
+      const parsed = parseManagedCalendarEvent(item, {
+        requireIdentity: true,
+      });
+      if (parsed == null) {
+        continue;
+      }
+
+      if (filters.kind === 'app' && (parsed.eventId == null || parsed.eventId.length === 0)) {
+        continue;
+      }
+      if (
+        filters.kind === 'constraint' &&
+        (parsed.constraintId == null || parsed.constraintId.length === 0)
+      ) {
+        continue;
+      }
+
+      events.push(parsed);
+    }
+
+    pageToken = optionalString(payload['nextPageToken']);
+  } while (pageToken != null && pageToken.length > 0);
+
+  return events;
+}
+
+async function getManagedCalendarEvent(
+  firestore: Firestore,
+  environment: CalendarEnvironmentMode,
+  calendarEventId: string,
+): Promise<ManagedCalendarEventSummary | null> {
+  try {
+    const event = await getCalendarEvent(firestore, environment, calendarEventId);
+    return parseManagedCalendarEvent(event, {
+      requireIdentity: false,
+    });
+  } catch (error) {
+    if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function ensureConstraintEvent(
+  firestore: Firestore,
+  environment: CalendarEnvironmentMode,
+  calendarEventId: string | null,
+  teamMember: CalendarTeamMemberPayload,
+  constraint: CalendarConstraintPayload,
+  isTestMode: boolean,
+): Promise<{calendarEventId: string; recreated: boolean}> {
+  if (calendarEventId != null && calendarEventId.length > 0) {
+    try {
+      await updateConstraintEvent(
+        firestore,
+        environment,
+        calendarEventId,
+        teamMember,
+        constraint,
+        isTestMode,
+      );
+      return {
+        calendarEventId,
+        recreated: false,
+      };
+    } catch (error) {
+      if (!(error instanceof GoogleApiError) || (error.status !== 404 && error.status !== 410)) {
+        throw error;
+      }
+    }
+  }
+
+  const createdId = await createConstraintEvent(
+    firestore,
+    environment,
+    teamMember,
+    constraint,
+    isTestMode,
+  );
+  return {
+    calendarEventId: createdId,
+    recreated: true,
+  };
+}
+
 export async function getCalendarConfigForClient(
   firestore: Firestore,
   environment: CalendarEnvironmentMode,
@@ -1411,6 +1671,21 @@ export async function executeCalendarAction(
       return {ok: true};
     }
 
+    case 'ensureConstraintEvent': {
+      requireAdmin(actor);
+      const teamMember = parseTeamMemberPayload(payload['teamMember']);
+      const constraint = parseConstraintPayload(payload['constraint']);
+      const result = await ensureConstraintEvent(
+        firestore,
+        environment,
+        optionalString(payload['calendarEventId']),
+        teamMember,
+        constraint,
+        optionalBoolean(payload['isTestMode']) ?? false,
+      );
+      return result;
+    }
+
     case 'deleteConstraintEvent': {
       const teamMemberId = requireString(payload['teamMemberId'], 'teamMemberId');
       requireSelfOrAdmin(actor, teamMemberId);
@@ -1437,6 +1712,22 @@ export async function executeCalendarAction(
       const event = parseCalendarEventPayload(payload['event']);
       const result = await createAppEventCalendarEvents(firestore, environment, event);
       return {result};
+    }
+
+    case 'createAppEventCalendarEventPart': {
+      requireAdmin(actor);
+      const event = parseCalendarEventPayload(payload['event']);
+      const eventTypeRaw = requireString(payload['eventType'], 'eventType');
+      if (eventTypeRaw !== 'assembly' && eventTypeRaw !== 'main' && eventTypeRaw !== 'allDay') {
+        throw new Error(`Unsupported app event part type: ${eventTypeRaw}`);
+      }
+      const calendarEventId = await createAppEventCalendarEventPart(
+        firestore,
+        environment,
+        event,
+        eventTypeRaw,
+      );
+      return {calendarEventId};
     }
 
     case 'updateAppEventCalendarEvents': {
@@ -1511,6 +1802,35 @@ export async function executeCalendarAction(
         },
       });
       return {events: payloadResponse};
+    }
+
+    case 'listManagedCalendarEvents': {
+      requireAdmin(actor);
+      const kindRaw = optionalString(payload['kind']);
+      const kind =
+        kindRaw === 'app' || kindRaw === 'constraint'
+          ? kindRaw
+          : undefined;
+      const events = await listManagedCalendarEvents(
+        firestore,
+        environment,
+        {
+          kind,
+          eventId: optionalString(payload['eventId']),
+          constraintId: optionalString(payload['constraintId']),
+        },
+      );
+      return {events};
+    }
+
+    case 'getManagedCalendarEvent': {
+      requireAdmin(actor);
+      const event = await getManagedCalendarEvent(
+        firestore,
+        environment,
+        requireString(payload['calendarEventId'], 'calendarEventId'),
+      );
+      return {event};
     }
 
     default:

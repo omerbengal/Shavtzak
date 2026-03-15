@@ -23,6 +23,13 @@ import {
   getCalendarConfigForClient,
   getCalendarStatusForClient,
 } from './calendar_integration';
+import {
+  deleteAppEventCalendarArtifacts,
+  syncAppEventCalendars,
+  syncAssignedEventsBestEffort,
+  syncAssignedFutureEventsForMemberEmailChange,
+  syncEventsAndConstraints,
+} from './calendar_sync_backend';
 
 initializeApp();
 
@@ -64,6 +71,99 @@ type Collections = {
   privateSessions: string;
   privateGoogleCalendarAuth: string;
 };
+
+type AppEventCalendarSyncSummary = {
+  scannedCount: number;
+  changedCount: number;
+  upToDateCount: number;
+  failedEventIds: string[];
+  removedOrphanedCount: number;
+  cleanedSyncStateCount: number;
+};
+
+type ConstraintCalendarSyncSummary = {
+  scannedCount: number;
+  rejectedCount: number;
+  retriedCount: number;
+  successCount: number;
+  skippedCount: number;
+  failedConstraintIds: string[];
+};
+
+type DatabaseConstraintCalendarSyncSummary = {
+  scannedCount: number;
+  changedCount: number;
+  upToDateCount: number;
+  removedOrphanedCount: number;
+  cleanedSyncStateCount: number;
+  failedConstraintIds: string[];
+};
+
+type ManagedCalendarEventSummary = {
+  id: string;
+  status: string | null;
+  summary: string | null;
+  description: string | null;
+  location: string | null;
+  colorId: string | null;
+  startDate: string | null;
+  startDateTime: string | null;
+  endDate: string | null;
+  endDateTime: string | null;
+  recurrence: string[];
+  attendeeEmails: string[];
+  attendeesKnown: boolean;
+  eventId: string | null;
+  eventType: string | null;
+  constraintId: string | null;
+  teamMemberId: string | null;
+  constraintType: string | null;
+  repeatType: string | null;
+  repeatDay: string | null;
+  repeatEndDate: string | null;
+  isTestMode: string | null;
+};
+
+type DesiredAppEventCalendarState = {
+  payload: Record<string, unknown>;
+  useAllDay: boolean;
+  assemblyTitle: string;
+  mainTitle: string;
+  location: string | null;
+  colorId: string;
+  assemblyStartPrefix: string | null;
+  assemblyEndPrefix: string | null;
+  mainStartPrefix: string | null;
+  mainEndPrefix: string | null;
+  allDayStartDate: string | null;
+  allDayEndDate: string | null;
+};
+
+type DesiredConstraintCalendarState = {
+  teamMemberPayload: Record<string, unknown>;
+  constraintPayload: Record<string, unknown>;
+  summary: string;
+  description: string;
+  colorId: string;
+  attendeeEmails: string[];
+  startDate: string | null;
+  startDateTime: string | null;
+  endDate: string | null;
+  endDateTime: string | null;
+  recurrence: string[];
+  repeatType: string | null;
+  repeatDay: string | null;
+  repeatEndDate: string | null;
+};
+
+const CALENDAR_SYNC_MAX_RETRY_ATTEMPTS = 3;
+const CALENDAR_SYNC_INITIAL_RETRY_DELAY_MS = 1000;
+const CALENDAR_SYNC_BACKOFF_MULTIPLIER = 2;
+const CALENDAR_SYNC_MAX_RETRY_DELAY_MS = 300000;
+const CALENDAR_TEST_MODE_PREFIX = 'שבצק טסטינג: ';
+const CALENDAR_APP_EVENT_COLOR_ID = '7';
+const CALENDAR_TEST_MODE_COLOR_ID = '5';
+const CALENDAR_UNAVAILABILITY_COLOR_ID = '8';
 
 function getEnvironmentMode(value: unknown): EnvironmentMode {
   return value === 'test' ? 'test' : 'production';
@@ -229,77 +329,1021 @@ async function readEventById(
   return snapshot.exists ? snapshot.data() ?? null : null;
 }
 
+function optionalStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => (typeof entry === 'string' ? entry : null))
+    .filter((entry): entry is string => entry != null);
+}
+
+function normalizeOptionalText(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeEmailValue(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function uniqueSortedStrings(values: Iterable<string>): string[] {
+  return Array.from(new Set(
+    Array.from(values)
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0),
+  )).sort((left, right) => left.localeCompare(right));
+}
+
+function toLocalDateTimePrefix(value: string | null): string | null {
+  if (value == null || value.length < 16) {
+    return value;
+  }
+  return value.slice(0, 16);
+}
+
+function formatCalendarDateTimePrefix(date: Date, time: string): string {
+  return `${formatCalendarDateOnly(date)}T${time}`;
+}
+
+function calendarEventColorId(environment: EnvironmentMode): string {
+  return environment === 'test'
+    ? CALENDAR_TEST_MODE_COLOR_ID
+    : CALENDAR_APP_EVENT_COLOR_ID;
+}
+
+function constraintColorIdForEnvironment(environment: EnvironmentMode): string {
+  return environment === 'test'
+    ? CALENDAR_TEST_MODE_COLOR_ID
+    : CALENDAR_UNAVAILABILITY_COLOR_ID;
+}
+
+function createCalendarEventMainTitle(eventName: string, environment: EnvironmentMode): string {
+  return environment === 'test'
+    ? `${CALENDAR_TEST_MODE_PREFIX}${eventName}`
+    : eventName;
+}
+
+function createCalendarEventAssemblyTitle(eventName: string, environment: EnvironmentMode): string {
+  const title = `${eventName} - התייצבות והכנות`;
+  return environment === 'test'
+    ? `${CALENDAR_TEST_MODE_PREFIX}${title}`
+    : title;
+}
+
+function cleanConstraintNote(note: string | null): string | null {
+  if (note == null || note.trim().length === 0) {
+    return null;
+  }
+
+  const autoRejectionMessage =
+    '(מגבלה זו נדחתה באופן אוטומטי בגלל שאחד מהמנהלים מחק את המגבלה מגוגל קלנדר)';
+  const cleaned = note
+    .replace(`\n\n${autoRejectionMessage}`, '')
+    .replace(autoRejectionMessage, '')
+    .trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+function createConstraintDescription(note: string | null): string {
+  const cleaned = cleanConstraintNote(note);
+  const lines = cleaned != null && cleaned.length > 0
+    ? [cleaned, '', '--- נוצר אוטומטית על ידי שבצק ---']
+    : ['--- נוצר אוטומטית על ידי שבצק ---'];
+  return `${lines.join('\n')}\n`;
+}
+
+function createConstraintTitle(
+  memberName: string,
+  environment: EnvironmentMode,
+): string {
+  const base = `${memberName} - מגבלה`;
+  return environment === 'test'
+    ? `${CALENDAR_TEST_MODE_PREFIX}${base}`
+    : base;
+}
+
+function weekdayToRRule(weekday: number | null): string | null {
+  switch (weekday) {
+    case 1:
+      return 'MO';
+    case 2:
+      return 'TU';
+    case 3:
+      return 'WE';
+    case 4:
+      return 'TH';
+    case 5:
+      return 'FR';
+    case 6:
+      return 'SA';
+    case 7:
+      return 'SU';
+    default:
+      return null;
+  }
+}
+
+function formatRRuleUntil(endDate: Date): string {
+  const utc = new Date(
+    Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate(), 23, 59, 59),
+  );
+  const year = utc.getUTCFullYear().toString().padStart(4, '0');
+  const month = String(utc.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(utc.getUTCDate()).padStart(2, '0');
+  const hour = String(utc.getUTCHours()).padStart(2, '0');
+  const minute = String(utc.getUTCMinutes()).padStart(2, '0');
+  const second = String(utc.getUTCSeconds()).padStart(2, '0');
+  return `${year}${month}${day}T${hour}${minute}${second}Z`;
+}
+
+function buildConstraintRecurrenceRule(constraint: Record<string, unknown>): string | null {
+  const repeatType =
+    typeof constraint['repeatType'] === 'string'
+      ? constraint['repeatType']
+      : null;
+  if (repeatType == null || constraint['repeatEndDate'] == null) {
+    return null;
+  }
+
+  const until = formatRRuleUntil(asDate(constraint['repeatEndDate'], 'constraint.repeatEndDate'));
+  switch (repeatType) {
+    case 'daily':
+      return `RRULE:FREQ=DAILY;UNTIL=${until}`;
+    case 'weekly': {
+      const byDay = weekdayToRRule(readInt(constraint['repeatDay']));
+      return byDay == null ? null : `RRULE:FREQ=WEEKLY;BYDAY=${byDay};UNTIL=${until}`;
+    }
+    case 'monthly': {
+      const repeatDay = readInt(constraint['repeatDay']);
+      if (repeatDay == null || repeatDay < 1 || repeatDay > 31) {
+        return null;
+      }
+      return `RRULE:FREQ=MONTHLY;BYMONTHDAY=${repeatDay};UNTIL=${until}`;
+    }
+    default:
+      return null;
+  }
+}
+
+function nextMonthlyOccurrenceOnOrAfter(
+  from: Date,
+  day: number,
+  maxDate: Date | null,
+): Date | null {
+  let cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
+
+  for (let i = 0; i < 240; i += 1) {
+    const daysInMonth = new Date(
+      Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    if (day <= daysInMonth) {
+      const candidate = new Date(
+        Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), day),
+      );
+      if (candidate.getTime() >= from.getTime()) {
+        if (maxDate != null && candidate.getTime() > maxDate.getTime()) {
+          return null;
+        }
+        return candidate;
+      }
+    }
+
+    const nextMonth = new Date(
+      Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1),
+    );
+    if (maxDate != null && nextMonth.getTime() > maxDate.getTime()) {
+      return null;
+    }
+    cursor = nextMonth;
+  }
+
+  return null;
+}
+
+function resolveConstraintEventStartDate(constraint: Record<string, unknown>): Date {
+  const startDate = asDate(constraint['startDate'], 'constraint.startDate');
+  const start = new Date(
+    Date.UTC(
+      startDate.getUTCFullYear(),
+      startDate.getUTCMonth(),
+      startDate.getUTCDate(),
+    ),
+  );
+  const repeatType =
+    typeof constraint['repeatType'] === 'string'
+      ? constraint['repeatType']
+      : null;
+  if (repeatType == null || constraint['repeatEndDate'] == null) {
+    return start;
+  }
+
+  const repeatEndDate = asDate(constraint['repeatEndDate'], 'constraint.repeatEndDate');
+  const repeatEnd = new Date(
+    Date.UTC(
+      repeatEndDate.getUTCFullYear(),
+      repeatEndDate.getUTCMonth(),
+      repeatEndDate.getUTCDate(),
+    ),
+  );
+
+  switch (repeatType) {
+    case 'daily':
+      return start;
+    case 'weekly': {
+      const repeatDay = readInt(constraint['repeatDay']);
+      if (repeatDay == null || repeatDay < 1 || repeatDay > 7) {
+        return start;
+      }
+      const jsWeekday = start.getUTCDay() === 0 ? 7 : start.getUTCDay();
+      const offset = (repeatDay - jsWeekday + 7) % 7;
+      const candidate = addDays(start, offset);
+      return candidate.getTime() > repeatEnd.getTime() ? start : candidate;
+    }
+    case 'monthly': {
+      const repeatDay = readInt(constraint['repeatDay']);
+      if (repeatDay == null || repeatDay < 1 || repeatDay > 31) {
+        return start;
+      }
+      return nextMonthlyOccurrenceOnOrAfter(start, repeatDay, repeatEnd) ?? start;
+    }
+    default:
+      return start;
+  }
+}
+
+function asManagedCalendarEventSummary(value: unknown): ManagedCalendarEventSummary | null {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = optionalString(record['id']);
+  if (id == null || id.length === 0) {
+    return null;
+  }
+
+  return {
+    id,
+    status: optionalString(record['status']),
+    summary: optionalString(record['summary']),
+    description: optionalString(record['description']),
+    location: optionalString(record['location']),
+    colorId: optionalString(record['colorId']),
+    startDate: optionalString(record['startDate']),
+    startDateTime: optionalString(record['startDateTime']),
+    endDate: optionalString(record['endDate']),
+    endDateTime: optionalString(record['endDateTime']),
+    recurrence: optionalStringArray(record['recurrence']),
+    attendeeEmails: optionalStringArray(record['attendeeEmails']),
+    attendeesKnown: record['attendeesKnown'] === true,
+    eventId: optionalString(record['eventId']),
+    eventType: optionalString(record['eventType']),
+    constraintId: optionalString(record['constraintId']),
+    teamMemberId: optionalString(record['teamMemberId']),
+    constraintType: optionalString(record['constraintType']),
+    repeatType: optionalString(record['repeatType']),
+    repeatDay: optionalString(record['repeatDay']),
+    repeatEndDate: optionalString(record['repeatEndDate']),
+    isTestMode: optionalString(record['isTestMode']),
+  };
+}
+
+async function listManagedCalendarEventsForSync(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  filters: {
+    kind?: 'app' | 'constraint';
+    eventId?: string | null;
+    constraintId?: string | null;
+  } = {},
+): Promise<ManagedCalendarEventSummary[]> {
+  const result = await executeCalendarAction(
+    db,
+    {
+      memberId: actor.memberId,
+      isAdmin: actor.isAdmin,
+    },
+    environment,
+    'listManagedCalendarEvents',
+    stripUndefined({
+      kind: filters.kind,
+      eventId: filters.eventId ?? undefined,
+      constraintId: filters.constraintId ?? undefined,
+    }),
+  );
+
+  const events = Array.isArray(result['events']) ? result['events'] : [];
+  return events
+    .map((entry) => asManagedCalendarEventSummary(entry))
+    .filter((entry): entry is ManagedCalendarEventSummary => entry != null);
+}
+
+async function getManagedCalendarEventForSync(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  calendarEventId: string,
+): Promise<ManagedCalendarEventSummary | null> {
+  const result = await executeCalendarAction(
+    db,
+    {
+      memberId: actor.memberId,
+      isAdmin: actor.isAdmin,
+    },
+    environment,
+    'getManagedCalendarEvent',
+    {
+      calendarEventId,
+    },
+  );
+
+  return asManagedCalendarEventSummary(result['event']);
+}
+
+function buildDesiredAppEventCalendarState(
+  eventId: string,
+  eventData: Record<string, unknown>,
+  environment: EnvironmentMode,
+): DesiredAppEventCalendarState {
+  const eventName = requireString(eventData['name'], 'event.name');
+  const startDate = asDate(eventData['startDate'], 'event.startDate');
+  const endDate = asDate(eventData['endDate'], 'event.endDate');
+  const assemblyTime = typeof eventData['assemblyTime'] === 'string'
+    ? eventData['assemblyTime'].trim()
+    : '';
+  const startTime = typeof eventData['startTime'] === 'string'
+    ? eventData['startTime'].trim()
+    : '';
+  const actualShowStartTime = typeof eventData['actualShowStartTime'] === 'string'
+    ? eventData['actualShowStartTime'].trim()
+    : '';
+  const endTime = typeof eventData['endTime'] === 'string'
+    ? eventData['endTime'].trim()
+    : '';
+  const separatorTime = actualShowStartTime.length > 0 ? actualShowStartTime : startTime;
+  const useAllDay = assemblyTime.length === 0 || endTime.length === 0;
+  const location = normalizeOptionalText(eventData['location']);
+  const payload = stripUndefined({
+    eventId,
+    eventName,
+    startDate: formatCalendarDateOnly(startDate),
+    endDate: formatCalendarDateOnly(endDate),
+    assemblyTime,
+    separatorTime,
+    endTime,
+    location,
+    isTestMode: environment === 'test',
+  });
+
+  return {
+    payload,
+    useAllDay,
+    assemblyTitle: createCalendarEventAssemblyTitle(eventName, environment),
+    mainTitle: createCalendarEventMainTitle(eventName, environment),
+    location,
+    colorId: calendarEventColorId(environment),
+    assemblyStartPrefix:
+      !useAllDay && assemblyTime.length > 0 && separatorTime.length > 0
+        ? formatCalendarDateTimePrefix(startDate, assemblyTime)
+        : null,
+    assemblyEndPrefix:
+      !useAllDay && assemblyTime.length > 0 && separatorTime.length > 0
+        ? formatCalendarDateTimePrefix(startDate, separatorTime)
+        : null,
+    mainStartPrefix:
+      !useAllDay && (separatorTime.length > 0 || assemblyTime.length > 0)
+        ? formatCalendarDateTimePrefix(
+          startDate,
+          separatorTime.length > 0 ? separatorTime : assemblyTime,
+        )
+        : null,
+    mainEndPrefix:
+      !useAllDay && endTime.length > 0
+        ? formatCalendarDateTimePrefix(endDate, endTime)
+        : null,
+    allDayStartDate: useAllDay ? formatCalendarDateOnly(startDate) : null,
+    allDayEndDate: useAllDay ? formatCalendarDateOnly(addDays(endDate, 1)) : null,
+  };
+}
+
+function managedAppEventMatchesDesired(
+  managedEvent: ManagedCalendarEventSummary | null,
+  desired: DesiredAppEventCalendarState,
+  expectedType: 'assembly' | 'main' | 'allDay',
+): boolean {
+  if (managedEvent == null) {
+    return false;
+  }
+
+  if (managedEvent.eventType !== expectedType) {
+    return false;
+  }
+
+  if (managedEvent.colorId !== desired.colorId) {
+    return false;
+  }
+
+  if (normalizeOptionalText(managedEvent.location) !== desired.location) {
+    return false;
+  }
+
+  if (expectedType === 'assembly') {
+    return managedEvent.summary === desired.assemblyTitle &&
+      toLocalDateTimePrefix(managedEvent.startDateTime) === desired.assemblyStartPrefix &&
+      toLocalDateTimePrefix(managedEvent.endDateTime) === desired.assemblyEndPrefix;
+  }
+
+  if (expectedType === 'main') {
+    return managedEvent.summary === desired.mainTitle &&
+      toLocalDateTimePrefix(managedEvent.startDateTime) === desired.mainStartPrefix &&
+      toLocalDateTimePrefix(managedEvent.endDateTime) === desired.mainEndPrefix;
+  }
+
+  return managedEvent.summary === desired.mainTitle &&
+    managedEvent.startDate === desired.allDayStartDate &&
+    managedEvent.endDate === desired.allDayEndDate;
+}
+
+function managedEventAttendeesMatch(
+  managedEvent: ManagedCalendarEventSummary | null,
+  desiredEmails: string[],
+): boolean {
+  if (managedEvent == null) {
+    return false;
+  }
+
+  if (!managedEvent.attendeesKnown) {
+    return false;
+  }
+
+  const currentEmails = uniqueSortedStrings(
+    managedEvent.attendeeEmails.map((email) => normalizeEmailValue(email)),
+  );
+  return currentEmails.length === desiredEmails.length &&
+    currentEmails.every((email, index) => email === desiredEmails[index]);
+}
+
+async function readEventAttendeeEmails(
+  collections: Collections,
+  eventId: string,
+  teamMemberCache: Map<string, Record<string, unknown> | null>,
+): Promise<string[]> {
+  const assignmentsSnapshot = await db
+    .collection(collections.assignments)
+    .where('eventId', '==', eventId)
+    .get();
+
+  const teamMemberIds = Array.from(new Set(
+    assignmentsSnapshot.docs
+      .map((doc) => {
+        const data = doc.data() ?? {};
+        return typeof data['teamMemberId'] === 'string'
+          ? data['teamMemberId'] as string
+          : null;
+      })
+      .filter((teamMemberId): teamMemberId is string => teamMemberId != null),
+  ));
+
+  const emails = new Set<string>();
+  for (const teamMemberId of teamMemberIds) {
+    if (!teamMemberCache.has(teamMemberId)) {
+      teamMemberCache.set(teamMemberId, await readTeamMemberById(db, collections, teamMemberId));
+    }
+    const teamMemberData = teamMemberCache.get(teamMemberId) ?? null;
+    const email = normalizeOptionalText(teamMemberData?.['email']);
+    if (email != null) {
+      emails.add(normalizeEmailValue(email));
+    }
+  }
+
+  return uniqueSortedStrings(emails);
+}
+
+async function updateAppEventAttendees(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  calendarEventIds: Iterable<string>,
+  emails: string[],
+): Promise<void> {
+  const uniqueIds = uniqueSortedStrings(calendarEventIds);
+  for (const calendarEventId of uniqueIds) {
+    await executeCalendarAction(
+      db,
+      {
+        memberId: actor.memberId,
+        isAdmin: actor.isAdmin,
+      },
+      environment,
+      'updateEventAttendees',
+      {
+        calendarEventId,
+        emails,
+      },
+    );
+  }
+}
+
+async function deleteManagedAppEvent(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  managedEvent: ManagedCalendarEventSummary,
+): Promise<void> {
+  await executeCalendarAction(
+    db,
+    {
+      memberId: actor.memberId,
+      isAdmin: actor.isAdmin,
+    },
+    environment,
+    'deleteAppEventCalendarEvents',
+    managedEvent.eventType === 'assembly'
+      ? {assemblyCalendarEventId: managedEvent.id}
+      : {mainCalendarEventId: managedEvent.id},
+  );
+}
+
+async function reconcileSingleAppEventCalendar(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  collections: Collections,
+  eventId: string,
+  eventData: Record<string, unknown>,
+  managedEvents: ManagedCalendarEventSummary[],
+  eventSyncData: Record<string, unknown> | null,
+  teamMemberCache: Map<string, Record<string, unknown> | null>,
+): Promise<{changed: boolean}> {
+  const desired = buildDesiredAppEventCalendarState(eventId, eventData, environment);
+  const desiredEmails = await readEventAttendeeEmails(collections, eventId, teamMemberCache);
+  const activeManagedEvents = managedEvents.filter((event) => event.status !== 'cancelled');
+  const assemblyEvents = activeManagedEvents.filter((event) => event.eventType === 'assembly');
+  const mainEvents = activeManagedEvents.filter((event) => event.eventType === 'main');
+  const allDayEvents = activeManagedEvents.filter((event) => event.eventType === 'allDay');
+  const currentAssembly = assemblyEvents[0] ?? null;
+  const currentMain = mainEvents[0] ?? null;
+  const currentAllDay = allDayEvents[0] ?? null;
+  const currentStateAssemblyId = optionalString(eventSyncData?.['assemblyCalendarEventId']) ?? '';
+  const currentStateMainId = optionalString(eventSyncData?.['mainCalendarEventId']) ?? '';
+  const currentStateStatus = optionalString(eventSyncData?.['status']) ?? '';
+  const currentAssemblyId = currentAssembly?.id ?? currentStateAssemblyId;
+  const currentMainId = desired.useAllDay
+    ? (currentAllDay?.id ?? currentMain?.id ?? currentStateMainId)
+    : (currentMain?.id ?? currentAllDay?.id ?? currentStateMainId);
+  const detailedCurrentAssembly =
+    !desired.useAllDay && currentAssemblyId.length > 0
+      ? await getManagedCalendarEventForSync(actor, environment, currentAssemblyId)
+      : null;
+  const detailedCurrentMain =
+    currentMainId.length > 0
+      ? await getManagedCalendarEventForSync(actor, environment, currentMainId)
+      : null;
+
+  const hasDuplicateEvents = assemblyEvents.length > 1 || mainEvents.length > 1 || allDayEvents.length > 1;
+  const needsEventUpsert = desired.useAllDay
+    ? !managedAppEventMatchesDesired(detailedCurrentMain, desired, 'allDay') ||
+      currentAssembly != null ||
+      assemblyEvents.length > 0 ||
+      hasDuplicateEvents
+    : !managedAppEventMatchesDesired(detailedCurrentAssembly, desired, 'assembly') ||
+      !managedAppEventMatchesDesired(detailedCurrentMain, desired, 'main') ||
+      currentAllDay != null ||
+      hasDuplicateEvents;
+  const needsAttendeeSync = desired.useAllDay
+    ? !managedEventAttendeesMatch(detailedCurrentMain, desiredEmails)
+    : !managedEventAttendeesMatch(detailedCurrentAssembly, desiredEmails) ||
+      !managedEventAttendeesMatch(detailedCurrentMain, desiredEmails);
+
+  let finalAssemblyId = desired.useAllDay
+    ? ''
+    : currentAssemblyId;
+  let finalMainId = currentMainId;
+  let changed = false;
+
+  if (needsEventUpsert) {
+    const result = await executeCalendarAction(
+      db,
+      {
+        memberId: actor.memberId,
+        isAdmin: actor.isAdmin,
+      },
+      environment,
+      'updateAppEventCalendarEvents',
+      {
+        assemblyCalendarEventId: finalAssemblyId,
+        mainCalendarEventId: finalMainId,
+        event: desired.payload,
+      },
+    );
+    const recreatedIds =
+      result['result'] != null && typeof result['result'] === 'object' && !Array.isArray(result['result'])
+        ? result['result'] as Record<string, unknown>
+        : null;
+
+    if (desired.useAllDay) {
+      finalAssemblyId = '';
+      if (recreatedIds != null && typeof recreatedIds['main'] === 'string') {
+        finalMainId = recreatedIds['main'] as string;
+      }
+    } else {
+      if (recreatedIds != null && typeof recreatedIds['assembly'] === 'string') {
+        finalAssemblyId = recreatedIds['assembly'] as string;
+      }
+      if (recreatedIds != null && typeof recreatedIds['main'] === 'string') {
+        finalMainId = recreatedIds['main'] as string;
+      }
+    }
+    changed = true;
+  }
+
+  const finalIds = new Set(
+    [finalAssemblyId, finalMainId].filter((calendarEventId) => calendarEventId.trim().length > 0),
+  );
+  for (const managedEvent of activeManagedEvents) {
+    if (finalIds.has(managedEvent.id)) {
+      continue;
+    }
+    await deleteManagedAppEvent(actor, environment, managedEvent);
+    changed = true;
+  }
+
+  if (needsAttendeeSync || needsEventUpsert) {
+    await updateAppEventAttendees(actor, environment, finalIds, desiredEmails);
+    changed = true;
+  }
+
+  if (
+    currentStateAssemblyId !== finalAssemblyId ||
+    currentStateMainId !== finalMainId ||
+    currentStateStatus !== 'synced'
+  ) {
+    await db.collection(collections.eventCalendarSync).doc(eventId).set({
+      assemblyCalendarEventId: finalAssemblyId,
+      mainCalendarEventId: finalMainId,
+      status: 'synced',
+      syncedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    changed = true;
+  }
+
+  return {changed};
+}
+
+function buildDesiredConstraintCalendarState(
+  teamMemberId: string,
+  teamMemberData: Record<string, unknown>,
+  constraint: Record<string, unknown>,
+  environment: EnvironmentMode,
+): DesiredConstraintCalendarState {
+  const teamMemberPayload = serializeTeamMemberForCalendarAction(teamMemberId, teamMemberData);
+  const constraintPayload = serializeConstraintForCalendarAction(constraint);
+  const startDate = resolveConstraintEventStartDate(constraint);
+  const repeatType =
+    typeof constraint['repeatType'] === 'string'
+      ? constraint['repeatType']
+      : null;
+  const recurrenceRule = buildConstraintRecurrenceRule(constraint);
+  const hasTimeRange =
+    normalizeOptionalText(constraint['startTime']) != null &&
+    normalizeOptionalText(constraint['endTime']) != null;
+  const rawEndBaseDate = repeatType != null
+    ? startDate
+    : (constraint['endDate'] == null
+      ? asDate(constraint['startDate'], 'constraint.startDate')
+      : asDate(constraint['endDate'], 'constraint.endDate'));
+  const endBaseDate = normalizeDay(rawEndBaseDate);
+  const attendeeEmail = normalizeOptionalText(teamMemberData['email']);
+
+  return {
+    teamMemberPayload,
+    constraintPayload,
+    summary: createConstraintTitle(
+      requireString(teamMemberData['name'] ?? teamMemberId, 'teamMember.name'),
+      environment,
+    ),
+    description: createConstraintDescription(normalizeOptionalText(constraint['note'])),
+    colorId: constraintColorIdForEnvironment(environment),
+    attendeeEmails:
+      attendeeEmail == null ? [] : [normalizeEmailValue(attendeeEmail)],
+    startDate: hasTimeRange ? null : formatCalendarDateOnly(startDate),
+    startDateTime: hasTimeRange
+      ? formatCalendarDateTimePrefix(
+        startDate,
+        requireString(constraint['startTime'], 'constraint.startTime'),
+      )
+      : null,
+    endDate: hasTimeRange ? null : formatCalendarDateOnly(addDays(endBaseDate, 1)),
+    endDateTime: hasTimeRange
+      ? formatCalendarDateTimePrefix(
+        endBaseDate,
+        requireString(constraint['endTime'], 'constraint.endTime'),
+      )
+      : null,
+    recurrence: recurrenceRule == null ? [] : [recurrenceRule],
+    repeatType,
+    repeatDay:
+      constraintPayload['repeatDay'] == null ? null : String(constraintPayload['repeatDay']),
+    repeatEndDate:
+      constraintPayload['repeatEndDate'] == null
+        ? null
+        : String(constraintPayload['repeatEndDate']),
+  };
+}
+
+function managedConstraintEventMatchesDesired(
+  managedEvent: ManagedCalendarEventSummary | null,
+  desired: DesiredConstraintCalendarState,
+): boolean {
+  if (managedEvent == null) {
+    return false;
+  }
+
+  if (
+    managedEvent.summary !== desired.summary ||
+    managedEvent.description !== desired.description ||
+    managedEvent.colorId !== desired.colorId ||
+    managedEvent.constraintType !== 'unavailability' ||
+    managedEvent.repeatType !== (desired.repeatType ?? '') ||
+    managedEvent.repeatDay !== (desired.repeatDay ?? '') ||
+    managedEvent.repeatEndDate !== (desired.repeatEndDate ?? '') ||
+    managedEvent.teamMemberId !== String(desired.teamMemberPayload['id'])
+  ) {
+    return false;
+  }
+
+  const currentRecurrence = uniqueSortedStrings(managedEvent.recurrence);
+  const desiredRecurrence = uniqueSortedStrings(desired.recurrence);
+  if (
+    currentRecurrence.length !== desiredRecurrence.length ||
+    currentRecurrence.some((entry, index) => entry !== desiredRecurrence[index])
+  ) {
+    return false;
+  }
+
+  const currentEmails = uniqueSortedStrings(
+    managedEvent.attendeeEmails.map((email) => normalizeEmailValue(email)),
+  );
+  if (
+    currentEmails.length !== desired.attendeeEmails.length ||
+    currentEmails.some((entry, index) => entry !== desired.attendeeEmails[index])
+  ) {
+    return false;
+  }
+
+  if (desired.startDateTime != null || desired.endDateTime != null) {
+    return toLocalDateTimePrefix(managedEvent.startDateTime) === desired.startDateTime &&
+      toLocalDateTimePrefix(managedEvent.endDateTime) === desired.endDateTime;
+  }
+
+  return managedEvent.startDate === desired.startDate &&
+    managedEvent.endDate === desired.endDate;
+}
+
+async function deleteManagedConstraintEvent(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  managedEvent: ManagedCalendarEventSummary,
+): Promise<void> {
+  await executeCalendarAction(
+    db,
+    {
+      memberId: actor.memberId,
+      isAdmin: actor.isAdmin,
+    },
+    environment,
+    'deleteConstraintEvent',
+    {
+      calendarEventId: managedEvent.id,
+      teamMemberId: managedEvent.teamMemberId ?? actor.memberId,
+    },
+  );
+}
+
+async function reconcileConstraintsFromDatabase(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  collections: Collections,
+  managedConstraintEvents?: ManagedCalendarEventSummary[],
+): Promise<DatabaseConstraintCalendarSyncSummary> {
+  const teamMembersSnapshot = await db.collection(collections.teamMembers).get();
+  const syncSnapshot = await db.collection(collections.calendarSync).get();
+  const managedEvents = managedConstraintEvents ??
+    await listManagedCalendarEventsForSync(actor, environment, {kind: 'constraint'});
+
+  const desiredConstraints = new Map<string, {
+    teamMemberId: string;
+    teamMemberData: Record<string, unknown>;
+    constraint: Record<string, unknown>;
+  }>();
+  for (const memberDoc of teamMembersSnapshot.docs) {
+    const teamMemberData = memberDoc.data() ?? {};
+    const constraints = Array.isArray(teamMemberData['constraints'])
+      ? teamMemberData['constraints'] as Array<Record<string, unknown>>
+      : [];
+    for (const constraint of constraints) {
+      if (constraint['status'] !== 'approved' || constraint['constraintType'] !== 'unavailability') {
+        continue;
+      }
+      const constraintId = requireString(constraint['id'], 'constraint.id');
+      desiredConstraints.set(constraintId, {
+        teamMemberId: memberDoc.id,
+        teamMemberData,
+        constraint,
+      });
+    }
+  }
+
+  const managedByConstraintId = new Map<string, ManagedCalendarEventSummary[]>();
+  for (const managedEvent of managedEvents) {
+    const constraintId = managedEvent.constraintId;
+    if (constraintId == null || constraintId.length === 0) {
+      continue;
+    }
+    const bucket = managedByConstraintId.get(constraintId) ?? [];
+    bucket.push(managedEvent);
+    managedByConstraintId.set(constraintId, bucket);
+  }
+
+  const syncByConstraintId = new Map<string, Record<string, unknown>>();
+  for (const doc of syncSnapshot.docs) {
+    syncByConstraintId.set(doc.id, doc.data() ?? {});
+  }
+
+  let changedCount = 0;
+  let upToDateCount = 0;
+  let removedOrphanedCount = 0;
+  let cleanedSyncStateCount = 0;
+  const failedConstraintIds: string[] = [];
+  const deletedGoogleEventIds = new Set<string>();
+
+  for (const [constraintId, desiredConstraint] of desiredConstraints.entries()) {
+    try {
+      const desired = buildDesiredConstraintCalendarState(
+        desiredConstraint.teamMemberId,
+        desiredConstraint.teamMemberData,
+        desiredConstraint.constraint,
+        environment,
+      );
+      const activeManagedEvents = (managedByConstraintId.get(constraintId) ?? [])
+        .filter((event) => event.status !== 'cancelled');
+      const currentManagedEvent = activeManagedEvents[0] ?? null;
+      const syncData = syncByConstraintId.get(constraintId) ?? null;
+      const currentStateCalendarEventId = optionalString(syncData?.['calendarEventId']) ?? '';
+      const currentStateStatus = optionalString(syncData?.['status']) ?? '';
+      const hasDuplicates = activeManagedEvents.length > 1;
+      const needsUpsert = hasDuplicates ||
+        !managedConstraintEventMatchesDesired(currentManagedEvent, desired);
+
+      let finalCalendarEventId = currentManagedEvent?.id ?? currentStateCalendarEventId;
+      let changed = false;
+
+      if (needsUpsert) {
+        const result = await executeCalendarAction(
+          db,
+          {
+            memberId: actor.memberId,
+            isAdmin: actor.isAdmin,
+          },
+          environment,
+          'ensureConstraintEvent',
+          {
+            calendarEventId: finalCalendarEventId.length > 0 ? finalCalendarEventId : undefined,
+            teamMember: desired.teamMemberPayload,
+            constraint: desired.constraintPayload,
+            isTestMode: environment === 'test',
+          },
+        );
+        finalCalendarEventId = requireString(result['calendarEventId'], 'calendarEventId');
+        changed = true;
+      }
+
+      for (const managedEvent of activeManagedEvents) {
+        if (managedEvent.id === finalCalendarEventId || deletedGoogleEventIds.has(managedEvent.id)) {
+          continue;
+        }
+        await deleteManagedConstraintEvent(actor, environment, managedEvent);
+        deletedGoogleEventIds.add(managedEvent.id);
+        changed = true;
+      }
+
+      if (
+        currentStateCalendarEventId !== finalCalendarEventId ||
+        currentStateStatus !== 'synced' ||
+        optionalString(syncData?.['teamMemberId']) !== desiredConstraint.teamMemberId
+      ) {
+        await saveSyncedConstraintSyncState(
+          collections,
+          constraintId,
+          desiredConstraint.teamMemberId,
+          finalCalendarEventId,
+        );
+        changed = true;
+      }
+
+      if (changed) {
+        changedCount += 1;
+      } else {
+        upToDateCount += 1;
+      }
+    } catch (error) {
+      console.error(`Failed to reconcile constraint ${constraintId}:`, error);
+      failedConstraintIds.push(constraintId);
+    }
+  }
+
+  for (const doc of syncSnapshot.docs) {
+    if (desiredConstraints.has(doc.id)) {
+      continue;
+    }
+
+    const syncData = doc.data() ?? {};
+    const calendarEventId = optionalString(syncData['calendarEventId']);
+    const managedEvent = (managedByConstraintId.get(doc.id) ?? [])
+      .find((event) => event.id === calendarEventId) ??
+      (managedByConstraintId.get(doc.id) ?? [])[0] ??
+      null;
+    if (managedEvent != null && !deletedGoogleEventIds.has(managedEvent.id)) {
+      try {
+        await deleteManagedConstraintEvent(actor, environment, managedEvent);
+        deletedGoogleEventIds.add(managedEvent.id);
+        removedOrphanedCount += 1;
+      } catch (error) {
+        console.error(`Failed to remove orphaned constraint event ${managedEvent.id}:`, error);
+      }
+    }
+
+    await doc.ref.delete();
+    cleanedSyncStateCount += 1;
+  }
+
+  for (const managedEvent of managedEvents) {
+    const constraintId = managedEvent.constraintId;
+    if (
+      constraintId == null ||
+      desiredConstraints.has(constraintId) ||
+      deletedGoogleEventIds.has(managedEvent.id)
+    ) {
+      continue;
+    }
+
+    try {
+      await deleteManagedConstraintEvent(actor, environment, managedEvent);
+      deletedGoogleEventIds.add(managedEvent.id);
+      removedOrphanedCount += 1;
+    } catch (error) {
+      console.error(`Failed to remove orphaned constraint event ${managedEvent.id}:`, error);
+    }
+  }
+
+  return {
+    scannedCount: desiredConstraints.size,
+    changedCount,
+    upToDateCount,
+    removedOrphanedCount,
+    cleanedSyncStateCount,
+    failedConstraintIds,
+  };
+}
+
 async function syncCalendarAttendeesForEvent(
   actor: ActorContext,
   environment: EnvironmentMode,
   collections: Collections,
   eventId: string,
-): Promise<void> {
+): Promise<{
+  attempted: boolean;
+  success: boolean;
+}> {
   try {
-    const syncDoc = await db.collection(collections.eventCalendarSync).doc(eventId).get();
-    if (!syncDoc.exists) {
-      return;
+    const eventDoc = await db.collection(collections.events).doc(eventId).get();
+    if (!eventDoc.exists) {
+      return {attempted: false, success: true};
     }
 
-    const syncData = syncDoc.data() ?? {};
-    const calendarEventIds = [
-      optionalString(syncData['assemblyCalendarEventId']),
-      optionalString(syncData['mainCalendarEventId']),
-    ].filter((calendarEventId): calendarEventId is string =>
-      calendarEventId != null && calendarEventId.trim().length > 0,
+    const [syncDoc, managedEvents] = await Promise.all([
+      db.collection(collections.eventCalendarSync).doc(eventId).get(),
+      listManagedCalendarEventsForSync(actor, environment, {
+        kind: 'app',
+        eventId,
+      }),
+    ]);
+    await reconcileSingleAppEventCalendar(
+      actor,
+      environment,
+      collections,
+      eventId,
+      eventDoc.data() ?? {},
+      managedEvents,
+      syncDoc.exists ? syncDoc.data() ?? {} : null,
+      new Map<string, Record<string, unknown> | null>(),
     );
-
-    if (calendarEventIds.length === 0) {
-      return;
-    }
-
-    const assignmentsSnapshot = await db
-      .collection(collections.assignments)
-      .where('eventId', '==', eventId)
-      .get();
-
-    const teamMemberIds = Array.from(new Set(
-      assignmentsSnapshot.docs
-        .map((doc) => {
-          const data = doc.data() ?? {};
-          return typeof data['teamMemberId'] === 'string'
-            ? data['teamMemberId'] as string
-            : null;
-        })
-        .filter((teamMemberId): teamMemberId is string => teamMemberId != null),
-    ));
-
-    const emails = new Set<string>();
-    for (const teamMemberId of teamMemberIds) {
-      const teamMemberData = await readTeamMemberById(db, collections, teamMemberId);
-      const email = typeof teamMemberData?.['email'] === 'string'
-        ? teamMemberData['email'].trim()
-        : '';
-      if (email.length > 0) {
-        emails.add(email);
-      }
-    }
-
-    for (const calendarEventId of calendarEventIds) {
-      await executeCalendarAction(
-        db,
-        {
-          memberId: actor.memberId,
-          isAdmin: actor.isAdmin,
-        },
-        environment,
-        'updateEventAttendees',
-        {
-          calendarEventId,
-          emails: Array.from(emails),
-        },
-      );
-    }
+    return {attempted: true, success: true};
   } catch (error) {
     console.error(
       `Failed to sync calendar attendees for event ${eventId}:`,
       error,
     );
+    return {attempted: true, success: false};
   }
 }
 
@@ -316,6 +1360,662 @@ async function syncCalendarAttendeesForEvents(
   for (const eventId of uniqueEventIds) {
     await syncCalendarAttendeesForEvent(actor, environment, collections, eventId);
   }
+}
+
+async function reconcileAppEventsFromDatabase(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  collections: Collections,
+  eventId?: string | null,
+  managedAppEvents?: ManagedCalendarEventSummary[],
+): Promise<AppEventCalendarSyncSummary> {
+  const failedEventIds: string[] = [];
+  let scannedCount = 0;
+  let changedCount = 0;
+  let upToDateCount = 0;
+  let removedOrphanedCount = 0;
+  let cleanedSyncStateCount = 0;
+  const deletedGoogleEventIds = new Set<string>();
+  const teamMemberCache = new Map<string, Record<string, unknown> | null>();
+
+  if (eventId != null && eventId.trim().length > 0) {
+    const normalizedEventId = eventId.trim();
+    const eventDoc = await db.collection(collections.events).doc(normalizedEventId).get();
+    if (!eventDoc.exists) {
+      return {
+        scannedCount: 0,
+        changedCount: 0,
+        upToDateCount: 0,
+        failedEventIds,
+        removedOrphanedCount: 0,
+        cleanedSyncStateCount: 0,
+      };
+    }
+
+    const [syncDoc, managedEvents] = await Promise.all([
+      db.collection(collections.eventCalendarSync).doc(normalizedEventId).get(),
+      listManagedCalendarEventsForSync(actor, environment, {
+        kind: 'app',
+        eventId: normalizedEventId,
+      }),
+    ]);
+    scannedCount = 1;
+
+    try {
+      const result = await reconcileSingleAppEventCalendar(
+        actor,
+        environment,
+        collections,
+        normalizedEventId,
+        eventDoc.data() ?? {},
+        managedEvents,
+        syncDoc.exists ? syncDoc.data() ?? {} : null,
+        teamMemberCache,
+      );
+      if (result.changed) {
+        changedCount = 1;
+      } else {
+        upToDateCount = 1;
+      }
+    } catch (error) {
+      console.error(`Failed to reconcile app event ${normalizedEventId}:`, error);
+      failedEventIds.push(normalizedEventId);
+    }
+  } else {
+    const [eventsSnapshot, syncSnapshot, fetchedManagedEvents] = await Promise.all([
+      db.collection(collections.events).get(),
+      db.collection(collections.eventCalendarSync).get(),
+      managedAppEvents != null
+        ? Promise.resolve(managedAppEvents)
+        : listManagedCalendarEventsForSync(actor, environment, {kind: 'app'}),
+    ]);
+    const managedEvents = fetchedManagedEvents;
+
+    const managedByEventId = new Map<string, ManagedCalendarEventSummary[]>();
+    for (const managedEvent of managedEvents) {
+      const managedEventId = managedEvent.eventId;
+      if (managedEventId == null || managedEventId.length === 0) {
+        continue;
+      }
+      const bucket = managedByEventId.get(managedEventId) ?? [];
+      bucket.push(managedEvent);
+      managedByEventId.set(managedEventId, bucket);
+    }
+
+    const syncByEventId = new Map<string, Record<string, unknown>>();
+    for (const doc of syncSnapshot.docs) {
+      syncByEventId.set(doc.id, doc.data() ?? {});
+    }
+
+    scannedCount = eventsSnapshot.docs.length;
+    const existingEventIds = new Set(eventsSnapshot.docs.map((doc) => doc.id));
+
+    for (const doc of eventsSnapshot.docs) {
+      const currentEventId = doc.id;
+      try {
+        const result = await reconcileSingleAppEventCalendar(
+          actor,
+          environment,
+          collections,
+          currentEventId,
+          doc.data() ?? {},
+          managedByEventId.get(currentEventId) ?? [],
+          syncByEventId.get(currentEventId) ?? null,
+          teamMemberCache,
+        );
+        if (result.changed) {
+          changedCount += 1;
+        } else {
+          upToDateCount += 1;
+        }
+      } catch (error) {
+        console.error(`Failed to reconcile app event ${currentEventId}:`, error);
+        failedEventIds.push(currentEventId);
+      }
+    }
+
+    for (const doc of syncSnapshot.docs) {
+      if (existingEventIds.has(doc.id)) {
+        continue;
+      }
+
+      const syncData = doc.data() ?? {};
+      const storedCalendarIds = [
+        optionalString(syncData['assemblyCalendarEventId']),
+        optionalString(syncData['mainCalendarEventId']),
+      ].filter((calendarEventId): calendarEventId is string =>
+        calendarEventId != null && calendarEventId.length > 0,
+      );
+      for (const calendarEventId of storedCalendarIds) {
+        if (deletedGoogleEventIds.has(calendarEventId)) {
+          continue;
+        }
+        const managedEvent =
+          (managedByEventId.get(doc.id) ?? []).find((event) => event.id === calendarEventId) ??
+          (managedByEventId.get(doc.id) ?? []).find((event) => !deletedGoogleEventIds.has(event.id)) ??
+          null;
+        if (managedEvent == null) {
+          continue;
+        }
+        try {
+          await deleteManagedAppEvent(actor, environment, managedEvent);
+          deletedGoogleEventIds.add(managedEvent.id);
+          removedOrphanedCount += 1;
+        } catch (error) {
+          console.error(`Failed to remove orphaned app event ${managedEvent.id}:`, error);
+        }
+      }
+      await doc.ref.delete();
+      cleanedSyncStateCount += 1;
+    }
+
+    for (const managedEvent of managedEvents) {
+      const managedEventId = managedEvent.eventId;
+      if (
+        managedEventId == null ||
+        existingEventIds.has(managedEventId) ||
+        deletedGoogleEventIds.has(managedEvent.id)
+      ) {
+        continue;
+      }
+
+      try {
+        await deleteManagedAppEvent(actor, environment, managedEvent);
+        deletedGoogleEventIds.add(managedEvent.id);
+        removedOrphanedCount += 1;
+      } catch (error) {
+        console.error(`Failed to remove orphaned app event ${managedEvent.id}:`, error);
+      }
+    }
+  }
+
+  return {
+    scannedCount,
+    changedCount,
+    upToDateCount,
+    failedEventIds,
+    removedOrphanedCount,
+    cleanedSyncStateCount,
+  };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function readInt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+function formatCalendarDateOnly(date: Date): string {
+  const normalized = normalizeDay(date);
+  const year = normalized.getUTCFullYear().toString().padStart(4, '0');
+  const month = String(normalized.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(normalized.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getAvailableRoleKeys(teamMemberData: Record<string, unknown>): string[] {
+  const roleCapabilities = teamMemberData['roleCapabilities'];
+  if (roleCapabilities == null || typeof roleCapabilities !== 'object' || Array.isArray(roleCapabilities)) {
+    return [];
+  }
+
+  return Object.entries(roleCapabilities as Record<string, unknown>)
+    .filter(([, value]) => value === true)
+    .map(([key]) => key);
+}
+
+function serializeTeamMemberForCalendarAction(
+  teamMemberId: string,
+  teamMemberData: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    id: teamMemberId,
+    name: requireString(teamMemberData['name'] ?? teamMemberId, 'teamMember.name'),
+    email: optionalString(teamMemberData['email']),
+    availableRoleKeys: getAvailableRoleKeys(teamMemberData),
+  };
+}
+
+function serializeConstraintForCalendarAction(
+  constraint: Record<string, unknown>,
+): Record<string, unknown> {
+  const rawConstraintType =
+    typeof constraint['constraintType'] === 'string'
+      ? constraint['constraintType'].trim()
+      : 'unavailability';
+  const repeatTypeRaw =
+    typeof constraint['repeatType'] === 'string'
+      ? constraint['repeatType'].trim()
+      : null;
+  const repeatType =
+    repeatTypeRaw === 'daily' || repeatTypeRaw === 'weekly' || repeatTypeRaw === 'monthly'
+      ? repeatTypeRaw
+      : null;
+  const repeatDay = readInt(constraint['repeatDay']);
+
+  return stripUndefined({
+    id: requireString(constraint['id'], 'constraint.id'),
+    startDate: formatCalendarDateOnly(asDate(constraint['startDate'], 'constraint.startDate')),
+    endDate:
+      constraint['endDate'] == null
+        ? null
+        : formatCalendarDateOnly(asDate(constraint['endDate'], 'constraint.endDate')),
+    note: optionalString(constraint['note']),
+    constraintType: rawConstraintType === 'availability' ? 'availability' : 'unavailability',
+    startTime: optionalString(constraint['startTime']),
+    endTime: optionalString(constraint['endTime']),
+    repeatType,
+    repeatDay: repeatDay ?? undefined,
+    repeatEndDate:
+      constraint['repeatEndDate'] == null
+        ? null
+        : formatCalendarDateOnly(asDate(constraint['repeatEndDate'], 'constraint.repeatEndDate')),
+  });
+}
+
+async function updateConstraintStatusForTeamMember(
+  collections: Collections,
+  actor: ActorContext,
+  teamMemberId: string,
+  constraintId: string,
+  newStatus: string,
+  options: {
+    note?: string | null;
+    wasAutoRejectedFromCalendar?: boolean;
+  } = {},
+): Promise<boolean> {
+  const memberRef = db.collection(collections.teamMembers).doc(teamMemberId);
+  const memberDoc = await memberRef.get();
+  if (!memberDoc.exists) {
+    return false;
+  }
+
+  const memberData = memberDoc.data() ?? {};
+  const teamMemberName =
+    typeof memberData['name'] === 'string' ? memberData['name'] as string : null;
+  const constraints = Array.isArray(memberData['constraints'])
+    ? [...(memberData['constraints'] as Array<Record<string, unknown>>)]
+    : [];
+  const constraintIndex = constraints.findIndex((constraint) => constraint['id'] === constraintId);
+  if (constraintIndex < 0) {
+    return false;
+  }
+
+  const previousConstraint = constraints[constraintIndex];
+  const wasAutoRejectedFromCalendar = options.wasAutoRejectedFromCalendar === true;
+  const updatedConstraint = {
+    ...constraints[constraintIndex],
+    status: newStatus,
+    ...(options.note != null ? {note: options.note} : {}),
+    ...(options.wasAutoRejectedFromCalendar != null
+      ? {wasAutoRejectedFromCalendar}
+      : {}),
+  };
+  constraints[constraintIndex] = updatedConstraint;
+
+  await memberRef.update({
+    constraints,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  await writeAuditLog(
+    db,
+    collections,
+    actor,
+    'constraint.updateStatus',
+    getConstraintAuditEntityType(updatedConstraint),
+    constraintId,
+    buildConstraintAuditDetails(
+      teamMemberId,
+      teamMemberName,
+      updatedConstraint,
+      {
+        newStatus,
+        semanticAction: getConstraintStatusSemanticAction(
+          newStatus,
+          wasAutoRejectedFromCalendar,
+        ) ?? undefined,
+      },
+    ),
+    {
+      before: previousConstraint,
+      after: updatedConstraint,
+    },
+  );
+  return true;
+}
+
+async function acquireConstraintSyncAction(
+  collections: Collections,
+  constraintId: string,
+  teamMemberId: string,
+): Promise<{
+  action: 'create' | 'update';
+  calendarEventId: string | null;
+}> {
+  return await db.runTransaction(async (transaction) => {
+    const ref = db.collection(collections.calendarSync).doc(constraintId);
+    const snapshot = await transaction.get(ref);
+    if (snapshot.exists && snapshot.data()?.['status'] === 'synced') {
+      return {
+        action: 'update' as const,
+        calendarEventId: optionalString(snapshot.data()?.['calendarEventId']),
+      };
+    }
+
+    transaction.set(ref, {
+      calendarEventId: '',
+      teamMemberId,
+      status: 'pending',
+      syncedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      retryCount: 0,
+      errorMessage: null,
+      reservedBy: Date.now(),
+    });
+
+    return {
+      action: 'create' as const,
+      calendarEventId: null,
+    };
+  });
+}
+
+async function saveFailedConstraintSyncState(
+  collections: Collections,
+  constraintId: string,
+  teamMemberId: string,
+  errorMessage: string,
+  retryCount: number,
+): Promise<void> {
+  await db.collection(collections.calendarSync).doc(constraintId).set({
+    calendarEventId: '',
+    teamMemberId,
+    status: 'failed',
+    syncedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+    retryCount,
+    errorMessage,
+  });
+}
+
+async function saveSyncedConstraintSyncState(
+  collections: Collections,
+  constraintId: string,
+  teamMemberId: string,
+  calendarEventId: string,
+): Promise<void> {
+  await db.collection(collections.calendarSync).doc(constraintId).set({
+    calendarEventId,
+    teamMemberId,
+    status: 'synced',
+    syncedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+    retryCount: 0,
+    errorMessage: null,
+  });
+}
+
+async function retryConstraintCalendarSync(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  collections: Collections,
+  constraintId: string,
+  teamMemberId: string,
+  teamMemberData: Record<string, unknown>,
+  constraint: Record<string, unknown>,
+  currentRetryCount: number,
+): Promise<boolean> {
+  try {
+    const syncAction = await acquireConstraintSyncAction(
+      collections,
+      constraintId,
+      teamMemberId,
+    );
+    const teamMemberPayload = serializeTeamMemberForCalendarAction(
+      teamMemberId,
+      teamMemberData,
+    );
+    const constraintPayload = serializeConstraintForCalendarAction(constraint);
+
+    if (syncAction.action === 'update') {
+      if (syncAction.calendarEventId == null || syncAction.calendarEventId.length === 0) {
+        throw new Error('Update action requested but no calendar event ID found');
+      }
+
+      await executeCalendarAction(
+        db,
+        {
+          memberId: actor.memberId,
+          isAdmin: actor.isAdmin,
+        },
+        environment,
+        'updateConstraintEvent',
+        {
+          calendarEventId: syncAction.calendarEventId,
+          teamMember: teamMemberPayload,
+          constraint: constraintPayload,
+          isTestMode: environment === 'test',
+        },
+      );
+      return true;
+    }
+
+    const result = await executeCalendarAction(
+      db,
+      {
+        memberId: actor.memberId,
+        isAdmin: actor.isAdmin,
+      },
+      environment,
+      'createConstraintEvent',
+      {
+        teamMember: teamMemberPayload,
+        constraint: constraintPayload,
+        isTestMode: environment === 'test',
+      },
+    );
+    const calendarEventId = requireString(result['calendarEventId'], 'calendarEventId');
+    await saveSyncedConstraintSyncState(
+      collections,
+      constraintId,
+      teamMemberId,
+      calendarEventId,
+    );
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await saveFailedConstraintSyncState(
+      collections,
+      constraintId,
+      teamMemberId,
+      message,
+      currentRetryCount + 1,
+    );
+    return false;
+  }
+}
+
+async function syncConstraintCalendarStates(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  collections: Collections,
+): Promise<ConstraintCalendarSyncSummary> {
+  const syncedSnapshot = await db
+    .collection(collections.calendarSync)
+    .where('status', '==', 'synced')
+    .get();
+  const failedSnapshot = await db
+    .collection(collections.calendarSync)
+    .where('status', '==', 'failed')
+    .get();
+
+  let rejectedCount = 0;
+  let retriedCount = 0;
+  let successCount = 0;
+  let skippedCount = 0;
+  const failedConstraintIds: string[] = [];
+  const teamMemberCache = new Map<string, Record<string, unknown> | null>();
+
+  const getTeamMember = async (teamMemberId: string): Promise<Record<string, unknown> | null> => {
+    if (teamMemberCache.has(teamMemberId)) {
+      return teamMemberCache.get(teamMemberId) ?? null;
+    }
+
+    const teamMemberData = await readTeamMemberById(db, collections, teamMemberId);
+    teamMemberCache.set(teamMemberId, teamMemberData);
+    return teamMemberData;
+  };
+
+  for (const doc of syncedSnapshot.docs) {
+    const syncData = doc.data() ?? {};
+    const calendarEventId = optionalString(syncData['calendarEventId']);
+    const teamMemberId = optionalString(syncData['teamMemberId']);
+    if (
+      calendarEventId == null ||
+      calendarEventId.length === 0 ||
+      teamMemberId == null ||
+      teamMemberId.length === 0
+    ) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const result = await executeCalendarAction(
+      db,
+      {
+        memberId: actor.memberId,
+        isAdmin: actor.isAdmin,
+      },
+      environment,
+      'eventExists',
+      {
+        calendarEventId,
+      },
+    );
+    const eventExists = result['exists'] === true;
+    if (eventExists) {
+      continue;
+    }
+
+    const updated = await updateConstraintStatusForTeamMember(
+      collections,
+      actor,
+      teamMemberId,
+      doc.id,
+      'rejected',
+      {
+        wasAutoRejectedFromCalendar: true,
+      },
+    );
+    await doc.ref.delete().catch(() => undefined);
+    if (updated) {
+      rejectedCount += 1;
+    } else {
+      skippedCount += 1;
+    }
+  }
+
+  for (const doc of failedSnapshot.docs) {
+    const syncData = doc.data() ?? {};
+    const teamMemberId = optionalString(syncData['teamMemberId']);
+    if (teamMemberId == null || teamMemberId.length === 0) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const teamMemberData = await getTeamMember(teamMemberId);
+    if (teamMemberData == null) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const constraints = Array.isArray(teamMemberData['constraints'])
+      ? teamMemberData['constraints'] as Array<Record<string, unknown>>
+      : [];
+    const constraint = constraints.find((entry) => entry['id'] === doc.id);
+    if (constraint == null) {
+      skippedCount += 1;
+      continue;
+    }
+
+    retriedCount += 1;
+    const currentRetryCount = readInt(syncData['retryCount']) ?? 0;
+    if (currentRetryCount >= CALENDAR_SYNC_MAX_RETRY_ATTEMPTS) {
+      failedConstraintIds.push(doc.id);
+      continue;
+    }
+
+    const delayMs = Math.round(
+      CALENDAR_SYNC_INITIAL_RETRY_DELAY_MS *
+        (CALENDAR_SYNC_BACKOFF_MULTIPLIER * currentRetryCount),
+    );
+    const clampedDelayMs = Math.min(
+      Math.max(delayMs, CALENDAR_SYNC_INITIAL_RETRY_DELAY_MS),
+      CALENDAR_SYNC_MAX_RETRY_DELAY_MS,
+    );
+    await delay(clampedDelayMs);
+
+    const success = await retryConstraintCalendarSync(
+      actor,
+      environment,
+      collections,
+      doc.id,
+      teamMemberId,
+      teamMemberData,
+      constraint,
+      currentRetryCount,
+    );
+    if (success) {
+      successCount += 1;
+    } else {
+      failedConstraintIds.push(doc.id);
+    }
+  }
+
+  return {
+    scannedCount: syncedSnapshot.docs.length + failedSnapshot.docs.length,
+    rejectedCount,
+    retriedCount,
+    successCount,
+    skippedCount,
+    failedConstraintIds,
+  };
+}
+
+function buildEventsAndConstraintsSyncMessage(
+  eventSummary: AppEventCalendarSyncSummary,
+  constraintSummary: DatabaseConstraintCalendarSyncSummary,
+): string {
+  const parts = [
+    `אירועים: בוצעו שינויים ב-${eventSummary.changedCount} מתוך ${eventSummary.scannedCount}, ${eventSummary.upToDateCount} כבר היו תקינים, נכשלו ${eventSummary.failedEventIds.length}.`,
+    `מגבלות: בוצעו שינויים ב-${constraintSummary.changedCount} מתוך ${constraintSummary.scannedCount}, ${constraintSummary.upToDateCount} כבר היו תקינות, נכשלו ${constraintSummary.failedConstraintIds.length}.`,
+  ];
+
+  if (eventSummary.removedOrphanedCount > 0) {
+    parts.push(`אירועים: נמחקו ${eventSummary.removedOrphanedCount} אירועים יתומים מיומן גוגל.`);
+  }
+  if (eventSummary.cleanedSyncStateCount > 0) {
+    parts.push(`אירועים: נוקו ${eventSummary.cleanedSyncStateCount} רשומות סנכרון ישנות.`);
+  }
+  if (constraintSummary.removedOrphanedCount > 0) {
+    parts.push(`מגבלות: נמחקו ${constraintSummary.removedOrphanedCount} אירועים יתומים מיומן גוגל.`);
+  }
+  if (constraintSummary.cleanedSyncStateCount > 0) {
+    parts.push(`מגבלות: נוקו ${constraintSummary.cleanedSyncStateCount} רשומות סנכרון ישנות.`);
+  }
+
+  return `סנכרון אירועים ומגבלות הושלם. ${parts.join(' ')}`;
 }
 
 async function createSession(
@@ -1283,6 +2983,26 @@ async function executeMutation(
       }
       delete next['passcode'];
       await docRef.update(next);
+      const previousEmail = normalizeOptionalText(existing['email']);
+      const nextEmail = normalizeOptionalText(next['email']);
+      if (previousEmail !== nextEmail) {
+        try {
+          await syncAssignedFutureEventsForMemberEmailChange(
+            {
+              firestore: db,
+              actor: {
+                memberId: actor.memberId,
+                isAdmin: actor.isAdmin,
+              },
+              environment,
+              collections,
+            },
+            memberId,
+          );
+        } catch (error) {
+          console.error(`Failed to sync future events for team member ${memberId}:`, error);
+        }
+      }
       await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId, {
         name: typeof next['name'] === 'string'
           ? next['name']
@@ -1310,10 +3030,32 @@ async function executeMutation(
       const teamBefore = teamDoc.data() ?? {};
       const credentialDoc = await credentialRef.get();
 
-      if (!actor.isAdmin && credentialDoc.exists) {
+      if (!actor.isAdmin) {
         const existingHash = credentialDoc.data()?.['passcodeHash'];
-        if (typeof existingHash === 'string') {
-          if (currentPasscode == null || !verifyPasscode(currentPasscode, existingHash)) {
+        const legacyPasscode = typeof teamBefore['passcode'] === 'string'
+          ? teamBefore['passcode']
+          : null;
+        const hasExistingPasscode = typeof existingHash === 'string' ||
+          (typeof legacyPasscode === 'string' && legacyPasscode.length > 0) ||
+          teamBefore['passcodeLength'] != null;
+
+        if (hasExistingPasscode) {
+          let isCurrentPasscodeValid = false;
+
+          if (typeof existingHash === 'string') {
+            isCurrentPasscodeValid = currentPasscode != null &&
+              verifyPasscode(currentPasscode, existingHash);
+          } else if (typeof legacyPasscode === 'string' &&
+              legacyPasscode.length > 0) {
+            isCurrentPasscodeValid = currentPasscode === legacyPasscode;
+          } else {
+            throw new HttpError(
+              409,
+              'לא ניתן לאמת את קוד הגישה הנוכחי. יש לפנות למנהל/ת',
+            );
+          }
+
+          if (!isCurrentPasscodeValid) {
             throw new HttpError(403, 'קוד הגישה הנוכחי שגוי');
           }
         }
@@ -1695,12 +3437,11 @@ async function executeMutation(
       requireAdmin(actor);
       const eventId = requireString(payload['eventId'], 'eventId');
       const eventRef = db.collection(collections.events).doc(eventId);
-      const [eventDoc, assignmentSnapshot, checklistSnapshot, eventSyncDoc] =
+      const [eventDoc, assignmentSnapshot, checklistSnapshot] =
         await Promise.all([
           eventRef.get(),
           db.collection(collections.assignments).where('eventId', '==', eventId).get(),
           db.collection(collections.checklistItems).where('eventId', '==', eventId).get(),
-          db.collection(collections.eventCalendarSync).doc(eventId).get(),
         ]);
       if (!eventDoc.exists) {
         throw new HttpError(404, 'Event not found');
@@ -1754,28 +3495,18 @@ async function executeMutation(
           responsibleName: responsibleName ?? undefined,
         });
       }));
-
-      const eventSyncData = eventSyncDoc.exists ? eventSyncDoc.data() ?? {} : {};
-      const assemblyCalendarEventId = optionalString(eventSyncData['assemblyCalendarEventId']);
-      const mainCalendarEventId = optionalString(eventSyncData['mainCalendarEventId']);
-      if (
-        (assemblyCalendarEventId != null && assemblyCalendarEventId.length > 0) ||
-        (mainCalendarEventId != null && mainCalendarEventId.length > 0)
-      ) {
-        await executeCalendarAction(
-          db,
-          {
+      await deleteAppEventCalendarArtifacts(
+        {
+          firestore: db,
+          actor: {
             memberId: actor.memberId,
             isAdmin: actor.isAdmin,
           },
           environment,
-          'deleteAppEventCalendarEvents',
-          stripUndefined({
-            assemblyCalendarEventId: assemblyCalendarEventId ?? undefined,
-            mainCalendarEventId: mainCalendarEventId ?? undefined,
-          }),
-        );
-      }
+          collections,
+        },
+        eventId,
+      );
 
       const batch = db.batch();
       for (const doc of assignmentSnapshot.docs) {
@@ -1785,9 +3516,7 @@ async function executeMutation(
         batch.delete(doc.ref);
       }
       batch.delete(eventRef);
-      if (eventSyncDoc.exists) {
-        batch.delete(eventSyncDoc.ref);
-      }
+      batch.delete(db.collection(collections.eventCalendarSync).doc(eventId));
       await batch.commit();
       await writeAuditLog(db, collections, actor, operation, 'event', eventId, stripUndefined({
         name: existingEvent['name'],
@@ -1851,7 +3580,18 @@ async function executeMutation(
       await validateAssignmentPayload(db, collections, assignment);
       const nextAssignment = assignmentDocFromJson(assignment);
       await db.collection(collections.assignments).doc(assignmentId).set(nextAssignment);
-      await syncCalendarAttendeesForEvent(actor, environment, collections, String(nextAssignment['eventId']));
+      await syncAssignedEventsBestEffort(
+        {
+          firestore: db,
+          actor: {
+            memberId: actor.memberId,
+            isAdmin: actor.isAdmin,
+          },
+          environment,
+          collections,
+        },
+        [String(nextAssignment['eventId'])],
+      );
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
         after: nextAssignment,
       });
@@ -1871,10 +3611,16 @@ async function executeMutation(
       await validateAssignmentPayload(db, collections, assignment, assignmentId);
       const nextAssignment = assignmentDocFromJson(assignment);
       await assignmentRef.update(nextAssignment);
-      await syncCalendarAttendeesForEvents(
-        actor,
-        environment,
-        collections,
+      await syncAssignedEventsBestEffort(
+        {
+          firestore: db,
+          actor: {
+            memberId: actor.memberId,
+            isAdmin: actor.isAdmin,
+          },
+          environment,
+          collections,
+        },
         [
           typeof existing['eventId'] === 'string' ? existing['eventId'] : '',
           String(nextAssignment['eventId']),
@@ -1898,11 +3644,17 @@ async function executeMutation(
       const existing = existingDoc.data() ?? {};
       await assignmentRef.delete();
       if (typeof existing['eventId'] === 'string') {
-        await syncCalendarAttendeesForEvent(
-          actor,
-          environment,
-          collections,
-          existing['eventId'] as string,
+        await syncAssignedEventsBestEffort(
+          {
+            firestore: db,
+            actor: {
+              memberId: actor.memberId,
+              isAdmin: actor.isAdmin,
+            },
+            environment,
+            collections,
+          },
+          [existing['eventId'] as string],
         );
       }
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
@@ -1928,7 +3680,18 @@ async function executeMutation(
         batch.delete(doc.ref);
       }
       await batch.commit();
-      await syncCalendarAttendeesForEvent(actor, environment, collections, eventId);
+      await syncAssignedEventsBestEffort(
+        {
+          firestore: db,
+          actor: {
+            memberId: actor.memberId,
+            isAdmin: actor.isAdmin,
+          },
+          environment,
+          collections,
+        },
+        [eventId],
+      );
       const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', eventId, {
         name: eventName ?? undefined,
@@ -1996,10 +3759,16 @@ async function executeMutation(
         batch.delete(doc.ref);
       }
       await batch.commit();
-      await syncCalendarAttendeesForEvents(
-        actor,
-        environment,
-        collections,
+      await syncAssignedEventsBestEffort(
+        {
+          firestore: db,
+          actor: {
+            memberId: actor.memberId,
+            isAdmin: actor.isAdmin,
+          },
+          environment,
+          collections,
+        },
         existingAssignments.map((assignment) => (
           typeof assignment.data['eventId'] === 'string'
             ? assignment.data['eventId'] as string
@@ -2071,10 +3840,16 @@ async function executeMutation(
         batch.delete(db.collection(collections.assignments).doc(String(rawId)));
       }
       await batch.commit();
-      await syncCalendarAttendeesForEvents(
-        actor,
-        environment,
-        collections,
+      await syncAssignedEventsBestEffort(
+        {
+          firestore: db,
+          actor: {
+            memberId: actor.memberId,
+            isAdmin: actor.isAdmin,
+          },
+          environment,
+          collections,
+        },
         existingAssignments.map((assignment) => (
           typeof assignment.data['eventId'] === 'string'
             ? assignment.data['eventId'] as string
@@ -2158,10 +3933,16 @@ async function executeMutation(
         );
       }
       await batch.commit();
-      await syncCalendarAttendeesForEvents(
-        actor,
-        environment,
-        collections,
+      await syncAssignedEventsBestEffort(
+        {
+          firestore: db,
+          actor: {
+            memberId: actor.memberId,
+            isAdmin: actor.isAdmin,
+          },
+          environment,
+          collections,
+        },
         assignments.map((assignment) => {
           const value = assignment as Record<string, unknown>;
           return typeof value['eventId'] === 'string' ? value['eventId'] as string : '';
@@ -2919,6 +4700,112 @@ app.post('/calendar/action', async (request: Request, response: Response) => {
       payload,
     );
     response.json(result);
+  } catch (error) {
+    handleError(response, error);
+  }
+});
+
+app.post('/calendar/sync-app-event-attendees', async (request: Request, response: Response) => {
+  try {
+    const authContext = await authenticateRequest(request);
+    requireAdmin(authContext.actor);
+
+    const summary = await syncAppEventCalendars(
+      {
+        firestore: db,
+        actor: {
+          memberId: authContext.actor.memberId,
+          isAdmin: authContext.actor.isAdmin,
+        },
+        environment: authContext.environment,
+        collections: authContext.collections,
+      },
+      {
+        eventId: optionalString(request.body?.eventId),
+      },
+    );
+
+    response.json({
+      ok: true,
+      scannedCount: summary.scannedCount,
+      syncedCount: summary.changedCount,
+      skippedCount: summary.upToDateCount,
+      failedCount: summary.failedEventIds.length,
+      failedEventIds: summary.failedEventIds,
+      createdEventPartCount: summary.createdEventPartCount,
+      updatedEventPartCount: summary.updatedEventPartCount,
+      deletedEventPartCount: summary.deletedEventPartCount,
+      updatedAttendeeEventCount: summary.updatedAttendeeEventCount,
+      repairedEventSyncStateCount: summary.repairedEventSyncStateCount,
+      removedOrphanedCount: summary.removedOrphanedCount,
+      cleanedSyncStateCount: summary.cleanedSyncStateCount,
+    });
+  } catch (error) {
+    handleError(response, error);
+  }
+});
+
+app.post('/calendar/sync-events-and-constraints', async (request: Request, response: Response) => {
+  try {
+    const authContext = await authenticateRequest(request);
+    requireAdmin(authContext.actor);
+
+    const combined = await syncEventsAndConstraints(
+      {
+        firestore: db,
+        actor: {
+          memberId: authContext.actor.memberId,
+          isAdmin: authContext.actor.isAdmin,
+        },
+        environment: authContext.environment,
+        collections: authContext.collections,
+        rejectConstraint: async (teamMemberId: string, constraintId: string) =>
+          await updateConstraintStatusForTeamMember(
+            authContext.collections,
+            authContext.actor,
+            teamMemberId,
+            constraintId,
+            'rejected',
+            {
+              wasAutoRejectedFromCalendar: true,
+            },
+          ),
+      },
+    );
+    const eventSummary = combined.appEvents;
+    const constraintSummary = combined.constraints;
+
+    response.json({
+      ok: true,
+      scannedEventCount: eventSummary.scannedCount,
+      syncedEventCount: eventSummary.changedCount,
+      skippedEventCount: eventSummary.upToDateCount,
+      failedEventCount: eventSummary.failedEventIds.length,
+      failedEventIds: eventSummary.failedEventIds,
+      scannedConstraintCount: constraintSummary.scannedCount,
+      changedConstraintCount: constraintSummary.changedCount,
+      upToDateConstraintCount: constraintSummary.upToDateCount,
+      rejectedConstraintCount: constraintSummary.rejectedConstraintCount,
+      retriedConstraintCount:
+        constraintSummary.changedCount + constraintSummary.failedConstraintIds.length,
+      successfulConstraintRetryCount: constraintSummary.changedCount,
+      skippedConstraintCount: constraintSummary.upToDateCount,
+      failedConstraintCount: constraintSummary.failedConstraintIds.length,
+      failedConstraintIds: constraintSummary.failedConstraintIds,
+      createdEventPartCount: eventSummary.createdEventPartCount,
+      updatedEventPartCount: eventSummary.updatedEventPartCount,
+      deletedEventPartCount: eventSummary.deletedEventPartCount,
+      updatedAttendeeEventCount: eventSummary.updatedAttendeeEventCount,
+      repairedEventSyncStateCount: eventSummary.repairedEventSyncStateCount,
+      createdConstraintEventCount: constraintSummary.createdConstraintEventCount,
+      updatedConstraintEventCount: constraintSummary.updatedConstraintEventCount,
+      deletedConstraintEventCount: constraintSummary.deletedConstraintEventCount,
+      repairedConstraintSyncStateCount: constraintSummary.repairedConstraintSyncStateCount,
+      removedOrphanedEventCount: eventSummary.removedOrphanedCount,
+      cleanedEventSyncStateCount: eventSummary.cleanedSyncStateCount,
+      cleanedConstraintSyncStateCount: constraintSummary.cleanedSyncStateCount,
+      message: combined.message,
+    });
   } catch (error) {
     handleError(response, error);
   }

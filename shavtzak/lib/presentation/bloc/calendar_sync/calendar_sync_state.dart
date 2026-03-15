@@ -209,6 +209,43 @@ class CalendarSyncBidirectionalComplete extends CalendarSyncState {
       [rejectedCount, retriedCount, successCount, message];
 }
 
+class CalendarEventsAndConstraintsSyncComplete extends CalendarSyncState {
+  final int scannedEventCount;
+  final int syncedEventCount;
+  final int skippedEventCount;
+  final int failedEventCount;
+  final List<String> failedEventIds;
+  final int rejectedConstraintCount;
+  final int retriedConstraintCount;
+  final int successfulConstraintRetryCount;
+  final String message;
+
+  const CalendarEventsAndConstraintsSyncComplete({
+    required this.scannedEventCount,
+    required this.syncedEventCount,
+    required this.skippedEventCount,
+    required this.failedEventCount,
+    this.failedEventIds = const [],
+    required this.rejectedConstraintCount,
+    required this.retriedConstraintCount,
+    required this.successfulConstraintRetryCount,
+    required this.message,
+  });
+
+  @override
+  List<Object?> get props => [
+        scannedEventCount,
+        syncedEventCount,
+        skippedEventCount,
+        failedEventCount,
+        failedEventIds,
+        rejectedConstraintCount,
+        retriedConstraintCount,
+        successfulConstraintRetryCount,
+        message,
+      ];
+}
+
 /// TEMP: Summary of manual attendee backfill for existing constraint events.
 class ConstraintAttendeeBackfillComplete extends CalendarSyncState {
   final int scannedCount;

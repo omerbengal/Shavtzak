@@ -4,10 +4,12 @@ import 'passcode_digit_field.dart';
 /// Dialog for changing an existing passcode
 class PasscodeChangeDialog extends StatefulWidget {
   final int currentLength;
+  final Future<bool> Function(String currentPasscode) verifyCurrentPasscode;
 
   const PasscodeChangeDialog({
     super.key,
     required this.currentLength,
+    required this.verifyCurrentPasscode,
   });
 
   @override
@@ -16,7 +18,7 @@ class PasscodeChangeDialog extends StatefulWidget {
 
 class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
   static const double _iconSize = 20.0;
-  
+
   int _currentStep = 0;
   int _selectedLength = 4;
   final List<TextEditingController> _currentControllers = [];
@@ -27,6 +29,7 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
   final List<FocusNode> _confirmFocusNodes = [];
   bool _obscureCurrent = true;
   bool _obscureNew = true;
+  bool _isVerifyingCurrentPasscode = false;
 
   @override
   void initState() {
@@ -75,9 +78,13 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       textDirection: TextDirection.rtl,
       child: AlertDialog(
         title: Text(
-          _currentStep == 0 ? 'שינוי קוד גישה' :
-          _currentStep == 1 ? 'בחר אורך חדש' :
-          _currentStep == 2 ? 'הזן קוד גישה חדש' : 'אשר קוד גישה חדש',
+          _currentStep == 0
+              ? 'שינוי קוד גישה'
+              : _currentStep == 1
+                  ? 'בחר אורך חדש'
+                  : _currentStep == 2
+                      ? 'הזן קוד גישה חדש'
+                      : 'אשר קוד גישה חדש',
           textAlign: TextAlign.center,
         ),
         actionsAlignment: MainAxisAlignment.center,
@@ -176,7 +183,9 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
             width: 2,
           ),
           borderRadius: BorderRadius.circular(12),
-          color: isSelected ? Theme.of(context).primaryColor.withValues(alpha: 0.1) : null,
+          color: isSelected
+              ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
+              : null,
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -186,14 +195,18 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: isSelected ? Theme.of(context).primaryColor : Colors.grey[700],
+                color: isSelected
+                    ? Theme.of(context).primaryColor
+                    : Colors.grey[700],
               ),
             ),
             Text(
               'ספרות',
               style: TextStyle(
                 fontSize: 14,
-                color: isSelected ? Theme.of(context).primaryColor : Colors.grey[600],
+                color: isSelected
+                    ? Theme.of(context).primaryColor
+                    : Colors.grey[600],
               ),
             ),
           ],
@@ -247,8 +260,15 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
             child: const Text('ביטול', textAlign: TextAlign.center),
           ),
           ElevatedButton(
-            onPressed: _verifyCurrentPasscode,
-            child: const Text('הבא', textAlign: TextAlign.center),
+            onPressed:
+                _isVerifyingCurrentPasscode ? null : _verifyCurrentPasscode,
+            child: _isVerifyingCurrentPasscode
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('הבא', textAlign: TextAlign.center),
           ),
         ];
       case 1:
@@ -292,16 +312,33 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
     }
   }
 
-  void _verifyCurrentPasscode() {
-    final enteredPasscode = _getEnteredPasscode(_currentControllers, widget.currentLength);
+  Future<void> _verifyCurrentPasscode() async {
+    final enteredPasscode =
+        _getEnteredPasscode(_currentControllers, widget.currentLength);
 
     if (enteredPasscode.length != widget.currentLength) {
       _showError('אנא הזן קוד גישה שלם');
       return;
     }
 
-    // Success, proceed to length selection
     setState(() {
+      _isVerifyingCurrentPasscode = true;
+    });
+
+    final isValid = await widget.verifyCurrentPasscode(enteredPasscode);
+
+    if (!mounted) return;
+
+    if (!isValid) {
+      setState(() {
+        _isVerifyingCurrentPasscode = false;
+      });
+      _showError('קוד הגישה הנוכחי שגוי');
+      return;
+    }
+
+    setState(() {
+      _isVerifyingCurrentPasscode = false;
       _currentStep = 1;
     });
   }
@@ -354,20 +391,18 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
 
     // Success! Return the new passcode
     Navigator.of(context).pop({
-      'currentPasscode': _getEnteredPasscode(_currentControllers, widget.currentLength),
+      'currentPasscode':
+          _getEnteredPasscode(_currentControllers, widget.currentLength),
       'passcode': passcode,
       'length': _selectedLength,
     });
   }
 
-  String _getEnteredPasscode(List<TextEditingController> controllers, int length) {
-    return controllers
-        .take(length)
-        .map((c) => c.text)
-        .join();
+  String _getEnteredPasscode(
+      List<TextEditingController> controllers, int length) {
+    return controllers.take(length).map((c) => c.text).join();
   }
 
-  
   void _showError(String message) {
     showDialog(
       context: context,

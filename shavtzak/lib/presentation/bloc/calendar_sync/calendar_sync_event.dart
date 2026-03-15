@@ -116,6 +116,11 @@ class PerformBidirectionalSync extends CalendarSyncEvent {
   const PerformBidirectionalSync();
 }
 
+/// Sync app event attendees and constraints from one admin action.
+class SyncEventsAndConstraints extends CalendarSyncEvent {
+  const SyncEventsAndConstraints();
+}
+
 /// Sync an app event to the calendar
 class SyncAppEventToCalendar extends CalendarSyncEvent {
   final String eventId;

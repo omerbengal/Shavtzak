@@ -33,6 +33,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     on<CheckSyncStatus>(_onCheckSyncStatus);
     on<ValidateSyncedEvents>(_onValidateSyncedEvents);
     on<PerformBidirectionalSync>(_onPerformBidirectionalSync);
+    on<SyncEventsAndConstraints>(_onSyncEventsAndConstraints);
     on<SyncAppEventToCalendar>(_onSyncAppEvent);
     on<RemoveAppEventFromCalendar>(_onRemoveAppEvent);
     on<AddAttendeeToAppEvent>(_onAddAttendeeToAppEvent);
@@ -470,73 +471,13 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     ));
 
     try {
-      // Step 1: Validate synced events and update constraints if calendar events were deleted
-      final rejectedCount =
-          await _syncService!.validateSyncedEventsWithCalendar();
-
-      // Step 2: Get all failed syncs and retry them
-      final failedSyncs = await _syncService!.getFailedSyncs();
-      int retriedCount = 0;
-      int successCount = 0;
-
-      for (final syncState in failedSyncs) {
-        try {
-          // Get team member and constraint details for retry
-          final constraintId = syncState['constraintId'] as String;
-          final teamMemberId = syncState['teamMemberId'] as String;
-
-          // Get team member from database
-          final teamMembers = await _database.getTeamMembers();
-          final teamMember = teamMembers.cast<TeamMember?>().firstWhere(
-                (m) => m?.id == teamMemberId,
-                orElse: () => null,
-              );
-
-          if (teamMember == null) {
-            continue;
-          }
-
-          // Find the constraint
-          final constraint = teamMember.constraints.firstWhere(
-            (c) => c.id == constraintId,
-            orElse: () => throw Exception('Constraint not found'),
-          );
-
-          // Retry the sync
-          final retryCount = syncState['retryCount'] as int? ?? 0;
-          final result = await _syncService!.retrySyncWithBackoff(
-            constraintId: constraintId,
-            teamMember: teamMember,
-            constraint: constraint,
-            currentRetryCount: retryCount,
-          );
-
-          retriedCount++;
-          if (result.success) {
-            successCount++;
-          } else {}
-        } catch (e) {
-          // Ignore individual constraint sync errors during batch sync
-        }
-      }
-
-      // Step 3: Emit completion state
-      String message = 'הסנכרון הדו-כיווני הושלם. ';
-      if (rejectedCount > 0) {
-        message += '$rejectedCount מגבלות דחויות. ';
-      }
-      if (retriedCount > 0) {
-        message += '$successCount מתוך $retriedCount סנכרונים כושלים תוקנו. ';
-      }
-      if (rejectedCount == 0 && retriedCount == 0) {
-        message += 'כל הנתונים מסונכרנים.';
-      }
+      final summary = await _runBidirectionalSyncWorkflow();
 
       emit(CalendarSyncBidirectionalComplete(
-        rejectedCount: rejectedCount,
-        retriedCount: retriedCount,
-        successCount: successCount,
-        message: message,
+        rejectedCount: summary.rejectedCount,
+        retriedCount: summary.retriedCount,
+        successCount: summary.successCount,
+        message: summary.message,
       ));
     } catch (e) {
       developer.log(
@@ -547,6 +488,56 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
       emit(CalendarSyncFailure(
         constraintId: 'bidirectional',
         errorMessage: 'סנכרון דו-כיווני נכשל: ${e.toString()}',
+        isRetryable: true,
+      ));
+    }
+  }
+
+  Future<void> _onSyncEventsAndConstraints(
+    SyncEventsAndConstraints event,
+    Emitter<CalendarSyncState> emit,
+  ) async {
+    if (_syncService == null) {
+      developer.log(
+        'CalendarSyncBloc: Combined admin sync requested before initialization',
+        name: 'CalendarSyncBloc',
+      );
+      emit(const CalendarSyncFailure(
+        constraintId: 'events_and_constraints',
+        errorMessage: 'שירות הסנכרון אינו מאותחל',
+        isRetryable: false,
+      ));
+      return;
+    }
+
+    emit(const CalendarSyncInProgress(
+      constraintId: 'events_and_constraints',
+      message: 'מסנכרן אירועים ומגבלות עם יומן גוגל...',
+    ));
+
+    try {
+      final result = await _calendarService.syncEventsAndConstraints();
+
+      emit(CalendarEventsAndConstraintsSyncComplete(
+        scannedEventCount: result.scannedEventCount,
+        syncedEventCount: result.syncedEventCount,
+        skippedEventCount: result.skippedEventCount,
+        failedEventCount: result.failedEventCount,
+        failedEventIds: result.failedEventIds,
+        rejectedConstraintCount: result.rejectedConstraintCount,
+        retriedConstraintCount: result.retriedConstraintCount,
+        successfulConstraintRetryCount: result.successfulConstraintRetryCount,
+        message: result.message,
+      ));
+    } catch (e) {
+      developer.log(
+        'CalendarSyncBloc: Combined admin sync failed - $e',
+        name: 'CalendarSyncBloc',
+        error: e,
+      );
+      emit(CalendarSyncFailure(
+        constraintId: 'events_and_constraints',
+        errorMessage: 'סנכרון אירועים ומגבלות נכשל: ${e.toString()}',
         isRetryable: true,
       ));
     }
@@ -836,9 +827,89 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     }
   }
 
+  Future<_BidirectionalSyncSummary> _runBidirectionalSyncWorkflow() async {
+    if (_syncService == null) {
+      throw StateError('Calendar sync service is not initialized');
+    }
+
+    final rejectedCount =
+        await _syncService!.validateSyncedEventsWithCalendar();
+    final failedSyncs = await _syncService!.getFailedSyncs();
+    int retriedCount = 0;
+    int successCount = 0;
+
+    for (final syncState in failedSyncs) {
+      try {
+        final constraintId = syncState['constraintId'] as String;
+        final teamMemberId = syncState['teamMemberId'] as String;
+        final teamMembers = await _database.getTeamMembers();
+        final teamMember = teamMembers.cast<TeamMember?>().firstWhere(
+              (member) => member?.id == teamMemberId,
+              orElse: () => null,
+            );
+
+        if (teamMember == null) {
+          continue;
+        }
+
+        final constraint = teamMember.constraints.firstWhere(
+          (item) => item.id == constraintId,
+          orElse: () => throw Exception('Constraint not found'),
+        );
+
+        final retryCount = syncState['retryCount'] as int? ?? 0;
+        final result = await _syncService!.retrySyncWithBackoff(
+          constraintId: constraintId,
+          teamMember: teamMember,
+          constraint: constraint,
+          currentRetryCount: retryCount,
+        );
+
+        retriedCount++;
+        if (result.success) {
+          successCount++;
+        }
+      } catch (_) {
+        // Ignore individual constraint sync errors during batch sync.
+      }
+    }
+
+    var message = 'הסנכרון הדו-כיווני הושלם. ';
+    if (rejectedCount > 0) {
+      message += '$rejectedCount מגבלות דחויות. ';
+    }
+    if (retriedCount > 0) {
+      message += '$successCount מתוך $retriedCount סנכרונים כושלים תוקנו. ';
+    }
+    if (rejectedCount == 0 && retriedCount == 0) {
+      message += 'כל הנתונים מסונכרנים.';
+    }
+
+    return _BidirectionalSyncSummary(
+      rejectedCount: rejectedCount,
+      retriedCount: retriedCount,
+      successCount: successCount,
+      message: message,
+    );
+  }
+
   @override
   Future<void> close() {
     _syncService?.dispose();
     return super.close();
   }
+}
+
+class _BidirectionalSyncSummary {
+  final int rejectedCount;
+  final int retriedCount;
+  final int successCount;
+  final String message;
+
+  const _BidirectionalSyncSummary({
+    required this.rejectedCount,
+    required this.retriedCount,
+    required this.successCount,
+    required this.message,
+  });
 }
