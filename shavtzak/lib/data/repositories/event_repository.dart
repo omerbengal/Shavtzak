@@ -42,7 +42,8 @@ class EventRepository {
   Stream<List<Event>> watchEventsByDateRange(DateTime start, DateTime end) {
     // Cast to FirestoreDatabase to access stream methods
     if (_database is FirestoreDatabase) {
-      return (_database as FirestoreDatabase).watchEventsByDateRange(start, end);
+      return (_database as FirestoreDatabase)
+          .watchEventsByDateRange(start, end);
     }
     // Fallback: convert Future to Stream for non-Firestore databases
     return Stream.fromFuture(_database.getEventsByDateRange(start, end));
@@ -78,8 +79,10 @@ class EventRepository {
   }
 
   /// Check if an event with the same name and date already exists
-  Future<bool> isDuplicateEvent(String name, DateTime startDate, {String? excludeEventId}) async {
-    return await _database.isDuplicateEvent(name, startDate, excludeEventId: excludeEventId);
+  Future<bool> isDuplicateEvent(String name, DateTime startDate,
+      {String? excludeEventId}) async {
+    return await _database.isDuplicateEvent(name, startDate,
+        excludeEventId: excludeEventId);
   }
 
   /// Create a new event
@@ -153,7 +156,8 @@ class EventRepository {
     if (_driveService.isInitialized && event.hasDriveFolder) {
       // Check if name or date changed
       final nameChanged = originalEvent?.name != event.name;
-      final dateChanged = originalEvent?.startDate != event.startDate || originalEvent?.endDate != event.endDate;
+      final dateChanged = originalEvent?.startDate != event.startDate ||
+          originalEvent?.endDate != event.endDate;
 
       if (nameChanged || dateChanged) {
         _renameDriveFolderInBackground(event, originalEvent);
@@ -167,7 +171,8 @@ class EventRepository {
   }
 
   /// Delete an event
-  /// Also deletes all assignments and the Drive folder for this event in background
+  /// The backend mutation cascades to assignments, checklist items, and
+  /// calendar sync state. Drive folder deletion still happens in background.
   Future<void> deleteEvent(String id) async {
     // Get event to check for Drive folder
     final event = await getEventById(id);
@@ -177,10 +182,7 @@ class EventRepository {
       _deleteDriveFolderInBackground(event.driveFolderId!);
     }
 
-    // Delete all assignments first
-    await _database.deleteAssignmentsByEvent(id);
-
-    // Then delete the event
+    // Delete the event through the backend cascade
     await _database.deleteEvent(id);
 
     // Run archive check in background
@@ -225,7 +227,8 @@ class EventRepository {
         for (final folderId in result.archivedFolderIds) {
           final event = eventsToArchive.firstWhere(
             (e) => e.driveFolderId == folderId,
-            orElse: () => throw StateError('Event not found for folder $folderId'),
+            orElse: () =>
+                throw StateError('Event not found for folder $folderId'),
           );
           await _database.updateEventArchiveStatus(event.id, true);
           developer.log(
@@ -256,7 +259,8 @@ class EventRepository {
     }
 
     try {
-      final result = await _driveService.listFiles(folderId: event.driveFolderId!);
+      final result =
+          await _driveService.listFiles(folderId: event.driveFolderId!);
       if (result.success) {
         return result.files;
       }
@@ -294,7 +298,8 @@ class EventRepository {
     final all = await getAllEvents();
     return all
         .where(
-          (event) => event.roleRequirements[role] != null &&
+          (event) =>
+              event.roleRequirements[role] != null &&
               event.roleRequirements[role]! > 0,
         )
         .toList();
@@ -333,7 +338,8 @@ class EventRepository {
   Future<List<Event>> getThisWeekEvents() async {
     final now = DateTime.now();
     final weekStart = now.subtract(Duration(days: now.weekday - 1));
-    final weekEnd = weekStart.add(const Duration(days: 6, hours: 23, minutes: 59));
+    final weekEnd =
+        weekStart.add(const Duration(days: 6, hours: 23, minutes: 59));
 
     return await getEventsByDateRange(weekStart, weekEnd);
   }
@@ -345,7 +351,6 @@ class EventRepository {
     Event newEvent,
     List<Assignment> originalAssignments,
   ) async {
-
     // Insert event to database first (Drive folder created in background)
     await _database.insertEvent(newEvent);
 
@@ -353,19 +358,23 @@ class EventRepository {
     _createDriveFolderInBackground(newEvent);
 
     // Create new assignments for the duplicated event
-    final newAssignments = originalAssignments.map((assignment) => Assignment(
-      id: const Uuid().v4(), // Generate unique ID for each duplicated assignment
-      eventId: newEvent.id, // Use the ID from newEvent
-      teamMemberId: assignment.teamMemberId,
-      roleType: assignment.roleType,
-      slotIndex: assignment.slotIndex,
-      status: AssignmentStatus.confirmed, // Default to confirmed for duplicated assignments
-      notes: assignment.notes,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-      teamMember: assignment.teamMember,
-      event: newEvent, // Use newEvent directly
-    )).toList();
+    final newAssignments = originalAssignments
+        .map((assignment) => Assignment(
+              id: const Uuid()
+                  .v4(), // Generate unique ID for each duplicated assignment
+              eventId: newEvent.id, // Use the ID from newEvent
+              teamMemberId: assignment.teamMemberId,
+              roleType: assignment.roleType,
+              slotIndex: assignment.slotIndex,
+              status: AssignmentStatus
+                  .confirmed, // Default to confirmed for duplicated assignments
+              notes: assignment.notes,
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+              teamMember: assignment.teamMember,
+              event: newEvent, // Use newEvent directly
+            ))
+        .toList();
 
     // Insert all new assignments in batch
     await _database.insertAssignmentsBatch(newAssignments);
@@ -381,7 +390,6 @@ class EventRepository {
     Event newEvent,
     List<Assignment> originalAssignments,
   ) async {
-
     // Insert event to database first (Drive folder created in background)
     await _database.insertEvent(newEvent);
 
@@ -397,7 +405,8 @@ class EventRepository {
         teamMemberId: assignment.teamMemberId,
         roleType: assignment.roleType,
         slotIndex: assignment.slotIndex,
-        status: AssignmentStatus.confirmed, // Default to confirmed for duplicated assignments
+        status: AssignmentStatus
+            .confirmed, // Default to confirmed for duplicated assignments
         notes: assignment.notes,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
@@ -501,7 +510,8 @@ class EventRepository {
   }
 
   /// Rename Drive folder in background
-  Future<void> _renameDriveFolderInBackground(Event event, Event? originalEvent) async {
+  Future<void> _renameDriveFolderInBackground(
+      Event event, Event? originalEvent) async {
     if (!_driveService.isInitialized || !event.hasDriveFolder) return;
 
     try {
@@ -600,7 +610,8 @@ class EventRepository {
         for (final folderId in result.archivedFolderIds) {
           final event = eventsToArchive.firstWhere(
             (e) => e.driveFolderId == folderId,
-            orElse: () => throw StateError('Event not found for folder $folderId'),
+            orElse: () =>
+                throw StateError('Event not found for folder $folderId'),
           );
           await _database.updateEventArchiveStatus(event.id, true);
           developer.log(

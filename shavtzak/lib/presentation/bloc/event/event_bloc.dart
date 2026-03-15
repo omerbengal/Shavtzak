@@ -134,12 +134,14 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       final birthdayNames = <String>[];
 
       // Find all assignments for this event
-      final eventAssignments = _latestAssignments.where((a) => a.eventId == event.id);
+      final eventAssignments =
+          _latestAssignments.where((a) => a.eventId == event.id);
 
       for (final assignment in eventAssignments) {
         final teamMember = assignment.teamMember;
         if (teamMember != null && teamMember.birthday != null) {
-          if (_isBirthdayDuringEvent(teamMember.birthday!, event.startDate, event.endDate)) {
+          if (_isBirthdayDuringEvent(
+              teamMember.birthday!, event.startDate, event.endDate)) {
             birthdayNames.add(teamMember.name);
           }
         }
@@ -156,7 +158,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   }
 
   /// Check if a birthday falls within an event's date range
-  bool _isBirthdayDuringEvent(DateTime birthday, DateTime eventStart, DateTime eventEnd) {
+  bool _isBirthdayDuringEvent(
+      DateTime birthday, DateTime eventStart, DateTime eventEnd) {
     // Normalize to date-only (remove time component)
     final start = DateTime(eventStart.year, eventStart.month, eventStart.day);
     final end = DateTime(eventEnd.year, eventEnd.month, eventEnd.day);
@@ -164,7 +167,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     // Check each day in the event range
     DateTime currentDay = start;
     while (!currentDay.isAfter(end)) {
-      if (currentDay.month == birthday.month && currentDay.day == birthday.day) {
+      if (currentDay.month == birthday.month &&
+          currentDay.day == birthday.day) {
         return true;
       }
       currentDay = currentDay.add(const Duration(days: 1));
@@ -187,7 +191,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // Filter for future events
       final futureEvents = events.where((e) {
         return e.endDate.isAfter(today) ||
-               (e.endDate.year == today.year &&
+            (e.endDate.year == today.year &&
                 e.endDate.month == today.month &&
                 e.endDate.day == today.day);
       }).toList();
@@ -324,9 +328,6 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     Emitter<EventState> emit,
   ) async {
     try {
-      // Remove from Google Calendar first if calendar sync is enabled
-      _removeEventFromCalendar(event.id);
-
       // Delete the event
       await _repository.deleteEvent(event.id);
 
@@ -401,7 +402,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       }
 
       // Get assignments to duplicate
-      final assignments = await _assignmentRepository.getAssignmentsByEvent(event.eventId);
+      final assignments =
+          await _assignmentRepository.getAssignmentsByEvent(event.eventId);
 
       if (assignments.isEmpty) {
         // No assignments to duplicate, just create the event
@@ -410,7 +412,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
           proposedEvent,
           [],
         );
-        emit(const EventOperationSuccess('האירוע שוכפל בהצלחה (ללא שיבוצים קיימים)'));
+        emit(const EventOperationSuccess(
+            'האירוע שוכפל בהצלחה (ללא שיבוצים קיימים)'));
         add(const LoadEvents());
         return;
       }
@@ -419,7 +422,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       final overQuotaRoles = <String>{};
       for (final roleType in RoleType.values) {
         final newQuota = event.newRoleRequirements[roleType.key] ?? 0;
-        final assignmentCount = assignments.where((a) => a.roleType == roleType.key).length;
+        final assignmentCount =
+            assignments.where((a) => a.roleType == roleType.key).length;
         if (assignmentCount > newQuota) {
           overQuotaRoles.add(roleType.key);
         }
@@ -435,8 +439,10 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 
         // Check availability conflict with new dates
         // Skip for members with allowMultipleAssignments
-        if (assignment.teamMember != null && !assignment.teamMember!.allowMultipleAssignments) {
-          if (!assignment.teamMember!.isAvailableForDateRange(event.newStartDate, event.newEndDate)) {
+        if (assignment.teamMember != null &&
+            !assignment.teamMember!.allowMultipleAssignments) {
+          if (!assignment.teamMember!
+              .isAvailableForDateRange(event.newStartDate, event.newEndDate)) {
             hasAvailabilityConflict = true;
             availabilityReason = 'חבר הצוות לא זמין בתאריכים החדשים';
           }
@@ -493,7 +499,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   ) async {
     try {
       // Get the original assignments
-      final allAssignments = await _assignmentRepository.getAssignmentsByEvent(event.originalEvent.id);
+      final allAssignments = await _assignmentRepository
+          .getAssignmentsByEvent(event.originalEvent.id);
 
       // Filter out excluded assignments
       final assignmentsToInclude = allAssignments
@@ -501,7 +508,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
           .toList();
 
       // LOGIC FIX: Adjust quotas in the proposed event to match kept assignments
-      final adjustedEvent = _adjustQuotasToMatchAssignments(event.proposedEvent, assignmentsToInclude);
+      final adjustedEvent = _adjustQuotasToMatchAssignments(
+          event.proposedEvent, assignmentsToInclude);
 
       // Create the event with adjusted quotas and filtered assignments
       await _repository.duplicateEvent(
@@ -520,7 +528,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       } else if (includedCount == 0) {
         message = 'האירוע שוכפל בהצלחה ללא שיבוצים';
       } else {
-        message = 'האירוע שוכפל בהצלחה עם $includedCount שיבוצים ($excludedCount הוסרו)';
+        message =
+            'האירוע שוכפל בהצלחה עם $includedCount שיבוצים ($excludedCount הוסרו)';
       }
 
       emit(EventOperationSuccess(message));
@@ -532,15 +541,18 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 
   /// Adjust role requirements in the event to match the number of kept assignments
   /// This ensures the event's quotas are consistent with what will be created
-  Event _adjustQuotasToMatchAssignments(Event proposedEvent, List<Assignment> assignmentsToInclude) {
+  Event _adjustQuotasToMatchAssignments(
+      Event proposedEvent, List<Assignment> assignmentsToInclude) {
     // Count assignments by role
     final roleCounts = <String, int>{};
     for (final assignment in assignmentsToInclude) {
-      roleCounts[assignment.roleType] = (roleCounts[assignment.roleType] ?? 0) + 1;
+      roleCounts[assignment.roleType] =
+          (roleCounts[assignment.roleType] ?? 0) + 1;
     }
 
     // Update the proposed event's role requirements to match the kept assignments
-    final updatedRoleRequirements = Map<String, int>.from(proposedEvent.roleRequirements);
+    final updatedRoleRequirements =
+        Map<String, int>.from(proposedEvent.roleRequirements);
 
     // Set each role's quota to match the number of kept assignments
     for (final entry in roleCounts.entries) {
@@ -562,7 +574,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       roleRequirements: updatedRoleRequirements,
       categoryId: proposedEvent.categoryId,
       createdAt: proposedEvent.createdAt,
-      updatedAt: DateTime.now(), // Update timestamp since we're modifying quotas
+      updatedAt:
+          DateTime.now(), // Update timestamp since we're modifying quotas
       // Preserve Drive fields from proposedEvent (if any)
       driveFolderId: proposedEvent.driveFolderId,
       driveFolderLink: proposedEvent.driveFolderLink,
@@ -574,8 +587,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   /// Helper method to sync event to Google Calendar
   /// Always syncs to handle both creation/update AND deletion of calendar events
   void _syncEventToCalendar(Event event) {
-    // Only sync if calendar sync bloc is available
-    if (_calendarSyncBloc == null) {
+    final calendarSyncBloc = _calendarSyncBloc;
+    if (calendarSyncBloc == null) {
       return;
     }
 
@@ -591,7 +604,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     // IMPORTANT: Always dispatch sync event, even if time fields are empty
     // The sync service will handle deletion of calendar events when time fields are removed
     // Dispatch sync event to calendar sync bloc
-    _calendarSyncBloc!.add(SyncAppEventToCalendar(
+    calendarSyncBloc.add(SyncAppEventToCalendar(
       eventId: event.id,
       eventName: event.name,
       startDate: event.startDate,
@@ -601,17 +614,6 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       actualShowStartTime: event.actualShowStartTime,
       endTime: event.endTime,
       location: cleanLocation,
-    ));
-  }
-
-  /// Helper method to remove event from Google Calendar
-  void _removeEventFromCalendar(String eventId) {
-    // Only remove if calendar sync bloc is available
-    if (_calendarSyncBloc == null) return;
-
-    // Dispatch remove event to calendar sync bloc
-    _calendarSyncBloc!.add(RemoveAppEventFromCalendar(
-      eventId: eventId,
     ));
   }
 
@@ -640,5 +642,6 @@ class _EventsDataUpdated extends EventEvent {
   });
 
   @override
-  List<Object?> get props => [events, assignmentCounts, eventBirthdays, upcomingOnly];
+  List<Object?> get props =>
+      [events, assignmentCounts, eventBirthdays, upcomingOnly];
 }

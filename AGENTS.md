@@ -601,6 +601,11 @@ When making changes to the code:
 3. If `flutter analyze` passes, the code is ready for testing
 4. I will test the changes in both test and production environments as needed
 
+### Deployment Rule
+- After changes under `functions/`, deploy Cloud Functions before finishing the task unless the user explicitly says not to.
+- Use `firebase deploy --only functions` from the repository root.
+- Do not redeploy Cloud Functions for client-only changes.
+
 ### Deploying
 1. Build production: `flutter build web`
 2. Deploy `build/web/` to hosting

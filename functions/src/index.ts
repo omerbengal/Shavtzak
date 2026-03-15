@@ -220,6 +220,104 @@ async function readTeamMemberById(
   return snapshot.exists ? snapshot.data() ?? null : null;
 }
 
+async function readEventById(
+  firestore: Firestore,
+  collections: Collections,
+  eventId: string,
+): Promise<Record<string, unknown> | null> {
+  const snapshot = await firestore.collection(collections.events).doc(eventId).get();
+  return snapshot.exists ? snapshot.data() ?? null : null;
+}
+
+async function syncCalendarAttendeesForEvent(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  collections: Collections,
+  eventId: string,
+): Promise<void> {
+  try {
+    const syncDoc = await db.collection(collections.eventCalendarSync).doc(eventId).get();
+    if (!syncDoc.exists) {
+      return;
+    }
+
+    const syncData = syncDoc.data() ?? {};
+    const calendarEventIds = [
+      optionalString(syncData['assemblyCalendarEventId']),
+      optionalString(syncData['mainCalendarEventId']),
+    ].filter((calendarEventId): calendarEventId is string =>
+      calendarEventId != null && calendarEventId.trim().length > 0,
+    );
+
+    if (calendarEventIds.length === 0) {
+      return;
+    }
+
+    const assignmentsSnapshot = await db
+      .collection(collections.assignments)
+      .where('eventId', '==', eventId)
+      .get();
+
+    const teamMemberIds = Array.from(new Set(
+      assignmentsSnapshot.docs
+        .map((doc) => {
+          const data = doc.data() ?? {};
+          return typeof data['teamMemberId'] === 'string'
+            ? data['teamMemberId'] as string
+            : null;
+        })
+        .filter((teamMemberId): teamMemberId is string => teamMemberId != null),
+    ));
+
+    const emails = new Set<string>();
+    for (const teamMemberId of teamMemberIds) {
+      const teamMemberData = await readTeamMemberById(db, collections, teamMemberId);
+      const email = typeof teamMemberData?.['email'] === 'string'
+        ? teamMemberData['email'].trim()
+        : '';
+      if (email.length > 0) {
+        emails.add(email);
+      }
+    }
+
+    for (const calendarEventId of calendarEventIds) {
+      await executeCalendarAction(
+        db,
+        {
+          memberId: actor.memberId,
+          isAdmin: actor.isAdmin,
+        },
+        environment,
+        'updateEventAttendees',
+        {
+          calendarEventId,
+          emails: Array.from(emails),
+        },
+      );
+    }
+  } catch (error) {
+    console.error(
+      `Failed to sync calendar attendees for event ${eventId}:`,
+      error,
+    );
+  }
+}
+
+async function syncCalendarAttendeesForEvents(
+  actor: ActorContext,
+  environment: EnvironmentMode,
+  collections: Collections,
+  eventIds: Iterable<string>,
+): Promise<void> {
+  const uniqueEventIds = Array.from(new Set(
+    Array.from(eventIds).filter((eventId) => eventId.trim().length > 0),
+  ));
+
+  for (const eventId of uniqueEventIds) {
+    await syncCalendarAttendeesForEvent(actor, environment, collections, eventId);
+  }
+}
+
 async function createSession(
   firestore: Firestore,
   collections: Collections,
@@ -297,6 +395,441 @@ async function authenticateRequest(request: Request): Promise<{
   };
 }
 
+function getConstraintStatusSemanticAction(
+  newStatus: unknown,
+  wasAutoRejectedFromCalendar = false,
+): string | null {
+  if (wasAutoRejectedFromCalendar) {
+    return 'autoreject';
+  }
+
+  if (typeof newStatus !== 'string' || newStatus.trim().length === 0) {
+    return null;
+  }
+
+  switch (newStatus.trim().toLowerCase()) {
+    case 'approved':
+      return 'approve';
+    case 'rejected':
+      return 'reject';
+    case 'pending':
+      return 'returntopending';
+    default:
+      return null;
+  }
+}
+
+function getChecklistUpdateSemanticAction(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): string | null {
+  const diff = buildAuditDiff(before, after, ['createdAt', 'updatedAt', 'statusLastUpdatedAt']);
+  const changedKeys = new Set([
+    ...Object.keys(diff.oldValue ?? {}),
+    ...Object.keys(diff.newValue ?? {}),
+  ]);
+
+  if (changedKeys.size !== 1 || !changedKeys.has('status')) {
+    return null;
+  }
+
+  if (after['status'] === true) {
+    return 'complete';
+  }
+
+  if (after['status'] === false) {
+    return 'reopen';
+  }
+
+  return null;
+}
+
+function normalizeAuditActionType(
+  operation: string,
+  details: Record<string, unknown> = {},
+): string {
+  const raw = operation.trim().toLowerCase();
+  const finalSegment = raw.split('.').at(-1) ?? raw;
+  const explicitSemanticAction = optionalString(details['semanticAction']);
+
+  if (explicitSemanticAction != null && explicitSemanticAction.trim().length > 0) {
+    return explicitSemanticAction.trim().toLowerCase();
+  }
+
+  if (finalSegment === 'updatestatus') {
+    const semanticAction = getConstraintStatusSemanticAction(
+      details['newStatus'],
+      details['wasAutoRejectedFromCalendar'] === true,
+    );
+    if (semanticAction != null) {
+      return semanticAction;
+    }
+  }
+
+  switch (finalSegment) {
+    case 'insert':
+      return 'create';
+    case 'edit':
+      return 'update';
+    default:
+      return finalSegment;
+  }
+}
+
+function getAuditEntityName(details: Record<string, unknown>): string | null {
+  const name = details['name'];
+  if (typeof name === 'string' && name.trim().length > 0) {
+    return name.trim();
+  }
+
+  const entityName = details['entityName'];
+  if (typeof entityName === 'string' && entityName.trim().length > 0) {
+    return entityName.trim();
+  }
+
+  return null;
+}
+
+function optionalDate(value: unknown): Date | null {
+  if (value instanceof Timestamp) return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' && value.trim().length > 0 && !Number.isNaN(Date.parse(value))) {
+    return new Date(value);
+  }
+  return null;
+}
+
+function formatIsraelDateOnly(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jerusalem',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function getConstraintRepeatTypeLabel(value: unknown): string | null {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return null;
+  }
+
+  switch (value.trim().toLowerCase()) {
+    case 'daily':
+      return 'יומי';
+    case 'weekly':
+      return 'שבועי';
+    case 'monthly':
+      return 'חודשי';
+    default:
+      return value;
+  }
+}
+
+function getConstraintAuditEntityType(
+  constraint: Record<string, unknown> | null | undefined,
+): string {
+  return constraint?.['constraintType'] === 'availability'
+    ? 'availability'
+    : 'constraint';
+}
+
+function buildConstraintSummary(
+  constraint: Record<string, unknown> | null | undefined,
+): string | null {
+  if (constraint == null) {
+    return null;
+  }
+
+  const startDate = optionalDate(constraint['startDate']);
+  const endDate = optionalDate(constraint['endDate']);
+  const startTime =
+    typeof constraint['startTime'] === 'string' &&
+      constraint['startTime'].trim().length > 0
+      ? constraint['startTime'].trim()
+      : null;
+  const endTime =
+    typeof constraint['endTime'] === 'string' &&
+      constraint['endTime'].trim().length > 0
+      ? constraint['endTime'].trim()
+      : null;
+  const note =
+    typeof constraint['note'] === 'string' && constraint['note'].trim().length > 0
+      ? constraint['note'].trim()
+      : null;
+  const repeatTypeLabel = getConstraintRepeatTypeLabel(constraint['repeatType']);
+
+  const parts: string[] = [];
+
+  if (repeatTypeLabel != null) {
+    parts.push(repeatTypeLabel);
+  }
+
+  if (startDate != null) {
+    const startText = formatIsraelDateOnly(startDate);
+    const endText = endDate == null ? null : formatIsraelDateOnly(endDate);
+    parts.push(endText == null || endText === startText
+      ? startText
+      : `${startText} - ${endText}`);
+  }
+
+  if (startTime != null || endTime != null) {
+    parts.push(startTime != null && endTime != null
+      ? `${startTime} - ${endTime}`
+      : (startTime ?? endTime)!);
+  }
+
+  if (note != null) {
+    parts.push(note);
+  }
+
+  return parts.length > 0 ? parts.join(' | ') : null;
+}
+
+function buildConstraintAuditDetails(
+  teamMemberId: string,
+  teamMemberName: string | null,
+  constraint: Record<string, unknown> | null | undefined,
+  extras: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return stripUndefined({
+    teamMemberId,
+    teamMemberName: teamMemberName ?? undefined,
+    constraintType:
+      typeof constraint?.['constraintType'] === 'string'
+        ? constraint['constraintType']
+        : undefined,
+    startDate: constraint?.['startDate'] ?? undefined,
+    endDate: constraint?.['endDate'] ?? undefined,
+    startTime:
+      typeof constraint?.['startTime'] === 'string'
+        ? constraint['startTime']
+        : undefined,
+    endTime:
+      typeof constraint?.['endTime'] === 'string'
+        ? constraint['endTime']
+        : undefined,
+    note:
+      typeof constraint?.['note'] === 'string' &&
+        constraint['note'].trim().length > 0
+        ? constraint['note']
+        : undefined,
+    status:
+      typeof constraint?.['status'] === 'string'
+        ? constraint['status']
+        : undefined,
+    repeatType:
+      typeof constraint?.['repeatType'] === 'string'
+        ? constraint['repeatType']
+        : undefined,
+    repeatDay:
+      typeof constraint?.['repeatDay'] === 'number'
+        ? constraint['repeatDay']
+        : undefined,
+    repeatEndDate: constraint?.['repeatEndDate'] ?? undefined,
+    wasAutoRejectedFromCalendar:
+      constraint?.['wasAutoRejectedFromCalendar'] === true ? true : undefined,
+    constraintSummary: buildConstraintSummary(constraint) ?? undefined,
+    ...extras,
+  });
+}
+
+function buildAssignmentAuditDetails(
+  assignment: Record<string, unknown> | null | undefined,
+  extras: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return stripUndefined({
+    eventId:
+      typeof assignment?.['eventId'] === 'string'
+        ? assignment['eventId']
+        : undefined,
+    eventName:
+      typeof extras['eventName'] === 'string' && String(extras['eventName']).trim().length > 0
+        ? extras['eventName']
+        : undefined,
+    teamMemberId:
+      typeof assignment?.['teamMemberId'] === 'string'
+        ? assignment['teamMemberId']
+        : undefined,
+    teamMemberName:
+      typeof extras['teamMemberName'] === 'string' && String(extras['teamMemberName']).trim().length > 0
+        ? extras['teamMemberName']
+        : undefined,
+    roleType:
+      typeof assignment?.['roleType'] === 'string'
+        ? assignment['roleType']
+        : undefined,
+    status:
+      typeof assignment?.['status'] === 'string'
+        ? assignment['status']
+        : undefined,
+    ...extras,
+  });
+}
+
+function buildChecklistItemAuditDetails(
+  checklistItem: Record<string, unknown> | null | undefined,
+  extras: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return stripUndefined({
+    name:
+      typeof checklistItem?.['name'] === 'string'
+        ? checklistItem['name']
+        : undefined,
+    responsibleId:
+      typeof checklistItem?.['responsibleId'] === 'string'
+        ? checklistItem['responsibleId']
+        : undefined,
+    responsibleName:
+      typeof extras['responsibleName'] === 'string' &&
+        String(extras['responsibleName']).trim().length > 0
+        ? extras['responsibleName']
+        : undefined,
+    status:
+      typeof checklistItem?.['status'] === 'boolean'
+        ? checklistItem['status']
+        : undefined,
+    createdByAdminId:
+      typeof checklistItem?.['createdByAdminId'] === 'string'
+        ? checklistItem['createdByAdminId']
+        : undefined,
+    ...extras,
+  });
+}
+
+function formatIsraelTimestamp(date: Date): string {
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Jerusalem',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+    hour12: false,
+  });
+
+  const partMap: Record<string, string> = {};
+  for (const part of formatter.formatToParts(date)) {
+    if (part.type !== 'literal') {
+      partMap[part.type] = part.value;
+    }
+  }
+
+  return `${partMap['year']}-${partMap['month']}-${partMap['day']}`
+      + `T${partMap['hour']}:${partMap['minute']}:${partMap['second']}`
+      + `.${partMap['fractionalSecond'] ?? '000'}`;
+}
+
+function normalizeAuditValue(value: unknown): unknown {
+  if (value == null) {
+    return null;
+  }
+
+  if (value instanceof Timestamp) {
+    return value.toDate().toISOString();
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeAuditValue(item));
+  }
+
+  if (typeof value === 'object') {
+    const normalized: Record<string, unknown> = {};
+    for (const [key, entryValue] of Object.entries(
+      value as Record<string, unknown>,
+    ).sort(([left], [right]) => left.localeCompare(right))) {
+      if (entryValue === undefined) {
+        continue;
+      }
+      normalized[key] = normalizeAuditValue(entryValue);
+    }
+    return normalized;
+  }
+
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+
+  return value;
+}
+
+function normalizeAuditRecord(
+  value: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (value == null) {
+    return null;
+  }
+
+  return normalizeAuditValue(value) as Record<string, unknown>;
+}
+
+function auditValuesEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(normalizeAuditValue(left)) ===
+    JSON.stringify(normalizeAuditValue(right));
+}
+
+function buildAuditDiff(
+  before: Record<string, unknown> | null | undefined,
+  after: Record<string, unknown> | null | undefined,
+  ignoreKeys: string[] = [],
+): {
+  changes: Record<string, unknown> | null;
+  oldValue: Record<string, unknown> | null;
+  newValue: Record<string, unknown> | null;
+} {
+  const normalizedBefore = normalizeAuditRecord(before);
+  const normalizedAfter = normalizeAuditRecord(after);
+
+  if (normalizedBefore == null && normalizedAfter == null) {
+    return {
+      changes: null,
+      oldValue: null,
+      newValue: null,
+    };
+  }
+
+  const ignored = new Set(ignoreKeys);
+  const keys = Array.from(
+    new Set([
+      ...Object.keys(normalizedBefore ?? {}),
+      ...Object.keys(normalizedAfter ?? {}),
+    ]),
+  )
+    .filter((key) => !ignored.has(key))
+    .sort((left, right) => left.localeCompare(right));
+
+  const changes: Record<string, unknown> = {};
+  const oldValue: Record<string, unknown> = {};
+  const newValue: Record<string, unknown> = {};
+
+  for (const key of keys) {
+    const beforeValue = normalizedBefore?.[key] ?? null;
+    const afterValue = normalizedAfter?.[key] ?? null;
+
+    if (auditValuesEqual(beforeValue, afterValue)) {
+      continue;
+    }
+
+    changes[key] = {
+      oldValue: beforeValue,
+      newValue: afterValue,
+    };
+    oldValue[key] = beforeValue;
+    newValue[key] = afterValue;
+  }
+
+  return {
+    changes: Object.keys(changes).length > 0 ? changes : null,
+    oldValue: Object.keys(oldValue).length > 0 ? oldValue : null,
+    newValue: Object.keys(newValue).length > 0 ? newValue : null,
+  };
+}
+
 async function writeAuditLog(
   firestore: Firestore,
   collections: Collections,
@@ -305,18 +838,55 @@ async function writeAuditLog(
   entityType: string,
   entityId: string,
   details: Record<string, unknown> = {},
-): Promise<void> {
+  diffContext: {
+    before?: Record<string, unknown> | null;
+    after?: Record<string, unknown> | null;
+    ignoreKeys?: string[];
+  } = {},
+  operationContext: {
+    operationId?: string;
+    parentOperationId?: string | null;
+  } = {},
+): Promise<string> {
+  const performerName = typeof actor.member['name'] === 'string'
+    ? (actor.member['name'] as string)
+    : null;
+  const diff = buildAuditDiff(
+    diffContext.before,
+    diffContext.after,
+    diffContext.ignoreKeys ?? ['createdAt', 'updatedAt', 'statusLastUpdatedAt'],
+  );
+  const operationId = typeof operationContext.operationId === 'string' &&
+      operationContext.operationId.trim().length > 0
+    ? operationContext.operationId.trim()
+    : randomUUID();
+  const parentOperationId = typeof operationContext.parentOperationId === 'string' &&
+      operationContext.parentOperationId.trim().length > 0
+    ? operationContext.parentOperationId.trim()
+    : null;
+
   await firestore.collection(collections.logs).add({
     timestampUtc: FieldValue.serverTimestamp(),
-    actionType: operation,
+    timestampLocalIsrael: formatIsraelTimestamp(new Date()),
+    actionType: normalizeAuditActionType(operation, details),
+    operation,
     entityType,
     entityId,
+    entityName: getAuditEntityName(details),
     performerId: actor.memberId,
     performerUniqueKey: actor.uniqueKey,
+    performerName,
     status: 'success',
     source: 'cloud_function',
+    changes: diff.changes,
+    oldValue: diff.oldValue,
+    newValue: diff.newValue,
     details,
+    operationId,
+    ...(parentOperationId == null ? {} : {parentOperationId}),
   });
+
+  return operationId;
 }
 
 async function ensureFirebaseAuthUser(
@@ -670,6 +1240,7 @@ function getCategoriesArray(listsData: Record<string, unknown>): Array<Record<st
 
 async function executeMutation(
   actor: ActorContext,
+  environment: EnvironmentMode,
   collections: Collections,
   operation: string,
   payload: Record<string, unknown>,
@@ -679,9 +1250,12 @@ async function executeMutation(
       requireAdmin(actor);
       const member = payload['member'] as Record<string, unknown>;
       const memberId = requireString(member['id'], 'member.id');
-      await db.collection(collections.teamMembers).doc(memberId).set(teamMemberDocFromJson(member));
+      const nextMember = teamMemberDocFromJson(member);
+      await db.collection(collections.teamMembers).doc(memberId).set(nextMember);
       await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId, {
         name: member['name'],
+      }, {
+        after: nextMember,
       });
       return {ok: true};
     }
@@ -709,7 +1283,14 @@ async function executeMutation(
       }
       delete next['passcode'];
       await docRef.update(next);
-      await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId);
+      await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId, {
+        name: typeof next['name'] === 'string'
+          ? next['name']
+          : existing['name'],
+      }, {
+        before: existing,
+        after: next,
+      });
       return {ok: true};
     }
 
@@ -722,6 +1303,11 @@ async function executeMutation(
 
       const teamRef = db.collection(collections.teamMembers).doc(memberId);
       const credentialRef = db.collection(collections.privateCredentials).doc(memberId);
+      const teamDoc = await teamRef.get();
+      if (!teamDoc.exists) {
+        throw new HttpError(404, 'Team member not found');
+      }
+      const teamBefore = teamDoc.data() ?? {};
       const credentialDoc = await credentialRef.get();
 
       if (!actor.isAdmin && credentialDoc.exists) {
@@ -745,29 +1331,61 @@ async function executeMutation(
         updatedAt: FieldValue.serverTimestamp(),
       });
 
-      await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId, {length});
+      const teamAfter: Record<string, unknown> = {
+        ...teamBefore,
+        passcodeLength: length,
+      };
+      delete teamAfter['passcode'];
+      await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId, {length}, {
+        before: teamBefore,
+        after: teamAfter,
+      });
       return {ok: true};
     }
 
     case 'teamMember.clearPasscode': {
       const memberId = requireString(payload['memberId'], 'memberId');
       requireSelfOrAdmin(actor, memberId);
+      const teamRef = db.collection(collections.teamMembers).doc(memberId);
+      const teamDoc = await teamRef.get();
+      if (!teamDoc.exists) {
+        throw new HttpError(404, 'Team member not found');
+      }
+      const teamBefore = teamDoc.data() ?? {};
       await db.collection(collections.privateCredentials).doc(memberId).delete();
-      await db.collection(collections.teamMembers).doc(memberId).update({
+      await teamRef.update({
         passcodeLength: FieldValue.delete(),
         passcode: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId);
+      const teamAfter: Record<string, unknown> = {
+        ...teamBefore,
+      };
+      delete teamAfter['passcodeLength'];
+      delete teamAfter['passcode'];
+      await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId, {}, {
+        before: teamBefore,
+        after: teamAfter,
+      });
       return {ok: true};
     }
 
     case 'teamMember.delete': {
       requireAdmin(actor);
       const memberId = requireString(payload['memberId'], 'memberId');
-      await db.collection(collections.teamMembers).doc(memberId).delete();
+      const docRef = db.collection(collections.teamMembers).doc(memberId);
+      const existingDoc = await docRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Team member not found');
+      }
+      const existing = existingDoc.data() ?? {};
+      await docRef.delete();
       await db.collection(collections.privateCredentials).doc(memberId).delete().catch(() => undefined);
-      await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId);
+      await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId, {
+        name: existing['name'],
+      }, {
+        before: existing,
+      });
       return {ok: true};
     }
 
@@ -802,9 +1420,12 @@ async function executeMutation(
         const teamMembers = await db.collection(collections.teamMembers).get();
         for (const doc of teamMembers.docs) {
           const data = doc.data();
+          const teamMemberName =
+            typeof data['name'] === 'string' ? (data['name'] as string) : null;
           const constraints = Array.isArray(data['constraints']) ? [...(data['constraints'] as Array<Record<string, unknown>>)] : [];
           const index = constraints.findIndex((constraint) => constraint['id'] === constraintIdOrMemberId);
           if (index < 0) continue;
+          const previousConstraint = constraints[index];
           const updated = {
             ...constraints[index],
             status: newStatus,
@@ -818,10 +1439,25 @@ async function executeMutation(
             constraints,
             updatedAt: FieldValue.serverTimestamp(),
           });
-          await writeAuditLog(db, collections, actor, operation, 'constraint', constraintIdOrMemberId, {
-            teamMemberId: doc.id,
-            newStatus,
-          });
+          await writeAuditLog(
+            db,
+            collections,
+            actor,
+            operation,
+            getConstraintAuditEntityType(updated),
+            constraintIdOrMemberId,
+            buildConstraintAuditDetails(doc.id, teamMemberName, updated, {
+              newStatus,
+              semanticAction: getConstraintStatusSemanticAction(
+                newStatus,
+                wasAutoRejectedFromCalendar,
+              ) ?? undefined,
+            }),
+            {
+              before: previousConstraint,
+              after: updated,
+            },
+          );
           return {ok: true};
         }
         throw new HttpError(404, 'Constraint not found');
@@ -831,12 +1467,17 @@ async function executeMutation(
       const constraintIndex = Number(constraintIndexValue);
       const memberDoc = await db.collection(collections.teamMembers).doc(teamMemberId).get();
       if (!memberDoc.exists) throw new HttpError(404, 'Team member not found');
+      const teamMemberName =
+        typeof memberDoc.data()?.['name'] === 'string'
+          ? (memberDoc.data()?.['name'] as string)
+          : null;
       const constraints = Array.isArray(memberDoc.data()?.['constraints'])
         ? [...(memberDoc.data()?.['constraints'] as Array<Record<string, unknown>>)]
         : [];
       if (constraintIndex < 0 || constraintIndex >= constraints.length) {
         throw new HttpError(400, 'Invalid constraint index');
       }
+      const previousConstraint = constraints[constraintIndex];
       constraints[constraintIndex] = {
         ...constraints[constraintIndex],
         status: newStatus,
@@ -849,7 +1490,30 @@ async function executeMutation(
         constraints,
         updatedAt: FieldValue.serverTimestamp(),
       });
-      await writeAuditLog(db, collections, actor, operation, 'constraint', String(constraints[constraintIndex]['id']));
+      await writeAuditLog(
+        db,
+        collections,
+        actor,
+        operation,
+        getConstraintAuditEntityType(constraints[constraintIndex]),
+        String(constraints[constraintIndex]['id']),
+        buildConstraintAuditDetails(
+          teamMemberId,
+          teamMemberName,
+          constraints[constraintIndex],
+          {
+            newStatus,
+            semanticAction: getConstraintStatusSemanticAction(
+              newStatus,
+              wasAutoRejectedFromCalendar,
+            ) ?? undefined,
+          },
+        ),
+        {
+          before: previousConstraint,
+          after: constraints[constraintIndex],
+        },
+      );
       return {ok: true};
     }
 
@@ -857,11 +1521,29 @@ async function executeMutation(
       const teamMemberId = requireString(payload['teamMemberId'], 'teamMemberId');
       requireSelfOrAdmin(actor, teamMemberId);
       const constraint = payload['constraint'] as Record<string, unknown>;
-      await db.collection(collections.teamMembers).doc(teamMemberId).update({
-        constraints: FieldValue.arrayUnion([constraint]),
+      const memberRef = db.collection(collections.teamMembers).doc(teamMemberId);
+      const memberDoc = await memberRef.get();
+      if (!memberDoc.exists) throw new HttpError(404, 'Team member not found');
+      const teamMemberName =
+        typeof memberDoc.data()?.['name'] === 'string'
+          ? (memberDoc.data()?.['name'] as string)
+          : null;
+      await memberRef.update({
+        constraints: FieldValue.arrayUnion(constraint),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      await writeAuditLog(db, collections, actor, operation, 'constraint', requireString(constraint['id'], 'constraint.id'));
+      await writeAuditLog(
+        db,
+        collections,
+        actor,
+        operation,
+        getConstraintAuditEntityType(constraint),
+        requireString(constraint['id'], 'constraint.id'),
+        buildConstraintAuditDetails(teamMemberId, teamMemberName, constraint),
+        {
+          after: constraint,
+        },
+      );
       return {ok: true};
     }
 
@@ -873,14 +1555,35 @@ async function executeMutation(
       const memberRef = db.collection(collections.teamMembers).doc(teamMemberId);
       const memberDoc = await memberRef.get();
       if (!memberDoc.exists) throw new HttpError(404, 'Team member not found');
+      const teamMemberName =
+        typeof memberDoc.data()?.['name'] === 'string'
+          ? (memberDoc.data()?.['name'] as string)
+          : null;
       const constraints = Array.isArray(memberDoc.data()?.['constraints'])
         ? [...(memberDoc.data()?.['constraints'] as Array<Record<string, unknown>>)]
         : [];
       const index = constraints.findIndex((constraint) => constraint['id'] === constraintId);
       if (index < 0) throw new HttpError(404, 'Constraint not found');
+      const previousConstraint = constraints[index];
       constraints[index] = updatedConstraint;
       await memberRef.update({constraints, updatedAt: FieldValue.serverTimestamp()});
-      await writeAuditLog(db, collections, actor, operation, 'constraint', constraintId);
+      await writeAuditLog(
+        db,
+        collections,
+        actor,
+        operation,
+        getConstraintAuditEntityType(updatedConstraint),
+        constraintId,
+        buildConstraintAuditDetails(
+          teamMemberId,
+          teamMemberName,
+          updatedConstraint,
+        ),
+        {
+          before: previousConstraint,
+          after: updatedConstraint,
+        },
+      );
       return {ok: true};
     }
 
@@ -891,12 +1594,33 @@ async function executeMutation(
       const memberRef = db.collection(collections.teamMembers).doc(teamMemberId);
       const memberDoc = await memberRef.get();
       if (!memberDoc.exists) throw new HttpError(404, 'Team member not found');
+      const teamMemberName =
+        typeof memberDoc.data()?.['name'] === 'string'
+          ? (memberDoc.data()?.['name'] as string)
+          : null;
       const constraints = Array.isArray(memberDoc.data()?.['constraints'])
         ? [...(memberDoc.data()?.['constraints'] as Array<Record<string, unknown>>)]
         : [];
+      const removedConstraint =
+        constraints.find((constraint) => constraint['id'] === constraintId) ?? null;
       const nextConstraints = constraints.filter((constraint) => constraint['id'] !== constraintId);
       await memberRef.update({constraints: nextConstraints, updatedAt: FieldValue.serverTimestamp()});
-      await writeAuditLog(db, collections, actor, operation, 'constraint', constraintId);
+      await writeAuditLog(
+        db,
+        collections,
+        actor,
+        operation,
+        getConstraintAuditEntityType(removedConstraint),
+        constraintId,
+        buildConstraintAuditDetails(
+          teamMemberId,
+          teamMemberName,
+          removedConstraint,
+        ),
+        {
+          before: removedConstraint,
+        },
+      );
       return {ok: true};
     }
 
@@ -920,8 +1644,11 @@ async function executeMutation(
       if (hasDuplicate) {
         throw new HttpError(400, 'כבר קיים אירוע בשם זה בתאריך זה');
       }
-      await db.collection(collections.events).doc(eventId).set(eventDocFromJson(event));
-      await writeAuditLog(db, collections, actor, operation, 'event', eventId, {name});
+      const nextEvent = eventDocFromJson(event);
+      await db.collection(collections.events).doc(eventId).set(nextEvent);
+      await writeAuditLog(db, collections, actor, operation, 'event', eventId, {name}, {
+        after: nextEvent,
+      });
       return {ok: true};
     }
 
@@ -930,6 +1657,12 @@ async function executeMutation(
       const event = payload['event'] as Record<string, unknown>;
       const eventId = requireString(event['id'], 'event.id');
       const name = requireString(event['name'], 'event.name');
+      const eventRef = db.collection(collections.events).doc(eventId);
+      const existingDoc = await eventRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Event not found');
+      }
+      const existing = existingDoc.data() ?? {};
       const startDate = asDate(event['startDate'], 'event.startDate');
       const startOfTargetDay = Timestamp.fromDate(normalizeDay(startDate));
       const endOfTargetDay = Timestamp.fromDate(addDays(normalizeDay(startDate), 1));
@@ -949,26 +1682,121 @@ async function executeMutation(
       if (hasDuplicate) {
         throw new HttpError(400, 'כבר קיים אירוע בשם זה בתאריך זה');
       }
-      await db.collection(collections.events).doc(eventId).update(eventDocFromJson(event));
-      await writeAuditLog(db, collections, actor, operation, 'event', eventId, {name});
+      const nextEvent = eventDocFromJson(event);
+      await eventRef.update(nextEvent);
+      await writeAuditLog(db, collections, actor, operation, 'event', eventId, {name}, {
+        before: existing,
+        after: nextEvent,
+      });
       return {ok: true};
     }
 
     case 'event.delete': {
       requireAdmin(actor);
       const eventId = requireString(payload['eventId'], 'eventId');
-      const checklistSnapshot = await db
-        .collection(collections.checklistItems)
-        .where('eventId', '==', eventId)
-        .get();
+      const eventRef = db.collection(collections.events).doc(eventId);
+      const [eventDoc, assignmentSnapshot, checklistSnapshot, eventSyncDoc] =
+        await Promise.all([
+          eventRef.get(),
+          db.collection(collections.assignments).where('eventId', '==', eventId).get(),
+          db.collection(collections.checklistItems).where('eventId', '==', eventId).get(),
+          db.collection(collections.eventCalendarSync).doc(eventId).get(),
+        ]);
+      if (!eventDoc.exists) {
+        throw new HttpError(404, 'Event not found');
+      }
+      const existingEvent = eventDoc.data() ?? {};
+      const existingAssignments = assignmentSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        data: doc.data() ?? {},
+      }));
+      const existingChecklistItems = checklistSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        data: doc.data() ?? {},
+      }));
+
+      const teamMemberNameCache = new Map<string, string | null>();
+      const readTeamMemberName = async (memberId: string | null): Promise<string | null> => {
+        if (memberId == null) {
+          return null;
+        }
+
+        if (teamMemberNameCache.has(memberId)) {
+          return teamMemberNameCache.get(memberId) ?? null;
+        }
+
+        const teamMemberData = await readTeamMemberById(db, collections, memberId);
+        const teamMemberName = typeof teamMemberData?.['name'] === 'string'
+          ? teamMemberData['name'] as string
+          : null;
+        teamMemberNameCache.set(memberId, teamMemberName);
+        return teamMemberName;
+      };
+
+      const deletedAssignments = await Promise.all(existingAssignments.map(async (assignment) => {
+        const teamMemberId = typeof assignment.data['teamMemberId'] === 'string'
+          ? assignment.data['teamMemberId'] as string
+          : null;
+        const teamMemberName = await readTeamMemberName(teamMemberId);
+        return buildAssignmentAuditDetails(assignment.data, {
+          id: assignment.id,
+          teamMemberName: teamMemberName ?? undefined,
+        });
+      }));
+
+      const deletedChecklistItems = await Promise.all(existingChecklistItems.map(async (item) => {
+        const responsibleId = typeof item.data['responsibleId'] === 'string'
+          ? item.data['responsibleId'] as string
+          : null;
+        const responsibleName = await readTeamMemberName(responsibleId);
+        return buildChecklistItemAuditDetails(item.data, {
+          id: item.id,
+          responsibleName: responsibleName ?? undefined,
+        });
+      }));
+
+      const eventSyncData = eventSyncDoc.exists ? eventSyncDoc.data() ?? {} : {};
+      const assemblyCalendarEventId = optionalString(eventSyncData['assemblyCalendarEventId']);
+      const mainCalendarEventId = optionalString(eventSyncData['mainCalendarEventId']);
+      if (
+        (assemblyCalendarEventId != null && assemblyCalendarEventId.length > 0) ||
+        (mainCalendarEventId != null && mainCalendarEventId.length > 0)
+      ) {
+        await executeCalendarAction(
+          db,
+          {
+            memberId: actor.memberId,
+            isAdmin: actor.isAdmin,
+          },
+          environment,
+          'deleteAppEventCalendarEvents',
+          stripUndefined({
+            assemblyCalendarEventId: assemblyCalendarEventId ?? undefined,
+            mainCalendarEventId: mainCalendarEventId ?? undefined,
+          }),
+        );
+      }
+
       const batch = db.batch();
+      for (const doc of assignmentSnapshot.docs) {
+        batch.delete(doc.ref);
+      }
       for (const doc of checklistSnapshot.docs) {
         batch.delete(doc.ref);
       }
-      batch.delete(db.collection(collections.events).doc(eventId));
+      batch.delete(eventRef);
+      if (eventSyncDoc.exists) {
+        batch.delete(eventSyncDoc.ref);
+      }
       await batch.commit();
-      await writeAuditLog(db, collections, actor, operation, 'event', eventId, {
-        deletedChecklistItems: checklistSnapshot.docs.length,
+      await writeAuditLog(db, collections, actor, operation, 'event', eventId, stripUndefined({
+        name: existingEvent['name'],
+        deletedAssignments:
+          deletedAssignments.length > 0 ? deletedAssignments : undefined,
+        deletedChecklistItems:
+          deletedChecklistItems.length > 0 ? deletedChecklistItems : undefined,
+      }), {
+        before: existingEvent,
       });
       return {ok: true};
     }
@@ -992,12 +1820,26 @@ async function executeMutation(
     case 'event.updateArchiveStatus': {
       requireAdmin(actor);
       const eventId = requireString(payload['eventId'], 'eventId');
-      await db.collection(collections.events).doc(eventId).update({
+      const eventRef = db.collection(collections.events).doc(eventId);
+      const existingDoc = await eventRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Event not found');
+      }
+      const existing = existingDoc.data() ?? {};
+      const nextEvent = {
+        ...existing,
+        isArchived: payload['isArchived'] === true,
+      };
+      await eventRef.update({
         isArchived: payload['isArchived'] === true,
         updatedAt: FieldValue.serverTimestamp(),
       });
       await writeAuditLog(db, collections, actor, operation, 'event', eventId, {
+        name: existing['name'],
         isArchived: payload['isArchived'] === true,
+      }, {
+        before: existing,
+        after: nextEvent,
       });
       return {ok: true};
     }
@@ -1007,8 +1849,12 @@ async function executeMutation(
       const assignment = payload['assignment'] as Record<string, unknown>;
       const assignmentId = requireString(assignment['id'], 'assignment.id');
       await validateAssignmentPayload(db, collections, assignment);
-      await db.collection(collections.assignments).doc(assignmentId).set(assignmentDocFromJson(assignment));
-      await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId);
+      const nextAssignment = assignmentDocFromJson(assignment);
+      await db.collection(collections.assignments).doc(assignmentId).set(nextAssignment);
+      await syncCalendarAttendeesForEvent(actor, environment, collections, String(nextAssignment['eventId']));
+      await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
+        after: nextAssignment,
+      });
       return {ok: true};
     }
 
@@ -1016,64 +1862,285 @@ async function executeMutation(
       requireAdmin(actor);
       const assignment = payload['assignment'] as Record<string, unknown>;
       const assignmentId = requireString(assignment['id'], 'assignment.id');
+      const assignmentRef = db.collection(collections.assignments).doc(assignmentId);
+      const existingDoc = await assignmentRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Assignment not found');
+      }
+      const existing = existingDoc.data() ?? {};
       await validateAssignmentPayload(db, collections, assignment, assignmentId);
-      await db.collection(collections.assignments).doc(assignmentId).update(assignmentDocFromJson(assignment));
-      await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId);
+      const nextAssignment = assignmentDocFromJson(assignment);
+      await assignmentRef.update(nextAssignment);
+      await syncCalendarAttendeesForEvents(
+        actor,
+        environment,
+        collections,
+        [
+          typeof existing['eventId'] === 'string' ? existing['eventId'] : '',
+          String(nextAssignment['eventId']),
+        ],
+      );
+      await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
+        before: existing,
+        after: nextAssignment,
+      });
       return {ok: true};
     }
 
     case 'assignment.delete': {
       requireAdmin(actor);
       const assignmentId = requireString(payload['assignmentId'], 'assignmentId');
-      await db.collection(collections.assignments).doc(assignmentId).delete();
-      await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId);
+      const assignmentRef = db.collection(collections.assignments).doc(assignmentId);
+      const existingDoc = await assignmentRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Assignment not found');
+      }
+      const existing = existingDoc.data() ?? {};
+      await assignmentRef.delete();
+      if (typeof existing['eventId'] === 'string') {
+        await syncCalendarAttendeesForEvent(
+          actor,
+          environment,
+          collections,
+          existing['eventId'] as string,
+        );
+      }
+      await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
+        before: existing,
+      });
       return {ok: true};
     }
 
     case 'assignment.deleteByEvent': {
       requireAdmin(actor);
       const eventId = requireString(payload['eventId'], 'eventId');
+      const eventData = await readEventById(db, collections, eventId);
+      const eventName = typeof eventData?.['name'] === 'string'
+        ? eventData['name'] as string
+        : null;
       const snapshot = await db.collection(collections.assignments).where('eventId', '==', eventId).get();
+      const existingAssignments = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        data: doc.data() ?? {},
+      }));
       const batch = db.batch();
       for (const doc of snapshot.docs) {
         batch.delete(doc.ref);
       }
       await batch.commit();
+      await syncCalendarAttendeesForEvent(actor, environment, collections, eventId);
+      const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', eventId, {
+        name: eventName ?? undefined,
         deletedCount: snapshot.docs.length,
+      }, {}, {
+        operationId: batchOperationId,
       });
+
+      const teamMemberNameCache = new Map<string, string | null>();
+      for (const assignment of existingAssignments) {
+        const teamMemberId = typeof assignment.data['teamMemberId'] === 'string'
+          ? assignment.data['teamMemberId'] as string
+          : null;
+        let teamMemberName: string | null = null;
+        if (teamMemberId != null) {
+          teamMemberName = teamMemberNameCache.get(teamMemberId) ?? null;
+          if (!teamMemberNameCache.has(teamMemberId)) {
+            const teamMemberData = await readTeamMemberById(db, collections, teamMemberId);
+            teamMemberName = typeof teamMemberData?.['name'] === 'string'
+              ? teamMemberData['name'] as string
+              : null;
+            teamMemberNameCache.set(teamMemberId, teamMemberName);
+          }
+        }
+
+        await writeAuditLog(
+          db,
+          collections,
+          actor,
+          'assignment.delete',
+          'assignment',
+          assignment.id,
+          buildAssignmentAuditDetails(assignment.data, {
+            eventName: eventName ?? undefined,
+            teamMemberName: teamMemberName ?? undefined,
+          }),
+          {
+            before: assignment.data,
+          },
+          {
+            parentOperationId: batchOperationId,
+          },
+        );
+      }
       return {ok: true};
     }
 
     case 'assignment.deleteByPerson': {
       requireAdmin(actor);
       const teamMemberId = requireString(payload['teamMemberId'], 'teamMemberId');
+      const teamMemberData = await readTeamMemberById(db, collections, teamMemberId);
+      const teamMemberName = typeof teamMemberData?.['name'] === 'string'
+        ? teamMemberData['name'] as string
+        : null;
       const snapshot = await db
         .collection(collections.assignments)
         .where('teamMemberId', '==', teamMemberId)
         .get();
+      const existingAssignments = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        data: doc.data() ?? {},
+      }));
       const batch = db.batch();
       for (const doc of snapshot.docs) {
         batch.delete(doc.ref);
       }
       await batch.commit();
+      await syncCalendarAttendeesForEvents(
+        actor,
+        environment,
+        collections,
+        existingAssignments.map((assignment) => (
+          typeof assignment.data['eventId'] === 'string'
+            ? assignment.data['eventId'] as string
+            : ''
+        )),
+      );
+      const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', teamMemberId, {
+        name: teamMemberName ?? undefined,
         deletedCount: snapshot.docs.length,
+      }, {}, {
+        operationId: batchOperationId,
       });
+
+      const eventNameCache = new Map<string, string | null>();
+      for (const assignment of existingAssignments) {
+        const assignmentEventId = typeof assignment.data['eventId'] === 'string'
+          ? assignment.data['eventId'] as string
+          : null;
+        let eventName: string | null = null;
+        if (assignmentEventId != null) {
+          eventName = eventNameCache.get(assignmentEventId) ?? null;
+          if (!eventNameCache.has(assignmentEventId)) {
+            const eventDoc = await readEventById(db, collections, assignmentEventId);
+            eventName = typeof eventDoc?.['name'] === 'string'
+              ? eventDoc['name'] as string
+              : null;
+            eventNameCache.set(assignmentEventId, eventName);
+          }
+        }
+
+        await writeAuditLog(
+          db,
+          collections,
+          actor,
+          'assignment.delete',
+          'assignment',
+          assignment.id,
+          buildAssignmentAuditDetails(assignment.data, {
+            eventName: eventName ?? undefined,
+            teamMemberName: teamMemberName ?? undefined,
+          }),
+          {
+            before: assignment.data,
+          },
+          {
+            parentOperationId: batchOperationId,
+          },
+        );
+      }
       return {ok: true};
     }
 
     case 'assignment.deleteBatch': {
       requireAdmin(actor);
       const assignmentIds = Array.isArray(payload['assignmentIds']) ? payload['assignmentIds'] : [];
+      const assignmentRefs = assignmentIds.map((rawId) =>
+        db.collection(collections.assignments).doc(String(rawId)),
+      );
+      const assignmentDocs = assignmentRefs.length > 0 ? await db.getAll(...assignmentRefs) : [];
+      const existingAssignments = assignmentDocs
+        .filter((doc) => doc.exists)
+        .map((doc) => ({
+          id: doc.id,
+          data: doc.data() ?? {},
+        }));
       const batch = db.batch();
       for (const rawId of assignmentIds) {
         batch.delete(db.collection(collections.assignments).doc(String(rawId)));
       }
       await batch.commit();
+      await syncCalendarAttendeesForEvents(
+        actor,
+        environment,
+        collections,
+        existingAssignments.map((assignment) => (
+          typeof assignment.data['eventId'] === 'string'
+            ? assignment.data['eventId'] as string
+            : ''
+        )),
+      );
+      const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', actor.memberId, {
-        deletedCount: assignmentIds.length,
+        deletedCount: existingAssignments.length,
+      }, {}, {
+        operationId: batchOperationId,
       });
+
+      const teamMemberNameCache = new Map<string, string | null>();
+      const eventNameCache = new Map<string, string | null>();
+      for (const assignment of existingAssignments) {
+        const assignmentEventId = typeof assignment.data['eventId'] === 'string'
+          ? assignment.data['eventId'] as string
+          : null;
+        const assignmentTeamMemberId = typeof assignment.data['teamMemberId'] === 'string'
+          ? assignment.data['teamMemberId'] as string
+          : null;
+
+        let eventName: string | null = null;
+        if (assignmentEventId != null) {
+          eventName = eventNameCache.get(assignmentEventId) ?? null;
+          if (!eventNameCache.has(assignmentEventId)) {
+            const eventDoc = await readEventById(db, collections, assignmentEventId);
+            eventName = typeof eventDoc?.['name'] === 'string'
+              ? eventDoc['name'] as string
+              : null;
+            eventNameCache.set(assignmentEventId, eventName);
+          }
+        }
+
+        let teamMemberName: string | null = null;
+        if (assignmentTeamMemberId != null) {
+          teamMemberName = teamMemberNameCache.get(assignmentTeamMemberId) ?? null;
+          if (!teamMemberNameCache.has(assignmentTeamMemberId)) {
+            const teamMemberDoc = await readTeamMemberById(db, collections, assignmentTeamMemberId);
+            teamMemberName = typeof teamMemberDoc?.['name'] === 'string'
+              ? teamMemberDoc['name'] as string
+              : null;
+            teamMemberNameCache.set(assignmentTeamMemberId, teamMemberName);
+          }
+        }
+
+        await writeAuditLog(
+          db,
+          collections,
+          actor,
+          'assignment.delete',
+          'assignment',
+          assignment.id,
+          buildAssignmentAuditDetails(assignment.data, {
+            eventName: eventName ?? undefined,
+            teamMemberName: teamMemberName ?? undefined,
+          }),
+          {
+            before: assignment.data,
+          },
+          {
+            parentOperationId: batchOperationId,
+          },
+        );
+      }
       return {ok: true};
     }
 
@@ -1091,6 +2158,15 @@ async function executeMutation(
         );
       }
       await batch.commit();
+      await syncCalendarAttendeesForEvents(
+        actor,
+        environment,
+        collections,
+        assignments.map((assignment) => {
+          const value = assignment as Record<string, unknown>;
+          return typeof value['eventId'] === 'string' ? value['eventId'] as string : '';
+        }),
+      );
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', actor.memberId, {
         count: assignments.length,
       });
@@ -1202,11 +2278,8 @@ async function executeMutation(
       requireAdmin(actor);
       const eventId = requireString(payload['eventId'], 'eventId');
       await db.collection(collections.eventCalendarSync).doc(eventId).set({
-        assemblyCalendarEventId: requireString(
-          payload['assemblyCalendarEventId'],
-          'assemblyCalendarEventId',
-        ),
-        mainCalendarEventId: requireString(payload['mainCalendarEventId'], 'mainCalendarEventId'),
+        assemblyCalendarEventId: optionalString(payload['assemblyCalendarEventId']) ?? '',
+        mainCalendarEventId: optionalString(payload['mainCalendarEventId']) ?? '',
         status: requireString(payload['status'], 'status'),
         syncedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -1225,8 +2298,13 @@ async function executeMutation(
       requireAdmin(actor);
       const item = payload['item'] as Record<string, unknown>;
       const itemId = requireString(item['id'], 'item.id');
-      await db.collection(collections.checklistItems).doc(itemId).set(checklistItemDocFromJson(item));
-      await writeAuditLog(db, collections, actor, operation, 'checklistItem', itemId);
+      const nextItem = checklistItemDocFromJson(item);
+      await db.collection(collections.checklistItems).doc(itemId).set(nextItem);
+      await writeAuditLog(db, collections, actor, operation, 'checklistItem', itemId, {
+        name: item['name'],
+      }, {
+        after: nextItem,
+      });
       return {ok: true};
     }
 
@@ -1244,8 +2322,27 @@ async function executeMutation(
       }
 
       if (actor.isAdmin || isResponsible) {
-        await docRef.update(checklistItemDocFromJson(item));
+        const nextItem = checklistItemDocFromJson(item);
+        const semanticAction = getChecklistUpdateSemanticAction(existing, nextItem);
+        await docRef.update(nextItem);
+        await writeAuditLog(db, collections, actor, operation, 'checklistItem', itemId, stripUndefined({
+          name: item['name'] ?? existing['name'],
+          semanticAction,
+        }), {
+          before: existing,
+          after: nextItem,
+        });
       } else {
+        const nextItem = {
+          ...existing,
+          status: item['status'] ?? existing['status'] ?? false,
+          statusLastUpdatedAt: toTimestamp(
+            item['statusLastUpdatedAt'] ?? new Date().toISOString(),
+            'item.statusLastUpdatedAt',
+          ),
+          updatedAt: toTimestamp(item['updatedAt'] ?? new Date().toISOString(), 'item.updatedAt'),
+        };
+        const semanticAction = getChecklistUpdateSemanticAction(existing, nextItem);
         await docRef.update({
           status: item['status'] ?? existing['status'] ?? false,
           statusLastUpdatedAt: toTimestamp(
@@ -1254,17 +2351,32 @@ async function executeMutation(
           ),
           updatedAt: toTimestamp(item['updatedAt'] ?? new Date().toISOString(), 'item.updatedAt'),
         });
+        await writeAuditLog(db, collections, actor, operation, 'checklistItem', itemId, stripUndefined({
+          name: existing['name'],
+          semanticAction,
+        }), {
+          before: existing,
+          after: nextItem,
+        });
       }
-
-      await writeAuditLog(db, collections, actor, operation, 'checklistItem', itemId);
       return {ok: true};
     }
 
     case 'checklist.delete': {
       requireAdmin(actor);
       const itemId = requireString(payload['itemId'], 'itemId');
-      await db.collection(collections.checklistItems).doc(itemId).delete();
-      await writeAuditLog(db, collections, actor, operation, 'checklistItem', itemId);
+      const docRef = db.collection(collections.checklistItems).doc(itemId);
+      const existingDoc = await docRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Checklist item not found');
+      }
+      const existing = existingDoc.data() ?? {};
+      await docRef.delete();
+      await writeAuditLog(db, collections, actor, operation, 'checklistItem', itemId, {
+        name: existing['name'],
+      }, {
+        before: existing,
+      });
       return {ok: true};
     }
 
@@ -1307,6 +2419,13 @@ async function executeMutation(
         operation,
         'checklistNote',
         String(firestoreNote['id'] ?? checklistItemId),
+        {
+          checklistItemId,
+          checklistItemName: existing['name'],
+        },
+        {
+          after: firestoreNote,
+        },
       );
       return {ok: true};
     }
@@ -1315,8 +2434,13 @@ async function executeMutation(
       requireAdmin(actor);
       const preset = payload['preset'] as Record<string, unknown>;
       const presetId = requireString(preset['id'], 'preset.id');
-      await db.collection(collections.presets).doc(presetId).set(presetDocFromJson(preset));
-      await writeAuditLog(db, collections, actor, operation, 'preset', presetId);
+      const nextPreset = presetDocFromJson(preset);
+      await db.collection(collections.presets).doc(presetId).set(nextPreset);
+      await writeAuditLog(db, collections, actor, operation, 'preset', presetId, {
+        name: preset['name'],
+      }, {
+        after: nextPreset,
+      });
       return {ok: true};
     }
 
@@ -1324,16 +2448,38 @@ async function executeMutation(
       requireAdmin(actor);
       const preset = payload['preset'] as Record<string, unknown>;
       const presetId = requireString(preset['id'], 'preset.id');
-      await db.collection(collections.presets).doc(presetId).update(presetDocFromJson(preset));
-      await writeAuditLog(db, collections, actor, operation, 'preset', presetId);
+      const presetRef = db.collection(collections.presets).doc(presetId);
+      const existingDoc = await presetRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Preset not found');
+      }
+      const existing = existingDoc.data() ?? {};
+      const nextPreset = presetDocFromJson(preset);
+      await presetRef.update(nextPreset);
+      await writeAuditLog(db, collections, actor, operation, 'preset', presetId, {
+        name: preset['name'],
+      }, {
+        before: existing,
+        after: nextPreset,
+      });
       return {ok: true};
     }
 
     case 'preset.delete': {
       requireAdmin(actor);
       const presetId = requireString(payload['presetId'], 'presetId');
-      await db.collection(collections.presets).doc(presetId).delete();
-      await writeAuditLog(db, collections, actor, operation, 'preset', presetId);
+      const presetRef = db.collection(collections.presets).doc(presetId);
+      const existingDoc = await presetRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Preset not found');
+      }
+      const existing = existingDoc.data() ?? {};
+      await presetRef.delete();
+      await writeAuditLog(db, collections, actor, operation, 'preset', presetId, {
+        name: existing['name'],
+      }, {
+        before: existing,
+      });
       return {ok: true};
     }
 
@@ -1394,16 +2540,41 @@ async function executeMutation(
       requireAdmin(actor);
       const listsRef = db.collection('utilities').doc('Lists');
       const listsData = await getUtilitiesListsDoc();
+      const previousRoles = getRolesArray(listsData);
       let roles = getRolesArray(listsData);
+      let auditEntityId = actor.memberId;
+      let auditEntityType = 'role';
+      let auditDetails: Record<string, unknown> = {
+        count: roles.length,
+      };
+      let auditBefore: Record<string, unknown> | null = null;
+      let auditAfter: Record<string, unknown> | null = null;
 
       if (operation === 'role.insert') {
-        roles = [...roles, payload['role'] as Record<string, unknown>];
+        const role = payload['role'] as Record<string, unknown>;
+        const roleId = requireString(role['id'], 'role.id');
+        auditEntityId = roleId;
+        auditDetails = {
+          count: roles.length + 1,
+          name: role['hebrewName'],
+        };
+        auditAfter = role;
+        roles = [...roles, role];
       } else if (operation === 'role.update') {
         const role = payload['role'] as Record<string, unknown>;
         const roleId = requireString(role['id'], 'role.id');
+        auditEntityId = roleId;
+        auditBefore = roles.find((item) => item['id'] === roleId) ?? null;
+        auditAfter = role;
+        auditDetails = {
+          count: roles.length,
+          name: role['hebrewName'],
+        };
         roles = roles.map((item) => (item['id'] === roleId ? role : item));
       } else if (operation === 'role.archive' || operation === 'role.restore') {
         const roleId = requireString(payload['roleId'], 'roleId');
+        auditEntityId = roleId;
+        auditBefore = roles.find((item) => item['id'] === roleId) ?? null;
         roles = roles.map((item) => {
           if (item['id'] !== roleId) return item;
           return {
@@ -1413,25 +2584,48 @@ async function executeMutation(
             updatedAt: new Date().toISOString(),
           };
         });
+        auditAfter = roles.find((item) => item['id'] === roleId) ?? null;
+        auditDetails = {
+          count: roles.length,
+          name: auditAfter?.['hebrewName'] ?? auditBefore?.['hebrewName'],
+        };
       } else if (operation === 'role.delete') {
         const roleId = requireString(payload['roleId'], 'roleId');
+        auditEntityId = roleId;
+        auditBefore = roles.find((item) => item['id'] === roleId) ?? null;
+        auditDetails = {
+          count: Math.max(roles.length - 1, 0),
+          name: auditBefore?.['hebrewName'],
+        };
         roles = roles.filter((item) => item['id'] !== roleId);
       } else if (operation === 'role.reorder') {
         const sortOrderMap = payload['roleIdToSortOrder'] as Record<string, number>;
+        auditEntityType = 'roleBatch';
+        auditDetails = {
+          count: roles.length,
+        };
         roles = roles.map((item) => ({
           ...item,
           sortOrder: sortOrderMap[String(item['id'])] ?? item['sortOrder'],
           updatedAt: new Date().toISOString(),
         }));
+        auditBefore = {roles: previousRoles};
+        auditAfter = {roles};
       } else if (operation === 'role.seed') {
         if (roles.length > 0) return {ok: true};
         const seedRoles = Array.isArray(payload['roles']) ? payload['roles'] : [];
+        auditEntityType = 'roleBatch';
+        auditDetails = {
+          count: seedRoles.length,
+        };
+        auditAfter = {roles: seedRoles};
         roles = seedRoles as Array<Record<string, unknown>>;
       }
 
       await listsRef.set({Roles: roles}, {merge: true});
-      await writeAuditLog(db, collections, actor, operation, 'role', actor.memberId, {
-        count: roles.length,
+      await writeAuditLog(db, collections, actor, operation, auditEntityType, auditEntityId, auditDetails, {
+        before: auditBefore,
+        after: auditAfter,
       });
       return {ok: true};
     }
@@ -1445,16 +2639,43 @@ async function executeMutation(
       const listsRef = db.collection('utilities').doc('Lists');
       const listsData = await getUtilitiesListsDoc();
       let categories = getCategoriesArray(listsData);
+      let auditEntityId = actor.memberId;
+      let auditDetails: Record<string, unknown> = {
+        count: categories.length,
+      };
+      let auditBefore: Record<string, unknown> | null = null;
+      let auditAfter: Record<string, unknown> | null = null;
 
       if (operation === 'category.insert') {
-        categories = [...categories, payload['category'] as Record<string, unknown>];
+        const category = payload['category'] as Record<string, unknown>;
+        const categoryId = requireString(category['id'], 'category.id');
+        auditEntityId = categoryId;
+        auditDetails = {
+          count: categories.length + 1,
+          name: category['name'],
+        };
+        auditAfter = category;
+        categories = [...categories, category];
       } else if (operation === 'category.update') {
         const category = payload['category'] as Record<string, unknown>;
         const categoryId = requireString(category['id'], 'category.id');
+        auditEntityId = categoryId;
+        auditBefore = categories.find((item) => item['id'] === categoryId) ?? null;
+        auditAfter = category;
+        auditDetails = {
+          count: categories.length,
+          name: category['name'],
+        };
         categories = categories.map((item) => (item['id'] === categoryId ? category : item));
       } else {
         const categoryId = requireString(payload['categoryId'], 'categoryId');
+        auditEntityId = categoryId;
+        auditBefore = categories.find((item) => item['id'] === categoryId) ?? null;
         if (operation === 'category.permanentlyDelete') {
+          auditDetails = {
+            count: Math.max(categories.length - 1, 0),
+            name: auditBefore?.['name'],
+          };
           categories = categories.filter((item) => item['id'] !== categoryId);
         } else {
           categories = categories.map((item) => {
@@ -1465,12 +2686,18 @@ async function executeMutation(
               updatedAt: new Date().toISOString(),
             };
           });
+          auditAfter = categories.find((item) => item['id'] === categoryId) ?? null;
+          auditDetails = {
+            count: categories.length,
+            name: auditAfter?.['name'] ?? auditBefore?.['name'],
+          };
         }
       }
 
       await listsRef.set({Categories: categories}, {merge: true});
-      await writeAuditLog(db, collections, actor, operation, 'category', actor.memberId, {
-        count: categories.length,
+      await writeAuditLog(db, collections, actor, operation, 'category', auditEntityId, auditDetails, {
+        before: auditBefore,
+        after: auditAfter,
       });
       return {ok: true};
     }
@@ -1735,11 +2962,17 @@ app.post('/drive/export', async (request: Request, response: Response) => {
 
 app.post('/mutate', async (request: Request, response: Response) => {
   try {
-    const {actor, collections} = await authenticateRequest(request);
+    const {actor, environment, collections} = await authenticateRequest(request);
     const operation = requireString(request.body?.operation, 'operation');
     const payload =
       (request.body?.payload as Record<string, unknown> | undefined) ?? {};
-    const result = await executeMutation(actor, collections, operation, payload);
+    const result = await executeMutation(
+      actor,
+      environment,
+      collections,
+      operation,
+      payload,
+    );
     response.json(result);
   } catch (error) {
     handleError(response, error);

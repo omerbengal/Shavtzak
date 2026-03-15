@@ -962,6 +962,9 @@ async function patchCalendarEvent(
   environment: CalendarEnvironmentMode,
   calendarEventId: string,
   eventPayload: Record<string, unknown>,
+  options: {
+    sendUpdates?: 'all' | 'none';
+  } = {},
 ): Promise<void> {
   await calendarApiRequest(
     firestore,
@@ -971,7 +974,7 @@ async function patchCalendarEvent(
       method: 'PATCH',
       query: {
         conferenceDataVersion: 1,
-        sendUpdates: 'none',
+        sendUpdates: options.sendUpdates ?? 'none',
       },
       body: eventPayload,
     },
@@ -1183,6 +1186,8 @@ async function addAttendeeToEvent(
         ...currentAttendees,
         {email},
       ],
+    }, {
+      sendUpdates: 'all',
     });
   } catch (error) {
     if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {
@@ -1210,6 +1215,8 @@ async function removeAttendeeFromEvent(
 
     await patchCalendarEvent(firestore, environment, calendarEventId, {
       attendees: nextAttendees.length > 0 ? nextAttendees : null,
+    }, {
+      sendUpdates: 'all',
     });
   } catch (error) {
     if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {
@@ -1228,6 +1235,8 @@ async function updateEventAttendees(
   try {
     await patchCalendarEvent(firestore, environment, calendarEventId, {
       attendees: emails.length > 0 ? emails.map((email) => ({email})) : null,
+    }, {
+      sendUpdates: 'all',
     });
   } catch (error) {
     if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {

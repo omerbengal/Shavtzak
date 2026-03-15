@@ -729,6 +729,19 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
         continue;
       }
 
+      final expandableItems =
+          _buildExpandableDetailItems(entry.key, entry.value);
+      if (expandableItems != null) {
+        rows.add(
+          _LogDetailRowViewModel(
+            label: _getFieldLabel(entry.key),
+            value: _FormattedValue(text: '${expandableItems.length} פריטים'),
+            expandableItems: expandableItems,
+          ),
+        );
+        continue;
+      }
+
       final nestedMap = _asStringMap(entry.value);
       if (nestedMap != null && nestedMap.isNotEmpty) {
         for (final nestedEntry in nestedMap.entries) {
@@ -752,6 +765,111 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
     }
 
     return rows;
+  }
+
+  List<_LogExpandableListItem>? _buildExpandableDetailItems(
+    String fieldKey,
+    dynamic value,
+  ) {
+    if (value is! List) {
+      return null;
+    }
+
+    switch (fieldKey) {
+      case 'deletedAssignments':
+        final items = value
+            .asMap()
+            .entries
+            .map((entry) => _buildDeletedAssignmentItem(entry.value, entry.key))
+            .whereType<_LogExpandableListItem>()
+            .toList();
+        return items.isEmpty ? null : items;
+      case 'deletedChecklistItems':
+        final items = value
+            .asMap()
+            .entries
+            .map((entry) => _buildDeletedChecklistItem(entry.value, entry.key))
+            .whereType<_LogExpandableListItem>()
+            .toList();
+        return items.isEmpty ? null : items;
+      default:
+        return null;
+    }
+  }
+
+  _LogExpandableListItem? _buildDeletedAssignmentItem(
+    dynamic rawItem,
+    int index,
+  ) {
+    final item = _asStringMap(rawItem);
+    if (item == null) {
+      return null;
+    }
+
+    final teamMemberName = _readTrimmedString(item['teamMemberName']) ??
+        _resolveReferenceName(
+          'teamMemberId',
+          _readTrimmedString(item['teamMemberId']) ?? '',
+        ) ??
+        'חבר צוות לא ידוע';
+    final roleType = _readTrimmedString(item['roleType']);
+    final id = _readTrimmedString(item['id']);
+    final statusValue = item['status'];
+    final formattedStatus =
+        statusValue == null ? null : _formatValue('status', statusValue);
+
+    final titleParts = <String>[
+      teamMemberName,
+      if (roleType != null) _formatRoleType(roleType),
+    ];
+    final subtitleParts = <String>[
+      if (formattedStatus != null && formattedStatus.hasValue)
+        formattedStatus.text,
+      if (id != null) _shortId(id),
+    ];
+
+    return _LogExpandableListItem(
+      title: titleParts.join(' | '),
+      subtitle: subtitleParts.isEmpty ? null : subtitleParts.join(' • '),
+      icon: Icons.assignment_ind_outlined,
+      color: Colors.red.shade700,
+    );
+  }
+
+  _LogExpandableListItem? _buildDeletedChecklistItem(
+    dynamic rawItem,
+    int index,
+  ) {
+    final item = _asStringMap(rawItem);
+    if (item == null) {
+      return null;
+    }
+
+    final name =
+        _readTrimmedString(item['name']) ?? 'פריט צ\'קליסט ${index + 1}';
+    final responsibleName = _readTrimmedString(item['responsibleName']) ??
+        _resolveReferenceName(
+          'responsibleId',
+          _readTrimmedString(item['responsibleId']) ?? '',
+        );
+    final id = _readTrimmedString(item['id']);
+    final statusValue = item['status'];
+    final formattedStatus =
+        statusValue == null ? null : _formatValue('status', statusValue);
+
+    final subtitleParts = <String>[
+      if (responsibleName != null) 'אחראי: $responsibleName',
+      if (formattedStatus != null && formattedStatus.hasValue)
+        'סטטוס: ${formattedStatus.text}',
+      if (id != null) _shortId(id),
+    ];
+
+    return _LogExpandableListItem(
+      title: name,
+      subtitle: subtitleParts.isEmpty ? null : subtitleParts.join(' • '),
+      icon: Icons.checklist_outlined,
+      color: Colors.red.shade700,
+    );
   }
 
   Map<String, dynamic> _buildRawJsonData() {
@@ -1104,7 +1222,9 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
         _resolveReferenceName(
           'eventId',
           _readTrimmedString(
-                details?['eventId'] ?? oldValue?['eventId'] ?? newValue?['eventId'],
+                details?['eventId'] ??
+                    oldValue?['eventId'] ??
+                    newValue?['eventId'],
               ) ??
               '',
         );
@@ -1309,11 +1429,13 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
       'updatedAt': 'עודכן בתאריך',
       'statusLastUpdatedAt': 'עודכן סטטוס בתאריך',
       'deletedChecklistItems': 'פריטי צ\'קליסט שנמחקו',
+      'deletedAssignments': 'שיבוצים שנמחקו',
       'title': 'כותרת',
       'description': 'תיאור',
       'type': 'סוג',
       'order': 'סדר',
       'sortOrder': 'סדר תצוגה',
+      'responsibleName': 'אחראי',
       'source': 'מקור',
       'operation': 'פעולה טכנית',
       'environment': 'סביבה',
@@ -1349,6 +1471,18 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
           text: 'ממתין',
           icon: Icons.schedule_outlined,
           color: Colors.orange.shade800,
+        );
+      case 'confirmed':
+        return _FormattedValue(
+          text: 'מאושר',
+          icon: Icons.check_circle_outline,
+          color: Colors.green.shade700,
+        );
+      case 'declined':
+        return _FormattedValue(
+          text: 'סירב',
+          icon: Icons.cancel_outlined,
+          color: Colors.red.shade700,
         );
       default:
         return _FormattedValue(text: status);
@@ -1413,7 +1547,8 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
 
   String? _getBatchScopeDisplay(String? entityType) {
     final normalizedEntityType = (entityType ?? '').trim().toLowerCase();
-    final operation = _readTrimmedString(widget.data['operation'])?.toLowerCase();
+    final operation =
+        _readTrimmedString(widget.data['operation'])?.toLowerCase();
     final entityId = _readTrimmedString(widget.data['entityId']);
     if (operation == null || entityId == null) {
       return null;
@@ -2022,7 +2157,7 @@ class _DiffValueBox extends StatelessWidget {
 
 enum _ValueTone { old, newValue }
 
-class _LogDetailRow extends StatelessWidget {
+class _LogDetailRow extends StatefulWidget {
   final _LogDetailRowViewModel row;
 
   const _LogDetailRow({
@@ -2030,9 +2165,99 @@ class _LogDetailRow extends StatelessWidget {
   });
 
   @override
+  State<_LogDetailRow> createState() => _LogDetailRowState();
+}
+
+class _LogDetailRowState extends State<_LogDetailRow> {
+  bool _isExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final row = widget.row;
     final textColor = row.value.color ??
         (row.value.isPlaceholder ? Colors.grey.shade600 : Colors.grey.shade900);
+
+    if (row.expandableItems.isNotEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () {
+              setState(() {
+                _isExpanded = !_isExpanded;
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 132,
+                    child: Text(
+                      row.label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            row.value.text,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: textColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          _isExpanded ? Icons.expand_less : Icons.expand_more,
+                          size: 18,
+                          color: Colors.grey.shade600,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 180),
+            crossFadeState: _isExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            firstChild: const SizedBox.shrink(),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Column(
+                children: [
+                  for (int index = 0;
+                      index < row.expandableItems.length;
+                      index++)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        bottom: index == row.expandableItems.length - 1 ? 0 : 8,
+                      ),
+                      child: _LogExpandableListItemView(
+                        item: row.expandableItems[index],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2074,6 +2299,62 @@ class _LogDetailRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _LogExpandableListItemView extends StatelessWidget {
+  final _LogExpandableListItem item;
+
+  const _LogExpandableListItemView({
+    required this.item,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: item.color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: item.color.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(item.icon, size: 18, color: item.color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade900,
+                  ),
+                ),
+                if (item.subtitle != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    item.subtitle!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade700,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2145,10 +2426,26 @@ class _LogDiffRowViewModel {
 class _LogDetailRowViewModel {
   final String label;
   final _FormattedValue value;
+  final List<_LogExpandableListItem> expandableItems;
 
   const _LogDetailRowViewModel({
     required this.label,
     required this.value,
+    this.expandableItems = const [],
+  });
+}
+
+class _LogExpandableListItem {
+  final String title;
+  final String? subtitle;
+  final IconData icon;
+  final Color color;
+
+  const _LogExpandableListItem({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
   });
 }
 

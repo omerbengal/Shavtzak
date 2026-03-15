@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/role_types.dart';
@@ -244,6 +243,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
 
       await _repository.createAssignment(event.assignment);
+      _syncAttendeesForAffectedEvents(nextAssignment: event.assignment);
       emit(const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
 
       // Check if we need to reload based on view type
@@ -286,6 +286,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentOperating('updating'));
 
     try {
+      final previousAssignment =
+          await _repository.getAssignmentById(event.assignment.id);
+
       // Check for conflicts before updating
       final conflicts = await _repository.checkConflicts(event.assignment);
 
@@ -296,6 +299,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
 
       await _repository.updateAssignment(event.assignment);
+      _syncAttendeesForAffectedEvents(
+        previousAssignment: previousAssignment,
+        nextAssignment: event.assignment,
+      );
       emit(const AssignmentOperationSuccess('השיבוץ עודכן בהצלחה'));
 
       // Check if we need to reload based on view type
@@ -344,10 +351,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _repository.deleteAssignment(event.id);
 
       // Sync attendees for calendar event (will remove the deleted attendee)
-      if (assignmentToDelete != null) {
-        _calendarSyncBloc?.add(
-            SyncAttendeesForAppEvent(eventId: assignmentToDelete.eventId));
-      }
+      _syncAttendeesForAffectedEvents(previousAssignment: assignmentToDelete);
 
       emit(const AssignmentOperationSuccess('השיבוץ נמחק בהצלחה'));
 
@@ -1010,16 +1014,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         await _repository.createAssignment(event.assignment);
       }
 
-      // Add attendee to calendar event if team member has email
-      final teamMember = event.assignment.teamMember;
-      if (teamMember != null &&
-          teamMember.email != null &&
-          teamMember.email!.isNotEmpty) {
-        _calendarSyncBloc?.add(AddAttendeeToAppEvent(
-          eventId: event.assignment.eventId,
-          email: teamMember.email!,
-        ));
-      }
+      _syncAttendeesForAffectedEvents(nextAssignment: event.assignment);
 
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
@@ -1081,7 +1076,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     // Execute database operation
     try {
+      final previousAssignment =
+          await _repository.getAssignmentById(event.assignment.id);
+
       await _repository.updateAssignment(event.assignment);
+      _syncAttendeesForAffectedEvents(
+        previousAssignment: previousAssignment,
+        nextAssignment: event.assignment,
+      );
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
       emit(AssignmentSlotsLoaded(
@@ -1150,10 +1152,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _repository.clearCache();
 
       // Sync calendar attendees (will remove the deleted attendee)
-      if (assignmentToDelete != null) {
-        _calendarSyncBloc?.add(
-            SyncAttendeesForAppEvent(eventId: assignmentToDelete.eventId));
-      }
+      _syncAttendeesForAffectedEvents(previousAssignment: assignmentToDelete);
 
       // CRITICAL FIX: Remove pending operation after successful delete
       _pendingOperations.remove(event.slotKey);
@@ -1172,6 +1171,28 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: currentState.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
+    }
+  }
+
+  /// Re-sync the full attendee list for every calendar event touched by an
+  /// assignment change. This keeps Google Calendar aligned for create, update,
+  /// reassignment, and delete flows.
+  void _syncAttendeesForAffectedEvents({
+    Assignment? previousAssignment,
+    Assignment? nextAssignment,
+  }) {
+    final calendarSyncBloc = _calendarSyncBloc;
+    if (calendarSyncBloc == null) {
+      return;
+    }
+
+    final affectedEventIds = <String>{
+      if (previousAssignment != null) previousAssignment.eventId,
+      if (nextAssignment != null) nextAssignment.eventId,
+    };
+
+    for (final eventId in affectedEventIds) {
+      calendarSyncBloc.add(SyncAttendeesForAppEvent(eventId: eventId));
     }
   }
 
@@ -1707,16 +1728,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Skip conflict checks for bypass assignments
       await _repository.createAssignmentWithBypass(event.assignment);
 
-      // Add attendee to calendar event if team member has email
-      final teamMember = event.assignment.teamMember;
-      if (teamMember != null &&
-          teamMember.email != null &&
-          teamMember.email!.isNotEmpty) {
-        _calendarSyncBloc?.add(AddAttendeeToAppEvent(
-          eventId: event.assignment.eventId,
-          email: teamMember.email!,
-        ));
-      }
+      _syncAttendeesForAffectedEvents(nextAssignment: event.assignment);
 
       emit(const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
 
