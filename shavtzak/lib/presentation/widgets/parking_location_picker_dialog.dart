@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../domain/entities/team_member.dart';
 import '../bloc/team/team_bloc.dart';
 import '../bloc/team/team_state.dart';
 import 'map_location_picker.dart';
@@ -40,10 +41,12 @@ class ParkingLocationPickerDialog extends StatefulWidget {
   }
 
   @override
-  State<ParkingLocationPickerDialog> createState() => _ParkingLocationPickerDialogState();
+  State<ParkingLocationPickerDialog> createState() =>
+      _ParkingLocationPickerDialogState();
 }
 
-class _ParkingLocationPickerDialogState extends State<ParkingLocationPickerDialog> {
+class _ParkingLocationPickerDialogState
+    extends State<ParkingLocationPickerDialog> {
   String? _selectedParkingLocation;
 
   @override
@@ -58,9 +61,12 @@ class _ParkingLocationPickerDialogState extends State<ParkingLocationPickerDialo
     double? initialLng;
     String? initialName;
 
-    if (_selectedParkingLocation != null && _selectedParkingLocation!.isNotEmpty) {
-      final strippedName = MapLocationResult.stripCoordinates(_selectedParkingLocation!);
-      final (lat, lng) = MapLocationResult.parseCoordinates(_selectedParkingLocation!);
+    if (_selectedParkingLocation != null &&
+        _selectedParkingLocation!.isNotEmpty) {
+      final strippedName =
+          MapLocationResult.stripCoordinates(_selectedParkingLocation!);
+      final (lat, lng) =
+          MapLocationResult.parseCoordinates(_selectedParkingLocation!);
       initialLat = lat;
       initialLng = lng;
       initialName = strippedName;
@@ -113,7 +119,8 @@ class _ParkingLocationPickerDialogState extends State<ParkingLocationPickerDialo
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Current parking location display
-              if (_selectedParkingLocation != null && _selectedParkingLocation!.isNotEmpty)
+              if (_selectedParkingLocation != null &&
+                  _selectedParkingLocation!.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -127,7 +134,8 @@ class _ParkingLocationPickerDialogState extends State<ParkingLocationPickerDialo
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          MapLocationResult.stripCoordinates(_selectedParkingLocation!),
+                          MapLocationResult.stripCoordinates(
+                              _selectedParkingLocation!),
                           style: const TextStyle(fontWeight: FontWeight.w500),
                         ),
                       ),
@@ -135,7 +143,8 @@ class _ParkingLocationPickerDialogState extends State<ParkingLocationPickerDialo
                   ),
                 ),
 
-              if (_selectedParkingLocation != null && _selectedParkingLocation!.isNotEmpty)
+              if (_selectedParkingLocation != null &&
+                  _selectedParkingLocation!.isNotEmpty)
                 const SizedBox(height: 16),
 
               // Map picker button
@@ -155,7 +164,8 @@ class _ParkingLocationPickerDialogState extends State<ParkingLocationPickerDialo
               ),
 
               // Clear button (show if there's currently a selected parking location)
-              if (_selectedParkingLocation != null && _selectedParkingLocation!.isNotEmpty) ...[
+              if (_selectedParkingLocation != null &&
+                  _selectedParkingLocation!.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 TextButton.icon(
                   onPressed: _clear,
@@ -217,10 +227,30 @@ class _ParkingEditorsDialogState extends State<ParkingEditorsDialog> {
   final _editorSearchController = TextEditingController();
   late final FocusNode _editorSearchFocusNode;
 
+  Widget _buildMemberChipLabel(TeamMember member) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(member.name),
+        ),
+        if (member.isPermanent) ...[
+          const SizedBox(width: 4),
+          Icon(
+            Icons.verified_user,
+            size: 14,
+            color: Colors.blue.shade700,
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
-    _editorSearchFocusNode = createRtlCursorFixedFocusNode(_editorSearchController);
+    _editorSearchFocusNode =
+        createRtlCursorFixedFocusNode(_editorSearchController);
     _selectedEditorIds.addAll(widget.initialEditorIds);
   }
 
@@ -246,7 +276,8 @@ class _ParkingEditorsDialogState extends State<ParkingEditorsDialog> {
           child: BlocBuilder<TeamBloc, TeamState>(
             builder: (context, state) {
               if (state is TeamLoaded) {
-                final teamMembers = state.members.where((m) => m.isActive).toList();
+                final teamMembers =
+                    state.members.where((m) => m.isActive).toList();
 
                 return Column(
                   mainAxisSize: MainAxisSize.min,
@@ -262,7 +293,8 @@ class _ParkingEditorsDialogState extends State<ParkingEditorsDialog> {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                          Icon(Icons.info_outline,
+                              color: Colors.blue.shade700, size: 20),
                           const SizedBox(width: 8),
                           const Expanded(
                             child: Text(
@@ -284,7 +316,8 @@ class _ParkingEditorsDialogState extends State<ParkingEditorsDialog> {
                         labelText: 'חיפוש חבר צוות...',
                         prefixIcon: Icon(Icons.search),
                         border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       ),
                       onChanged: (_) => setState(() {}),
                     ),
@@ -314,14 +347,15 @@ class _ParkingEditorsDialogState extends State<ParkingEditorsDialog> {
                           children: teamMembers.where((member) {
                             if (_editorSearchController.text.isNotEmpty) {
                               return member.name.toLowerCase().contains(
-                                _editorSearchController.text.toLowerCase(),
-                              );
+                                    _editorSearchController.text.toLowerCase(),
+                                  );
                             }
                             return true;
                           }).map((member) {
-                            final isSelected = _selectedEditorIds.contains(member.id);
+                            final isSelected =
+                                _selectedEditorIds.contains(member.id);
                             return FilterChip(
-                              label: Text(member.name),
+                              label: _buildMemberChipLabel(member),
                               selected: isSelected,
                               onSelected: (selected) {
                                 setState(() {

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/role_types.dart';
+import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/event_sorting.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/event_repository.dart';
@@ -88,10 +90,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     try {
       // Stop slot-mode subscriptions to prevent mixed AssignmentSlotsLoaded
       // updates while in "all assignments" mode.
-      await _assignmentSubscription?.cancel();
-      await _teamMemberSubscription?.cancel();
-      await _eventSubscription?.cancel();
-      await _roleSubscription?.cancel();
+      await _cancelSlotsSubscriptions();
+      await _cancelUserAssignmentsSubscriptions();
 
       // Use emit.forEach to subscribe to real-time stream
       await emit.forEach<List<Assignment>>(
@@ -123,6 +123,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentLoading());
 
     try {
+      await _cancelSlotsSubscriptions();
+      await _cancelUserAssignmentsSubscriptions();
+
       await emit.forEach<List<Assignment>>(
         _repository.watchAssignmentsByEvent(event.eventId),
         onData: (assignments) {
@@ -153,6 +156,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentLoading());
 
     try {
+      await _cancelSlotsSubscriptions();
+      await _cancelUserAssignmentsSubscriptions();
+
       await emit.forEach<List<Assignment>>(
         _repository.watchAssignmentsByPerson(event.teamMemberId),
         onData: (assignments) {
@@ -183,6 +189,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentLoading());
 
     try {
+      await _cancelSlotsSubscriptions();
+      await _cancelUserAssignmentsSubscriptions();
+
       final assignments = await _repository.getAssignmentsByDateRange(
         event.start,
         event.end,
@@ -209,6 +218,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentLoading());
 
     try {
+      await _cancelSlotsSubscriptions();
+      await _cancelUserAssignmentsSubscriptions();
+
       final assignment = await _repository.getAssignmentById(event.id);
 
       if (assignment == null) {
@@ -238,6 +250,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       if (conflicts.isNotEmpty) {
         // Emit conflict warning but don't fail
         emit(AssignmentConflictWarning(conflicts, event.assignment));
+        _completeActionFailure(event.completion, conflicts.join(', '));
         // Note: Real-time stream will automatically update UI, no manual reload needed
         return;
       }
@@ -245,6 +258,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _repository.createAssignment(event.assignment);
       _syncAttendeesForAffectedEvents(nextAssignment: event.assignment);
       emit(const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
+      _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
 
       // Check if we need to reload based on view type
       // For slots view: Real-time stream handles updates automatically
@@ -261,7 +275,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         } else {
           add(const LoadAssignments());
         }
-      } else if (previousState is! AssignmentSlotsLoaded) {
+      } else if (previousState is AssignmentSlotsLoaded) {
+        add(RebuildAssignmentSlots(
+          preservedFilter: previousState.selectedEventIds,
+        ));
+      } else {
         // Only reload if not in slots view (real-time stream handles slots view)
         add(const LoadAssignments());
       }
@@ -269,8 +287,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     } catch (e) {
       if (e is AssignmentConflictException) {
         emit(AssignmentConflictWarning(e.conflicts, event.assignment));
+        _completeActionFailure(event.completion, e.conflicts.join(', '));
       } else {
-        emit(AssignmentError('שגיאה בהוספת שיבוץ: $e'));
+        final message = 'שגיאה בהוספת שיבוץ: $e';
+        emit(AssignmentError(message));
+        _completeActionFailure(event.completion, message);
       }
     }
   }
@@ -289,21 +310,28 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final previousAssignment =
           await _repository.getAssignmentById(event.assignment.id);
 
-      // Check for conflicts before updating
-      final conflicts = await _repository.checkConflicts(event.assignment);
+      if (!event.bypassAvailability) {
+        final conflicts = await _repository.checkConflicts(event.assignment);
 
-      if (conflicts.isNotEmpty) {
-        emit(AssignmentConflictWarning(conflicts, event.assignment));
-        // Note: Real-time stream will automatically update UI, no manual reload needed
-        return;
+        if (conflicts.isNotEmpty) {
+          emit(AssignmentConflictWarning(conflicts, event.assignment));
+          _completeActionFailure(event.completion, conflicts.join(', '));
+          // Note: Real-time stream will automatically update UI, no manual reload needed
+          return;
+        }
       }
 
-      await _repository.updateAssignment(event.assignment);
+      if (event.bypassAvailability) {
+        await _repository.updateAssignmentWithBypass(event.assignment);
+      } else {
+        await _repository.updateAssignment(event.assignment);
+      }
       _syncAttendeesForAffectedEvents(
         previousAssignment: previousAssignment,
         nextAssignment: event.assignment,
       );
       emit(const AssignmentOperationSuccess('השיבוץ עודכן בהצלחה'));
+      _completeActionSuccess(event.completion, 'השיבוץ עודכן בהצלחה');
 
       // Check if we need to reload based on view type
       // For slots view: Real-time stream handles updates automatically
@@ -320,7 +348,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         } else {
           add(const LoadAssignments());
         }
-      } else if (previousState is! AssignmentSlotsLoaded) {
+      } else if (previousState is AssignmentSlotsLoaded) {
+        add(RebuildAssignmentSlots(
+          preservedFilter: previousState.selectedEventIds,
+        ));
+      } else {
         // Only reload if not in slots view (real-time stream handles slots view)
         add(const LoadAssignments());
       }
@@ -328,8 +360,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     } catch (e) {
       if (e is AssignmentConflictException) {
         emit(AssignmentConflictWarning(e.conflicts, event.assignment));
+        _completeActionFailure(event.completion, e.conflicts.join(', '));
       } else {
-        emit(AssignmentError('שגיאה בעדכון שיבוץ: $e'));
+        final message = 'שגיאה בעדכון שיבוץ: $e';
+        emit(AssignmentError(message));
+        _completeActionFailure(event.completion, message);
       }
     }
   }
@@ -354,6 +389,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _syncAttendeesForAffectedEvents(previousAssignment: assignmentToDelete);
 
       emit(const AssignmentOperationSuccess('השיבוץ נמחק בהצלחה'));
+      _completeActionSuccess(event.completion, 'השיבוץ נמחק בהצלחה');
 
       // Check if we need to reload based on view type
       // For slots view: Real-time stream handles updates automatically
@@ -370,13 +406,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         } else {
           add(const LoadAssignments());
         }
-      } else if (previousState is! AssignmentSlotsLoaded) {
+      } else if (previousState is AssignmentSlotsLoaded) {
+        add(RebuildAssignmentSlots(
+          preservedFilter: previousState.selectedEventIds,
+        ));
+      } else {
         // Only reload if not in slots view (real-time stream handles slots view)
         add(const LoadAssignments());
       }
       // If previousState is AssignmentSlotsLoaded, do nothing - real-time stream will handle it
     } catch (e) {
-      emit(AssignmentError('שגיאה במחיקת שיבוץ: $e'));
+      final message = 'שגיאה במחיקת שיבוץ: $e';
+      emit(AssignmentError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -435,6 +477,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentLoading());
 
     try {
+      await _cancelSlotsSubscriptions();
+      await _cancelUserAssignmentsSubscriptions();
+
       final assignments = await _repository.getAssignmentsWithConflicts();
 
       if (assignments.isEmpty) {
@@ -455,6 +500,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentLoading());
 
     try {
+      await _cancelSlotsSubscriptions();
+      await _cancelUserAssignmentsSubscriptions();
+
       final stats = await _repository.getEventAssignmentStats(event.eventId);
       emit(EventAssignmentStatsLoaded(event.eventId, stats));
     } catch (e) {
@@ -501,10 +549,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     try {
       // Cancel any existing subscriptions
-      await _assignmentSubscription?.cancel();
-      await _teamMemberSubscription?.cancel();
-      await _eventSubscription?.cancel();
-      await _roleSubscription?.cancel();
+      await _cancelSlotsSubscriptions();
+      await _cancelUserAssignmentsSubscriptions();
 
       // OPTIMIZATION: Use time window instead of loading all events/assignments
       // This reduces initial load from 5000+ assignments to ~500 (90% reduction)
@@ -641,13 +687,77 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
   @override
   Future<void> close() async {
-    await _assignmentSubscription?.cancel();
-    await _teamMemberSubscription?.cancel();
-    await _eventSubscription?.cancel();
-    await _roleSubscription?.cancel();
-    await _userAssignmentSubscription?.cancel();
-    await _userEventSubscription?.cancel();
+    await _cancelSlotsSubscriptions();
+    await _cancelUserAssignmentsSubscriptions();
     return super.close();
+  }
+
+  Future<void> _cancelSlotsSubscriptions() async {
+    await _assignmentSubscription?.cancel();
+    _assignmentSubscription = null;
+    await _teamMemberSubscription?.cancel();
+    _teamMemberSubscription = null;
+    await _eventSubscription?.cancel();
+    _eventSubscription = null;
+    await _roleSubscription?.cancel();
+    _roleSubscription = null;
+  }
+
+  Future<void> _cancelUserAssignmentsSubscriptions() async {
+    await _userAssignmentSubscription?.cancel();
+    _userAssignmentSubscription = null;
+    await _userEventSubscription?.cancel();
+    _userEventSubscription = null;
+  }
+
+  void _completeActionSuccess(
+    CrudActionCompleter? completion, [
+    String? message,
+  ]) {
+    completeCrudAction(completion, CrudActionResult.success(message));
+  }
+
+  void _completeActionFailure(
+    CrudActionCompleter? completion,
+    String message,
+  ) {
+    completeCrudAction(completion, CrudActionResult.failure(message));
+  }
+
+  int _compareAssignmentSlots(AssignmentSlot a, AssignmentSlot b) {
+    final eventCompare = compareEventsChronologically(a.event, b.event);
+    if (eventCompare != 0) {
+      return eventCompare;
+    }
+
+    final eventNameCompare = a.event.name.compareTo(b.event.name);
+    if (eventNameCompare != 0) {
+      return eventNameCompare;
+    }
+
+    final roleOrderCompare = a.role.sortOrder.compareTo(b.role.sortOrder);
+    if (roleOrderCompare != 0) {
+      return roleOrderCompare;
+    }
+
+    final roleKeyCompare = a.role.key.compareTo(b.role.key);
+    if (roleKeyCompare != 0) {
+      return roleKeyCompare;
+    }
+
+    final slotIndexCompare = a.slotIndex.compareTo(b.slotIndex);
+    if (slotIndexCompare != 0) {
+      return slotIndexCompare;
+    }
+
+    final memberNameCompare = (a.currentAssignment?.teamMemberName ?? '')
+        .compareTo(b.currentAssignment?.teamMemberName ?? '');
+    if (memberNameCompare != 0) {
+      return memberNameCompare;
+    }
+
+    return (a.currentAssignment?.id ?? '')
+        .compareTo(b.currentAssignment?.id ?? '');
   }
 
   /// Get slot key for AssignmentSlot
@@ -974,6 +1084,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     Emitter<AssignmentState> emit,
   ) async {
     if (state is! AssignmentSlotsLoaded) {
+      _completeActionFailure(
+        event.completion,
+        'לא ניתן לעדכן שיבוץ בזמן שהמסך עדיין נטען',
+      );
       return;
     }
 
@@ -1023,6 +1137,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: currentState.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
+      _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
       add(RebuildAssignmentSlots(
           preservedFilter: currentState.selectedEventIds));
     } catch (e) {
@@ -1033,6 +1148,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: currentState.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
+      final message = e is AssignmentConflictException
+          ? e.conflicts.join(', ')
+          : 'שגיאה בהוספת שיבוץ: $e';
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -1042,6 +1161,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     Emitter<AssignmentState> emit,
   ) async {
     if (state is! AssignmentSlotsLoaded) {
+      _completeActionFailure(
+        event.completion,
+        'לא ניתן לעדכן שיבוץ בזמן שהמסך עדיין נטען',
+      );
       return;
     }
 
@@ -1091,6 +1214,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: currentState.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
+      _completeActionSuccess(event.completion, 'השיבוץ עודכן בהצלחה');
       add(RebuildAssignmentSlots(
           preservedFilter: currentState.selectedEventIds));
     } catch (e) {
@@ -1101,6 +1225,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: currentState.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
+      final message = e is AssignmentConflictException
+          ? e.conflicts.join(', ')
+          : 'שגיאה בעדכון שיבוץ: $e';
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -1109,7 +1237,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     OptimisticDeleteAssignment event,
     Emitter<AssignmentState> emit,
   ) async {
-    if (state is! AssignmentSlotsLoaded) return;
+    if (state is! AssignmentSlotsLoaded) {
+      _completeActionFailure(
+        event.completion,
+        'לא ניתן למחוק שיבוץ בזמן שהמסך עדיין נטען',
+      );
+      return;
+    }
 
     final currentState = state as AssignmentSlotsLoaded;
 
@@ -1161,6 +1295,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: currentState.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
+      _completeActionSuccess(event.completion, 'השיבוץ נמחק בהצלחה');
       add(RebuildAssignmentSlots(
           preservedFilter: currentState.selectedEventIds));
     } catch (e) {
@@ -1171,6 +1306,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: currentState.selectedEventIds,
         pendingOperations: _pendingOperations,
       ));
+      _completeActionFailure(event.completion, 'שגיאה במחיקת שיבוץ: $e');
     }
   }
 
@@ -1399,17 +1535,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
     }
 
-    // 7. Sort slots by event date, then event name, then role sortOrder
-    slotsWithDoubleAssignmentDetection.sort((a, b) {
-      final dateCompare = a.event.startDate.compareTo(b.event.startDate);
-      if (dateCompare != 0) return dateCompare;
-
-      final nameCompare = a.event.name.compareTo(b.event.name);
-      if (nameCompare != 0) return nameCompare;
-
-      // Sort by role sortOrder (not enum order)
-      return a.role.sortOrder.compareTo(b.role.sortOrder);
-    });
+    // 7. Sort slots deterministically so same-role rows do not flip order.
+    slotsWithDoubleAssignmentDetection.sort(_compareAssignmentSlots);
 
     return AssignmentSlotsLoaded(
       slotsWithDoubleAssignmentDetection,
@@ -1675,17 +1802,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         }
       }
 
-      // Sort slots by event date, then event name, then role sortOrder
-      slotsWithDoubleAssignmentDetection.sort((a, b) {
-        final dateCompare = a.event.startDate.compareTo(b.event.startDate);
-        if (dateCompare != 0) return dateCompare;
-
-        final nameCompare = a.event.name.compareTo(b.event.name);
-        if (nameCompare != 0) return nameCompare;
-
-        // Sort by role sortOrder (not enum order)
-        return a.role.sortOrder.compareTo(b.role.sortOrder);
-      });
+      // Sort slots deterministically so same-role rows do not flip order.
+      slotsWithDoubleAssignmentDetection.sort(_compareAssignmentSlots);
 
       // Apply filter if needed
       final filteredSlots = rebuildEvent.selectedEventIds.isNotEmpty
@@ -1731,6 +1849,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _syncAttendeesForAffectedEvents(nextAssignment: event.assignment);
 
       emit(const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
+      _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
 
       // Check if we need to reload based on view type
       // For slots view: Real-time stream handles updates automatically
@@ -1747,16 +1866,23 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         } else {
           add(const LoadAssignments());
         }
-      } else if (previousState is! AssignmentSlotsLoaded) {
+      } else if (previousState is AssignmentSlotsLoaded) {
+        add(RebuildAssignmentSlots(
+          preservedFilter: previousState.selectedEventIds,
+        ));
+      } else {
         // Only reload if not in slots view (real-time stream handles slots view)
         add(const LoadAssignments());
       }
     } catch (e) {
       if (e is AssignmentConflictException) {
         emit(AssignmentConflictWarning(e.conflicts, event.assignment));
+        _completeActionFailure(event.completion, e.conflicts.join(', '));
         // Note: Real-time stream will automatically update UI, no manual reload needed
       } else {
-        emit(AssignmentError('שגיאה ביצירת שיבוץ: $e'));
+        final message = 'שגיאה ביצירת שיבוץ: $e';
+        emit(AssignmentError(message));
+        _completeActionFailure(event.completion, message);
       }
     }
   }
@@ -1770,9 +1896,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(const AssignmentLoading());
 
     try {
-      // Cancel any existing user assignment subscriptions
-      await _userAssignmentSubscription?.cancel();
-      await _userEventSubscription?.cancel();
+      // Cancel any competing subscriptions from other modes
+      await _cancelSlotsSubscriptions();
+      await _cancelUserAssignmentsSubscriptions();
 
       // Subscribe to assignments stream for this user
       _userAssignmentSubscription =
@@ -1839,6 +1965,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _repository.updateAssignmentNotes(event.id, event.notes,
           alternativePhoneNumber: event.alternativePhoneNumber);
       emit(const AssignmentOperationSuccess('הערות עודכנו בהצלחה'));
+      _completeActionSuccess(event.completion, 'הערות עודכנו בהצלחה');
 
       // Trigger rebuild based on current view type
       if (previousState is AssignmentSlotsLoaded) {
@@ -1861,7 +1988,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         add(const LoadAssignments());
       }
     } catch (e) {
-      emit(AssignmentError('שגיאה בעדכון הערות: $e'));
+      final message = 'שגיאה בעדכון הערות: $e';
+      emit(AssignmentError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 

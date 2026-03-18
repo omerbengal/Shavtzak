@@ -41,7 +41,6 @@ abstract class DatabaseInterface {
   /// Delete a team member
   Future<void> deleteTeamMember(String id);
 
-  
   // ========== Events ==========
 
   /// Get all events
@@ -71,7 +70,8 @@ abstract class DatabaseInterface {
 
   /// Check if an event with the same name and start date already exists
   /// If excludeEventId is provided, that event is excluded from the check (for updates)
-  Future<bool> isDuplicateEvent(String name, DateTime startDate, {String? excludeEventId});
+  Future<bool> isDuplicateEvent(String name, DateTime startDate,
+      {String? excludeEventId});
 
   /// Get events that need to be archived (endDate < today, not yet archived, has drive folder)
   Future<List<Event>> getEventsToArchive();
@@ -118,10 +118,16 @@ abstract class DatabaseInterface {
   );
 
   /// Insert a new assignment
-  Future<void> insertAssignment(Assignment assignment);
+  Future<void> insertAssignment(
+    Assignment assignment, {
+    bool bypassAvailability,
+  });
 
   /// Update an existing assignment
-  Future<void> updateAssignment(Assignment assignment);
+  Future<void> updateAssignment(
+    Assignment assignment, {
+    bool bypassAvailability,
+  });
 
   /// Delete an assignment
   Future<void> deleteAssignment(String id);
@@ -135,7 +141,6 @@ abstract class DatabaseInterface {
   /// Delete multiple assignments by their IDs in a single batch operation
   Future<void> deleteAssignmentsBatch(List<String> assignmentIds);
 
-  
   // ========== Batch Operations ==========
 
   /// Insert multiple team members at once (for data import)
@@ -247,7 +252,8 @@ abstract class DatabaseInterface {
   );
 
   /// Get all synced constraints for a team member
-  Future<List<Map<String, dynamic>>> getSyncedConstraintsForMember(String teamMemberId);
+  Future<List<Map<String, dynamic>>> getSyncedConstraintsForMember(
+      String teamMemberId);
 
   /// Legacy method retained for interface compatibility.
   /// Google Calendar config is now backend-only and should not be read by clients.
@@ -269,10 +275,12 @@ abstract class DatabaseInterface {
   Future<List<ChecklistItem>> getChecklistItemsByEvent(String eventId);
 
   /// Get checklist items for a specific team member (as responsible or CC'd)
-  Future<List<ChecklistItem>> getChecklistItemsForTeamMember(String teamMemberId);
+  Future<List<ChecklistItem>> getChecklistItemsForTeamMember(
+      String teamMemberId);
 
   /// Get checklist items where team member is responsible
-  Future<List<ChecklistItem>> getChecklistItemsWhereResponsible(String teamMemberId);
+  Future<List<ChecklistItem>> getChecklistItemsWhereResponsible(
+      String teamMemberId);
 
   /// Get checklist items where team member is CC'd
   Future<List<ChecklistItem>> getChecklistItemsWhereCc(String teamMemberId);
@@ -290,7 +298,8 @@ abstract class DatabaseInterface {
   Future<void> deleteChecklistItemsByEvent(String eventId);
 
   /// Add a note to a checklist item (atomic arrayUnion)
-  Future<void> addNoteToChecklistItem(String checklistItemId, Map<String, dynamic> noteData);
+  Future<void> addNoteToChecklistItem(
+      String checklistItemId, Map<String, dynamic> noteData);
 
   // ========== Checklist Presets ==========
 
@@ -310,7 +319,8 @@ abstract class DatabaseInterface {
   Future<void> deletePreset(String id);
 
   /// Load a preset into an event (creates checklist items from template)
-  Future<void> loadPresetIntoEvent(String presetId, String eventId, String creatorAdminId);
+  Future<void> loadPresetIntoEvent(
+      String presetId, String eventId, String creatorAdminId);
 
   // ========== Roles ==========
 

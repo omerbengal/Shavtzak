@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/utils/event_assignment_status.dart';
 import '../../../core/utils/filter_persistence.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/search_utils.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../domain/entities/event.dart';
@@ -22,7 +25,6 @@ import 'widgets/event_form_modal.dart';
 import 'widgets/event_drive_files_section.dart';
 import 'widgets/role_management_dialog.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
-import 'dart:async';
 
 // Filter enum for events (0=all, 1=future, 2=past)
 enum EventFilter { all, future, past }
@@ -637,29 +639,63 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   void _showDeleteConfirmation(Event event) {
+    bool isDeleting = false;
     showDialog(
       context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('מחיקת אירוע'),
-          content: Text(
-            'האם אתה בטוח שברצונך למחוק את ${event.name}?\nפעולה זו תמחק גם את כל השיבוצים.',
-          ),
-          actions: [
-            TextButton(
-              child: const Text('ביטול'),
-              onPressed: () => Navigator.pop(context),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: const Text('מחיקת אירוע'),
+              content: Text(
+                'האם אתה בטוח שברצונך למחוק את ${event.name}?\nפעולה זו תמחק גם את כל השיבוצים.',
+              ),
+              actions: [
+                TextButton(
+                  child: const Text('ביטול'),
+                  onPressed:
+                      isDeleting ? null : () => Navigator.pop(dialogContext),
+                ),
+                TextButton(
+                  child: isDeleting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text(
+                          'מחק',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                  onPressed: isDeleting
+                      ? null
+                      : () async {
+                          setDialogState(() {
+                            isDeleting = true;
+                          });
+                          final completion = Completer<CrudActionResult>();
+                          this
+                              .context
+                              .read<EventBloc>()
+                              .add(DeleteEvent(event.id, completion: completion));
+                          final result = await completion.future;
+                          if (!dialogContext.mounted) {
+                            return;
+                          }
+                          if (result.isFailure) {
+                            setDialogState(() {
+                              isDeleting = false;
+                            });
+                            return;
+                          }
+                          Navigator.pop(dialogContext);
+                        },
+                ),
+              ],
             ),
-            TextButton(
-              child: const Text('מחק', style: TextStyle(color: Colors.red)),
-              onPressed: () {
-                context.read<EventBloc>().add(DeleteEvent(event.id));
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

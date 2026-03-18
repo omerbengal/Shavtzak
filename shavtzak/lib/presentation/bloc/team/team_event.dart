@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
+import '../../../core/utils/crud_action_result.dart';
 
 /// Events for Team BLoC
 abstract class TeamEvent extends Equatable {
@@ -43,8 +44,9 @@ class LoadTeamMemberById extends TeamEvent {
 /// Create a new team member
 class CreateTeamMember extends TeamEvent {
   final TeamMember member;
+  final CrudActionCompleter? completion;
 
-  const CreateTeamMember(this.member);
+  const CreateTeamMember(this.member, {this.completion});
 
   @override
   List<Object?> get props => [member];
@@ -53,8 +55,9 @@ class CreateTeamMember extends TeamEvent {
 /// Update an existing team member
 class UpdateTeamMember extends TeamEvent {
   final TeamMember member;
+  final CrudActionCompleter? completion;
 
-  const UpdateTeamMember(this.member);
+  const UpdateTeamMember(this.member, {this.completion});
 
   @override
   List<Object?> get props => [member];
@@ -63,8 +66,9 @@ class UpdateTeamMember extends TeamEvent {
 /// Delete a team member
 class DeleteTeamMember extends TeamEvent {
   final String id;
+  final CrudActionCompleter? completion;
 
-  const DeleteTeamMember(this.id);
+  const DeleteTeamMember(this.id, {this.completion});
 
   @override
   List<Object?> get props => [id];
@@ -73,8 +77,9 @@ class DeleteTeamMember extends TeamEvent {
 /// Deactivate a team member (soft delete)
 class DeactivateTeamMember extends TeamEvent {
   final String id;
+  final CrudActionCompleter? completion;
 
-  const DeactivateTeamMember(this.id);
+  const DeactivateTeamMember(this.id, {this.completion});
 
   @override
   List<Object?> get props => [id];
@@ -83,8 +88,9 @@ class DeactivateTeamMember extends TeamEvent {
 /// Reactivate a team member
 class ReactivateTeamMember extends TeamEvent {
   final String id;
+  final CrudActionCompleter? completion;
 
-  const ReactivateTeamMember(this.id);
+  const ReactivateTeamMember(this.id, {this.completion});
 
   @override
   List<Object?> get props => [id];
@@ -125,6 +131,7 @@ class AddConstraintRequest extends TeamEvent {
   final RepeatType? repeatType; // null = one-time
   final int? repeatDay; // weekly weekday (1..7) / monthly day-of-month (1..31)
   final DateTime? repeatEndDate; // end date for recurring constraints
+  final CrudActionCompleter? completion;
 
   const AddConstraintRequest({
     required this.teamMemberId,
@@ -139,6 +146,7 @@ class AddConstraintRequest extends TeamEvent {
     this.repeatType,
     this.repeatDay,
     this.repeatEndDate,
+    this.completion,
   });
 
   @override
@@ -162,10 +170,12 @@ class AddConstraintRequest extends TeamEvent {
 class RemoveConstraintRequest extends TeamEvent {
   final String teamMemberId;
   final String constraintId;
+  final CrudActionCompleter? completion;
 
   const RemoveConstraintRequest({
     required this.teamMemberId,
     required this.constraintId,
+    this.completion,
   });
 
   @override
@@ -187,6 +197,7 @@ class EditConstraintRequest extends TeamEvent {
   final RepeatType? repeatType;
   final int? repeatDay;
   final DateTime? repeatEndDate;
+  final CrudActionCompleter? completion;
 
   const EditConstraintRequest({
     required this.teamMemberId,
@@ -202,6 +213,7 @@ class EditConstraintRequest extends TeamEvent {
     this.repeatType,
     this.repeatDay,
     this.repeatEndDate,
+    this.completion,
   });
 
   @override

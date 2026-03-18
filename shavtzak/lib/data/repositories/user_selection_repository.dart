@@ -113,7 +113,8 @@ class UserSelectionRepository {
   /// Check if there's a cached user selection or an active Firebase session.
   Future<bool> hasCachedUser() async {
     try {
-      return _firebaseAuth.currentUser != null || await _cacheService.hasCachedUser();
+      return _firebaseAuth.currentUser != null ||
+          await _cacheService.hasCachedUser();
     } catch (e) {
       throw UserSelectionException('Failed to check cached user: $e');
     }
@@ -124,7 +125,8 @@ class UserSelectionRepository {
     final now = DateTime.now();
 
     return members.map((member) {
-      final uniqueKey = member['uniqueKey'] as String? ?? member['id'] as String? ?? '';
+      final uniqueKey =
+          member['uniqueKey'] as String? ?? member['id'] as String? ?? '';
       return TeamMember(
         id: member['id'] as String? ?? uniqueKey,
         name: member['name'] as String? ?? '',
@@ -179,8 +181,11 @@ class UserSelectionRepository {
       if (sessionUniqueKey == null || sessionUniqueKey != uniqueKey) {
         return false;
       }
-      final teamMember = await _database.getTeamMemberById(_firebaseAuth.currentUser!.uid);
-      return teamMember != null && teamMember.isActive && !teamMember.isArchived;
+      final teamMember =
+          await _database.getTeamMemberById(_firebaseAuth.currentUser!.uid);
+      return teamMember != null &&
+          teamMember.isActive &&
+          !teamMember.isArchived;
     } catch (e) {
       return false;
     }
@@ -213,7 +218,8 @@ class UserSelectionRepository {
     try {
       final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
       if (teamMember == null) {
-        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+        throw UserSelectionException(
+            'Team member not found with unique key: $uniqueKey');
       }
 
       await _backendApiService.mutate(
@@ -238,7 +244,8 @@ class UserSelectionRepository {
     try {
       final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
       if (teamMember == null) {
-        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+        throw UserSelectionException(
+            'Team member not found with unique key: $uniqueKey');
       }
 
       await _backendApiService.mutate(
@@ -250,6 +257,39 @@ class UserSelectionRepository {
     } catch (e) {
       if (e is UserSelectionException) rethrow;
       throw UserSelectionException('Failed to clear passcode: $e');
+    }
+  }
+
+  /// Reveal the current passcode for a team member.
+  /// Existing hash-only passcodes may not be recoverable until they are reset.
+  Future<String> getTeamMemberPasscode(String uniqueKey) async {
+    try {
+      final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
+      if (teamMember == null) {
+        throw UserSelectionException(
+          'Team member not found with unique key: $uniqueKey',
+        );
+      }
+
+      final response = await _backendApiService.mutate(
+        'teamMember.getPasscode',
+        payload: {
+          'memberId': teamMember.id,
+        },
+      );
+
+      final passcode = response['passcode'] as String?;
+      if (passcode == null || passcode.isEmpty) {
+        throw UserSelectionException('לא ניתן להציג את קוד הגישה הקיים');
+      }
+
+      return passcode;
+    } catch (e) {
+      if (e is UserSelectionException) rethrow;
+      if (e is BackendApiException) {
+        throw UserSelectionException(e.message);
+      }
+      throw UserSelectionException('Failed to get team member passcode: $e');
     }
   }
 
@@ -274,11 +314,13 @@ class UserSelectionRepository {
   }
 
   /// Update phone number for a team member
-  Future<void> updateTeamMemberPhoneNumber(String uniqueKey, String? phoneNumber) async {
+  Future<void> updateTeamMemberPhoneNumber(
+      String uniqueKey, String? phoneNumber) async {
     try {
       final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
       if (teamMember == null) {
-        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+        throw UserSelectionException(
+            'Team member not found with unique key: $uniqueKey');
       }
 
       final updatedMember = teamMember.copyWith(
@@ -295,11 +337,13 @@ class UserSelectionRepository {
   }
 
   /// Update birthday for a team member
-  Future<void> updateTeamMemberBirthday(String uniqueKey, DateTime? birthday) async {
+  Future<void> updateTeamMemberBirthday(
+      String uniqueKey, DateTime? birthday) async {
     try {
       final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
       if (teamMember == null) {
-        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+        throw UserSelectionException(
+            'Team member not found with unique key: $uniqueKey');
       }
 
       final updatedMember = teamMember.copyWith(
@@ -316,11 +360,13 @@ class UserSelectionRepository {
   }
 
   /// Update vehicle info for a team member
-  Future<void> updateTeamMemberVehicleInfo(String uniqueKey, VehicleInfo? vehicleInfo) async {
+  Future<void> updateTeamMemberVehicleInfo(
+      String uniqueKey, VehicleInfo? vehicleInfo) async {
     try {
       final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
       if (teamMember == null) {
-        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+        throw UserSelectionException(
+            'Team member not found with unique key: $uniqueKey');
       }
 
       final updatedMember = teamMember.copyWith(
@@ -341,7 +387,8 @@ class UserSelectionRepository {
     try {
       final teamMember = await _database.getTeamMemberByUniqueKey(uniqueKey);
       if (teamMember == null) {
-        throw UserSelectionException('Team member not found with unique key: $uniqueKey');
+        throw UserSelectionException(
+            'Team member not found with unique key: $uniqueKey');
       }
 
       final updatedMember = teamMember.copyWith(

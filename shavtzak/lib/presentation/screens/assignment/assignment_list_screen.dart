@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
@@ -13,14 +12,14 @@ import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/team_repository.dart';
 import '../../../core/utils/filter_persistence.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../../core/services/environment_service.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
-import '../../bloc/role/role_bloc.dart';
-import '../../bloc/role/role_state.dart';
+import '../../bloc/event/event_state.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
@@ -51,6 +50,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   // Search functionality
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  bool _isMutationInFlight = false;
+  String _mutationMessage = '';
 
   @override
   void initState() {
@@ -69,6 +70,121 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     setState(() {
       FilterPersistence.assignmentFilterIndex = newIndex;
     });
+  }
+
+  void _showAssignmentSnackBar(
+    String message, {
+    required Color backgroundColor,
+  }) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Text(message),
+          ),
+          backgroundColor: backgroundColor,
+        ),
+      );
+  }
+
+  void _startMutation(String message) {
+    setState(() {
+      _isMutationInFlight = true;
+      _mutationMessage = message;
+    });
+  }
+
+  void _updateMutationMessage(String message) {
+    if (!mounted) return;
+    setState(() {
+      _mutationMessage = message;
+    });
+  }
+
+  void _finishMutation() {
+    if (!mounted) return;
+    setState(() {
+      _isMutationInFlight = false;
+      _mutationMessage = '';
+    });
+  }
+
+  Future<CrudActionResult> _dispatchMutation(
+    void Function(CrudActionCompleter completion) dispatch, {
+    bool showErrorSnackBar = true,
+  }) async {
+    final completion = Completer<CrudActionResult>();
+    dispatch(completion);
+    return await completion.future;
+  }
+
+  Future<CrudActionResult> _runBlockingMutation({
+    required String message,
+    required void Function(CrudActionCompleter completion) dispatch,
+    bool showErrorSnackBar = true,
+  }) async {
+    if (_isMutationInFlight) {
+      return const CrudActionResult.failure('פעולה אחרת עדיין מתבצעת');
+    }
+
+    _startMutation(message);
+    final result = await _dispatchMutation(
+      dispatch,
+      showErrorSnackBar: showErrorSnackBar,
+    );
+    _finishMutation();
+    return result;
+  }
+
+  Widget _buildMutationDialogOverlay() {
+    if (!_isMutationInFlight) {
+      return const SizedBox.shrink();
+    }
+
+    return Positioned.fill(
+      child: AbsorbPointer(
+        child: Container(
+          color: Colors.transparent,
+          alignment: Alignment.center,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 220, maxWidth: 280),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x22000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 3),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _mutationMessage,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Format location for display based on how it was entered
@@ -234,92 +350,85 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         ),
         floatingActionButton: FloatingActionButton(
           heroTag: 'assignment_fab',
-          onPressed: () => _showManualAssignmentFlow(),
+          onPressed:
+              _isMutationInFlight ? null : () => _showManualAssignmentFlow(),
           backgroundColor: Colors.blue,
-          child: const Icon(Icons.add, color: Colors.white),
           tooltip: 'שיבוץ ידני',
+          child: const Icon(Icons.add, color: Colors.white),
         ),
-        body: BlocConsumer<AssignmentBloc, AssignmentState>(
+        body: BlocListener<EventBloc, EventState>(
           listener: (context, state) {
-            if (state is AssignmentError) {
-              ScaffoldMessenger.of(context)
-                ..clearSnackBars()
-                ..showSnackBar(
-                  SnackBar(
-                      content: Directionality(
-                        textDirection: TextDirection.rtl,
-                        child: Text(state.message),
-                      ),
-                      backgroundColor: Colors.red),
-                );
-            } else if (state is AssignmentOperationSuccess) {
-              // BLoC will automatically reload slots without showing loading
-              ScaffoldMessenger.of(context)
-                ..clearSnackBars()
-                ..showSnackBar(
-                  SnackBar(
-                      content: Directionality(
-                        textDirection: TextDirection.rtl,
-                        child: Text(state.message),
-                      ),
-                      backgroundColor: Colors.green),
-                );
-            } else if (state is AssignmentConflictWarning) {
-              // Show conflict warning to user
-              ScaffoldMessenger.of(context)
-                ..clearSnackBars()
-                ..showSnackBar(
-                  SnackBar(
-                    content: Directionality(
-                      textDirection: TextDirection.rtl,
-                      child:
-                          Text('שיבוץ לא בוצע: ${state.conflicts.join(", ")}'),
-                    ),
-                    backgroundColor: Colors.orange,
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
+            if (state is EventError) {
+              _showAssignmentSnackBar(
+                state.message,
+                backgroundColor: Colors.red,
+              );
             }
           },
-          builder: (context, state) {
-            // Always show last known state if available, unless explicitly loading
-            if (state is AssignmentLoading && _lastSlotsState == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
+          child: Stack(
+            children: [
+              BlocConsumer<AssignmentBloc, AssignmentState>(
+                listener: (context, state) {
+                  if (state is AssignmentError) {
+                    _showAssignmentSnackBar(
+                      state.message,
+                      backgroundColor: Colors.red,
+                    );
+                  } else if (state is AssignmentOperationSuccess) {
+                    _showAssignmentSnackBar(
+                      state.message,
+                      backgroundColor: Colors.green,
+                    );
+                  } else if (state is AssignmentConflictWarning) {
+                    _showAssignmentSnackBar(
+                      'שיבוץ לא בוצע: ${state.conflicts.join(", ")}',
+                      backgroundColor: Colors.orange,
+                    );
+                  }
+                },
+                builder: (context, state) {
+                  // Always show last known state if available, unless explicitly loading
+                  if (state is AssignmentLoading && _lastSlotsState == null) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-            if (state is AssignmentSlotsLoaded) {
-              // If slots are empty, the load is complete (no events in time window)
-              // Only check for team members if there are actual slots
-              if (!_isInitialLoadComplete && state.slots.isNotEmpty) {
-                final hasTeamMembers =
-                    state.slots.any((slot) => slot.availableMembers.isNotEmpty);
-                if (!hasTeamMembers) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-              }
+                  if (state is AssignmentSlotsLoaded) {
+                    // If slots are empty, the load is complete (no events in time window)
+                    // Only check for team members if there are actual slots
+                    if (!_isInitialLoadComplete && state.slots.isNotEmpty) {
+                      final hasTeamMembers = state.slots
+                          .any((slot) => slot.availableMembers.isNotEmpty);
+                      if (!hasTeamMembers) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                    }
 
-              // Mark initial load as complete
-              if (!_isInitialLoadComplete) {
-                _isInitialLoadComplete = true;
-              }
+                    // Mark initial load as complete
+                    if (!_isInitialLoadComplete) {
+                      _isInitialLoadComplete = true;
+                    }
 
-              // Update _lastSlotsState with current state
-              _lastSlotsState = state;
-              return _buildSlotGrid(state);
-            }
+                    // Update _lastSlotsState with current state
+                    _lastSlotsState = state;
+                    return _buildSlotGrid(state);
+                  }
 
-            // For any other state (Operating, Success, Error), keep showing last state if available
-            if (_lastSlotsState != null) {
-              return _buildSlotGrid(_lastSlotsState!);
-            }
+                  // For any other state (Operating, Success, Error), keep showing last state if available
+                  if (_lastSlotsState != null) {
+                    return _buildSlotGrid(_lastSlotsState!);
+                  }
 
-            // Only show error UI if we have no cached state
-            if (state is AssignmentError) {
-              return _buildErrorState(state.message);
-            }
+                  // Only show error UI if we have no cached state
+                  if (state is AssignmentError) {
+                    return _buildErrorState(state.message);
+                  }
 
-            return _buildEmptyState(0, 0, 0);
-          },
+                  return _buildEmptyState(0, 0, 0);
+                },
+              ),
+              _buildMutationDialogOverlay(),
+            ],
+          ),
         ),
       ),
     );
@@ -870,7 +979,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         if (direction == DismissDirection.startToEnd) {
           // Notes swipe - show notes dialog
           if (slot.isFilled && slot.currentAssignment != null) {
-            await _showNotesDialog(slot);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showNotesDialog(slot);
+              }
+            });
           }
           return false; // Never actually dismiss
         } else {
@@ -915,12 +1028,18 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// Handle dismissing a slot - removes role slot from event (reduces capacity)
   /// If the slot is filled, also deletes the assignment
   Future<void> _handleSlotDismiss(AssignmentSlot slot) async {
+    if (_isMutationInFlight) {
+      return;
+    }
+
+    _startMutation('מוחק משרה...');
     try {
       final assignmentRepo = context.read<AssignmentRepository>();
       final eventBloc = context.read<EventBloc>();
 
       // Step 1: Delete the assignment if it exists (filled slot)
       if (slot.currentAssignment != null) {
+        _updateMutationMessage('מוחק שיבוץ...');
         await assignmentRepo.deleteAssignment(slot.currentAssignment!.id);
 
         // CRITICAL: Clear the cache to prevent stale data
@@ -936,6 +1055,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
 
       // Step 3: Reorder remaining assignments to fill gaps
+      _updateMutationMessage('מעדכן סדר משרות...');
       for (int i = 0; i < roleAssignments.length; i++) {
         if (roleAssignments[i].slotIndex != i) {
           final updated = roleAssignments[i].copyWith(
@@ -960,40 +1080,38 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       );
 
       // Step 5: Update the event
-      eventBloc.add(UpdateEvent(updatedEvent));
+      _updateMutationMessage('מעדכן מכסת אירוע...');
+      final updateResult = await _dispatchMutation(
+        (completion) => eventBloc.add(
+          UpdateEvent(updatedEvent, completion: completion),
+        ),
+        showErrorSnackBar: false,
+      );
+
+      if (updateResult.isFailure) {
+        _finishMutation();
+        return;
+      }
+
+      _finishMutation();
 
       // Show success message
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(
-            const SnackBar(
-              content: Directionality(
-                textDirection: TextDirection.rtl,
-                child: Text('המשרה נמחקה בהצלחה'),
-              ),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
+        _showAssignmentSnackBar(
+          'המשרה נמחקה בהצלחה',
+          backgroundColor: Colors.green,
+        );
       }
 
       // Real-time streams will automatically reload assignment slots to reflect changes
     } catch (e) {
+      _finishMutation();
       // Show error message
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(
-            SnackBar(
-              content: Directionality(
-                textDirection: TextDirection.rtl,
-                child: Text('שגיאה במחיקת המשרה: $e'),
-              ),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 2),
-            ),
-          );
+        _showAssignmentSnackBar(
+          'שגיאה במחיקת המשרה: $e',
+          backgroundColor: Colors.red,
+        );
       }
     }
   }
@@ -1008,116 +1126,163 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     final phoneController =
         TextEditingController(text: assignment.alternativePhoneNumber ?? '');
     final formKey = GlobalKey<FormState>();
+    bool isSaving = false;
 
-    final result = await showDialog<Map<String, String>?>(
+    await showDialog<void>(
       context: context,
       builder: (dialogContext) {
         final screenWidth = MediaQuery.of(dialogContext).size.width;
         final isWide = screenWidth > 600;
         final dialogWidth = isWide ? screenWidth * 0.45 : screenWidth * 0.9;
 
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            actionsAlignment: MainAxisAlignment.center,
-            title: Row(
-              children: [
-                const Icon(Icons.edit_note, color: Colors.blue),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'הערות לשיבוץ',
-                    style: const TextStyle(fontSize: 18),
-                  ),
-                ),
-              ],
-            ),
-            content: SizedBox(
-              width: dialogWidth,
-              child: Form(
-                key: formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                actionsAlignment: MainAxisAlignment.center,
+                title: Row(
                   children: [
-                    // Show assignment info
-                    Text(
-                      '${slot.currentAssignment?.teamMember?.name ?? ""} - ${slot.role.hebrewName}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    Text(
-                      slot.event.name,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: notesController,
-                      focusNode: notesFocusNode,
-                      minLines: 4,
-                      maxLines: 10,
-                      decoration: InputDecoration(
-                        hintText: 'הכנס הערות...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                      ),
-                      autofocus: false,
-                    ),
-                    const SizedBox(height: 16),
-                    // Alternative phone number field
-                    TextFormField(
-                      controller: phoneController,
-                      keyboardType: TextInputType.phone,
-                      textDirection: TextDirection.ltr,
-                      textAlign: TextAlign.center,
-                      inputFormatters: [PhoneNumberTextInputFormatter()],
-                      validator: Validators.validatePhoneNumber,
-                      decoration: InputDecoration(
-                        labelText: 'טלפון חד פעמי לשיבוץ',
-                        hintText: '05X-XXXXXXX',
-                        hintTextDirection: TextDirection.ltr,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        prefixIcon: const Icon(Icons.phone),
+                    const Icon(Icons.edit_note, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'הערות לשיבוץ',
+                        style: const TextStyle(fontSize: 18),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(null),
-                child: const Text('ביטול'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  if (formKey.currentState!.validate()) {
-                    Navigator.of(dialogContext).pop({
-                      'notes': notesController.text,
-                      'phone': phoneController.text,
-                    });
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
+                content: SizedBox(
+                  width: dialogWidth,
+                  child: Form(
+                    key: formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${slot.currentAssignment?.teamMember?.name ?? ""} - ${slot.role.hebrewName}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          slot.event.name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: notesController,
+                          focusNode: notesFocusNode,
+                          minLines: 4,
+                          maxLines: 10,
+                          decoration: InputDecoration(
+                            hintText: 'הכנס הערות...',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey.shade50,
+                          ),
+                          autofocus: false,
+                          enabled: !isSaving,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: phoneController,
+                          keyboardType: TextInputType.phone,
+                          textDirection: TextDirection.ltr,
+                          textAlign: TextAlign.center,
+                          inputFormatters: [PhoneNumberTextInputFormatter()],
+                          validator: Validators.validatePhoneNumber,
+                          enabled: !isSaving,
+                          decoration: InputDecoration(
+                            labelText: 'טלפון חד פעמי לשיבוץ',
+                            hintText: '05X-XXXXXXX',
+                            hintTextDirection: TextDirection.ltr,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey.shade50,
+                            prefixIcon: const Icon(Icons.phone),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                child: const Text('שמור'),
+                actions: [
+                  TextButton(
+                    onPressed: isSaving
+                        ? null
+                        : () => Navigator.of(dialogContext).pop(),
+                    child: const Text('ביטול'),
+                  ),
+                  ElevatedButton(
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            if (!formKey.currentState!.validate()) {
+                              return;
+                            }
+
+                            setDialogState(() {
+                              isSaving = true;
+                            });
+
+                            final phone = phoneController.text;
+                            final result = await _dispatchMutation(
+                              (completion) =>
+                                  context.read<AssignmentBloc>().add(
+                                        UpdateAssignmentNotes(
+                                          assignment.id,
+                                          notesController.text,
+                                          alternativePhoneNumber:
+                                              phone.isNotEmpty ? phone : null,
+                                          completion: completion,
+                                        ),
+                                      ),
+                              showErrorSnackBar: false,
+                            );
+
+                            if (!dialogContext.mounted) {
+                              return;
+                            }
+
+                            if (result.isFailure) {
+                              setDialogState(() {
+                                isSaving = false;
+                              });
+                              return;
+                            }
+
+                            Navigator.of(dialogContext).pop();
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('שמור'),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -1126,19 +1291,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     notesFocusNode.dispose();
     notesController.dispose();
     phoneController.dispose();
-
-    if (result != null && mounted) {
-      final phone = result['phone'];
-      // Update notes and phone via BLoC
-      context.read<AssignmentBloc>().add(
-            UpdateAssignmentNotes(
-              assignment.id,
-              result['notes']!,
-              alternativePhoneNumber:
-                  phone != null && phone.isNotEmpty ? phone : null,
-            ),
-          );
-    }
   }
 
   Widget _buildAssignmentCell(AssignmentSlot slot) {
@@ -1488,17 +1640,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
   }
 
-  void _handleClearAssignment(AssignmentSlot slot) {
+  Future<void> _handleClearAssignment(AssignmentSlot slot) async {
     if (slot.currentAssignment != null) {
-      final slotKey = _getSlotKey(slot);
-
-      // Dispatch to BLoC - no local state manipulation!
-      context.read<AssignmentBloc>().add(
-            OptimisticDeleteAssignment(
-              assignmentId: slot.currentAssignment!.id,
-              slotKey: slotKey,
+      await _runBlockingMutation(
+        message: 'מוחק שיבוץ...',
+        dispatch: (completion) => context.read<AssignmentBloc>().add(
+              DeleteAssignment(
+                slot.currentAssignment!.id,
+                completion: completion,
+              ),
             ),
-          );
+      );
     }
   }
 
@@ -1656,11 +1808,15 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
     for (final member in allMembers) {
       // Must have role capability
-      if (!member.canPerformRole(slot.role.key)) continue;
+      if (!member.canPerformRole(slot.role.key)) {
+        continue;
+      }
 
       // Must not already be in available or alreadyAssigned lists
       if (availableIds.contains(member.id) ||
-          alreadyAssignedIds.contains(member.id)) continue;
+          alreadyAssignedIds.contains(member.id)) {
+        continue;
+      }
 
       // Must be unavailable for the event (including time-based constraints)
       final isAvailable = member.isAvailableForEventWithTime(slot.event);
@@ -1818,6 +1974,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// Handle assignment change bypassing conflict checks (for constrained members)
   Future<void> _handleAssignmentChangeWithBypass(
       AssignmentSlot slot, TeamMember selectedMember) async {
+    if (_isMutationInFlight) {
+      return;
+    }
+
     // Check if already assigned (no-op)
     if (slot.currentAssignment?.teamMemberId == selectedMember.id) {
       return;
@@ -1845,19 +2005,35 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           );
 
     // Use optimistic path with bypass flag to skip conflict checks
-    if (slot.currentAssignment != null) {
-      context.read<AssignmentBloc>().add(
-            OptimisticUpdateAssignment(assignment),
-          );
-    } else {
-      context.read<AssignmentBloc>().add(
-            OptimisticCreateAssignment(assignment, bypassConflicts: true),
-          );
-    }
+    await _runBlockingMutation(
+      message: 'מעדכן שיבוץ...',
+      dispatch: (completion) {
+        if (slot.currentAssignment != null) {
+          context.read<AssignmentBloc>().add(
+                UpdateAssignment(
+                  assignment,
+                  completion: completion,
+                  bypassAvailability: true,
+                ),
+              );
+        } else {
+          context.read<AssignmentBloc>().add(
+                CreateAssignmentWithBypass(
+                  assignment,
+                  completion: completion,
+                ),
+              );
+        }
+      },
+    );
   }
 
   Future<void> _handleAssignmentChange(
       AssignmentSlot slot, TeamMember selectedMember) async {
+    if (_isMutationInFlight) {
+      return;
+    }
+
     // Check if already assigned (no-op)
     if (slot.currentAssignment?.teamMemberId == selectedMember.id) {
       return;
@@ -1884,16 +2060,26 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             teamMember: selectedMember,
           );
 
-    // Dispatch to BLoC - no local state manipulation!
-    if (slot.currentAssignment != null) {
-      context.read<AssignmentBloc>().add(
-            OptimisticUpdateAssignment(assignment),
-          );
-    } else {
-      context.read<AssignmentBloc>().add(
-            OptimisticCreateAssignment(assignment),
-          );
-    }
+    await _runBlockingMutation(
+      message: 'מעדכן שיבוץ...',
+      dispatch: (completion) {
+        if (slot.currentAssignment != null) {
+          context.read<AssignmentBloc>().add(
+                UpdateAssignment(
+                  assignment,
+                  completion: completion,
+                ),
+              );
+        } else {
+          context.read<AssignmentBloc>().add(
+                CreateAssignment(
+                  assignment,
+                  completion: completion,
+                ),
+              );
+        }
+      },
+    );
   }
 
   String _formatDate(DateTime date) {
@@ -1997,7 +2183,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         ..sort((a, b) => a.startDate.compareTo(b.startDate));
     }
 
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -2056,6 +2242,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// Create assignment and increase event quota for the selected role
   Future<void> _createAssignmentAndQuota(
       Event event, TeamMember teamMember, String roleType) async {
+    if (_isMutationInFlight) {
+      return;
+    }
+
     try {
       final assignmentRepo = context.read<AssignmentRepository>();
       final eventBloc = context.read<EventBloc>();
@@ -2104,51 +2294,59 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         updatedAt: DateTime.now(),
       );
 
-      // Step 5: Execute both operations
-      // First update the event quota
-      eventBloc.add(UpdateEvent(updatedEvent));
+      _startMutation('מעדכן מכסת אירוע...');
 
-      // Then create the assignment (bypass conflict checks since admin was warned)
-      context
-          .read<AssignmentBloc>()
-          .add(CreateAssignmentWithBypass(newAssignment));
+      final quotaUpdateResult = await _dispatchMutation(
+        (completion) => eventBloc.add(
+          UpdateEvent(updatedEvent, completion: completion),
+        ),
+        showErrorSnackBar: false,
+      );
 
-      // Show success message
-      if (mounted) {
-        final roleState = context.read<RoleBloc>().state;
-        final roleHebrewName = roleState is RolesLoaded
-            ? roleState.getRoleHebrewName(roleType)
-            : roleType;
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(
-            SnackBar(
-              content: Directionality(
-                textDirection: TextDirection.rtl,
-                child: Text(
-                    'שיבוץ חדש נוצר בהצלחה: ${teamMember.name} → $roleHebrewName באירוע "${event.name}"'),
-              ),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
-            ),
-          );
+      if (quotaUpdateResult.isFailure) {
+        _finishMutation();
+        return;
       }
 
-      // Real-time streams will automatically reload assignment slots to reflect changes
+      _updateMutationMessage('יוצר שיבוץ...');
+
+      final assignmentResult = await _dispatchMutation(
+        (completion) => context.read<AssignmentBloc>().add(
+              CreateAssignmentWithBypass(
+                newAssignment,
+                completion: completion,
+              ),
+            ),
+        showErrorSnackBar: false,
+      );
+
+      if (assignmentResult.isFailure) {
+        _updateMutationMessage('משחזר מכסת אירוע...');
+        final rollbackResult = await _dispatchMutation(
+          (completion) => eventBloc.add(
+            UpdateEvent(event, completion: completion),
+          ),
+          showErrorSnackBar: false,
+        );
+        _finishMutation();
+        if (rollbackResult.isFailure && mounted) {
+          _showAssignmentSnackBar(
+            'השיבוץ נכשל וגם שחזור המכסה לא הושלם. יש לבדוק את האירוע ידנית.',
+            backgroundColor: Colors.red,
+          );
+        }
+        return;
+      }
+
+      _finishMutation();
     } catch (e) {
       // Show error message
+      _finishMutation();
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(
-            SnackBar(
-              content: Directionality(
-                textDirection: TextDirection.rtl,
-                child: Text('שגיאה ביצירת שיבוץ: $e'),
-              ),
-              backgroundColor: Colors.red,
-            ),
-          );
+        _showAssignmentSnackBar(
+          'שגיאה ביצירת שיבוץ: $e',
+          backgroundColor: Colors.red,
+        );
       }
     }
   }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:collection/collection.dart';
@@ -18,6 +20,7 @@ import '../../widgets/checklist/checklist_form_modal.dart';
 import '../../widgets/checklist/checklist_item_card.dart';
 import '../../widgets/checklist/presets_dialog.dart';
 import '../../../core/services/environment_service.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 
 /// Admin screen for managing all checklist items
@@ -108,25 +111,34 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
 
     // Search filter
     if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((item) =>
-          item.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          (item.event?.name?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false) ||
-          (item.responsible?.name?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false)).toList();
+      final normalizedQuery = _searchQuery.toLowerCase();
+      filtered = filtered
+          .where((item) =>
+              item.name.toLowerCase().contains(normalizedQuery) ||
+              (item.event?.name.toLowerCase().contains(normalizedQuery) ??
+                  false) ||
+              (item.responsible?.name.toLowerCase().contains(normalizedQuery) ??
+                  false))
+          .toList();
     }
 
     // Event filter
     if (_selectedEventId != null) {
-      filtered = filtered.where((item) => item.eventId == _selectedEventId).toList();
+      filtered =
+          filtered.where((item) => item.eventId == _selectedEventId).toList();
     }
 
     // Responsible filter
     if (_selectedResponsibleId != null) {
-      filtered = filtered.where((item) => item.responsibleId == _selectedResponsibleId).toList();
+      filtered = filtered
+          .where((item) => item.responsibleId == _selectedResponsibleId)
+          .toList();
     }
 
     // Status filter
     if (_statusFilter != null) {
-      filtered = filtered.where((item) => item.status == _statusFilter).toList();
+      filtered =
+          filtered.where((item) => item.status == _statusFilter).toList();
     }
 
     return filtered;
@@ -150,17 +162,19 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
   void _showAddModal() {
     // Get current user ID for tracking creator
     final userState = context.read<UserSelectionBloc>().state;
-    final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
+    final currentUserId =
+        userState is UserAuthenticated ? userState.user.id : null;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (modalContext) => ChecklistFormModal(
         currentUserId: currentUserId,
-        onSave: (item) {
-          context.read<ChecklistBloc>().add(AddChecklistItem(item));
-          Navigator.pop(modalContext);
-        },
+        onSave: (item) => _waitForChecklistAction(
+          (completion) => context.read<ChecklistBloc>().add(
+                AddChecklistItem(item, completion: completion),
+              ),
+        ),
       ),
     );
   }
@@ -193,7 +207,9 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
               ),
               // Centered title
               const Expanded(
-                child: Center(child: Text('צ\'קליסט אירועים', style: TextStyle(fontSize: 20))),
+                child: Center(
+                    child: Text('צ\'קליסט אירועים',
+                        style: TextStyle(fontSize: 20))),
               ),
               // Trailing icons
               IconButton(
@@ -227,7 +243,8 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
               insets: const EdgeInsets.symmetric(horizontal: 16.0),
             ),
             labelColor: Theme.of(context).colorScheme.onPrimary,
-            unselectedLabelColor: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+            unselectedLabelColor:
+                Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
             labelStyle: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -331,7 +348,8 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
         Expanded(
           child: BlocBuilder<TeamBloc, TeamState>(
             builder: (context, teamState) {
-              final allTeamMembers = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
+              final allTeamMembers =
+                  teamState is TeamLoaded ? teamState.members : <TeamMember>[];
 
               return BlocBuilder<ChecklistBloc, ChecklistState>(
                 builder: (context, state) {
@@ -346,7 +364,9 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                           Text(state.message),
                           const SizedBox(height: 16),
                           ElevatedButton(
-                            onPressed: () => context.read<ChecklistBloc>().add(LoadChecklistItems()),
+                            onPressed: () => context
+                                .read<ChecklistBloc>()
+                                .add(LoadChecklistItems()),
                             child: const Text('נסה שוב'),
                           ),
                         ],
@@ -381,7 +401,9 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
 
                     // Get current user ID for personal note display
                     final userState = context.read<UserSelectionBloc>().state;
-                    final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
+                    final currentUserId = userState is UserAuthenticated
+                        ? userState.user.id
+                        : null;
 
                     return ListView.builder(
                       padding: const EdgeInsets.only(bottom: 80),
@@ -396,20 +418,20 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                           onTap: () => _showEditModal(item),
                           onStatusChanged: (newStatus) {
                             context.read<ChecklistBloc>().add(
-                              UpdateChecklistItemStatus(
-                                itemId: item.id,
-                                newStatus: newStatus,
-                              ),
-                            );
+                                  UpdateChecklistItemStatus(
+                                    itemId: item.id,
+                                    newStatus: newStatus,
+                                  ),
+                                );
                           },
                           onAddNote: (content) {
                             context.read<ChecklistBloc>().add(
-                              AddChecklistNote(
-                                itemId: item.id,
-                                content: content,
-                                authorRole: 'מנהל',
-                              ),
-                            );
+                                  AddChecklistNote(
+                                    itemId: item.id,
+                                    content: content,
+                                    authorRole: 'מנהל',
+                                  ),
+                                );
                           },
                         );
                       },
@@ -428,7 +450,8 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
   Widget _buildByEventTab() {
     return BlocBuilder<TeamBloc, TeamState>(
       builder: (context, teamState) {
-        final allTeamMembers = teamState is TeamLoaded ? teamState.members : <TeamMember>[];
+        final allTeamMembers =
+            teamState is TeamLoaded ? teamState.members : <TeamMember>[];
 
         return BlocBuilder<ChecklistBloc, ChecklistState>(
           builder: (context, state) {
@@ -467,7 +490,8 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
 
               // Get current user ID for personal note display
               final userState = context.read<UserSelectionBloc>().state;
-              final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
+              final currentUserId =
+                  userState is UserAuthenticated ? userState.user.id : null;
 
               return ListView.builder(
                 padding: const EdgeInsets.only(bottom: 80),
@@ -480,30 +504,32 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                   return ExpansionTile(
                     title: Text(event?.name ?? 'אירוע לא ידוע'),
                     subtitle: Text('${items.length} פריטים'),
-                    children: items.map((item) => ChecklistItemCard(
-                      item: item,
-                      allTeamMembers: allTeamMembers,
-                      isAdmin: true,
-                      currentUserId: currentUserId,
-                      onTap: () => _showEditModal(item),
-                      onStatusChanged: (newStatus) {
-                        context.read<ChecklistBloc>().add(
-                          UpdateChecklistItemStatus(
-                            itemId: item.id,
-                            newStatus: newStatus,
-                          ),
-                        );
-                      },
-                      onAddNote: (content) {
-                        context.read<ChecklistBloc>().add(
-                          AddChecklistNote(
-                            itemId: item.id,
-                            content: content,
-                            authorRole: 'מנהל',
-                          ),
-                        );
-                      },
-                    )).toList(),
+                    children: items
+                        .map((item) => ChecklistItemCard(
+                              item: item,
+                              allTeamMembers: allTeamMembers,
+                              isAdmin: true,
+                              currentUserId: currentUserId,
+                              onTap: () => _showEditModal(item),
+                              onStatusChanged: (newStatus) {
+                                context.read<ChecklistBloc>().add(
+                                      UpdateChecklistItemStatus(
+                                        itemId: item.id,
+                                        newStatus: newStatus,
+                                      ),
+                                    );
+                              },
+                              onAddNote: (content) {
+                                context.read<ChecklistBloc>().add(
+                                      AddChecklistNote(
+                                        itemId: item.id,
+                                        content: content,
+                                        authorRole: 'מנהל',
+                                      ),
+                                    );
+                              },
+                            ))
+                        .toList(),
                   );
                 },
               );
@@ -520,6 +546,29 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
         _selectedEventId != null ||
         _selectedResponsibleId != null ||
         _statusFilter != null;
+  }
+
+  Widget _buildCenteredDropdownText(String text) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: SizedBox(
+        width: double.infinity,
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 2,
+        ),
+      ),
+    );
+  }
+
+  Future<CrudActionResult> _waitForChecklistAction(
+    void Function(CrudActionCompleter completion) dispatch,
+  ) {
+    final completion = Completer<CrudActionResult>();
+    dispatch(completion);
+    return completion.future;
   }
 
   void _showFilterSheet() {
@@ -558,29 +607,42 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                   children: [
                     const Text(
                       'סינון צ\'קליסט',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 16),
                     // Event filter
                     BlocBuilder<EventBloc, EventState>(
                       builder: (context, state) {
                         if (state is EventsLoaded) {
+                          final eventItems = [
+                            const DropdownMenuItem<String>(
+                              value: null,
+                              child: SizedBox.shrink(),
+                            ),
+                            ...state.events.map(
+                              (event) => DropdownMenuItem<String>(
+                                value: event.id,
+                                child: _buildCenteredDropdownText(event.name),
+                              ),
+                            ),
+                          ];
                           return DropdownButtonFormField<String>(
                             value: _selectedEventId,
+                            alignment: AlignmentDirectional.center,
+                            isExpanded: true,
                             decoration: const InputDecoration(
                               labelText: 'אירוע',
                               border: OutlineInputBorder(),
                             ),
-                            items: [
-                              const DropdownMenuItem(
-                                value: null,
-                                child: Text('כל האירועים'),
+                            selectedItemBuilder: (context) => [
+                              _buildCenteredDropdownText('כל האירועים'),
+                              ...state.events.map(
+                                (event) =>
+                                    _buildCenteredDropdownText(event.name),
                               ),
-                              ...state.events.map((event) => DropdownMenuItem(
-                                value: event.id,
-                                child: Text(event.name),
-                              )),
                             ],
+                            items: eventItems,
                             onChanged: (value) {
                               setModalState(() => _selectedEventId = value);
                               setState(() => _selectedEventId = value);
@@ -595,24 +657,37 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                     BlocBuilder<TeamBloc, TeamState>(
                       builder: (context, state) {
                         if (state is TeamLoaded) {
+                          final memberItems = [
+                            const DropdownMenuItem<String>(
+                              value: null,
+                              child: SizedBox.shrink(),
+                            ),
+                            ...state.members.map(
+                              (member) => DropdownMenuItem<String>(
+                                value: member.id,
+                                child: _buildCenteredDropdownText(member.name),
+                              ),
+                            ),
+                          ];
                           return DropdownButtonFormField<String>(
                             value: _selectedResponsibleId,
+                            alignment: AlignmentDirectional.center,
+                            isExpanded: true,
                             decoration: const InputDecoration(
                               labelText: 'אחראי',
                               border: OutlineInputBorder(),
                             ),
-                            items: [
-                              const DropdownMenuItem(
-                                value: null,
-                                child: Text('כל האחראים'),
+                            selectedItemBuilder: (context) => [
+                              _buildCenteredDropdownText('כל האחראים'),
+                              ...state.members.map(
+                                (member) =>
+                                    _buildCenteredDropdownText(member.name),
                               ),
-                              ...state.members.map((member) => DropdownMenuItem(
-                                value: member.id,
-                                child: Text(member.name),
-                              )),
                             ],
+                            items: memberItems,
                             onChanged: (value) {
-                              setModalState(() => _selectedResponsibleId = value);
+                              setModalState(
+                                  () => _selectedResponsibleId = value);
                               setState(() => _selectedResponsibleId = value);
                             },
                           );
@@ -624,22 +699,29 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                     // Status filter
                     DropdownButtonFormField<bool>(
                       value: _statusFilter,
+                      alignment: AlignmentDirectional.center,
+                      isExpanded: true,
                       decoration: const InputDecoration(
                         labelText: 'סטטוס',
                         border: OutlineInputBorder(),
                       ),
-                      items: const [
+                      selectedItemBuilder: (context) => [
+                        _buildCenteredDropdownText('הכל'),
+                        _buildCenteredDropdownText('קיים (כן)'),
+                        _buildCenteredDropdownText('לא קיים (לא)'),
+                      ],
+                      items: [
                         DropdownMenuItem(
                           value: null,
-                          child: Text('הכל'),
+                          child: _buildCenteredDropdownText('הכל'),
                         ),
                         DropdownMenuItem(
                           value: true,
-                          child: Text('קיים (כן)'),
+                          child: _buildCenteredDropdownText('קיים (כן)'),
                         ),
                         DropdownMenuItem(
                           value: false,
-                          child: Text('לא קיים (לא)'),
+                          child: _buildCenteredDropdownText('לא קיים (לא)'),
                         ),
                       ],
                       onChanged: (value) {
@@ -689,7 +771,8 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
   void _showEditModal(ChecklistItem item) {
     // Get current user ID for tracking creator
     final userState = context.read<UserSelectionBloc>().state;
-    final currentUserId = userState is UserAuthenticated ? userState.user.id : null;
+    final currentUserId =
+        userState is UserAuthenticated ? userState.user.id : null;
 
     showModalBottomSheet(
       context: context,
@@ -697,43 +780,27 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
       builder: (modalContext) => ChecklistFormModal(
         item: item,
         currentUserId: currentUserId,
-        onSave: (updatedItem) {
-          context.read<ChecklistBloc>().add(UpdateChecklistItem(updatedItem));
-          Navigator.pop(modalContext);
-        },
-        onDelete: () => _deleteItem(item, modalContext),
+        onSave: (updatedItem) => _waitForChecklistAction(
+          (completion) => context.read<ChecklistBloc>().add(
+                UpdateChecklistItem(
+                  updatedItem,
+                  completion: completion,
+                ),
+              ),
+        ),
+        onDelete: () => _deleteItem(item),
       ),
     );
   }
 
-  void _deleteItem(ChecklistItem item, BuildContext modalContext) {
-    showDialog(
-      context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('מחיקת פריט מהצ\'קליסט'),
-          content: Text('האם אתה בטוח שברצונך למחוק את "${item.name}"?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('ביטול'),
+  Future<CrudActionResult> _deleteItem(ChecklistItem item) {
+    return _waitForChecklistAction(
+      (completion) => context.read<ChecklistBloc>().add(
+            DeleteChecklistItem(
+              item.id,
+              completion: completion,
             ),
-            ElevatedButton(
-              onPressed: () {
-                context.read<ChecklistBloc>().add(DeleteChecklistItem(item.id));
-                Navigator.pop(context); // Close confirmation dialog
-                Navigator.pop(modalContext); // Close edit dialog
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('מחק'),
-            ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 }

@@ -6,6 +6,7 @@ import '../../../data/repositories/assignment_repository.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../core/constants/role_types.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
 import '../calendar_sync/calendar_sync_event.dart';
 import 'event_event.dart';
@@ -293,10 +294,13 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 
       // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('האירוע נוסף בהצלחה'));
+      _completeActionSuccess(event.completion, 'האירוע נוסף בהצלחה');
 
       // Don't restart listener here - the modal will handle it with the correct filter
     } catch (e) {
-      emit(EventError('שגיאה בהוספת אירוע: $e'));
+      final message = 'שגיאה בהוספת אירוע: $e';
+      emit(EventError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -315,10 +319,13 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 
       // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('פרטי האירוע עודכנו בהצלחה'));
+      _completeActionSuccess(event.completion, 'פרטי האירוע עודכנו בהצלחה');
 
       // Don't restart listener here - the modal will handle it with the correct filter
     } catch (e) {
-      emit(EventError('שגיאה בעדכון פרטי האירוע: $e'));
+      final message = 'שגיאה בעדכון פרטי האירוע: $e';
+      emit(EventError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -337,8 +344,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 
       // Emit success to show snackbar
       emit(const EventOperationSuccess('האירוע נמחק בהצלחה'));
+      _completeActionSuccess(event.completion, 'האירוע נמחק בהצלחה');
     } catch (e) {
-      emit(EventError('שגיאה במחיקת האירוע: $e'));
+      final message = 'שגיאה במחיקת האירוע: $e';
+      emit(EventError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -623,6 +633,20 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     await _eventsSubscription?.cancel();
     await _assignmentsSubscription?.cancel();
     return super.close();
+  }
+
+  void _completeActionSuccess(
+    CrudActionCompleter? completion, [
+    String? message,
+  ]) {
+    completeCrudAction(completion, CrudActionResult.success(message));
+  }
+
+  void _completeActionFailure(
+    CrudActionCompleter? completion,
+    String message,
+  ) {
+    completeCrudAction(completion, CrudActionResult.failure(message));
   }
 }
 

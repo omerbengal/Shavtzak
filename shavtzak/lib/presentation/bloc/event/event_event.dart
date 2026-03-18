@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/event.dart';
+import '../../../core/utils/crud_action_result.dart';
 
 /// Base event class for EventBloc
 abstract class EventEvent extends Equatable {
@@ -42,8 +43,9 @@ class LoadEventById extends EventEvent {
 /// Create new event
 class CreateEvent extends EventEvent {
   final Event event;
+  final CrudActionCompleter? completion;
 
-  const CreateEvent(this.event);
+  const CreateEvent(this.event, {this.completion});
 
   @override
   List<Object?> get props => [event];
@@ -52,8 +54,9 @@ class CreateEvent extends EventEvent {
 /// Update event
 class UpdateEvent extends EventEvent {
   final Event event;
+  final CrudActionCompleter? completion;
 
-  const UpdateEvent(this.event);
+  const UpdateEvent(this.event, {this.completion});
 
   @override
   List<Object?> get props => [event];
@@ -62,8 +65,9 @@ class UpdateEvent extends EventEvent {
 /// Delete event
 class DeleteEvent extends EventEvent {
   final String id;
+  final CrudActionCompleter? completion;
 
-  const DeleteEvent(this.id);
+  const DeleteEvent(this.id, {this.completion});
 
   @override
   List<Object?> get props => [id];

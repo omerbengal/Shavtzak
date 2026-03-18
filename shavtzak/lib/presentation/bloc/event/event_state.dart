@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/assignment.dart';
+import '../../../core/utils/event_sorting.dart';
 import '../../screens/event/quota_reduction_analyzer.dart';
 
 /// Base state class for EventBloc
@@ -30,7 +31,8 @@ class EventsLoaded extends EventState {
   final int pastCount;
   final int activeCount;
   final Map<String, int> assignmentCounts; // Event ID -> count of assignments
-  final Map<String, List<String>> eventBirthdays; // Event ID -> list of team member names with birthdays during event
+  final Map<String, List<String>>
+      eventBirthdays; // Event ID -> list of team member names with birthdays during event
 
   const EventsLoaded(
     this.events, {
@@ -47,7 +49,7 @@ class EventsLoaded extends EventState {
     this.searchQuery,
     this.assignmentCounts = const {},
     this.eventBirthdays = const {},
-  })  : events = (events..sort((a, b) => a.startDate.compareTo(b.startDate))),
+  })  : events = (List<Event>.from(events)..sort(compareEventsChronologically)),
         totalCount = events.length,
         upcomingCount = events.where((e) => e.isUpcoming).length,
         pastCount = events.where((e) => e.isPast).length,
@@ -79,7 +81,8 @@ class EventDetailLoaded extends EventState {
 /// No events found
 class EventsEmpty extends EventState {
   final String message;
-  final bool isFiltered; // true if empty due to filter, false if database is empty
+  final bool
+      isFiltered; // true if empty due to filter, false if database is empty
 
   const EventsEmpty(this.message, {this.isFiltered = false});
 
@@ -135,7 +138,8 @@ class EventDuplicatedWithConflicts extends EventState {
 class EventDuplicatedWithQuotaConflicts extends EventState {
   final Event duplicatedEvent;
   final List<RoleQuotaConflict> quotaConflicts;
-  final Map<String, String> oldToNewAssignmentIds; // Map old assignment IDs to new ones
+  final Map<String, String>
+      oldToNewAssignmentIds; // Map old assignment IDs to new ones
 
   const EventDuplicatedWithQuotaConflicts({
     required this.duplicatedEvent,
@@ -144,7 +148,8 @@ class EventDuplicatedWithQuotaConflicts extends EventState {
   });
 
   @override
-  List<Object?> get props => [duplicatedEvent, quotaConflicts, oldToNewAssignmentIds];
+  List<Object?> get props =>
+      [duplicatedEvent, quotaConflicts, oldToNewAssignmentIds];
 }
 
 /// Assignment conflict information
@@ -162,7 +167,8 @@ class AssignmentConflict extends Equatable {
   });
 
   @override
-  List<Object?> get props => [assignmentId, teamMemberName, roleName, conflictReasons];
+  List<Object?> get props =>
+      [assignmentId, teamMemberName, roleName, conflictReasons];
 }
 
 /// State emitted when duplication has conflicts that need user resolution
@@ -199,14 +205,14 @@ class DuplicationRequiresConflictResolution extends EventState {
       assignmentInfos.where((a) => a.hasAvailabilityConflict).toList();
 
   /// Get suggested exclusions (all availability-conflicted assignments)
-  Set<String> get suggestedExclusions =>
-      assignmentInfos
-          .where((a) => a.hasAvailabilityConflict)
-          .map((a) => a.assignment.id)
-          .toSet();
+  Set<String> get suggestedExclusions => assignmentInfos
+      .where((a) => a.hasAvailabilityConflict)
+      .map((a) => a.assignment.id)
+      .toSet();
 
   @override
-  List<Object?> get props => [originalEvent, proposedEvent, assignmentInfos, roleQuotas];
+  List<Object?> get props =>
+      [originalEvent, proposedEvent, assignmentInfos, roleQuotas];
 }
 
 /// Information about a single assignment during duplication conflict analysis
@@ -214,7 +220,8 @@ class AssignmentDuplicationInfo extends Equatable {
   final Assignment assignment;
   final bool hasAvailabilityConflict;
   final String? availabilityReason;
-  final bool isInOverQuotaRole; // True if this role has more assignments than new quota
+  final bool
+      isInOverQuotaRole; // True if this role has more assignments than new quota
 
   const AssignmentDuplicationInfo({
     required this.assignment,
@@ -227,5 +234,10 @@ class AssignmentDuplicationInfo extends Equatable {
   bool get hasAnyConflict => hasAvailabilityConflict || isInOverQuotaRole;
 
   @override
-  List<Object?> get props => [assignment, hasAvailabilityConflict, availabilityReason, isInOverQuotaRole];
+  List<Object?> get props => [
+        assignment,
+        hasAvailabilityConflict,
+        availabilityReason,
+        isInOverQuotaRole
+      ];
 }

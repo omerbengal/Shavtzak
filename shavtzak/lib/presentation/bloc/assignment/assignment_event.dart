@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/constants/role_types.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
@@ -62,8 +63,9 @@ class LoadAssignmentById extends AssignmentEvent {
 /// Create new assignment
 class CreateAssignment extends AssignmentEvent {
   final Assignment assignment;
+  final CrudActionCompleter? completion;
 
-  const CreateAssignment(this.assignment);
+  const CreateAssignment(this.assignment, {this.completion});
 
   @override
   List<Object?> get props => [assignment];
@@ -72,8 +74,9 @@ class CreateAssignment extends AssignmentEvent {
 /// Create new assignment bypassing conflict checks (for manual assignments)
 class CreateAssignmentWithBypass extends AssignmentEvent {
   final Assignment assignment;
+  final CrudActionCompleter? completion;
 
-  const CreateAssignmentWithBypass(this.assignment);
+  const CreateAssignmentWithBypass(this.assignment, {this.completion});
 
   @override
   List<Object?> get props => [assignment];
@@ -82,18 +85,25 @@ class CreateAssignmentWithBypass extends AssignmentEvent {
 /// Update assignment
 class UpdateAssignment extends AssignmentEvent {
   final Assignment assignment;
+  final CrudActionCompleter? completion;
+  final bool bypassAvailability;
 
-  const UpdateAssignment(this.assignment);
+  const UpdateAssignment(
+    this.assignment, {
+    this.completion,
+    this.bypassAvailability = false,
+  });
 
   @override
-  List<Object?> get props => [assignment];
+  List<Object?> get props => [assignment, bypassAvailability];
 }
 
 /// Delete assignment
 class DeleteAssignment extends AssignmentEvent {
   final String id;
+  final CrudActionCompleter? completion;
 
-  const DeleteAssignment(this.id);
+  const DeleteAssignment(this.id, {this.completion});
 
   @override
   List<Object?> get props => [id];
@@ -218,7 +228,8 @@ class RebuildAssignmentSlotsFromData extends AssignmentEvent {
   );
 
   @override
-  List<Object?> get props => [assignments, events, teamMembers, selectedEventIds];
+  List<Object?> get props =>
+      [assignments, events, teamMembers, selectedEventIds];
 }
 
 /// Update assignment notes and/or alternative phone number
@@ -226,8 +237,14 @@ class UpdateAssignmentNotes extends AssignmentEvent {
   final String id;
   final String notes;
   final String? alternativePhoneNumber;
+  final CrudActionCompleter? completion;
 
-  const UpdateAssignmentNotes(this.id, this.notes, {this.alternativePhoneNumber});
+  const UpdateAssignmentNotes(
+    this.id,
+    this.notes, {
+    this.alternativePhoneNumber,
+    this.completion,
+  });
 
   @override
   List<Object?> get props => [id, notes, alternativePhoneNumber];
@@ -238,11 +255,13 @@ abstract class OptimisticAssignmentEvent extends AssignmentEvent {
   final String operationId;
   final String slotKey;
   final Assignment assignment;
+  final CrudActionCompleter? completion;
 
   const OptimisticAssignmentEvent({
     required this.operationId,
     required this.slotKey,
     required this.assignment,
+    this.completion,
   });
 
   @override
@@ -253,24 +272,34 @@ abstract class OptimisticAssignmentEvent extends AssignmentEvent {
 class OptimisticCreateAssignment extends OptimisticAssignmentEvent {
   final bool bypassConflicts;
 
-  OptimisticCreateAssignment(Assignment assignment, {this.bypassConflicts = false})
-      : super(
+  OptimisticCreateAssignment(
+    Assignment assignment, {
+    this.bypassConflicts = false,
+    CrudActionCompleter? completion,
+  }) : super(
           operationId: Uuid().v4(),
-          slotKey: '${assignment.eventId}_${assignment.roleType}_${assignment.slotIndex}',
+          slotKey:
+              '${assignment.eventId}_${assignment.roleType}_${assignment.slotIndex}',
           assignment: assignment,
+          completion: completion,
         );
 
   @override
-  List<Object?> get props => [operationId, slotKey, assignment, bypassConflicts];
+  List<Object?> get props =>
+      [operationId, slotKey, assignment, bypassConflicts];
 }
 
 /// Optimistically update an existing assignment
 class OptimisticUpdateAssignment extends OptimisticAssignmentEvent {
-  OptimisticUpdateAssignment(Assignment assignment)
-      : super(
+  OptimisticUpdateAssignment(
+    Assignment assignment, {
+    CrudActionCompleter? completion,
+  }) : super(
           operationId: Uuid().v4(),
-          slotKey: '${assignment.eventId}_${assignment.roleType}_${assignment.slotIndex}',
+          slotKey:
+              '${assignment.eventId}_${assignment.roleType}_${assignment.slotIndex}',
           assignment: assignment,
+          completion: completion,
         );
 }
 
@@ -279,14 +308,15 @@ class OptimisticDeleteAssignment extends AssignmentEvent {
   final String assignmentId;
   final String slotKey;
   final String operationId;
+  final CrudActionCompleter? completion;
 
   OptimisticDeleteAssignment({
     required this.assignmentId,
     required this.slotKey,
     String? operationId,
+    this.completion,
   }) : operationId = operationId ?? Uuid().v4();
 
   @override
   List<Object?> get props => [assignmentId, slotKey, operationId];
 }
-

@@ -156,6 +156,9 @@ type DesiredConstraintCalendarState = {
   repeatEndDate: string | null;
 };
 
+const DEFAULT_TEAM_MEMBER_PASSCODE = '071023';
+const DEFAULT_TEAM_MEMBER_PASSCODE_LENGTH = DEFAULT_TEAM_MEMBER_PASSCODE.length;
+
 const CALENDAR_SYNC_MAX_RETRY_ATTEMPTS = 3;
 const CALENDAR_SYNC_INITIAL_RETRY_DELAY_MS = 1000;
 const CALENDAR_SYNC_BACKOFF_MULTIPLIER = 2;
@@ -220,6 +223,126 @@ function toTimestamp(value: unknown, fieldName: string): Timestamp {
   return Timestamp.fromDate(asDate(value, fieldName));
 }
 
+const ISRAEL_TIME_ZONE = 'Asia/Jerusalem';
+
+type CalendarDateParts = {
+  year: number;
+  month: number;
+  day: number;
+};
+
+function getCalendarDatePartsInTimeZone(
+  date: Date,
+  timeZone: string,
+): CalendarDateParts {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const partMap: Record<string, string> = {};
+  for (const part of formatter.formatToParts(date)) {
+    if (part.type !== 'literal') {
+      partMap[part.type] = part.value;
+    }
+  }
+
+  return {
+    year: Number(partMap['year']),
+    month: Number(partMap['month']),
+    day: Number(partMap['day']),
+  };
+}
+
+function getTimeZoneOffsetMinutes(date: Date, timeZone: string): number {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    timeZoneName: 'shortOffset',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const offsetPart = formatter
+    .formatToParts(date)
+    .find((part) => part.type === 'timeZoneName')
+    ?.value;
+
+  if (offsetPart == null) {
+    throw new Error(`Missing timezone offset for ${timeZone}`);
+  }
+
+  const match = /^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/.exec(offsetPart);
+  if (match == null) {
+    throw new Error(`Unsupported timezone offset format: ${offsetPart}`);
+  }
+
+  const sign = match[1] === '-' ? -1 : 1;
+  const hours = Number(match[2]);
+  const minutes = Number(match[3] ?? '0');
+  return sign * ((hours * 60) + minutes);
+}
+
+function buildTimeZoneMidnight(
+  year: number,
+  month: number,
+  day: number,
+  timeZone: string,
+): Date {
+  let candidate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    const offsetMinutes = getTimeZoneOffsetMinutes(candidate, timeZone);
+    candidate = new Date(
+      Date.UTC(year, month - 1, day, 0, 0, 0) - (offsetMinutes * 60 * 1000),
+    );
+  }
+
+  return candidate;
+}
+
+function asCalendarDay(value: unknown, fieldName: string): Date {
+  if (value instanceof Timestamp) {
+    const parts = getCalendarDatePartsInTimeZone(value.toDate(), ISRAEL_TIME_ZONE);
+    return buildTimeZoneMidnight(
+      parts.year,
+      parts.month,
+      parts.day,
+      ISRAEL_TIME_ZONE,
+    );
+  }
+
+  if (typeof value == 'string') {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (match != null) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      return buildTimeZoneMidnight(year, month, day, ISRAEL_TIME_ZONE);
+    }
+  }
+
+  const parts = getCalendarDatePartsInTimeZone(
+    asDate(value, fieldName),
+    ISRAEL_TIME_ZONE,
+  );
+  return buildTimeZoneMidnight(
+    parts.year,
+    parts.month,
+    parts.day,
+    ISRAEL_TIME_ZONE,
+  );
+}
+
+function toDayTimestamp(value: unknown, fieldName: string): Timestamp {
+  return Timestamp.fromDate(asCalendarDay(value, fieldName));
+}
+
 function isSameDay(a: Date, b: Date): boolean {
   return (
     a.getUTCFullYear() === b.getUTCFullYear() &&
@@ -278,6 +401,32 @@ function verifyPasscode(passcode: string, encodedHash: string): boolean {
   const expected = Buffer.from(parts[1], 'hex');
   const actual = scryptSync(passcode, salt, expected.length);
   return timingSafeEqual(expected, actual);
+}
+
+function getStoredPrivatePasscodeValue(
+  credentialData: Record<string, unknown> | undefined,
+): string | null {
+  const value = credentialData?.['passcodeValue'];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+async function upsertPrivatePasscodeCredential(
+  collections: Collections,
+  memberId: string,
+  passcode: string,
+  length: number,
+  extraFields: Record<string, unknown> = {},
+): Promise<void> {
+  await db.collection(collections.privateCredentials).doc(memberId).set(
+    stripUndefined({
+      passcodeHash: hashPasscode(passcode),
+      passcodeValue: passcode,
+      passcodeLength: length,
+      updatedAt: FieldValue.serverTimestamp(),
+      ...extraFields,
+    }),
+    {merge: true},
+  );
 }
 
 function hashSessionToken(token: string): string {
@@ -2664,8 +2813,8 @@ function eventDocFromJson(event: Record<string, unknown>): Record<string, unknow
   return stripUndefined({
     id: event['id'],
     name: event['name'],
-    startDate: toTimestamp(event['startDate'], 'event.startDate'),
-    endDate: toTimestamp(event['endDate'], 'event.endDate'),
+    startDate: toDayTimestamp(event['startDate'], 'event.startDate'),
+    endDate: toDayTimestamp(event['endDate'], 'event.endDate'),
     startTime: event['startTime'] ?? '',
     endTime: event['endTime'] ?? '',
     assemblyTime: event['assemblyTime'] ?? '',
@@ -2865,6 +3014,9 @@ async function validateAssignmentPayload(
   collections: Collections,
   assignment: Record<string, unknown>,
   ignoreAssignmentId?: string,
+  options?: {
+    bypassAvailability?: boolean;
+  },
 ): Promise<void> {
   const eventId = requireString(assignment['eventId'], 'assignment.eventId');
   const teamMemberId = requireString(assignment['teamMemberId'], 'assignment.teamMemberId');
@@ -2916,7 +3068,11 @@ async function validateAssignmentPayload(
     }
   }
 
-  if (memberData['allowMultipleAssignments'] !== true && !memberAvailableForEvent(memberData, eventData)) {
+  if (
+    options?.bypassAvailability !== true &&
+    memberData['allowMultipleAssignments'] !== true &&
+    !memberAvailableForEvent(memberData, eventData)
+  ) {
     throw new HttpError(400, 'חבר/ת הצוות לא זמין/ה לאירוע זה');
   }
 }
@@ -2950,8 +3106,17 @@ async function executeMutation(
       requireAdmin(actor);
       const member = payload['member'] as Record<string, unknown>;
       const memberId = requireString(member['id'], 'member.id');
-      const nextMember = teamMemberDocFromJson(member);
+      const nextMember = {
+        ...teamMemberDocFromJson(member),
+        passcodeLength: DEFAULT_TEAM_MEMBER_PASSCODE_LENGTH,
+      };
       await db.collection(collections.teamMembers).doc(memberId).set(nextMember);
+      await upsertPrivatePasscodeCredential(
+        collections,
+        memberId,
+        DEFAULT_TEAM_MEMBER_PASSCODE,
+        DEFAULT_TEAM_MEMBER_PASSCODE_LENGTH,
+      );
       await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId, {
         name: member['name'],
       }, {
@@ -3061,11 +3226,7 @@ async function executeMutation(
         }
       }
 
-      await credentialRef.set({
-        passcodeHash: hashPasscode(passcode),
-        passcodeLength: length,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      await upsertPrivatePasscodeCredential(collections, memberId, passcode, length);
 
       await teamRef.update({
         passcodeLength: length,
@@ -3112,6 +3273,85 @@ async function executeMutation(
       return {ok: true};
     }
 
+    case 'teamMember.getPasscode': {
+      requireAdmin(actor);
+      const memberId = requireString(payload['memberId'], 'memberId');
+      const teamRef = db.collection(collections.teamMembers).doc(memberId);
+      const credentialRef = db.collection(collections.privateCredentials).doc(memberId);
+      const [teamDoc, credentialDoc] = await Promise.all([
+        teamRef.get(),
+        credentialRef.get(),
+      ]);
+
+      if (!teamDoc.exists) {
+        throw new HttpError(404, 'Team member not found');
+      }
+
+      const teamData = teamDoc.data() ?? {};
+      const credentialData = credentialDoc.data();
+      const storedPasscode = getStoredPrivatePasscodeValue(credentialData);
+      const storedLength =
+        typeof credentialData?.['passcodeLength'] === 'number'
+          ? credentialData['passcodeLength']
+          : typeof teamData['passcodeLength'] === 'number'
+            ? teamData['passcodeLength']
+            : storedPasscode?.length ?? 0;
+
+      if (storedPasscode != null) {
+        await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId, {
+          revealed: true,
+          length: storedLength,
+        });
+        return {
+          ok: true,
+          passcode: storedPasscode,
+          length: storedLength,
+        };
+      }
+
+      const legacyPasscode = typeof teamData['passcode'] === 'string' &&
+          (teamData['passcode'] as string).length > 0
+        ? (teamData['passcode'] as string)
+        : null;
+
+      if (legacyPasscode != null) {
+        const length = typeof teamData['passcodeLength'] === 'number'
+          ? teamData['passcodeLength']
+          : legacyPasscode.length;
+        await upsertPrivatePasscodeCredential(
+          collections,
+          memberId,
+          legacyPasscode,
+          length,
+          {
+            migratedFromLegacyFieldAt: FieldValue.serverTimestamp(),
+          },
+        );
+        await teamRef.update({
+          passcode: FieldValue.delete(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId, {
+          revealed: true,
+          length,
+        });
+        return {
+          ok: true,
+          passcode: legacyPasscode,
+          length,
+        };
+      }
+
+      if (credentialDoc.exists || teamData['passcodeLength'] != null) {
+        throw new HttpError(
+          409,
+          'לא ניתן להציג את קוד הגישה הקיים. יש להגדיר קוד חדש',
+        );
+      }
+
+      throw new HttpError(404, 'לא הוגדר קוד גישה');
+    }
+
     case 'teamMember.delete': {
       requireAdmin(actor);
       const memberId = requireString(payload['memberId'], 'memberId');
@@ -3138,9 +3378,22 @@ async function executeMutation(
       for (const rawMember of members) {
         const member = rawMember as Record<string, unknown>;
         const memberId = requireString(member['id'], 'member.id');
+        const nextMember = {
+          ...teamMemberDocFromJson(member),
+          passcodeLength: DEFAULT_TEAM_MEMBER_PASSCODE_LENGTH,
+        };
         batch.set(
           db.collection(collections.teamMembers).doc(memberId),
-          teamMemberDocFromJson(member),
+          nextMember,
+        );
+        batch.set(
+          db.collection(collections.privateCredentials).doc(memberId),
+          {
+            passcodeHash: hashPasscode(DEFAULT_TEAM_MEMBER_PASSCODE),
+            passcodeValue: DEFAULT_TEAM_MEMBER_PASSCODE,
+            passcodeLength: DEFAULT_TEAM_MEMBER_PASSCODE_LENGTH,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
         );
       }
       await batch.commit();
@@ -3371,9 +3624,9 @@ async function executeMutation(
       const event = payload['event'] as Record<string, unknown>;
       const eventId = requireString(event['id'], 'event.id');
       const name = requireString(event['name'], 'event.name');
-      const startDate = asDate(event['startDate'], 'event.startDate');
-      const startOfTargetDay = Timestamp.fromDate(normalizeDay(startDate));
-      const endOfTargetDay = Timestamp.fromDate(addDays(normalizeDay(startDate), 1));
+      const startDate = asCalendarDay(event['startDate'], 'event.startDate');
+      const startOfTargetDay = Timestamp.fromDate(startDate);
+      const endOfTargetDay = Timestamp.fromDate(addDays(startDate, 1));
       const duplicates = await db
         .collection(collections.events)
         .where('startDate', '>=', startOfTargetDay)
@@ -3395,19 +3648,52 @@ async function executeMutation(
     }
 
     case 'event.update': {
-      requireAdmin(actor);
       const event = payload['event'] as Record<string, unknown>;
       const eventId = requireString(event['id'], 'event.id');
-      const name = requireString(event['name'], 'event.name');
       const eventRef = db.collection(collections.events).doc(eventId);
       const existingDoc = await eventRef.get();
       if (!existingDoc.exists) {
         throw new HttpError(404, 'Event not found');
       }
       const existing = existingDoc.data() ?? {};
-      const startDate = asDate(event['startDate'], 'event.startDate');
-      const startOfTargetDay = Timestamp.fromDate(normalizeDay(startDate));
-      const endOfTargetDay = Timestamp.fromDate(addDays(normalizeDay(startDate), 1));
+      const existingParkingEditorIds = Array.isArray(existing['parkingEditorIds'])
+        ? existing['parkingEditorIds'].map((value) => String(value))
+        : [];
+
+      if (!actor.isAdmin) {
+        if (!existingParkingEditorIds.includes(actor.memberId)) {
+          throw new HttpError(403, 'אין הרשאה לעדכן את מיקום החנייה של האירוע');
+        }
+
+        const nextParkingLocation = typeof event['parkingLocation'] === 'string'
+          ? event['parkingLocation']
+          : null;
+        const nextUpdatedAt = toTimestamp(event['updatedAt'], 'event.updatedAt');
+
+        await eventRef.update({
+          parkingLocation: nextParkingLocation,
+          updatedAt: nextUpdatedAt,
+        });
+        await writeAuditLog(db, collections, actor, operation, 'event', eventId, {
+          name: typeof existing['name'] === 'string' ? existing['name'] : undefined,
+          parkingLocationUpdated: true,
+        }, {
+          before: {
+            parkingLocation: existing['parkingLocation'] ?? null,
+            updatedAt: existing['updatedAt'] ?? null,
+          },
+          after: {
+            parkingLocation: nextParkingLocation,
+            updatedAt: nextUpdatedAt,
+          },
+        });
+        return {ok: true};
+      }
+
+      const name = requireString(event['name'], 'event.name');
+      const startDate = asCalendarDay(event['startDate'], 'event.startDate');
+      const startOfTargetDay = Timestamp.fromDate(startDate);
+      const endOfTargetDay = Timestamp.fromDate(addDays(startDate, 1));
       const duplicates = await db
         .collection(collections.events)
         .where('startDate', '>=', startOfTargetDay)
@@ -3577,7 +3863,9 @@ async function executeMutation(
       requireAdmin(actor);
       const assignment = payload['assignment'] as Record<string, unknown>;
       const assignmentId = requireString(assignment['id'], 'assignment.id');
-      await validateAssignmentPayload(db, collections, assignment);
+      await validateAssignmentPayload(db, collections, assignment, undefined, {
+        bypassAvailability: payload['bypassAvailability'] === true,
+      });
       const nextAssignment = assignmentDocFromJson(assignment);
       await db.collection(collections.assignments).doc(assignmentId).set(nextAssignment);
       await syncAssignedEventsBestEffort(
@@ -3608,7 +3896,9 @@ async function executeMutation(
         throw new HttpError(404, 'Assignment not found');
       }
       const existing = existingDoc.data() ?? {};
-      await validateAssignmentPayload(db, collections, assignment, assignmentId);
+      await validateAssignmentPayload(db, collections, assignment, assignmentId, {
+        bypassAvailability: payload['bypassAvailability'] === true,
+      });
       const nextAssignment = assignmentDocFromJson(assignment);
       await assignmentRef.update(nextAssignment);
       await syncAssignedEventsBestEffort(
@@ -4542,23 +4832,39 @@ app.post('/auth/sign-in', async (request: Request, response: Response) => {
     const credentialRef = db.collection(collections.privateCredentials).doc(memberResult.id);
     const credentialDoc = await credentialRef.get();
     let isValid = false;
-    let length = memberData['passcodeLength'];
+    let length: number | null =
+      typeof memberData['passcodeLength'] === 'number'
+        ? memberData['passcodeLength']
+        : null;
 
     if (credentialDoc.exists) {
-      const hash = credentialDoc.data()?.['passcodeHash'];
+      const credentialData = credentialDoc.data();
+      const hash = credentialData?.['passcodeHash'];
       if (typeof hash === 'string') {
         isValid = verifyPasscode(passcode, hash);
-        length = credentialDoc.data()?.['passcodeLength'] ?? length;
+        length = typeof credentialData?.['passcodeLength'] === 'number'
+          ? credentialData['passcodeLength']
+          : length;
+        if (isValid) {
+          await credentialRef.set({
+            passcodeValue: passcode,
+            passcodeLength: length ?? passcode.length,
+            updatedAt: FieldValue.serverTimestamp(),
+          }, {merge: true});
+        }
       }
     } else if (typeof memberData['passcode'] === 'string' && (memberData['passcode'] as string).length > 0) {
       isValid = memberData['passcode'] === passcode;
       if (isValid) {
-        await credentialRef.set({
-          passcodeHash: hashPasscode(passcode),
-          passcodeLength: memberData['passcodeLength'] ?? passcode.length,
-          migratedFromLegacyFieldAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        });
+        await upsertPrivatePasscodeCredential(
+          collections,
+          memberResult.id,
+          passcode,
+          length ?? passcode.length,
+          {
+            migratedFromLegacyFieldAt: FieldValue.serverTimestamp(),
+          },
+        );
         await db.collection(collections.teamMembers).doc(memberResult.id).update({
           passcode: FieldValue.delete(),
           updatedAt: FieldValue.serverTimestamp(),

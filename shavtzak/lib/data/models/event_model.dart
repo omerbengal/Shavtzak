@@ -51,6 +51,38 @@ class EventModel {
     this.relevantForExtendedTeam = false,
   });
 
+  static DateTime _normalizeDateOnly(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  static DateTime _normalizeDateOnlyUtc(DateTime date) {
+    return DateTime.utc(date.year, date.month, date.day);
+  }
+
+  static DateTime _parseDateOnlyJsonValue(Object? value, String fieldName) {
+    if (value is! String) {
+      throw ArgumentError('Missing or invalid $fieldName');
+    }
+
+    final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(value);
+    if (match != null) {
+      final year = int.parse(match.group(1)!);
+      final month = int.parse(match.group(2)!);
+      final day = int.parse(match.group(3)!);
+      return DateTime(year, month, day);
+    }
+
+    return _normalizeDateOnly(DateTime.parse(value));
+  }
+
+  static String _formatDateOnly(DateTime date) {
+    final normalizedDate = _normalizeDateOnly(date);
+    final year = normalizedDate.year.toString().padLeft(4, '0');
+    final month = normalizedDate.month.toString().padLeft(2, '0');
+    final day = normalizedDate.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
   /// Convert from domain entity
   factory EventModel.fromEntity(Event entity) {
     return EventModel(
@@ -112,25 +144,28 @@ class EventModel {
     return EventModel(
       id: doc.id,
       name: data['name'] as String,
-      startDate: (data['startDate'] as Timestamp).toDate(),
-      endDate: (data['endDate'] as Timestamp).toDate(),
+      startDate: _normalizeDateOnly((data['startDate'] as Timestamp).toDate()),
+      endDate: _normalizeDateOnly((data['endDate'] as Timestamp).toDate()),
       startTime: data['startTime'] as String,
       endTime: data['endTime'] as String,
       assemblyTime: data['assemblyTime'] as String,
       actualShowStartTime: data['actualShowStartTime'] as String? ?? '',
       location: data['location'] as String? ?? '',
       parkingLocation: data['parkingLocation'] as String?,
-      parkingEditorIds: List<String>.from(data['parkingEditorIds'] as List? ?? const []),
+      parkingEditorIds:
+          List<String>.from(data['parkingEditorIds'] as List? ?? const []),
       requiresArmed: data['requiresArmed'] as bool? ?? false,
       comments: data['comments'] as String? ?? data['notes'] as String? ?? '',
       categoryId: data['categoryId'] as String?,
-      roleRequirements: Map<String, int>.from(data['roleRequirements'] as Map? ?? {}),
+      roleRequirements:
+          Map<String, int>.from(data['roleRequirements'] as Map? ?? {}),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
       driveFolderId: data['driveFolderId'] as String?,
       driveFolderLink: data['driveFolderLink'] as String?,
       isArchived: data['isArchived'] as bool? ?? false,
-      relevantForExtendedTeam: data['relevantForExtendedTeam'] as bool? ?? false,
+      relevantForExtendedTeam:
+          data['relevantForExtendedTeam'] as bool? ?? false,
     );
   }
 
@@ -139,8 +174,8 @@ class EventModel {
     return {
       'id': id,
       'name': name,
-      'startDate': Timestamp.fromDate(startDate),
-      'endDate': Timestamp.fromDate(endDate),
+      'startDate': Timestamp.fromDate(_normalizeDateOnlyUtc(startDate)),
+      'endDate': Timestamp.fromDate(_normalizeDateOnlyUtc(endDate)),
       'startTime': startTime,
       'endTime': endTime,
       'assemblyTime': assemblyTime,
@@ -166,25 +201,28 @@ class EventModel {
     return EventModel(
       id: json['id'] as String,
       name: json['name'] as String,
-      startDate: DateTime.parse(json['startDate'] as String),
-      endDate: DateTime.parse(json['endDate'] as String),
+      startDate: _parseDateOnlyJsonValue(json['startDate'], 'startDate'),
+      endDate: _parseDateOnlyJsonValue(json['endDate'], 'endDate'),
       startTime: json['startTime'] as String,
       endTime: json['endTime'] as String,
       assemblyTime: json['assemblyTime'] as String,
       actualShowStartTime: json['actualShowStartTime'] as String? ?? '',
       location: json['location'] as String? ?? '',
       parkingLocation: json['parkingLocation'] as String?,
-      parkingEditorIds: List<String>.from(json['parkingEditorIds'] as List? ?? const []),
+      parkingEditorIds:
+          List<String>.from(json['parkingEditorIds'] as List? ?? const []),
       requiresArmed: json['requiresArmed'] as bool? ?? false,
       comments: json['comments'] as String? ?? json['notes'] as String? ?? '',
       categoryId: json['categoryId'] as String?,
-      roleRequirements: Map<String, int>.from(json['roleRequirements'] as Map? ?? {}),
+      roleRequirements:
+          Map<String, int>.from(json['roleRequirements'] as Map? ?? {}),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       driveFolderId: json['driveFolderId'] as String?,
       driveFolderLink: json['driveFolderLink'] as String?,
       isArchived: json['isArchived'] as bool? ?? false,
-      relevantForExtendedTeam: json['relevantForExtendedTeam'] as bool? ?? false,
+      relevantForExtendedTeam:
+          json['relevantForExtendedTeam'] as bool? ?? false,
     );
   }
 
@@ -193,8 +231,8 @@ class EventModel {
     return {
       'id': id,
       'name': name,
-      'startDate': startDate.toIso8601String(),
-      'endDate': endDate.toIso8601String(),
+      'startDate': _formatDateOnly(startDate),
+      'endDate': _formatDateOnly(endDate),
       'startTime': startTime,
       'endTime': endTime,
       'assemblyTime': assemblyTime,

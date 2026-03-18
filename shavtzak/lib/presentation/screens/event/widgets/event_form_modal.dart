@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
+import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/event.dart';
@@ -84,6 +87,7 @@ class _EventFormModalState extends State<EventFormModal> {
   ScrollController?
       _scrollController; // Will be set from DraggableScrollableSheet
   bool _isSaving = false; // Loading state during save
+  String _loadingMessage = '';
   final _sheetController =
       DraggableScrollableController(); // Controller to expand sheet
   final Map<RoleType, GlobalKey> _roleKeys = {};
@@ -322,6 +326,9 @@ class _EventFormModalState extends State<EventFormModal> {
     // Enable validation for all fields after first submit attempt
     setState(() {
       _isSaving = true;
+      _loadingMessage = widget.isDuplication
+          ? 'משכפל אירוע...'
+          : (_isEditMode ? 'שומר אירוע...' : 'יוצר אירוע...');
       _validateName = true;
       // Always validate date field when save is attempted
       if (_startDate == null || _endDate == null) {
@@ -334,11 +341,17 @@ class _EventFormModalState extends State<EventFormModal> {
     });
 
     if (!_formKey.currentState!.validate()) {
-      setState(() => _isSaving = false);
+      setState(() {
+        _isSaving = false;
+        _loadingMessage = '';
+      });
       return;
     }
     if (_startDate == null || _endDate == null) {
-      setState(() => _isSaving = false);
+      setState(() {
+        _isSaving = false;
+        _loadingMessage = '';
+      });
       // This is now redundant since we set the error above, but keeping for safety
       return;
     }
@@ -350,6 +363,7 @@ class _EventFormModalState extends State<EventFormModal> {
         setState(() {
           _dateError = '↑ יש לבחור תאריכי התחלה וסיום לאירוע המשוכפל ↑';
           _isSaving = false;
+          _loadingMessage = '';
         });
         return;
       }
@@ -411,6 +425,7 @@ class _EventFormModalState extends State<EventFormModal> {
             setState(() {
               _roleRequirements = Map.from(widget.event!.roleRequirements);
               _isSaving = false;
+              _loadingMessage = '';
             });
             return;
           }
@@ -513,7 +528,10 @@ class _EventFormModalState extends State<EventFormModal> {
               ),
             );
         }
-        setState(() => _isSaving = false);
+        setState(() {
+          _isSaving = false;
+          _loadingMessage = '';
+        });
         return;
       }
     }
@@ -559,13 +577,24 @@ class _EventFormModalState extends State<EventFormModal> {
 
     if (!mounted) return;
     final bloc = context.read<EventBloc>();
+    final completion = Completer<CrudActionResult>();
     if (_isEditMode) {
-      bloc.add(UpdateEvent(event));
+      bloc.add(UpdateEvent(event, completion: completion));
     } else {
-      bloc.add(CreateEvent(event));
+      bloc.add(CreateEvent(event, completion: completion));
     }
 
-    // Close modal after save operation
+    final result = await completion.future;
+    if (!mounted) return;
+
+    if (result.isFailure) {
+      setState(() {
+        _isSaving = false;
+        _loadingMessage = '';
+      });
+      return;
+    }
+
     widget.onSuccess();
   }
 
@@ -681,7 +710,9 @@ class _EventFormModalState extends State<EventFormModal> {
                                   IconButton(
                                     icon: const Icon(Icons.delete,
                                         color: Colors.red),
-                                    onPressed: () {
+                                    onPressed: _isSaving
+                                        ? null
+                                        : () {
                                       showDialog(
                                         context: context,
                                         builder: (dialogContext) =>
@@ -703,15 +734,39 @@ class _EventFormModalState extends State<EventFormModal> {
                                                 child: const Text('מחק',
                                                     style: TextStyle(
                                                         color: Colors.red)),
-                                                onPressed: () {
-                                                  final bloc =
-                                                      context.read<EventBloc>();
-                                                  bloc.add(DeleteEvent(
-                                                      widget.event!.id));
+                                                onPressed: () async {
                                                   Navigator.of(dialogContext)
-                                                      .pop(); // Close dialog
-                                                  widget
-                                                      .onSuccess(); // Close modal
+                                                      .pop();
+                                                  if (mounted) {
+                                                    setState(() {
+                                                      _isSaving = true;
+                                                      _loadingMessage =
+                                                          'מוחק אירוע...';
+                                                    });
+                                                  }
+                                                  final completion =
+                                                      Completer<
+                                                          CrudActionResult>();
+                                                  context.read<EventBloc>().add(
+                                                        DeleteEvent(
+                                                          widget.event!.id,
+                                                          completion:
+                                                              completion,
+                                                        ),
+                                                      );
+                                                  final result =
+                                                      await completion.future;
+                                                  if (!context.mounted) {
+                                                    return;
+                                                  }
+                                                  if (result.isFailure) {
+                                                    setState(() {
+                                                      _isSaving = false;
+                                                      _loadingMessage = '';
+                                                    });
+                                                    return;
+                                                  }
+                                                  widget.onSuccess();
                                                 },
                                               ),
                                             ],
@@ -725,7 +780,9 @@ class _EventFormModalState extends State<EventFormModal> {
                                   IconButton(
                                     icon: const Icon(Icons.copy,
                                         color: Colors.blue),
-                                    onPressed: () {
+                                    onPressed: _isSaving
+                                        ? null
+                                        : () {
                                       // Close the current modal and signal duplication intent
                                       Navigator.of(context).pop({
                                         'action': 'duplicate',
@@ -736,7 +793,7 @@ class _EventFormModalState extends State<EventFormModal> {
                                   ),
                                 IconButton(
                                   icon: const Icon(Icons.close),
-                                  onPressed: _handleClose,
+                                  onPressed: _isSaving ? null : _handleClose,
                                 ),
                               ],
                             ),
@@ -753,6 +810,12 @@ class _EventFormModalState extends State<EventFormModal> {
                                 // This is triggered BEFORE any database writes
                                 if (state
                                     is DuplicationRequiresConflictResolution) {
+                                  if (mounted) {
+                                    setState(() {
+                                      _isSaving = false;
+                                      _loadingMessage = '';
+                                    });
+                                  }
                                   // Show the unified conflict resolution dialog
                                   final excludedIds =
                                       await DuplicationConflictResolutionDialog
@@ -764,6 +827,10 @@ class _EventFormModalState extends State<EventFormModal> {
                                   if (excludedIds != null) {
                                     // User confirmed - dispatch confirmation event with exclusions
                                     if (context.mounted) {
+                                      setState(() {
+                                        _isSaving = true;
+                                        _loadingMessage = 'משכפל אירוע...';
+                                      });
                                       context
                                           .read<EventBloc>()
                                           .add(ConfirmDuplicationWithExclusions(
@@ -787,9 +854,22 @@ class _EventFormModalState extends State<EventFormModal> {
 
                                 // Handle success state - close modal when duplication completes
                                 if (state is EventOperationSuccess) {
+                                  if (mounted) {
+                                    setState(() {
+                                      _isSaving = false;
+                                      _loadingMessage = '';
+                                    });
+                                  }
                                   if (context.mounted) {
                                     widget.onSuccess();
                                   }
+                                }
+
+                                if (state is EventError && mounted) {
+                                  setState(() {
+                                    _isSaving = false;
+                                    _loadingMessage = '';
+                                  });
                                 }
 
                                 // Handle old quota conflicts state (LEGACY - kept for backwards compatibility)
@@ -2086,7 +2166,7 @@ class _EventFormModalState extends State<EventFormModal> {
                               children: [
                                 Expanded(
                                   child: OutlinedButton(
-                                    onPressed: _handleClose,
+                                    onPressed: _isSaving ? null : _handleClose,
                                     child: const Text('ביטול'),
                                   ),
                                 ),
@@ -2115,8 +2195,7 @@ class _EventFormModalState extends State<EventFormModal> {
                     // Loading overlay
                     LoadingOverlay(
                       isLoading: _isSaving,
-                      message:
-                          widget.isDuplication ? 'משכפל אירוע...' : 'שומר...',
+                      message: _loadingMessage,
                     ),
                   ],
                 ),

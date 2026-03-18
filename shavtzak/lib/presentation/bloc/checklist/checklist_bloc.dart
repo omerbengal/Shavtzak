@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:uuid/uuid.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../data/repositories/checklist_repository.dart';
@@ -54,12 +55,14 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
           return ChecklistLoaded(items);
         },
         onError: (error, stackTrace) {
-          developer.log('ChecklistBloc: Error loading checklist items: $error', name: 'Checklist', error: error, stackTrace: stackTrace);
+          developer.log('ChecklistBloc: Error loading checklist items: $error',
+              name: 'Checklist', error: error, stackTrace: stackTrace);
           return ChecklistError('Failed to load checklist items: $error');
         },
       );
     } catch (e) {
-      developer.log('ChecklistBloc: Error in _onLoadChecklistItems: $e', name: 'Checklist', error: e);
+      developer.log('ChecklistBloc: Error in _onLoadChecklistItems: $e',
+          name: 'Checklist', error: e);
       emit(ChecklistError('Failed to load checklist items: $e'));
     }
   }
@@ -78,12 +81,18 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
           return ChecklistLoaded(items);
         },
         onError: (error, stackTrace) {
-          developer.log('ChecklistBloc: Error loading checklist items for event: $error', name: 'Checklist', error: error, stackTrace: stackTrace);
-          return ChecklistError('Failed to load checklist items for event: $error');
+          developer.log(
+              'ChecklistBloc: Error loading checklist items for event: $error',
+              name: 'Checklist',
+              error: error,
+              stackTrace: stackTrace);
+          return ChecklistError(
+              'Failed to load checklist items for event: $error');
         },
       );
     } catch (e) {
-      developer.log('ChecklistBloc: Error in _onLoadChecklistItemsByEvent: $e', name: 'Checklist', error: e);
+      developer.log('ChecklistBloc: Error in _onLoadChecklistItemsByEvent: $e',
+          name: 'Checklist', error: e);
       emit(ChecklistError('Failed to load checklist items for event: $e'));
     }
   }
@@ -108,12 +117,17 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
           );
         },
         onError: (error, stackTrace) {
-          developer.log('ChecklistBloc: Error loading user checklist items: $error', name: 'Checklist', error: error, stackTrace: stackTrace);
+          developer.log(
+              'ChecklistBloc: Error loading user checklist items: $error',
+              name: 'Checklist',
+              error: error,
+              stackTrace: stackTrace);
           return ChecklistError('Failed to load your checklist items: $error');
         },
       );
     } catch (e) {
-      developer.log('ChecklistBloc: Error in _onLoadUserChecklistItems: $e', name: 'Checklist', error: e);
+      developer.log('ChecklistBloc: Error in _onLoadUserChecklistItems: $e',
+          name: 'Checklist', error: e);
       emit(ChecklistError('Failed to load your checklist items: $e'));
     }
   }
@@ -126,7 +140,11 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       // Validate permissions
       final currentUser = _getCurrentUser();
       if (currentUser == null || !currentUser.isAdmin) {
-        emit(ChecklistError('Only admins can add checklist items'));
+        _completeActionFailure(
+          event.completion,
+          'רק מנהלים יכולים להוסיף פריטי צ\'קליסט',
+          emit: emit,
+        );
         return;
       }
 
@@ -138,9 +156,15 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       );
 
       await _repository.createChecklistItem(item);
+      _completeActionSuccess(event.completion, 'פריט הצ\'קליסט נוצר בהצלחה');
     } catch (e) {
-      developer.log('ChecklistBloc: Error adding checklist item: $e', name: 'Checklist', error: e);
-      emit(ChecklistError('Failed to add checklist item: $e'));
+      final message = 'שגיאה בהוספת פריט צ\'קליסט: $e';
+      developer.log(
+        'ChecklistBloc: Error adding checklist item: $e',
+        name: 'Checklist',
+        error: e,
+      );
+      _completeActionFailure(event.completion, message, emit: emit);
     }
   }
 
@@ -151,13 +175,21 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
     try {
       final currentUser = _getCurrentUser();
       if (currentUser == null) {
-        emit(ChecklistError('User not authenticated'));
+        _completeActionFailure(
+          event.completion,
+          'המשתמש אינו מחובר',
+          emit: emit,
+        );
         return;
       }
 
       // Check permissions
       if (!event.item.userCanEdit(currentUser.id, currentUser.isAdmin)) {
-        emit(ChecklistError('You do not have permission to edit this item'));
+        _completeActionFailure(
+          event.completion,
+          'אין לך הרשאה לערוך את הפריט הזה',
+          emit: emit,
+        );
         return;
       }
 
@@ -166,9 +198,15 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       );
 
       await _repository.updateChecklistItem(updatedItem);
+      _completeActionSuccess(event.completion, 'פריט הצ\'קליסט עודכן בהצלחה');
     } catch (e) {
-      developer.log('ChecklistBloc: Error updating checklist item: $e', name: 'Checklist', error: e);
-      emit(ChecklistError('Failed to update checklist item: $e'));
+      final message = 'שגיאה בעדכון פריט צ\'קליסט: $e';
+      developer.log(
+        'ChecklistBloc: Error updating checklist item: $e',
+        name: 'Checklist',
+        error: e,
+      );
+      _completeActionFailure(event.completion, message, emit: emit);
     }
   }
 
@@ -199,7 +237,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       final updatedItem = item.withUpdatedStatus(event.newStatus);
       await _repository.updateChecklistItem(updatedItem);
     } catch (e) {
-      developer.log('ChecklistBloc: Error updating checklist item status: $e', name: 'Checklist', error: e);
+      developer.log('ChecklistBloc: Error updating checklist item status: $e',
+          name: 'Checklist', error: e);
       emit(ChecklistError('Failed to update status: $e'));
     }
   }
@@ -225,7 +264,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
         authorRole: event.authorRole,
       );
     } catch (e) {
-      developer.log('ChecklistBloc: Error adding note to checklist item: $e', name: 'Checklist', error: e);
+      developer.log('ChecklistBloc: Error adding note to checklist item: $e',
+          name: 'Checklist', error: e);
       emit(ChecklistError('Failed to add note: $e'));
     }
   }
@@ -257,7 +297,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       final updatedItem = item.withAddedCc(event.ccMemberId);
       await _repository.updateChecklistItem(updatedItem);
     } catch (e) {
-      developer.log('ChecklistBloc: Error adding CC member: $e', name: 'Checklist', error: e);
+      developer.log('ChecklistBloc: Error adding CC member: $e',
+          name: 'Checklist', error: e);
       emit(ChecklistError('Failed to add CC member: $e'));
     }
   }
@@ -289,7 +330,8 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       final updatedItem = item.withRemovedCc(event.ccMemberId);
       await _repository.updateChecklistItem(updatedItem);
     } catch (e) {
-      developer.log('ChecklistBloc: Error removing CC member: $e', name: 'Checklist', error: e);
+      developer.log('ChecklistBloc: Error removing CC member: $e',
+          name: 'Checklist', error: e);
       emit(ChecklistError('Failed to remove CC member: $e'));
     }
   }
@@ -301,14 +343,24 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
     try {
       final currentUser = _getCurrentUser();
       if (currentUser == null || !currentUser.isAdmin) {
-        emit(ChecklistError('Only admins can delete checklist items'));
+        _completeActionFailure(
+          event.completion,
+          'רק מנהלים יכולים למחוק פריטי צ\'קליסט',
+          emit: emit,
+        );
         return;
       }
 
       await _repository.deleteChecklistItem(event.itemId);
+      _completeActionSuccess(event.completion, 'פריט הצ\'קליסט נמחק בהצלחה');
     } catch (e) {
-      developer.log('ChecklistBloc: Error deleting checklist item: $e', name: 'Checklist', error: e);
-      emit(ChecklistError('Failed to delete checklist item: $e'));
+      final message = 'שגיאה במחיקת פריט צ\'קליסט: $e';
+      developer.log(
+        'ChecklistBloc: Error deleting checklist item: $e',
+        name: 'Checklist',
+        error: e,
+      );
+      _completeActionFailure(event.completion, message, emit: emit);
     }
   }
 
@@ -334,6 +386,24 @@ class ChecklistBloc extends Bloc<ChecklistEvent, ChecklistState> {
       return userState.user;
     }
     return null;
+  }
+
+  void _completeActionSuccess(
+    CrudActionCompleter? completion, [
+    String? message,
+  ]) {
+    completeCrudAction(completion, CrudActionResult.success(message));
+  }
+
+  void _completeActionFailure(
+    CrudActionCompleter? completion,
+    String message, {
+    Emitter<ChecklistState>? emit,
+  }) {
+    completeCrudAction(completion, CrudActionResult.failure(message));
+    if (completion == null && emit != null) {
+      emit(ChecklistError(message));
+    }
   }
 
   @override

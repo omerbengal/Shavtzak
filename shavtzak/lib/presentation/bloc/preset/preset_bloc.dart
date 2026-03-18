@@ -2,6 +2,7 @@ import 'dart:developer' as developer;
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:uuid/uuid.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../../domain/entities/preset.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../data/repositories/preset_repository.dart';
@@ -54,12 +55,14 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
           return PresetsLoaded(presets);
         },
         onError: (error, stackTrace) {
-          developer.log('PresetBloc: Error loading presets: $error', name: 'Preset', error: error, stackTrace: stackTrace);
+          developer.log('PresetBloc: Error loading presets: $error',
+              name: 'Preset', error: error, stackTrace: stackTrace);
           return PresetError('נכשל בטעינת פריסטים: $error');
         },
       );
     } catch (e) {
-      developer.log('PresetBloc: Error in _onLoadPresets: $e', name: 'Preset', error: e);
+      developer.log('PresetBloc: Error in _onLoadPresets: $e',
+          name: 'Preset', error: e);
       emit(PresetError('נכשל בטעינת פריסטים: $e'));
     }
   }
@@ -71,7 +74,11 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
     try {
       final currentUser = _getCurrentUser();
       if (currentUser == null || !currentUser.isAdmin) {
-        emit(const PresetError('רק מנהלים יכולים ליצור פריסטים'));
+        _completeActionFailure(
+          event.completion,
+          'רק מנהלים יכולים ליצור פריסטים',
+          emit: emit,
+        );
         return;
       }
 
@@ -85,11 +92,15 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
       );
 
       await _repository.createPreset(preset);
-
-      // Re-emit current state to trigger UI update (the stream will handle the rest)
+      _completeActionSuccess(event.completion, 'הפריסט נוצר בהצלחה');
     } catch (e) {
-      developer.log('PresetBloc: Error creating preset: $e', name: 'Preset', error: e);
-      emit(PresetError('נכשל ביצירת פריסט: $e'));
+      final message = 'נכשל ביצירת פריסט: $e';
+      developer.log(
+        'PresetBloc: Error creating preset: $e',
+        name: 'Preset',
+        error: e,
+      );
+      _completeActionFailure(event.completion, message, emit: emit);
     }
   }
 
@@ -100,15 +111,25 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
     try {
       final currentUser = _getCurrentUser();
       if (currentUser == null || !currentUser.isAdmin) {
-        emit(const PresetError('רק מנהלים יכולים לערוך פריסטים'));
+        _completeActionFailure(
+          event.completion,
+          'רק מנהלים יכולים לערוך פריסטים',
+          emit: emit,
+        );
         return;
       }
 
       final preset = event.preset.copyWith(updatedAt: DateTime.now());
       await _repository.updatePreset(preset);
+      _completeActionSuccess(event.completion, 'הפריסט עודכן בהצלחה');
     } catch (e) {
-      developer.log('PresetBloc: Error updating preset: $e', name: 'Preset', error: e);
-      emit(PresetError('נכשל בעדכון פריסט: $e'));
+      final message = 'נכשל בעדכון פריסט: $e';
+      developer.log(
+        'PresetBloc: Error updating preset: $e',
+        name: 'Preset',
+        error: e,
+      );
+      _completeActionFailure(event.completion, message, emit: emit);
     }
   }
 
@@ -119,14 +140,24 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
     try {
       final currentUser = _getCurrentUser();
       if (currentUser == null || !currentUser.isAdmin) {
-        emit(const PresetError('רק מנהלים יכולים למחוק פריסטים'));
+        _completeActionFailure(
+          event.completion,
+          'רק מנהלים יכולים למחוק פריסטים',
+          emit: emit,
+        );
         return;
       }
 
       await _repository.deletePreset(event.presetId);
+      _completeActionSuccess(event.completion, 'הפריסט נמחק בהצלחה');
     } catch (e) {
-      developer.log('PresetBloc: Error deleting preset: $e', name: 'Preset', error: e);
-      emit(PresetError('נכשל במחיקת פריסט: $e'));
+      final message = 'נכשל במחיקת פריסט: $e';
+      developer.log(
+        'PresetBloc: Error deleting preset: $e',
+        name: 'Preset',
+        error: e,
+      );
+      _completeActionFailure(event.completion, message, emit: emit);
     }
   }
 
@@ -137,20 +168,32 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
     try {
       final currentUser = _getCurrentUser();
       if (currentUser == null || !currentUser.isAdmin) {
-        emit(const PresetError('רק מנהלים יכולים לטעון פריסטים'));
+        _completeActionFailure(
+          event.completion,
+          'רק מנהלים יכולים לטעון פריסטים',
+          emit: emit,
+        );
         return;
       }
 
       // Get preset and event for success message
       final preset = await _repository.getPresetById(event.presetId);
       if (preset == null) {
-        emit(const PresetError('הפריסט לא נמצא'));
+        _completeActionFailure(
+          event.completion,
+          'הפריסט לא נמצא',
+          emit: emit,
+        );
         return;
       }
 
       final targetEvent = await _eventRepository.getEventById(event.eventId);
       if (targetEvent == null) {
-        emit(const PresetError('האירוע לא נמצא'));
+        _completeActionFailure(
+          event.completion,
+          'האירוע לא נמצא',
+          emit: emit,
+        );
         return;
       }
 
@@ -160,14 +203,45 @@ class PresetBloc extends Bloc<PresetEvent, PresetState> {
         currentUser.id,
       );
 
-      emit(PresetLoadedIntoEvent(
+      final successState = PresetLoadedIntoEvent(
         presetName: preset.name,
         eventName: targetEvent.name,
         itemCount: preset.items.length,
-      ));
+      );
+      if (event.completion == null) {
+        emit(successState);
+      } else {
+        _completeActionSuccess(
+          event.completion,
+          'נטענו ${preset.items.length} פריטים מ-"${preset.name}" לאירוע "${targetEvent.name}"',
+        );
+      }
     } catch (e) {
-      developer.log('PresetBloc: Error loading preset into event: $e', name: 'Preset', error: e);
-      emit(PresetError('נכשל בטעינת פריסט לאירוע: $e'));
+      final message = 'נכשל בטעינת פריסט לאירוע: $e';
+      developer.log(
+        'PresetBloc: Error loading preset into event: $e',
+        name: 'Preset',
+        error: e,
+      );
+      _completeActionFailure(event.completion, message, emit: emit);
+    }
+  }
+
+  void _completeActionSuccess(
+    CrudActionCompleter? completion, [
+    String? message,
+  ]) {
+    completeCrudAction(completion, CrudActionResult.success(message));
+  }
+
+  void _completeActionFailure(
+    CrudActionCompleter? completion,
+    String message, {
+    Emitter<PresetState>? emit,
+  }) {
+    completeCrudAction(completion, CrudActionResult.failure(message));
+    if (completion == null && emit != null) {
+      emit(PresetError(message));
     }
   }
 

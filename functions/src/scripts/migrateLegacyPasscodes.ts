@@ -29,6 +29,7 @@ async function migrateCollection(collectionName: string): Promise<void> {
 
     await firestore.collection(credentialsCollection).doc(doc.id).set({
       passcodeHash: hashPasscode(passcode),
+      passcodeValue: passcode,
       passcodeLength: length,
       migratedFromLegacyFieldAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),

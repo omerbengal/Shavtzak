@@ -35,7 +35,8 @@ class AssignmentRepository {
   /// Watch assignments for a specific team member in real-time
   Stream<List<Assignment>> watchAssignmentsByPerson(String teamMemberId) {
     if (_database is FirestoreDatabase) {
-      return (_database as FirestoreDatabase).watchAssignmentsByPerson(teamMemberId);
+      return (_database as FirestoreDatabase)
+          .watchAssignmentsByPerson(teamMemberId);
     }
     return Stream.fromFuture(_database.getAssignmentsByPerson(teamMemberId));
   }
@@ -121,9 +122,12 @@ class AssignmentRepository {
     await _database.insertAssignment(assignment);
   }
 
-  /// Create assignment bypassing conflict checks (for manual assignments)
+  /// Create assignment bypassing availability checks (for forced assignments)
   Future<void> createAssignmentWithBypass(Assignment assignment) async {
-    await _database.insertAssignment(assignment);
+    await _database.insertAssignment(
+      assignment,
+      bypassAvailability: true,
+    );
   }
 
   /// Update an existing assignment
@@ -143,6 +147,14 @@ class AssignmentRepository {
   /// Update assignment without conflict checking (for internal operations like slot reassignment)
   Future<void> updateAssignmentUnchecked(Assignment assignment) async {
     await _database.updateAssignment(assignment);
+  }
+
+  /// Update assignment bypassing availability checks (for forced reassignments)
+  Future<void> updateAssignmentWithBypass(Assignment assignment) async {
+    await _database.updateAssignment(
+      assignment,
+      bypassAvailability: true,
+    );
   }
 
   /// Delete an assignment
@@ -176,15 +188,18 @@ class AssignmentRepository {
 
     // Check availability conflict for entire event duration (with time-based detection)
     // Skip for members with allowMultipleAssignments
-    if (!member.allowMultipleAssignments && !member.isAvailableForEventWithTime(event)) {
+    if (!member.allowMultipleAssignments &&
+        !member.isAvailableForEventWithTime(event)) {
       final dateRange = _isSameDay(event.startDate, event.endDate)
           ? _formatDate(event.startDate)
           : '${_formatDate(event.startDate)} - ${_formatDate(event.endDate)}';
 
       if (member.isPermanent) {
-        conflicts.add('${member.name} לא זמין/ה בתאריכים $dateRange (יש הגבלה מאושרת)');
+        conflicts.add(
+            '${member.name} לא זמין/ה בתאריכים $dateRange (יש הגבלה מאושרת)');
       } else {
-        conflicts.add('${member.name} לא ציין/ה זמינות בתאריכים $dateRange (יש להוסיף זמינות)');
+        conflicts.add(
+            '${member.name} לא ציין/ה זמינות בתאריכים $dateRange (יש להוסיף זמינות)');
       }
     }
 
@@ -203,7 +218,8 @@ class AssignmentRepository {
     // Check for duplicate assignments (same person, same event, same role)
     // Skip for members with allowMultipleAssignments
     if (!member.allowMultipleAssignments) {
-      final existingAssignments = await getAssignmentsByEvent(assignment.eventId);
+      final existingAssignments =
+          await getAssignmentsByEvent(assignment.eventId);
       final duplicate = existingAssignments.any(
         (a) =>
             a.id != assignment.id && // Don't check against itself
@@ -236,7 +252,8 @@ class AssignmentRepository {
     for (final roleKey in event.requiredRoleKeys) {
       final required = event.roleRequirements[roleKey] ?? 0;
       final assigned = assignments
-          .where((a) => a.roleType == roleKey && a.status != AssignmentStatus.declined)
+          .where((a) =>
+              a.roleType == roleKey && a.status != AssignmentStatus.declined)
           .length;
 
       stats[roleKey] = AssignmentStats(
@@ -282,8 +299,7 @@ class AssignmentRepository {
           all.where((a) => a.status == AssignmentStatus.declined).length,
       'with_conflicts': all
           .where(
-            (a) =>
-                a.hasAvailabilityConflict() || a.hasQualificationConflict(),
+            (a) => a.hasAvailabilityConflict() || a.hasQualificationConflict(),
           )
           .length,
     };
@@ -328,7 +344,8 @@ class AssignmentRepository {
   }
 
   /// Update assignment notes and/or alternative phone number
-  Future<void> updateAssignmentNotes(String id, String notes, {String? alternativePhoneNumber}) async {
+  Future<void> updateAssignmentNotes(String id, String notes,
+      {String? alternativePhoneNumber}) async {
     final assignment = await getAssignmentById(id);
     if (assignment == null) {
       throw Exception('Assignment not found: $id');
@@ -383,7 +400,9 @@ String _formatDate(DateTime date) {
 
 /// Helper method to check if two dates are the same day
 bool _isSameDay(DateTime date1, DateTime date2) {
-  return date1.year == date2.year && date1.month == date2.month && date1.day == date2.day;
+  return date1.year == date2.year &&
+      date1.month == date2.month &&
+      date1.day == date2.day;
 }
 
 /// Exception thrown when assignment has conflicts

@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../domain/entities/preset.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_state.dart';
+import '../loading_overlay.dart';
 
 /// Modal form for creating or editing a preset
 class PresetFormModal extends StatefulWidget {
   final Preset? preset;
-  final Function(Preset) onSave;
+  final Future<CrudActionResult> Function(Preset) onSave;
 
   const PresetFormModal({
     super.key,
@@ -28,6 +30,8 @@ class _PresetFormModalState extends State<PresetFormModal> {
   final _itemsScrollController = ScrollController();
   late final FocusNode _nameFocusNode;
   List<PresetItem> _items = [];
+  bool _isSaving = false;
+  String _savingMessage = '';
 
   @override
   void initState() {
@@ -73,7 +77,45 @@ class _PresetFormModalState extends State<PresetFormModal> {
     );
   }
 
-  void _save() {
+  void _showMutationError(String message) {
+    _scaffoldMessengerKey.currentState
+      ?..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+        ),
+      );
+  }
+
+  Widget _buildMemberLabel(TeamMember? member, String fallback) {
+    if (member == null) {
+      return Text(fallback);
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            member.name,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (member.isPermanent) ...[
+          const SizedBox(width: 4),
+          Icon(
+            Icons.verified_user,
+            size: 14,
+            color: Colors.blue.shade700,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _save() async {
+    if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
     if (_items.isEmpty) {
       _scaffoldMessengerKey.currentState?.showSnackBar(
@@ -93,7 +135,27 @@ class _PresetFormModalState extends State<PresetFormModal> {
       updatedAt: DateTime.now(),
     );
 
-    widget.onSave(preset);
+    setState(() {
+      _isSaving = true;
+      _savingMessage =
+          widget.preset == null ? 'יוצר פריסט...' : 'שומר פריסט...';
+    });
+
+    final result = await widget.onSave(preset);
+    if (!mounted) {
+      return;
+    }
+
+    if (result.isFailure) {
+      setState(() {
+        _isSaving = false;
+        _savingMessage = '';
+      });
+      _showMutationError(result.message ?? 'שגיאה בשמירת הפריסט');
+      return;
+    }
+
+    Navigator.pop(context);
   }
 
   @override
@@ -116,208 +178,229 @@ class _PresetFormModalState extends State<PresetFormModal> {
             height: dialogHeight,
             child: Scaffold(
               backgroundColor: Colors.transparent,
-              body: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    // Header
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            widget.preset == null
-                                ? 'יצירת פריסט'
-                                : 'עריכת פריסט',
-                            style: const TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // Content
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Name field
-                            TextFormField(
-                              controller: _nameController,
-                              focusNode: _nameFocusNode,
-                              decoration: const InputDecoration(
-                                labelText: 'שם הפריסט *',
-                                border: OutlineInputBorder(),
-                                hintText: 'לדוגמה: אירוע רגיל',
+              body: Stack(
+                children: [
+                  Form(
+                    key: _formKey,
+                    child: Column(
+                      children: [
+                        // Header
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                widget.preset == null
+                                    ? 'יצירת פריסט'
+                                    : 'עריכת פריסט',
+                                style: const TextStyle(
+                                    fontSize: 20, fontWeight: FontWeight.bold),
                               ),
-                              validator: (value) {
-                                if (value == null || value.trim().isEmpty) {
-                                  return 'אנא הזן שם לפריסט';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 24),
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () => Navigator.pop(context),
+                              ),
+                            ],
+                          ),
+                        ),
 
-                            // Items section header
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        // Content
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Text(
-                                  'פריטים בתבנית (${_items.length})',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
+                                // Name field
+                                TextFormField(
+                                  controller: _nameController,
+                                  focusNode: _nameFocusNode,
+                                  decoration: const InputDecoration(
+                                    labelText: 'שם הפריסט *',
+                                    border: OutlineInputBorder(),
+                                    hintText: 'לדוגמה: אירוע רגיל',
                                   ),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'אנא הזן שם לפריסט';
+                                    }
+                                    return null;
+                                  },
                                 ),
-                                ElevatedButton.icon(
-                                  onPressed: _addItem,
-                                  icon: const Icon(Icons.add,
-                                      color: Colors.white),
-                                  label: const Text('הוסף פריט'),
+                                const SizedBox(height: 24),
+
+                                // Items section header
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'פריטים בתבנית (${_items.length})',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    ElevatedButton.icon(
+                                      onPressed: _addItem,
+                                      icon: const Icon(Icons.add,
+                                          color: Colors.white),
+                                      label: const Text('הוסף פריט'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+
+                                // Items list
+                                Expanded(
+                                  child: _items.isEmpty
+                                      ? Center(
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.list_alt,
+                                                  size: 64,
+                                                  color: Colors.grey[400]),
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                'אין פריטים בתבנית',
+                                                style: TextStyle(
+                                                    color: Colors.grey[600]),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                'לחץ על "הוסף פריט" להוספת פריט חדש',
+                                                style: TextStyle(
+                                                    color: Colors.grey[500],
+                                                    fontSize: 12),
+                                              ),
+                                            ],
+                                          ),
+                                        )
+                                      : BlocBuilder<TeamBloc, TeamState>(
+                                          builder: (context, teamState) {
+                                            final members =
+                                                teamState is TeamLoaded
+                                                    ? teamState.members
+                                                    : <TeamMember>[];
+                                            final memberMap = {
+                                              for (var m in members) m.id: m
+                                            };
+
+                                            return ReorderableListView.builder(
+                                              scrollController:
+                                                  _itemsScrollController,
+                                              itemCount: _items.length,
+                                              onReorder: (oldIndex, newIndex) {
+                                                setState(() {
+                                                  if (newIndex > oldIndex) {
+                                                    newIndex -= 1;
+                                                  }
+                                                  final item =
+                                                      _items.removeAt(oldIndex);
+                                                  _items.insert(newIndex, item);
+                                                });
+                                              },
+                                              itemBuilder: (context, index) {
+                                                final item = _items[index];
+                                                final responsible = memberMap[
+                                                    item.responsibleId];
+                                                final ccCount =
+                                                    item.ccIds.length;
+
+                                                return Card(
+                                                  key: ValueKey('item_$index'),
+                                                  margin: const EdgeInsets
+                                                      .symmetric(vertical: 4),
+                                                  child: ListTile(
+                                                    leading: CircleAvatar(
+                                                      child:
+                                                          Text('${index + 1}'),
+                                                    ),
+                                                    title: Text(item.name),
+                                                    subtitle: Wrap(
+                                                      crossAxisAlignment:
+                                                          WrapCrossAlignment
+                                                              .center,
+                                                      children: [
+                                                        const Text('אחראי: '),
+                                                        _buildMemberLabel(
+                                                          responsible,
+                                                          'לא הוגדר',
+                                                        ),
+                                                        if (ccCount > 0) ...[
+                                                          const Text(' | '),
+                                                          Text(
+                                                              '$ccCount מיודעים'),
+                                                        ],
+                                                      ],
+                                                    ),
+                                                    trailing: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        IconButton(
+                                                          icon: const Icon(
+                                                              Icons.edit,
+                                                              size: 20),
+                                                          onPressed: () =>
+                                                              _editItem(index),
+                                                          tooltip: 'ערוך',
+                                                        ),
+                                                        IconButton(
+                                                          icon: const Icon(
+                                                              Icons.delete,
+                                                              size: 20,
+                                                              color:
+                                                                  Colors.red),
+                                                          onPressed: () =>
+                                                              _removeItem(
+                                                                  index),
+                                                          tooltip: 'הסר',
+                                                        ),
+                                                        const Icon(
+                                                            Icons.drag_handle,
+                                                            color: Colors.grey),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                            );
+                                          },
+                                        ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 8),
-
-                            // Items list
-                            Expanded(
-                              child: _items.isEmpty
-                                  ? Center(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(Icons.list_alt,
-                                              size: 64,
-                                              color: Colors.grey[400]),
-                                          const SizedBox(height: 16),
-                                          Text(
-                                            'אין פריטים בתבנית',
-                                            style: TextStyle(
-                                                color: Colors.grey[600]),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'לחץ על "הוסף פריט" להוספת פריט חדש',
-                                            style: TextStyle(
-                                                color: Colors.grey[500],
-                                                fontSize: 12),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  : BlocBuilder<TeamBloc, TeamState>(
-                                      builder: (context, teamState) {
-                                        final members = teamState is TeamLoaded
-                                            ? teamState.members
-                                            : <TeamMember>[];
-                                        final memberMap = {
-                                          for (var m in members) m.id: m
-                                        };
-
-                                        return ReorderableListView.builder(
-                                          scrollController:
-                                              _itemsScrollController,
-                                          itemCount: _items.length,
-                                          onReorder: (oldIndex, newIndex) {
-                                            setState(() {
-                                              if (newIndex > oldIndex) {
-                                                newIndex -= 1;
-                                              }
-                                              final item =
-                                                  _items.removeAt(oldIndex);
-                                              _items.insert(newIndex, item);
-                                            });
-                                          },
-                                          itemBuilder: (context, index) {
-                                            final item = _items[index];
-                                            final responsible =
-                                                memberMap[item.responsibleId];
-                                            final ccCount = item.ccIds.length;
-                                            final responsibleLabel =
-                                                responsible?.name.isNotEmpty ==
-                                                        true
-                                                    ? responsible!.name
-                                                    : 'לא הוגדר';
-
-                                            return Card(
-                                              key: ValueKey('item_$index'),
-                                              margin:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 4),
-                                              child: ListTile(
-                                                leading: CircleAvatar(
-                                                  child: Text('${index + 1}'),
-                                                ),
-                                                title: Text(item.name),
-                                                subtitle: Text(
-                                                  'אחראי: $responsibleLabel'
-                                                  '${ccCount > 0 ? " | $ccCount מיודעים" : ""}',
-                                                ),
-                                                trailing: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    IconButton(
-                                                      icon: const Icon(
-                                                          Icons.edit,
-                                                          size: 20),
-                                                      onPressed: () =>
-                                                          _editItem(index),
-                                                      tooltip: 'ערוך',
-                                                    ),
-                                                    IconButton(
-                                                      icon: const Icon(
-                                                          Icons.delete,
-                                                          size: 20,
-                                                          color: Colors.red),
-                                                      onPressed: () =>
-                                                          _removeItem(index),
-                                                      tooltip: 'הסר',
-                                                    ),
-                                                    const Icon(
-                                                        Icons.drag_handle,
-                                                        color: Colors.grey),
-                                                  ],
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        );
-                                      },
-                                    ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Save button
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _save,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.all(16),
                           ),
-                          child: Text(widget.preset == null
-                              ? 'צור פריסט'
-                              : 'שמור שינויים'),
                         ),
-                      ),
+
+                        // Save button
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _isSaving ? null : _save,
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.all(16),
+                              ),
+                              child: Text(widget.preset == null
+                                  ? 'צור פריסט'
+                                  : 'שמור שינויים'),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  LoadingOverlay(
+                    isLoading: _isSaving,
+                    message: _savingMessage,
+                  ),
+                ],
               ),
             ),
           ),
@@ -369,6 +452,56 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
     _nameController.dispose();
     _adminNoteController.dispose();
     super.dispose();
+  }
+
+  Widget _buildMemberChipLabel(TeamMember member) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(member.name),
+        ),
+        if (member.isPermanent) ...[
+          const SizedBox(width: 4),
+          Icon(
+            Icons.verified_user,
+            size: 14,
+            color: Colors.blue.shade700,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCenteredMemberDropdownLabel(TeamMember member) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: SizedBox(
+        width: double.infinity,
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  member.name,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (member.isPermanent) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.verified_user,
+                  size: 14,
+                  color: Colors.blue.shade700,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _initializeFromItem(PresetItem item, List<TeamMember> members) {
@@ -454,15 +587,21 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
                       // Responsible dropdown
                       DropdownButtonFormField<TeamMember>(
                         value: _selectedResponsible,
+                        alignment: AlignmentDirectional.center,
                         decoration: const InputDecoration(
                           labelText: 'אחראי (אופציונלי)',
                           border: OutlineInputBorder(),
                         ),
                         isExpanded: true,
+                        selectedItemBuilder: (context) {
+                          return members
+                              .map(_buildCenteredMemberDropdownLabel)
+                              .toList();
+                        },
                         items: members
-                            .map((m) => DropdownMenuItem(
+                            .map((m) => DropdownMenuItem<TeamMember>(
                                   value: m,
-                                  child: Text(m.name),
+                                  child: _buildCenteredMemberDropdownLabel(m),
                                 ))
                             .toList(),
                         onChanged: (value) {
@@ -515,7 +654,7 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
                                     final isSelected =
                                         _selectedCcMembers.contains(m);
                                     return FilterChip(
-                                      label: Text(m.name),
+                                      label: _buildMemberChipLabel(m),
                                       selected: isSelected,
                                       onSelected: (selected) {
                                         setState(() {

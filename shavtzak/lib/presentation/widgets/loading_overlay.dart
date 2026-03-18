@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 class LoadingOverlay extends StatelessWidget {
   final String message;
   final bool isLoading;
+  final Color backgroundColor;
 
   const LoadingOverlay({
     super.key,
     this.message = 'טוען...',
     required this.isLoading,
+    this.backgroundColor = const Color(0xCCFFFFFF),
   });
 
   @override
@@ -17,7 +19,7 @@ class LoadingOverlay extends StatelessWidget {
     if (!isLoading) return const SizedBox.shrink();
 
     return Container(
-      color: Colors.white.withOpacity(0.8),
+      color: backgroundColor,
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

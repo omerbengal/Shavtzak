@@ -33,8 +33,9 @@ class LoadUserChecklistItems extends ChecklistEvent {
 /// Add a new checklist item
 class AddChecklistItem extends ChecklistEvent {
   final ChecklistItem item;
+  final CrudActionCompleter? completion;
 
-  const AddChecklistItem(this.item);
+  const AddChecklistItem(this.item, {this.completion});
 
   @override
   List<Object?> get props => [item];
@@ -43,8 +44,9 @@ class AddChecklistItem extends ChecklistEvent {
 /// Update an existing checklist item
 class UpdateChecklistItem extends ChecklistEvent {
   final ChecklistItem item;
+  final CrudActionCompleter? completion;
 
-  const UpdateChecklistItem(this.item);
+  const UpdateChecklistItem(this.item, {this.completion});
 
   @override
   List<Object?> get props => [item];
@@ -111,8 +113,9 @@ class RemoveCcMember extends ChecklistEvent {
 /// Delete a checklist item
 class DeleteChecklistItem extends ChecklistEvent {
   final String itemId;
+  final CrudActionCompleter? completion;
 
-  const DeleteChecklistItem(this.itemId);
+  const DeleteChecklistItem(this.itemId, {this.completion});
 
   @override
   List<Object?> get props => [itemId];

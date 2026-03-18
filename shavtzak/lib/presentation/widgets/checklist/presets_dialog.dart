@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../../domain/entities/preset.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
@@ -8,6 +11,7 @@ import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_state.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_state.dart';
+import '../loading_overlay.dart';
 import 'preset_form_modal.dart';
 
 /// Dialog for managing and loading checklist presets
@@ -34,6 +38,8 @@ class _PresetsDialogState extends State<PresetsDialog>
   final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   Preset? _selectedPreset;
   Event? _selectedEvent;
+  bool _isMutating = false;
+  String _mutationMessage = '';
 
   @override
   void initState() {
@@ -47,6 +53,94 @@ class _PresetsDialogState extends State<PresetsDialog>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _showMessage(
+    String message, {
+    required Color backgroundColor,
+  }) {
+    _scaffoldMessengerKey.currentState
+      ?..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: backgroundColor,
+        ),
+      );
+  }
+
+  Future<CrudActionResult> _waitForPresetAction(
+    void Function(CrudActionCompleter completion) dispatch,
+  ) {
+    final completion = Completer<CrudActionResult>();
+    dispatch(completion);
+    return completion.future;
+  }
+
+  Future<CrudActionResult> _runPresetMutation({
+    required String message,
+    required void Function(CrudActionCompleter completion) dispatch,
+  }) async {
+    if (_isMutating) {
+      return const CrudActionResult.failure('פעולה אחרת עדיין מתבצעת');
+    }
+
+    setState(() {
+      _isMutating = true;
+      _mutationMessage = message;
+    });
+
+    final result = await _waitForPresetAction(dispatch);
+    if (!mounted) {
+      return result;
+    }
+
+    setState(() {
+      _isMutating = false;
+      _mutationMessage = '';
+    });
+    return result;
+  }
+
+  Widget _buildMemberLabel(TeamMember? member, String fallback) {
+    if (member == null) {
+      return Text(fallback);
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            member.name,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (member.isPermanent) ...[
+          const SizedBox(width: 4),
+          Icon(
+            Icons.verified_user,
+            size: 14,
+            color: Colors.blue.shade700,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCenteredDropdownText(String text) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: SizedBox(
+        width: double.infinity,
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 2,
+        ),
+      ),
+    );
   }
 
   @override
@@ -67,45 +161,53 @@ class _PresetsDialogState extends State<PresetsDialog>
             height: dialogHeight,
             child: Scaffold(
               backgroundColor: Colors.transparent,
-              body: Column(
+              body: Stack(
                 children: [
-                  // Header
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'פריסטים',
-                          style: TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.bold),
+                  Column(
+                    children: [
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'פריסטים',
+                              style: TextStyle(
+                                  fontSize: 20, fontWeight: FontWeight.bold),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                          ],
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                  ),
+                      ),
 
-                  // Tabs
-                  TabBar(
-                    controller: _tabController,
-                    tabs: const [
-                      Tab(text: 'ניהול פריסטים'),
-                      Tab(text: 'טעינה לאירוע'),
+                      // Tabs
+                      TabBar(
+                        controller: _tabController,
+                        tabs: const [
+                          Tab(text: 'ניהול פריסטים'),
+                          Tab(text: 'טעינה לאירוע'),
+                        ],
+                      ),
+
+                      // Tab content
+                      Expanded(
+                        child: TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildManagePresetsTab(),
+                            _buildLoadPresetTab(),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-
-                  // Tab content
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildManagePresetsTab(),
-                        _buildLoadPresetTab(),
-                      ],
-                    ),
+                  LoadingOverlay(
+                    isLoading: _isMutating,
+                    message: _mutationMessage,
                   ),
                 ],
               ),
@@ -149,7 +251,9 @@ class _PresetsDialogState extends State<PresetsDialog>
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: () => _showPresetFormModal(context, null),
+                  onPressed: _isMutating
+                      ? null
+                      : () => _showPresetFormModal(context, null),
                   icon: const Icon(Icons.add, color: Colors.white),
                   label: const Text('הוסף פריסט'),
                 ),
@@ -180,15 +284,20 @@ class _PresetsDialogState extends State<PresetsDialog>
                               children: [
                                 IconButton(
                                   icon: const Icon(Icons.edit),
-                                  onPressed: () =>
-                                      _showPresetFormModal(context, preset),
+                                  onPressed: _isMutating
+                                      ? null
+                                      : () => _showPresetFormModal(
+                                            context,
+                                            preset,
+                                          ),
                                   tooltip: 'ערוך',
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete,
                                       color: Colors.red),
-                                  onPressed: () =>
-                                      _confirmDelete(context, preset),
+                                  onPressed: _isMutating
+                                      ? null
+                                      : () => _confirmDelete(context, preset),
                                   tooltip: 'מחק',
                                 ),
                               ],
@@ -205,26 +314,7 @@ class _PresetsDialogState extends State<PresetsDialog>
   }
 
   Widget _buildLoadPresetTab() {
-    return BlocConsumer<PresetBloc, PresetState>(
-      listener: (context, state) {
-        if (state is PresetLoadedIntoEvent) {
-          _scaffoldMessengerKey.currentState?.showSnackBar(
-            SnackBar(
-              content: Text(
-                  'נטענו ${state.itemCount} פריטים מ-"${state.presetName}" לאירוע "${state.eventName}"'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.pop(context);
-        } else if (state is PresetError) {
-          _scaffoldMessengerKey.currentState?.showSnackBar(
-            SnackBar(
-              content: Text(state.message),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      },
+    return BlocBuilder<PresetBloc, PresetState>(
       builder: (context, presetState) {
         return BlocBuilder<EventBloc, EventState>(
           builder: (context, eventState) {
@@ -252,16 +342,27 @@ class _PresetsDialogState extends State<PresetsDialog>
                       // Preset dropdown
                       DropdownButtonFormField<Preset>(
                         value: _selectedPreset,
+                        alignment: AlignmentDirectional.center,
                         decoration: const InputDecoration(
                           labelText: 'בחר פריסט',
                           border: OutlineInputBorder(),
                         ),
                         isExpanded: true,
+                        selectedItemBuilder: (context) {
+                          return presets
+                              .map(
+                                (p) => _buildCenteredDropdownText(
+                                  '${p.name} (${p.items.length} פריטים)',
+                                ),
+                              )
+                              .toList();
+                        },
                         items: presets
-                            .map((p) => DropdownMenuItem(
+                            .map((p) => DropdownMenuItem<Preset>(
                                   value: p,
-                                  child: Text(
-                                      '${p.name} (${p.items.length} פריטים)'),
+                                  child: _buildCenteredDropdownText(
+                                    '${p.name} (${p.items.length} פריטים)',
+                                  ),
                                 ))
                             .toList(),
                         onChanged: (value) =>
@@ -272,16 +373,27 @@ class _PresetsDialogState extends State<PresetsDialog>
                       // Event dropdown
                       DropdownButtonFormField<Event>(
                         value: _selectedEvent,
+                        alignment: AlignmentDirectional.center,
                         decoration: const InputDecoration(
                           labelText: 'בחר אירוע',
                           border: OutlineInputBorder(),
                         ),
                         isExpanded: true,
+                        selectedItemBuilder: (context) {
+                          return events
+                              .map(
+                                (e) => _buildCenteredDropdownText(
+                                  '${e.name} (${e.startDate.day}/${e.startDate.month}/${e.startDate.year})',
+                                ),
+                              )
+                              .toList();
+                        },
                         items: events
-                            .map((e) => DropdownMenuItem(
+                            .map((e) => DropdownMenuItem<Event>(
                                   value: e,
-                                  child: Text(
-                                      '${e.name} (${e.startDate.day}/${e.startDate.month}/${e.startDate.year})'),
+                                  child: _buildCenteredDropdownText(
+                                    '${e.name} (${e.startDate.day}/${e.startDate.month}/${e.startDate.year})',
+                                  ),
                                 ))
                             .toList(),
                         onChanged: (value) =>
@@ -310,10 +422,6 @@ class _PresetsDialogState extends State<PresetsDialog>
                                 final responsible =
                                     memberMap[item.responsibleId];
                                 final ccCount = item.ccIds.length;
-                                final responsibleLabel =
-                                    responsible?.name.isNotEmpty == true
-                                        ? responsible!.name
-                                        : 'לא הוגדר';
                                 return ListTile(
                                   dense: true,
                                   leading: CircleAvatar(
@@ -321,9 +429,20 @@ class _PresetsDialogState extends State<PresetsDialog>
                                     child: Text('${index + 1}'),
                                   ),
                                   title: Text(item.name),
-                                  subtitle: Text(
-                                    'אחראי: $responsibleLabel'
-                                    '${ccCount > 0 ? " | $ccCount מיודעים" : ""}',
+                                  subtitle: Wrap(
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      const Text('אחראי: '),
+                                      _buildMemberLabel(
+                                        responsible,
+                                        'לא הוגדר',
+                                      ),
+                                      if (ccCount > 0) ...[
+                                        const Text(' | '),
+                                        Text('$ccCount מיודעים'),
+                                      ],
+                                    ],
                                   ),
                                 );
                               },
@@ -344,17 +463,11 @@ class _PresetsDialogState extends State<PresetsDialog>
 
                       // Load button
                       ElevatedButton.icon(
-                        onPressed:
-                            _selectedPreset != null && _selectedEvent != null
-                                ? () {
-                                    context
-                                        .read<PresetBloc>()
-                                        .add(LoadPresetIntoEvent(
-                                          presetId: _selectedPreset!.id,
-                                          eventId: _selectedEvent!.id,
-                                        ));
-                                  }
-                                : null,
+                        onPressed: _isMutating ||
+                                _selectedPreset == null ||
+                                _selectedEvent == null
+                            ? null
+                            : _handleLoadPresetIntoEvent,
                         icon: const Icon(Icons.download, color: Colors.white),
                         label: const Text('טען לאירוע'),
                         style: ElevatedButton.styleFrom(
@@ -372,20 +485,61 @@ class _PresetsDialogState extends State<PresetsDialog>
     );
   }
 
+  Future<void> _handleLoadPresetIntoEvent() async {
+    if (_selectedPreset == null || _selectedEvent == null) {
+      return;
+    }
+
+    final result = await _runPresetMutation(
+      message: 'טוען פריסט לאירוע...',
+      dispatch: (completion) => context.read<PresetBloc>().add(
+            LoadPresetIntoEvent(
+              presetId: _selectedPreset!.id,
+              eventId: _selectedEvent!.id,
+              completion: completion,
+            ),
+          ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (result.isFailure) {
+      _showMessage(
+        result.message ?? 'שגיאה בטעינת פריסט לאירוע',
+        backgroundColor: Colors.red,
+      );
+      return;
+    }
+
+    _showMessage(
+      result.message ?? 'הפריסט נטען בהצלחה',
+      backgroundColor: Colors.green,
+    );
+    Navigator.pop(context);
+  }
+
   void _showPresetFormModal(BuildContext context, Preset? preset) {
     showDialog(
       context: context,
       useRootNavigator: true,
       builder: (modalContext) => PresetFormModal(
         preset: preset,
-        onSave: (savedPreset) {
-          if (preset == null) {
-            context.read<PresetBloc>().add(CreatePreset(savedPreset));
-          } else {
-            context.read<PresetBloc>().add(UpdatePreset(savedPreset));
-          }
-          Navigator.of(modalContext).pop();
-        },
+        onSave: (savedPreset) => _runPresetMutation(
+          message: preset == null ? 'יוצר פריסט...' : 'שומר פריסט...',
+          dispatch: (completion) {
+            if (preset == null) {
+              context.read<PresetBloc>().add(
+                    CreatePreset(savedPreset, completion: completion),
+                  );
+            } else {
+              context.read<PresetBloc>().add(
+                    UpdatePreset(savedPreset, completion: completion),
+                  );
+            }
+          },
+        ),
       ),
     );
   }
@@ -405,9 +559,33 @@ class _PresetsDialogState extends State<PresetsDialog>
               child: const Text('ביטול'),
             ),
             TextButton(
-              onPressed: () {
-                context.read<PresetBloc>().add(DeletePreset(preset.id));
+              onPressed: () async {
                 Navigator.pop(dialogContext);
+                final result = await _runPresetMutation(
+                  message: 'מוחק פריסט...',
+                  dispatch: (completion) => context.read<PresetBloc>().add(
+                        DeletePreset(
+                          preset.id,
+                          completion: completion,
+                        ),
+                      ),
+                );
+                if (!mounted) {
+                  return;
+                }
+
+                if (result.isFailure) {
+                  _showMessage(
+                    result.message ?? 'שגיאה במחיקת פריסט',
+                    backgroundColor: Colors.red,
+                  );
+                  return;
+                }
+
+                _showMessage(
+                  result.message ?? 'הפריסט נמחק בהצלחה',
+                  backgroundColor: Colors.green,
+                );
               },
               style: TextButton.styleFrom(foregroundColor: Colors.red),
               child: const Text('מחק'),

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -9,7 +8,6 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../../core/constants/calendar_constants.dart';
-import '../../../core/state/constraint_manager.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/assignment.dart';
@@ -22,6 +20,7 @@ import '../../../core/utils/filter_persistence.dart';
 import '../../../core/utils/time_range_utils.dart';
 import '../../../core/utils/search_utils.dart';
 import '../../../core/utils/constraint_event_overlap.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/utilities_service.dart';
 import 'package:uuid/uuid.dart';
@@ -38,7 +37,6 @@ import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/role/role_bloc.dart';
 import '../../bloc/role/role_state.dart';
-import '../../widgets/navigation_menu.dart';
 import '../../widgets/date_picker_dialog.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/swipeable_page_view.dart';
@@ -821,28 +819,62 @@ class _TeamListScreenState extends State<TeamListScreen> {
   }
 
   void _showDeleteConfirmation(TeamMember member) {
+    bool isDeleting = false;
     showDialog(
       context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('מחיקת חבר צוות'),
-          content: Text(
-            'האם אתה בטוח שברצונך למחוק את ${member.name}?\nפעולה זו תמחק גם את כל השיבוצים שלו.',
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('מחיקת חבר צוות'),
+            content: Text(
+              'האם אתה בטוח שברצונך למחוק את ${member.name}?\nפעולה זו תמחק גם את כל השיבוצים שלו.',
+            ),
+            actions: [
+              TextButton(
+                child: const Text('ביטול'),
+                onPressed:
+                    isDeleting ? null : () => Navigator.pop(dialogContext),
+              ),
+              TextButton(
+                child: isDeleting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text(
+                        'מחק',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                onPressed: isDeleting
+                    ? null
+                    : () async {
+                        setDialogState(() {
+                          isDeleting = true;
+                        });
+                        final completion = Completer<CrudActionResult>();
+                        context.read<TeamBloc>().add(
+                              team.DeleteTeamMember(
+                                member.id,
+                                completion: completion,
+                              ),
+                            );
+                        final result = await completion.future;
+                        if (!dialogContext.mounted) {
+                          return;
+                        }
+                        if (result.isFailure) {
+                          setDialogState(() {
+                            isDeleting = false;
+                          });
+                          return;
+                        }
+                        Navigator.pop(dialogContext);
+                      },
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              child: const Text('ביטול'),
-              onPressed: () => Navigator.pop(context),
-            ),
-            TextButton(
-              child: const Text('מחק', style: TextStyle(color: Colors.red)),
-              onPressed: () {
-                context.read<TeamBloc>().add(team.DeleteTeamMember(member.id));
-                Navigator.pop(context);
-              },
-            ),
-          ],
         ),
       ),
     );
@@ -1100,6 +1132,22 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     super.dispose();
   }
 
+  Future<CrudActionResult> _waitForTeamAction(
+    void Function(CrudActionCompleter completion) dispatch,
+  ) {
+    final completion = Completer<CrudActionResult>();
+    dispatch(completion);
+    return completion.future;
+  }
+
+  Future<CrudActionResult> _waitForAssignmentDelete(String assignmentId) {
+    final completion = Completer<CrudActionResult>();
+    context.read<AssignmentBloc>().add(
+          DeleteAssignment(assignmentId, completion: completion),
+        );
+    return completion.future;
+  }
+
   Future<void> _saveMember() async {
     if (_isSaving) return; // Prevent double-submit
 
@@ -1169,13 +1217,28 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
         if (action == true) {
           // User chose "שמור ומחק שיבוצים" (Save + Delete assignments)
-          final assignmentBloc = context.read<AssignmentBloc>();
           for (final assignment in conflictingAssignments) {
-            assignmentBloc.add(DeleteAssignment(assignment.id));
+            final deleteResult = await _waitForAssignmentDelete(assignment.id);
+            if (deleteResult.isFailure) {
+              if (mounted) {
+                setState(() => _isSaving = false);
+                ScaffoldMessenger.of(context)
+                  ..clearSnackBars()
+                  ..showSnackBar(
+                    SnackBar(
+                      content: Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: Text(
+                          deleteResult.message ?? 'שגיאה במחיקת שיבוץ מתנגש',
+                        ),
+                      ),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+              }
+              return;
+            }
           }
-
-          // Wait a moment for deletions to process
-          await Future.delayed(const Duration(milliseconds: 300));
         }
         // If action == false, user chose "שמור והשאר שיבוצים" (Save + Keep assignments)
         // So we proceed with saving without deleting assignments
@@ -1183,6 +1246,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     }
 
     final bloc = context.read<TeamBloc>();
+    final operationFutures = <Future<CrudActionResult>>[];
+
     if (_isEditMode) {
       final originalMember = widget.member!;
       final constraintsChanged = _constraintsChanged();
@@ -1191,26 +1256,58 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
           : member;
 
       if (memberWithoutConstraintChanges != originalMember) {
-        bloc.add(team.UpdateTeamMember(memberWithoutConstraintChanges));
+        operationFutures.add(
+          _waitForTeamAction(
+            (completion) => bloc.add(
+              team.UpdateTeamMember(
+                memberWithoutConstraintChanges,
+                completion: completion,
+              ),
+            ),
+          ),
+        );
       }
 
       if (constraintsChanged) {
-        _dispatchConstraintMutationEvents(
+        operationFutures.addAll(_dispatchConstraintMutationEvents(
           bloc,
           originalMember.constraints,
           finalConstraints,
-        );
+        ));
       }
     } else {
-      bloc.add(team.CreateTeamMember(member));
+      operationFutures.add(
+        _waitForTeamAction(
+          (completion) =>
+              bloc.add(team.CreateTeamMember(member, completion: completion)),
+        ),
+      );
     }
 
-    // Reload all team members after operation completes (filtering happens in UI)
-    Future.delayed(const Duration(milliseconds: 100), () {
-      bloc.add(const team.LoadTeamMembers());
-    });
+    if (operationFutures.isEmpty) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+      widget.onSuccess();
+      return;
+    }
 
-    // Close modal after save operation
+    final results = await Future.wait(operationFutures);
+    CrudActionResult? failedResult;
+    for (final result in results) {
+      if (result.isFailure) {
+        failedResult = result;
+        break;
+      }
+    }
+
+    if (!mounted) return;
+
+    if (failedResult != null) {
+      setState(() => _isSaving = false);
+      return;
+    }
+
     widget.onSuccess();
   }
 
@@ -1235,11 +1332,12 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     return false;
   }
 
-  void _dispatchConstraintMutationEvents(
+  List<Future<CrudActionResult>> _dispatchConstraintMutationEvents(
     TeamBloc bloc,
     List<DateConstraint> originalConstraints,
     List<DateConstraint> updatedConstraints,
   ) {
+    final operationFutures = <Future<CrudActionResult>>[];
     final originalById = {
       for (final constraint in originalConstraints) constraint.id: constraint,
     };
@@ -1249,53 +1347,76 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
     for (final originalConstraint in originalConstraints) {
       if (!updatedById.containsKey(originalConstraint.id)) {
-        bloc.add(team.RemoveConstraintRequest(
-          teamMemberId: widget.member!.id,
-          constraintId: originalConstraint.id,
-        ));
+        operationFutures.add(
+          _waitForTeamAction(
+            (completion) => bloc.add(
+              team.RemoveConstraintRequest(
+                teamMemberId: widget.member!.id,
+                constraintId: originalConstraint.id,
+                completion: completion,
+              ),
+            ),
+          ),
+        );
       }
     }
 
     for (final updatedConstraint in updatedConstraints) {
       final originalConstraint = originalById[updatedConstraint.id];
       if (originalConstraint == null) {
-        bloc.add(team.AddConstraintRequest(
-          teamMemberId: widget.member!.id,
-          startDate: updatedConstraint.startDate,
-          endDate: updatedConstraint.endDate,
-          note: updatedConstraint.note,
-          status: updatedConstraint.status,
-          constraintType: updatedConstraint.constraintType,
-          startTime: updatedConstraint.startTime,
-          endTime: updatedConstraint.endTime,
-          wasAutoRejectedFromCalendar:
-              updatedConstraint.wasAutoRejectedFromCalendar,
-          repeatType: updatedConstraint.repeatType,
-          repeatDay: updatedConstraint.repeatDay,
-          repeatEndDate: updatedConstraint.repeatEndDate,
-        ));
+        operationFutures.add(
+          _waitForTeamAction(
+            (completion) => bloc.add(
+              team.AddConstraintRequest(
+                teamMemberId: widget.member!.id,
+                startDate: updatedConstraint.startDate,
+                endDate: updatedConstraint.endDate,
+                note: updatedConstraint.note,
+                status: updatedConstraint.status,
+                constraintType: updatedConstraint.constraintType,
+                startTime: updatedConstraint.startTime,
+                endTime: updatedConstraint.endTime,
+                wasAutoRejectedFromCalendar:
+                    updatedConstraint.wasAutoRejectedFromCalendar,
+                repeatType: updatedConstraint.repeatType,
+                repeatDay: updatedConstraint.repeatDay,
+                repeatEndDate: updatedConstraint.repeatEndDate,
+                completion: completion,
+              ),
+            ),
+          ),
+        );
         continue;
       }
 
       if (originalConstraint != updatedConstraint) {
-        bloc.add(team.EditConstraintRequest(
-          teamMemberId: widget.member!.id,
-          constraintId: updatedConstraint.id,
-          startDate: updatedConstraint.startDate,
-          endDate: updatedConstraint.endDate,
-          note: updatedConstraint.note,
-          status: updatedConstraint.status,
-          constraintType: updatedConstraint.constraintType,
-          startTime: updatedConstraint.startTime,
-          endTime: updatedConstraint.endTime,
-          wasAutoRejectedFromCalendar:
-              updatedConstraint.wasAutoRejectedFromCalendar,
-          repeatType: updatedConstraint.repeatType,
-          repeatDay: updatedConstraint.repeatDay,
-          repeatEndDate: updatedConstraint.repeatEndDate,
-        ));
+        operationFutures.add(
+          _waitForTeamAction(
+            (completion) => bloc.add(
+              team.EditConstraintRequest(
+                teamMemberId: widget.member!.id,
+                constraintId: updatedConstraint.id,
+                startDate: updatedConstraint.startDate,
+                endDate: updatedConstraint.endDate,
+                note: updatedConstraint.note,
+                status: updatedConstraint.status,
+                constraintType: updatedConstraint.constraintType,
+                startTime: updatedConstraint.startTime,
+                endTime: updatedConstraint.endTime,
+                wasAutoRejectedFromCalendar:
+                    updatedConstraint.wasAutoRejectedFromCalendar,
+                repeatType: updatedConstraint.repeatType,
+                repeatDay: updatedConstraint.repeatDay,
+                repeatEndDate: updatedConstraint.repeatEndDate,
+                completion: completion,
+              ),
+            ),
+          ),
+        );
       }
     }
+
+    return operationFutures;
   }
 
   /// Get assignments that conflict with the new constraints
@@ -1476,6 +1597,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       builder: (context) => AdminPasscodeDialog(
         teamMemberName: widget.member!.name,
         currentLength: widget.member!.passcodeLength,
+        onRevealPasscode: () => context
+            .read<UserSelectionRepository>()
+            .getTeamMemberPasscode(widget.member!.uniqueKey),
       ),
     );
 
@@ -1636,39 +1760,40 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                                               style: TextStyle(
                                                                   color: Colors
                                                                       .red)),
-                                                          onPressed: () {
+                                                          onPressed: () async {
                                                             Navigator.of(
                                                                     dialogContext)
                                                                 .pop(); // Close dialog first
                                                             setState(() =>
                                                                 _isDeleting =
                                                                     true);
-                                                            final bloc =
-                                                                context.read<
-                                                                    TeamBloc>();
-                                                            bloc.add(team
-                                                                .DeleteTeamMember(
-                                                                    widget
-                                                                        .member!
-                                                                        .id));
-                                                            // Reload all team members after operation completes (filtering happens in UI)
-                                                            Future.delayed(
-                                                                const Duration(
-                                                                    milliseconds:
-                                                                        300),
-                                                                () {
-                                                              bloc.add(const team
-                                                                  .LoadTeamMembers());
-                                                            });
-                                                            // Close modal after showing delete overlay briefly
-                                                            Future.delayed(
-                                                                const Duration(
-                                                                    milliseconds:
-                                                                        500),
-                                                                () {
-                                                              widget
-                                                                  .onSuccess();
-                                                            });
+                                                            final result =
+                                                                await _waitForTeamAction(
+                                                              (completion) =>
+                                                                  context
+                                                                      .read<
+                                                                          TeamBloc>()
+                                                                      .add(
+                                                                        team.DeleteTeamMember(
+                                                                          widget
+                                                                              .member!
+                                                                              .id,
+                                                                          completion:
+                                                                              completion,
+                                                                        ),
+                                                                      ),
+                                                            );
+                                                            if (!mounted) {
+                                                              return;
+                                                            }
+                                                            if (result
+                                                                .isFailure) {
+                                                              setState(() =>
+                                                                  _isDeleting =
+                                                                      false);
+                                                              return;
+                                                            }
+                                                            widget.onSuccess();
                                                           },
                                                         ),
                                                       ],
@@ -1684,7 +1809,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                   ),
                                 IconButton(
                                   icon: const Icon(Icons.close),
-                                  onPressed: _handleClose,
+                                  onPressed: (_isSaving || _isDeleting)
+                                      ? null
+                                      : _handleClose,
                                 ),
                               ],
                             ),
@@ -2545,7 +2672,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                               children: [
                                 Expanded(
                                   child: OutlinedButton(
-                                    onPressed: _handleClose,
+                                    onPressed: (_isSaving || _isDeleting)
+                                        ? null
+                                        : _handleClose,
                                     child: const Text('ביטול'),
                                   ),
                                 ),

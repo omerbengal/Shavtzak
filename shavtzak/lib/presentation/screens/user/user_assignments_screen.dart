@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/utils/web_url_launcher.dart';
+import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/event_sorting.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
 import '../../../core/constants/role_types.dart';
@@ -27,8 +31,10 @@ class UserAssignmentsScreen extends StatefulWidget {
 }
 
 class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
-  // State persistence to prevent infinite loading
+  // State persistence to prevent transient bloc states from blanking the screen.
   AssignmentState? _lastLoadedState;
+  bool _isMutationInFlight = false;
+  String _mutationMessage = '';
 
   @override
   void initState() {
@@ -77,81 +83,104 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        body: SafeArea(
-          child: BlocSelector<UserSelectionBloc, UserSelectionState, String?>(
-            selector: (state) => state is UserAuthenticated ? state.user.id : null,
-            builder: (context, userId) {
-              if (userId == null) {
-                return const Center(
-                  child: Text('אין משתמש מחובר'),
-                );
-              }
-
-              return BlocConsumer<AssignmentBloc, AssignmentState>(
-                listener: (context, state) {
-                  // Save the last loaded state with data
-                  if (state is! AssignmentLoading &&
-                      state is! AssignmentError) {
-                    _lastLoadedState = state;
-                  }
-
-                  if (state is AssignmentError) {
-                    ScaffoldMessenger.of(context)
-                      ..clearSnackBars()
-                      ..showSnackBar(
-                        SnackBar(
-                          content: Directionality(
-                            textDirection: TextDirection.rtl,
-                            child: Text(state.message),
-                          ),
-                          backgroundColor: Colors.red,
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                  }
-                },
-                builder: (context, state) {
-                  // Use last loaded state during loading to prevent flickering
-                  final displayState =
-                      state is AssignmentLoading && _lastLoadedState != null
-                          ? _lastLoadedState!
-                          : state;
-
-                  if (state is AssignmentLoading && _lastLoadedState == null) {
+        body: Stack(
+          children: [
+            SafeArea(
+              child:
+                  BlocSelector<UserSelectionBloc, UserSelectionState, String?>(
+                selector: (state) =>
+                    state is UserAuthenticated ? state.user.id : null,
+                builder: (context, userId) {
+                  if (userId == null) {
                     return const Center(
-                      child: CircularProgressIndicator(),
+                      child: Text('אין משתמש מחובר'),
                     );
                   }
 
-                  if (displayState is AssignmentsEmpty) {
-                    return _buildEmptyState();
-                  }
+                  return BlocConsumer<AssignmentBloc, AssignmentState>(
+                    listener: (context, state) {
+                      if (state is AssignmentsLoaded ||
+                          state is AssignmentsEmpty) {
+                        _lastLoadedState = state;
+                      }
 
-                  if (displayState is AssignmentsLoaded) {
-                    // Wrap with BlocBuilder to rebuild when role order changes
-                    return BlocBuilder<RoleBloc, RoleState>(
-                      builder: (context, roleState) {
-                        return _buildAssignmentsContent(
-                            context, displayState.assignments);
-                      },
-                    );
-                  }
+                      if (state is AssignmentError) {
+                        ScaffoldMessenger.of(context)
+                          ..clearSnackBars()
+                          ..showSnackBar(
+                            SnackBar(
+                              content: Directionality(
+                                textDirection: TextDirection.rtl,
+                                child: Text(state.message),
+                              ),
+                              backgroundColor: Colors.red,
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                      }
+                    },
+                    builder: (context, state) {
+                      final displayState = _resolveDisplayState(state);
 
-                  if (displayState is AssignmentError) {
-                    return _buildErrorState(displayState.message);
-                  }
+                      if (state is AssignmentLoading &&
+                          _lastLoadedState == null) {
+                        return const Center(
+                          child: CircularProgressIndicator(),
+                        );
+                      }
 
-                  // Initial state or other states - show loading
-                  return const Center(
-                    child: CircularProgressIndicator(),
+                      if (displayState is AssignmentsEmpty) {
+                        return _buildEmptyState();
+                      }
+
+                      if (displayState is AssignmentsLoaded) {
+                        return BlocBuilder<RoleBloc, RoleState>(
+                          builder: (context, roleState) {
+                            return _buildAssignmentsContent(
+                              context,
+                              displayState.assignments,
+                            );
+                          },
+                        );
+                      }
+
+                      if (displayState is AssignmentError) {
+                        return _buildErrorState(displayState.message);
+                      }
+
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    },
                   );
                 },
-              );
-            },
-          ),
+              ),
+            ),
+            _buildMutationDialogOverlay(),
+          ],
         ),
       ),
     );
+  }
+
+  AssignmentState _resolveDisplayState(AssignmentState state) {
+    if (_lastLoadedState == null) {
+      return state;
+    }
+
+    if (state is AssignmentsLoaded || state is AssignmentsEmpty) {
+      return state;
+    }
+
+    if (state is AssignmentError && _lastLoadedState is AssignmentError) {
+      return state;
+    }
+
+    if (state is! AssignmentsLoaded && state is! AssignmentsEmpty) {
+      return _lastLoadedState!;
+    }
+
+    return state;
   }
 
   Widget _buildAssignmentsContent(
@@ -219,12 +248,15 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
     // Sort upcoming by start date (soonest first)
     upcomingGroups.sort((a, b) {
-      return a.first.event!.startDate.compareTo(b.first.event!.startDate);
+      return compareEventsChronologically(a.first.event!, b.first.event!);
     });
 
     // Sort past by start date (most recent first)
     pastGroups.sort((a, b) {
-      return b.first.event!.startDate.compareTo(a.first.event!.startDate);
+      return compareEventsChronologicallyDescending(
+        a.first.event!,
+        b.first.event!,
+      );
     });
 
     return RefreshIndicator(
@@ -693,9 +725,12 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                   // Show if: (1) parking location exists, OR (2) user can edit parking (show "לא מוגדרת")
                   Builder(
                     builder: (context) {
-                      final currentUserId = context.select<UserSelectionBloc, String?>((bloc) {
+                      final currentUserId =
+                          context.select<UserSelectionBloc, String?>((bloc) {
                         final state = bloc.state;
-                        return state is UserAuthenticated ? state.user.id : null;
+                        return state is UserAuthenticated
+                            ? state.user.id
+                            : null;
                       });
                       final canEditParking = currentUserId != null &&
                           event.parkingEditorIds.contains(currentUserId);
@@ -1191,8 +1226,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   TextSpan _formatDateWithHighlight(
       String dateText, bool isUpcoming, BuildContext context) {
     final color = isUpcoming ? Colors.blue.shade900 : Colors.grey.shade700;
-    final responsiveFontSize = _getResponsiveFontSize(context,
-        minSize: 14.0, maxSize: 16.0);
+    final responsiveFontSize =
+        _getResponsiveFontSize(context, minSize: 14.0, maxSize: 16.0);
 
     if (dateText.contains('(היום)')) {
       final parts = dateText.split('(היום)');
@@ -1433,7 +1468,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   }
 
   /// Update parking location for an event
-  Future<void> _updateParkingLocation(
+  Future<CrudActionResult> _updateParkingLocation(
     BuildContext context,
     Event event,
     String? newParkingLocation,
@@ -1447,7 +1482,14 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           newParkingLocation == null, // Explicitly clear when null
     );
 
-    context.read<EventBloc>().add(UpdateEvent(updatedEvent));
+    return await _runBlockingMutation(
+      message: 'שומר מיקום חנייה...',
+      dispatch: (completion) {
+        context.read<EventBloc>().add(
+              UpdateEvent(updatedEvent, completion: completion),
+            );
+      },
+    );
   }
 
   /// Edit parking location for an event
@@ -1465,7 +1507,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
       final newLocation =
           result.parkingLocation.isEmpty ? null : result.parkingLocation;
 
-      await _updateParkingLocation(
+      final updateResult = await _updateParkingLocation(
         context,
         event,
         newLocation,
@@ -1473,7 +1515,21 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             .parkingEditorIds, // Keep original editor IDs (users can't change them)
       );
 
-      // Show success message
+      if (!mounted) {
+        return;
+      }
+
+      if (updateResult.isFailure) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(updateResult.message ?? 'שגיאה בשמירת מיקום החנייה'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1486,6 +1542,92 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
         );
       }
     }
+  }
+
+  void _startMutation(String message) {
+    setState(() {
+      _isMutationInFlight = true;
+      _mutationMessage = message;
+    });
+  }
+
+  void _finishMutation() {
+    if (!mounted) return;
+    setState(() {
+      _isMutationInFlight = false;
+      _mutationMessage = '';
+    });
+  }
+
+  Future<CrudActionResult> _dispatchMutation(
+    void Function(CrudActionCompleter completion) dispatch,
+  ) async {
+    final completion = Completer<CrudActionResult>();
+    dispatch(completion);
+    return await completion.future;
+  }
+
+  Future<CrudActionResult> _runBlockingMutation({
+    required String message,
+    required void Function(CrudActionCompleter completion) dispatch,
+  }) async {
+    if (_isMutationInFlight) {
+      return const CrudActionResult.failure('פעולה אחרת עדיין מתבצעת');
+    }
+
+    _startMutation(message);
+    final result = await _dispatchMutation(dispatch);
+    _finishMutation();
+    return result;
+  }
+
+  Widget _buildMutationDialogOverlay() {
+    if (!_isMutationInFlight) {
+      return const SizedBox.shrink();
+    }
+
+    return Positioned.fill(
+      child: AbsorbPointer(
+        child: Container(
+          color: Colors.transparent,
+          alignment: Alignment.center,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 220, maxWidth: 280),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x22000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 3),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _mutationMessage,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildEmptyState() {

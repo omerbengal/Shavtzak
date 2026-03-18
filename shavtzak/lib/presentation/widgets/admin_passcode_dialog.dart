@@ -5,11 +5,13 @@ import 'passcode_setup_dialog.dart';
 class AdminPasscodeDialog extends StatefulWidget {
   final String teamMemberName;
   final int? currentLength;
+  final Future<String> Function()? onRevealPasscode;
 
   const AdminPasscodeDialog({
     super.key,
     required this.teamMemberName,
     this.currentLength,
+    this.onRevealPasscode,
   });
 
   @override
@@ -17,6 +19,10 @@ class AdminPasscodeDialog extends StatefulWidget {
 }
 
 class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
+  bool _showPasscode = false;
+  bool _isLoadingPasscode = false;
+  String? _currentPasscode;
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -60,8 +66,56 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
               if (widget.currentLength != null) ...[
                 Text(
                   'קוד גישה מוגדר (${widget.currentLength} ספרות)',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _showPasscode && _currentPasscode != null
+                              ? _currentPasscode!
+                              : '•' * (widget.currentLength ?? 4),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            letterSpacing: 4,
+                          ),
+                        ),
+                      ),
+                      if (widget.onRevealPasscode != null)
+                        _isLoadingPasscode
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : IconButton(
+                                onPressed: _togglePasscodeVisibility,
+                                icon: Icon(
+                                  _showPasscode
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  color: Colors.grey[600],
+                                ),
+                                tooltip: _showPasscode ? 'הסתר קוד' : 'הצג קוד',
+                              ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 24),
               ] else ...[
@@ -87,9 +141,11 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
                           ? Theme.of(context).primaryColor
                           : Colors.green,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                     ),
-                    child: Text(widget.currentLength != null ? 'שנה קוד' : 'הגדר קוד'),
+                    child: Text(
+                        widget.currentLength != null ? 'שנה קוד' : 'הגדר קוד'),
                   ),
                   if (widget.currentLength != null) ...[
                     const SizedBox(width: 12),
@@ -98,7 +154,8 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                       ),
                       child: const Text('הסר קוד'),
                     ),
@@ -116,6 +173,51 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
         ],
       ),
     );
+  }
+
+  Future<void> _togglePasscodeVisibility() async {
+    if (_showPasscode) {
+      setState(() => _showPasscode = false);
+      return;
+    }
+
+    if (_currentPasscode != null) {
+      setState(() => _showPasscode = true);
+      return;
+    }
+
+    if (widget.onRevealPasscode == null || _isLoadingPasscode) {
+      return;
+    }
+
+    setState(() => _isLoadingPasscode = true);
+
+    try {
+      final passcode = await widget.onRevealPasscode!();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _currentPasscode = passcode;
+        _showPasscode = true;
+        _isLoadingPasscode = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isLoadingPasscode = false);
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              error.toString().replaceFirst('UserSelectionException: ', ''),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+    }
   }
 
   void _showSetPasscodeDialog(BuildContext context) async {

@@ -14,6 +14,7 @@ import '../../core/constants/calendar_constants.dart';
 import '../../core/constants/role_types.dart';
 import '../../core/services/backend_api_service.dart';
 import '../../core/services/environment_service.dart';
+import '../../core/utils/event_sorting.dart';
 import '../models/assignment_model.dart';
 import '../models/category_model.dart';
 import '../models/checklist_item_model.dart';
@@ -407,9 +408,11 @@ class FirestoreDatabase implements DatabaseInterface {
         .orderBy('startDate', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
+      final events = snapshot.docs
           .map((doc) => EventModel.fromFirestore(doc).toEntity())
           .toList();
+      events.sort(compareEventsChronologicallyDescending);
+      return events;
     });
   }
 
@@ -421,9 +424,11 @@ class FirestoreDatabase implements DatabaseInterface {
           .orderBy('startDate', descending: true)
           .get();
 
-      return snapshot.docs
+      final events = snapshot.docs
           .map((doc) => EventModel.fromFirestore(doc).toEntity())
           .toList();
+      events.sort(compareEventsChronologicallyDescending);
+      return events;
     } catch (e) {
       throw DatabaseException('Failed to get events: $e');
     }
@@ -488,9 +493,11 @@ class FirestoreDatabase implements DatabaseInterface {
           .orderBy('startDate')
           .get();
 
-      return snapshot.docs
+      final events = snapshot.docs
           .map((doc) => EventModel.fromFirestore(doc).toEntity())
           .toList();
+      events.sort(compareEventsChronologically);
+      return events;
     } catch (e) {
       throw DatabaseException('Failed to get upcoming events: $e');
     }
@@ -509,9 +516,11 @@ class FirestoreDatabase implements DatabaseInterface {
           .orderBy('startDate')
           .get();
 
-      return snapshot.docs
+      final events = snapshot.docs
           .map((doc) => EventModel.fromFirestore(doc).toEntity())
           .toList();
+      events.sort(compareEventsChronologically);
+      return events;
     } catch (e) {
       throw DatabaseException('Failed to get events by date range: $e');
     }
@@ -528,9 +537,13 @@ class FirestoreDatabase implements DatabaseInterface {
         .where('startDate', isLessThanOrEqualTo: endTimestamp)
         .orderBy('startDate')
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => EventModel.fromFirestore(doc).toEntity())
-            .toList());
+        .map((snapshot) {
+      final events = snapshot.docs
+          .map((doc) => EventModel.fromFirestore(doc).toEntity())
+          .toList();
+      events.sort(compareEventsChronologically);
+      return events;
+    });
   }
 
   @override
@@ -928,11 +941,17 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
-  Future<void> insertAssignment(Assignment assignment) async {
+  Future<void> insertAssignment(
+    Assignment assignment, {
+    bool bypassAvailability = false,
+  }) async {
     try {
       await _invokeMutation(
         'assignment.insert',
-        payload: {'assignment': _assignmentEntityToMap(assignment)},
+        payload: {
+          'assignment': _assignmentEntityToMap(assignment),
+          if (bypassAvailability) 'bypassAvailability': true,
+        },
       );
     } catch (e) {
       throw DatabaseException('Failed to insert assignment: $e');
@@ -940,11 +959,17 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
-  Future<void> updateAssignment(Assignment assignment) async {
+  Future<void> updateAssignment(
+    Assignment assignment, {
+    bool bypassAvailability = false,
+  }) async {
     try {
       await _invokeMutation(
         'assignment.update',
-        payload: {'assignment': _assignmentEntityToMap(assignment)},
+        payload: {
+          'assignment': _assignmentEntityToMap(assignment),
+          if (bypassAvailability) 'bypassAvailability': true,
+        },
       );
     } catch (e) {
       throw DatabaseException('Failed to update assignment: $e');

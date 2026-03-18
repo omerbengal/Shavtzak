@@ -7,6 +7,7 @@ import '../../../data/repositories/assignment_repository.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../../core/state/constraint_manager.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
 import '../calendar_sync/calendar_sync_event.dart';
 import 'team_event.dart';
@@ -194,10 +195,13 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       await _repository.createTeamMember(event.member);
       // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות נוסף/ה בהצלחה'));
+      _completeActionSuccess(event.completion, 'חבר/ת הצוות נוסף/ה בהצלחה');
 
       // Don't restart listener here - the modal will handle it with the correct filter
     } catch (e) {
-      emit(TeamError('שגיאה בהוספת חבר/ת צוות: $e'));
+      final message = 'שגיאה בהוספת חבר/ת צוות: $e';
+      emit(TeamError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -340,12 +344,15 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       final searchQuery =
           state is TeamLoaded ? (state as TeamLoaded).searchQuery : null;
       emit(TeamLoaded(allMembers, searchQuery: searchQuery));
+      _completeActionSuccess(event.completion, 'פרטי חבר/ת הצוות עודכנו בהצלחה');
 
       // Note: We don't emit TeamMemberOperationSuccess here because it would change the state type
       // from TeamLoaded, causing the archive dialog (which checks 'state is TeamLoaded') to show empty.
       // The stream listener will emit additional updates as needed.
     } catch (e) {
-      emit(TeamError('שגיאה בעדכון פרטי חבר/ת הצוות: $e'));
+      final message = 'שגיאה בעדכון פרטי חבר/ת הצוות: $e';
+      emit(TeamError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -359,10 +366,13 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       await _repository.deleteTeamMember(event.id);
       // Emit success to show snackbar, UI will keep showing last state
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות נמחק/ה בהצלחה'));
+      _completeActionSuccess(event.completion, 'חבר/ת הצוות נמחק/ה בהצלחה');
 
       // Don't restart listener here - the modal/screen will handle it with the correct filter
     } catch (e) {
-      emit(TeamError('שגיאה במחיקת חבר/ת הצוות: $e'));
+      final message = 'שגיאה במחיקת חבר/ת הצוות: $e';
+      emit(TeamError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -375,10 +385,13 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.deactivateTeamMember(event.id);
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות הוסר/ה בהצלחה'));
+      _completeActionSuccess(event.completion, 'חבר/ת הצוות הוסר/ה בהצלחה');
 
       // Don't restart listener here - the screen will handle it with the correct filter
     } catch (e) {
-      emit(TeamError('שגיאה בהסרת חבר/ת הצוות: $e'));
+      final message = 'שגיאה בהסרת חבר/ת הצוות: $e';
+      emit(TeamError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -391,10 +404,13 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       // Don't emit TeamMemberOperating to avoid UI rebuild
       await _repository.reactivateTeamMember(event.id);
       emit(const TeamMemberOperationSuccess('חבר/ת הצוות הופעל/ה בהצלחה'));
+      _completeActionSuccess(event.completion, 'חבר/ת הצוות הופעל/ה בהצלחה');
 
       // Don't restart listener here - the screen will handle it with the correct filter
     } catch (e) {
-      emit(TeamError('שגיאה בהפעלת חבר/ת הצוות: $e'));
+      final message = 'שגיאה בהפעלת חבר/ת הצוות: $e';
+      emit(TeamError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -520,8 +536,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       // Emit success to show snackbar
       // The existing stream subscription will automatically pick up the database changes
       emit(TeamMemberOperationSuccess(successMessage));
+      _completeActionSuccess(event.completion, successMessage);
     } catch (e) {
-      emit(TeamError('שגיאה בהוספת בקשת מגבלה: $e'));
+      final message = 'שגיאה בהוספת בקשת מגבלה: $e';
+      emit(TeamError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -540,6 +559,7 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       if (removedConstraint == null) {
         // Constraint was already removed (idempotent) - not an error
         emit(const TeamMemberOperationSuccess('בקשת מגבלה נמחקה בהצלחה'));
+        _completeActionSuccess(event.completion, 'בקשת מגבלה נמחקה בהצלחה');
         return;
       }
 
@@ -559,8 +579,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       // Emit success to show snackbar
       // The existing stream subscription will automatically pick up the database changes
       emit(const TeamMemberOperationSuccess('בקשת מגבלה נמחקה בהצלחה'));
+      _completeActionSuccess(event.completion, 'בקשת מגבלה נמחקה בהצלחה');
     } catch (e) {
-      emit(TeamError('שגיאה במחיקת בקשת מגבלה: $e'));
+      final message = 'שגיאה במחיקת בקשת מגבלה: $e';
+      emit(TeamError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -625,8 +648,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       }
 
       emit(const TeamMemberOperationSuccess('מגבלה עודכנה בהצלחה'));
+      _completeActionSuccess(event.completion, 'מגבלה עודכנה בהצלחה');
     } catch (e) {
-      emit(TeamError('שגיאה בעדכון מגבלה: $e'));
+      final message = 'שגיאה בעדכון מגבלה: $e';
+      emit(TeamError(message));
+      _completeActionFailure(event.completion, message);
     }
   }
 
@@ -849,6 +875,20 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     _constraintManagers.clear();
     // Reset to initial state
     emit(const TeamInitial());
+  }
+
+  void _completeActionSuccess(
+    CrudActionCompleter? completion, [
+    String? message,
+  ]) {
+    completeCrudAction(completion, CrudActionResult.success(message));
+  }
+
+  void _completeActionFailure(
+    CrudActionCompleter? completion,
+    String message,
+  ) {
+    completeCrudAction(completion, CrudActionResult.failure(message));
   }
 
   @override
