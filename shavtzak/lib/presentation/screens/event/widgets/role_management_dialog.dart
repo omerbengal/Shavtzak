@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../domain/entities/role.dart';
 import '../../../bloc/role/role_bloc.dart';
@@ -22,6 +25,31 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
   /// Local optimistic state for reordering - updates immediately via setState
   /// before BLoC/Firestore responds. Cleared when BLoC state updates.
   List<Role>? _pendingReorderedRoles;
+
+  Future<CrudActionResult> _waitForRoleAction(
+    void Function(CrudActionCompleter completion) dispatch,
+  ) async {
+    final completion = Completer<CrudActionResult>();
+    dispatch(completion);
+    return await completion.future;
+  }
+
+  Future<CrudActionResult> _runRoleMutation({
+    required Future<CrudActionResult> Function() action,
+  }) async {
+    if (_isLoading) {
+      return const CrudActionResult.failure('פעולה אחרת עדיין מתבצעת');
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      return await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -234,8 +262,26 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                   color: role.isVisible ? Colors.green : Colors.grey,
                 ),
                 tooltip: role.isVisible ? 'הסתר' : 'הצג',
-                onPressed: () {
-                  context.read<RoleBloc>().add(ToggleRoleVisibility(role.id));
+                onPressed: () async {
+                  final result = await _runRoleMutation(
+                    action: () => _waitForRoleAction(
+                      (completion) => context.read<RoleBloc>().add(
+                            ToggleRoleVisibility(
+                              role.id,
+                              completion: completion,
+                            ),
+                          ),
+                    ),
+                  );
+                  if (!mounted || result.isSuccess) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        result.message ?? 'שגיאה בשינוי נראות תפקיד',
+                      ),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
                 },
                 splashColor: Colors.transparent,
                 hoverColor: Colors.transparent,
@@ -269,8 +315,23 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
               if (isArchived) ...[
                 // Restore button
                 ElevatedButton.icon(
-                  onPressed: () {
-                    context.read<RoleBloc>().add(RestoreRole(role.id));
+                  onPressed: () async {
+                    final result = await _runRoleMutation(
+                      action: () => _waitForRoleAction(
+                        (completion) => context.read<RoleBloc>().add(
+                              RestoreRole(role.id, completion: completion),
+                            ),
+                      ),
+                    );
+                    if (!mounted || result.isSuccess) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          result.message ?? 'שגיאה בשחזור תפקיד',
+                        ),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
                   },
                   icon: const Icon(Icons.restore, size: 16),
                   label: const Text('שחזר'),
@@ -343,7 +404,20 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
     );
 
     if (confirmed == true && context.mounted) {
-      context.read<RoleBloc>().add(ArchiveRole(role.id));
+      final result = await _runRoleMutation(
+        action: () => _waitForRoleAction(
+          (completion) => context.read<RoleBloc>().add(
+                ArchiveRole(role.id, completion: completion),
+              ),
+        ),
+      );
+      if (!mounted || result.isSuccess) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message ?? 'שגיאה בהעברת תפקיד לארכיון'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -375,7 +449,20 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
     );
 
     if (confirmed == true && context.mounted) {
-      context.read<RoleBloc>().add(DeleteRole(role.id));
+      final result = await _runRoleMutation(
+        action: () => _waitForRoleAction(
+          (completion) => context.read<RoleBloc>().add(
+                DeleteRole(role.id, completion: completion),
+              ),
+        ),
+      );
+      if (!mounted || result.isSuccess) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message ?? 'שגיאה במחיקת תפקיד'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -384,6 +471,7 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
     final controller = TextEditingController();
     final focusNode = createRtlCursorFixedFocusNode(controller);
     bool isVisible = true;
+    bool isSaving = false;
 
     showDialog(
       context: context,
@@ -423,20 +511,51 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  onPressed:
+                      isSaving ? null : () => Navigator.of(dialogContext).pop(),
                   child: const Text('ביטול'),
                 ),
                 ElevatedButton(
-                  onPressed: () {
-                    if (controller.text.trim().isNotEmpty) {
-                      context.read<RoleBloc>().add(CreateRole(
-                            hebrewName: controller.text.trim(),
-                            isVisible: isVisible,
-                          ));
-                      Navigator.of(dialogContext).pop();
-                    }
-                  },
-                  child: const Text('הוסף'),
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          if (controller.text.trim().isEmpty) {
+                            return;
+                          }
+                          setState(() => isSaving = true);
+                          final result = await _waitForRoleAction(
+                            (completion) => context.read<RoleBloc>().add(
+                                  CreateRole(
+                                    hebrewName: controller.text.trim(),
+                                    isVisible: isVisible,
+                                    completion: completion,
+                                  ),
+                                ),
+                          );
+                          if (!dialogContext.mounted) {
+                            return;
+                          }
+                          if (result.isFailure) {
+                            setState(() => isSaving = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  result.message ?? 'שגיאה ביצירת תפקיד',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+                          Navigator.of(dialogContext).pop();
+                        },
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('הוסף'),
                 ),
               ],
             );
@@ -453,40 +572,74 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
   void _showRenameDialog(BuildContext context, Role role) {
     final controller = TextEditingController(text: role.hebrewName);
     final focusNode = createRtlCursorFixedFocusNode(controller);
+    bool isSaving = false;
 
     showDialog(
       context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('שנה שם תפקיד'),
-          content: TextField(
-            controller: controller,
-            focusNode: focusNode,
-            decoration: const InputDecoration(
-              labelText: 'שם התפקיד בעברית',
-              border: OutlineInputBorder(),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('שנה שם תפקיד'),
+            content: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              decoration: const InputDecoration(
+                labelText: 'שם התפקיד בעברית',
+                border: OutlineInputBorder(),
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed:
+                    isSaving ? null : () => Navigator.of(dialogContext).pop(),
+                child: const Text('ביטול'),
+              ),
+              ElevatedButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        if (controller.text.trim().isEmpty ||
+                            controller.text.trim() == role.hebrewName) {
+                          return;
+                        }
+                        setDialogState(() => isSaving = true);
+                        final result = await _waitForRoleAction(
+                          (completion) => context.read<RoleBloc>().add(
+                                RenameRole(
+                                  roleId: role.id,
+                                  newHebrewName: controller.text.trim(),
+                                  completion: completion,
+                                ),
+                              ),
+                        );
+                        if (!dialogContext.mounted) {
+                          return;
+                        }
+                        if (result.isFailure) {
+                          setDialogState(() => isSaving = false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                result.message ?? 'שגיאה בעדכון שם תפקיד',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.of(dialogContext).pop();
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('שמור'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('ביטול'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (controller.text.trim().isNotEmpty &&
-                    controller.text.trim() != role.hebrewName) {
-                  context.read<RoleBloc>().add(RenameRole(
-                        roleId: role.id,
-                        newHebrewName: controller.text.trim(),
-                      ));
-                  Navigator.of(dialogContext).pop();
-                }
-              },
-              child: const Text('שמור'),
-            ),
-          ],
         ),
       ),
     ).then((_) {

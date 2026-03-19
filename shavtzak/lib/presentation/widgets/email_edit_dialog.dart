@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
+import '../../core/utils/crud_action_result.dart';
 import '../../core/utils/validators.dart';
 
 /// Dialog for editing user's email address
@@ -104,7 +107,16 @@ class _EmailEditDialogState extends State<EmailEditDialog> {
           ),
           ElevatedButton(
             onPressed: (_isDirty && !_isSaving) ? _saveEmail : null,
-            child: const Text('שמור'),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('שמור'),
           ),
         ],
       ),
@@ -132,21 +144,40 @@ class _EmailEditDialogState extends State<EmailEditDialog> {
     final trimmed = _emailController.text.trim();
     final newEmail = trimmed.isEmpty ? null : trimmed;
 
-    try {
-      // Update email via existing event in your project
-      bloc.add(UpdateEmail(newEmail));
+    setState(() => _isSaving = true);
 
-      if (mounted) {
-        Navigator.of(context).pop();
+    try {
+      final completion = Completer<CrudActionResult>();
+      bloc.add(UpdateEmail(newEmail, completion: completion));
+      final result = await completion.future;
+
+      if (!mounted) {
+        return;
+      }
+
+      if (result.isFailure) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              newEmail == null ? 'כתובת אימייל הוסר' : 'כתובת אימייל עודכנה',
-            ),
-            backgroundColor: Colors.green,
+            content: Text(result.message ?? 'שגיאה בעדכון כתובת אימייל'),
+            backgroundColor: Colors.red,
           ),
         );
+        return;
       }
+
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.message ??
+                (newEmail == null
+                    ? 'כתובת אימייל הוסרה'
+                    : 'כתובת אימייל עודכנה'),
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);

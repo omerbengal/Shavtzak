@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
+import '../../core/utils/crud_action_result.dart';
 
 /// Dialog for editing user's birthday
 class BirthdayEditDialog extends StatefulWidget {
@@ -22,8 +25,18 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
 
   // Hebrew month names
   static const List<String> _hebrewMonths = [
-    'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
-    'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+    'ינואר',
+    'פברואר',
+    'מרץ',
+    'אפריל',
+    'מאי',
+    'יוני',
+    'יולי',
+    'אוגוסט',
+    'ספטמבר',
+    'אוקטובר',
+    'נובמבר',
+    'דצמבר'
   ];
 
   int get _maxYear => DateTime.now().year - 20;
@@ -48,7 +61,9 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
   }
 
   DateTime? _getSelectedDate() {
-    if (_selectedDay != null && _selectedMonth != null && _selectedYear != null) {
+    if (_selectedDay != null &&
+        _selectedMonth != null &&
+        _selectedYear != null) {
       return DateTime(_selectedYear!, _selectedMonth!, _selectedDay!);
     }
     return null;
@@ -114,95 +129,96 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-              const Text(
-                'בחר את תאריך הלידה שלך',
-                style: TextStyle(fontSize: 16),
-              ),
-              const SizedBox(height: 20),
-              // Day dropdown
-              DropdownButtonFormField<int>(
-                value: _selectedDay,
-                decoration: _buildFieldDecoration('יום', _selectedDay),
-                items: List.generate(daysInMonth, (index) {
-                  final day = index + 1;
-                  return DropdownMenuItem(
-                    value: day,
-                    child: Text(day.toString()),
-                  );
-                }),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedDay = value;
-                    _isDirty = true;
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
-              // Month dropdown
-              DropdownButtonFormField<int>(
-                value: _selectedMonth,
-                decoration: _buildFieldDecoration('חודש', _selectedMonth),
-                items: List.generate(12, (index) {
-                  final month = index + 1;
-                  return DropdownMenuItem(
-                    value: month,
-                    child: Text(_hebrewMonths[index]),
-                  );
-                }),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedMonth = value;
-                    _isDirty = true;
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
-              // Year dropdown
-              DropdownButtonFormField<int>(
-                value: _selectedYear,
-                decoration: _buildFieldDecoration('שנה', _selectedYear),
-                items: List.generate(_maxYear - _minYear + 1, (index) {
-                  final year = _maxYear - index;
-                  return DropdownMenuItem(
-                    value: year,
-                    child: Text(year.toString()),
-                  );
-                }),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedYear = value;
-                    _isDirty = true;
-                  });
-                },
-              ),
-              if (_showValidationErrors && _hasPartialSelection) ...[
-                const SizedBox(height: 8),
                 const Text(
-                  'יש למלא את כל השדות',
-                  style: TextStyle(color: Colors.red, fontSize: 13),
+                  'בחר את תאריך הלידה שלך',
+                  style: TextStyle(fontSize: 16),
                 ),
-              ],
-              if (_selectedDay != null || _selectedMonth != null || _selectedYear != null) ...[
-                const SizedBox(height: 12),
-                TextButton.icon(
-                  onPressed: () {
+                const SizedBox(height: 20),
+                DropdownButtonFormField<int>(
+                  value: _selectedDay,
+                  decoration: _buildFieldDecoration('יום', _selectedDay),
+                  items: List.generate(daysInMonth, (index) {
+                    final day = index + 1;
+                    return DropdownMenuItem(
+                      value: day,
+                      child: Text(day.toString()),
+                    );
+                  }),
+                  onChanged: (value) {
                     setState(() {
-                      _selectedDay = null;
-                      _selectedMonth = null;
-                      _selectedYear = null;
+                      _selectedDay = value;
                       _isDirty = true;
-                      _showValidationErrors = false;
                     });
                   },
-                  icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                  label: const Text('נקה תאריך', style: TextStyle(color: Colors.red)),
                 ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  value: _selectedMonth,
+                  decoration: _buildFieldDecoration('חודש', _selectedMonth),
+                  items: List.generate(12, (index) {
+                    final month = index + 1;
+                    return DropdownMenuItem(
+                      value: month,
+                      child: Text(_hebrewMonths[index]),
+                    );
+                  }),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedMonth = value;
+                      _isDirty = true;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  value: _selectedYear,
+                  decoration: _buildFieldDecoration('שנה', _selectedYear),
+                  items: List.generate(_maxYear - _minYear + 1, (index) {
+                    final year = _maxYear - index;
+                    return DropdownMenuItem(
+                      value: year,
+                      child: Text(year.toString()),
+                    );
+                  }),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedYear = value;
+                      _isDirty = true;
+                    });
+                  },
+                ),
+                if (_showValidationErrors && _hasPartialSelection) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'יש למלא את כל השדות',
+                    style: TextStyle(color: Colors.red, fontSize: 13),
+                  ),
+                ],
+                if (_selectedDay != null ||
+                    _selectedMonth != null ||
+                    _selectedYear != null) ...[
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _selectedDay = null;
+                        _selectedMonth = null;
+                        _selectedYear = null;
+                        _isDirty = true;
+                        _showValidationErrors = false;
+                      });
+                    },
+                    icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                    label: const Text(
+                      'נקה תאריך',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ],
+                SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
               ],
-              // Add padding at bottom to account for keyboard
-              SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
-            ],
+            ),
           ),
-        ),
         ),
         actions: [
           TextButton(
@@ -211,14 +227,23 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
           ),
           ElevatedButton(
             onPressed: (_isDirty && !_isSaving) ? _saveBirthday : null,
-            child: const Text('שמור'),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('שמור'),
           ),
         ],
       ),
     );
   }
 
-  void _saveBirthday() async {
+  Future<void> _saveBirthday() async {
     if (_isSaving) return;
 
     // Check if selection is valid before saving
@@ -238,19 +263,36 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
 
     final selectedDate = _getSelectedDate();
 
-    try {
-      // Use the UpdateBirthday event to update the birthday
-      bloc.add(UpdateBirthday(selectedDate));
+    setState(() => _isSaving = true);
 
-      if (mounted) {
-        Navigator.of(context).pop();
+    try {
+      final completion = Completer<CrudActionResult>();
+      bloc.add(UpdateBirthday(selectedDate, completion: completion));
+      final result = await completion.future;
+
+      if (!mounted) {
+        return;
+      }
+
+      if (result.isFailure) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(selectedDate == null ? 'תאריך לידה הוסר' : 'תאריך לידה עודכן'),
-            backgroundColor: Colors.green,
+            content: Text(result.message ?? 'שגיאה בעדכון תאריך לידה'),
+            backgroundColor: Colors.red,
           ),
         );
+        return;
       }
+
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message ??
+              (selectedDate == null ? 'תאריך לידה הוסר' : 'תאריך לידה עודכן')),
+          backgroundColor: Colors.green,
+        ),
+      );
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);

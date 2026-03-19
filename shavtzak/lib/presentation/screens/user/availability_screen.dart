@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/team/team_bloc.dart';
@@ -10,6 +13,7 @@ import '../../bloc/team/team_state.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
+import '../../widgets/loading_overlay.dart';
 
 class _UserAvailabilityContext {
   final String? userId;
@@ -43,6 +47,8 @@ class AvailabilityScreen extends StatefulWidget {
 class _AvailabilityScreenState extends State<AvailabilityScreen> {
   TeamMember? _lastKnownUser;
   List<Event> _futureEvents = [];
+  bool _isMutationInFlight = false;
+  String _mutationMessage = '';
 
   @override
   void initState() {
@@ -60,89 +66,129 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         resizeToAvoidBottomInset: false,
-        body: SafeArea(
-          child: BlocSelector<UserSelectionBloc, UserSelectionState, _UserAvailabilityContext>(
-            selector: (state) {
-              if (state is UserAuthenticated) {
-                return _UserAvailabilityContext(
-                  userId: state.user.id,
-                  isAuthenticated: true,
-                );
-              }
-              return const _UserAvailabilityContext(
-                userId: null,
-                isAuthenticated: false,
-              );
-            },
-            builder: (context, userContext) {
-              if (!userContext.isAuthenticated || userContext.userId == null) {
-                return const Center(
-                  child: Text('אין משתמש מחובר'),
-                );
-              }
-
-              return BlocConsumer<TeamBloc, TeamState>(
-                listener: (context, teamState) {
-                  if (teamState is TeamError) {
-                    ScaffoldMessenger.of(context)
-                      ..clearSnackBars()
-                      ..showSnackBar(
-                        SnackBar(
-                          content: Directionality(
-                            textDirection: TextDirection.rtl,
-                            child: Text(teamState.message),
-                          ),
-                          backgroundColor: Colors.red,
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
+        body: Stack(
+          children: [
+            SafeArea(
+              child: BlocSelector<UserSelectionBloc, UserSelectionState,
+                  _UserAvailabilityContext>(
+                selector: (state) {
+                  if (state is UserAuthenticated) {
+                    return _UserAvailabilityContext(
+                      userId: state.user.id,
+                      isAuthenticated: true,
+                    );
                   }
+                  return const _UserAvailabilityContext(
+                    userId: null,
+                    isAuthenticated: false,
+                  );
                 },
-                builder: (context, teamState) {
-                  // Show loading only if we don't have any data yet
-                  if (teamState is TeamLoading && _lastKnownUser == null) {
+                builder: (context, userContext) {
+                  if (!userContext.isAuthenticated || userContext.userId == null) {
                     return const Center(
-                      child: CircularProgressIndicator(),
+                      child: Text('אין משתמש מחובר'),
                     );
                   }
 
-                  if (teamState is TeamLoaded) {
-                    if (teamState.members.isEmpty) {
+                  return BlocConsumer<TeamBloc, TeamState>(
+                    listener: (context, teamState) {
+                      if (teamState is TeamError) {
+                        ScaffoldMessenger.of(context)
+                          ..clearSnackBars()
+                          ..showSnackBar(
+                            SnackBar(
+                              content: Directionality(
+                                textDirection: TextDirection.rtl,
+                                child: Text(teamState.message),
+                              ),
+                              backgroundColor: Colors.red,
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                      }
+                    },
+                    builder: (context, teamState) {
+                      if (teamState is TeamLoading && _lastKnownUser == null) {
+                        return const Center(
+                          child: CircularProgressIndicator(),
+                        );
+                      }
+
+                      if (teamState is TeamLoaded) {
+                        if (teamState.members.isEmpty) {
+                          if (_lastKnownUser != null) {
+                            return _buildAvailabilityContent(
+                                context, _lastKnownUser!);
+                          }
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        final currentUser = teamState.members.firstWhere(
+                          (member) => member.id == userContext.userId,
+                          orElse: () => _lastKnownUser ?? teamState.members.first,
+                        );
+                        _lastKnownUser = currentUser;
+                        return _buildAvailabilityContent(context, currentUser);
+                      }
+
                       if (_lastKnownUser != null) {
                         return _buildAvailabilityContent(context, _lastKnownUser!);
                       }
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    // Find the current user in the team list
-                    final currentUser = teamState.members.firstWhere(
-                      (member) => member.id == userContext.userId,
-                      orElse: () => _lastKnownUser ?? teamState.members.first,
-                    );
-                    _lastKnownUser = currentUser;
-                    return _buildAvailabilityContent(context, currentUser);
-                  }
 
-                  // For any other state (Success, Error, etc.), keep showing last known state
-                  if (_lastKnownUser != null) {
-                    return _buildAvailabilityContent(context, _lastKnownUser!);
-                  }
+                      if (teamState is TeamError) {
+                        return Center(
+                          child: Text('שגיאה: ${teamState.message}'),
+                        );
+                      }
 
-                  if (teamState is TeamError) {
-                    return Center(
-                      child: Text('שגיאה: ${teamState.message}'),
-                    );
-                  }
-
-                  return const Center(
-                    child: CircularProgressIndicator(),
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    },
                   );
                 },
-              );
-            },
-          ),
+              ),
+            ),
+            LoadingOverlay(
+              isLoading: _isMutationInFlight,
+              message: _mutationMessage,
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  void _startMutation(String message) {
+    setState(() {
+      _isMutationInFlight = true;
+      _mutationMessage = message;
+    });
+  }
+
+  void _finishMutation() {
+    if (!mounted) return;
+    setState(() {
+      _isMutationInFlight = false;
+      _mutationMessage = '';
+    });
+  }
+
+  Future<CrudActionResult> _runBlockingMutation({
+    required String message,
+    required void Function(CrudActionCompleter completion) dispatch,
+  }) async {
+    if (_isMutationInFlight) {
+      return const CrudActionResult.failure('פעולה אחרת עדיין מתבצעת');
+    }
+
+    _startMutation(message);
+    try {
+      final completion = Completer<CrudActionResult>();
+      dispatch(completion);
+      return await completion.future;
+    } finally {
+      _finishMutation();
+    }
   }
 
   Widget _buildAvailabilityContent(BuildContext context, TeamMember user) {
@@ -364,18 +410,21 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
     );
   }
 
-  void _toggleEventAvailability(BuildContext context, Event event, TeamMember user, bool isAvailable) {
+  Future<void> _toggleEventAvailability(
+    BuildContext context,
+    Event event,
+    TeamMember user,
+    bool isAvailable,
+  ) async {
     final userState = context.read<UserSelectionBloc>().state;
     final teamState = context.read<TeamBloc>().state;
 
     if (userState is UserAuthenticated && teamState is TeamLoaded) {
-      // Find the current user from the fresh team data
       final currentUser = teamState.members.firstWhere(
         (member) => member.id == userState.user.id,
         orElse: () => userState.user,
       );
 
-      // Toggle event availability
       final updatedEventIds = List<String>.from(currentUser.availableEventIds);
       if (isAvailable) {
         if (!updatedEventIds.contains(event.id)) {
@@ -389,18 +438,32 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
         availableEventIds: updatedEventIds,
       );
 
-      context.read<TeamBloc>().add(UpdateTeamMember(updatedUser));
+      final result = await _runBlockingMutation(
+        message: isAvailable ? 'מוסיף זמינות...' : 'מסיר זמינות...',
+        dispatch: (completion) => context.read<TeamBloc>().add(
+              UpdateTeamMember(updatedUser, completion: completion),
+            ),
+      );
 
-      // Show success message
+      if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
         ..showSnackBar(
           SnackBar(
             content: Directionality(
               textDirection: TextDirection.rtl,
-              child: Text(isAvailable ? 'נוספה זמינות לאירוע' : 'הוסרה זמינות מהאירוע'),
+              child: Text(
+                result.message ??
+                    (result.isSuccess
+                        ? (isAvailable
+                            ? 'נוספה זמינות לאירוע'
+                            : 'הוסרה זמינות מהאירוע')
+                        : 'שגיאה בעדכון הזמינות'),
+              ),
             ),
-            backgroundColor: isAvailable ? Colors.green : Colors.orange,
+            backgroundColor: result.isSuccess
+                ? (isAvailable ? Colors.green : Colors.orange)
+                : Colors.red,
             duration: const Duration(seconds: 2),
           ),
         );

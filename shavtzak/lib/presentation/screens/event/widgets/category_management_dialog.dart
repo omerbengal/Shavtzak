@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../domain/entities/category.dart';
 import '../../../../data/repositories/event_repository.dart';
@@ -23,6 +26,31 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
   /// Local optimistic state for reordering - updates immediately via setState
   /// before BLoC/Firestore responds. Cleared when BLoC state updates.
   List<Category>? _pendingReorderedCategories;
+
+  Future<CrudActionResult> _waitForCategoryAction(
+    void Function(CrudActionCompleter completion) dispatch,
+  ) async {
+    final completion = Completer<CrudActionResult>();
+    dispatch(completion);
+    return await completion.future;
+  }
+
+  Future<CrudActionResult> _runCategoryMutation({
+    required Future<CrudActionResult> Function() action,
+  }) async {
+    if (_isLoading) {
+      return const CrudActionResult.failure('פעולה אחרת עדיין מתבצעת');
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      return await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -268,8 +296,26 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                 Directionality(
                   textDirection: TextDirection.rtl,
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      context.read<CategoryBloc>().add(RestoreCategory(category.id));
+                    onPressed: () async {
+                      final result = await _runCategoryMutation(
+                        action: () => _waitForCategoryAction(
+                          (completion) => context.read<CategoryBloc>().add(
+                                RestoreCategory(
+                                  category.id,
+                                  completion: completion,
+                                ),
+                              ),
+                        ),
+                      );
+                      if (!mounted || result.isSuccess) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            result.message ?? 'שגיאה בשחזור קטגוריה',
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
                     },
                     icon: const Icon(Icons.restore, size: 16, color: Colors.white),
                     label: const Text('שחזר'),
@@ -334,7 +380,20 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
     );
 
     if (confirmed == true && context.mounted) {
-      context.read<CategoryBloc>().add(DeleteCategory(category.id));
+      final result = await _runCategoryMutation(
+        action: () => _waitForCategoryAction(
+          (completion) => context.read<CategoryBloc>().add(
+                DeleteCategory(category.id, completion: completion),
+              ),
+        ),
+      );
+      if (!mounted || result.isSuccess) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message ?? 'שגיאה בהעברת קטגוריה לארכיון'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -412,7 +471,21 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
       if (!context.mounted) return;
 
       if (choice == 'archive') {
-        context.read<CategoryBloc>().add(DeleteCategory(category.id));
+        final result = await _runCategoryMutation(
+          action: () => _waitForCategoryAction(
+            (completion) => context.read<CategoryBloc>().add(
+                  DeleteCategory(category.id, completion: completion),
+                ),
+          ),
+        );
+        if (mounted && result.isFailure) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.message ?? 'שגיאה בהעברת קטגוריה לארכיון'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       } else if (choice == 'clear_and_delete') {
         setState(() => _isLoading = true);
         // Clear categoryId on every affected event
@@ -421,9 +494,26 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
         }
         // Now safe to permanently delete the category
         if (context.mounted) {
-          context.read<CategoryBloc>().add(PermanentlyDeleteCategory(category.id));
+          final result = await _waitForCategoryAction(
+            (completion) => context.read<CategoryBloc>().add(
+                  PermanentlyDeleteCategory(
+                    category.id,
+                    completion: completion,
+                  ),
+                ),
+          );
+          if (result.isFailure && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(result.message ?? 'שגיאה במחיקת קטגוריה'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
-        // _isLoading is cleared by the BlocListener when CategoriesLoaded arrives
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
       }
     } else {
       // No events use this category — simple confirmation
@@ -453,7 +543,23 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
       );
 
       if (confirmed == true && context.mounted) {
-        context.read<CategoryBloc>().add(PermanentlyDeleteCategory(category.id));
+        final result = await _runCategoryMutation(
+          action: () => _waitForCategoryAction(
+            (completion) => context.read<CategoryBloc>().add(
+                  PermanentlyDeleteCategory(
+                    category.id,
+                    completion: completion,
+                  ),
+                ),
+          ),
+        );
+        if (!mounted || result.isSuccess) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.message ?? 'שגיאה במחיקת קטגוריה'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -462,38 +568,71 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
   void _showAddCategoryDialog(BuildContext context) {
     final controller = TextEditingController();
     final focusNode = createRtlCursorFixedFocusNode(controller);
+    bool isSaving = false;
 
     showDialog(
       context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('צור קטגוריה חדשה'),
-          content: TextField(
-            controller: controller,
-            focusNode: focusNode,
-            decoration: const InputDecoration(
-              labelText: 'שם הקטגוריה',
-              border: OutlineInputBorder(),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('צור קטגוריה חדשה'),
+            content: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              decoration: const InputDecoration(
+                labelText: 'שם הקטגוריה',
+                border: OutlineInputBorder(),
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.of(dialogContext).pop(),
+                child: const Text('ביטול'),
+              ),
+              ElevatedButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        if (controller.text.trim().isEmpty) {
+                          return;
+                        }
+                        setDialogState(() => isSaving = true);
+                        final result = await _waitForCategoryAction(
+                          (completion) => context.read<CategoryBloc>().add(
+                                CreateCategory(
+                                  controller.text.trim(),
+                                  completion: completion,
+                                ),
+                              ),
+                        );
+                        if (!dialogContext.mounted) {
+                          return;
+                        }
+                        if (result.isFailure) {
+                          setDialogState(() => isSaving = false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                result.message ?? 'שגיאה ביצירת קטגוריה',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.of(dialogContext).pop();
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('צור'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('ביטול'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (controller.text.trim().isNotEmpty) {
-                  context.read<CategoryBloc>().add(CreateCategory(
-                        controller.text.trim(),
-                      ));
-                  Navigator.of(dialogContext).pop();
-                }
-              },
-              child: const Text('צור'),
-            ),
-          ],
         ),
       ),
     ).then((_) {
@@ -506,40 +645,73 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
   void _showRenameDialog(BuildContext context, Category category) {
     final controller = TextEditingController(text: category.name);
     final focusNode = createRtlCursorFixedFocusNode(controller);
+    bool isSaving = false;
 
     showDialog(
       context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('שנה שם קטגוריה'),
-          content: TextField(
-            controller: controller,
-            focusNode: focusNode,
-            decoration: const InputDecoration(
-              labelText: 'שם הקטגוריה',
-              border: OutlineInputBorder(),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('שנה שם קטגוריה'),
+            content: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              decoration: const InputDecoration(
+                labelText: 'שם הקטגוריה',
+                border: OutlineInputBorder(),
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.of(dialogContext).pop(),
+                child: const Text('ביטול'),
+              ),
+              ElevatedButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        if (controller.text.trim().isEmpty ||
+                            controller.text.trim() == category.name) {
+                          return;
+                        }
+                        setDialogState(() => isSaving = true);
+                        final result = await _waitForCategoryAction(
+                          (completion) => context.read<CategoryBloc>().add(
+                                RenameCategory(
+                                  category.id,
+                                  controller.text.trim(),
+                                  completion: completion,
+                                ),
+                              ),
+                        );
+                        if (!dialogContext.mounted) {
+                          return;
+                        }
+                        if (result.isFailure) {
+                          setDialogState(() => isSaving = false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                result.message ?? 'שגיאה בעדכון שם קטגוריה',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.of(dialogContext).pop();
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('שמור'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('ביטול'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (controller.text.trim().isNotEmpty &&
-                    controller.text.trim() != category.name) {
-                  context.read<CategoryBloc>().add(RenameCategory(
-                        category.id,
-                        controller.text.trim(),
-                      ));
-                  Navigator.of(dialogContext).pop();
-                }
-              },
-              child: const Text('שמור'),
-            ),
-          ],
         ),
       ),
     ).then((_) {

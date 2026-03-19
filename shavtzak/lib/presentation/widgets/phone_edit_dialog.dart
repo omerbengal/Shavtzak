@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
+import '../../core/utils/crud_action_result.dart';
 import '../../core/utils/validators.dart';
 import '../../core/utils/phone_input_formatter.dart';
 
@@ -73,14 +76,17 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
                       prefixIcon: Icon(Icons.phone),
                       border: OutlineInputBorder(),
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
                     ),
                     validator: Validators.validatePhoneNumber,
                     keyboardType: TextInputType.phone,
                     textDirection: TextDirection.ltr,
                     smartQuotesType: SmartQuotesType.disabled,
                     smartDashesType: SmartDashesType.disabled,
-                    textAlign: TextAlign.end, // Right-aligned like the team member modal
+                    textAlign: TextAlign.end,
                     autofocus: false,
                     inputFormatters: [
                       PhoneNumberTextInputFormatter(),
@@ -92,7 +98,6 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                     textAlign: TextAlign.center,
                   ),
-                  // Add padding at bottom to account for keyboard
                   SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
                 ],
               ),
@@ -106,14 +111,23 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
           ),
           ElevatedButton(
             onPressed: (_isDirty && !_isSaving) ? _savePhone : null,
-            child: const Text('שמור'),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('שמור'),
           ),
         ],
       ),
     );
   }
 
-  void _savePhone() async {
+  Future<void> _savePhone() async {
     if (_isSaving) return;
 
     if (!_formKey.currentState!.validate()) {
@@ -131,19 +145,36 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
         ? null
         : _phoneController.text.trim();
 
-    try {
-      // Use the UpdatePhoneNumber event to update the phone number
-      bloc.add(UpdatePhoneNumber(newPhone));
+    setState(() => _isSaving = true);
 
-      if (mounted) {
-        Navigator.of(context).pop();
+    try {
+      final completion = Completer<CrudActionResult>();
+      bloc.add(UpdatePhoneNumber(newPhone, completion: completion));
+      final result = await completion.future;
+
+      if (!mounted) {
+        return;
+      }
+
+      if (result.isFailure) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(newPhone == null ? 'מספר טלפון הוסר' : 'מספר טלפון עודכן'),
-            backgroundColor: Colors.green,
+            content: Text(result.message ?? 'שגיאה בעדכון מספר טלפון'),
+            backgroundColor: Colors.red,
           ),
         );
+        return;
       }
+
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message ??
+              (newPhone == null ? 'מספר טלפון הוסר' : 'מספר טלפון עודכן')),
+          backgroundColor: Colors.green,
+        ),
+      );
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);

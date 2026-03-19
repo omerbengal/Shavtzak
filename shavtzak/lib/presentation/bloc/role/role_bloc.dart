@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'dart:developer' as developer;
 import '../../../data/repositories/role_repository.dart';
 import '../../../domain/entities/role.dart';
+import '../../../core/utils/crud_action_result.dart';
 import 'role_event.dart';
 import 'role_state.dart';
 
@@ -81,8 +82,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
         hebrewName: event.hebrewName,
         isVisible: event.isVisible,
       );
-      // Real-time stream will trigger UI update
+      _completeActionSuccess(event.completion, 'התפקיד נוצר בהצלחה');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה ביצירת תפקיד: $e');
       developer.log('RoleBloc._onCreateRole: Error creating role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה ביצירת תפקיד: $e'));
     }
@@ -95,8 +97,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.updateRole(event.role);
-      // Real-time stream will trigger UI update
+      _completeActionSuccess(event.completion, 'התפקיד עודכן בהצלחה');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה בעדכון תפקיד: $e');
       developer.log('RoleBloc._onUpdateRole: Error updating role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בעדכון תפקיד: $e'));
     }
@@ -109,8 +112,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.renameRole(event.roleId, event.newHebrewName);
-      // Real-time stream will trigger UI update
+      _completeActionSuccess(event.completion, 'שם התפקיד עודכן בהצלחה');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה בשינוי שם תפקיד: $e');
       developer.log('RoleBloc._onRenameRole: Error renaming role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בשינוי שם תפקיד: $e'));
     }
@@ -123,8 +127,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.toggleVisibility(event.roleId);
-      // Real-time stream will trigger UI update
+      _completeActionSuccess(event.completion, 'נראות התפקיד עודכנה');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה בשינוי נראות תפקיד: $e');
       developer.log('RoleBloc._onToggleVisibility: Error toggling visibility: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בשינוי נראות תפקיד: $e'));
     }
@@ -137,8 +142,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.archiveRole(event.roleId);
-      // Real-time stream will trigger UI update
+      _completeActionSuccess(event.completion, 'התפקיד הועבר לארכיון');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה בהעברת תפקיד לארכיון: $e');
       developer.log('RoleBloc._onArchiveRole: Error archiving role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בהעברת תפקיד לארכיון: $e'));
     }
@@ -151,8 +157,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.restoreRole(event.roleId);
-      // Real-time stream will trigger UI update
+      _completeActionSuccess(event.completion, 'התפקיד שוחזר בהצלחה');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה בשחזור תפקיד מהארכיון: $e');
       developer.log('RoleBloc._onRestoreRole: Error restoring role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה בשחזור תפקיד מהארכיון: $e'));
     }
@@ -165,8 +172,9 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
   ) async {
     try {
       await _repository.deleteRole(event.roleId);
-      // Real-time stream will trigger UI update
+      _completeActionSuccess(event.completion, 'התפקיד נמחק לצמיתות');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה במחיקת תפקיד: $e');
       developer.log('RoleBloc._onDeleteRole: Error deleting role: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה במחיקת תפקיד: $e'));
     }
@@ -224,5 +232,19 @@ class RoleBloc extends Bloc<RoleEvent, RoleState> {
       developer.log('RoleBloc._onSeedRolesFromEnum: Error seeding roles: $e', name: 'RoleBloc', error: e);
       emit(RoleError('שגיאה ביצירת תפקידים מהמערכת: $e'));
     }
+  }
+
+  void _completeActionSuccess(
+    CrudActionCompleter? completion, [
+    String? message,
+  ]) {
+    completeCrudAction(completion, CrudActionResult.success(message));
+  }
+
+  void _completeActionFailure(
+    CrudActionCompleter? completion,
+    String message,
+  ) {
+    completeCrudAction(completion, CrudActionResult.failure(message));
   }
 }

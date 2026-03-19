@@ -3,6 +3,7 @@ import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/team_repository.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/services/user_cache_service.dart';
+import '../../../core/utils/crud_action_result.dart';
 import 'user_selection_event.dart';
 import 'user_selection_state.dart';
 import 'dart:async';
@@ -103,7 +104,8 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
   }
 
   bool _hasAuthRelevantUserChanges(TeamMember next, TeamMember current) {
-    // Only fields that affect auth, routing, passcode gating, or primary shell identity.
+    // Keep settings dialogs in sync with Firestore updates for the
+    // authenticated user without requiring a full app restart.
     return next.id != current.id ||
         next.uniqueKey != current.uniqueKey ||
         next.isAdmin != current.isAdmin ||
@@ -115,7 +117,11 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
         next.isActive != current.isActive ||
         next.isArchived != current.isArchived ||
         next.passcodeLength != current.passcodeLength ||
-        next.name != current.name;
+        next.name != current.name ||
+        next.phoneNumber != current.phoneNumber ||
+        next.email != current.email ||
+        next.birthday != current.birthday ||
+        next.vehicleInfo != current.vehicleInfo;
   }
 
   /// Check if user is already cached and authenticate them
@@ -284,9 +290,17 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
           currentState.user.uniqueKey,
           event.phoneNumber,
         );
+        _completeActionSuccess(
+          event.completion,
+          event.phoneNumber == null
+              ? 'מספר הטלפון נמחק בהצלחה'
+              : 'מספר הטלפון עודכן בהצלחה',
+        );
       } catch (e) {
-        emit(UserSelectionError('שגיאה בעדכון מספר טלפון: $e'));
+        _completeActionFailure(event.completion, 'שגיאה בעדכון מספר טלפון: $e');
       }
+    } else {
+      _completeActionFailure(event.completion, 'אין משתמש מחובר');
     }
   }
 
@@ -307,9 +321,20 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
           currentState.user.uniqueKey,
           event.birthday,
         );
+        _completeActionSuccess(
+          event.completion,
+          event.birthday == null
+              ? 'תאריך הלידה נמחק בהצלחה'
+              : 'תאריך הלידה עודכן בהצלחה',
+        );
       } catch (e) {
-        emit(UserSelectionError('שגיאה בעדכון תאריך לידה: $e'));
+        _completeActionFailure(
+          event.completion,
+          'שגיאה בעדכון תאריך לידה: $e',
+        );
       }
+    } else {
+      _completeActionFailure(event.completion, 'אין משתמש מחובר');
     }
   }
 
@@ -330,9 +355,20 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
           currentState.user.uniqueKey,
           event.vehicleInfo,
         );
+        _completeActionSuccess(
+          event.completion,
+          event.vehicleInfo == null
+              ? 'פרטי הרכב נמחקו בהצלחה'
+              : 'פרטי הרכב עודכנו בהצלחה',
+        );
       } catch (e) {
-        emit(UserSelectionError('שגיאה בעדכון פרטי רכב: $e'));
+        _completeActionFailure(
+          event.completion,
+          'שגיאה בעדכון פרטי רכב: $e',
+        );
       }
+    } else {
+      _completeActionFailure(event.completion, 'אין משתמש מחובר');
     }
   }
 
@@ -366,10 +402,35 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
             newEmail: newEmail,
           ));
         }
+        _completeActionSuccess(
+          event.completion,
+          event.email == null
+              ? 'כתובת האימייל נמחקה בהצלחה'
+              : 'כתובת האימייל עודכנה בהצלחה',
+        );
       } catch (e) {
-        emit(UserSelectionError('שגיאה בעדכון כתובת אימייל: $e'));
+        _completeActionFailure(
+          event.completion,
+          'שגיאה בעדכון כתובת אימייל: $e',
+        );
       }
+    } else {
+      _completeActionFailure(event.completion, 'אין משתמש מחובר');
     }
+  }
+
+  void _completeActionSuccess(
+    CrudActionCompleter? completion, [
+    String? message,
+  ]) {
+    completeCrudAction(completion, CrudActionResult.success(message));
+  }
+
+  void _completeActionFailure(
+    CrudActionCompleter? completion,
+    String message,
+  ) {
+    completeCrudAction(completion, CrudActionResult.failure(message));
   }
 }
 

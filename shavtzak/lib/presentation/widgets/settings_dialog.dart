@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../../data/repositories/user_selection_repository.dart';
+import '../../core/utils/crud_action_result.dart';
 import '../../core/utils/validators.dart';
 import 'passcode_setup_dialog.dart';
 import 'passcode_change_dialog.dart';
@@ -21,7 +24,8 @@ class SettingsDialog extends StatefulWidget {
 }
 
 class _SettingsDialogState extends State<SettingsDialog> {
-  bool _isDeleting = false;
+  bool _isMutating = false;
+  String? _activeAction;
 
   // Helper method to calculate responsive font size
   double _getResponsiveFontSize(BuildContext context, double baseSize) {
@@ -44,6 +48,125 @@ class _SettingsDialogState extends State<SettingsDialog> {
     return baseSize * (width / 400);
   }
 
+  void _startMutation(String actionKey) {
+    setState(() {
+      _isMutating = true;
+      _activeAction = actionKey;
+    });
+  }
+
+  void _finishMutation() {
+    if (!mounted) return;
+    setState(() {
+      _isMutating = false;
+      _activeAction = null;
+    });
+  }
+
+  bool _isActionLoading(String actionKey) =>
+      _isMutating && _activeAction == actionKey;
+
+  Future<CrudActionResult> _runUserSelectionAction({
+    required void Function(CrudActionCompleter completion) dispatch,
+  }) async {
+    final completion = Completer<CrudActionResult>();
+    dispatch(completion);
+    return completion.future;
+  }
+
+  Future<void> _runSettingsMutation({
+    required String actionKey,
+    required Future<void> Function() action,
+  }) async {
+    if (_isMutating) {
+      return;
+    }
+
+    _startMutation(actionKey);
+    try {
+      await action();
+    } finally {
+      _finishMutation();
+    }
+  }
+
+  Future<CrudActionResult?> _showLoadingConfirmationDialog({
+    required BuildContext context,
+    required String title,
+    required String message,
+    required String confirmLabel,
+    required Future<CrudActionResult> Function() onConfirm,
+    Color confirmColor = Colors.red,
+  }) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    return showDialog<CrudActionResult?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        var isProcessing = false;
+
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: Text(title),
+              content: Text(message, textAlign: TextAlign.center),
+              actions: [
+                TextButton(
+                  onPressed: isProcessing
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('ביטול'),
+                ),
+                TextButton(
+                  onPressed: isProcessing
+                      ? null
+                      : () async {
+                          setDialogState(() => isProcessing = true);
+                          final result = await onConfirm();
+
+                          if (!mounted || !dialogContext.mounted) {
+                            return;
+                          }
+
+                          if (result.isFailure) {
+                            setDialogState(() => isProcessing = false);
+                            scaffoldMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  result.message ?? 'הפעולה נכשלה',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          Navigator.of(dialogContext).pop(result);
+                        },
+                  style: TextButton.styleFrom(
+                    foregroundColor: confirmColor,
+                  ),
+                  child: isProcessing
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: confirmColor,
+                          ),
+                        )
+                      : Text(confirmLabel),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -51,7 +174,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
       child: BlocListener<UserSelectionBloc, UserSelectionState>(
         listener: (context, state) {
           if (state is UserSelectionError) {
-            // Show error message and reset loading state
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -59,28 +181,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
                   backgroundColor: Colors.red,
                 ),
               );
-              setState(() {
-                _isDeleting = false;
-              });
             }
-            // Reset to previous state
             context.read<UserSelectionBloc>().add(const RefreshUserData());
-          }
-
-          // Listen for successful phone updates
-          if (_isDeleting && state is UserAuthenticated) {
-            // Show success message when phone is updated
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('מספר טלפון נמחק בהצלחה'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-              setState(() {
-                _isDeleting = false;
-              });
-            }
           }
         },
         child: AlertDialog(
@@ -156,8 +258,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     ElevatedButton.icon(
-                                      onPressed: () =>
-                                          _showPhoneEditDialog(context),
+                                      onPressed: _isMutating
+                                          ? null
+                                          : () => _showPhoneEditDialog(context),
                                       icon: Icon(Icons.edit,
                                           size: iconSize, color: Colors.white),
                                       label: Text('ערוך',
@@ -179,24 +282,13 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     ),
                                     SizedBox(width: spacing),
                                     OutlinedButton.icon(
-                                      onPressed: _isDeleting
+                                      onPressed: _isMutating
                                           ? null
                                           : () => _deletePhoneNumber(context),
-                                      icon: _isDeleting
-                                          ? SizedBox(
-                                              width: iconSize,
-                                              height: iconSize,
-                                              child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  valueColor:
-                                                      const AlwaysStoppedAnimation<
-                                                          Color>(Colors.red)),
-                                            )
-                                          : Icon(Icons.delete,
-                                              size: iconSize,
-                                              color: Colors.red),
+                                      icon: Icon(Icons.delete,
+                                          size: iconSize, color: Colors.red),
                                       label: Text(
-                                        _isDeleting ? 'מוחק...' : 'מחק',
+                                        'מחק',
                                         style: TextStyle(
                                             color: Colors.red,
                                             fontSize: fontSize * 0.75),
@@ -253,8 +345,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     height: MediaQuery.of(context).size.height *
                                         0.015),
                                 ElevatedButton.icon(
-                                  onPressed: () =>
-                                      _showPhoneEditDialog(context),
+                                  onPressed: _isMutating
+                                      ? null
+                                      : () => _showPhoneEditDialog(context),
                                   icon: Icon(Icons.add,
                                       color: Colors.white, size: iconSize),
                                   label: Text(
@@ -335,8 +428,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     ElevatedButton.icon(
-                                      onPressed: () =>
-                                          _showEmailEditDialog(context),
+                                      onPressed: _isMutating
+                                          ? null
+                                          : () => _showEmailEditDialog(context),
                                       icon: Icon(Icons.edit,
                                           size: iconSize, color: Colors.white),
                                       label: Text('ערוך',
@@ -358,24 +452,13 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     ),
                                     SizedBox(width: spacing),
                                     OutlinedButton.icon(
-                                      onPressed: _isDeleting
+                                      onPressed: _isMutating
                                           ? null
                                           : () => _deleteEmail(context),
-                                      icon: _isDeleting
-                                          ? SizedBox(
-                                              width: iconSize,
-                                              height: iconSize,
-                                              child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  valueColor:
-                                                      const AlwaysStoppedAnimation<
-                                                          Color>(Colors.red)),
-                                            )
-                                          : Icon(Icons.delete,
-                                              size: iconSize,
-                                              color: Colors.red),
+                                      icon: Icon(Icons.delete,
+                                          size: iconSize, color: Colors.red),
                                       label: Text(
-                                        _isDeleting ? 'מוחק...' : 'מחק',
+                                        'מחק',
                                         style: TextStyle(
                                             color: Colors.red,
                                             fontSize: fontSize * 0.75),
@@ -432,8 +515,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     height: MediaQuery.of(context).size.height *
                                         0.015),
                                 ElevatedButton.icon(
-                                  onPressed: () =>
-                                      _showEmailEditDialog(context),
+                                  onPressed: _isMutating
+                                      ? null
+                                      : () => _showEmailEditDialog(context),
                                   icon: Icon(Icons.add,
                                       color: Colors.white, size: iconSize),
                                   label: Text(
@@ -516,8 +600,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     ElevatedButton.icon(
-                                      onPressed: () =>
-                                          _showBirthdayEditDialog(context),
+                                      onPressed: _isMutating
+                                          ? null
+                                          : () =>
+                                              _showBirthdayEditDialog(context),
                                       icon: Icon(Icons.edit,
                                           size: iconSize, color: Colors.white),
                                       label: Text('ערוך',
@@ -539,7 +625,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     ),
                                     SizedBox(width: spacing),
                                     OutlinedButton.icon(
-                                      onPressed: () => _deleteBirthday(context),
+                                      onPressed: _isMutating
+                                          ? null
+                                          : () => _deleteBirthday(context),
                                       icon: Icon(Icons.delete,
                                           size: iconSize, color: Colors.red),
                                       label: Text(
@@ -600,8 +688,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     height: MediaQuery.of(context).size.height *
                                         0.015),
                                 ElevatedButton.icon(
-                                  onPressed: () =>
-                                      _showBirthdayEditDialog(context),
+                                  onPressed: _isMutating
+                                      ? null
+                                      : () => _showBirthdayEditDialog(context),
                                   icon: Icon(Icons.add,
                                       color: Colors.white, size: iconSize),
                                   label: Text(
@@ -683,8 +772,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     ElevatedButton.icon(
-                                      onPressed: () =>
-                                          _showVehicleInfoEditDialog(context),
+                                      onPressed: _isMutating
+                                          ? null
+                                          : () => _showVehicleInfoEditDialog(
+                                              context),
                                       icon: Icon(Icons.edit,
                                           size: iconSize, color: Colors.white),
                                       label: Text('ערוך',
@@ -706,8 +797,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     ),
                                     SizedBox(width: spacing),
                                     OutlinedButton.icon(
-                                      onPressed: () =>
-                                          _deleteVehicleInfo(context),
+                                      onPressed: _isMutating
+                                          ? null
+                                          : () => _deleteVehicleInfo(context),
                                       icon: Icon(Icons.delete,
                                           size: iconSize, color: Colors.red),
                                       label: Text(
@@ -768,8 +860,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     height: MediaQuery.of(context).size.height *
                                         0.015),
                                 ElevatedButton.icon(
-                                  onPressed: () =>
-                                      _showVehicleInfoEditDialog(context),
+                                  onPressed: _isMutating
+                                      ? null
+                                      : () =>
+                                          _showVehicleInfoEditDialog(context),
                                   icon: Icon(Icons.add,
                                       color: Colors.white, size: iconSize),
                                   label: Text(
@@ -847,10 +941,23 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     ElevatedButton.icon(
-                                      onPressed: () =>
-                                          _showChangePasscodeDialog(context),
-                                      icon: Icon(Icons.edit,
-                                          size: iconSize, color: Colors.white),
+                                      onPressed: _isMutating
+                                          ? null
+                                          : () => _showChangePasscodeDialog(
+                                              context),
+                                      icon: _isActionLoading('change_passcode')
+                                          ? SizedBox(
+                                              width: iconSize,
+                                              height: iconSize,
+                                              child:
+                                                  const CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : Icon(Icons.edit,
+                                              size: iconSize,
+                                              color: Colors.white),
                                       label: Text('ערוך',
                                           style: TextStyle(
                                               fontSize: fontSize * 0.75)),
@@ -870,8 +977,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     ),
                                     SizedBox(width: spacing),
                                     OutlinedButton.icon(
-                                      onPressed: () =>
-                                          _showRemovePasscodeDialog(context),
+                                      onPressed: _isMutating
+                                          ? null
+                                          : () => _showRemovePasscodeDialog(
+                                              context),
                                       icon: Icon(Icons.delete,
                                           size: iconSize, color: Colors.red),
                                       label: Text(
@@ -932,10 +1041,21 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     height: MediaQuery.of(context).size.height *
                                         0.02),
                                 ElevatedButton.icon(
-                                  onPressed: () =>
-                                      _showSetupPasscodeDialog(context),
-                                  icon: Icon(Icons.add,
-                                      color: Colors.white, size: iconSize),
+                                  onPressed: _isMutating
+                                      ? null
+                                      : () => _showSetupPasscodeDialog(context),
+                                  icon: _isActionLoading('setup_passcode')
+                                      ? SizedBox(
+                                          width: iconSize,
+                                          height: iconSize,
+                                          child:
+                                              const CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : Icon(Icons.add,
+                                          color: Colors.white, size: iconSize),
                                   label: Text(
                                     'הגדר קוד גישה',
                                     style: TextStyle(fontSize: fontSize * 0.85),
@@ -959,7 +1079,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: _isMutating ? null : () => Navigator.of(context).pop(),
               child: const Text('סגור'),
             ),
           ],
@@ -984,14 +1104,17 @@ class _SettingsDialogState extends State<SettingsDialog> {
         final currentState = bloc.state;
 
         if (currentState is UserAuthenticated) {
-          await userSelectionRepo.setTeamMemberPasscode(
-            currentState.user.uniqueKey,
-            passcode,
-            length,
+          await _runSettingsMutation(
+            actionKey: 'setup_passcode',
+            action: () async {
+              await userSelectionRepo.setTeamMemberPasscode(
+                currentState.user.uniqueKey,
+                passcode,
+                length,
+              );
+              bloc.add(const RefreshUserData());
+            },
           );
-
-          // Refresh user data
-          bloc.add(const RefreshUserData());
 
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1047,15 +1170,18 @@ class _SettingsDialogState extends State<SettingsDialog> {
       try {
         final userSelectionRepo = context.read<UserSelectionRepository>();
 
-        await userSelectionRepo.setTeamMemberPasscode(
-          currentState.user.uniqueKey,
-          passcode,
-          length,
-          currentPasscode: currentPasscode,
+        await _runSettingsMutation(
+          actionKey: 'change_passcode',
+          action: () async {
+            await userSelectionRepo.setTeamMemberPasscode(
+              currentState.user.uniqueKey,
+              passcode,
+              length,
+              currentPasscode: currentPasscode,
+            );
+            bloc.add(const RefreshUserData());
+          },
         );
-
-        // Refresh user data
-        bloc.add(const CheckCachedUser());
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1079,66 +1205,44 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   void _showRemovePasscodeDialog(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
+    final result = await _showLoadingConfirmationDialog(
       context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('הסרת קוד גישה'),
-          content: const Text(
-            'האם את/ה בטוח/ה שברצונך להסיר את קוד הגישה?\nכל אחד יוכל לגשת לחשבון שלך ללא הגבלה.',
-            textAlign: TextAlign.center,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('ביטול'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red,
-              ),
-              child: const Text('הסר קוד'),
-            ),
-          ],
-        ),
-      ),
+      title: 'הסרת קוד גישה',
+      message:
+          'האם את/ה בטוח/ה שברצונך להסיר את קוד הגישה?\nכל אחד יוכל לגשת לחשבון שלך ללא הגבלה.',
+      confirmLabel: 'הסר קוד',
+      onConfirm: () async {
+        try {
+          final userSelectionRepo =
+              this.context.read<UserSelectionRepository>();
+          final bloc = this.context.read<UserSelectionBloc>();
+          final currentState = bloc.state;
+
+          if (currentState is! UserAuthenticated) {
+            return const CrudActionResult.failure('לא נמצא משתמש מחובר');
+          }
+
+          await userSelectionRepo.clearTeamMemberPasscode(
+            currentState.user.uniqueKey,
+          );
+          bloc.add(const RefreshUserData());
+          return const CrudActionResult.success('קוד גישה הוסר בהצלחה');
+        } catch (e) {
+          return CrudActionResult.failure('שגיאה בהסרת קוד גישה: $e');
+        }
+      },
     );
 
-    if (confirmed == true && context.mounted) {
-      try {
-        final userSelectionRepo = context.read<UserSelectionRepository>();
-        final bloc = context.read<UserSelectionBloc>();
-        final currentState = bloc.state;
-
-        if (currentState is UserAuthenticated) {
-          await userSelectionRepo
-              .clearTeamMemberPasscode(currentState.user.uniqueKey);
-
-          // Refresh user data
-          bloc.add(const RefreshUserData());
-
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('קוד גישה הוסר בהצלחה'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('שגיאה בהסרת קוד גישה: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
+    if (result == null || !context.mounted) {
+      return;
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message ?? 'קוד גישה הוסר בהצלחה'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   void _showPhoneEditDialog(BuildContext context) {
@@ -1149,43 +1253,36 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   void _deletePhoneNumber(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
+    final result = await _showLoadingConfirmationDialog(
       context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('מחיקת מספר טלפון'),
-          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את מספר הטלפון?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('ביטול'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red,
-              ),
-              child: const Text('מחק'),
-            ),
-          ],
-        ),
-      ),
+      title: 'מחיקת מספר טלפון',
+      message: 'האם את/ה בטוח/ה שברצונך למחוק את מספר הטלפון?',
+      confirmLabel: 'מחק',
+      onConfirm: () async {
+        final bloc = this.context.read<UserSelectionBloc>();
+        final currentState = bloc.state;
+
+        if (currentState is! UserAuthenticated) {
+          return const CrudActionResult.failure('לא נמצא משתמש מחובר');
+        }
+
+        return _runUserSelectionAction(
+          dispatch: (completion) =>
+              bloc.add(UpdatePhoneNumber(null, completion: completion)),
+        );
+      },
     );
 
-    if (confirmed == true && context.mounted) {
-      setState(() {
-        _isDeleting = true;
-      });
-
-      final bloc = context.read<UserSelectionBloc>();
-      final currentState = bloc.state;
-
-      if (currentState is UserAuthenticated) {
-        // Add the update event to delete the phone number
-        bloc.add(const UpdatePhoneNumber(null));
-      }
+    if (result == null || !context.mounted) {
+      return;
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message ?? 'מספר טלפון נמחק בהצלחה'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   void _showEmailEditDialog(BuildContext context) {
@@ -1196,40 +1293,36 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   void _deleteEmail(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
+    final result = await _showLoadingConfirmationDialog(
       context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('מחיקת כתובת אימייל'),
-          content: const Text(
-              'האם אתה בטוח/ה בטוח/ה שברצונך למחוק את כתובת האימייל?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('ביטול'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red,
-              ),
-              child: const Text('מחק'),
-            ),
-          ],
-        ),
-      ),
+      title: 'מחיקת כתובת אימייל',
+      message: 'האם אתה בטוח/ה בטוח/ה שברצונך למחוק את כתובת האימייל?',
+      confirmLabel: 'מחק',
+      onConfirm: () async {
+        final bloc = this.context.read<UserSelectionBloc>();
+        final currentState = bloc.state;
+
+        if (currentState is! UserAuthenticated) {
+          return const CrudActionResult.failure('לא נמצא משתמש מחובר');
+        }
+
+        return _runUserSelectionAction(
+          dispatch: (completion) =>
+              bloc.add(UpdateEmail(null, completion: completion)),
+        );
+      },
     );
 
-    if (confirmed == true && context.mounted) {
-      final bloc = context.read<UserSelectionBloc>();
-      final currentState = bloc.state;
-
-      if (currentState is UserAuthenticated) {
-        // Add UpdateEmail event to delete the email
-        bloc.add(const UpdateEmail(null));
-      }
+    if (result == null || !context.mounted) {
+      return;
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message ?? 'כתובת אימייל נמחקה בהצלחה'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   void _showBirthdayEditDialog(BuildContext context) {
@@ -1240,46 +1333,36 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   void _deleteBirthday(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
+    final result = await _showLoadingConfirmationDialog(
       context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('מחיקת תאריך לידה'),
-          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את תאריך הלידה?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('ביטול'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red,
-              ),
-              child: const Text('מחק'),
-            ),
-          ],
-        ),
-      ),
+      title: 'מחיקת תאריך לידה',
+      message: 'האם את/ה בטוח/ה שברצונך למחוק את תאריך הלידה?',
+      confirmLabel: 'מחק',
+      onConfirm: () async {
+        final bloc = this.context.read<UserSelectionBloc>();
+        final currentState = bloc.state;
+
+        if (currentState is! UserAuthenticated) {
+          return const CrudActionResult.failure('לא נמצא משתמש מחובר');
+        }
+
+        return _runUserSelectionAction(
+          dispatch: (completion) =>
+              bloc.add(UpdateBirthday(null, completion: completion)),
+        );
+      },
     );
 
-    if (confirmed == true && context.mounted) {
-      final bloc = context.read<UserSelectionBloc>();
-      final currentState = bloc.state;
-
-      if (currentState is UserAuthenticated) {
-        // Add the update event to delete the birthday
-        bloc.add(const UpdateBirthday(null));
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('תאריך לידה נמחק בהצלחה'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
+    if (result == null || !context.mounted) {
+      return;
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message ?? 'תאריך לידה נמחק בהצלחה'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   void _showVehicleInfoEditDialog(BuildContext context) {
@@ -1290,45 +1373,35 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   void _deleteVehicleInfo(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
+    final result = await _showLoadingConfirmationDialog(
       context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('מחיקת פרטי רכב'),
-          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את פרטי הרכב?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('ביטול'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red,
-              ),
-              child: const Text('מחק'),
-            ),
-          ],
-        ),
-      ),
+      title: 'מחיקת פרטי רכב',
+      message: 'האם את/ה בטוח/ה שברצונך למחוק את פרטי הרכב?',
+      confirmLabel: 'מחק',
+      onConfirm: () async {
+        final bloc = this.context.read<UserSelectionBloc>();
+        final currentState = bloc.state;
+
+        if (currentState is! UserAuthenticated) {
+          return const CrudActionResult.failure('לא נמצא משתמש מחובר');
+        }
+
+        return _runUserSelectionAction(
+          dispatch: (completion) =>
+              bloc.add(UpdateVehicleInfo(null, completion: completion)),
+        );
+      },
     );
 
-    if (confirmed == true && context.mounted) {
-      final bloc = context.read<UserSelectionBloc>();
-      final currentState = bloc.state;
-
-      if (currentState is UserAuthenticated) {
-        // Add the update event to delete the vehicle info
-        bloc.add(const UpdateVehicleInfo(null));
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('פרטי רכב נמחקו בהצלחה'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
+    if (result == null || !context.mounted) {
+      return;
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message ?? 'פרטי רכב נמחקו בהצלחה'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 }

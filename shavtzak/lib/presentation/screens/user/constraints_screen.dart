@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -8,6 +10,7 @@ import '../../../core/constants/calendar_constants.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/utils/time_range_utils.dart';
 import '../../../core/utils/constraint_event_overlap.dart';
+import '../../../core/utils/crud_action_result.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
@@ -28,6 +31,15 @@ Future<List<Event>> _loadEventsForConstraintWarnings(
   } catch (_) {
     return [];
   }
+}
+
+Future<CrudActionResult> _dispatchTeamMutation(
+  BuildContext context,
+  void Function(CrudActionCompleter completion) dispatch,
+) async {
+  final completion = Completer<CrudActionResult>();
+  dispatch(completion);
+  return await completion.future;
 }
 
 class _UserConstraintsContext {
@@ -651,19 +663,22 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
           showDialog(
             context: rootContext,
             builder: (context) => _ConstraintRequestDialog(
-              onAdd: (startDate, endDate, note, startTime, endTime) {
+              onAdd: (startDate, endDate, note, startTime, endTime) async {
                 final userState = rootContext.read<UserSelectionBloc>().state;
                 if (userState is UserAuthenticated) {
-                  // Send to database - UI will update automatically via stream
-                  rootContext.read<TeamBloc>().add(AddConstraintRequest(
-                        teamMemberId: userState.user.id,
-                        startDate: startDate,
-                        endDate: endDate,
-                        note: note,
-                        startTime: startTime,
-                        endTime: endTime,
-                      ));
+                  return _dispatchTeamMutation(rootContext, (completion) {
+                    rootContext.read<TeamBloc>().add(AddConstraintRequest(
+                          teamMemberId: userState.user.id,
+                          startDate: startDate,
+                          endDate: endDate,
+                          note: note,
+                          startTime: startTime,
+                          endTime: endTime,
+                          completion: completion,
+                        ));
+                  });
                 }
+                return const CrudActionResult.failure('אין משתמש מחובר');
               },
             ),
           );
@@ -688,34 +703,53 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
             endTime: repeatingResult.endTime,
           );
 
-          final shouldCreate = await showDialog<bool>(
+          final result = await showDialog<CrudActionResult>(
             context: rootContext,
             builder: (context) => _RepeatingConstraintConfirmationDialog(
               summary: summary,
               note: repeatingResult.note,
+              onConfirm: () async {
+                final userState = rootContext.read<UserSelectionBloc>().state;
+                if (userState is UserAuthenticated) {
+                  final now = DateTime.now();
+                  final today = DateTime(now.year, now.month, now.day);
+                  final startDate = repeatingResult.repeatStartDate ?? today;
+                  return _dispatchTeamMutation(rootContext, (completion) {
+                    rootContext.read<TeamBloc>().add(AddConstraintRequest(
+                          teamMemberId: userState.user.id,
+                          startDate: startDate,
+                          endDate: startDate,
+                          note: repeatingResult.note,
+                          startTime: repeatingResult.startTime,
+                          endTime: repeatingResult.endTime,
+                          repeatType: repeatingResult.repeatType,
+                          repeatDay: repeatingResult.repeatDay,
+                          repeatEndDate: repeatingResult.repeatEndDate,
+                          completion: completion,
+                        ));
+                  });
+                }
+                return const CrudActionResult.failure('אין משתמש מחובר');
+              },
             ),
           );
 
-          if (shouldCreate != true || !rootContext.mounted) {
+          if (!rootContext.mounted || result == null) {
             return;
           }
 
-          final userState = rootContext.read<UserSelectionBloc>().state;
-          if (userState is UserAuthenticated) {
-            final now = DateTime.now();
-            final today = DateTime(now.year, now.month, now.day);
-            final startDate = repeatingResult.repeatStartDate ?? today;
-            rootContext.read<TeamBloc>().add(AddConstraintRequest(
-                  teamMemberId: userState.user.id,
-                  startDate: startDate,
-                  endDate: startDate,
-                  note: repeatingResult.note,
-                  startTime: repeatingResult.startTime,
-                  endTime: repeatingResult.endTime,
-                  repeatType: repeatingResult.repeatType,
-                  repeatDay: repeatingResult.repeatDay,
-                  repeatEndDate: repeatingResult.repeatEndDate,
-                ));
+          if (result.isFailure) {
+            ScaffoldMessenger.of(rootContext)
+              ..clearSnackBars()
+              ..showSnackBar(
+                SnackBar(
+                  content: Directionality(
+                    textDirection: TextDirection.rtl,
+                    child: Text(result.message ?? 'שגיאה בהוספת בקשת מגבלה'),
+                  ),
+                  backgroundColor: Colors.red,
+                ),
+              );
           }
         },
       ),
@@ -724,31 +758,75 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
 
   void _deleteConstraint(
       BuildContext context, TeamMember user, String constraintId) {
+    bool isDeleting = false;
     showDialog(
       context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('מחיקת מגבלה'),
-          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את המגבלה הזו?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('ביטול'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('מחיקת מגבלה'),
+            content: const Text('האם את/ה בטוח/ה שברצונך למחוק את המגבלה הזו?'),
+            actions: [
+              TextButton(
+                onPressed:
+                    isDeleting ? null : () => Navigator.of(dialogContext).pop(),
+                child: const Text('ביטול'),
+              ),
+              TextButton(
+                onPressed: isDeleting
+                    ? null
+                    : () async {
+                        setDialogState(() => isDeleting = true);
 
-                // Use ID-based removal (targeted update - only writes constraints field)
-                context.read<TeamBloc>().add(RemoveConstraintRequest(
-                      teamMemberId: user.id,
-                      constraintId: constraintId,
-                    ));
-              },
-              child: const Text('מחק', style: TextStyle(color: Colors.red)),
-            ),
-          ],
+                        final result = await _dispatchTeamMutation(
+                          context,
+                          (completion) => context.read<TeamBloc>().add(
+                                RemoveConstraintRequest(
+                                  teamMemberId: user.id,
+                                  constraintId: constraintId,
+                                  completion: completion,
+                                ),
+                              ),
+                        );
+
+                        if (!dialogContext.mounted) {
+                          return;
+                        }
+
+                        if (result.isFailure) {
+                          setDialogState(() => isDeleting = false);
+                          ScaffoldMessenger.of(context)
+                            ..clearSnackBars()
+                            ..showSnackBar(
+                              SnackBar(
+                                content: Directionality(
+                                  textDirection: TextDirection.rtl,
+                                  child: Text(
+                                    result.message ?? 'שגיאה במחיקת בקשת מגבלה',
+                                  ),
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          return;
+                        }
+
+                        Navigator.of(dialogContext).pop();
+                      },
+                child: isDeleting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text(
+                        'מחק',
+                        style: TextStyle(color: Colors.red),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -760,28 +838,29 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
       context: context,
       builder: (context) => _EditConstraintDialog(
         constraint: constraint,
-        onSave: (startDate, endDate, note, startTime, endTime) {
+        onSave: (startDate, endDate, note, startTime, endTime) async {
           final userState = context.read<UserSelectionBloc>().state;
           if (userState is UserAuthenticated) {
-            // Use targeted edit (reads latest from DB, finds by ID, writes only constraints field)
-            context.read<TeamBloc>().add(EditConstraintRequest(
-                  teamMemberId: userState.user.id,
-                  constraintId: constraint.id,
-                  startDate: startDate,
-                  endDate: endDate,
-                  note: note,
-                  status: ConstraintStatus
-                      .pending, // Always change to pending when edited
-                  constraintType: constraint.constraintType,
-                  startTime: startTime,
-                  endTime: endTime,
-                  wasAutoRejectedFromCalendar:
-                      false, // Reset auto-rejection flag when edited
-                  repeatType: constraint.repeatType,
-                  repeatDay: constraint.repeatDay,
-                  repeatEndDate: constraint.repeatEndDate,
-                ));
+            return _dispatchTeamMutation(context, (completion) {
+              context.read<TeamBloc>().add(EditConstraintRequest(
+                    teamMemberId: userState.user.id,
+                    constraintId: constraint.id,
+                    startDate: startDate,
+                    endDate: endDate,
+                    note: note,
+                    status: ConstraintStatus.pending,
+                    constraintType: constraint.constraintType,
+                    startTime: startTime,
+                    endTime: endTime,
+                    wasAutoRejectedFromCalendar: false,
+                    repeatType: constraint.repeatType,
+                    repeatDay: constraint.repeatDay,
+                    repeatEndDate: constraint.repeatEndDate,
+                    completion: completion,
+                  ));
+            });
           }
+          return const CrudActionResult.failure('אין משתמש מחובר');
         },
       ),
     );
@@ -1466,14 +1545,25 @@ class _RepeatingConstraintDialogState
   }
 }
 
-class _RepeatingConstraintConfirmationDialog extends StatelessWidget {
+class _RepeatingConstraintConfirmationDialog extends StatefulWidget {
   final String summary;
   final String note;
+  final Future<CrudActionResult> Function() onConfirm;
 
   const _RepeatingConstraintConfirmationDialog({
     required this.summary,
     required this.note,
+    required this.onConfirm,
   });
+
+  @override
+  State<_RepeatingConstraintConfirmationDialog> createState() =>
+      _RepeatingConstraintConfirmationDialogState();
+}
+
+class _RepeatingConstraintConfirmationDialogState
+    extends State<_RepeatingConstraintConfirmationDialog> {
+  bool _isSaving = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1485,19 +1575,51 @@ class _RepeatingConstraintConfirmationDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(summary),
+            Text(widget.summary),
             const SizedBox(height: 10),
-            Text('הערה: $note'),
+            Text('הערה: ${widget.note}'),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: _isSaving ? null : () => Navigator.of(context).pop(null),
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('מאושר'),
+            onPressed: _isSaving
+                ? null
+                : () async {
+                    setState(() => _isSaving = true);
+                    final result = await widget.onConfirm();
+                    if (!context.mounted) {
+                      return;
+                    }
+
+                    if (result.isFailure) {
+                      setState(() => _isSaving = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Text(
+                              result.message ?? 'שגיאה בהוספת מגבלה קבועה',
+                            ),
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
+                    Navigator.of(context).pop(result);
+                  },
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('מאושר'),
           ),
         ],
       ),
@@ -1507,8 +1629,13 @@ class _RepeatingConstraintConfirmationDialog extends StatelessWidget {
 
 /// Dialog for adding constraint requests
 class _ConstraintRequestDialog extends StatefulWidget {
-  final Function(DateTime startDate, DateTime? endDate, String? note,
-      String? startTime, String? endTime) onAdd;
+  final Future<CrudActionResult> Function(
+    DateTime startDate,
+    DateTime? endDate,
+    String? note,
+    String? startTime,
+    String? endTime,
+  ) onAdd;
 
   const _ConstraintRequestDialog({required this.onAdd});
 
@@ -1524,6 +1651,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
   final noteController = TextEditingController();
   late final FocusNode _noteFocusNode;
   bool _canSubmit = false;
+  bool _isSaving = false;
   final startTimeController = TextEditingController();
   final endTimeController = TextEditingController();
 
@@ -1749,8 +1877,10 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                         border: const OutlineInputBorder(),
                         suffixIcon: startTimeController.text.isNotEmpty
                             ? IconButton(
-                                icon:
-                                    const Icon(Icons.clear, color: Colors.grey),
+                                icon: const Icon(
+                                  Icons.clear,
+                                  color: Colors.grey,
+                                ),
                                 onPressed: () {
                                   setState(() {
                                     startTimeController.clear();
@@ -1771,8 +1901,10 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                         border: const OutlineInputBorder(),
                         suffixIcon: endTimeController.text.isNotEmpty
                             ? IconButton(
-                                icon:
-                                    const Icon(Icons.clear, color: Colors.grey),
+                                icon: const Icon(
+                                  Icons.clear,
+                                  color: Colors.grey,
+                                ),
                                 onPressed: () {
                                   setState(() {
                                     endTimeController.clear();
@@ -1826,7 +1958,9 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                     hintText: 'יש להזין סיבה לבקשה...',
                     border: const OutlineInputBorder(),
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 16),
+                      horizontal: 12,
+                      vertical: 16,
+                    ),
                     hintStyle: TextStyle(
                       color: Colors.grey[600],
                       height: 1.5,
@@ -1839,7 +1973,6 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                   scrollPhysics: const BouncingScrollPhysics(),
                 ),
                 const SizedBox(height: 8),
-                // Add padding at bottom to account for keyboard
                 SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
               ],
             ),
@@ -1847,23 +1980,25 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: _canSubmit
+            onPressed: (_canSubmit && !_isSaving)
                 ? () async {
-                    // Validate time range if both times are specified
                     if (startTimeController.text.isNotEmpty &&
                         endTimeController.text.isNotEmpty) {
                       if (!TimeRangeUtils.isValidTimeRange(
-                          startTimeController.text, endTimeController.text)) {
+                        startTimeController.text,
+                        endTimeController.text,
+                      )) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Directionality(
                               textDirection: TextDirection.rtl,
-                              child:
-                                  Text('שעת הסיום חייבת להיות אחרי שעת ההתחלה'),
+                              child: Text(
+                                'שעת הסיום חייבת להיות אחרי שעת ההתחלה',
+                              ),
                             ),
                             backgroundColor: Colors.red,
                           ),
@@ -1878,7 +2013,8 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                       return;
                     }
 
-                    widget.onAdd(
+                    setState(() => _isSaving = true);
+                    final result = await widget.onAdd(
                       startDate!,
                       endDate,
                       noteController.text,
@@ -1889,10 +2025,37 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                           ? endTimeController.text
                           : null,
                     );
+
+                    if (!mounted) {
+                      return;
+                    }
+
+                    if (result.isFailure) {
+                      setState(() => _isSaving = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Text(
+                              result.message ?? 'שגיאה בהוספת בקשת מגבלה',
+                            ),
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
                     Navigator.of(context).pop();
                   }
                 : null,
-            child: const Text('הוסף בקשה'),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('הוסף בקשה'),
           ),
         ],
       ),
@@ -1936,8 +2099,13 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
 /// Dialog for editing constraints
 class _EditConstraintDialog extends StatefulWidget {
   final DateConstraint constraint;
-  final Function(DateTime startDate, DateTime? endDate, String note,
-      String? startTime, String? endTime) onSave;
+  final Future<CrudActionResult> Function(
+    DateTime startDate,
+    DateTime? endDate,
+    String note,
+    String? startTime,
+    String? endTime,
+  ) onSave;
 
   const _EditConstraintDialog({
     required this.constraint,
@@ -1955,6 +2123,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
   late TextEditingController noteController;
   late final FocusNode _noteFocusNode;
   bool _canSubmit = false;
+  bool _isSaving = false;
   final startTimeController = TextEditingController();
   final endTimeController = TextEditingController();
 
@@ -2326,13 +2495,12 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: _canSubmit
+            onPressed: (_canSubmit && !_isSaving)
                 ? () async {
-                    // Validate time range if both times are specified
                     if (startTimeController.text.isNotEmpty &&
                         endTimeController.text.isNotEmpty) {
                       if (!TimeRangeUtils.isValidTimeRange(
@@ -2357,7 +2525,8 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                       return;
                     }
 
-                    widget.onSave(
+                    setState(() => _isSaving = true);
+                    final result = await widget.onSave(
                       startDate,
                       endDate,
                       noteController.text,
@@ -2368,10 +2537,37 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                           ? endTimeController.text
                           : null,
                     );
+
+                    if (!mounted) {
+                      return;
+                    }
+
+                    if (result.isFailure) {
+                      setState(() => _isSaving = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Text(
+                              result.message ?? 'שגיאה בעדכון מגבלה',
+                            ),
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
                     Navigator.of(context).pop();
                   }
                 : null,
-            child: const Text('שמור שינויים'),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('שמור שינויים'),
           ),
         ],
       ),
@@ -2857,31 +3053,75 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
 
   void _deleteConstraint(
       BuildContext context, TeamMember user, String constraintId) {
+    bool isDeleting = false;
     showDialog(
       context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('מחיקת מגבלה'),
-          content: const Text('האם את/ה בטוח/ה שברצונך למחוק את המגבלה הזו?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('ביטול'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('מחיקת מגבלה'),
+            content: const Text('האם את/ה בטוח/ה שברצונך למחוק את המגבלה הזו?'),
+            actions: [
+              TextButton(
+                onPressed:
+                    isDeleting ? null : () => Navigator.of(dialogContext).pop(),
+                child: const Text('ביטול'),
+              ),
+              TextButton(
+                onPressed: isDeleting
+                    ? null
+                    : () async {
+                        setDialogState(() => isDeleting = true);
 
-                // Use ID-based removal (targeted update - only writes constraints field)
-                context.read<TeamBloc>().add(RemoveConstraintRequest(
-                      teamMemberId: user.id,
-                      constraintId: constraintId,
-                    ));
-              },
-              child: const Text('מחק', style: TextStyle(color: Colors.red)),
-            ),
-          ],
+                        final result = await _dispatchTeamMutation(
+                          context,
+                          (completion) => context.read<TeamBloc>().add(
+                                RemoveConstraintRequest(
+                                  teamMemberId: user.id,
+                                  constraintId: constraintId,
+                                  completion: completion,
+                                ),
+                              ),
+                        );
+
+                        if (!dialogContext.mounted) {
+                          return;
+                        }
+
+                        if (result.isFailure) {
+                          setDialogState(() => isDeleting = false);
+                          ScaffoldMessenger.of(context)
+                            ..clearSnackBars()
+                            ..showSnackBar(
+                              SnackBar(
+                                content: Directionality(
+                                  textDirection: TextDirection.rtl,
+                                  child: Text(
+                                    result.message ?? 'שגיאה במחיקת בקשת מגבלה',
+                                  ),
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          return;
+                        }
+
+                        Navigator.of(dialogContext).pop();
+                      },
+                child: isDeleting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text(
+                        'מחק',
+                        style: TextStyle(color: Colors.red),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2910,6 +3150,7 @@ class _EditExpiredConstraintDialogState
   late TextEditingController noteController;
   late final FocusNode _noteFocusNode;
   bool _canSubmit = false;
+  bool _isSaving = false;
   final startTimeController = TextEditingController();
   final endTimeController = TextEditingController();
 
@@ -3156,64 +3397,91 @@ class _EditExpiredConstraintDialogState
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: _canSubmit
-                ? () {
-                    // Validate time range if both times are specified
-                    if (startTimeController.text.isNotEmpty &&
-                        endTimeController.text.isNotEmpty) {
-                      if (!TimeRangeUtils.isValidTimeRange(
-                          startTimeController.text, endTimeController.text)) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Directionality(
-                              textDirection: TextDirection.rtl,
-                              child:
-                                  Text('שעת הסיום חייבת להיות אחרי שעת ההתחלה'),
-                            ),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                        return;
-                      }
-                    }
-
-                    // Use targeted edit (reads latest from DB, finds by ID, writes only constraints field)
-                    context.read<TeamBloc>().add(EditConstraintRequest(
-                          teamMemberId: widget.user.id,
-                          constraintId: widget.constraint.id,
-                          startDate: startDate,
-                          endDate: endDate,
-                          note: noteController.text.trim().isEmpty
-                              ? null
-                              : noteController.text.trim(),
-                          status: ConstraintStatus
-                              .pending, // Reset to pending when edited
-                          constraintType: widget.constraint.constraintType,
-                          startTime: startTimeController.text.isNotEmpty
-                              ? startTimeController.text
-                              : null,
-                          endTime: endTimeController.text.isNotEmpty
-                              ? endTimeController.text
-                              : null,
-                          wasAutoRejectedFromCalendar:
-                              false, // Reset auto-rejection flag when edited
-                          repeatType: widget.constraint.repeatType,
-                          repeatDay: widget.constraint.repeatDay,
-                          repeatEndDate: widget.constraint.repeatEndDate,
-                        ));
-
-                    Navigator.of(context).pop();
-                  }
-                : null,
-            child: const Text('שמור שינויים'),
+            onPressed:
+                (_canSubmit && !_isSaving) ? _saveExpiredConstraint : null,
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('שמור שינויים'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _saveExpiredConstraint() async {
+    if (startTimeController.text.isNotEmpty &&
+        endTimeController.text.isNotEmpty) {
+      if (!TimeRangeUtils.isValidTimeRange(
+          startTimeController.text, endTimeController.text)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Text('שעת הסיום חייבת להיות אחרי שעת ההתחלה'),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isSaving = false);
+        return;
+      }
+    }
+
+    final result = await _dispatchTeamMutation(
+      context,
+      (completion) => context.read<TeamBloc>().add(
+            EditConstraintRequest(
+              teamMemberId: widget.user.id,
+              constraintId: widget.constraint.id,
+              startDate: startDate,
+              endDate: endDate,
+              note: noteController.text.trim().isEmpty
+                  ? null
+                  : noteController.text.trim(),
+              status: ConstraintStatus.pending,
+              constraintType: widget.constraint.constraintType,
+              startTime: startTimeController.text.isNotEmpty
+                  ? startTimeController.text
+                  : null,
+              endTime: endTimeController.text.isNotEmpty
+                  ? endTimeController.text
+                  : null,
+              wasAutoRejectedFromCalendar: false,
+              repeatType: widget.constraint.repeatType,
+              repeatDay: widget.constraint.repeatDay,
+              repeatEndDate: widget.constraint.repeatEndDate,
+              completion: completion,
+            ),
+          ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (result.isFailure) {
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Text(result.message ?? 'שגיאה בעדכון מגבלה'),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).pop();
   }
 
   Future<void> _selectDateRange() async {

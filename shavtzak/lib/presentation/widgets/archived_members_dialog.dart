@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../core/utils/crud_action_result.dart';
 import '../../domain/entities/team_member.dart';
 import '../bloc/team/team_bloc.dart';
 import '../bloc/team/team_event.dart';
@@ -117,47 +120,94 @@ class ArchivedMembersDialog extends StatelessWidget {
   }
 
   void _restoreMember(BuildContext context, TeamMember member) {
-    // Show confirmation dialog
+    var isRestoring = false;
     showDialog(
       context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('שחזור חבר צוות'),
-          content: Text('האם לשחזר את ${member.name} מהארכיון?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('ביטול'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                // Update member to not be archived
-                final updatedMember = member.copyWith(
-                  isArchived: false,
-                  isActive: true, // Also set active when restoring
-                  updatedAt: DateTime.now(),
-                );
-                context.read<TeamBloc>().add(UpdateTeamMember(updatedMember));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Directionality(
-                      textDirection: TextDirection.rtl,
-                      child: Text('${member.name} שוחזר/ה בהצלחה'),
-                    ),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: const Text('שחזור חבר צוות'),
+              content: Text('האם לשחזר את ${member.name} מהארכיון?'),
+              actions: [
+                TextButton(
+                  onPressed: isRestoring
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('ביטול'),
+                ),
+                ElevatedButton(
+                  onPressed: isRestoring
+                      ? null
+                      : () async {
+                          setDialogState(() => isRestoring = true);
+                          final updatedMember = member.copyWith(
+                            isArchived: false,
+                            isActive: true,
+                            updatedAt: DateTime.now(),
+                          );
+
+                          final completion = Completer<CrudActionResult>();
+                          context.read<TeamBloc>().add(
+                                UpdateTeamMember(
+                                  updatedMember,
+                                  completion: completion,
+                                ),
+                              );
+                          final result = await completion.future;
+
+                          if (!dialogContext.mounted) {
+                            return;
+                          }
+
+                          if (result.isFailure) {
+                            setDialogState(() => isRestoring = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Directionality(
+                                  textDirection: TextDirection.rtl,
+                                  child: Text(
+                                    result.message ??
+                                        'שגיאה בשחזור חבר הצוות',
+                                  ),
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          Navigator.of(dialogContext).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Directionality(
+                                textDirection: TextDirection.rtl,
+                                child: Text(
+                                  result.message ??
+                                      '${member.name} שוחזר/ה בהצלחה',
+                                ),
+                              ),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        },
+                  style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
                   ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('שחזור'),
+                  child: isRestoring
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('שחזור'),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

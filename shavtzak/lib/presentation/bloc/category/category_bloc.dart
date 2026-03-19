@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../data/repositories/category_repository.dart';
 import '../../../domain/entities/category.dart' as domain_category;
+import '../../../core/utils/crud_action_result.dart';
 import 'category_event.dart';
 import 'category_state.dart';
 
@@ -102,7 +103,9 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
   ) async {
     try {
       await _categoryRepository.createCategory(event.name);
+      _completeActionSuccess(event.completion, 'הקטגוריה נוצרה בהצלחה');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה ביצירת קטגוריה: $e');
       emit(CategoryError(e.toString()));
     }
   }
@@ -113,7 +116,9 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
   ) async {
     try {
       await _categoryRepository.updateCategory(event.category);
+      _completeActionSuccess(event.completion, 'הקטגוריה עודכנה בהצלחה');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה בעדכון קטגוריה: $e');
       emit(CategoryError(e.toString()));
     }
   }
@@ -124,7 +129,9 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
   ) async {
     try {
       await _categoryRepository.renameCategory(event.categoryId, event.newName);
+      _completeActionSuccess(event.completion, 'שם הקטגוריה עודכן בהצלחה');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה בעדכון שם קטגוריה: $e');
       emit(CategoryError(e.toString()));
     }
   }
@@ -135,7 +142,9 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
   ) async {
     try {
       await _categoryRepository.deleteCategory(event.categoryId);
+      _completeActionSuccess(event.completion, 'הקטגוריה הועברה לארכיון');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה בהעברת קטגוריה לארכיון: $e');
       emit(CategoryError(e.toString()));
     }
   }
@@ -146,7 +155,9 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
   ) async {
     try {
       await _categoryRepository.permanentlyDeleteCategory(event.categoryId);
+      _completeActionSuccess(event.completion, 'הקטגוריה נמחקה לצמיתות');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה במחיקת קטגוריה: $e');
       emit(CategoryError(e.toString()));
     }
   }
@@ -157,7 +168,9 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
   ) async {
     try {
       await _categoryRepository.restoreCategory(event.categoryId);
+      _completeActionSuccess(event.completion, 'הקטגוריה שוחזרה בהצלחה');
     } catch (e) {
+      _completeActionFailure(event.completion, 'שגיאה בשחזור קטגוריה: $e');
       emit(CategoryError(e.toString()));
     }
   }
@@ -188,5 +201,19 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
       _lastReorderTimestamp = null;
       emit(CategoryError(e.toString()));
     }
+  }
+
+  void _completeActionSuccess(
+    CrudActionCompleter? completion, [
+    String? message,
+  ]) {
+    completeCrudAction(completion, CrudActionResult.success(message));
+  }
+
+  void _completeActionFailure(
+    CrudActionCompleter? completion,
+    String message,
+  ) {
+    completeCrudAction(completion, CrudActionResult.failure(message));
   }
 }

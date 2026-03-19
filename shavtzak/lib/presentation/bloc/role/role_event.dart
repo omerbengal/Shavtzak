@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/role.dart';
+import '../../../core/utils/crud_action_result.dart';
 
 /// Base event class for RoleBloc
 abstract class RoleEvent extends Equatable {
@@ -18,10 +19,12 @@ class LoadRoles extends RoleEvent {
 class CreateRole extends RoleEvent {
   final String hebrewName;
   final bool isVisible;
+  final CrudActionCompleter? completion;
 
   const CreateRole({
     required this.hebrewName,
     this.isVisible = true,
+    this.completion,
   });
 
   @override
@@ -31,8 +34,9 @@ class CreateRole extends RoleEvent {
 /// Update role
 class UpdateRole extends RoleEvent {
   final Role role;
+  final CrudActionCompleter? completion;
 
-  const UpdateRole(this.role);
+  const UpdateRole(this.role, {this.completion});
 
   @override
   List<Object?> get props => [role];
@@ -42,10 +46,12 @@ class UpdateRole extends RoleEvent {
 class RenameRole extends RoleEvent {
   final String roleId;
   final String newHebrewName;
+  final CrudActionCompleter? completion;
 
   const RenameRole({
     required this.roleId,
     required this.newHebrewName,
+    this.completion,
   });
 
   @override
@@ -55,8 +61,9 @@ class RenameRole extends RoleEvent {
 /// Toggle role visibility (active/inactive for event quota configuration)
 class ToggleRoleVisibility extends RoleEvent {
   final String roleId;
+  final CrudActionCompleter? completion;
 
-  const ToggleRoleVisibility(this.roleId);
+  const ToggleRoleVisibility(this.roleId, {this.completion});
 
   @override
   List<Object?> get props => [roleId];
@@ -65,8 +72,9 @@ class ToggleRoleVisibility extends RoleEvent {
 /// Archive role
 class ArchiveRole extends RoleEvent {
   final String roleId;
+  final CrudActionCompleter? completion;
 
-  const ArchiveRole(this.roleId);
+  const ArchiveRole(this.roleId, {this.completion});
 
   @override
   List<Object?> get props => [roleId];
@@ -75,8 +83,9 @@ class ArchiveRole extends RoleEvent {
 /// Restore archived role
 class RestoreRole extends RoleEvent {
   final String roleId;
+  final CrudActionCompleter? completion;
 
-  const RestoreRole(this.roleId);
+  const RestoreRole(this.roleId, {this.completion});
 
   @override
   List<Object?> get props => [roleId];
@@ -85,8 +94,9 @@ class RestoreRole extends RoleEvent {
 /// Permanently delete a role
 class DeleteRole extends RoleEvent {
   final String roleId;
+  final CrudActionCompleter? completion;
 
-  const DeleteRole(this.roleId);
+  const DeleteRole(this.roleId, {this.completion});
 
   @override
   List<Object?> get props => [roleId];

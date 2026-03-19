@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/vehicle_info.dart';
+import '../../../core/utils/crud_action_result.dart';
 
 /// Events for User Selection BLoC
 abstract class UserSelectionEvent extends Equatable {
@@ -53,8 +54,9 @@ class RefreshUserData extends UserSelectionEvent {
 /// Update user's phone number
 class UpdatePhoneNumber extends UserSelectionEvent {
   final String? phoneNumber;
+  final CrudActionCompleter? completion;
 
-  const UpdatePhoneNumber(this.phoneNumber);
+  const UpdatePhoneNumber(this.phoneNumber, {this.completion});
 
   @override
   List<Object?> get props => [phoneNumber];
@@ -63,8 +65,9 @@ class UpdatePhoneNumber extends UserSelectionEvent {
 /// Update user's birthday
 class UpdateBirthday extends UserSelectionEvent {
   final DateTime? birthday;
+  final CrudActionCompleter? completion;
 
-  const UpdateBirthday(this.birthday);
+  const UpdateBirthday(this.birthday, {this.completion});
 
   @override
   List<Object?> get props => [birthday];
@@ -73,8 +76,9 @@ class UpdateBirthday extends UserSelectionEvent {
 /// Update user's vehicle information
 class UpdateVehicleInfo extends UserSelectionEvent {
   final VehicleInfo? vehicleInfo;
+  final CrudActionCompleter? completion;
 
-  const UpdateVehicleInfo(this.vehicleInfo);
+  const UpdateVehicleInfo(this.vehicleInfo, {this.completion});
 
   @override
   List<Object?> get props => [vehicleInfo];
@@ -83,8 +87,9 @@ class UpdateVehicleInfo extends UserSelectionEvent {
 /// Update user's email address
 class UpdateEmail extends UserSelectionEvent {
   final String? email;
+  final CrudActionCompleter? completion;
 
-  const UpdateEmail(this.email);
+  const UpdateEmail(this.email, {this.completion});
 
   @override
   List<Object?> get props => [email];
