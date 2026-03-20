@@ -1,4 +1,5 @@
 import '../../domain/entities/assignment.dart';
+import '../../domain/entities/assignment_label.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
@@ -140,6 +141,34 @@ abstract class DatabaseInterface {
 
   /// Delete multiple assignments by their IDs in a single batch operation
   Future<void> deleteAssignmentsBatch(List<String> assignmentIds);
+
+  // ========== Assignment Labels ==========
+
+  /// Get all assignment semantic labels
+  Future<List<AssignmentLabel>> getAssignmentLabels();
+
+  /// Insert a new assignment semantic label
+  Future<void> insertAssignmentLabel(AssignmentLabel label);
+
+  /// Update an existing assignment semantic label
+  Future<void> updateAssignmentLabel(AssignmentLabel label);
+
+  /// Archive an assignment semantic label
+  Future<void> archiveAssignmentLabel(String id);
+
+  /// Restore an archived assignment semantic label
+  Future<void> restoreAssignmentLabel(String id);
+
+  /// Permanently delete an assignment semantic label
+  Future<void> deleteAssignmentLabel(String id);
+
+  /// Update assignment semantic label sort order
+  Future<void> updateAssignmentLabelsSortOrder(
+    Map<String, int> labelIdToSortOrder,
+  );
+
+  /// Watch assignment semantic labels in real-time
+  Stream<List<AssignmentLabel>> watchAssignmentLabels();
 
   // ========== Batch Operations ==========
 

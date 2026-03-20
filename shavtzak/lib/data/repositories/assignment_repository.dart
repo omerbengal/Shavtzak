@@ -323,11 +323,13 @@ class AssignmentRepository {
       slotIndex: assignment.slotIndex,
       status: status,
       notes: assignment.notes,
+      semanticLabelId: assignment.semanticLabelId,
       alternativePhoneNumber: assignment.alternativePhoneNumber,
       createdAt: assignment.createdAt,
       updatedAt: DateTime.now(),
       event: assignment.event,
       teamMember: assignment.teamMember,
+      semanticLabel: assignment.semanticLabel,
     );
 
     await _database.updateAssignment(updated);
@@ -343,9 +345,9 @@ class AssignmentRepository {
     await updateAssignmentStatus(id, AssignmentStatus.declined);
   }
 
-  /// Update assignment notes and/or alternative phone number
+  /// Update assignment notes and related admin metadata
   Future<void> updateAssignmentNotes(String id, String notes,
-      {String? alternativePhoneNumber}) async {
+      {String? alternativePhoneNumber, String? semanticLabelId}) async {
     final assignment = await getAssignmentById(id);
     if (assignment == null) {
       throw Exception('Assignment not found: $id');
@@ -353,6 +355,10 @@ class AssignmentRepository {
 
     final updated = assignment.copyWith(
       notes: notes,
+      semanticLabelId: () => semanticLabelId,
+      semanticLabel: () => semanticLabelId == assignment.semanticLabelId
+          ? assignment.semanticLabel
+          : null,
       alternativePhoneNumber: () => alternativePhoneNumber,
       updatedAt: DateTime.now(),
     );

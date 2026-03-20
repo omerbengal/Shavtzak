@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../core/constants/role_types.dart';
+import 'assignment_label.dart';
 import 'event.dart';
 import 'team_member.dart';
 
@@ -19,6 +20,7 @@ class Assignment extends Equatable {
   final int slotIndex; // Which slot (0, 1, 2...) for this role in the event
   final AssignmentStatus status;
   final String notes;
+  final String? semanticLabelId;
   final String? alternativePhoneNumber;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -26,6 +28,7 @@ class Assignment extends Equatable {
   // Computed fields (populated via joins, not stored)
   final Event? event;
   final TeamMember? teamMember;
+  final AssignmentLabel? semanticLabel;
 
   const Assignment({
     required this.id,
@@ -35,11 +38,13 @@ class Assignment extends Equatable {
     required this.slotIndex,
     required this.status,
     required this.notes,
+    this.semanticLabelId,
     this.alternativePhoneNumber,
     required this.createdAt,
     required this.updatedAt,
     this.event,
     this.teamMember,
+    this.semanticLabel,
   });
 
   /// Check if this assignment is confirmed
@@ -99,6 +104,7 @@ class Assignment extends Equatable {
   Assignment withRelations({
     Event? event,
     TeamMember? teamMember,
+    AssignmentLabel? Function()? semanticLabel,
   }) {
     return Assignment(
       id: id,
@@ -108,11 +114,14 @@ class Assignment extends Equatable {
       slotIndex: slotIndex,
       status: status,
       notes: notes,
+      semanticLabelId: semanticLabelId,
       alternativePhoneNumber: alternativePhoneNumber,
       createdAt: createdAt,
       updatedAt: updatedAt,
       event: event ?? this.event,
       teamMember: teamMember ?? this.teamMember,
+      semanticLabel:
+          semanticLabel != null ? semanticLabel() : this.semanticLabel,
     );
   }
 
@@ -125,11 +134,13 @@ class Assignment extends Equatable {
     int? slotIndex,
     AssignmentStatus? status,
     String? notes,
+    String? Function()? semanticLabelId,
     String? Function()? alternativePhoneNumber,
     DateTime? createdAt,
     DateTime? updatedAt,
     Event? event,
     TeamMember? teamMember,
+    AssignmentLabel? Function()? semanticLabel,
   }) {
     return Assignment(
       id: id ?? this.id,
@@ -139,11 +150,15 @@ class Assignment extends Equatable {
       slotIndex: slotIndex ?? this.slotIndex,
       status: status ?? this.status,
       notes: notes ?? this.notes,
+      semanticLabelId:
+          semanticLabelId != null ? semanticLabelId() : this.semanticLabelId,
       alternativePhoneNumber: alternativePhoneNumber != null ? alternativePhoneNumber() : this.alternativePhoneNumber,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       event: event ?? this.event,
       teamMember: teamMember ?? this.teamMember,
+      semanticLabel:
+          semanticLabel != null ? semanticLabel() : this.semanticLabel,
     );
   }
 
@@ -156,6 +171,7 @@ class Assignment extends Equatable {
         slotIndex,
         status,
         notes,
+        semanticLabelId,
         alternativePhoneNumber,
         createdAt,
         updatedAt,
@@ -163,6 +179,7 @@ class Assignment extends Equatable {
         // changes to nested objects trigger UI updates
         event,
         teamMember,
+        semanticLabel,
       ];
 
   @override

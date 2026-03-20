@@ -16,6 +16,7 @@ import 'data/data_sources/firestore_database.dart';
 import 'data/repositories/team_repository.dart';
 import 'data/repositories/event_repository.dart';
 import 'data/repositories/assignment_repository.dart';
+import 'data/repositories/assignment_label_repository.dart';
 import 'data/repositories/user_selection_repository.dart';
 import 'data/repositories/checklist_repository.dart';
 import 'data/repositories/preset_repository.dart';
@@ -181,6 +182,7 @@ Future<void> _initialize() async {
         team: TeamRepository(database),
         event: EventRepository(database),
         assignment: AssignmentRepository(database),
+        assignmentLabel: AssignmentLabelRepository(database),
         checklist: ChecklistRepository(database),
         preset: PresetRepository(database),
         role: RoleRepository(database),
@@ -221,6 +223,7 @@ Future<void> _initialize() async {
         teamRepository: repositories.team,
         eventRepository: repositories.event,
         assignmentRepository: repositories.assignment,
+        assignmentLabelRepository: repositories.assignmentLabel,
         checklistRepository: repositories.checklist,
         presetRepository: repositories.preset,
         roleRepository: repositories.role,
@@ -284,6 +287,7 @@ class MyApp extends StatelessWidget {
   final TeamRepository teamRepository;
   final EventRepository eventRepository;
   final AssignmentRepository assignmentRepository;
+  final AssignmentLabelRepository assignmentLabelRepository;
   final ChecklistRepository checklistRepository;
   final PresetRepository presetRepository;
   final RoleRepository roleRepository;
@@ -297,6 +301,7 @@ class MyApp extends StatelessWidget {
     required this.teamRepository,
     required this.eventRepository,
     required this.assignmentRepository,
+    required this.assignmentLabelRepository,
     required this.checklistRepository,
     required this.presetRepository,
     required this.roleRepository,
@@ -317,6 +322,7 @@ class MyApp extends StatelessWidget {
         RepositoryProvider.value(value: teamRepository),
         RepositoryProvider.value(value: eventRepository),
         RepositoryProvider.value(value: assignmentRepository),
+        RepositoryProvider.value(value: assignmentLabelRepository),
         RepositoryProvider.value(value: checklistRepository),
         RepositoryProvider.value(value: presetRepository),
         RepositoryProvider.value(value: roleRepository),

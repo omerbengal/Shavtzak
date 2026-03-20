@@ -369,10 +369,13 @@ class EventRepository {
               status: AssignmentStatus
                   .confirmed, // Default to confirmed for duplicated assignments
               notes: assignment.notes,
+              semanticLabelId: assignment.semanticLabelId,
+              alternativePhoneNumber: assignment.alternativePhoneNumber,
               createdAt: DateTime.now(),
               updatedAt: DateTime.now(),
               teamMember: assignment.teamMember,
               event: newEvent, // Use newEvent directly
+              semanticLabel: assignment.semanticLabel,
             ))
         .toList();
 
@@ -408,10 +411,13 @@ class EventRepository {
         status: AssignmentStatus
             .confirmed, // Default to confirmed for duplicated assignments
         notes: assignment.notes,
+        semanticLabelId: assignment.semanticLabelId,
+        alternativePhoneNumber: assignment.alternativePhoneNumber,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         teamMember: assignment.teamMember,
         event: newEvent, // Use newEvent directly
+        semanticLabel: assignment.semanticLabel,
       );
     }).toList();
 

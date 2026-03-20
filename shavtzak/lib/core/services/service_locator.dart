@@ -4,6 +4,7 @@ import '../../data/repositories/team_repository.dart';
 import '../../presentation/bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../data/repositories/event_repository.dart';
 import '../../data/repositories/assignment_repository.dart';
+import '../../data/repositories/assignment_label_repository.dart';
 import '../../data/repositories/user_selection_repository.dart';
 import '../../presentation/bloc/team/team_bloc.dart';
 import '../../presentation/bloc/event/event_bloc.dart';
@@ -32,6 +33,10 @@ class ServiceLocator {
 
   /// Create assignment repository
   AssignmentRepository createAssignmentRepository() => EnvironmentAwareFactory.createAssignmentRepository();
+
+  /// Create assignment label repository
+  AssignmentLabelRepository createAssignmentLabelRepository() =>
+      EnvironmentAwareFactory.createAssignmentLabelRepository();
 
   /// Create user selection repository
   UserSelectionRepository createUserSelectionRepository() => EnvironmentAwareFactory.createUserSelectionRepository();

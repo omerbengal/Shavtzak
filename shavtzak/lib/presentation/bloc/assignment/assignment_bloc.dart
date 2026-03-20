@@ -1953,7 +1953,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     }
   }
 
-  /// Update assignment notes
+  /// Update assignment notes and related admin metadata
   Future<void> _onUpdateAssignmentNotes(
     UpdateAssignmentNotes event,
     Emitter<AssignmentState> emit,
@@ -1963,9 +1963,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     try {
       await _repository.updateAssignmentNotes(event.id, event.notes,
-          alternativePhoneNumber: event.alternativePhoneNumber);
-      emit(const AssignmentOperationSuccess('הערות עודכנו בהצלחה'));
-      _completeActionSuccess(event.completion, 'הערות עודכנו בהצלחה');
+          alternativePhoneNumber: event.alternativePhoneNumber,
+          semanticLabelId: event.semanticLabelId);
+      emit(const AssignmentOperationSuccess('פרטי השיבוץ עודכנו בהצלחה'));
+      _completeActionSuccess(event.completion, 'פרטי השיבוץ עודכנו בהצלחה');
 
       // Trigger rebuild based on current view type
       if (previousState is AssignmentSlotsLoaded) {
@@ -1988,7 +1989,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         add(const LoadAssignments());
       }
     } catch (e) {
-      final message = 'שגיאה בעדכון הערות: $e';
+      final message = 'שגיאה בעדכון פרטי השיבוץ: $e';
       emit(AssignmentError(message));
       _completeActionFailure(event.completion, message);
     }

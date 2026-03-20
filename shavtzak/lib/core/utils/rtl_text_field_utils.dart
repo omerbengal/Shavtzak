@@ -1,5 +1,17 @@
 import 'package:flutter/widgets.dart';
 
+class RtlCursorFixedFocusNode extends FocusNode {
+  bool _isDisposed = false;
+
+  bool get isDisposed => _isDisposed;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+}
+
 /// Fixes RTL cursor positioning for text fields with mixed Hebrew/number content.
 ///
 /// Flutter's BiDi cursor mapping can place the cursor at the wrong logical
@@ -15,8 +27,18 @@ import 'package:flutter/widgets.dart';
 /// taps within the text while already focused use normal positioning.
 void addRtlCursorFix(FocusNode focusNode, TextEditingController controller) {
   focusNode.addListener(() {
+    final trackedFocusNode =
+        focusNode is RtlCursorFixedFocusNode ? focusNode : null;
+    if (trackedFocusNode?.isDisposed == true) {
+      return;
+    }
+
     if (focusNode.hasFocus && controller.text.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (trackedFocusNode?.isDisposed == true) {
+          return;
+        }
+
         if (focusNode.hasFocus && controller.text.isNotEmpty) {
           controller.selection = TextSelection.collapsed(
             offset: controller.text.length,
@@ -30,7 +52,7 @@ void addRtlCursorFix(FocusNode focusNode, TextEditingController controller) {
 /// Creates a new FocusNode with the RTL cursor fix pre-attached.
 /// The caller is responsible for disposing the returned FocusNode.
 FocusNode createRtlCursorFixedFocusNode(TextEditingController controller) {
-  final focusNode = FocusNode();
+  final focusNode = RtlCursorFixedFocusNode();
   addRtlCursorFix(focusNode, controller);
   return focusNode;
 }

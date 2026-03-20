@@ -5,6 +5,7 @@ import '../../../core/services/environment_service.dart';
 import '../../../core/utils/event_assignment_status.dart';
 import '../../../domain/entities/category.dart';
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/assignment_label.dart';
 import '../../bloc/category/category_bloc.dart';
 import '../../bloc/category/category_event.dart';
 import '../../bloc/category/category_state.dart';
@@ -20,6 +21,7 @@ import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/checklist/checklist_bloc.dart';
+import '../../../data/repositories/assignment_label_repository.dart';
 import 'widgets/summary_header_cards.dart';
 import 'widgets/events_overview_chart.dart';
 import 'widgets/staffing_status_chart.dart';
@@ -154,84 +156,101 @@ class _SummaryScreenState extends State<SummaryScreen> {
               builder: (context, assignmentState) {
                 return BlocBuilder<ChecklistBloc, ChecklistState>(
                   builder: (context, checklistState) {
-                    final isEventBlocking = eventState is EventLoading ||
-                        eventState is EventInitial;
-                    final isChecklistBlocking =
-                        checklistState is ChecklistLoading ||
-                            checklistState is ChecklistInitial;
-                    final hasAssignmentData =
-                        assignmentState is AssignmentsLoaded ||
-                            assignmentState is AssignmentSlotsLoaded ||
-                            _lastKnownAssignments.isNotEmpty;
-                    final isAssignmentBlocking =
-                        (assignmentState is AssignmentLoading ||
-                                assignmentState is AssignmentInitial) &&
-                            !hasAssignmentData;
+                    return StreamBuilder<List<AssignmentLabel>>(
+                      stream: context
+                          .read<AssignmentLabelRepository>()
+                          .watchAssignmentLabels(),
+                      builder: (context, labelSnapshot) {
+                        final isEventBlocking = eventState is EventLoading ||
+                            eventState is EventInitial;
+                        final isChecklistBlocking =
+                            checklistState is ChecklistLoading ||
+                                checklistState is ChecklistInitial;
+                        final hasAssignmentData =
+                            assignmentState is AssignmentsLoaded ||
+                                assignmentState is AssignmentSlotsLoaded ||
+                                _lastKnownAssignments.isNotEmpty;
+                        final isAssignmentBlocking =
+                            (assignmentState is AssignmentLoading ||
+                                    assignmentState is AssignmentInitial) &&
+                                !hasAssignmentData;
 
-                    // Show loading only when we truly don't have data yet.
-                    if (isEventBlocking ||
-                        isChecklistBlocking ||
-                        isAssignmentBlocking) {
-                      return const Center(
-                        child: CircularProgressIndicator(),
-                      );
-                    }
+                        if (isEventBlocking ||
+                            isChecklistBlocking ||
+                            isAssignmentBlocking) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
 
-                    // Extract data from states
-                    final events = eventState is EventsLoaded
-                        ? eventState.events
-                        : <Event>[];
-                    List<Assignment> assignments;
-                    if (assignmentState is AssignmentsLoaded) {
-                      assignments = assignmentState.assignments;
-                      _lastKnownAssignments = assignments;
-                    } else if (assignmentState is AssignmentSlotsLoaded) {
-                      assignments = assignmentState.slots
-                          .where((slot) => slot.currentAssignment != null)
-                          .map((slot) => slot.currentAssignment!)
-                          .toList();
-                      _lastKnownAssignments = assignments;
-                    } else {
-                      assignments = _lastKnownAssignments;
-                    }
-                    final checklistItems = checklistState is ChecklistLoaded
-                        ? checklistState.items
-                        : <ChecklistItem>[];
+                        final events = eventState is EventsLoaded
+                            ? eventState.events
+                            : <Event>[];
+                        List<Assignment> assignments;
+                        if (assignmentState is AssignmentsLoaded) {
+                          assignments = assignmentState.assignments;
+                        } else if (assignmentState is AssignmentSlotsLoaded) {
+                          assignments = assignmentState.slots
+                              .where((slot) => slot.currentAssignment != null)
+                              .map((slot) => slot.currentAssignment!)
+                              .toList();
+                        } else {
+                          assignments = _lastKnownAssignments;
+                        }
 
-                    // Filter to upcoming events only
-                    final upcomingEvents = events
-                        .where((e) => e.isUpcoming || e.isActive)
-                        .toList()
-                      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+                        assignments = _applyAssignmentLabels(
+                          assignments,
+                          labelSnapshot.data ?? const <AssignmentLabel>[],
+                        );
+                        _lastKnownAssignments = assignments;
 
-                    if (upcomingEvents.isEmpty) {
-                      return const Center(
-                        child: Text(
-                          'אין אירועים קרובים',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      );
-                    }
+                        final checklistItems = checklistState is ChecklistLoaded
+                            ? checklistState.items
+                            : <ChecklistItem>[];
 
-                    // Compute metrics
-                    final metrics = _computeMetrics(
-                      upcomingEvents,
-                      assignments,
-                      checklistItems,
+                        final now = DateTime.now();
+                        final today =
+                            DateTime(now.year, now.month, now.day);
+                        final upcomingEvents = events
+                            .where((event) {
+                              final eventEndDate = DateTime(
+                                event.endDate.year,
+                                event.endDate.month,
+                                event.endDate.day,
+                              );
+                              return !eventEndDate.isBefore(today);
+                            })
+                            .toList()
+                          ..sort((a, b) => a.startDate.compareTo(b.startDate));
+
+                        if (upcomingEvents.isEmpty) {
+                          return const Center(
+                            child: Text(
+                              'אין אירועים קרובים',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          );
+                        }
+
+                        final metrics = _computeMetrics(
+                          upcomingEvents,
+                          assignments,
+                          checklistItems,
+                        );
+
+                        final summaryCardsData = computeSummaryCardsData(
+                          events,
+                          assignments,
+                          checklistItems,
+                        );
+
+                        return _buildContent(metrics, assignments,
+                            upcomingEvents, categories, summaryCardsData);
+                      },
                     );
-
-                    // Compute summary cards data
-                    final summaryCardsData = computeSummaryCardsData(
-                      events,
-                      assignments,
-                      checklistItems,
-                    );
-
-                    return _buildContent(metrics, assignments, upcomingEvents,
-                        categories, summaryCardsData);
                   },
                 );
               },
@@ -240,6 +259,27 @@ class _SummaryScreenState extends State<SummaryScreen> {
         );
       },
     );
+  }
+
+  List<Assignment> _applyAssignmentLabels(
+    List<Assignment> assignments,
+    List<AssignmentLabel> labels,
+  ) {
+    if (assignments.isEmpty || labels.isEmpty) {
+      return assignments;
+    }
+
+    final labelsById = {
+      for (final label in labels) label.id: label,
+    };
+
+    return assignments.map((assignment) {
+      return assignment.copyWith(
+        semanticLabel: () => assignment.semanticLabelId == null
+            ? null
+            : labelsById[assignment.semanticLabelId!],
+      );
+    }).toList();
   }
 
   Widget _buildContent(

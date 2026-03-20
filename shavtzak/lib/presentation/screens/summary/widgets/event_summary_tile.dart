@@ -974,7 +974,7 @@ class EventSummaryTile extends StatelessWidget {
                           Text(
                             alreadyAssignedMembers.isEmpty
                                 ? 'אין אנשים שכבר שובצו לאירוע זה'
-                                : 'כל האנשים שכבר שובצו לאירוע זה כבר משובצים לתפקיד $roleHebrewName',
+                                : 'כל חברי הצוות שיכולים להשתבץ לתפקיד $roleHebrewName, ומשובצים לאירוע זה, כבר משובצים בתפקיד זה...',
                             textAlign: TextAlign.center,
                             style: const TextStyle(fontSize: 16),
                           ),

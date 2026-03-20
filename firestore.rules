@@ -73,6 +73,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /assignmentLabels/{document=**} {
+      allow read: if isAuthorizedProdUser();
+      allow write: if false;
+    }
+
+    match /test_assignmentLabels/{document=**} {
+      allow read: if isAuthorizedTestUser();
+      allow write: if false;
+    }
+
     match /checklist_items/{document=**} {
       allow read: if isAuthorizedProdUser();
       allow write: if false;

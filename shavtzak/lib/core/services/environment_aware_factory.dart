@@ -1,6 +1,7 @@
 import '../../../data/repositories/team_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
+import '../../../data/repositories/assignment_label_repository.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/role_repository.dart';
 import '../../../data/data_sources/firestore_database.dart';
@@ -43,6 +44,12 @@ class EnvironmentAwareFactory {
     final db = database;
     // For now, return standard repository. Test repositories can be added later.
     return AssignmentRepository(db);
+  }
+
+  /// Create assignment label repository based on environment
+  static AssignmentLabelRepository createAssignmentLabelRepository() {
+    final db = database;
+    return AssignmentLabelRepository(db);
   }
 
   /// Create role repository based on environment

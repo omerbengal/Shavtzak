@@ -232,22 +232,24 @@ class RebuildAssignmentSlotsFromData extends AssignmentEvent {
       [assignments, events, teamMembers, selectedEventIds];
 }
 
-/// Update assignment notes and/or alternative phone number
+/// Update assignment notes and related admin metadata
 class UpdateAssignmentNotes extends AssignmentEvent {
   final String id;
   final String notes;
+  final String? semanticLabelId;
   final String? alternativePhoneNumber;
   final CrudActionCompleter? completion;
 
   const UpdateAssignmentNotes(
     this.id,
     this.notes, {
+    this.semanticLabelId,
     this.alternativePhoneNumber,
     this.completion,
   });
 
   @override
-  List<Object?> get props => [id, notes, alternativePhoneNumber];
+  List<Object?> get props => [id, notes, semanticLabelId, alternativePhoneNumber];
 }
 
 /// Base class for optimistic assignment operations

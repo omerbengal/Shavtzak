@@ -23,4 +23,10 @@ class FilterPersistence {
 
   /// Selected category IDs for Assignments screen
   static Set<String> selectedAssignmentCategoryIds = {};
+
+  /// Selected assignment semantic label IDs for Assignments screen
+  static Set<String> selectedAssignmentLabelIds = {};
+
+  /// Whether to sort assignments by semantic label in the Assignments screen
+  static bool assignmentSortBySemanticLabel = false;
 }

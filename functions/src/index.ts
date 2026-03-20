@@ -62,6 +62,7 @@ type Collections = {
   teamMembers: string;
   events: string;
   assignments: string;
+  assignmentLabels: string;
   checklistItems: string;
   presets: string;
   calendarSync: string;
@@ -178,6 +179,7 @@ function getCollections(environment: EnvironmentMode): Collections {
     teamMembers: `${prefix}teamMembers`,
     events: `${prefix}events`,
     assignments: `${prefix}assignments`,
+    assignmentLabels: `${prefix}assignmentLabels`,
     checklistItems: `${prefix}checklist_items`,
     presets: `${prefix}checklist_presets`,
     calendarSync: `${prefix}calendar_sync`,
@@ -2844,9 +2846,25 @@ function assignmentDocFromJson(assignment: Record<string, unknown>): Record<stri
     slotIndex: assignment['slotIndex'] ?? 0,
     status: assignment['status'] ?? 'pending',
     notes: assignment['notes'] ?? '',
+    semanticLabelId: normalizeOptionalText(assignment['semanticLabelId']),
     alternativePhoneNumber: assignment['alternativePhoneNumber'] ?? null,
     createdAt: toTimestamp(assignment['createdAt'], 'assignment.createdAt'),
     updatedAt: toTimestamp(assignment['updatedAt'], 'assignment.updatedAt'),
+  });
+}
+
+function assignmentLabelDocFromJson(
+  label: Record<string, unknown>,
+): Record<string, unknown> {
+  return stripUndefined({
+    id: label['id'],
+    key: label['key'],
+    hebrewName: label['hebrewName'],
+    color: label['color'] ?? '#1565C0',
+    sortOrder: label['sortOrder'] ?? 0,
+    isActive: label['isActive'] ?? true,
+    createdAt: toTimestamp(label['createdAt'], 'label.createdAt'),
+    updatedAt: toTimestamp(label['updatedAt'], 'label.updatedAt'),
   });
 }
 
@@ -3021,17 +3039,28 @@ async function validateAssignmentPayload(
   const eventId = requireString(assignment['eventId'], 'assignment.eventId');
   const teamMemberId = requireString(assignment['teamMemberId'], 'assignment.teamMemberId');
   const roleType = requireString(assignment['roleType'], 'assignment.roleType');
+  const semanticLabelId = normalizeOptionalText(assignment['semanticLabelId']);
 
-  const [eventDoc, memberDoc] = await Promise.all([
+  const reads = [
     firestore.collection(collections.events).doc(eventId).get(),
     firestore.collection(collections.teamMembers).doc(teamMemberId).get(),
-  ]);
+  ];
+  if (semanticLabelId != null) {
+    reads.push(
+      firestore.collection(collections.assignmentLabels).doc(semanticLabelId).get(),
+    );
+  }
+
+  const [eventDoc, memberDoc, semanticLabelDoc] = await Promise.all(reads);
 
   if (!eventDoc.exists) {
     throw new HttpError(400, 'אירוע לא נמצא');
   }
   if (!memberDoc.exists) {
     throw new HttpError(400, 'חבר צוות לא נמצא');
+  }
+  if (semanticLabelId != null && !semanticLabelDoc?.exists) {
+    throw new HttpError(400, 'סיווג השיבוץ לא נמצא');
   }
 
   const eventData = eventDoc.data() ?? {};
@@ -4253,6 +4282,7 @@ async function executeMutation(
         collections.teamMembers,
         collections.events,
         collections.assignments,
+        collections.assignmentLabels,
         collections.checklistItems,
         collections.presets,
         collections.calendarSync,
@@ -4597,6 +4627,128 @@ async function executeMutation(
       await writeAuditLog(db, collections, actor, operation, 'preset', presetId, {
         eventId,
         count: items.length,
+      });
+      return {ok: true};
+    }
+
+    case 'assignmentLabel.insert': {
+      requireAdmin(actor);
+      const label = payload['label'] as Record<string, unknown>;
+      const labelId = requireString(label['id'], 'label.id');
+      const nextLabel = assignmentLabelDocFromJson(label);
+      await db.collection(collections.assignmentLabels).doc(labelId).set(nextLabel);
+      await writeAuditLog(db, collections, actor, operation, 'assignmentLabel', labelId, {
+        name: label['hebrewName'],
+      }, {
+        after: nextLabel,
+      });
+      return {ok: true};
+    }
+
+    case 'assignmentLabel.update': {
+      requireAdmin(actor);
+      const label = payload['label'] as Record<string, unknown>;
+      const labelId = requireString(label['id'], 'label.id');
+      const labelRef = db.collection(collections.assignmentLabels).doc(labelId);
+      const existingDoc = await labelRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Assignment label not found');
+      }
+      const existing = existingDoc.data() ?? {};
+      const nextLabel = assignmentLabelDocFromJson(label);
+      await labelRef.update(nextLabel);
+      await writeAuditLog(db, collections, actor, operation, 'assignmentLabel', labelId, {
+        name: label['hebrewName'],
+      }, {
+        before: existing,
+        after: nextLabel,
+      });
+      return {ok: true};
+    }
+
+    case 'assignmentLabel.archive':
+    case 'assignmentLabel.restore': {
+      requireAdmin(actor);
+      const labelId = requireString(payload['labelId'], 'labelId');
+      const labelRef = db.collection(collections.assignmentLabels).doc(labelId);
+      const existingDoc = await labelRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Assignment label not found');
+      }
+      const existing = existingDoc.data() ?? {};
+      const nextLabel = {
+        ...existing,
+        isActive: operation === 'assignmentLabel.restore',
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      await labelRef.update({
+        isActive: operation === 'assignmentLabel.restore',
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      await writeAuditLog(db, collections, actor, operation, 'assignmentLabel', labelId, {
+        name: existing['hebrewName'],
+      }, {
+        before: existing,
+        after: nextLabel,
+      });
+      return {ok: true};
+    }
+
+    case 'assignmentLabel.delete': {
+      requireAdmin(actor);
+      const labelId = requireString(payload['labelId'], 'labelId');
+      const labelRef = db.collection(collections.assignmentLabels).doc(labelId);
+      const existingDoc = await labelRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Assignment label not found');
+      }
+      const existing = existingDoc.data() ?? {};
+
+      const assignmentsSnapshot = await db
+        .collection(collections.assignments)
+        .where('semanticLabelId', '==', labelId)
+        .get();
+
+      const assignmentDocs = assignmentsSnapshot.docs;
+      const chunkSize = 400;
+      for (let index = 0; index < assignmentDocs.length; index += chunkSize) {
+        const batch = db.batch();
+        for (const assignmentDoc of assignmentDocs.slice(index, index + chunkSize)) {
+          batch.update(assignmentDoc.ref, {
+            semanticLabelId: null,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
+        await batch.commit();
+      }
+      await labelRef.delete();
+
+      await writeAuditLog(db, collections, actor, operation, 'assignmentLabel', labelId, {
+        name: existing['hebrewName'],
+        clearedAssignmentsCount: assignmentDocs.length,
+      }, {
+        before: existing,
+      });
+      return {ok: true};
+    }
+
+    case 'assignmentLabel.reorder': {
+      requireAdmin(actor);
+      const labelIdToSortOrder = payload['labelIdToSortOrder'] as Record<string, unknown>;
+      const entries = Object.entries(labelIdToSortOrder);
+      const batch = db.batch();
+      for (const [labelId, sortOrder] of entries) {
+        if (typeof sortOrder !== 'number' || !Number.isFinite(sortOrder)) {
+          throw new Error(`Missing or invalid labelIdToSortOrder.${labelId}`);
+        }
+        batch.update(db.collection(collections.assignmentLabels).doc(labelId), {
+          sortOrder,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+      await writeAuditLog(db, collections, actor, operation, 'assignmentLabel', actor.memberId, {
+        count: entries.length,
       });
       return {ok: true};
     }

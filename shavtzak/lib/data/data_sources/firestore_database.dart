@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../domain/entities/assignment.dart';
+import '../../domain/entities/assignment_label.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
@@ -16,6 +17,7 @@ import '../../core/services/backend_api_service.dart';
 import '../../core/services/environment_service.dart';
 import '../../core/utils/event_sorting.dart';
 import '../models/assignment_model.dart';
+import '../models/assignment_label_model.dart';
 import '../models/category_model.dart';
 import '../models/checklist_item_model.dart';
 import '../models/checklist_note_model.dart';
@@ -41,6 +43,10 @@ class FirestoreDatabase implements DatabaseInterface {
 
   String get _assignmentsCollection {
     return '${EnvironmentService.instance.collectionPrefix}assignments';
+  }
+
+  String get _assignmentLabelsCollection {
+    return '${EnvironmentService.instance.collectionPrefix}assignmentLabels';
   }
 
   String get _calendarSyncCollection {
@@ -98,6 +104,10 @@ class FirestoreDatabase implements DatabaseInterface {
 
   Map<String, dynamic> _assignmentEntityToMap(Assignment assignment) {
     return AssignmentModel.fromEntity(assignment).toJson();
+  }
+
+  Map<String, dynamic> _assignmentLabelEntityToMap(AssignmentLabel label) {
+    return AssignmentLabelModel.fromEntity(label).toJson();
   }
 
   Map<String, dynamic> _constraintEntityToMap(DateConstraint constraint) {
@@ -1039,6 +1049,113 @@ class FirestoreDatabase implements DatabaseInterface {
     }
   }
 
+  // ========== Assignment Labels ==========
+
+  @override
+  Future<List<AssignmentLabel>> getAssignmentLabels() async {
+    try {
+      final snapshot = await _firestore
+          .collection(_assignmentLabelsCollection)
+          .orderBy('sortOrder')
+          .get();
+
+      return snapshot.docs
+          .map((doc) => AssignmentLabelModel.fromFirestore(doc).toEntity())
+          .toList();
+    } catch (e) {
+      throw DatabaseException('Failed to get assignment labels: $e');
+    }
+  }
+
+  @override
+  Future<void> insertAssignmentLabel(AssignmentLabel label) async {
+    try {
+      await _invokeMutation(
+        'assignmentLabel.insert',
+        payload: {'label': _assignmentLabelEntityToMap(label)},
+      );
+    } catch (e) {
+      throw DatabaseException('Failed to insert assignment label: $e');
+    }
+  }
+
+  @override
+  Future<void> updateAssignmentLabel(AssignmentLabel label) async {
+    try {
+      await _invokeMutation(
+        'assignmentLabel.update',
+        payload: {'label': _assignmentLabelEntityToMap(label)},
+      );
+    } catch (e) {
+      throw DatabaseException('Failed to update assignment label: $e');
+    }
+  }
+
+  @override
+  Future<void> archiveAssignmentLabel(String id) async {
+    try {
+      await _invokeMutation(
+        'assignmentLabel.archive',
+        payload: {'labelId': id},
+      );
+    } catch (e) {
+      throw DatabaseException('Failed to archive assignment label: $e');
+    }
+  }
+
+  @override
+  Future<void> restoreAssignmentLabel(String id) async {
+    try {
+      await _invokeMutation(
+        'assignmentLabel.restore',
+        payload: {'labelId': id},
+      );
+    } catch (e) {
+      throw DatabaseException('Failed to restore assignment label: $e');
+    }
+  }
+
+  @override
+  Future<void> deleteAssignmentLabel(String id) async {
+    try {
+      await _invokeMutation(
+        'assignmentLabel.delete',
+        payload: {'labelId': id},
+      );
+    } catch (e) {
+      throw DatabaseException('Failed to delete assignment label: $e');
+    }
+  }
+
+  @override
+  Future<void> updateAssignmentLabelsSortOrder(
+    Map<String, int> labelIdToSortOrder,
+  ) async {
+    try {
+      await _invokeMutation(
+        'assignmentLabel.reorder',
+        payload: {'labelIdToSortOrder': labelIdToSortOrder},
+      );
+    } catch (e) {
+      throw DatabaseException(
+        'Failed to update assignment labels sort order: $e',
+      );
+    }
+  }
+
+  @override
+  Stream<List<AssignmentLabel>> watchAssignmentLabels() {
+    return _firestore
+        .collection(_assignmentLabelsCollection)
+        .orderBy('sortOrder')
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map((doc) => AssignmentLabelModel.fromFirestore(doc).toEntity())
+          .toList();
+    });
+  }
+
   // ========== Utility ==========
 
   @override
@@ -1052,16 +1169,21 @@ class FirestoreDatabase implements DatabaseInterface {
 
   // ========== Private Helper Methods ==========
 
-  /// Populate assignment relations (event and team member)
+  /// Populate assignment relations (event, team member, and semantic label)
   /// OPTIMIZED: Uses batch queries (whereIn) instead of N+1 sequential queries
   /// Firestore allows up to 30 items in a single whereIn clause
   Future<List<Assignment>> _populateAssignmentRelations(
       List<Assignment> assignments) async {
     if (assignments.isEmpty) return assignments;
 
-    // Get unique event IDs and team member IDs
+    // Get unique event IDs, team member IDs, and label IDs
     final eventIds = assignments.map((a) => a.eventId).toSet().toList();
     final memberIds = assignments.map((a) => a.teamMemberId).toSet().toList();
+    final labelIds = assignments
+        .map((a) => a.semanticLabelId)
+        .whereType<String>()
+        .toSet()
+        .toList();
 
     // Batch fetch events (Firestore allows 30 items per whereIn query)
     final events = <String, Event>{};
@@ -1093,11 +1215,29 @@ class FirestoreDatabase implements DatabaseInterface {
       }
     }
 
+    // Batch fetch semantic labels (same pattern)
+    final labels = <String, AssignmentLabel>{};
+    for (int i = 0; i < labelIds.length; i += 30) {
+      final chunk = labelIds.skip(i).take(30).toList();
+      final snapshot = await _firestore
+          .collection(_assignmentLabelsCollection)
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        final label = AssignmentLabelModel.fromFirestore(doc).toEntity();
+        labels[label.id] = label;
+      }
+    }
+
     // Populate relations using cached data
     return assignments.map((assignment) {
       return assignment.withRelations(
         event: events[assignment.eventId],
         teamMember: members[assignment.teamMemberId],
+        semanticLabel: () => assignment.semanticLabelId == null
+            ? null
+            : labels[assignment.semanticLabelId!],
       );
     }).toList();
   }

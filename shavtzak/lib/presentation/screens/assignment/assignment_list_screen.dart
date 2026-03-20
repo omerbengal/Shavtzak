@@ -6,11 +6,14 @@ import 'package:go_router/go_router.dart';
 import 'dart:async';
 import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/assignment.dart';
+import '../../../domain/entities/assignment_label.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/event.dart';
 import '../../../data/repositories/assignment_repository.dart';
+import '../../../data/repositories/assignment_label_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/team_repository.dart';
+import '../../../core/constants/assignment_label_palette.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/services/environment_service.dart';
@@ -26,9 +29,11 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import 'assignment_filter_modal.dart';
+import 'widgets/assignment_label_management_dialog.dart';
 import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
 import '../../widgets/map_location_picker.dart';
+import '../../widgets/assignment_label_chip.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
@@ -39,6 +44,26 @@ class AssignmentListScreen extends StatefulWidget {
 
   @override
   State<AssignmentListScreen> createState() => _AssignmentListScreenState();
+}
+
+class _AssignmentLabelSelectionResult {
+  final String? selectedLabelId;
+  final AssignmentLabel? createdLabel;
+
+  const _AssignmentLabelSelectionResult({
+    required this.selectedLabelId,
+    this.createdLabel,
+  });
+}
+
+class _AssignmentLabelCreationResult {
+  final AssignmentLabel createdLabel;
+  final bool shouldSelectLabel;
+
+  const _AssignmentLabelCreationResult({
+    required this.createdLabel,
+    required this.shouldSelectLabel,
+  });
 }
 
 class _AssignmentListScreenState extends State<AssignmentListScreen> {
@@ -109,6 +134,16 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       _isMutationInFlight = false;
       _mutationMessage = '';
     });
+  }
+
+  void _unfocusDialogInputs(BuildContext context) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    FocusScope.of(context).unfocus();
+  }
+
+  Future<void> _settleDialogFocus(BuildContext context) async {
+    _unfocusDialogInputs(context);
+    await Future<void>.delayed(Duration.zero);
   }
 
   Future<CrudActionResult> _dispatchMutation(
@@ -236,7 +271,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     }
   }
 
-  /// Filter slots by search query (event name, role name, member name)
+  /// Filter slots by search query (event name, role name, member name, label)
   List<AssignmentSlot> _searchSlots(List<AssignmentSlot> slots) {
     if (_searchQuery.isEmpty) {
       return slots;
@@ -259,8 +294,71 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           return true;
         }
       }
+      // Search in semantic label name (if filled)
+      final semanticLabelName =
+          slot.currentAssignment?.semanticLabel?.hebrewName;
+      if (semanticLabelName != null &&
+          normalizeForSearch(semanticLabelName).contains(normalizedQuery)) {
+        return true;
+      }
       return false;
     }).toList();
+  }
+
+  List<AssignmentSlot> _sortSlotsForDisplay(List<AssignmentSlot> slots) {
+    final sorted = List<AssignmentSlot>.from(slots);
+    final originalIndexes = <String, int>{
+      for (int index = 0; index < slots.length; index++)
+        _getSlotKey(slots[index]): index,
+    };
+
+    sorted.sort((a, b) {
+      final originalCompare = (originalIndexes[_getSlotKey(a)] ?? 0)
+          .compareTo(originalIndexes[_getSlotKey(b)] ?? 0);
+
+      final sameEvent = a.event.id == b.event.id;
+      if (!sameEvent) {
+        return originalCompare;
+      }
+
+      final aLabel = a.currentAssignment?.semanticLabel;
+      final bLabel = b.currentAssignment?.semanticLabel;
+
+      int compareLabels() {
+        if (aLabel == null && bLabel == null) {
+          return 0;
+        }
+        if (aLabel == null) return 1;
+        if (bLabel == null) return -1;
+
+        final bySortOrder = aLabel.sortOrder.compareTo(bLabel.sortOrder);
+        if (bySortOrder != 0) return bySortOrder;
+
+        return aLabel.hebrewName.compareTo(bLabel.hebrewName);
+      }
+
+      final byRoleOrder = a.role.sortOrder.compareTo(b.role.sortOrder);
+      final byRoleKey = a.role.key.compareTo(b.role.key);
+
+      if (FilterPersistence.assignmentSortBySemanticLabel) {
+        final byLabel = compareLabels();
+        if (byLabel != 0) return byLabel;
+
+        if (byRoleOrder != 0) return byRoleOrder;
+        if (byRoleKey != 0) return byRoleKey;
+        return originalCompare;
+      }
+
+      if (byRoleOrder != 0) return byRoleOrder;
+      if (byRoleKey != 0) return byRoleKey;
+
+      final byLabel = compareLabels();
+      if (byLabel != 0) return byLabel;
+
+      return originalCompare;
+    });
+
+    return sorted;
   }
 
   @override
@@ -326,6 +424,20 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     child: Text('שיבוצים', style: TextStyle(fontSize: 20))),
               ),
               // Trailing icons
+              IconButton(
+                icon: const Icon(Icons.label_outline),
+                tooltip: 'ניהול לייבלים',
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) =>
+                        const AssignmentLabelManagementDialog(),
+                  );
+                },
+                iconSize: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+              ),
               IconButton(
                 icon: const Icon(Icons.home),
                 tooltip: 'בית',
@@ -451,188 +563,261 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   }
 
   Widget _buildSlotGrid(AssignmentSlotsLoaded state) {
-    // Store all slots for checking
-    _allSlots = state.slots;
+    return StreamBuilder<List<AssignmentLabel>>(
+      stream: context.read<AssignmentLabelRepository>().watchAssignmentLabels(),
+      builder: (context, labelSnapshot) {
+        final liveSlots = _applyAssignmentLabelsToSlots(
+          state.slots,
+          labelSnapshot.data ?? const <AssignmentLabel>[],
+        );
 
-    // Apply event filter first
-    var filteredSlots = state.slots;
-    if (state.selectedEventIds.isNotEmpty) {
-      filteredSlots = filteredSlots
-          .where((s) => state.selectedEventIds.contains(s.event.id))
-          .toList();
-    }
+        // Store all slots for checking
+        _allSlots = liveSlots;
 
-    // Calculate statistics based on all slots (before assignment filter)
-    final totalSlots = filteredSlots.length;
-    final filledSlots = filteredSlots.where((s) => s.isFilled).length;
-    final unfilledSlots = filteredSlots.where((s) => !s.isFilled).length;
+        // Apply event filter first
+        var filteredSlots = liveSlots;
+        if (state.selectedEventIds.isNotEmpty) {
+          filteredSlots = filteredSlots
+              .where((s) => state.selectedEventIds.contains(s.event.id))
+              .toList();
+        }
 
-    // Apply assignment filter
-    final filteredByStatus = _filterAssignments(
-        filteredSlots, FilterPersistence.assignmentFilterIndex);
+        // Calculate statistics based on all slots (before assignment filter)
+        final totalSlots = filteredSlots.length;
+        final filledSlots = filteredSlots.where((s) => s.isFilled).length;
+        final unfilledSlots = filteredSlots.where((s) => !s.isFilled).length;
 
-    // Apply search filter
-    final slots = _searchSlots(filteredByStatus);
-    final hasVisibleSlots = slots.isNotEmpty;
+        // Apply assignment filter
+        final filteredByStatus = _filterAssignments(
+            filteredSlots, FilterPersistence.assignmentFilterIndex);
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
-        await Future.delayed(const Duration(milliseconds: 500));
-      },
-      child: Column(
-        children: [
-          // Interactive filter bar
-          InteractiveFilterBar(
-            options: [
-              FilterOption(label: 'סה״כ', count: totalSlots.toString()),
-              FilterOption(label: 'משובצים', count: filledSlots.toString()),
-              FilterOption(
-                  label: 'לא משובצים', count: unfilledSlots.toString()),
-            ],
-            selectedIndex: FilterPersistence.assignmentFilterIndex,
-            onFilterChanged: _onFilterChanged,
-          ),
+        // Apply semantic label filter
+        var filteredByLabel = filteredByStatus;
+        if (FilterPersistence.selectedAssignmentLabelIds.isNotEmpty) {
+          filteredByLabel = filteredByStatus.where((slot) {
+            final semanticLabelId = slot.currentAssignment?.semanticLabelId;
+            return semanticLabelId != null &&
+                FilterPersistence.selectedAssignmentLabelIds.contains(
+                  semanticLabelId,
+                );
+          }).toList();
+        }
 
-          // Search bar with filter button inside
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Directionality(
-              textDirection: TextDirection.rtl,
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'חיפוש באירוע, תפקיד או שם...',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Clear button (only when there's text)
-                      if (_searchQuery.isNotEmpty)
-                        IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            setState(() {
-                              _searchController.clear();
-                              _searchQuery = '';
-                            });
-                          },
-                        ),
-                      // Filter button (always visible)
-                      IconButton(
-                        icon: Badge(
-                          isLabelVisible: state.selectedEventIds.isNotEmpty,
-                          label: Text(state.selectedEventIds.length.toString()),
-                          child: Icon(
-                            Icons.filter_list,
-                            color: state.selectedEventIds.isNotEmpty
-                                ? Colors.blue.shade700
-                                : null,
-                          ),
-                        ),
-                        onPressed: () => _showFilterModal(context, state),
-                        tooltip: state.selectedEventIds.isEmpty
-                            ? 'סינון לפי אירוע'
-                            : 'סינון: ${state.selectedEventIds.length} אירועים',
-                      ),
-                    ],
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey.shade50,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                ),
-                onChanged: (value) {
-                  setState(() {
-                    _searchQuery = value;
-                  });
-                },
+        // Apply search filter
+        final slots = _sortSlotsForDisplay(_searchSlots(filteredByLabel));
+        final hasVisibleSlots = slots.isNotEmpty;
+        final activeFilterCount = state.selectedEventIds.length +
+            FilterPersistence.selectedAssignmentCategoryIds.length +
+            FilterPersistence.selectedAssignmentLabelIds.length;
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+            await Future.delayed(const Duration(milliseconds: 500));
+          },
+          child: Column(
+            children: [
+              // Interactive filter bar
+              InteractiveFilterBar(
+                options: [
+                  FilterOption(label: 'סה״כ', count: totalSlots.toString()),
+                  FilterOption(label: 'משובצים', count: filledSlots.toString()),
+                  FilterOption(
+                      label: 'לא משובצים', count: unfilledSlots.toString()),
+                ],
+                selectedIndex: FilterPersistence.assignmentFilterIndex,
+                onFilterChanged: _onFilterChanged,
               ),
-            ),
-          ),
 
-          if (hasVisibleSlots)
-            // Header row
-            Container(
-              height: 48,
-              color: Colors.grey.shade200,
-              child: Padding(
+              // Search bar with filter button inside
+              Padding(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                child: Row(
-                  children: [
-                    // Event column (matches data row flex: 3)
-                    Expanded(
-                        flex: 3,
-                        child: Text('אירוע',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontWeight: FontWeight.bold))),
-                    // Role column (matches data row flex: 2)
-                    Expanded(
-                        flex: 2,
-                        child: Text('תפקיד',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontWeight: FontWeight.bold))),
-                    // Assignment column (matches data row flex: 3)
-                    Expanded(
-                        flex: 3,
-                        child: Text('שיבוץ',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontWeight: FontWeight.bold))),
-                  ],
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'חיפוש באירוע, תפקיד, שם או לייבל...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Clear button (only when there's text)
+                          if (_searchQuery.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                setState(() {
+                                  _searchController.clear();
+                                  _searchQuery = '';
+                                });
+                              },
+                            ),
+                          // Filter button (always visible)
+                          IconButton(
+                            icon: Badge(
+                              isLabelVisible: activeFilterCount > 0,
+                              label: Text(activeFilterCount.toString()),
+                              child: Icon(
+                                Icons.filter_list,
+                                color: activeFilterCount > 0
+                                    ? Colors.blue.shade700
+                                    : null,
+                              ),
+                            ),
+                            onPressed: () => _showFilterModal(context, state),
+                            tooltip: activeFilterCount == 0
+                                ? 'סינון לפי אירוע ולייבל'
+                                : 'קיימים $activeFilterCount מסננים פעילים',
+                          ),
+                        ],
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey.shade50,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value;
+                      });
+                    },
+                  ),
                 ),
               ),
-            ),
 
-          // Grid rows
-          Expanded(
-            child: hasVisibleSlots
-                ? ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 80),
-                    itemCount: slots.length,
-                    itemBuilder: (context, index) {
-                      return _buildSlotRow(slots[index]);
-                    },
-                  )
-                : Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+              if (hasVisibleSlots)
+                // Header row
+                Container(
+                  height: 48,
+                  color: Colors.grey.shade200,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    child: Row(
                       children: [
-                        Icon(Icons.assignment_outlined,
-                            size: 80, color: Colors.grey.shade400),
-                        const SizedBox(height: 16),
-                        Text(
-                          _searchQuery.isNotEmpty
-                              ? 'לא נמצאו תוצאות לחיפוש'
-                              : FilterPersistence.assignmentFilterIndex == 1
-                                  ? 'אין תפקידים משובצים'
-                                  : FilterPersistence.assignmentFilterIndex == 2
-                                      ? 'אין תפקידים פנויים'
-                                      : 'אין תפקידים להצגה',
-                          style: TextStyle(
-                              fontSize: 18, color: Colors.grey.shade600),
-                        ),
+                        // Event column (matches data row flex: 3)
+                        Expanded(
+                            flex: 3,
+                            child: Text('אירוע',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontWeight: FontWeight.bold))),
+                        // Role column (matches data row flex: 2)
+                        Expanded(
+                            flex: 2,
+                            child: Text('תפקיד',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontWeight: FontWeight.bold))),
+                        // Assignment column (matches data row flex: 3)
+                        Expanded(
+                            flex: 3,
+                            child: Text('שיבוץ',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontWeight: FontWeight.bold))),
                       ],
                     ),
                   ),
+                ),
+
+              // Grid rows
+              Expanded(
+                child: hasVisibleSlots
+                    ? ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 80),
+                        itemCount: slots.length,
+                        itemBuilder: (context, index) {
+                          return _buildSlotRow(slots[index]);
+                        },
+                      )
+                    : Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.assignment_outlined,
+                                size: 80, color: Colors.grey.shade400),
+                            const SizedBox(height: 16),
+                            Text(
+                              _searchQuery.isNotEmpty
+                                  ? 'לא נמצאו תוצאות לחיפוש'
+                                  : FilterPersistence.assignmentFilterIndex == 1
+                                      ? 'אין תפקידים משובצים'
+                                      : FilterPersistence
+                                                  .assignmentFilterIndex ==
+                                              2
+                                          ? 'אין תפקידים פנויים'
+                                          : 'אין תפקידים להצגה',
+                              style: TextStyle(
+                                  fontSize: 18, color: Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
+  }
+
+  List<AssignmentSlot> _applyAssignmentLabelsToSlots(
+    List<AssignmentSlot> slots,
+    List<AssignmentLabel> labels,
+  ) {
+    if (slots.isEmpty) {
+      return slots;
+    }
+
+    final labelsById = {
+      for (final label in labels) label.id: label,
+    };
+
+    return slots.map((slot) {
+      final assignment = slot.currentAssignment;
+      if (assignment == null) {
+        return slot;
+      }
+
+      final updatedAssignment = assignment.copyWith(
+        semanticLabel: () => assignment.semanticLabelId == null
+            ? null
+            : labelsById[assignment.semanticLabelId!],
+      );
+
+      return AssignmentSlot(
+        event: slot.event,
+        role: slot.role,
+        slotIndex: slot.slotIndex,
+        currentAssignment: updatedAssignment,
+        availableMembers: slot.availableMembers,
+        alreadyAssignedMembers: slot.alreadyAssignedMembers,
+        hasDoubleAssignment: slot.hasDoubleAssignment,
+        otherRoles: slot.otherRoles,
+        sameDayAssignedMembers: slot.sameDayAssignedMembers,
+        sameDayEventInfo: slot.sameDayEventInfo,
+      );
+    }).toList();
   }
 
   Widget _buildSlotRow(AssignmentSlot slot) {
     final hasNotes = slot.isFilled &&
         slot.currentAssignment != null &&
         slot.currentAssignment!.notes.isNotEmpty;
+    final hasSemanticLabel =
+        slot.isFilled && slot.currentAssignment?.semanticLabel != null;
     final hasAltPhone = slot.isFilled &&
         slot.currentAssignment != null &&
         slot.currentAssignment!.alternativePhoneNumber != null &&
         slot.currentAssignment!.alternativePhoneNumber!.isNotEmpty;
-    final hasExtraInfo = hasNotes || hasAltPhone;
+    final hasExtraInfo = hasSemanticLabel || hasNotes || hasAltPhone;
 
     final rowContent = Container(
       decoration: BoxDecoration(
@@ -848,6 +1033,21 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 textDirection: TextDirection.rtl,
                 child: Column(
                   children: [
+                    if (hasSemanticLabel) ...[
+                      Align(
+                        alignment: Alignment.center,
+                        child: AssignmentLabelChip(
+                          label: slot.currentAssignment!.semanticLabel!,
+                          fontSize: 10,
+                          maxLines: 3,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                        ),
+                      ),
+                      if (hasNotes || hasAltPhone) const SizedBox(height: 4),
+                    ],
                     // Notes card
                     if (hasNotes)
                       Container(
@@ -1125,7 +1325,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     final notesFocusNode = createRtlCursorFixedFocusNode(notesController);
     final phoneController =
         TextEditingController(text: assignment.alternativePhoneNumber ?? '');
+    final labelRepository = context.read<AssignmentLabelRepository>();
     final formKey = GlobalKey<FormState>();
+    String? selectedSemanticLabelId = assignment.semanticLabelId;
+    final inlineCreatedLabels = <AssignmentLabel>[];
     bool isSaving = false;
 
     await showDialog<void>(
@@ -1155,65 +1358,169 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 ),
                 content: SizedBox(
                   width: dialogWidth,
-                  child: Form(
-                    key: formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${slot.currentAssignment?.teamMember?.name ?? ""} - ${slot.role.hebrewName}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        Text(
-                          slot.event.name,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: notesController,
-                          focusNode: notesFocusNode,
-                          minLines: 4,
-                          maxLines: 10,
-                          decoration: InputDecoration(
-                            hintText: 'הכנס הערות...',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
+                  child: SingleChildScrollView(
+                    child: Form(
+                      key: formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${slot.currentAssignment?.teamMember?.name ?? ""} - ${slot.role.hebrewName}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
                             ),
-                            filled: true,
-                            fillColor: Colors.grey.shade50,
                           ),
-                          autofocus: false,
-                          enabled: !isSaving,
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: phoneController,
-                          keyboardType: TextInputType.phone,
-                          textDirection: TextDirection.ltr,
-                          textAlign: TextAlign.center,
-                          inputFormatters: [PhoneNumberTextInputFormatter()],
-                          validator: Validators.validatePhoneNumber,
-                          enabled: !isSaving,
-                          decoration: InputDecoration(
-                            labelText: 'טלפון חד פעמי לשיבוץ',
-                            hintText: '05X-XXXXXXX',
-                            hintTextDirection: TextDirection.ltr,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
+                          Text(
+                            slot.event.name,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
                             ),
-                            filled: true,
-                            fillColor: Colors.grey.shade50,
-                            prefixIcon: const Icon(Icons.phone),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 16),
+                          StreamBuilder<List<AssignmentLabel>>(
+                            stream: labelRepository.watchAssignmentLabels(),
+                            builder: (context, snapshot) {
+                              final allLabels =
+                                  snapshot.data ?? const <AssignmentLabel>[];
+                              final availableLabels =
+                                  _buildNotesDialogAvailableLabels(
+                                allLabels,
+                                inlineCreatedLabels,
+                                selectedLabelId: selectedSemanticLabelId,
+                              );
+                              final selectedLabel =
+                                  availableLabels.firstWhereOrNull(
+                                (label) => label.id == selectedSemanticLabelId,
+                              );
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  InkWell(
+                                    onTap: isSaving
+                                        ? null
+                                        : () async {
+                                            await _settleDialogFocus(
+                                              dialogContext,
+                                            );
+                                            if (!dialogContext.mounted) {
+                                              return;
+                                            }
+
+                                            final result =
+                                                await _showAssignmentLabelPickerDialog(
+                                              dialogContext,
+                                              allLabels: allLabels,
+                                              availableLabels: availableLabels,
+                                              selectedLabelId:
+                                                  selectedSemanticLabelId,
+                                            );
+                                            if (result == null ||
+                                                !dialogContext.mounted) {
+                                              return;
+                                            }
+
+                                            setDialogState(() {
+                                              if (result.createdLabel != null) {
+                                                inlineCreatedLabels.removeWhere(
+                                                  (label) =>
+                                                      label.id ==
+                                                      result.createdLabel!.id,
+                                                );
+                                                inlineCreatedLabels.add(
+                                                  result.createdLabel!,
+                                                );
+                                              }
+                                              selectedSemanticLabelId =
+                                                  result.selectedLabelId;
+                                            });
+                                          },
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: InputDecorator(
+                                      decoration: InputDecoration(
+                                        labelText: 'לייבל',
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.grey.shade50,
+                                        prefixIcon: const Icon(
+                                          Icons.label_outline,
+                                        ),
+                                        suffixIcon: const Icon(
+                                          Icons.arrow_drop_down,
+                                        ),
+                                      ),
+                                      child: selectedLabel == null
+                                          ? Text(
+                                              'ללא לייבל',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade700,
+                                              ),
+                                            )
+                                          : Align(
+                                              alignment: Alignment.centerRight,
+                                              child: AssignmentLabelChip(
+                                                label: selectedLabel,
+                                                fontSize: 10,
+                                                maxLines: 2,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: notesController,
+                            focusNode: notesFocusNode,
+                            minLines: 4,
+                            maxLines: 10,
+                            decoration: InputDecoration(
+                              hintText: 'הכנס הערות...',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey.shade50,
+                            ),
+                            autofocus: false,
+                            enabled: !isSaving,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: phoneController,
+                            keyboardType: TextInputType.phone,
+                            textDirection: TextDirection.ltr,
+                            textAlign: TextAlign.center,
+                            inputFormatters: [PhoneNumberTextInputFormatter()],
+                            validator: Validators.validatePhoneNumber,
+                            enabled: !isSaving,
+                            decoration: InputDecoration(
+                              labelText: 'טלפון חד פעמי לשיבוץ',
+                              hintText: '05X-XXXXXXX',
+                              hintTextDirection: TextDirection.ltr,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey.shade50,
+                              prefixIcon: const Icon(Icons.phone),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1221,13 +1528,21 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   TextButton(
                     onPressed: isSaving
                         ? null
-                        : () => Navigator.of(dialogContext).pop(),
+                        : () async {
+                            await _settleDialogFocus(dialogContext);
+                            if (!dialogContext.mounted) {
+                              return;
+                            }
+                            Navigator.of(dialogContext).pop();
+                          },
                     child: const Text('ביטול'),
                   ),
                   ElevatedButton(
                     onPressed: isSaving
                         ? null
                         : () async {
+                            final assignmentBloc =
+                                context.read<AssignmentBloc>();
                             if (!formKey.currentState!.validate()) {
                               return;
                             }
@@ -1236,18 +1551,19 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               isSaving = true;
                             });
 
+                            await _settleDialogFocus(dialogContext);
                             final phone = phoneController.text;
                             final result = await _dispatchMutation(
-                              (completion) =>
-                                  context.read<AssignmentBloc>().add(
-                                        UpdateAssignmentNotes(
-                                          assignment.id,
-                                          notesController.text,
-                                          alternativePhoneNumber:
-                                              phone.isNotEmpty ? phone : null,
-                                          completion: completion,
-                                        ),
-                                      ),
+                              (completion) => assignmentBloc.add(
+                                UpdateAssignmentNotes(
+                                  assignment.id,
+                                  notesController.text,
+                                  semanticLabelId: selectedSemanticLabelId,
+                                  alternativePhoneNumber:
+                                      phone.isNotEmpty ? phone : null,
+                                  completion: completion,
+                                ),
+                              ),
                               showErrorSnackBar: false,
                             );
 
@@ -1262,6 +1578,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               return;
                             }
 
+                            await _settleDialogFocus(dialogContext);
+                            if (!dialogContext.mounted) {
+                              return;
+                            }
                             Navigator.of(dialogContext).pop();
                           },
                     style: ElevatedButton.styleFrom(
@@ -1287,10 +1607,494 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       },
     );
 
-    // Dispose local focus node and controllers after dialog closes
-    notesFocusNode.dispose();
-    notesController.dispose();
-    phoneController.dispose();
+    // Intentionally do not dispose these immediately after showDialog returns.
+    // On Flutter Web, the editable subtree can still be unwinding for a frame
+    // after pop, and eager disposal here causes use-after-dispose assertions.
+  }
+
+  Future<_AssignmentLabelSelectionResult?> _showAssignmentLabelPickerDialog(
+    BuildContext context, {
+    required List<AssignmentLabel> allLabels,
+    required List<AssignmentLabel> availableLabels,
+    required String? selectedLabelId,
+  }) async {
+    final searchController = TextEditingController();
+    final pickerInlineCreatedLabels = <AssignmentLabel>[];
+    String searchQuery = '';
+
+    final result = await showDialog<_AssignmentLabelSelectionResult>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final mergedLabels = _mergeAssignmentLabels(
+              availableLabels,
+              pickerInlineCreatedLabels,
+            );
+            final allKnownLabels = _mergeAssignmentLabels(
+              allLabels,
+              pickerInlineCreatedLabels,
+            );
+            final normalizedQuery = normalizeForSearch(searchQuery);
+            final filteredLabels = normalizedQuery.isEmpty
+                ? mergedLabels
+                : mergedLabels.where((label) {
+                    return normalizeForSearch(label.hebrewName)
+                        .contains(normalizedQuery);
+                  }).toList();
+            final isCreateFromSearchContext =
+                filteredLabels.isEmpty && normalizedQuery.isNotEmpty;
+
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                title: const Text('בחירת לייבל'),
+                content: SizedBox(
+                  width: 420,
+                  height: 360,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        controller: searchController,
+                        autofocus: false,
+                        decoration: InputDecoration(
+                          hintText: 'חיפוש לייבל...',
+                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                        ),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            searchQuery = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(
+                                  Icons.add_circle_outline,
+                                  color: Colors.blue,
+                                ),
+                                title: const Text('צור לייבל חדש'),
+                                subtitle: isCreateFromSearchContext
+                                    ? Text(searchQuery.trim())
+                                    : null,
+                                onTap: () async {
+                                  await _settleDialogFocus(dialogContext);
+                                  if (!dialogContext.mounted) {
+                                    return;
+                                  }
+
+                                  final creationResult =
+                                      await _showCreateAssignmentLabelDialog(
+                                    dialogContext,
+                                    existingLabels: allKnownLabels,
+                                    initialName: searchQuery.trim(),
+                                  );
+                                  if (creationResult == null ||
+                                      !dialogContext.mounted) {
+                                    return;
+                                  }
+
+                                  final createdLabel =
+                                      creationResult.createdLabel;
+
+                                  if (isCreateFromSearchContext ||
+                                      creationResult.shouldSelectLabel) {
+                                    Navigator.of(dialogContext).pop(
+                                      _AssignmentLabelSelectionResult(
+                                        selectedLabelId: createdLabel.id,
+                                        createdLabel: createdLabel,
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  setDialogState(() {
+                                    pickerInlineCreatedLabels.removeWhere(
+                                      (label) => label.id == createdLabel.id,
+                                    );
+                                    pickerInlineCreatedLabels.add(createdLabel);
+                                  });
+                                },
+                              ),
+                              if (normalizedQuery.isEmpty)
+                                ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: const Icon(Icons.clear),
+                                  title: const Text('ללא לייבל'),
+                                  selected: selectedLabelId == null,
+                                  onTap: () {
+                                    Navigator.of(dialogContext).pop(
+                                      const _AssignmentLabelSelectionResult(
+                                        selectedLabelId: null,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              if (filteredLabels.isNotEmpty)
+                                ...filteredLabels.map((label) {
+                                  return ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: Icon(
+                                      Icons.label,
+                                      color: _colorFromHex(label.color),
+                                    ),
+                                    title: Text(
+                                      _labelDisplayName(label),
+                                    ),
+                                    selected: selectedLabelId == label.id,
+                                    onTap: () {
+                                      Navigator.of(dialogContext).pop(
+                                        _AssignmentLabelSelectionResult(
+                                          selectedLabelId: label.id,
+                                        ),
+                                      );
+                                    },
+                                  );
+                                }),
+                              if (filteredLabels.isEmpty &&
+                                  normalizedQuery.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      'הקלד כדי לחפש לייבל או ליצור חדש',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () async {
+                      await _settleDialogFocus(dialogContext);
+                      if (!dialogContext.mounted) {
+                        return;
+                      }
+                      Navigator.of(dialogContext).pop();
+                    },
+                    child: const Text('ביטול'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    return result;
+  }
+
+  Future<_AssignmentLabelCreationResult?> _showCreateAssignmentLabelDialog(
+    BuildContext context, {
+    required List<AssignmentLabel> existingLabels,
+    String initialName = '',
+  }) async {
+    final nameController = TextEditingController(text: initialName);
+    String selectedColor = AssignmentLabelPalette.defaultColor;
+    bool isSaving = false;
+    String? errorText;
+
+    final result = await showDialog<_AssignmentLabelCreationResult>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final trimmedName = nameController.text.trim();
+            final duplicateNameError = _duplicateLabelError(
+              trimmedName,
+              existingLabels,
+            );
+
+            Future<void> saveLabel({
+              required bool shouldSelectLabel,
+            }) async {
+              final assignmentLabelRepository =
+                  context.read<AssignmentLabelRepository>();
+              if (trimmedName.isEmpty) {
+                setDialogState(() {
+                  errorText = 'יש להזין שם ללייבל';
+                });
+                return;
+              }
+              if (duplicateNameError != null) {
+                setDialogState(() {
+                  errorText = null;
+                });
+                return;
+              }
+
+              setDialogState(() {
+                isSaving = true;
+                errorText = null;
+              });
+
+              await _settleDialogFocus(dialogContext);
+              try {
+                final createdLabel =
+                    await assignmentLabelRepository.createAssignmentLabel(
+                  hebrewName: trimmedName,
+                  color: selectedColor,
+                );
+
+                if (!dialogContext.mounted) {
+                  return;
+                }
+
+                await _settleDialogFocus(dialogContext);
+                if (!dialogContext.mounted) {
+                  return;
+                }
+                Navigator.of(dialogContext).pop(
+                  _AssignmentLabelCreationResult(
+                    createdLabel: createdLabel,
+                    shouldSelectLabel: shouldSelectLabel,
+                  ),
+                );
+              } catch (e) {
+                if (!dialogContext.mounted) {
+                  return;
+                }
+
+                setDialogState(() {
+                  isSaving = false;
+                  errorText = _extractErrorMessage(e);
+                });
+              }
+            }
+
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                actionsAlignment: MainAxisAlignment.center,
+                actionsOverflowAlignment: OverflowBarAlignment.center,
+                actionsOverflowButtonSpacing: 12,
+                title: const Text('יצירת לייבל חדש'),
+                content: SizedBox(
+                  width: 420,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          controller: nameController,
+                          enabled: !isSaving,
+                          autofocus: false,
+                          onChanged: (_) {
+                            setDialogState(() {
+                              errorText = null;
+                            });
+                          },
+                          decoration: InputDecoration(
+                            labelText: 'שם לייבל',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            errorText: duplicateNameError ?? errorText,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'צבע',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children:
+                              AssignmentLabelPalette.colors.map((colorHex) {
+                            final isSelected = colorHex == selectedColor;
+                            return InkWell(
+                              onTap: isSaving
+                                  ? null
+                                  : () {
+                                      setDialogState(() {
+                                        selectedColor = colorHex;
+                                      });
+                                    },
+                              borderRadius: BorderRadius.circular(999),
+                              child: Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: _colorFromHex(colorHex),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? Colors.black87
+                                        : Colors.transparent,
+                                    width: 3,
+                                  ),
+                                ),
+                                child: isSelected
+                                    ? const Icon(
+                                        Icons.check,
+                                        color: Colors.white,
+                                        size: 18,
+                                      )
+                                    : null,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            await _settleDialogFocus(dialogContext);
+                            if (!dialogContext.mounted) {
+                              return;
+                            }
+                            Navigator.of(dialogContext).pop();
+                          },
+                    child: const Text('ביטול'),
+                  ),
+                  ElevatedButton(
+                    onPressed: isSaving
+                        ? null
+                        : () => saveLabel(shouldSelectLabel: false),
+                    child: isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('יצירה'),
+                  ),
+                  ElevatedButton(
+                    onPressed: isSaving
+                        ? null
+                        : () => saveLabel(shouldSelectLabel: true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('יצירה ובחירת לייבל'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    // Intentionally do not dispose immediately after showDialog returns for the
+    // same Flutter Web teardown reason as the notes dialog above.
+    return result;
+  }
+
+  List<AssignmentLabel> _mergeAssignmentLabels(
+    List<AssignmentLabel> streamLabels,
+    List<AssignmentLabel> inlineCreatedLabels,
+  ) {
+    final labelsById = <String, AssignmentLabel>{
+      for (final label in streamLabels) label.id: label,
+      for (final label in inlineCreatedLabels) label.id: label,
+    };
+
+    final labels = labelsById.values.toList()
+      ..sort((a, b) {
+        final bySortOrder = a.sortOrder.compareTo(b.sortOrder);
+        if (bySortOrder != 0) {
+          return bySortOrder;
+        }
+        return a.hebrewName.compareTo(b.hebrewName);
+      });
+    return labels;
+  }
+
+  List<AssignmentLabel> _buildNotesDialogAvailableLabels(
+    List<AssignmentLabel> allLabels,
+    List<AssignmentLabel> inlineCreatedLabels, {
+    required String? selectedLabelId,
+  }) {
+    final visibleLabels = allLabels.where((label) {
+      return label.isActive || label.id == selectedLabelId;
+    }).toList();
+
+    return _mergeAssignmentLabels(visibleLabels, inlineCreatedLabels);
+  }
+
+  String? _duplicateLabelError(
+    String trimmedName,
+    List<AssignmentLabel> existingLabels, {
+    String? excludeId,
+  }) {
+    if (trimmedName.isEmpty) {
+      return null;
+    }
+
+    final duplicateLabel = existingLabels.firstWhereOrNull(
+      (label) =>
+          label.id != excludeId &&
+          label.hebrewName.trim().toLowerCase() == trimmedName.toLowerCase(),
+    );
+
+    if (duplicateLabel == null) {
+      return null;
+    }
+
+    return duplicateLabel.isActive
+        ? 'כבר קיים לייבל בשם הזה'
+        : 'כבר קיים לייבל בשם הזה (בארכיון)';
+  }
+
+  String _labelDisplayName(AssignmentLabel label) {
+    return label.isActive ? label.hebrewName : '${label.hebrewName} (בארכיון)';
+  }
+
+  String _extractErrorMessage(Object error) {
+    final message = error.toString();
+    const exceptionPrefix = 'Exception: ';
+    if (message.startsWith(exceptionPrefix)) {
+      return message.substring(exceptionPrefix.length);
+    }
+    return message;
+  }
+
+  Color _colorFromHex(String hex) {
+    final normalized = hex.replaceAll('#', '').trim();
+    final buffer = StringBuffer();
+    if (normalized.length == 6) {
+      buffer.write('FF');
+    }
+    buffer.write(normalized);
+    return Color(int.parse(buffer.toString(), radix: 16));
   }
 
   Widget _buildAssignmentCell(AssignmentSlot slot) {
@@ -1700,7 +2504,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                         Text(
                           slot.alreadyAssignedMembers.isEmpty
                               ? 'אין אנשים שכבר שובצו לאירוע זה'
-                              : 'כל האנשים שכבר שובצו לאירוע זה כבר משובצים לתפקיד ${slot.role.hebrewName}',
+                              : 'כל חברי הצוות שיכולים להשתבץ לתפקיד ${slot.role.hebrewName}, ומשובצים לאירוע זה, כבר משובצים בתפקיד זה...',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
@@ -2154,6 +2958,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       BuildContext context, AssignmentSlotsLoaded state) async {
     void applyFilter(Set<String> selectedEventIds) {
       if (!mounted) return;
+      setState(() {});
       if (selectedEventIds.isEmpty) {
         context.read<AssignmentBloc>().add(const ClearEventFilter());
       } else {

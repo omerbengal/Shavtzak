@@ -15,6 +15,7 @@ class AssignmentModel {
   final int slotIndex; // Which slot (0, 1, 2...) for this role in the event
   final String status; // Stored as string key
   final String notes;
+  final String? semanticLabelId;
   final String? alternativePhoneNumber;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -27,6 +28,7 @@ class AssignmentModel {
     required this.slotIndex,
     required this.status,
     required this.notes,
+    this.semanticLabelId,
     this.alternativePhoneNumber,
     required this.createdAt,
     required this.updatedAt,
@@ -42,6 +44,7 @@ class AssignmentModel {
       slotIndex: entity.slotIndex,
       status: entity.status.key,
       notes: entity.notes,
+      semanticLabelId: entity.semanticLabelId,
       alternativePhoneNumber: entity.alternativePhoneNumber,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
@@ -58,6 +61,7 @@ class AssignmentModel {
       slotIndex: slotIndex,
       status: AssignmentStatusExtension.fromString(status),
       notes: notes,
+      semanticLabelId: semanticLabelId,
       alternativePhoneNumber: alternativePhoneNumber,
       createdAt: createdAt,
       updatedAt: updatedAt,
@@ -76,6 +80,7 @@ class AssignmentModel {
       slotIndex: data['slotIndex'] as int? ?? 0, // Default to 0 for old data
       status: data['status'] as String? ?? 'pending',
       notes: data['notes'] as String? ?? '',
+      semanticLabelId: data['semanticLabelId'] as String?,
       alternativePhoneNumber: data['alternativePhoneNumber'] as String?,
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
@@ -92,6 +97,7 @@ class AssignmentModel {
       'slotIndex': slotIndex,
       'status': status,
       'notes': notes,
+      'semanticLabelId': semanticLabelId,
       'alternativePhoneNumber': alternativePhoneNumber ?? FieldValue.delete(),
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
@@ -108,6 +114,7 @@ class AssignmentModel {
       slotIndex: json['slotIndex'] as int? ?? 0,
       status: json['status'] as String? ?? 'pending',
       notes: json['notes'] as String? ?? '',
+      semanticLabelId: json['semanticLabelId'] as String?,
       alternativePhoneNumber: json['alternativePhoneNumber'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -124,6 +131,7 @@ class AssignmentModel {
       'slotIndex': slotIndex,
       'status': status,
       'notes': notes,
+      'semanticLabelId': semanticLabelId,
       if (alternativePhoneNumber != null) 'alternativePhoneNumber': alternativePhoneNumber,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
