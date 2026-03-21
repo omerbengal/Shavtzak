@@ -21,9 +21,16 @@ class _AssignmentLabelManagementDialogState
   bool _isLoading = false;
   List<AssignmentLabel>? _pendingReorderedLabels;
   String? _lastLabelsSignature;
+  late final Future<List<AssignmentLabel>> _initialLabelsFuture;
 
   AssignmentLabelRepository get _repository =>
       context.read<AssignmentLabelRepository>();
+
+  @override
+  void initState() {
+    super.initState();
+    _initialLabelsFuture = _repository.getAssignmentLabels();
+  }
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -139,33 +146,35 @@ class _AssignmentLabelManagementDialogState
                   ),
                   const SizedBox(height: 16),
                   Expanded(
-                    child: StreamBuilder<List<AssignmentLabel>>(
-                      stream: _repository.watchAssignmentLabels(),
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          return Center(
-                            child: Text(
-                              'שגיאה בטעינת לייבלים',
-                              style: TextStyle(
-                                color: Colors.red.shade700,
-                                fontSize: 16,
-                              ),
-                            ),
-                          );
+                    child: FutureBuilder<List<AssignmentLabel>>(
+                      future: _initialLabelsFuture,
+                      builder: (context, initialSnapshot) {
+                        if (initialSnapshot.hasError) {
+                          return _buildLabelsLoadError();
                         }
 
-                        if (!snapshot.hasData) {
+                        if (!initialSnapshot.hasData) {
                           return const Center(
                             child: CircularProgressIndicator(),
                           );
                         }
 
-                        final labels = snapshot.data!;
-                        _handleIncomingLabels(labels);
+                        return StreamBuilder<List<AssignmentLabel>>(
+                          stream: _repository.watchAssignmentLabels(),
+                          initialData: initialSnapshot.data!,
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return _buildLabelsLoadError();
+                            }
 
-                        return _showArchive
-                            ? _buildArchiveView(labels)
-                            : _buildMainView(labels);
+                            final labels = snapshot.data ?? initialSnapshot.data!;
+                            _handleIncomingLabels(labels);
+
+                            return _showArchive
+                                ? _buildArchiveView(labels)
+                                : _buildMainView(labels);
+                          },
+                        );
                       },
                     ),
                   ),
@@ -200,7 +209,7 @@ class _AssignmentLabelManagementDialogState
 
     if (activeLabels.isEmpty) {
       return const Center(
-        child: Text('אין לייבלים זמינים'),
+        child: Text('אין לייבלים קיימים'),
       );
     }
 
@@ -261,6 +270,18 @@ class _AssignmentLabelManagementDialogState
         final label = archivedLabels[index];
         return _buildLabelListTile(label, isArchived: true);
       },
+    );
+  }
+
+  Widget _buildLabelsLoadError() {
+    return Center(
+      child: Text(
+        'שגיאה בטעינת לייבלים',
+        style: TextStyle(
+          color: Colors.red.shade700,
+          fontSize: 16,
+        ),
+      ),
     );
   }
 
@@ -391,9 +412,60 @@ class _AssignmentLabelManagementDialogState
   }
 
   Future<void> _confirmDeleteLabel(AssignmentLabel label) async {
-    final shouldDelete = await showDialog<bool>(
+    final affectedAssignmentsCount = await _getAffectedAssignmentsCount(
+      label.id,
+    );
+    if (affectedAssignmentsCount == null || !mounted) {
+      return;
+    }
+
+    if (affectedAssignmentsCount == 0) {
+      await _showDeleteExecutionDialog(
+        title: 'מחיקת לייבל?',
+        content: 'האם למחוק את "${label.hebrewName}" לצמיתות?',
+        confirmText: 'מחק לצמיתות',
+        label: label,
+      );
+      return;
+    }
+
+    final shouldDelete = await _showDeleteConfirmationDialog(label);
+    if (shouldDelete != true || !mounted) {
+      return;
+    }
+
+    await _showDeleteExecutionDialog(
+      title: 'אישור נוסף למחיקה',
+      content:
+          '$affectedAssignmentsCount שיבוצים עם הלייבל "${label.hebrewName}" יאופסו מהלייבל הזה ויישארו ללא לייבל. להמשיך?',
+      confirmText: 'כן, למחוק',
+      label: label,
+    );
+  }
+
+  Future<int?> _getAffectedAssignmentsCount(String labelId) async {
+    if (_isLoading) {
+      _showError('פעולה אחרת עדיין מתבצעת');
+      return null;
+    }
+
+    try {
+      final assignments = await context.read<AssignmentRepository>().getAllAssignments();
+      return assignments
+          .where((assignment) => assignment.semanticLabelId == labelId)
+          .length;
+    } catch (e) {
+      if (mounted) {
+        _showError(_extractErrorMessage(e));
+      }
+      return null;
+    }
+  }
+
+  Future<bool?> _showDeleteConfirmationDialog(AssignmentLabel label) {
+    return showDialog<bool>(
       context: context,
-      builder: (context) => Directionality(
+      builder: (dialogContext) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           title: const Text(
@@ -403,11 +475,11 @@ class _AssignmentLabelManagementDialogState
           content: Text('האם למחוק את "${label.hebrewName}" לצמיתות?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
               child: const Text('ביטול'),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
@@ -418,58 +490,89 @@ class _AssignmentLabelManagementDialogState
         ),
       ),
     );
+  }
 
-    if (shouldDelete != true) {
-      return;
-    }
+  Future<bool?> _showDeleteExecutionDialog({
+    required String title,
+    required String content,
+    required String confirmText,
+    required AssignmentLabel label,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        var isDeleting = false;
 
-    if (!mounted) {
-      return;
-    }
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> deleteLabel() async {
+              if (isDeleting) {
+                return;
+              }
+              if (_isLoading) {
+                _showError('פעולה אחרת עדיין מתבצעת');
+                return;
+              }
 
-    final assignments = await context.read<AssignmentRepository>().getAllAssignments();
-    if (!mounted) {
-      return;
-    }
+              setDialogState(() => isDeleting = true);
 
-    final affectedAssignmentsCount = assignments
-        .where((assignment) => assignment.semanticLabelId == label.id)
-        .length;
+              try {
+                await _repository.deleteAssignmentLabel(label.id);
+                if (!dialogContext.mounted) {
+                  return;
+                }
+                Navigator.of(dialogContext).pop(true);
+              } catch (e) {
+                if (!dialogContext.mounted) {
+                  return;
+                }
+                setDialogState(() => isDeleting = false);
+                _showError(_extractErrorMessage(e));
+              }
+            }
 
-    if (affectedAssignmentsCount > 0) {
-      final shouldClearAssignments = await showDialog<bool>(
-        context: context,
-        builder: (context) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            title: const Text('אישור נוסף למחיקה'),
-            content: Text(
-              '$affectedAssignmentsCount שיבוצים עם הלייבל "${label.hebrewName}" יאופסו מהלייבל הזה ויישארו ללא לייבל. להמשיך?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('ביטול'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                title: Text(
+                  title,
+                  style: const TextStyle(color: Colors.red),
                 ),
-                child: const Text('כן, למחוק'),
+                content: Text(content),
+                actions: [
+                  TextButton(
+                    onPressed: isDeleting
+                        ? null
+                        : () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('ביטול'),
+                  ),
+                  ElevatedButton(
+                    onPressed: isDeleting ? null : deleteLabel,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: isDeleting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                        : Text(confirmText),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
-      );
-
-      if (shouldClearAssignments != true) {
-        return;
-      }
-    }
-
-    await _runMutation(() => _repository.deleteAssignmentLabel(label.id));
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _showAddOrEditLabelDialog({
