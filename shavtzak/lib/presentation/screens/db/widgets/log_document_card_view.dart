@@ -1340,6 +1340,8 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
         return 'זמינות';
       case 'assignment':
         return 'שיבוץ';
+      case 'assignmentlabel':
+        return 'לייבל';
       case 'checklistnote':
         return 'הערת צ\'קליסט';
       case 'preset':
@@ -1354,6 +1356,8 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
         return 'אירועים';
       case 'assignmentbatch':
         return 'שיבוצים';
+      case 'assignmentlabelbatch':
+        return 'לייבלים';
       case 'checklistitembatch':
         return 'פריטי צ\'קליסט';
       case 'rolebatch':
@@ -1393,6 +1397,8 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
       'endDate': 'תאריך סיום',
       'location': 'מיקום',
       'roleType': 'תפקיד',
+      'semanticLabelId': 'לייבל',
+      'labelId': 'לייבל',
       'teamMemberId': 'חבר צוות',
       'memberId': 'חבר צוות',
       'eventId': 'אירוע',
@@ -1435,6 +1441,10 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
       'type': 'סוג',
       'order': 'סדר',
       'sortOrder': 'סדר תצוגה',
+      'hebrewName': 'שם לייבל',
+      'color': 'צבע',
+      'key': 'מפתח',
+      'clearedAssignmentsCount': 'מספר שיבוצים שאופסו',
       'responsibleName': 'אחראי',
       'source': 'מקור',
       'operation': 'פעולה טכנית',
@@ -1592,6 +1602,8 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
         return _resolveReferenceName('checklistItemId', entityId);
       case 'preset':
         return _resolveReferenceName('presetId', entityId);
+      case 'assignmentlabel':
+        return _resolveReferenceName('semanticLabelId', entityId);
       default:
         return null;
     }
@@ -1609,6 +1621,18 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
         return 'מחיקת שיבוצים מרובה';
       case 'assignment.insertbatch':
         return 'יצירת שיבוצים מרובה';
+      case 'assignmentlabel.insert':
+        return 'יצירת לייבל';
+      case 'assignmentlabel.update':
+        return 'עדכון לייבל';
+      case 'assignmentlabel.archive':
+        return 'העברת לייבל לארכיון';
+      case 'assignmentlabel.restore':
+        return 'שחזור לייבל';
+      case 'assignmentlabel.delete':
+        return 'מחיקת לייבל';
+      case 'assignmentlabel.reorder':
+        return 'סידור מחדש של לייבלים';
       case 'checklist.deletebyevent':
         return 'מחיקת פריטי צ\'קליסט לפי אירוע';
       default:
@@ -1739,7 +1763,13 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
       return null;
     }
 
-    for (final candidateKey in ['name', 'entityName', 'title', 'label']) {
+    for (final candidateKey in [
+      'name',
+      'entityName',
+      'title',
+      'label',
+      'hebrewName',
+    ]) {
       final value = _readTrimmedString(doc[candidateKey]);
       if (value != null) {
         return value;
@@ -1760,6 +1790,9 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
         return 'teamMembers';
       case 'assignmentId':
         return 'assignments';
+      case 'semanticLabelId':
+      case 'labelId':
+        return 'assignmentLabels';
       case 'presetId':
         return 'checklist_presets';
       case 'checklistItemId':

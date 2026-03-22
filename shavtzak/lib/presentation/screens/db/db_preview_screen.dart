@@ -58,6 +58,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     _CollectionConfig('teamMembers', 'חברי צוות', Icons.people, true),
     _CollectionConfig('events', 'אירועים', Icons.event, true),
     _CollectionConfig('assignments', 'שיבוצים', Icons.assignment_ind, true),
+    _CollectionConfig('assignmentLabels', 'לייבלים', Icons.label, true),
     _CollectionConfig('logs', 'לוגים', Icons.receipt_long, true),
     _CollectionConfig(
         'checklist_items', 'פריטי צ\'קליסט', Icons.checklist, true),
@@ -122,6 +123,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
       // Create ValueNotifier for collections that need sorting
       if (config.name == 'events' ||
           config.name == 'assignments' ||
+          config.name == 'assignmentLabels' ||
           config.name == 'logs' ||
           config.name == 'checklist_items' ||
           config.name == 'teamMembers' ||
@@ -149,6 +151,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
         // Client-side sorting
         if (config.name == 'assignments') {
           docs = _sortAssignments(docs);
+        } else if (config.name == 'assignmentLabels') {
+          docs = _sortAssignmentLabels(docs);
         } else if (config.name == 'logs') {
           docs = _sortLogs(docs);
         } else if (config.name == 'checklist_items') {
@@ -238,6 +242,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> sorted;
     if (collectionName == 'assignments') {
       sorted = _sortAssignments(docs);
+    } else if (collectionName == 'assignmentLabels') {
+      sorted = _sortAssignmentLabels(docs);
     } else if (collectionName == 'logs') {
       sorted = _sortLogs(docs);
     } else if (collectionName == 'checklist_items') {
@@ -420,6 +426,34 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     return sortedDocs;
   }
 
+  /// Sort assignment labels by archive state, sortOrder, then Hebrew name
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortAssignmentLabels(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final sortedDocs =
+        List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+    sortedDocs.sort((a, b) {
+      final aData = a.data();
+      final bData = b.data();
+
+      final aIsActive = aData['isActive'] == true;
+      final bIsActive = bData['isActive'] == true;
+      final activeCompare = aIsActive == bIsActive
+          ? 0
+          : (aIsActive ? -1 : 1);
+      if (activeCompare != 0) return activeCompare;
+
+      final aSortOrder = (aData['sortOrder'] as num?)?.toInt() ?? 999999;
+      final bSortOrder = (bData['sortOrder'] as num?)?.toInt() ?? 999999;
+      final byOrder = aSortOrder.compareTo(bSortOrder);
+      if (byOrder != 0) return byOrder;
+
+      final aName = (aData['hebrewName'] as String? ?? '').toLowerCase();
+      final bName = (bData['hebrewName'] as String? ?? '').toLowerCase();
+      return aName.compareTo(bName);
+    });
+    return sortedDocs;
+  }
+
   /// Sort logs by timestamp descending (newest first)
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortLogs(
       List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
@@ -538,12 +572,12 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
   /// Get the primary field value for filtering (same logic as CollectionViewer and DocumentCard)
   String? _getPrimaryFieldValue(
       String collectionName, Map<String, dynamic> data) {
-    if (collectionName.contains('event')) {
+    if (collectionName == 'events') {
       return _formatEventPreview(data);
     }
 
     // Checklist items: Show "EventName | ItemName | ResponsibleName"
-    if (collectionName.contains('checklist_item')) {
+    if (collectionName == 'checklist_items') {
       final name = data['name'] as String?;
       final eventId = data['eventId'] as String?;
       final responsibleId = data['responsibleId'] as String?;
@@ -586,7 +620,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     }
 
     // Assignments: Show "TeamMemberName | RoleName | EventName"
-    if (collectionName.contains('assignment')) {
+    if (collectionName == 'assignments') {
       final teamMemberId = data['teamMemberId'] as String?;
       final eventId = data['eventId'] as String?;
       final roleType = data['roleType'] as String?;
@@ -639,7 +673,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     }
 
     // Logs: "<performerName> <actionType> <entityType> | <timestampLocalIsrael>"
-    if (collectionName.contains('log')) {
+    if (collectionName == 'logs') {
       final actionTypeRaw = data['actionType'] as String?;
       final entityTypeRaw = data['entityType'] as String?;
       final entityName = _getLogEntityName(data);
@@ -654,7 +688,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
     }
 
     // Team members: Show name + capability count
-    if (collectionName.contains('teamMember')) {
+    if (collectionName == 'teamMembers') {
       final name = data['name'] as String?;
       final roleCapabilities =
           data['roleCapabilities'] as Map<String, dynamic>?;
@@ -822,6 +856,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
         return 'זמינות';
       case 'assignment':
         return 'שיבוץ';
+      case 'assignmentlabel':
+        return 'לייבל';
       case 'checklistnote':
         return 'הערת צ\'קליסט';
       case 'preset':
@@ -836,6 +872,8 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
         return 'אירועים (פעולה קיבוצית)';
       case 'assignmentbatch':
         return 'שיבוצים (פעולה קיבוצית)';
+      case 'assignmentlabelbatch':
+        return 'לייבלים (פעולה קיבוצית)';
       case 'checklistitembatch':
         return 'פריטי צ\'קליסט (פעולה קיבוצית)';
       case 'rolebatch':

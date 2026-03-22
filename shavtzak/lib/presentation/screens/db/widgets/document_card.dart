@@ -30,7 +30,7 @@ class DocumentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isLog = collectionName != null && collectionName!.contains('log');
+    final isLog = collectionName == 'logs';
     if (isLog) {
       return LogDocumentCardView(
         key: key,
@@ -64,8 +64,7 @@ class DocumentCard extends StatelessWidget {
 
   Widget _buildHeader(BuildContext context) {
     final primaryField = _getPrimaryFieldValue();
-    final isAssignment =
-        collectionName != null && collectionName!.contains('assignment');
+    final isAssignment = collectionName == 'assignments';
 
     return InkWell(
       onTap: onToggle,
@@ -134,7 +133,7 @@ class DocumentCard extends StatelessWidget {
 
   Widget _buildExpandedContent() {
     final jsonData = _getExpandedJsonData();
-    final isLog = collectionName != null && collectionName!.contains('log');
+    final isLog = collectionName == 'logs';
     return Container(
       decoration: BoxDecoration(
         border: Border(
@@ -154,7 +153,7 @@ class DocumentCard extends StatelessWidget {
   }
 
   Map<String, dynamic> _getExpandedJsonData() {
-    final isLog = collectionName != null && collectionName!.contains('log');
+    final isLog = collectionName == 'logs';
     if (!isLog) {
       return {'id': documentId, ...data};
     }
@@ -188,12 +187,12 @@ class DocumentCard extends StatelessWidget {
   String? _getPrimaryFieldValue() {
     // Collection-specific hints
     if (collectionName != null) {
-      if (collectionName!.contains('event')) {
+      if (collectionName == 'events') {
         return _formatEventPreview();
       }
 
       // Assignments: Show role in Hebrew (no status - it's just pending/confirmed/declined)
-      if (collectionName!.contains('assignment')) {
+      if (collectionName == 'assignments') {
         final roleType = data['roleType'] as String?;
         if (roleType != null) {
           try {
@@ -206,7 +205,7 @@ class DocumentCard extends StatelessWidget {
       }
 
       // Team members: Show name + capability count
-      if (collectionName!.contains('teamMember')) {
+      if (collectionName == 'teamMembers') {
         final name = data['name'] as String?;
         final roleCapabilities =
             data['roleCapabilities'] as Map<String, dynamic>?;
@@ -221,7 +220,7 @@ class DocumentCard extends StatelessWidget {
       }
 
       // Checklist items: Show "EventName | ItemName | ResponsibleName"
-      if (collectionName!.contains('checklist_item')) {
+      if (collectionName == 'checklist_items') {
         final name = data['name'] as String?;
         final eventId = data['eventId'] as String?;
         final responsibleId = data['responsibleId'] as String?;
@@ -258,7 +257,7 @@ class DocumentCard extends StatelessWidget {
       }
 
       // Logs: "<performerName> <actionType> <entityType> | <timestampLocalIsrael>"
-      if (collectionName!.contains('log')) {
+      if (collectionName == 'logs') {
         final actionTypeRaw = data['actionType'] as String?;
         final entityTypeRaw = data['entityType'] as String?;
         final entityName = _getLogEntityName();

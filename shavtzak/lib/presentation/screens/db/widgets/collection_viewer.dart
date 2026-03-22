@@ -49,7 +49,7 @@ class _CollectionViewerState extends State<CollectionViewer> {
       widget.collectionName == 'logs' ||
       widget.collectionName == 'events';
 
-  bool get _isLogCollection => widget.collectionName.contains('log');
+  bool get _isLogCollection => widget.collectionName == 'logs';
 
   int get _initialVisibleCount => _isLazyCollection ? _lazyPageSize : 999999;
 
@@ -85,13 +85,13 @@ class _CollectionViewerState extends State<CollectionViewer> {
   /// Get the primary field value for a document (insightful preview text)
   /// This is the same logic used in DocumentCard._getPrimaryFieldValue()
   String? _getPrimaryFieldValue(Map<String, dynamic> data) {
-    if (widget.collectionName.contains('event')) {
+    if (widget.collectionName == 'events') {
       return _formatEventPreview(data);
     }
 
     // Collection-specific hints
     // Checklist items: Show "EventName | ItemName | ResponsibleName"
-    if (widget.collectionName.contains('checklist_item')) {
+    if (widget.collectionName == 'checklist_items') {
       final name = data['name'] as String?;
       final eventId = data['eventId'] as String?;
       final responsibleId = data['responsibleId'] as String?;
@@ -128,7 +128,7 @@ class _CollectionViewerState extends State<CollectionViewer> {
     }
 
     // Assignments: Show "TeamMemberName | RoleName | EventName"
-    if (widget.collectionName.contains('assignment')) {
+    if (widget.collectionName == 'assignments') {
       final teamMemberId = data['teamMemberId'] as String?;
       final eventId = data['eventId'] as String?;
       final roleType = data['roleType'] as String?;
@@ -175,7 +175,7 @@ class _CollectionViewerState extends State<CollectionViewer> {
     }
 
     // Logs: "<performerName> <actionType> <entityType> | <timestampLocalIsrael>"
-    if (widget.collectionName.contains('log')) {
+    if (widget.collectionName == 'logs') {
       final actionTypeRaw = data['actionType'] as String?;
       final entityTypeRaw = data['entityType'] as String?;
       final entityName = _getLogEntityName(data);
@@ -190,7 +190,7 @@ class _CollectionViewerState extends State<CollectionViewer> {
     }
 
     // Team members: Show name + capability count
-    if (widget.collectionName.contains('teamMember')) {
+    if (widget.collectionName == 'teamMembers') {
       final name = data['name'] as String?;
       final roleCapabilities =
           data['roleCapabilities'] as Map<String, dynamic>?;
@@ -377,6 +377,8 @@ class _CollectionViewerState extends State<CollectionViewer> {
         return 'זמינות';
       case 'assignment':
         return 'שיבוץ';
+      case 'assignmentlabel':
+        return 'לייבל';
       case 'checklistnote':
         return 'הערת צ\'קליסט';
       case 'preset':
@@ -391,6 +393,8 @@ class _CollectionViewerState extends State<CollectionViewer> {
         return 'אירועים (פעולה קיבוצית)';
       case 'assignmentbatch':
         return 'שיבוצים (פעולה קיבוצית)';
+      case 'assignmentlabelbatch':
+        return 'לייבלים (פעולה קיבוצית)';
       case 'checklistitembatch':
         return 'פריטי צ\'קליסט (פעולה קיבוצית)';
       case 'rolebatch':
