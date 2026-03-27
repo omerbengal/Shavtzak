@@ -3,5 +3,13 @@ import 'oauth_popup_bridge_stub.dart'
 
 String getOAuthCurrentOrigin() => impl.getOAuthCurrentOrigin();
 
-Future<String?> openOAuthPopupAndWaitForCode(String authUrl) =>
-    impl.openOAuthPopupAndWaitForCode(authUrl);
+Object? prepareOAuthPopup() => impl.prepareOAuthPopup();
+
+Future<String?> openOAuthPopupAndWaitForCode(
+  String authUrl, {
+  Object? popupHandle,
+}) =>
+    impl.openOAuthPopupAndWaitForCode(
+      authUrl,
+      popupHandle: popupHandle,
+    );

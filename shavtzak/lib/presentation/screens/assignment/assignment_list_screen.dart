@@ -1644,6 +1644,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   }).toList();
             final isCreateFromSearchContext =
                 filteredLabels.isEmpty && normalizedQuery.isNotEmpty;
+            const compactTileDensity = VisualDensity(vertical: -3);
 
             return Directionality(
               textDirection: TextDirection.rtl,
@@ -1681,6 +1682,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                             children: [
                               ListTile(
                                 contentPadding: EdgeInsets.zero,
+                                dense: true,
+                                visualDensity: compactTileDensity,
                                 leading: const Icon(
                                   Icons.add_circle_outline,
                                   color: Colors.blue,
@@ -1731,6 +1734,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               if (normalizedQuery.isEmpty)
                                 ListTile(
                                   contentPadding: EdgeInsets.zero,
+                                  dense: true,
+                                  visualDensity: compactTileDensity,
                                   leading: const Icon(Icons.clear),
                                   title: const Text('ללא לייבל'),
                                   selected: selectedLabelId == null,
@@ -1746,6 +1751,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                 ...filteredLabels.map((label) {
                                   return ListTile(
                                     contentPadding: EdgeInsets.zero,
+                                    dense: true,
+                                    visualDensity: compactTileDensity,
                                     leading: Icon(
                                       Icons.label,
                                       color: _colorFromHex(label.color),

@@ -1,6 +1,9 @@
 import 'dart:async';
+// ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'dart:developer' as developer;
+
+const _oauthPopupName = 'Google OAuth';
 
 String getOAuthCurrentOrigin() {
   // Use document.baseUri so subdirectory deployments (e.g. GitHub Pages /Shavtzak/)
@@ -20,17 +23,53 @@ String getOAuthCurrentOrigin() {
   return '$origin$basePath';
 }
 
-Future<String?> openOAuthPopupAndWaitForCode(String authUrl) async {
+String _buildOAuthPopupFeatures() {
   final width = 600;
   final height = 700;
   final left = (html.window.screen!.width! - width) ~/ 2;
   final top = (html.window.screen!.height! - height) ~/ 2;
 
-  html.window.open(
-    authUrl,
-    'Google OAuth',
-    'width=$width,height=$height,left=$left,top=$top,toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes',
-  );
+  return 'width=$width,height=$height,left=$left,top=$top,toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes';
+}
+
+Object? prepareOAuthPopup() {
+  try {
+    return html.window.open(
+      '',
+      _oauthPopupName,
+      _buildOAuthPopupFeatures(),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<String?> openOAuthPopupAndWaitForCode(
+  String authUrl, {
+  Object? popupHandle,
+}) async {
+  final popupWindow =
+      popupHandle is html.WindowBase ? popupHandle : prepareOAuthPopup();
+  final authWindow =
+      popupWindow is html.WindowBase ? popupWindow : null;
+
+  if (authWindow != null) {
+    try {
+      authWindow.location.href = authUrl;
+    } catch (_) {
+      html.window.open(
+        authUrl,
+        _oauthPopupName,
+        _buildOAuthPopupFeatures(),
+      );
+    }
+  } else {
+    html.window.open(
+      authUrl,
+      _oauthPopupName,
+      _buildOAuthPopupFeatures(),
+    );
+  }
 
   final completer = Completer<String?>();
   StreamSubscription<html.MessageEvent>? messageSubscription;

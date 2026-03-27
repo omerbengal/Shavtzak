@@ -1958,35 +1958,24 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     UpdateAssignmentNotes event,
     Emitter<AssignmentState> emit,
   ) async {
-    // Store previous state BEFORE any emit
     final previousState = state;
 
     try {
-      await _repository.updateAssignmentNotes(event.id, event.notes,
-          alternativePhoneNumber: event.alternativePhoneNumber,
-          semanticLabelId: event.semanticLabelId);
+      await _repository.updateAssignmentNotes(
+        event.id,
+        event.notes,
+        alternativePhoneNumber: event.alternativePhoneNumber,
+        semanticLabelId: event.semanticLabelId,
+      );
       emit(const AssignmentOperationSuccess('פרטי השיבוץ עודכנו בהצלחה'));
       _completeActionSuccess(event.completion, 'פרטי השיבוץ עודכנו בהצלחה');
 
-      // Trigger rebuild based on current view type
-      if (previousState is AssignmentSlotsLoaded) {
-        // For slots view, trigger a rebuild with preserved filter
-        add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
-      } else if (previousState is AssignmentsLoaded) {
-        // For list view, restart listener
-        final currentState = previousState;
-        if (currentState.filterType == 'event' &&
-            currentState.filterId != null) {
-          add(LoadAssignmentsByEvent(currentState.filterId!));
-        } else if (currentState.filterType == 'person' &&
-            currentState.filterId != null) {
-          add(LoadAssignmentsByPerson(currentState.filterId!));
-        } else {
-          add(const LoadAssignments());
-        }
-      } else {
-        // Default: reload all assignments
-        add(const LoadAssignments());
+      // Keep Firestore streams as the single source of truth for note/label/phone
+      // updates. A manual rebuild here can race with the stream and re-emit stale
+      // slot data, which is exactly the behavior this screen was showing.
+      if (previousState is! AssignmentSlotsLoaded &&
+          previousState is! AssignmentsLoaded) {
+        add(const RefreshAssignments());
       }
     } catch (e) {
       final message = 'שגיאה בעדכון פרטי השיבוץ: $e';

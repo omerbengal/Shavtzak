@@ -85,6 +85,7 @@ class GoogleOAuthService {
     try {
       final origin = getOAuthCurrentOrigin();
       final redirectUri = '$origin/oauth-callback.html';
+      final popupHandle = prepareOAuthPopup();
       final startResponse = await _backendApiService.startCalendarOAuth(
         redirectUri: redirectUri,
       );
@@ -94,7 +95,10 @@ class GoogleOAuthService {
         return false;
       }
 
-      final authCode = await openOAuthPopupAndWaitForCode(authUrl);
+      final authCode = await openOAuthPopupAndWaitForCode(
+        authUrl,
+        popupHandle: popupHandle,
+      );
       if (authCode == null || authCode.isEmpty) {
         return false;
       }
