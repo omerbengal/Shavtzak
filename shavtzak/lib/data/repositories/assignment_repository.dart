@@ -348,22 +348,12 @@ class AssignmentRepository {
   /// Update assignment notes and related admin metadata
   Future<void> updateAssignmentNotes(String id, String notes,
       {String? alternativePhoneNumber, String? semanticLabelId}) async {
-    final assignment = await getAssignmentById(id);
-    if (assignment == null) {
-      throw Exception('Assignment not found: $id');
-    }
-
-    final updated = assignment.copyWith(
+    await _database.updateAssignmentMetadata(
+      id,
       notes: notes,
-      semanticLabelId: () => semanticLabelId,
-      semanticLabel: () => semanticLabelId == assignment.semanticLabelId
-          ? assignment.semanticLabel
-          : null,
-      alternativePhoneNumber: () => alternativePhoneNumber,
-      updatedAt: DateTime.now(),
+      semanticLabelId: semanticLabelId,
+      alternativePhoneNumber: alternativePhoneNumber,
     );
-
-    await _database.updateAssignment(updated);
   }
 
   /// Cache current assignments for real-time updates

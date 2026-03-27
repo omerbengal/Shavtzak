@@ -130,6 +130,14 @@ abstract class DatabaseInterface {
     bool bypassAvailability,
   });
 
+  /// Update assignment metadata without re-validating assignment eligibility
+  Future<void> updateAssignmentMetadata(
+    String assignmentId, {
+    required String notes,
+    String? semanticLabelId,
+    String? alternativePhoneNumber,
+  });
+
   /// Delete an assignment
   Future<void> deleteAssignment(String id);
 

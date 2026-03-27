@@ -987,6 +987,28 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<void> updateAssignmentMetadata(
+    String assignmentId, {
+    required String notes,
+    String? semanticLabelId,
+    String? alternativePhoneNumber,
+  }) async {
+    try {
+      await _invokeMutation(
+        'assignment.updateMetadata',
+        payload: {
+          'assignmentId': assignmentId,
+          'notes': notes,
+          'semanticLabelId': semanticLabelId,
+          'alternativePhoneNumber': alternativePhoneNumber,
+        },
+      );
+    } catch (e) {
+      throw DatabaseException('Failed to update assignment metadata: $e');
+    }
+  }
+
+  @override
   Future<void> deleteAssignment(String id) async {
     try {
       await _invokeMutation(
