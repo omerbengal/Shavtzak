@@ -3106,6 +3106,35 @@ async function validateAssignmentPayload(
   }
 }
 
+async function validateAssignmentMetadataPayload(
+  firestore: Firestore,
+  collections: Collections,
+  payload: Record<string, unknown>,
+): Promise<{
+  notes: string;
+  semanticLabelId: string | null;
+  alternativePhoneNumber: string | null;
+}> {
+  const notes = typeof payload['notes'] === 'string' ? payload['notes'] : '';
+  const semanticLabelId = normalizeOptionalText(payload['semanticLabelId']);
+
+  if (semanticLabelId != null) {
+    const semanticLabelDoc = await firestore
+      .collection(collections.assignmentLabels)
+      .doc(semanticLabelId)
+      .get();
+    if (!semanticLabelDoc.exists) {
+      throw new HttpError(400, 'סיווג השיבוץ לא נמצא');
+    }
+  }
+
+  return {
+    notes,
+    semanticLabelId,
+    alternativePhoneNumber: normalizeOptionalText(payload['alternativePhoneNumber']),
+  };
+}
+
 async function getUtilitiesListsDoc(): Promise<Record<string, unknown>> {
   const doc = await db.collection('utilities').doc('Lists').get();
   return doc.exists ? (doc.data() ?? {}) : {};
@@ -3948,6 +3977,39 @@ async function executeMutation(
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
         before: existing,
         after: nextAssignment,
+      });
+      return {ok: true};
+    }
+
+    case 'assignment.updateMetadata': {
+      requireAdmin(actor);
+      const assignmentId = requireString(payload['assignmentId'], 'assignmentId');
+      const assignmentRef = db.collection(collections.assignments).doc(assignmentId);
+      const existingDoc = await assignmentRef.get();
+      if (!existingDoc.exists) {
+        throw new HttpError(404, 'Assignment not found');
+      }
+
+      const existing = existingDoc.data() ?? {};
+      const metadata = await validateAssignmentMetadataPayload(db, collections, payload);
+      const updatedAt = Timestamp.now();
+
+      await assignmentRef.update(stripUndefined({
+        notes: metadata.notes,
+        semanticLabelId: metadata.semanticLabelId,
+        alternativePhoneNumber: metadata.alternativePhoneNumber ?? FieldValue.delete(),
+        updatedAt,
+      }));
+
+      await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
+        before: existing,
+        after: stripUndefined({
+          ...existing,
+          notes: metadata.notes,
+          semanticLabelId: metadata.semanticLabelId,
+          alternativePhoneNumber: metadata.alternativePhoneNumber,
+          updatedAt,
+        }),
       });
       return {ok: true};
     }
