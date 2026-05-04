@@ -8,6 +8,20 @@ export type DriveAction =
   | 'archiveCheck';
 
 export type DriveExportType = 'full' | 'assignments';
+export type AssignmentExportMode = 'perPerson' | 'perEvent';
+
+export type AssignmentExportOptions = {
+  assignmentMode?: AssignmentExportMode;
+  eventIds?: string[];
+  now?: Date;
+};
+
+export class DriveExportValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DriveExportValidationError';
+  }
+}
 
 type DriveConfig = {
   scriptUrl: string;
@@ -111,6 +125,50 @@ function parseDate(value: unknown): Date | null {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
   return null;
+}
+
+const israelDateKeyFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Jerusalem',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function israelCalendarDateKey(value: Date): string {
+  if (Number.isNaN(value.getTime())) return '';
+  const parts = israelDateKeyFormatter.formatToParts(value);
+  const year = parts.find((part) => part.type === 'year')?.value ?? '0000';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '00';
+  const day = parts.find((part) => part.type === 'day')?.value ?? '00';
+  return `${year}-${month}-${day}`;
+}
+
+function formatIsraelCalendarDateKey(dateKey: string): string {
+  const [year, month, day] = dateKey.split('-');
+  if (year?.length !== 4 || month?.length !== 2 || day?.length !== 2) {
+    return '';
+  }
+  return `${day}/${month}/${year}`;
+}
+
+function isFutureOrTodayByEndDate(
+  eventData: Record<string, unknown>,
+  now: Date,
+): boolean {
+  const endDate = parseDate(eventData['endDate']);
+  if (endDate == null) return false;
+  return israelCalendarDateKey(endDate) >= israelCalendarDateKey(now);
+}
+
+function filterFutureEventsData(
+  eventsData: Record<string, Record<string, unknown>>,
+  now: Date,
+): Record<string, Record<string, unknown>> {
+  return Object.fromEntries(
+    Object.entries(eventsData).filter(([, eventData]) =>
+      isFutureOrTodayByEndDate(eventData, now),
+    ),
+  );
 }
 
 function formatDate(value: unknown): string {
@@ -249,6 +307,21 @@ function buildRoleHebrewNames(listsData: Record<string, unknown>): Record<string
     roleNames[key] = asString(role['hebrewName']) || key;
   }
   return roleNames;
+}
+
+function buildRoleSortOrders(listsData: Record<string, unknown>): Record<string, number> {
+  const sortOrders: Record<string, number> = {};
+  for (const roleValue of asList(listsData['Roles'])) {
+    const role = asMap(roleValue);
+    if (role == null) continue;
+    const key = asString(role['key']);
+    if (key.length === 0) continue;
+    const sortOrder = role['sortOrder'];
+    sortOrders[key] = typeof sortOrder === 'number' && Number.isFinite(sortOrder)
+      ? sortOrder
+      : 9999;
+  }
+  return sortOrders;
 }
 
 function buildCategoryNames(listsData: Record<string, unknown>): Record<string, string> {
@@ -711,11 +784,34 @@ function serializeMetadata(counts: {
   return {sheetName: '_metadata', headers, rows};
 }
 
+type AssignmentOnlySerializeOptions = {
+  mode: AssignmentExportMode;
+  selectedEventIds: string[];
+  roleSortOrders: Record<string, number>;
+};
+
+type AssignmentOnlyRow = {
+  teamMember: string;
+  roleKey: string;
+  roleType: string;
+  eventId: string;
+  event: string;
+  eventStartDate: string;
+  eventEndDate: string;
+  eventStartDateKey: string;
+  eventStartTime: string;
+  eventEndTime: string;
+  location: string;
+  assemblyTime: string;
+  notes: string;
+};
+
 function serializeAssignmentsOnly(
   assignments: FirestoreDoc[],
   eventsData: Record<string, Record<string, unknown>>,
   memberNames: Record<string, string>,
   roleHebrewNames: Record<string, string>,
+  options: AssignmentOnlySerializeOptions,
 ): Record<string, unknown> {
   const headers = [
     'שם חבר צוות',
@@ -730,22 +826,44 @@ function serializeAssignmentsOnly(
     'הערות שיבוץ',
   ];
 
+  const dedupedSelectedEventIds = Array.from(new Set(options.selectedEventIds));
+  if (options.mode === 'perEvent') {
+    const invalidEventIds = dedupedSelectedEventIds.filter((eventId) => eventsData[eventId] == null);
+    if (invalidEventIds.length > 0) {
+      throw new DriveExportValidationError(
+        `Selected future event IDs are invalid: ${invalidEventIds.join(', ')}`,
+      );
+    }
+  }
+
+  const selectedEventIds = new Set(dedupedSelectedEventIds);
+  const shouldIncludeEvent = (eventId: string): boolean => {
+    if (options.mode === 'perPerson') return true;
+    return selectedEventIds.has(eventId);
+  };
+
   const rows = assignments
     .map((doc) => {
       const eventId = asString(doc.data['eventId']);
+      if (!shouldIncludeEvent(eventId)) return null;
       const eventData = eventsData[eventId];
       if (eventData == null) return null;
       const startDate = parseDate(eventData['startDate']);
       const endDate = parseDate(eventData['endDate']);
+      const startDateKey = startDate == null ? '' : israelCalendarDateKey(startDate);
+      const endDateKey = endDate == null ? '' : israelCalendarDateKey(endDate);
       const singleDay =
-        startDate != null && endDate != null && isSameDay(startDate, endDate);
+        startDateKey.length > 0 && endDateKey.length > 0 && startDateKey === endDateKey;
+      const roleKey = asString(doc.data['roleType']);
       return {
         teamMember: memberNames[asString(doc.data['teamMemberId'])] ?? '',
-        roleType: roleHebrewNames[asString(doc.data['roleType'])] ?? '',
+        roleKey,
+        roleType: roleHebrewNames[roleKey] ?? roleKey,
+        eventId,
         event: asString(eventData['name']),
-        eventStartDate: formatDate(eventData['startDate']),
-        eventEndDate: singleDay ? '' : formatDate(eventData['endDate']),
-        eventStartDateObj: startDate,
+        eventStartDate: formatIsraelCalendarDateKey(startDateKey),
+        eventEndDate: singleDay ? '' : formatIsraelCalendarDateKey(endDateKey),
+        eventStartDateKey: startDateKey,
         eventStartTime: asString(eventData['startTime']),
         eventEndTime: asString(eventData['endTime']),
         location: cleanLocation(eventData['location']),
@@ -756,39 +874,41 @@ function serializeAssignmentsOnly(
     .filter(
       (
         value,
-      ): value is {
-        teamMember: string;
-        roleType: string;
-        event: string;
-        eventStartDate: string;
-        eventEndDate: string;
-        eventStartDateObj: Date | null;
-        eventStartTime: string;
-        eventEndTime: string;
-        location: string;
-        assemblyTime: string;
-        notes: string;
-      } => value != null,
+      ): value is AssignmentOnlyRow => value != null,
     );
 
   rows.sort((first, second) => {
-    const memberCompare = first.teamMember.localeCompare(second.teamMember);
-    if (memberCompare !== 0) return memberCompare;
+    const dateCompare = compareDateKeys(first.eventStartDateKey, second.eventStartDateKey);
 
-    if (first.eventStartDateObj != null && second.eventStartDateObj != null) {
-      const dateCompare =
-        first.eventStartDateObj.getTime() - second.eventStartDateObj.getTime();
+    if (options.mode === 'perPerson') {
+      const memberCompare = first.teamMember.localeCompare(second.teamMember);
+      if (memberCompare !== 0) return memberCompare;
+
       if (dateCompare !== 0) return dateCompare;
-    } else if (first.eventStartDateObj != null) {
-      return -1;
-    } else if (second.eventStartDateObj != null) {
-      return 1;
+
+      const timeCompare = first.eventStartTime.localeCompare(second.eventStartTime);
+      if (timeCompare !== 0) return timeCompare;
+
+      return first.roleType.localeCompare(second.roleType);
     }
+
+    if (dateCompare !== 0) return dateCompare;
 
     const timeCompare = first.eventStartTime.localeCompare(second.eventStartTime);
     if (timeCompare !== 0) return timeCompare;
 
-    return first.roleType.localeCompare(second.roleType);
+    const eventCompare = first.event.localeCompare(second.event);
+    if (eventCompare !== 0) return eventCompare;
+
+    const roleOrderCompare =
+      (options.roleSortOrders[first.roleKey] ?? 9999) -
+      (options.roleSortOrders[second.roleKey] ?? 9999);
+    if (roleOrderCompare !== 0) return roleOrderCompare;
+
+    const roleCompare = first.roleType.localeCompare(second.roleType);
+    if (roleCompare !== 0) return roleCompare;
+
+    return first.teamMember.localeCompare(second.teamMember);
   });
 
   return {
@@ -806,8 +926,21 @@ function serializeAssignmentsOnly(
       row.location,
       row.notes,
     ]),
-    colorByTeamMember: true,
+    colorByTeamMember: options.mode === 'perPerson',
   };
+}
+
+function compareDateKeys(first: string, second: string): number {
+  if (first.length > 0 && second.length > 0) {
+    return first.localeCompare(second);
+  }
+  if (first.length > 0) {
+    return -1;
+  }
+  if (second.length > 0) {
+    return 1;
+  }
+  return 0;
 }
 
 async function readCollection(
@@ -932,6 +1065,7 @@ export async function executeDriveAction(
 export async function exportProductionDataToSheets(
   firestore: Firestore,
   exportType: DriveExportType,
+  options: AssignmentExportOptions = {},
 ): Promise<Record<string, unknown>> {
   const driveConfig = await getDriveConfig(firestore);
 
@@ -945,9 +1079,15 @@ export async function exportProductionDataToSheets(
 
     const memberNames = buildMemberNames(teamMembers);
     const eventsData = buildEventsData(events);
+    const futureEventsData = filterFutureEventsData(eventsData, options.now ?? new Date());
     const roleHebrewNames = buildRoleHebrewNames(listsData);
+    const roleSortOrders = buildRoleSortOrders(listsData);
     const sheets = [
-      serializeAssignmentsOnly(assignments, eventsData, memberNames, roleHebrewNames),
+      serializeAssignmentsOnly(assignments, futureEventsData, memberNames, roleHebrewNames, {
+        mode: options.assignmentMode ?? 'perPerson',
+        selectedEventIds: options.eventIds ?? [],
+        roleSortOrders,
+      }),
     ];
 
     const response = await postToDriveScript(driveConfig, {
@@ -1033,4 +1173,28 @@ export function canExecuteDriveAction(action: string): action is DriveAction {
     'listFiles',
     'archiveCheck',
   ].includes(action);
+}
+
+export function __testSerializeAssignmentsOnly(input: {
+  assignments: FirestoreDoc[];
+  eventsData: Record<string, Record<string, unknown>>;
+  memberNames: Record<string, string>;
+  roleHebrewNames: Record<string, string>;
+  roleSortOrders: Record<string, number>;
+  mode: AssignmentExportMode;
+  selectedEventIds: string[];
+  now: Date;
+}): {sheetName: string; headers: string[]; rows: unknown[][]} {
+  const futureEventsData = filterFutureEventsData(input.eventsData, input.now);
+  return serializeAssignmentsOnly(
+    input.assignments,
+    futureEventsData,
+    input.memberNames,
+    input.roleHebrewNames,
+    {
+      mode: input.mode,
+      selectedEventIds: input.selectedEventIds,
+      roleSortOrders: input.roleSortOrders,
+    },
+  ) as {sheetName: string; headers: string[]; rows: unknown[][]};
 }

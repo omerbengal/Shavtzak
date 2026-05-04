@@ -19,6 +19,7 @@ import '../../../core/services/user_cache_service.dart';
 import '../../../core/services/google_oauth_service.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
+import '../../widgets/assignment_export_dialog.dart';
 import '../../widgets/shamap_export_dialog.dart';
 import '../../widgets/settings_dialog.dart';
 import '../../widgets/constraints_examining_dialog.dart';
@@ -632,27 +633,14 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            title: const Text('ייצוא שיבוצים'),
-            content: const Text(
-              'ייצוא רשימת שיבוצים בלבד לגיליון Google Sheets חדש.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('ביטול'),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(dialogContext).pop();
-                  _performExport(context, isFullExport: false);
-                },
-                child: const Text('ייצוא'),
-              ),
-            ],
-          ),
+        return AssignmentExportDialog(
+          onExport: (mode, eventIds) async {
+            await _performAssignmentsExport(
+              context,
+              mode: mode,
+              eventIds: eventIds,
+            );
+          },
         );
       },
     );
@@ -693,6 +681,53 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
     // Show result dialog
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
+    if (result.success && result.spreadsheetUrl != null) {
+      _showExportSuccessDialog(context, result.spreadsheetUrl!);
+    } else {
+      _showExportErrorDialog(context, result.error ?? 'שגיאה לא ידועה');
+    }
+  }
+
+  Future<void> _performAssignmentsExport(
+    BuildContext context, {
+    required AssignmentExportMode mode,
+    required List<String> eventIds,
+  }) async {
+    if (!context.mounted) return;
+
+    final navigator = Navigator.of(context, rootNavigator: true);
+    var isLoadingDialogOpen = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext ctx) {
+        return const Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('מייצא שיבוצים...'),
+              ],
+            ),
+          ),
+        );
+      },
+    ).then((_) => isLoadingDialogOpen = false);
+
+    final result = await ExportService().exportAssignmentsOnly(
+      mode: mode,
+      eventIds: eventIds,
+    );
+
+    if (isLoadingDialogOpen && navigator.mounted) {
+      navigator.pop();
+    }
+
+    if (!context.mounted) return;
     if (result.success && result.spreadsheetUrl != null) {
       _showExportSuccessDialog(context, result.spreadsheetUrl!);
     } else {

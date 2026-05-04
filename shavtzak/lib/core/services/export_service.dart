@@ -14,6 +14,15 @@ class ExportResult {
   });
 }
 
+enum AssignmentExportMode {
+  perPerson('perPerson'),
+  perEvent('perEvent');
+
+  const AssignmentExportMode(this.apiValue);
+
+  final String apiValue;
+}
+
 /// Exports production data through backend Cloud Functions so the browser never
 /// reads or forwards the Google Drive API key.
 class ExportService {
@@ -26,15 +35,30 @@ class ExportService {
     return _runExport('full');
   }
 
-  Future<ExportResult> exportAssignmentsOnly() async {
-    return _runExport('assignments');
+  Future<ExportResult> exportAssignmentsOnly({
+    AssignmentExportMode mode = AssignmentExportMode.perPerson,
+    List<String> eventIds = const [],
+  }) async {
+    return _runExport(
+      'assignments',
+      mode: mode,
+      eventIds: eventIds,
+    );
   }
 
-  Future<ExportResult> _runExport(String type) async {
+  Future<ExportResult> _runExport(
+    String type, {
+    AssignmentExportMode? mode,
+    List<String> eventIds = const [],
+  }) async {
     try {
       final response = await _backendApiService.post(
         'drive/export',
-        body: {'type': type},
+        body: {
+          'type': type,
+          if (mode != null) 'mode': mode.apiValue,
+          if (eventIds.isNotEmpty) 'eventIds': eventIds,
+        },
         requireAuth: true,
       );
 

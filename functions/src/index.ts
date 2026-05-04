@@ -12,6 +12,7 @@ import {
 import {onRequest} from 'firebase-functions/v2/https';
 import {
   canExecuteDriveAction,
+  DriveExportValidationError,
   executeDriveAction,
   exportProductionDataToSheets,
 } from './drive_export';
@@ -5360,7 +5361,27 @@ app.post('/drive/export', async (request: Request, response: Response) => {
     requireAdmin(actor);
 
     const type = request.body?.type === 'assignments' ? 'assignments' : 'full';
-    const result = await exportProductionDataToSheets(db, type);
+    const rawMode = request.body?.mode;
+    if (rawMode != null && rawMode !== 'perPerson' && rawMode !== 'perEvent') {
+      throw new HttpError(400, `Unsupported assignment export mode: ${String(rawMode)}`);
+    }
+    const assignmentMode = rawMode === 'perEvent' ? 'perEvent' : 'perPerson';
+    const rawEventIds = request.body?.eventIds;
+    const eventIds = Array.isArray(rawEventIds)
+      ? rawEventIds
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      : [];
+
+    if (type === 'assignments' && assignmentMode === 'perEvent' && eventIds.length === 0) {
+      throw new HttpError(400, 'Select at least one future event to export');
+    }
+
+    const result = await exportProductionDataToSheets(db, type, {
+      assignmentMode,
+      eventIds,
+    });
     response.json(result);
   } catch (error) {
     handleError(response, error);
@@ -5387,6 +5408,14 @@ app.post('/mutate', async (request: Request, response: Response) => {
 });
 
 function handleError(response: Response, error: unknown): void {
+  if (error instanceof DriveExportValidationError) {
+    response.status(400).json({
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
   if (error instanceof HttpError) {
     response.status(error.status).json({
       ok: false,
