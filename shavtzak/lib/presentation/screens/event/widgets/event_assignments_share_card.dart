@@ -102,7 +102,52 @@ class _Header extends StatelessWidget {
               ),
             ),
           ),
+        if (data.eventNoteLine.trim().isNotEmpty) ...[
+          const SizedBox(height: 4),
+          _EventNote(note: data.eventNoteLine),
+        ],
       ],
+    );
+  }
+}
+
+class _EventNote extends StatelessWidget {
+  final String note;
+
+  const _EventNote({required this.note});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.amber.shade200),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            size: 22,
+            color: Colors.amber.shade700,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              note,
+              style: TextStyle(
+                color: Colors.amber.shade900,
+                fontSize: 19,
+                fontStyle: FontStyle.italic,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -217,18 +262,18 @@ class _NotesSection extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        border: Border.all(color: const Color(0xFFFDE68A)),
+        color: Colors.purple.shade50,
+        border: Border.all(color: Colors.purple.shade200),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'הערות',
             style: TextStyle(
-              color: Color(0xFF78350F),
+              color: Colors.purple.shade800,
               fontSize: 21,
               fontWeight: FontWeight.w800,
               height: 1.25,
@@ -243,13 +288,16 @@ class _NotesSection extends StatelessWidget {
                   children: [
                     TextSpan(
                       text: '(${note.number}) ${note.memberName}: ',
-                      style: const TextStyle(fontWeight: FontWeight.w800),
+                      style: TextStyle(
+                        color: Colors.purple.shade800,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                     TextSpan(text: note.text),
                   ],
                 ),
-                style: const TextStyle(
-                  color: Color(0xFF1F2937),
+                style: TextStyle(
+                  color: Colors.purple.shade900,
                   fontSize: 19,
                   fontWeight: FontWeight.w500,
                   height: 1.45,

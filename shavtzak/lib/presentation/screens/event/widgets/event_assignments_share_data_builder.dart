@@ -57,7 +57,8 @@ class EventAssignmentsShareDataBuilder {
       eventName: event.name,
       dateLine: _formatEventDatesHebrew(event),
       timeLine: _formatTimeFields(event),
-      locationLine: _formatLocationForDisplay(event.location),
+      locationLine: _formatLocationLine(event.location),
+      eventNoteLine: event.comments.trim(),
       sections: sections,
       notes: notes,
     );
@@ -271,7 +272,7 @@ class EventAssignmentsShareDataBuilder {
       parts.add('התייצבות - ${event.assemblyTime}');
     }
     if (event.startTime.isNotEmpty) {
-      parts.add('התכנסות - ${event.startTime}');
+      parts.add('התכנסות קהל - ${event.startTime}');
     }
     if (event.actualShowStartTime.isNotEmpty) {
       parts.add('תחילת מופע - ${event.actualShowStartTime}');
@@ -314,6 +315,14 @@ class EventAssignmentsShareDataBuilder {
       'דצמבר',
     ];
     return months[month];
+  }
+
+  static String _formatLocationLine(String location) {
+    final displayLocation = _formatLocationForDisplay(location).trim();
+    if (displayLocation.isEmpty) {
+      return '';
+    }
+    return 'מיקום: $displayLocation';
   }
 
   static String _formatLocationForDisplay(String location) {

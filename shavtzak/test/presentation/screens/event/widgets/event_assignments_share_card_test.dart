@@ -10,7 +10,8 @@ void main() {
       eventName: 'טקס פתיחה',
       dateLine: 'יום שני 4 במאי',
       timeLine: 'התייצבות - 17:00 | תחילת מופע - 19:30',
-      locationLine: 'היכל התרבות',
+      locationLine: 'מיקום: היכל התרבות',
+      eventNoteLine: 'נא להביא חולצות ייצוגיות.',
       sections: const [
         EventAssignmentsShareSection(
           title: 'מפקד אירוע',
@@ -32,7 +33,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: EventAssignmentsShareCard(data: data),
+          body: SingleChildScrollView(
+            child: EventAssignmentsShareCard(data: data),
+          ),
         ),
       ),
     );
@@ -40,7 +43,8 @@ void main() {
     expect(find.text('טקס פתיחה'), findsOneWidget);
     expect(find.text('יום שני 4 במאי'), findsOneWidget);
     expect(find.text('התייצבות - 17:00 | תחילת מופע - 19:30'), findsOneWidget);
-    expect(find.text('היכל התרבות'), findsOneWidget);
+    expect(find.text('מיקום: היכל התרבות'), findsOneWidget);
+    expect(find.text('נא להביא חולצות ייצוגיות.'), findsOneWidget);
     expect(find.text('מפקד אירוע'), findsOneWidget);
     expect(find.text('נועה כהן'), findsOneWidget);
     expect(find.text('(1)'), findsOneWidget);
@@ -54,5 +58,12 @@ void main() {
     expect(find.textContaining('טלפון'), findsNothing);
     expect(find.textContaining('ממתין'), findsNothing);
     expect(find.textContaining('נדחה'), findsNothing);
+
+    final eventNoteText =
+        tester.widget<Text>(find.text('נא להביא חולצות ייצוגיות.'));
+    expect(eventNoteText.style?.color, Colors.amber.shade900);
+
+    final notesTitle = tester.widget<Text>(find.text('הערות'));
+    expect(notesTitle.style?.color, Colors.purple.shade800);
   });
 }

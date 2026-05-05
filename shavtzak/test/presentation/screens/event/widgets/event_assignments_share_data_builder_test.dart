@@ -54,8 +54,9 @@ void main() {
       expect(data.eventName, 'טקס פתיחה');
       expect(data.dateLine, 'יום שני 4 במאי');
       expect(data.timeLine,
-          'התייצבות - 17:00 | התכנסות - 18:00 | תחילת מופע - 19:30 | סיום - 22:00');
-      expect(data.locationLine, 'היכל התרבות');
+          'התייצבות - 17:00 | התכנסות קהל - 18:00 | תחילת מופע - 19:30 | סיום - 22:00');
+      expect(data.locationLine, 'מיקום: היכל התרבות');
+      expect(data.eventNoteLine, 'נא להביא חולצות ייצוגיות.');
       expect(data.sections.map((section) => section.title),
           ['מפקד אירוע', 'חובשים']);
       expect(data.sections[0].rows.single.memberName, 'נועה כהן');
@@ -130,6 +131,7 @@ Event _event(DateTime now) {
     assemblyTime: '17:00',
     actualShowStartTime: '19:30',
     location: 'היכל התרבות||32.1,34.8',
+    comments: ' נא להביא חולצות ייצוגיות. ',
     requiresArmed: false,
     roleRequirements: const {'commander': 1, 'medic': 2},
     createdAt: now,
