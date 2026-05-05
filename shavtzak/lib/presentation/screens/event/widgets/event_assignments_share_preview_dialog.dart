@@ -34,13 +34,16 @@ class _EventAssignmentsSharePreviewDialogState
     super.initState();
     if (widget.autoStartShare) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
         _shareImage();
       });
     }
   }
 
   Future<void> _shareImage() async {
-    if (_isSharing) {
+    if (!mounted || _isSharing) {
       return;
     }
 
@@ -60,7 +63,7 @@ class _EventAssignmentsSharePreviewDialogState
         throw StateError('Share card is not ready for capture');
       }
 
-      final image = await renderObject.toImage(pixelRatio: 2.5);
+      final image = await renderObject.toImage(pixelRatio: 1.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
 
