@@ -67,5 +67,13 @@ void main() {
     expect(notesTitle.style?.color, Colors.purple.shade800);
 
     expect(find.byType(Divider), findsOneWidget);
+
+    final roleTitle = tester.widget<Text>(find.text('מפקד אירוע'));
+    expect(roleTitle.style?.fontWeight, FontWeight.w800);
+
+    final memberName = tester.widget<Text>(find.text('נועה כהן'));
+    expect(memberName.style?.fontWeight, FontWeight.w400);
+
+    expect(find.text('•'), findsNWidgets(2));
   });
 }

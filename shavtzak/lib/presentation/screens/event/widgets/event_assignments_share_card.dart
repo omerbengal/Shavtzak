@@ -223,10 +223,20 @@ class _ShareRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 300),
+      constraints: const BoxConstraints(maxWidth: 320),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          const Text(
+            '•',
+            style: TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(width: 8),
           Flexible(
             child: Text(
               row.memberName,
@@ -235,7 +245,7 @@ class _ShareRow extends StatelessWidget {
               style: const TextStyle(
                 color: Color(0xFF111827),
                 fontSize: 21,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w400,
                 height: 1.25,
               ),
             ),
