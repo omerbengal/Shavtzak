@@ -4,39 +4,57 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/assignment_label.dart';
+import '../../../../domain/entities/event.dart';
 import '../../../../data/repositories/assignment_repository.dart';
 import '../../../../domain/entities/role.dart';
 import '../../../../data/repositories/assignment_label_repository.dart';
+import '../../../../data/repositories/role_repository.dart';
 import '../../../bloc/assignment/assignment_bloc.dart';
 import '../../../bloc/assignment/assignment_event.dart';
 import '../../../bloc/assignment/assignment_state.dart';
 import '../../../bloc/role/role_bloc.dart';
 import '../../../bloc/role/role_state.dart';
 import '../../../widgets/assignment_label_chip.dart';
+import 'event_assignments_share_data_builder.dart';
+import 'event_assignments_share_models.dart';
+import 'event_assignments_share_preview_dialog.dart';
 
 /// Dialog showing all assignments for an event.
 /// Default mode groups by role. Optional label mode groups by labels first,
 /// then by roles inside each label section.
 class EventAssignmentsDialog extends StatefulWidget {
-  final String eventId;
-  final String eventName;
+  final Event? event;
+  final String? eventId;
+  final String? eventName;
   final List<Assignment>? assignments; // Optional: if provided, skip loading
 
   const EventAssignmentsDialog({
     super.key,
-    required this.eventId,
-    required this.eventName,
+    this.event,
+    this.eventId,
+    this.eventName,
     this.assignments,
-  });
+  }) : assert(
+          event != null || (eventId != null && eventName != null),
+          'event or eventId/eventName must be provided',
+        );
 
   /// Constructor that accepts pre-loaded assignments (doesn't trigger BLoC event)
   const EventAssignmentsDialog.withAssignments({
     super.key,
-    required this.eventId,
-    required this.eventName,
+    this.event,
+    this.eventId,
+    this.eventName,
     required this.assignments,
-  }) : assert(assignments != null,
-            'assignments cannot be null in withAssignments constructor');
+  })  : assert(assignments != null,
+            'assignments cannot be null in withAssignments constructor'),
+        assert(
+          event != null || (eventId != null && eventName != null),
+          'event or eventId/eventName must be provided',
+        );
+
+  String get resolvedEventId => event?.id ?? eventId!;
+  String get resolvedEventName => event?.name ?? eventName!;
 
   @override
   State<EventAssignmentsDialog> createState() => _EventAssignmentsDialogState();
@@ -44,8 +62,11 @@ class EventAssignmentsDialog extends StatefulWidget {
 
 class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
   List<Assignment>? _cachedAssignments;
+  List<Assignment> _latestAssignments = const [];
+  List<AssignmentLabel> _latestLabels = const [];
   bool _useCache = false;
   bool _sortByLabel = false;
+  bool _isPreparingShare = false;
 
   @override
   void initState() {
@@ -53,12 +74,13 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
     // Only load assignments if not provided
     if (widget.assignments != null) {
       _cachedAssignments = widget.assignments!;
+      _latestAssignments = _cachedAssignments!;
       _useCache = true;
     } else {
       // Load assignments for this event
       context
           .read<AssignmentBloc>()
-          .add(LoadAssignmentsByEvent(widget.eventId));
+          .add(LoadAssignmentsByEvent(widget.resolvedEventId));
     }
   }
 
@@ -82,12 +104,25 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                 children: [
                   Expanded(
                     child: Text(
-                      'שיבוצים ל${widget.eventName}',
+                      'שיבוצים ל${widget.resolvedEventName}',
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                  ),
+                  IconButton(
+                    icon: _isPreparingShare
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.ios_share),
+                    tooltip: 'שתף תמונת שיבוצים',
+                    onPressed: _isPreparingShare || widget.event == null
+                        ? null
+                        : _openSharePreviewDialog,
                   ),
                   IconButton(
                     icon: const Icon(Icons.close),
@@ -126,12 +161,14 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                   builder: (context, labelSnapshot) {
                     final labels =
                         labelSnapshot.data ?? const <AssignmentLabel>[];
+                    _latestLabels = labels;
 
                     return _useCache
                         ? StreamBuilder<List<Assignment>>(
                             stream: context
                                 .read<AssignmentRepository>()
-                                .watchAssignmentsByEvent(widget.eventId),
+                                .watchAssignmentsByEvent(
+                                    widget.resolvedEventId),
                             initialData: _cachedAssignments,
                             builder: (context, assignmentSnapshot) {
                               final assignments = _applyAssignmentLabels(
@@ -140,6 +177,7 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                                         const <Assignment>[]),
                                 labels,
                               );
+                              _latestAssignments = assignments;
                               if (assignments.isEmpty) {
                                 return Center(
                                   child: Text(
@@ -171,6 +209,7 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                                   state.assignments,
                                   labels,
                                 );
+                                _latestAssignments = assignments;
                                 if (assignments.isEmpty) {
                                   return Center(
                                     child: Text(
@@ -206,6 +245,80 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
         ),
       ),
     );
+  }
+
+  Future<void> _openSharePreviewDialog() async {
+    if (_isPreparingShare || _latestAssignments.isEmpty) {
+      return;
+    }
+
+    final assignmentRepository = context.read<AssignmentRepository>();
+    final labelRepository = context.read<AssignmentLabelRepository>();
+    final roleRepository = context.read<RoleRepository>();
+    final loadedRoleState = context.read<RoleBloc>().state;
+
+    setState(() {
+      _isPreparingShare = true;
+    });
+
+    try {
+      final freshAssignments = await assignmentRepository.getAssignmentsByEvent(
+        widget.resolvedEventId,
+      );
+      if (!mounted) {
+        return;
+      }
+
+      if (freshAssignments.isEmpty) {
+        return;
+      }
+
+      final labels = await labelRepository.getAssignmentLabels();
+      if (!mounted) {
+        return;
+      }
+
+      final activeRoles = loadedRoleState is RolesLoaded
+          ? loadedRoleState.activeRoles
+          : await roleRepository.getActiveRoles();
+      if (!mounted) {
+        return;
+      }
+
+      final sortedActiveRoles = List<Role>.from(activeRoles)
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      final data = EventAssignmentsShareDataBuilder.build(
+        event: widget.event!,
+        assignments: freshAssignments,
+        activeRoles: sortedActiveRoles,
+        labels: labels.isNotEmpty ? labels : _latestLabels,
+        groupingMode: _sortByLabel
+            ? EventAssignmentsGroupingMode.label
+            : EventAssignmentsGroupingMode.role,
+      );
+
+      if (!mounted || data.sections.isEmpty) {
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) => EventAssignmentsSharePreviewDialog(data: data),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('לא ניתן להכין תמונת שיבוצים')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPreparingShare = false;
+        });
+      }
+    }
   }
 
   List<Assignment> _applyAssignmentLabels(
@@ -548,7 +661,8 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
     return sortedAssignments;
   }
 
-  List<Assignment> _sortAssignmentsAlphabetically(List<Assignment> assignments) {
+  List<Assignment> _sortAssignmentsAlphabetically(
+      List<Assignment> assignments) {
     final sortedAssignments = List<Assignment>.from(assignments);
     sortedAssignments.sort((a, b) {
       final aName = a.teamMember?.name ?? '';

@@ -101,8 +101,7 @@ class EventSummaryTile extends StatelessWidget {
                 showDialog(
                   context: context,
                   builder: (context) => EventAssignmentsDialog.withAssignments(
-                    eventId: data.event.id,
-                    eventName: data.event.name,
+                    event: data.event,
                     assignments: eventAssignments,
                   ),
                 );
