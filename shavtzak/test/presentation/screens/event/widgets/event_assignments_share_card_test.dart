@@ -65,5 +65,7 @@ void main() {
 
     final notesTitle = tester.widget<Text>(find.text('הערות'));
     expect(notesTitle.style?.color, Colors.purple.shade800);
+
+    expect(find.byType(Divider), findsOneWidget);
   });
 }

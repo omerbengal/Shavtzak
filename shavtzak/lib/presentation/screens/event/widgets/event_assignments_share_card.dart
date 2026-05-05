@@ -183,8 +183,17 @@ class _ShareSection extends StatelessWidget {
               height: 1.25,
             ),
           ),
-          if (section.rows.isNotEmpty) ...[
+          if (section.rows.isNotEmpty || section.hasChildren) ...[
             const SizedBox(height: 10),
+            Divider(
+              height: 1,
+              thickness: 1,
+              color:
+                  isChild ? const Color(0xFFE2E8F0) : const Color(0xFFCBD5E1),
+            ),
+          ],
+          if (section.rows.isNotEmpty) ...[
+            const SizedBox(height: 14),
             Wrap(
               spacing: 12,
               runSpacing: 8,
@@ -194,7 +203,7 @@ class _ShareSection extends StatelessWidget {
             ),
           ],
           if (section.hasChildren) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             for (final child in section.children) ...[
               _ShareSection(section: child, isChild: true),
               const SizedBox(height: 12),
