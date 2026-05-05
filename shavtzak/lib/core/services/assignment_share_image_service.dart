@@ -23,4 +23,10 @@ class AssignmentShareImageService {
       text: text,
     );
   }
+
+  Future<AssignmentShareImageResult> copyPng({
+    required Uint8List pngBytes,
+  }) {
+    return platform.copyAssignmentPng(pngBytes: pngBytes);
+  }
 }

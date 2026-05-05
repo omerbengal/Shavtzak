@@ -25,6 +25,14 @@ Future<AssignmentShareImageResult> shareAssignmentPng({
     return AssignmentShareImageResult.shared;
   }
 
+  return AssignmentShareImageResult.needsManualScreenshot;
+}
+
+Future<AssignmentShareImageResult> copyAssignmentPng({
+  required Uint8List pngBytes,
+}) async {
+  final blob = _createPngBlob(pngBytes);
+
   if (await _tryClipboardWrite(blob)) {
     return AssignmentShareImageResult.copiedImage;
   }

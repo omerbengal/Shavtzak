@@ -10,3 +10,9 @@ Future<AssignmentShareImageResult> shareAssignmentPng({
 }) async {
   return AssignmentShareImageResult.needsManualScreenshot;
 }
+
+Future<AssignmentShareImageResult> copyAssignmentPng({
+  required Uint8List pngBytes,
+}) async {
+  return AssignmentShareImageResult.needsManualScreenshot;
+}
