@@ -1,0 +1,413 @@
+<style>
+  .phone-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    align-items: start;
+  }
+  @media (max-width: 960px) {
+    .phone-grid { grid-template-columns: 1fr; }
+  }
+  .phone-option {
+    border: 2px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 14px;
+    background: #fff;
+    cursor: pointer;
+    transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+  }
+  .phone-option:hover {
+    border-color: #2563eb;
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.12);
+    transform: translateY(-1px);
+  }
+  .phone-option.selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.13);
+  }
+  .phone-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .letter-pill {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #2563eb;
+    color: white;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+  }
+  .phone-shell {
+    width: 260px;
+    max-width: 100%;
+    margin: 0 auto 14px;
+    border: 10px solid #111827;
+    border-radius: 28px;
+    overflow: hidden;
+    background: #f8fafc;
+    direction: rtl;
+    font-family: Rubik, Arial, sans-serif;
+    color: #111827;
+  }
+  .phone-top {
+    background: #f1f5f9;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 9px 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tiny-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+  }
+  .phone-title {
+    flex: 1;
+    font-weight: 700;
+    font-size: 12px;
+    line-height: 1.25;
+  }
+  .segmented {
+    display: flex;
+    margin: 9px;
+    padding: 3px;
+    background: #e2e8f0;
+    border-radius: 10px;
+    gap: 3px;
+  }
+  .segmented span {
+    flex: 1;
+    text-align: center;
+    font-size: 10px;
+    padding: 5px 2px;
+    border-radius: 8px;
+  }
+  .segmented .active {
+    background: white;
+    font-weight: 700;
+  }
+  .scroll-list {
+    height: 360px;
+    overflow: hidden;
+    padding: 8px;
+  }
+  .role-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 9px;
+    margin-bottom: 8px;
+  }
+  .role-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    color: #1d4ed8;
+    font-size: 12px;
+    margin-bottom: 7px;
+  }
+  .count {
+    margin-right: auto;
+    background: #dbeafe;
+    color: #1d4ed8;
+    border-radius: 99px;
+    padding: 1px 6px;
+    font-size: 10px;
+  }
+  .member-row {
+    font-size: 12px;
+    padding: 4px 0;
+    display: flex;
+    gap: 4px;
+  }
+  .member-row .note {
+    color: #7e22ce;
+    font-size: 10px;
+    margin-right: 3px;
+  }
+  .capture-card {
+    margin: 9px;
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 9px;
+  }
+  .capture-head {
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 6px;
+    margin-bottom: 7px;
+    text-align: center;
+  }
+  .capture-title {
+    font-weight: 800;
+    font-size: 13px;
+  }
+  .capture-meta {
+    font-size: 10px;
+    color: #475569;
+    margin-top: 2px;
+  }
+  .dense-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px 8px;
+  }
+  .dense-group {
+    break-inside: avoid;
+  }
+  .dense-group-title {
+    font-size: 10px;
+    font-weight: 800;
+    color: #0f766e;
+    border-bottom: 1px solid #99f6e4;
+    margin-bottom: 2px;
+  }
+  .dense-name {
+    font-size: 9px;
+    line-height: 1.32;
+    white-space: nowrap;
+  }
+  .action-bar {
+    display: flex;
+    gap: 6px;
+    padding: 9px;
+    border-top: 1px solid #e2e8f0;
+  }
+  .primary-action {
+    flex: 1;
+    background: #16a34a;
+    color: white;
+    font-size: 11px;
+    border-radius: 8px;
+    text-align: center;
+    padding: 7px 4px;
+    font-weight: 700;
+  }
+  .secondary-action {
+    width: 34px;
+    background: #e2e8f0;
+    border-radius: 8px;
+    text-align: center;
+    padding: 7px 0;
+  }
+  .share-sheet {
+    background: #f8fafc;
+    padding: 10px;
+  }
+  .share-preview {
+    height: 230px;
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 8px;
+    box-shadow: 0 5px 16px rgba(15, 23, 42, 0.11);
+  }
+  .share-preview .capture-head { margin-bottom: 5px; }
+  .share-list {
+    margin-top: 10px;
+    background: white;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+  }
+  .share-target {
+    padding: 9px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .share-target:last-child { border-bottom: 0; }
+  .wa-dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #22c55e;
+  }
+  .fallback-copy {
+    padding: 9px;
+  }
+  .text-box {
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 9px;
+    height: 260px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10px;
+    line-height: 1.4;
+    white-space: pre-line;
+  }
+  .tradeoff {
+    font-size: 13px;
+    color: #475569;
+    line-height: 1.45;
+    margin-top: 8px;
+  }
+</style>
+
+<h2>How should this event assignments dialog support WhatsApp sharing?</h2>
+<p class="subtitle">Click the direction that feels closest. These are product approaches, not final visual polish.</p>
+
+<div class="phone-grid">
+  <div class="phone-option" data-choice="compact-dialog" onclick="toggleSelect(this)">
+    <div class="phone-label">
+      <span class="letter-pill">A</span>
+      <strong>Compact dialog only</strong>
+    </div>
+    <div class="phone-shell">
+      <div class="phone-top">
+        <div class="phone-title">שיבוצים לאירוע טקס פתיחה</div>
+        <div class="tiny-icon">×</div>
+      </div>
+      <div class="segmented">
+        <span class="active">תפקידים</span>
+        <span>לייבלים</span>
+      </div>
+      <div class="scroll-list">
+        <div class="role-card">
+          <div class="role-head">תג מפקד אירוע <span class="count">2</span></div>
+          <div class="member-row">👤 נועה כהן <span class="note">הערה</span></div>
+          <div class="member-row">👤 דניאל לוי</div>
+        </div>
+        <div class="role-card">
+          <div class="role-head">תג חובשים <span class="count">4</span></div>
+          <div class="member-row">👤 אורי ברק</div>
+          <div class="member-row">👤 מיכל ישראלי</div>
+          <div class="member-row">👤 רוני תמר</div>
+          <div class="member-row">👤 יעל שחר</div>
+        </div>
+        <div class="role-card">
+          <div class="role-head">תג הפקה פנימית <span class="count">5</span></div>
+          <div class="member-row">👤 עמית צור</div>
+          <div class="member-row">👤 שירה דיין</div>
+          <div class="member-row">👤 עומר גל</div>
+          <div class="member-row">👤 תמר סיני</div>
+        </div>
+      </div>
+    </div>
+    <p class="tradeoff">Lowest complexity. Still depends on a human screenshot, and long events can still overflow unless we remove detail aggressively.</p>
+  </div>
+
+  <div class="phone-option" data-choice="share-image" onclick="toggleSelect(this)">
+    <div class="phone-label">
+      <span class="letter-pill">B</span>
+      <strong>Dedicated share image</strong>
+    </div>
+    <div class="phone-shell">
+      <div class="phone-top">
+        <div class="phone-title">שיבוצים לאירוע טקס פתיחה</div>
+        <div class="tiny-icon">↗</div>
+        <div class="tiny-icon">×</div>
+      </div>
+      <div class="capture-card">
+        <div class="capture-head">
+          <div class="capture-title">טקס פתיחה</div>
+          <div class="capture-meta">יום ג׳ 12.5 · 24 שיבוצים</div>
+        </div>
+        <div class="dense-grid">
+          <div class="dense-group">
+            <div class="dense-group-title">מפקד אירוע</div>
+            <div class="dense-name">נועה כהן</div>
+            <div class="dense-name">דניאל לוי</div>
+          </div>
+          <div class="dense-group">
+            <div class="dense-group-title">חובשים</div>
+            <div class="dense-name">אורי ברק</div>
+            <div class="dense-name">מיכל ישראלי</div>
+            <div class="dense-name">רוני תמר</div>
+            <div class="dense-name">יעל שחר</div>
+          </div>
+          <div class="dense-group">
+            <div class="dense-group-title">הפקה פנימית</div>
+            <div class="dense-name">עמית צור</div>
+            <div class="dense-name">שירה דיין</div>
+            <div class="dense-name">עומר גל</div>
+            <div class="dense-name">תמר סיני</div>
+          </div>
+          <div class="dense-group">
+            <div class="dense-group-title">סדר וארגון</div>
+            <div class="dense-name">יובל פרץ</div>
+            <div class="dense-name">איתי בר</div>
+            <div class="dense-name">ליאור מור</div>
+          </div>
+          <div class="dense-group">
+            <div class="dense-group-title">חמ״ל</div>
+            <div class="dense-name">מאיה רון</div>
+            <div class="dense-name">טל ארז</div>
+          </div>
+          <div class="dense-group">
+            <div class="dense-group-title">מסכים</div>
+            <div class="dense-name">אדם ניר</div>
+            <div class="dense-name">גל כהן</div>
+          </div>
+        </div>
+      </div>
+      <div class="action-bar">
+        <div class="primary-action">שתף תמונה</div>
+        <div class="secondary-action">📋</div>
+      </div>
+    </div>
+    <p class="tradeoff">Best fit for WhatsApp. Keeps the existing dialog useful, but adds a separate compact render built specifically for one image.</p>
+  </div>
+
+  <div class="phone-option" data-choice="text-fallback" onclick="toggleSelect(this)">
+    <div class="phone-label">
+      <span class="letter-pill">C</span>
+      <strong>Formatted text copy</strong>
+    </div>
+    <div class="phone-shell">
+      <div class="phone-top">
+        <div class="phone-title">שיבוצים לאירוע טקס פתיחה</div>
+        <div class="tiny-icon">📋</div>
+        <div class="tiny-icon">×</div>
+      </div>
+      <div class="fallback-copy">
+        <div class="text-box">טקס פתיחה
+יום ג׳ 12.5
+
+מפקד אירוע:
+נועה כהן
+דניאל לוי
+
+חובשים:
+אורי ברק
+מיכל ישראלי
+רוני תמר
+יעל שחר
+
+הפקה פנימית:
+עמית צור
+שירה דיין
+עומר גל
+תמר סיני
+
+סדר וארגון:
+יובל פרץ
+איתי בר
+ליאור מור</div>
+      </div>
+      <div class="action-bar">
+        <div class="primary-action">העתק טקסט</div>
+      </div>
+    </div>
+    <p class="tradeoff">Most reliable technically and easy to paste into WhatsApp. It is not an image, so it does not satisfy the screenshot-style request exactly.</p>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 20px;">
+  <p><strong>My recommendation:</strong> B as the primary path, with C as fallback. The current dialog can remain detailed and scrollable; the share action creates a compact, RTL, WhatsApp-ready image.</p>
+</div>

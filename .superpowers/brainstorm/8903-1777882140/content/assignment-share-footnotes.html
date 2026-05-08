@@ -1,0 +1,229 @@
+<style>
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) minmax(280px, 1fr);
+    gap: 24px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+  .share-card {
+    direction: rtl;
+    font-family: Rubik, Arial, sans-serif;
+    color: #111827;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.16);
+  }
+  .head {
+    padding: 14px 16px;
+    text-align: center;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+  }
+  .title {
+    font-weight: 800;
+    font-size: 18px;
+  }
+  .meta {
+    font-size: 12px;
+    color: #475569;
+    margin-top: 4px;
+  }
+  .body {
+    padding: 12px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+  }
+  .group {
+    min-width: 0;
+    break-inside: avoid;
+  }
+  .group-title {
+    font-size: 12px;
+    font-weight: 800;
+    color: #0f766e;
+    border-bottom: 1px solid #99f6e4;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .name {
+    font-size: 11px;
+    line-height: 1.38;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .note-ref {
+    font-size: 8px;
+    vertical-align: super;
+    color: #7e22ce;
+    font-weight: 800;
+    margin-inline-start: 1px;
+  }
+  .status {
+    display: inline-flex;
+    border-radius: 99px;
+    background: #ffedd5;
+    color: #9a3412;
+    padding: 0 4px;
+    font-size: 8px;
+    margin-inline-start: 3px;
+    vertical-align: 1px;
+  }
+  .notes {
+    margin-top: 12px;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 8px;
+  }
+  .notes-title {
+    font-size: 11px;
+    font-weight: 800;
+    color: #6b21a8;
+    margin-bottom: 4px;
+  }
+  .note-line {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 5px;
+    font-size: 10px;
+    line-height: 1.35;
+    color: #4c1d95;
+    margin-bottom: 3px;
+  }
+  .note-number {
+    font-weight: 800;
+    color: #7e22ce;
+  }
+  .footer {
+    padding: 7px 10px 10px;
+    font-size: 9px;
+    color: #64748b;
+    text-align: center;
+  }
+  .controls {
+    direction: rtl;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 18px;
+  }
+  .choice-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .choice {
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 12px;
+    flex: 1;
+    cursor: pointer;
+    background: #fff;
+  }
+  .choice:hover {
+    border-color: #2563eb;
+  }
+  .choice.selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.13);
+  }
+  .choice h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+  }
+  .choice p {
+    margin: 0;
+    color: #475569;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .note {
+    color: #475569;
+    line-height: 1.55;
+  }
+</style>
+
+<h2>Revised share image: numbered notes</h2>
+<p class="subtitle">Names stay compact. Members with notes get a superscript number, and notes are listed below by number.</p>
+
+<div class="layout">
+  <div class="share-card">
+    <div class="head">
+      <div class="title">טקס פתיחה</div>
+      <div class="meta">יום ג׳ 12.5 · 24 שיבוצים · לפי תפקידים</div>
+    </div>
+    <div class="body">
+      <div class="grid">
+        <div class="group">
+          <div class="group-title">מפקד אירוע</div>
+          <div class="name">נועה כהן<span class="note-ref">(1)</span></div>
+          <div class="name">דניאל לוי</div>
+        </div>
+        <div class="group">
+          <div class="group-title">חובשים</div>
+          <div class="name">אורי ברק</div>
+          <div class="name">מיכל ישראלי <span class="status">ממתין</span></div>
+          <div class="name">רוני תמר</div>
+          <div class="name">יעל שחר</div>
+        </div>
+        <div class="group">
+          <div class="group-title">הפקה פנימית</div>
+          <div class="name">עמית צור</div>
+          <div class="name">שירה דיין</div>
+          <div class="name">עומר גל<span class="note-ref">(2)</span></div>
+          <div class="name">תמר סיני</div>
+        </div>
+        <div class="group">
+          <div class="group-title">סדר וארגון</div>
+          <div class="name">יובל פרץ</div>
+          <div class="name">איתי בר</div>
+          <div class="name">ליאור מור</div>
+        </div>
+        <div class="group">
+          <div class="group-title">חמ״ל</div>
+          <div class="name">מאיה רון</div>
+          <div class="name">טל ארז<span class="note-ref">(3)</span></div>
+        </div>
+        <div class="group">
+          <div class="group-title">מסכים</div>
+          <div class="name">אדם ניר</div>
+          <div class="name">גל כהן</div>
+        </div>
+      </div>
+
+      <div class="notes">
+        <div class="notes-title">הערות</div>
+        <div class="note-line"><span class="note-number">(1)</span><span>נועה כהן: מגיעה ישירות מהכניסה הראשית.</span></div>
+        <div class="note-line"><span class="note-number">(2)</span><span>עומר גל: נדרש תיאום מוקדם עם ההפקה.</span></div>
+        <div class="note-line"><span class="note-number">(3)</span><span>טל ארז: להשתמש במספר החלופי במקרה חירום.</span></div>
+      </div>
+    </div>
+    <div class="footer">נוצר משבצק</div>
+  </div>
+
+  <div class="controls">
+    <h3>Proposed behavior</h3>
+    <p class="note">The share image includes event title/date, assignment groups, names, status chips if not confirmed, and numbered notes. Phone icons stay out of the image; if an alternate phone exists, it can be represented as a numbered note or small marker.</p>
+    <p class="note">For very long note text, I’d cap each note at a fixed length and add “…” so one event does not create an unreadably tall image.</p>
+
+    <div class="choice-row">
+      <div class="choice" data-choice="approve-footnotes" onclick="toggleSelect(this)">
+        <h3>Looks right</h3>
+        <p>Use numbered notes in the generated image.</p>
+      </div>
+      <div class="choice" data-choice="revise-footnotes" onclick="toggleSelect(this)">
+        <h3>Needs revision</h3>
+        <p>Change what appears in the image before defining the implementation.</p>
+      </div>
+    </div>
+  </div>
+</div>

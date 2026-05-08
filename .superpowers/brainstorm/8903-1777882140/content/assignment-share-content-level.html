@@ -1,0 +1,228 @@
+<style>
+  .variants {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    align-items: start;
+  }
+  @media (max-width: 960px) {
+    .variants { grid-template-columns: 1fr; }
+  }
+  .variant {
+    border: 2px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 14px;
+    background: #fff;
+    cursor: pointer;
+    transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+  }
+  .variant:hover {
+    border-color: #2563eb;
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.12);
+    transform: translateY(-1px);
+  }
+  .variant.selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.13);
+  }
+  .variant-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .letter-pill {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #2563eb;
+    color: white;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+  }
+  .share-card {
+    width: 275px;
+    max-width: 100%;
+    margin: 0 auto 12px;
+    direction: rtl;
+    font-family: Rubik, Arial, sans-serif;
+    color: #111827;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+  }
+  .head {
+    padding: 12px;
+    text-align: center;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+  }
+  .title {
+    font-weight: 800;
+    font-size: 14px;
+  }
+  .meta {
+    font-size: 10px;
+    color: #475569;
+    margin-top: 3px;
+  }
+  .body {
+    padding: 10px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 9px;
+  }
+  .group {
+    min-width: 0;
+  }
+  .group-title {
+    font-size: 10px;
+    font-weight: 800;
+    color: #0f766e;
+    border-bottom: 1px solid #99f6e4;
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .name {
+    font-size: 9.5px;
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chip {
+    display: inline-flex;
+    border-radius: 99px;
+    background: #fef3c7;
+    color: #92400e;
+    padding: 0 4px;
+    font-size: 8px;
+    margin-inline-start: 2px;
+    vertical-align: 1px;
+  }
+  .declined {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .pending {
+    background: #ffedd5;
+    color: #9a3412;
+  }
+  .notes {
+    margin-top: 8px;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 6px;
+  }
+  .note-line {
+    font-size: 8.7px;
+    line-height: 1.35;
+    color: #6b21a8;
+  }
+  .footer {
+    padding: 6px 10px 9px;
+    font-size: 8.5px;
+    color: #64748b;
+    text-align: center;
+  }
+  .tradeoff {
+    font-size: 13px;
+    color: #475569;
+    line-height: 1.45;
+    margin-top: 8px;
+  }
+</style>
+
+<h2>What should the generated WhatsApp image include?</h2>
+<p class="subtitle">The stricter we are about content, the more reliably one image fits on a phone.</p>
+
+<div class="variants">
+  <div class="variant" data-choice="names-only" onclick="toggleSelect(this)">
+    <div class="variant-label">
+      <span class="letter-pill">A</span>
+      <strong>Names only</strong>
+    </div>
+    <div class="share-card">
+      <div class="head">
+        <div class="title">טקס פתיחה</div>
+        <div class="meta">יום ג׳ 12.5 · 24 שיבוצים</div>
+      </div>
+      <div class="body">
+        <div class="grid">
+          <div class="group"><div class="group-title">מפקד אירוע</div><div class="name">נועה כהן</div><div class="name">דניאל לוי</div></div>
+          <div class="group"><div class="group-title">חובשים</div><div class="name">אורי ברק</div><div class="name">מיכל ישראלי</div><div class="name">רוני תמר</div><div class="name">יעל שחר</div></div>
+          <div class="group"><div class="group-title">הפקה פנימית</div><div class="name">עמית צור</div><div class="name">שירה דיין</div><div class="name">עומר גל</div><div class="name">תמר סיני</div></div>
+          <div class="group"><div class="group-title">סדר וארגון</div><div class="name">יובל פרץ</div><div class="name">איתי בר</div><div class="name">ליאור מור</div></div>
+          <div class="group"><div class="group-title">חמ״ל</div><div class="name">מאיה רון</div><div class="name">טל ארז</div></div>
+          <div class="group"><div class="group-title">מסכים</div><div class="name">אדם ניר</div><div class="name">גל כהן</div></div>
+        </div>
+      </div>
+      <div class="footer">נוצר משבצק</div>
+    </div>
+    <p class="tradeoff">Most reliable for one image. Best when WhatsApp only needs “who is assigned where.”</p>
+  </div>
+
+  <div class="variant" data-choice="names-status-markers" onclick="toggleSelect(this)">
+    <div class="variant-label">
+      <span class="letter-pill">B</span>
+      <strong>Names + small markers</strong>
+    </div>
+    <div class="share-card">
+      <div class="head">
+        <div class="title">טקס פתיחה</div>
+        <div class="meta">יום ג׳ 12.5 · 24 שיבוצים · לפי תפקידים</div>
+      </div>
+      <div class="body">
+        <div class="grid">
+          <div class="group"><div class="group-title">מפקד אירוע</div><div class="name">נועה כהן <span class="chip">הערה</span></div><div class="name">דניאל לוי</div></div>
+          <div class="group"><div class="group-title">חובשים</div><div class="name">אורי ברק</div><div class="name">מיכל ישראלי <span class="chip pending">ממתין</span></div><div class="name">רוני תמר</div><div class="name">יעל שחר</div></div>
+          <div class="group"><div class="group-title">הפקה פנימית</div><div class="name">עמית צור</div><div class="name">שירה דיין</div><div class="name">עומר גל <span class="chip declined">נדחה</span></div><div class="name">תמר סיני</div></div>
+          <div class="group"><div class="group-title">סדר וארגון</div><div class="name">יובל פרץ</div><div class="name">איתי בר</div><div class="name">ליאור מור</div></div>
+          <div class="group"><div class="group-title">חמ״ל</div><div class="name">מאיה רון</div><div class="name">טל ארז <span class="chip">טל׳ חלופי</span></div></div>
+          <div class="group"><div class="group-title">מסכים</div><div class="name">אדם ניר</div><div class="name">גל כהן</div></div>
+        </div>
+      </div>
+      <div class="footer">סימונים: הערה / ממתין / נדחה / טל׳ חלופי</div>
+    </div>
+    <p class="tradeoff">Good balance. The image stays compact, while the sender can see where details exist in the app.</p>
+  </div>
+
+  <div class="variant" data-choice="include-notes" onclick="toggleSelect(this)">
+    <div class="variant-label">
+      <span class="letter-pill">C</span>
+      <strong>Include notes text</strong>
+    </div>
+    <div class="share-card">
+      <div class="head">
+        <div class="title">טקס פתיחה</div>
+        <div class="meta">יום ג׳ 12.5 · 24 שיבוצים</div>
+      </div>
+      <div class="body">
+        <div class="grid">
+          <div class="group"><div class="group-title">מפקד אירוע</div><div class="name">נועה כהן</div><div class="name">דניאל לוי</div></div>
+          <div class="group"><div class="group-title">חובשים</div><div class="name">אורי ברק</div><div class="name">מיכל ישראלי</div><div class="name">רוני תמר</div><div class="name">יעל שחר</div></div>
+          <div class="group"><div class="group-title">הפקה פנימית</div><div class="name">עמית צור</div><div class="name">שירה דיין</div><div class="name">עומר גל</div></div>
+          <div class="group"><div class="group-title">חמ״ל</div><div class="name">מאיה רון</div><div class="name">טל ארז</div></div>
+        </div>
+        <div class="notes">
+          <div class="note-line">נועה כהן: מגיעה ישירות מהכניסה הראשית</div>
+          <div class="note-line">טל ארז: להשתמש במספר החלופי במקרה חירום</div>
+          <div class="note-line">עומר גל: נדרש תיאום מוקדם עם ההפקה</div>
+        </div>
+      </div>
+      <div class="footer">נוצר משבצק</div>
+    </div>
+    <p class="tradeoff">Useful context, but this is exactly what can make the image too tall for bigger events.</p>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 20px;">
+  <p><strong>My recommendation:</strong> B. Share the main staffing map, not every detail. Keep full notes/phone actions inside the regular dialog and add a text fallback for users who need details.</p>
+</div>
