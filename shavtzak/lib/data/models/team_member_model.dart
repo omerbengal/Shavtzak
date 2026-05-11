@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/constants/constraint_status.dart';
+import '../../core/utils/israel_calendar.dart';
 import '../../domain/entities/team_member.dart';
 import '../../domain/entities/vehicle_info.dart';
 
@@ -545,18 +546,21 @@ class DateConstraintModel {
     final repeatEndDate = json['repeatEndDate'] == null
         ? null
         : json['repeatEndDate'] is Timestamp
-            ? (json['repeatEndDate'] as Timestamp).toDate()
+            ? IsraelCalendar.calendarDay(
+                (json['repeatEndDate'] as Timestamp).toDate())
             : DateTime.parse(json['repeatEndDate'] as String);
 
     return DateConstraintModel(
       id: constraintId,
       startDate: json['startDate'] is Timestamp
-          ? (json['startDate'] as Timestamp).toDate()
+          ? IsraelCalendar.calendarDay(
+              (json['startDate'] as Timestamp).toDate())
           : DateTime.parse(json['startDate'] as String),
       endDate: json['endDate'] == null
           ? null
           : json['endDate'] is Timestamp
-              ? (json['endDate'] as Timestamp).toDate()
+              ? IsraelCalendar.calendarDay(
+                  (json['endDate'] as Timestamp).toDate())
               : DateTime.parse(json['endDate'] as String),
       note: json['note'] as String?,
       status: status,

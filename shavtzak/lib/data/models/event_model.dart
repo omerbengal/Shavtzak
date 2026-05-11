@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/utils/israel_calendar.dart';
 import '../../domain/entities/event.dart';
 
 /// Data model for Event with JSON serialization
@@ -52,7 +53,9 @@ class EventModel {
   });
 
   static DateTime _normalizeDateOnly(DateTime date) {
-    return DateTime(date.year, date.month, date.day);
+    // Project to Asia/Jerusalem calendar so .year/.month/.day always reflect
+    // the Israel day, independent of the browser's local TZ.
+    return IsraelCalendar.calendarDay(date);
   }
 
   static DateTime _normalizeDateOnlyUtc(DateTime date) {
