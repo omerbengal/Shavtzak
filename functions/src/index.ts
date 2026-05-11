@@ -358,6 +358,14 @@ function normalizeDay(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
+// Returns a Date at UTC midnight of the Israel calendar day of `date`.
+// Event day-stamps are stored as Israel midnight (e.g. 21:00Z in summer), so
+// using getUTCDate() on them would skid back into the previous calendar day.
+function normalizeDayInIsrael(date: Date): Date {
+  const parts = getCalendarDatePartsInTimeZone(date, ISRAEL_TIME_ZONE);
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+}
+
 function addDays(date: Date, days: number): Date {
   const result = new Date(date);
   result.setUTCDate(result.getUTCDate() + days);
@@ -2924,16 +2932,16 @@ function parseConstraint(constraint: Record<string, unknown>): Record<string, un
 }
 
 function constraintMatchesDate(constraint: Record<string, unknown>, date: Date): boolean {
-  const startDate = normalizeDay(constraint['startDate'] as Date);
+  const startDate = normalizeDayInIsrael(constraint['startDate'] as Date);
   const endDate = constraint['endDate'] == null
     ? startDate
-    : normalizeDay(constraint['endDate'] as Date);
+    : normalizeDayInIsrael(constraint['endDate'] as Date);
   const repeatType = typeof constraint['repeatType'] === 'string' ? constraint['repeatType'] : null;
   const repeatDay = typeof constraint['repeatDay'] === 'number' ? constraint['repeatDay'] : null;
   const repeatEndDate = constraint['repeatEndDate'] == null
     ? null
-    : normalizeDay(constraint['repeatEndDate'] as Date);
-  const target = normalizeDay(date);
+    : normalizeDayInIsrael(constraint['repeatEndDate'] as Date);
+  const target = normalizeDayInIsrael(date);
 
   if (repeatType == null) {
     return target >= startDate && target <= endDate;
@@ -2990,7 +2998,7 @@ function memberAvailableForEvent(
   const eventEnd = asDate(eventData['endDate'], 'event.endDate');
 
   if (isPermanent) {
-    for (let day = normalizeDay(eventStart); day <= normalizeDay(eventEnd); day = addDays(day, 1)) {
+    for (let day = normalizeDayInIsrael(eventStart); day <= normalizeDayInIsrael(eventEnd); day = addDays(day, 1)) {
       for (const constraint of constraints) {
         if (constraint['status'] !== 'approved') continue;
         if (constraint['constraintType'] !== 'unavailability') continue;
@@ -3010,7 +3018,7 @@ function memberAvailableForEvent(
     return true;
   }
 
-  for (let day = normalizeDay(eventStart); day <= normalizeDay(eventEnd); day = addDays(day, 1)) {
+  for (let day = normalizeDayInIsrael(eventStart); day <= normalizeDayInIsrael(eventEnd); day = addDays(day, 1)) {
     let availableOnDay = false;
     for (const constraint of constraints) {
       if (constraint['status'] !== 'approved') continue;
@@ -5437,3 +5445,10 @@ export const api = onRequest(
   },
   app,
 );
+
+// Test-only re-exports. Not part of the public API; used by availability.test.ts.
+export {
+  normalizeDayInIsrael as __testNormalizeDayInIsrael,
+  constraintMatchesDate as __testConstraintMatchesDate,
+  memberAvailableForEvent as __testMemberAvailableForEvent,
+};
