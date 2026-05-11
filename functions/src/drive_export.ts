@@ -247,14 +247,6 @@ function formatAvailableEvents(
   return parts.join('<<<NEWLINE>>>');
 }
 
-function isSameDay(first: Date, second: Date): boolean {
-  return (
-    first.getFullYear() === second.getFullYear() &&
-    first.getMonth() === second.getMonth() &&
-    first.getDate() === second.getDate()
-  );
-}
-
 function cleanLocation(value: unknown): string {
   if (typeof value !== 'string') return '';
   let location = value;
