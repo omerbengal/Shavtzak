@@ -1,0 +1,184 @@
+<h2>משימות: redesigned UX direction</h2>
+<p class="subtitle">Mobile-first, RTL, dense operational UI. Uses status chips, grouped event sections, clear warnings, and task detail actions without turning this into a generic project-management board.</p>
+
+<div class="section">
+  <div class="label">Design principles from ui-ux-pro-max</div>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="principle-flat" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content">
+        <h3>Flat, functional Material UI</h3>
+        <p>No decorative effects. Use Shavtzak blue/orange, neutral surfaces, status chips, and compact cards.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="principle-mobile" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content">
+        <h3>Mobile-first task execution</h3>
+        <p>User screen focuses on "what do I need to handle now" with no filters in V1.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="principle-admin" onclick="toggleSelect(this)">
+      <div class="letter">3</div>
+      <div class="content">
+        <h3>Admin control without spreadsheet chaos</h3>
+        <p>Admin gets private filters, event grouping, quick scanning, and safe actions.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">User: משימות tab</div>
+    <div class="mockup-body" dir="rtl">
+      <div style="max-width:360px;margin:auto;border:1px solid #d9e2ef;border-radius:16px;overflow:hidden;background:#f8fafc">
+        <div style="background:#2196F3;color:white;padding:12px 14px;text-align:center;font-weight:700">משימות</div>
+        <div style="padding:10px 12px;background:#eaf4ff;border-bottom:1px solid #d9e2ef">
+          <div style="font-size:13px;font-weight:700;color:#174ea6">2 משימות פתוחות</div>
+          <div style="font-size:12px;color:#475569">מסודר לפי דחיפות ודדליין</div>
+        </div>
+        <div style="padding:10px;display:flex;flex-direction:column;gap:8px">
+          <div style="background:white;border:1px solid #d9e2ef;border-right:5px solid #F44336;border-radius:10px;padding:10px">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+              <div style="font-weight:700;color:#1f2937">אישור ספק הגברה</div>
+              <span style="font-size:11px;background:#fff3cd;color:#7a4b00;border:1px solid #ffd666;border-radius:12px;padding:2px 8px;white-space:nowrap">ממתינה</span>
+            </div>
+            <div style="font-size:12px;color:#475569;margin-top:4px">ערב קהילה · 14/05 · דדליין: היום</div>
+            <div style="font-size:12px;color:#b3261e;margin-top:4px;font-weight:600">אירוע עבר</div>
+            <div style="border-top:1px solid #edf2f7;margin-top:8px;padding-top:8px;font-size:12px;color:#475569">עדכון אחרון: דנה · היום 09:15 · מחכה לאישור חשמל</div>
+          </div>
+          <div style="background:white;border:1px solid #d9e2ef;border-right:5px solid #2196F3;border-radius:10px;padding:10px">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+              <div style="font-weight:700;color:#1f2937">רשימת ציוד למחסן</div>
+              <span style="font-size:11px;background:#e8f1ff;color:#174ea6;border:1px solid #bbd7ff;border-radius:12px;padding:2px 8px;white-space:nowrap">פתוחה</span>
+            </div>
+            <div style="font-size:12px;color:#475569;margin-top:4px">ללא אירוע · אין דדליין</div>
+            <div style="border-top:1px solid #edf2f7;margin-top:8px;padding-top:8px;font-size:12px;color:#475569">עדכון אחרון: מנהל · אתמול · המשימה נוצרה</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid #d9e2ef;background:white;text-align:center;font-size:11px;color:#64748b">
+          <div style="padding:8px 2px">שיבוצים</div>
+          <div style="padding:8px 2px;color:#1976D2;font-weight:700;border-top:3px solid #2196F3">משימות <span style="background:#F44336;color:white;border-radius:10px;padding:1px 5px">2</span></div>
+          <div style="padding:8px 2px">זמינות</div>
+          <div style="padding:8px 2px">צ'קליסט</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Task detail: execution sheet</div>
+    <div class="mockup-body" dir="rtl">
+      <div style="max-width:360px;margin:auto;border:1px solid #d9e2ef;border-radius:16px;background:white;overflow:hidden">
+        <div style="height:5px;background:#F44336"></div>
+        <div style="padding:14px">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+            <div>
+              <div style="font-weight:700;font-size:17px;color:#1f2937">אישור ספק הגברה</div>
+              <div style="font-size:12px;color:#475569;margin-top:3px">ערב קהילה · 14/05</div>
+            </div>
+            <span style="font-size:11px;background:#fff3cd;color:#7a4b00;border:1px solid #ffd666;border-radius:12px;padding:3px 9px">ממתינה</span>
+          </div>
+          <p style="font-size:13px;line-height:1.55;color:#334155;margin:12px 0">לוודא מול הספק זמני הגעה, חשמל, ואיש קשר במקום.</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font-size:12px">
+              <b>למי</b><br>דנה, יואב
+            </div>
+            <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px;font-size:12px">
+              <b>דדליין</b><br>היום
+            </div>
+          </div>
+          <button class="mock-button" style="width:100%;background:#2196F3;color:white;border-color:#2196F3;margin-bottom:10px">עדכון סטטוס</button>
+          <div style="font-weight:700;font-size:13px;margin:10px 0 6px">היסטוריית עדכונים</div>
+          <div style="background:#eaf4ff;border:1px solid #bbd7ff;border-radius:10px;padding:9px;margin-bottom:7px;font-size:12px;color:#334155">
+            <b>דנה · ממתינה · היום 09:15</b><br>מחכה לאישור חשמל מהמתחם.
+          </div>
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:9px;font-size:12px;color:#334155">
+            <b>מנהל · פתוחה · אתמול 18:40</b><br>המשימה נוצרה.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Admin: event grouped operations</div>
+    <div class="mockup-body" dir="rtl">
+      <div style="max-width:430px;margin:auto;border:1px solid #d9e2ef;border-radius:16px;overflow:hidden;background:#f8fafc">
+        <div style="background:#2196F3;color:white;padding:12px 14px;text-align:center;font-weight:700">ניהול משימות</div>
+        <div style="padding:10px;background:white;border-bottom:1px solid #d9e2ef">
+          <div style="display:flex;gap:8px">
+            <input class="mock-input" placeholder="חיפוש משימה, אירוע או איש צוות" style="flex:1">
+            <button class="mock-button">סינון</button>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;font-size:11px">
+            <span style="background:#e8f1ff;color:#174ea6;border-radius:12px;padding:3px 8px">פתוחות</span>
+            <span style="background:#f1f5f9;color:#475569;border-radius:12px;padding:3px 8px">נסגרו</span>
+            <span style="background:#f1f5f9;color:#475569;border-radius:12px;padding:3px 8px">ארכיון</span>
+          </div>
+        </div>
+        <div style="padding:10px">
+          <div style="background:#eaf4ff;border:1px solid #bbd7ff;border-radius:10px;padding:9px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;gap:8px">
+              <b>ערב קהילה</b>
+              <span style="font-size:12px;color:#475569">14/05 · 3 פתוחות</span>
+            </div>
+          </div>
+          <div style="background:white;border:1px solid #d9e2ef;border-radius:10px;padding:10px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;gap:8px">
+              <b>אישור ספק הגברה</b>
+              <span style="font-size:11px;background:#fff3cd;color:#7a4b00;border:1px solid #ffd666;border-radius:12px;padding:2px 8px">ממתינה</span>
+            </div>
+            <div style="font-size:12px;color:#475569;margin-top:4px">דנה, יואב · דדליין: היום · עדכון: היום 09:15</div>
+          </div>
+          <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:10px;padding:10px;margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;gap:8px">
+              <b>סגירת שילוט</b>
+              <span style="font-size:11px;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:12px;padding:2px 8px">חסומה</span>
+            </div>
+            <div style="font-size:12px;color:#991b1b;margin-top:4px">איש צוות בארכיון · דדליין עבר</div>
+          </div>
+          <div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;padding:9px;margin-bottom:8px"><b>ללא אירוע</b> <span style="font-size:12px;color:#64748b">· 1 פתוחה</span></div>
+          <div style="background:white;border:1px solid #d9e2ef;border-radius:10px;padding:10px">
+            <b>רשימת ציוד למחסן</b>
+            <div style="font-size:12px;color:#475569;margin-top:4px">רועי · אין דדליין · פתוחה</div>
+          </div>
+        </div>
+        <div style="padding:10px;background:white;border-top:1px solid #d9e2ef">
+          <button class="mock-button" style="width:100%;background:#FF9800;color:white;border-color:#FF9800">יצירת משימה חדשה</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Admin create/edit: stepper sheet</div>
+    <div class="mockup-body" dir="rtl">
+      <div style="max-width:390px;margin:auto;border:1px solid #d9e2ef;border-radius:16px;background:white;overflow:hidden">
+        <div style="padding:14px;border-bottom:1px solid #e2e8f0">
+          <div style="font-weight:700;font-size:16px">יצירת משימה</div>
+          <div style="font-size:12px;color:#64748b">שדות חובה: כותרת, תיאור, אחראים</div>
+        </div>
+        <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+          <input class="mock-input" placeholder="כותרת קצרה">
+          <input class="mock-input" placeholder="תיאור המשימה">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <button class="mock-button">אירוע או ללא אירוע</button>
+            <button class="mock-button">דדליין</button>
+          </div>
+          <button class="mock-button">בחירת אחראים פעילים</button>
+          <div style="font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px">דנה · יואב</div>
+        </div>
+        <div style="display:flex;gap:8px;padding:12px;border-top:1px solid #e2e8f0">
+          <button class="mock-button" style="flex:1">ביטול</button>
+          <button class="mock-button" style="flex:2;background:#2196F3;color:white;border-color:#2196F3">שמירה</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">Click any principles you agree with, or just respond in the terminal with what still feels wrong.</p>

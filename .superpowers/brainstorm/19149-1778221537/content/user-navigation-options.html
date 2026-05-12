@@ -1,0 +1,72 @@
+<h2>Where should user tasks live?</h2>
+<p class="subtitle">The existing first tab becomes "השיבוצים שלי". The question is how visible the new "משימות" area should be on mobile.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a-fourth-tab" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. Four bottom tabs</div>
+        <div class="mockup-body">
+          <div style="height:220px;display:flex;align-items:center;justify-content:center;color:#777">Main screen content</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;border-top:1px solid #ddd;padding-top:10px;text-align:center;font-size:12px">
+            <div>📋<br>השיבוצים</div>
+            <div>✅<br>משימות</div>
+            <div>📅<br>זמינות</div>
+            <div>☑<br>צ'קליסט</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>New dedicated tab</h3>
+      <p>Most discoverable. Slightly more crowded, but still acceptable with short labels.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b-under-assignments" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. Inside personal area</div>
+        <div class="mockup-body">
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <button class="mock-button">שיבוצים</button>
+            <button class="mock-button">משימות</button>
+          </div>
+          <div style="height:220px;display:flex;align-items:center;justify-content:center;color:#777">Assignments/tasks switcher</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;border-top:1px solid #ddd;padding-top:10px;text-align:center;font-size:12px">
+            <div>📋<br>אישי</div>
+            <div>📅<br>זמינות</div>
+            <div>☑<br>צ'קליסט</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Nested under personal area</h3>
+      <p>Keeps bottom nav clean, but tasks are less prominent and may be missed.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c-menu" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. Menu-only access</div>
+        <div class="mockup-body">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #ddd;padding-bottom:10px">
+            <span>שלום, משתמש</span><span>☰</span>
+          </div>
+          <div style="height:220px;display:flex;align-items:center;justify-content:center;color:#777">Current screens unchanged</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;border-top:1px solid #ddd;padding-top:10px;text-align:center;font-size:12px">
+            <div>📋<br>השיבוצים</div>
+            <div>📅<br>זמינות</div>
+            <div>☑<br>צ'קליסט</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Only in menu</h3>
+      <p>Least disruptive, but wrong for an important daily workflow.</p>
+    </div>
+  </div>
+</div>
