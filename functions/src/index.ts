@@ -82,6 +82,27 @@ const CALENDAR_APP_EVENT_COLOR_ID = '7';
 const CALENDAR_TEST_MODE_COLOR_ID = '5';
 const CALENDAR_UNAVAILABILITY_COLOR_ID = '8';
 
+// Fire-and-forget Google Calendar sync. The HTTP handler returns immediately
+// (no `await`) so the user doesn't pay the ~5s Calendar API latency on every
+// assignment write. Per-event errors are already swallowed and logged inside
+// `syncAssignedEventsBestEffort`; this outer catch logs anything that escapes
+// the inner handler. Logs are tagged `[calendar-sync-error]` so a GCP Cloud
+// Logging alert can be configured to email on these failures.
+function fireAndForgetCalendarSync(
+  dependencies: Parameters<typeof syncAssignedEventsBestEffort>[0],
+  eventIds: Iterable<string>,
+  operationLabel: string,
+): void {
+  const ids = Array.from(eventIds);
+  void syncAssignedEventsBestEffort(dependencies, ids).catch((err: unknown) => {
+    console.error(
+      `[calendar-sync-error] background sync failed for ${operationLabel} ` +
+        `(eventIds=${JSON.stringify(ids)}):`,
+      err,
+    );
+  });
+}
+
 function getEnvironmentMode(value: unknown): EnvironmentMode {
   return value === 'test' ? 'test' : 'production';
 }
@@ -2419,7 +2440,7 @@ async function executeMutation(
       });
       const nextAssignment = assignmentDocFromJson(assignment);
       await db.collection(collections.assignments).doc(assignmentId).set(nextAssignment);
-      await syncAssignedEventsBestEffort(
+      fireAndForgetCalendarSync(
         {
           firestore: db,
           actor: {
@@ -2430,6 +2451,7 @@ async function executeMutation(
           collections,
         },
         [String(nextAssignment['eventId'])],
+        operation,
       );
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
         after: nextAssignment,
@@ -2452,7 +2474,7 @@ async function executeMutation(
       });
       const nextAssignment = assignmentDocFromJson(assignment);
       await assignmentRef.update(nextAssignment);
-      await syncAssignedEventsBestEffort(
+      fireAndForgetCalendarSync(
         {
           firestore: db,
           actor: {
@@ -2466,6 +2488,7 @@ async function executeMutation(
           typeof existing['eventId'] === 'string' ? existing['eventId'] : '',
           String(nextAssignment['eventId']),
         ],
+        operation,
       );
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
         before: existing,
@@ -2518,7 +2541,7 @@ async function executeMutation(
       const existing = existingDoc.data() ?? {};
       await assignmentRef.delete();
       if (typeof existing['eventId'] === 'string') {
-        await syncAssignedEventsBestEffort(
+        fireAndForgetCalendarSync(
           {
             firestore: db,
             actor: {
@@ -2529,6 +2552,7 @@ async function executeMutation(
             collections,
           },
           [existing['eventId'] as string],
+          operation,
         );
       }
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
@@ -2554,7 +2578,7 @@ async function executeMutation(
         batch.delete(doc.ref);
       }
       await batch.commit();
-      await syncAssignedEventsBestEffort(
+      fireAndForgetCalendarSync(
         {
           firestore: db,
           actor: {
@@ -2565,6 +2589,7 @@ async function executeMutation(
           collections,
         },
         [eventId],
+        operation,
       );
       const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', eventId, {
@@ -2633,7 +2658,7 @@ async function executeMutation(
         batch.delete(doc.ref);
       }
       await batch.commit();
-      await syncAssignedEventsBestEffort(
+      fireAndForgetCalendarSync(
         {
           firestore: db,
           actor: {
@@ -2648,6 +2673,7 @@ async function executeMutation(
             ? assignment.data['eventId'] as string
             : ''
         )),
+        operation,
       );
       const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', teamMemberId, {
@@ -2714,7 +2740,7 @@ async function executeMutation(
         batch.delete(db.collection(collections.assignments).doc(String(rawId)));
       }
       await batch.commit();
-      await syncAssignedEventsBestEffort(
+      fireAndForgetCalendarSync(
         {
           firestore: db,
           actor: {
@@ -2729,6 +2755,7 @@ async function executeMutation(
             ? assignment.data['eventId'] as string
             : ''
         )),
+        operation,
       );
       const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', actor.memberId, {
@@ -2807,7 +2834,7 @@ async function executeMutation(
         );
       }
       await batch.commit();
-      await syncAssignedEventsBestEffort(
+      fireAndForgetCalendarSync(
         {
           firestore: db,
           actor: {
@@ -2821,6 +2848,7 @@ async function executeMutation(
           const value = assignment as Record<string, unknown>;
           return typeof value['eventId'] === 'string' ? value['eventId'] as string : '';
         }),
+        operation,
       );
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', actor.memberId, {
         count: assignments.length,

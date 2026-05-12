@@ -1847,9 +1847,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     CreateAssignmentWithBypass event,
     Emitter<AssignmentState> emit,
   ) async {
-    // Store previous state BEFORE any emit
-    final previousState = state;
-
     emit(const AssignmentOperating('creating'));
 
     try {
@@ -1861,29 +1858,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       emit(const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
 
-      // Check if we need to reload based on view type
-      // For slots view: Real-time stream handles updates automatically
-      // For list view: Need to restart the listener
-      if (previousState is AssignmentsLoaded) {
-        // Restart real-time listener based on current filter
-        final currentState = previousState;
-        if (currentState.filterType == 'event' &&
-            currentState.filterId != null) {
-          add(LoadAssignmentsByEvent(currentState.filterId!));
-        } else if (currentState.filterType == 'person' &&
-            currentState.filterId != null) {
-          add(LoadAssignmentsByPerson(currentState.filterId!));
-        } else {
-          add(const LoadAssignments());
-        }
-      } else if (previousState is AssignmentSlotsLoaded) {
-        add(RebuildAssignmentSlots(
-          preservedFilter: previousState.selectedEventIds,
-        ));
-      } else {
-        // Only reload if not in slots view (real-time stream handles slots view)
-        add(const LoadAssignments());
-      }
+      // No manual reload: the active Firestore stream subscription
+      // (emit.forEach in _onLoadAssignments / _onLoadAssignmentsByEvent /
+      // _onLoadAssignmentsByPerson, or _assignmentSubscription for slots view)
+      // will emit the updated list automatically once the write propagates.
+      // Dispatching another Load* here would re-subscribe and cause a brief
+      // AssignmentLoading flash plus a redundant _populateAssignmentRelations.
     } catch (e) {
       if (e is AssignmentConflictException) {
         emit(AssignmentConflictWarning(e.conflicts, event.assignment));

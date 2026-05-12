@@ -3059,21 +3059,43 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     }
 
     try {
-      final assignmentRepo = context.read<AssignmentRepository>();
       final eventBloc = context.read<EventBloc>();
+      final assignmentBloc = context.read<AssignmentBloc>();
 
-      // Step 1: Get all existing assignments for this event and role
-      final existingAssignments =
-          await assignmentRepo.getAssignmentsByEvent(event.id);
-      final roleAssignments = existingAssignments
-          .where((a) => a.roleType == roleType)
-          .toList()
-        ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+      // Step 1: Find slot indices already used for this event+role from the
+      // bloc's in-memory state (avoids a Firestore round-trip + relation
+      // population, since the bloc's real-time stream already has this data).
+      // Falls back to a Firestore read if the bloc hasn't loaded yet.
+      final assignmentState = assignmentBloc.state;
+      List<int> usedSlotIndices;
+      if (assignmentState is AssignmentsLoaded) {
+        usedSlotIndices = assignmentState.assignments
+            .where((a) => a.eventId == event.id && a.roleType == roleType)
+            .map((a) => a.slotIndex)
+            .toList();
+      } else if (assignmentState is AssignmentSlotsLoaded) {
+        usedSlotIndices = assignmentState.slots
+            .where((s) =>
+                s.event.id == event.id &&
+                s.role.key == roleType &&
+                s.currentAssignment != null)
+            .map((s) => s.currentAssignment!.slotIndex)
+            .toList();
+      } else {
+        final existingAssignments = await context
+            .read<AssignmentRepository>()
+            .getAssignmentsByEvent(event.id);
+        usedSlotIndices = existingAssignments
+            .where((a) => a.roleType == roleType)
+            .map((a) => a.slotIndex)
+            .toList();
+      }
+      usedSlotIndices.sort();
 
-      // Step 2: Find the next available slot index
+      // Step 2: Find the next available slot index (first gap, or end of list)
       int nextSlotIndex = 0;
-      for (final assignment in roleAssignments) {
-        if (assignment.slotIndex == nextSlotIndex) {
+      for (final slotIndex in usedSlotIndices) {
+        if (slotIndex == nextSlotIndex) {
           nextSlotIndex++;
         } else {
           break; // Found a gap
