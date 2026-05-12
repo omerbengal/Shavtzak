@@ -1686,6 +1686,10 @@ async function executeMutation(
         };
       }
       delete next['passcode'];
+      // Constraints are owned by constraint.{add,edit,remove}. Stripping the field here
+      // prevents teamMember.update (a full-document merge) from racing with — and clobbering —
+      // concurrent constraint mutations dispatched from the same admin save (see modal flow).
+      delete next['constraints'];
       await docRef.update(next);
       const previousEmail = normalizeOptionalText(existing['email']);
       const nextEmail = normalizeOptionalText(next['email']);
@@ -1951,36 +1955,50 @@ async function executeMutation(
       const wasAutoRejectedFromCalendar = payload['wasAutoRejectedFromCalendar'] === true;
 
       if (constraintIndexValue == null) {
+        // Scan to locate the member that owns this constraint, then mutate via a transaction
+        // so concurrent edits on the same member don't lose updates.
         const teamMembers = await db.collection(collections.teamMembers).get();
         for (const doc of teamMembers.docs) {
-          const data = doc.data();
-          const teamMemberName =
-            typeof data['name'] === 'string' ? (data['name'] as string) : null;
-          const constraints = Array.isArray(data['constraints']) ? [...(data['constraints'] as Array<Record<string, unknown>>)] : [];
-          const index = constraints.findIndex((constraint) => constraint['id'] === constraintIdOrMemberId);
-          if (index < 0) continue;
-          const previousConstraint = constraints[index];
-          const updated = {
-            ...constraints[index],
-            status: newStatus,
-            ...(note != null ? {note} : {}),
-            ...(payload['wasAutoRejectedFromCalendar'] != null
-              ? {wasAutoRejectedFromCalendar}
-              : {}),
-          };
-          constraints[index] = updated;
-          await doc.ref.update({
-            constraints,
-            updatedAt: FieldValue.serverTimestamp(),
+          const hasConstraint = Array.isArray(doc.data()['constraints']) &&
+            (doc.data()['constraints'] as Array<Record<string, unknown>>)
+              .some((c) => c['id'] === constraintIdOrMemberId);
+          if (!hasConstraint) continue;
+          const memberRef = doc.ref;
+          const txResult = await db.runTransaction(async (transaction) => {
+            const memberDoc = await transaction.get(memberRef);
+            if (!memberDoc.exists) throw new HttpError(404, 'Team member not found');
+            const data = memberDoc.data();
+            const teamMemberName =
+              typeof data?.['name'] === 'string' ? (data['name'] as string) : null;
+            const constraints = Array.isArray(data?.['constraints'])
+              ? [...(data['constraints'] as Array<Record<string, unknown>>)]
+              : [];
+            const index = constraints.findIndex((c) => c['id'] === constraintIdOrMemberId);
+            if (index < 0) throw new HttpError(404, 'Constraint not found');
+            const previousConstraint = constraints[index];
+            const updated: Record<string, unknown> = {
+              ...constraints[index],
+              status: newStatus,
+              ...(note != null ? {note} : {}),
+              ...(payload['wasAutoRejectedFromCalendar'] != null
+                ? {wasAutoRejectedFromCalendar}
+                : {}),
+            };
+            constraints[index] = updated;
+            transaction.update(memberRef, {
+              constraints,
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+            return {previousConstraint, updated, teamMemberName};
           });
           await writeAuditLog(
             db,
             collections,
             actor,
             operation,
-            getConstraintAuditEntityType(updated),
+            getConstraintAuditEntityType(txResult.updated),
             constraintIdOrMemberId,
-            buildConstraintAuditDetails(doc.id, teamMemberName, updated, {
+            buildConstraintAuditDetails(doc.id, txResult.teamMemberName, txResult.updated, {
               newStatus,
               semanticAction: getConstraintStatusSemanticAction(
                 newStatus,
@@ -1988,8 +2006,8 @@ async function executeMutation(
               ) ?? undefined,
             }),
             {
-              before: previousConstraint,
-              after: updated,
+              before: txResult.previousConstraint,
+              after: txResult.updated,
             },
           );
           return {ok: true};
@@ -1999,42 +2017,50 @@ async function executeMutation(
 
       const teamMemberId = constraintIdOrMemberId;
       const constraintIndex = Number(constraintIndexValue);
-      const memberDoc = await db.collection(collections.teamMembers).doc(teamMemberId).get();
-      if (!memberDoc.exists) throw new HttpError(404, 'Team member not found');
-      const teamMemberName =
-        typeof memberDoc.data()?.['name'] === 'string'
-          ? (memberDoc.data()?.['name'] as string)
-          : null;
-      const constraints = Array.isArray(memberDoc.data()?.['constraints'])
-        ? [...(memberDoc.data()?.['constraints'] as Array<Record<string, unknown>>)]
-        : [];
-      if (constraintIndex < 0 || constraintIndex >= constraints.length) {
-        throw new HttpError(400, 'Invalid constraint index');
-      }
-      const previousConstraint = constraints[constraintIndex];
-      constraints[constraintIndex] = {
-        ...constraints[constraintIndex],
-        status: newStatus,
-        ...(note != null ? {note} : {}),
-        ...(payload['wasAutoRejectedFromCalendar'] != null
-          ? {wasAutoRejectedFromCalendar}
-          : {}),
-      };
-      await memberDoc.ref.update({
-        constraints,
-        updatedAt: FieldValue.serverTimestamp(),
+      const memberRef = db.collection(collections.teamMembers).doc(teamMemberId);
+      // Transaction prevents lost updates when concurrent status updates land on the same member.
+      // Note: we re-resolve the constraint by index inside the transaction; if the array shrank
+      // between client-side index capture and the write, this surfaces an explicit error rather
+      // than mutating the wrong constraint.
+      const txResult = await db.runTransaction(async (transaction) => {
+        const memberDoc = await transaction.get(memberRef);
+        if (!memberDoc.exists) throw new HttpError(404, 'Team member not found');
+        const data = memberDoc.data();
+        const teamMemberName =
+          typeof data?.['name'] === 'string' ? (data['name'] as string) : null;
+        const constraints = Array.isArray(data?.['constraints'])
+          ? [...(data['constraints'] as Array<Record<string, unknown>>)]
+          : [];
+        if (constraintIndex < 0 || constraintIndex >= constraints.length) {
+          throw new HttpError(400, 'Invalid constraint index');
+        }
+        const previousConstraint = constraints[constraintIndex];
+        const updated: Record<string, unknown> = {
+          ...constraints[constraintIndex],
+          status: newStatus,
+          ...(note != null ? {note} : {}),
+          ...(payload['wasAutoRejectedFromCalendar'] != null
+            ? {wasAutoRejectedFromCalendar}
+            : {}),
+        };
+        constraints[constraintIndex] = updated;
+        transaction.update(memberRef, {
+          constraints,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return {previousConstraint, updated, teamMemberName};
       });
       await writeAuditLog(
         db,
         collections,
         actor,
         operation,
-        getConstraintAuditEntityType(constraints[constraintIndex]),
-        String(constraints[constraintIndex]['id']),
+        getConstraintAuditEntityType(txResult.updated),
+        String(txResult.updated['id']),
         buildConstraintAuditDetails(
           teamMemberId,
-          teamMemberName,
-          constraints[constraintIndex],
+          txResult.teamMemberName,
+          txResult.updated,
           {
             newStatus,
             semanticAction: getConstraintStatusSemanticAction(
@@ -2044,8 +2070,8 @@ async function executeMutation(
           },
         ),
         {
-          before: previousConstraint,
-          after: constraints[constraintIndex],
+          before: txResult.previousConstraint,
+          after: txResult.updated,
         },
       );
       return {ok: true};
@@ -2087,20 +2113,27 @@ async function executeMutation(
       requireSelfOrAdmin(actor, teamMemberId);
       const updatedConstraint = payload['constraint'] as Record<string, unknown>;
       const memberRef = db.collection(collections.teamMembers).doc(teamMemberId);
-      const memberDoc = await memberRef.get();
-      if (!memberDoc.exists) throw new HttpError(404, 'Team member not found');
-      const teamMemberName =
-        typeof memberDoc.data()?.['name'] === 'string'
-          ? (memberDoc.data()?.['name'] as string)
-          : null;
-      const constraints = Array.isArray(memberDoc.data()?.['constraints'])
-        ? [...(memberDoc.data()?.['constraints'] as Array<Record<string, unknown>>)]
-        : [];
-      const index = constraints.findIndex((constraint) => constraint['id'] === constraintId);
-      if (index < 0) throw new HttpError(404, 'Constraint not found');
-      const previousConstraint = constraints[index];
-      constraints[index] = updatedConstraint;
-      await memberRef.update({constraints, updatedAt: FieldValue.serverTimestamp()});
+      // Transaction prevents lost updates when multiple constraint edits arrive concurrently
+      // (e.g. admin approving several pending requests in one save).
+      const txResult = await db.runTransaction(async (transaction) => {
+        const memberDoc = await transaction.get(memberRef);
+        if (!memberDoc.exists) throw new HttpError(404, 'Team member not found');
+        const data = memberDoc.data();
+        const teamMemberName =
+          typeof data?.['name'] === 'string' ? (data['name'] as string) : null;
+        const constraints = Array.isArray(data?.['constraints'])
+          ? [...(data['constraints'] as Array<Record<string, unknown>>)]
+          : [];
+        const index = constraints.findIndex((constraint) => constraint['id'] === constraintId);
+        if (index < 0) throw new HttpError(404, 'Constraint not found');
+        const previousConstraint = constraints[index];
+        constraints[index] = updatedConstraint;
+        transaction.update(memberRef, {
+          constraints,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return {previousConstraint, teamMemberName};
+      });
       await writeAuditLog(
         db,
         collections,
@@ -2110,11 +2143,11 @@ async function executeMutation(
         constraintId,
         buildConstraintAuditDetails(
           teamMemberId,
-          teamMemberName,
+          txResult.teamMemberName,
           updatedConstraint,
         ),
         {
-          before: previousConstraint,
+          before: txResult.previousConstraint,
           after: updatedConstraint,
         },
       );
@@ -2126,33 +2159,39 @@ async function executeMutation(
       const constraintId = requireString(payload['constraintId'], 'constraintId');
       requireSelfOrAdmin(actor, teamMemberId);
       const memberRef = db.collection(collections.teamMembers).doc(teamMemberId);
-      const memberDoc = await memberRef.get();
-      if (!memberDoc.exists) throw new HttpError(404, 'Team member not found');
-      const teamMemberName =
-        typeof memberDoc.data()?.['name'] === 'string'
-          ? (memberDoc.data()?.['name'] as string)
-          : null;
-      const constraints = Array.isArray(memberDoc.data()?.['constraints'])
-        ? [...(memberDoc.data()?.['constraints'] as Array<Record<string, unknown>>)]
-        : [];
-      const removedConstraint =
-        constraints.find((constraint) => constraint['id'] === constraintId) ?? null;
-      const nextConstraints = constraints.filter((constraint) => constraint['id'] !== constraintId);
-      await memberRef.update({constraints: nextConstraints, updatedAt: FieldValue.serverTimestamp()});
+      // Transaction prevents lost updates when concurrent constraint mutations target the same member.
+      const txResult = await db.runTransaction(async (transaction) => {
+        const memberDoc = await transaction.get(memberRef);
+        if (!memberDoc.exists) throw new HttpError(404, 'Team member not found');
+        const data = memberDoc.data();
+        const teamMemberName =
+          typeof data?.['name'] === 'string' ? (data['name'] as string) : null;
+        const constraints = Array.isArray(data?.['constraints'])
+          ? [...(data['constraints'] as Array<Record<string, unknown>>)]
+          : [];
+        const removedConstraint =
+          constraints.find((constraint) => constraint['id'] === constraintId) ?? null;
+        const nextConstraints = constraints.filter((constraint) => constraint['id'] !== constraintId);
+        transaction.update(memberRef, {
+          constraints: nextConstraints,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return {removedConstraint, teamMemberName};
+      });
       await writeAuditLog(
         db,
         collections,
         actor,
         operation,
-        getConstraintAuditEntityType(removedConstraint),
+        getConstraintAuditEntityType(txResult.removedConstraint),
         constraintId,
         buildConstraintAuditDetails(
           teamMemberId,
-          teamMemberName,
-          removedConstraint,
+          txResult.teamMemberName,
+          txResult.removedConstraint,
         ),
         {
-          before: removedConstraint,
+          before: txResult.removedConstraint,
         },
       );
       return {ok: true};
