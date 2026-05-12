@@ -242,9 +242,6 @@ Future<void> _initialize() async {
         _hideSplashScreen();
       });
     }
-
-    // Run archive check in background (non-blocking)
-    _runArchiveCheckInBackground(repositories.event);
   } catch (e) {
     totalSw.stop();
     // Show error screen
@@ -534,37 +531,6 @@ Future<void> _clearLegacyConfigCacheKeys() async {
       error: e,
     );
   }
-}
-
-/// Run archive check in background after app renders
-void _runArchiveCheckInBackground(EventRepository eventRepository) {
-  // Run after a short delay to not interfere with initial render
-  Future.delayed(const Duration(seconds: 3), () async {
-    try {
-      // Use reflection to call the private method, or make it public
-      // Since _runArchiveCheckInBackground is private in EventRepository,
-      // we'll need to make it public or add a public method for this purpose
-      developer.log(
-        'main.dart: Background: Running archive check on startup',
-        name: 'Main',
-      );
-
-      // Access the private method via a public API
-      // We need to add a public method to EventRepository for this
-      await eventRepository.runArchiveCheckIfReady();
-
-      developer.log(
-        'main.dart: Background: Archive check completed',
-        name: 'Main',
-      );
-    } catch (e) {
-      developer.log(
-        'main.dart: Background archive check failed: $e',
-        name: 'Main',
-        error: e,
-      );
-    }
-  });
 }
 
 /// Loading screen shown during app initialization

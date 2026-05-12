@@ -78,6 +78,30 @@ class RefreshEvents extends EventEvent {
   const RefreshEvents();
 }
 
+/// Deactivate event — hides it from /admin/assignments, /user/assignments, summary;
+/// deletes Google Calendar events; assignments stay preserved in Firestore.
+class DeactivateEventRequested extends EventEvent {
+  final String eventId;
+  final CrudActionCompleter? completion;
+
+  const DeactivateEventRequested(this.eventId, {this.completion});
+
+  @override
+  List<Object?> get props => [eventId];
+}
+
+/// Reactivate event — restores visibility everywhere and recreates Google Calendar
+/// events using preserved assignments.
+class ReactivateEventRequested extends EventEvent {
+  final String eventId;
+  final CrudActionCompleter? completion;
+
+  const ReactivateEventRequested(this.eventId, {this.completion});
+
+  @override
+  List<Object?> get props => [eventId];
+}
+
 /// Duplicate an event with new date/time and other fields
 class DuplicateEvent extends EventEvent {
   final String eventId;

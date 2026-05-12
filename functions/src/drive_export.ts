@@ -155,6 +155,10 @@ function isFutureOrTodayByEndDate(
   eventData: Record<string, unknown>,
   now: Date,
 ): boolean {
+  // Deactivated events should not appear in exports — they are hidden from
+  // every in-app surface and their assignments are preserved only for
+  // potential reactivation.
+  if (eventData['isDeactivated'] === true) return false;
   const endDate = parseDate(eventData['endDate']);
   if (endDate == null) return false;
   return israelCalendarDateKey(endDate) >= israelCalendarDateKey(now);

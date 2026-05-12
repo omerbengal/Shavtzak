@@ -86,7 +86,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
             if (state is EventsLoaded) {
               setState(() {
                 _futureEvents = state.events
-                    .where((event) => !event.isPast)
+                    .where((event) => !event.isPast && !event.isDeactivated)
                     .toList()
                   ..sort((a, b) => a.startDate.compareTo(b.startDate));
               });

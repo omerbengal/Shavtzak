@@ -72,36 +72,6 @@ class ListFilesResult {
   });
 }
 
-class ArchiveCheckResult {
-  final bool success;
-  final List<String> archivedFolderIds;
-  final String? error;
-
-  const ArchiveCheckResult({
-    required this.success,
-    this.archivedFolderIds = const [],
-    this.error,
-  });
-}
-
-class ArchiveEventData {
-  final String folderId;
-  final DateTime endDate;
-  final bool isArchived;
-
-  const ArchiveEventData({
-    required this.folderId,
-    required this.endDate,
-    required this.isArchived,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'folderId': folderId,
-        'endDate': endDate.toIso8601String(),
-        'isArchived': isArchived,
-      };
-}
-
 /// Service for interacting with Google Drive via Cloud Functions.
 class DriveService {
   static DriveService? _instance;
@@ -235,29 +205,4 @@ class DriveService {
     );
   }
 
-  Future<ArchiveCheckResult> archiveCheck({
-    required List<ArchiveEventData> events,
-  }) async {
-    final result = await _post({
-      'action': 'archiveCheck',
-      'events': events.map((event) => event.toJson()).toList(),
-    });
-
-    if (result['success'] == true) {
-      final archivedList = result['archived'] as List<dynamic>? ?? [];
-      final archivedIds = archivedList
-          .map((item) => (item as Map<String, dynamic>)['folderId'] as String)
-          .toList();
-
-      return ArchiveCheckResult(
-        success: true,
-        archivedFolderIds: archivedIds,
-      );
-    }
-
-    return ArchiveCheckResult(
-      success: false,
-      error: result['error'] as String?,
-    );
-  }
 }

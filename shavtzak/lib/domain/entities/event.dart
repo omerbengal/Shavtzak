@@ -23,8 +23,10 @@ class Event extends Equatable {
   // Google Drive integration fields
   final String? driveFolderId; // Google Drive folder ID for event files
   final String? driveFolderLink; // Direct link to the Drive folder
-  final bool isArchived; // True when folder has been moved to archive
   final bool relevantForExtendedTeam; // Event is relevant for extended team (non-permanent members)
+
+  // Lifecycle / status
+  final bool isDeactivated; // Admin-controlled "on hold": hides from /admin/assignments, /user/assignments, summary; deletes calendar events; assignments preserved for reactivation
 
   const Event({
     required this.id,
@@ -46,8 +48,8 @@ class Event extends Equatable {
     required this.updatedAt,
     this.driveFolderId,
     this.driveFolderLink,
-    this.isArchived = false,
     this.relevantForExtendedTeam = false,
+    this.isDeactivated = false,
   });
 
   /// Check if event occurs on a given date
@@ -137,8 +139,8 @@ class Event extends Equatable {
     DateTime? updatedAt,
     String? driveFolderId,
     String? driveFolderLink,
-    bool? isArchived,
     bool? relevantForExtendedTeam,
+    bool? isDeactivated,
     bool clearParkingLocation = false, // Flag to explicitly clear nullable fields
     bool clearCategoryId = false,
   }) {
@@ -162,8 +164,8 @@ class Event extends Equatable {
       updatedAt: updatedAt ?? this.updatedAt,
       driveFolderId: driveFolderId ?? this.driveFolderId,
       driveFolderLink: driveFolderLink ?? this.driveFolderLink,
-      isArchived: isArchived ?? this.isArchived,
       relevantForExtendedTeam: relevantForExtendedTeam ?? this.relevantForExtendedTeam,
+      isDeactivated: isDeactivated ?? this.isDeactivated,
     );
   }
 
@@ -188,8 +190,8 @@ class Event extends Equatable {
         updatedAt,
         driveFolderId,
         driveFolderLink,
-        isArchived,
         relevantForExtendedTeam,
+        isDeactivated,
       ];
 
   @override

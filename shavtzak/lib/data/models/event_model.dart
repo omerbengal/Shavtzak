@@ -25,8 +25,10 @@ class EventModel {
   // Google Drive integration fields
   final String? driveFolderId;
   final String? driveFolderLink;
-  final bool isArchived;
   final bool relevantForExtendedTeam;
+
+  // Lifecycle / status
+  final bool isDeactivated;
 
   const EventModel({
     required this.id,
@@ -48,8 +50,8 @@ class EventModel {
     required this.updatedAt,
     this.driveFolderId,
     this.driveFolderLink,
-    this.isArchived = false,
     this.relevantForExtendedTeam = false,
+    this.isDeactivated = false,
   });
 
   static DateTime _normalizeDateOnly(DateTime date) {
@@ -108,8 +110,8 @@ class EventModel {
       updatedAt: entity.updatedAt,
       driveFolderId: entity.driveFolderId,
       driveFolderLink: entity.driveFolderLink,
-      isArchived: entity.isArchived,
       relevantForExtendedTeam: entity.relevantForExtendedTeam,
+      isDeactivated: entity.isDeactivated,
     );
   }
 
@@ -135,8 +137,8 @@ class EventModel {
       updatedAt: updatedAt,
       driveFolderId: driveFolderId,
       driveFolderLink: driveFolderLink,
-      isArchived: isArchived,
       relevantForExtendedTeam: relevantForExtendedTeam,
+      isDeactivated: isDeactivated,
     );
   }
 
@@ -166,9 +168,9 @@ class EventModel {
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
       driveFolderId: data['driveFolderId'] as String?,
       driveFolderLink: data['driveFolderLink'] as String?,
-      isArchived: data['isArchived'] as bool? ?? false,
       relevantForExtendedTeam:
           data['relevantForExtendedTeam'] as bool? ?? false,
+      isDeactivated: data['isDeactivated'] as bool? ?? false,
     );
   }
 
@@ -194,8 +196,8 @@ class EventModel {
       'updatedAt': Timestamp.fromDate(updatedAt),
       'driveFolderId': driveFolderId,
       'driveFolderLink': driveFolderLink,
-      'isArchived': isArchived,
       'relevantForExtendedTeam': relevantForExtendedTeam,
+      'isDeactivated': isDeactivated,
     };
   }
 
@@ -223,9 +225,9 @@ class EventModel {
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       driveFolderId: json['driveFolderId'] as String?,
       driveFolderLink: json['driveFolderLink'] as String?,
-      isArchived: json['isArchived'] as bool? ?? false,
       relevantForExtendedTeam:
           json['relevantForExtendedTeam'] as bool? ?? false,
+      isDeactivated: json['isDeactivated'] as bool? ?? false,
     );
   }
 
@@ -251,8 +253,8 @@ class EventModel {
       'updatedAt': updatedAt.toIso8601String(),
       'driveFolderId': driveFolderId,
       'driveFolderLink': driveFolderLink,
-      'isArchived': isArchived,
       'relevantForExtendedTeam': relevantForExtendedTeam,
+      'isDeactivated': isDeactivated,
     };
   }
 }

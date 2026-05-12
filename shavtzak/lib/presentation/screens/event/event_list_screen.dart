@@ -423,8 +423,13 @@ class _EventListScreenState extends State<EventListScreen> {
     return result;
   }
 
-  /// Get background color for event card based on assignment status
+  /// Get background color for event card based on assignment status.
+  /// Deactivated events always render gray, overriding the status color.
   Color? _getEventCardColor(Event event, Map<String, int> assignmentCounts) {
+    if (event.isDeactivated) {
+      return Colors.grey.shade500;
+    }
+
     final assignmentCount = assignmentCounts[event.id] ?? 0;
     final totalRequired = event.totalPeopleRequired;
 
@@ -520,6 +525,30 @@ class _EventListScreenState extends State<EventListScreen> {
                               ),
                             ),
                           ],
+                          if (event.isDeactivated)
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: Padding(
+                                padding: const EdgeInsetsDirectional.only(
+                                    start: 8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade700,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'מושבת',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),

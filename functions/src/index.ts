@@ -1313,8 +1313,8 @@ function eventDocFromJson(event: Record<string, unknown>): Record<string, unknow
     updatedAt: toTimestamp(event['updatedAt'], 'event.updatedAt'),
     driveFolderId: event['driveFolderId'] ?? null,
     driveFolderLink: event['driveFolderLink'] ?? null,
-    isArchived: event['isArchived'] ?? false,
     relevantForExtendedTeam: event['relevantForExtendedTeam'] ?? false,
+    isDeactivated: event['isDeactivated'] ?? false,
   });
 }
 
@@ -2406,33 +2406,6 @@ async function executeMutation(
       await batch.commit();
       await writeAuditLog(db, collections, actor, operation, 'eventBatch', actor.memberId, {
         count: events.length,
-      });
-      return {ok: true};
-    }
-
-    case 'event.updateArchiveStatus': {
-      requireAdmin(actor);
-      const eventId = requireString(payload['eventId'], 'eventId');
-      const eventRef = db.collection(collections.events).doc(eventId);
-      const existingDoc = await eventRef.get();
-      if (!existingDoc.exists) {
-        throw new HttpError(404, 'Event not found');
-      }
-      const existing = existingDoc.data() ?? {};
-      const nextEvent = {
-        ...existing,
-        isArchived: payload['isArchived'] === true,
-      };
-      await eventRef.update({
-        isArchived: payload['isArchived'] === true,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      await writeAuditLog(db, collections, actor, operation, 'event', eventId, {
-        name: existing['name'],
-        isArchived: payload['isArchived'] === true,
-      }, {
-        before: existing,
-        after: nextEvent,
       });
       return {ok: true};
     }

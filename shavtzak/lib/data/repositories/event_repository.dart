@@ -114,8 +114,6 @@ class EventRepository {
     // Create Drive folder in background (don't wait for it)
     _createDriveFolderInBackground(event);
 
-    // Run archive check in background
-    _runArchiveCheckInBackground();
 
     return event;
   }
@@ -164,8 +162,6 @@ class EventRepository {
       }
     }
 
-    // Run archive check in background
-    _runArchiveCheckInBackground();
 
     return event;
   }
@@ -185,66 +181,6 @@ class EventRepository {
     // Delete the event through the backend cascade
     await _database.deleteEvent(id);
 
-    // Run archive check in background
-    _runArchiveCheckInBackground();
-  }
-
-  /// Run archive check - move old event folders to archive
-  Future<void> _runArchiveCheck() async {
-    if (!_driveService.isInitialized) return;
-
-    try {
-      // Get events that need to be archived
-      final eventsToArchive = await _database.getEventsToArchive();
-
-      if (eventsToArchive.isEmpty) {
-        developer.log(
-          'EventRepository._runArchiveCheck: No events to archive',
-          name: 'EventRepository',
-        );
-        return;
-      }
-
-      developer.log(
-        'EventRepository._runArchiveCheck: Found ${eventsToArchive.length} events to archive',
-        name: 'EventRepository',
-      );
-
-      // Prepare archive data
-      final archiveData = eventsToArchive
-          .map((e) => ArchiveEventData(
-                folderId: e.driveFolderId!,
-                endDate: e.endDate,
-                isArchived: e.isArchived,
-              ))
-          .toList();
-
-      // Call Drive service to archive
-      final result = await _driveService.archiveCheck(events: archiveData);
-
-      if (result.success && result.archivedFolderIds.isNotEmpty) {
-        // Update isArchived flag for archived events
-        for (final folderId in result.archivedFolderIds) {
-          final event = eventsToArchive.firstWhere(
-            (e) => e.driveFolderId == folderId,
-            orElse: () =>
-                throw StateError('Event not found for folder $folderId'),
-          );
-          await _database.updateEventArchiveStatus(event.id, true);
-          developer.log(
-            'EventRepository._runArchiveCheck: Archived event ${event.id}',
-            name: 'EventRepository',
-          );
-        }
-      }
-    } catch (e) {
-      developer.log(
-        'EventRepository._runArchiveCheck: Error: $e',
-        name: 'EventRepository',
-        error: e,
-      );
-      // Don't throw - archive check failure shouldn't break the main operation
-    }
   }
 
   /// Get files attached to an event from its Drive folder
@@ -382,8 +318,6 @@ class EventRepository {
     // Insert all new assignments in batch
     await _database.insertAssignmentsBatch(newAssignments);
 
-    // Run archive check in background
-    _runArchiveCheckInBackground();
   }
 
   /// Duplicate an event with new date/time and copy all assignments
@@ -430,8 +364,6 @@ class EventRepository {
       idMap[originalAssignments[i].id] = newAssignments[i];
     }
 
-    // Run archive check in background
-    _runArchiveCheckInBackground();
 
     return idMap;
   }
@@ -578,74 +510,4 @@ class EventRepository {
     }
   }
 
-  /// Run archive check in background
-  Future<void> _runArchiveCheckInBackground() async {
-    if (!_driveService.isInitialized) return;
-
-    try {
-      // Get events that need to be archived
-      final eventsToArchive = await _database.getEventsToArchive();
-
-      if (eventsToArchive.isEmpty) {
-        developer.log(
-          'EventRepository: No events to archive',
-          name: 'EventRepository',
-        );
-        return;
-      }
-
-      developer.log(
-        'EventRepository: Found ${eventsToArchive.length} events to archive',
-        name: 'EventRepository',
-      );
-
-      // Prepare archive data
-      final archiveData = eventsToArchive
-          .map((e) => ArchiveEventData(
-                folderId: e.driveFolderId!,
-                endDate: e.endDate,
-                isArchived: e.isArchived,
-              ))
-          .toList();
-
-      // Call Drive service to archive
-      final result = await _driveService.archiveCheck(events: archiveData);
-
-      if (result.success && result.archivedFolderIds.isNotEmpty) {
-        // Update isArchived flag for archived events
-        for (final folderId in result.archivedFolderIds) {
-          final event = eventsToArchive.firstWhere(
-            (e) => e.driveFolderId == folderId,
-            orElse: () =>
-                throw StateError('Event not found for folder $folderId'),
-          );
-          await _database.updateEventArchiveStatus(event.id, true);
-          developer.log(
-            'EventRepository: Archived event ${event.id}',
-            name: 'EventRepository',
-          );
-        }
-      }
-    } catch (e) {
-      developer.log(
-        'EventRepository: Archive check error: $e',
-        name: 'EventRepository',
-        error: e,
-      );
-      _showDriveErrorSnackBar('שגיאה בארכוב תיקיות דרייב ישנות: $e');
-    }
-  }
-
-  /// Public method to run archive check (called from main.dart on app startup)
-  /// Runs the archive check if Drive service is initialized
-  Future<void> runArchiveCheckIfReady() async {
-    if (!_driveService.isInitialized) {
-      developer.log(
-        'EventRepository.runArchiveCheckIfReady: Drive service not initialized, skipping',
-        name: 'EventRepository',
-      );
-      return;
-    }
-    await _runArchiveCheck();
-  }
 }

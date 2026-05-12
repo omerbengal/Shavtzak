@@ -183,8 +183,14 @@ class _SummaryScreenState extends State<SummaryScreen> {
                           );
                         }
 
+                        // Deactivated events have no presence in the summary —
+                        // exclude them up front so every downstream metric
+                        // (counts, staffing %, category breakdown, checklist
+                        // compliance) ignores them.
                         final events = eventState is EventsLoaded
                             ? eventState.events
+                                .where((e) => !e.isDeactivated)
+                                .toList()
                             : <Event>[];
                         List<Assignment> assignments;
                         if (assignmentState is AssignmentsLoaded) {

@@ -1032,6 +1032,12 @@ async function deleteConstraintArtifacts(
 }
 
 function isEventInDefaultScope(eventData: Record<string, unknown>, todayKey: string): boolean {
+  // Deactivated events have no calendar presence — the Flutter app explicitly
+  // calls RemoveAppEventFromCalendar on deactivation, and reactivation runs
+  // the dedicated sync path. Excluding them here prevents the reconciler
+  // (syncAppEventCalendars / syncAssignedEventsBestEffort) from silently
+  // recreating calendar events that were intentionally removed.
+  if (eventData['isDeactivated'] === true) return false;
   const endDateKey = getIsraelDateKey(asDate(eventData['endDate'], 'event.endDate'));
   return compareDateKeys(endDateKey, todayKey) >= 0;
 }

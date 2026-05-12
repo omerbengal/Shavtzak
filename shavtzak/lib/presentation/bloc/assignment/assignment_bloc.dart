@@ -1341,7 +1341,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // 1. Load all events
     var events = await _eventRepository.getAllEvents();
 
-    // 2. Filter events based on showPastEvents flag
+    // 2a. Deactivated events have no presence in the assignments grid
+    events = events.where((event) => !event.isDeactivated).toList();
+
+    // 2b. Filter events based on showPastEvents flag
     if (!FilterPersistence.showPastEvents) {
       final now = DateTime.now();
       // Only include events where end date >= today (start of day)
@@ -1629,8 +1632,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         roleKeyToRole[role.key] = role;
       }
 
+      // Deactivated events have no presence in the assignments grid
+      var filteredEvents =
+          eventsList.where((e) => !e.isDeactivated).toList();
+
       // Filter events based on showPastEvents flag
-      var filteredEvents = eventsList;
       if (!FilterPersistence.showPastEvents) {
         final now = DateTime.now();
         final todayStart = DateTime(now.year, now.month, now.day);
@@ -1684,6 +1690,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
               // Skip if event not found
               if (otherEvent == null) continue;
+
+              // Deactivated events do not generate conflicts —
+              // their assignments are preserved but treated as inactive.
+              if (otherEvent.isDeactivated) continue;
 
               // Check if events share dates
               if (_eventsShareDate(eventData, otherEvent)) {
@@ -1936,8 +1946,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   ) async {
     try {
       // Fetch fresh data from repository (with populated relations)
-      final assignments =
+      final allAssignments =
           await _repository.getAssignmentsByPerson(event.teamMemberId);
+
+      // Hide assignments whose event is deactivated — preserved in DB but
+      // not shown to the user until the event is reactivated.
+      final assignments = allAssignments
+          .where((a) => a.event == null || !a.event!.isDeactivated)
+          .toList();
 
       if (assignments.isEmpty) {
         emit(const AssignmentsEmpty('אין שיבוצים לחבר צוות זה'));

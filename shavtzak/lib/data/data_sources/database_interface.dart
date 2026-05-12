@@ -74,12 +74,6 @@ abstract class DatabaseInterface {
   Future<bool> isDuplicateEvent(String name, DateTime startDate,
       {String? excludeEventId});
 
-  /// Get events that need to be archived (endDate < today, not yet archived, has drive folder)
-  Future<List<Event>> getEventsToArchive();
-
-  /// Update the isArchived flag for an event
-  Future<void> updateEventArchiveStatus(String eventId, bool isArchived);
-
   // ========== Assignments ==========
 
   /// Get all assignments

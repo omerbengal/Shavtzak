@@ -570,7 +570,6 @@ class _EventFormModalState extends State<EventFormModal> {
       // Preserve Drive-related fields when updating
       driveFolderId: _isEditMode ? widget.event!.driveFolderId : null,
       driveFolderLink: _isEditMode ? widget.event!.driveFolderLink : null,
-      isArchived: _isEditMode ? widget.event!.isArchived : false,
       relevantForExtendedTeam:
           !_relevantForExtendedTeam, // Invert back for database
     );
@@ -582,6 +581,102 @@ class _EventFormModalState extends State<EventFormModal> {
       bloc.add(UpdateEvent(event, completion: completion));
     } else {
       bloc.add(CreateEvent(event, completion: completion));
+    }
+
+    final result = await completion.future;
+    if (!mounted) return;
+
+    if (result.isFailure) {
+      setState(() {
+        _isSaving = false;
+        _loadingMessage = '';
+      });
+      return;
+    }
+
+    widget.onSuccess();
+  }
+
+  /// Show confirm dialog and toggle the event's isDeactivated state.
+  /// On success, closes the modal — the list will refresh via real-time streams.
+  Future<void> _handleToggleDeactivation() async {
+    if (widget.event == null) return; // Edit mode only
+
+    final isCurrentlyDeactivated = widget.event!.isDeactivated;
+    final eventName = widget.event!.name;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text(
+            isCurrentlyDeactivated ? 'הפעלת אירוע מחדש' : 'השבתת אירוע',
+          ),
+          content: SingleChildScrollView(
+            child: isCurrentlyDeactivated
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('"$eventName" יוצג שוב במלואו:'),
+                      const SizedBox(height: 8),
+                      const Text('• אירועי יומן Google ייווצרו מחדש עם המשובצים הנוכחיים'),
+                      const Text('• ההצבות יחזרו להופיע בכל המסכים'),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('"$eventName" יושבת. המשמעות:'),
+                      const SizedBox(height: 8),
+                      const Text('• אירועי יומן Google הקשורים יימחקו'),
+                      const Text('• המשובצים לא יראו את האירוע במסך שלהם'),
+                      const Text('• האירוע יוסתר ממסך ההצבות וממסך המנהלים'),
+                      const Text('• ההצבות יישמרו במערכת'),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'ניתן להפעיל מחדש בכל עת — אירועי היומן ייווצרו שוב וההצבות יחזרו להופיע.',
+                        style: TextStyle(fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                  ),
+          ),
+          actions: [
+            TextButton(
+              child: const Text('ביטול'),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor:
+                    isCurrentlyDeactivated ? Colors.green : Colors.red,
+              ),
+              child: Text(isCurrentlyDeactivated ? 'הפעל מחדש' : 'השבת אירוע'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _isSaving = true;
+      _loadingMessage =
+          isCurrentlyDeactivated ? 'מפעיל אירוע מחדש...' : 'משבית אירוע...';
+    });
+
+    final completion = Completer<CrudActionResult>();
+    final bloc = context.read<EventBloc>();
+    if (isCurrentlyDeactivated) {
+      bloc.add(ReactivateEventRequested(widget.event!.id,
+          completion: completion));
+    } else {
+      bloc.add(DeactivateEventRequested(widget.event!.id,
+          completion: completion));
     }
 
     final result = await completion.future;
@@ -706,6 +801,20 @@ class _EventFormModalState extends State<EventFormModal> {
                                           ),
                                         ),
                                 ),
+                                if (_isEditMode && !widget.isDuplication)
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.power_settings_new,
+                                      color: widget.event!.isDeactivated
+                                          ? Colors.green
+                                          : Colors.red,
+                                    ),
+                                    onPressed:
+                                        _isSaving ? null : _handleToggleDeactivation,
+                                    tooltip: widget.event!.isDeactivated
+                                        ? 'הפעל אירוע מחדש'
+                                        : 'השבת אירוע',
+                                  ),
                                 if (_isEditMode)
                                   IconButton(
                                     icon: const Icon(Icons.delete,
@@ -798,6 +907,31 @@ class _EventFormModalState extends State<EventFormModal> {
                               ],
                             ),
                           ),
+
+                          // Deactivated status banner
+                          if (_isEditMode &&
+                              !widget.isDuplication &&
+                              widget.event!.isDeactivated)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 10),
+                              color: Colors.grey.shade200,
+                              child: Row(
+                                children: [
+                                  Icon(Icons.power_settings_new,
+                                      color: Colors.grey.shade700, size: 18),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'האירוע מושבת',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey.shade800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
 
                           // Modal Body (Scrollable)
                           Expanded(

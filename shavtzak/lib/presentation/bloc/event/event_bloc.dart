@@ -46,6 +46,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     on<DuplicateEvent>(_onDuplicateEvent);
     on<ConfirmDuplicationWithExclusions>(_onConfirmDuplicationWithExclusions);
     on<RefreshEvents>(_onRefreshEvents);
+    on<DeactivateEventRequested>(_onDeactivateEvent);
+    on<ReactivateEventRequested>(_onReactivateEvent);
     on<_EventsDataUpdated>(_onEventsDataUpdated);
   }
 
@@ -377,7 +379,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       }
 
       // Create the proposed duplicated event with all new values
-      // Note: Drive fields (driveFolderId, driveFolderLink, isArchived) will be null
+      // Note: Drive fields (driveFolderId, driveFolderLink) will be null
       // and will be created automatically when duplicating
       final proposedEvent = Event(
         id: const Uuid().v4(), // Generate unique ID for the duplicated event
@@ -589,16 +591,22 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // Preserve Drive fields from proposedEvent (if any)
       driveFolderId: proposedEvent.driveFolderId,
       driveFolderLink: proposedEvent.driveFolderLink,
-      isArchived: proposedEvent.isArchived,
       relevantForExtendedTeam: proposedEvent.relevantForExtendedTeam,
     );
   }
 
   /// Helper method to sync event to Google Calendar
-  /// Always syncs to handle both creation/update AND deletion of calendar events
+  /// Always syncs to handle both creation/update AND deletion of calendar events.
+  /// Deactivated events get their calendar entries removed instead of synced.
   void _syncEventToCalendar(Event event) {
     final calendarSyncBloc = _calendarSyncBloc;
     if (calendarSyncBloc == null) {
+      return;
+    }
+
+    // Deactivated events have no calendar presence — remove any existing entries.
+    if (event.isDeactivated) {
+      calendarSyncBloc.add(RemoveAppEventFromCalendar(eventId: event.id));
       return;
     }
 
@@ -625,6 +633,76 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       endTime: event.endTime,
       location: cleanLocation,
     ));
+  }
+
+  /// Deactivate an event:
+  /// - Writes isDeactivated=true to Firestore (assignments are preserved)
+  /// - Removes the event's Google Calendar entries via _syncEventToCalendar
+  Future<void> _onDeactivateEvent(
+    DeactivateEventRequested event,
+    Emitter<EventState> emit,
+  ) async {
+    try {
+      final current = await _repository.getEventById(event.eventId);
+      if (current == null) {
+        const message = 'האירוע לא נמצא';
+        emit(const EventError(message));
+        _completeActionFailure(event.completion, message);
+        return;
+      }
+
+      final updated = current.copyWith(
+        isDeactivated: true,
+        updatedAt: DateTime.now(),
+      );
+
+      await _repository.updateEvent(updated);
+      _syncEventToCalendar(updated);
+
+      emit(const EventOperationSuccess('האירוע הושבת'));
+      _completeActionSuccess(event.completion, 'האירוע הושבת');
+    } catch (e) {
+      final message = 'שגיאה בהשבתת האירוע: $e';
+      emit(EventError(message));
+      _completeActionFailure(event.completion, message);
+    }
+  }
+
+  /// Reactivate an event:
+  /// - Writes isDeactivated=false to Firestore
+  /// - Recreates Google Calendar entries via _syncEventToCalendar and re-syncs attendees
+  ///   from the preserved assignments
+  Future<void> _onReactivateEvent(
+    ReactivateEventRequested event,
+    Emitter<EventState> emit,
+  ) async {
+    try {
+      final current = await _repository.getEventById(event.eventId);
+      if (current == null) {
+        const message = 'האירוע לא נמצא';
+        emit(const EventError(message));
+        _completeActionFailure(event.completion, message);
+        return;
+      }
+
+      final updated = current.copyWith(
+        isDeactivated: false,
+        updatedAt: DateTime.now(),
+      );
+
+      await _repository.updateEvent(updated);
+      _syncEventToCalendar(updated);
+      // Re-sync attendees from the preserved assignments so calendar invites are
+      // restored to whoever was on the event before it was deactivated.
+      _calendarSyncBloc?.add(SyncAttendeesForAppEvent(eventId: updated.id));
+
+      emit(const EventOperationSuccess('האירוע הופעל מחדש'));
+      _completeActionSuccess(event.completion, 'האירוע הופעל מחדש');
+    } catch (e) {
+      final message = 'שגיאה בהפעלת האירוע: $e';
+      emit(EventError(message));
+      _completeActionFailure(event.completion, message);
+    }
   }
 
   @override
