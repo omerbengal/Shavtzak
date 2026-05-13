@@ -54,7 +54,15 @@ class _EventListScreenState extends State<EventListScreen> {
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: badge != null
-            ? Badge(label: badge, child: Icon(icon, size: 22))
+            ? Badge(
+                label: badge,
+                // Nudge the badge further up and toward the end (visually left
+                // in RTL) so it sits at the icon's corner instead of covering
+                // most of it.
+                alignment: AlignmentDirectional.topEnd,
+                offset: const Offset(8, -8),
+                child: Icon(icon, size: 22),
+              )
             : Icon(icon, size: 22),
       ),
     );
@@ -150,6 +158,32 @@ class _EventListScreenState extends State<EventListScreen> {
           titleSpacing: 0,
           title: Row(
             children: [
+              // Leading: Deactivated events button (mirrors the car icon in /admin/team-members)
+              BlocSelector<EventBloc, EventState, int>(
+                selector: (state) {
+                  if (state is EventsLoaded) {
+                    return state.events.where((e) => e.isDeactivated).length;
+                  }
+                  if (_lastLoadedState != null) {
+                    return _lastLoadedState!.events
+                        .where((e) => e.isDeactivated)
+                        .length;
+                  }
+                  return 0;
+                },
+                builder: (context, deactivatedCount) {
+                  return Tooltip(
+                    message: 'אירועים מושבתים',
+                    child: _buildCompactIcon(
+                      icon: Icons.power_settings_new,
+                      onPressed: _showDeactivatedEventsDialog,
+                      badge: deactivatedCount > 0
+                          ? Text(deactivatedCount.toString())
+                          : null,
+                    ),
+                  );
+                },
+              ),
               // Centered title
               const Expanded(
                 child: Center(
@@ -266,16 +300,26 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   Widget _buildEventList(EventsLoaded state) {
-    // Calculate past events count
+    // Exclude deactivated events from the main list and from all counts.
+    // Deactivated events are surfaced through a dedicated dialog instead.
+    final activeEvents =
+        state.events.where((event) => !event.isDeactivated).toList();
+
+    // Calculate counts from active events only
     final today = DateTime.now();
-    final pastCount = state.events.where((event) {
-      return event.endDate
-          .isBefore(DateTime(today.year, today.month, today.day));
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final totalCount = activeEvents.length;
+    final upcomingCount = activeEvents.where((event) {
+      return event.endDate.isAfter(todayDate) ||
+          event.endDate.isAtSameMomentAs(todayDate);
+    }).length;
+    final pastCount = activeEvents.where((event) {
+      return event.endDate.isBefore(todayDate);
     }).length;
 
-    // Filter events based on selected filter
+    // Filter events based on selected filter (operating on active-only set)
     final filteredEvents =
-        _filterEvents(state.events, FilterPersistence.eventFilterIndex);
+        _filterEvents(activeEvents, FilterPersistence.eventFilterIndex);
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -287,9 +331,9 @@ class _EventListScreenState extends State<EventListScreen> {
           // Interactive filter bar
           InteractiveFilterBar(
             options: [
-              FilterOption(label: 'סה״כ', count: state.totalCount.toString()),
+              FilterOption(label: 'סה״כ', count: totalCount.toString()),
               FilterOption(
-                  label: 'עתידיים', count: state.upcomingCount.toString()),
+                  label: 'עתידיים', count: upcomingCount.toString()),
               FilterOption(label: 'עברו', count: pastCount.toString()),
             ],
             selectedIndex: FilterPersistence.eventFilterIndex,
@@ -571,37 +615,43 @@ class _EventListScreenState extends State<EventListScreen> {
                   children: [
                     // Line 1: Date(s) with old styling
                     if (isSameDate)
-                      _buildFieldItem('תאריך', _formatDate(event.startDate))
+                      _buildFieldItem('תאריך', _formatDate(event.startDate),
+                          isDeactivated: event.isDeactivated)
                     else
                       // Multi-day: both dates on same row
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _buildFieldItem(
-                              'תאריך התחלה', _formatDate(event.startDate)),
+                              'תאריך התחלה', _formatDate(event.startDate),
+                              isDeactivated: event.isDeactivated),
                           const SizedBox(width: 16),
                           _buildFieldItem(
-                              'תאריך סיום', _formatDate(event.endDate)),
+                              'תאריך סיום', _formatDate(event.endDate),
+                              isDeactivated: event.isDeactivated),
                         ],
                       ),
                     // Line 2: Location with old styling (only if not empty)
                     if (event.location.isNotEmpty)
                       _buildFieldItem(
-                          'מיקום', _formatLocationForDisplay(event.location)),
+                          'מיקום', _formatLocationForDisplay(event.location),
+                          isDeactivated: event.isDeactivated),
                     // Line 3: Time fields with old styling and responsive font size
                     if (event.assemblyTime.isNotEmpty ||
                         event.startTime.isNotEmpty ||
                         event.actualShowStartTime.isNotEmpty ||
                         event.endTime.isNotEmpty)
                       _buildFieldItemWithResponsiveFont(
-                          'שעות', _formatTimeFields(event)),
+                          'שעות', _formatTimeFields(event),
+                          isDeactivated: event.isDeactivated),
                   ],
                 ),
               ),
               // Comments (if not empty)
               if (event.comments.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                _buildFieldItem('הערות', event.comments),
+                _buildFieldItem('הערות', event.comments,
+                    isDeactivated: event.isDeactivated),
               ],
               // Birthday indicators (if any team member has birthday during event)
               if (eventBirthdays[event.id] != null &&
@@ -665,6 +715,122 @@ class _EventListScreenState extends State<EventListScreen> {
         _showEventFormModal(result['event'] as Event, isDuplication: true);
       }
     }
+  }
+
+  /// Show a dialog listing only deactivated events. The list reactively updates
+  /// as events get deactivated/reactivated. Tapping an event opens the edit
+  /// modal (where it can be reactivated).
+  void _showDeactivatedEventsDialog() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final dialogHeight = (screenHeight * 0.8).clamp(420.0, 760.0);
+
+    showDialog(
+      context: context,
+      // Use the same navigator that the event form modal uses
+      // (showModalBottomSheet defaults to useRootNavigator: false). This keeps
+      // the dialog and any subsequently opened modal in the same Navigator
+      // stack, so the modal layers above the dialog and the dialog remains
+      // intact when the modal closes.
+      useRootNavigator: false,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: Dialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: SizedBox(
+            width: 560,
+            height: dialogHeight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.power_settings_new,
+                          color: Colors.grey.shade700),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'אירועים מושבתים',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'סגור',
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 12),
+                  Expanded(
+                    child: BlocBuilder<EventBloc, EventState>(
+                      builder: (context, state) {
+                        // Resolve a stable EventsLoaded snapshot
+                        EventsLoaded? loaded;
+                        if (state is EventsLoaded) {
+                          loaded = state;
+                        } else if (_lastLoadedState != null) {
+                          loaded = _lastLoadedState;
+                        }
+
+                        if (loaded == null) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+
+                        final deactivatedEvents = loaded.events
+                            .where((e) => e.isDeactivated)
+                            .toList()
+                          ..sort((a, b) {
+                            final dateCompare =
+                                a.startDate.compareTo(b.startDate);
+                            if (dateCompare != 0) return dateCompare;
+                            return a.name.compareTo(b.name);
+                          });
+
+                        if (deactivatedEvents.isEmpty) {
+                          return Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.power_settings_new,
+                                    size: 64, color: Colors.grey.shade400),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'אין אירועים מושבתים',
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.grey.shade600),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        return ListView.builder(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          itemCount: deactivatedEvents.length,
+                          itemBuilder: (context, index) {
+                            return _buildEventCard(
+                              deactivatedEvents[index],
+                              loaded!.assignmentCounts,
+                              loaded.eventBirthdays,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _showDeleteConfirmation(Event event) {
@@ -809,7 +975,11 @@ class _EventListScreenState extends State<EventListScreen> {
     return parts.join(' | ');
   }
 
-  Widget _buildFieldItem(String label, String value) {
+  Widget _buildFieldItem(String label, String value,
+      {bool isDeactivated = false}) {
+    // On deactivated cards (gray.shade500 background), the default Colors.grey
+    // label is invisible. Use a near-black label for contrast there.
+    final labelColor = isDeactivated ? Colors.grey.shade900 : Colors.grey;
     return Padding(
       padding: const EdgeInsets.only(top: 2, bottom: 2),
       child: Column(
@@ -818,8 +988,10 @@ class _EventListScreenState extends State<EventListScreen> {
         children: [
           Text(
             label,
-            style: const TextStyle(
-                fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500),
+            style: TextStyle(
+                fontSize: 10,
+                color: labelColor,
+                fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 2),
           Text(
@@ -833,7 +1005,9 @@ class _EventListScreenState extends State<EventListScreen> {
 
   /// Build field item with responsive font size for the value
   /// Uses FittedBox to automatically scale down font size when text would wrap
-  Widget _buildFieldItemWithResponsiveFont(String label, String value) {
+  Widget _buildFieldItemWithResponsiveFont(String label, String value,
+      {bool isDeactivated = false}) {
+    final labelColor = isDeactivated ? Colors.grey.shade900 : Colors.grey;
     return Padding(
       padding: const EdgeInsets.only(top: 2, bottom: 2),
       child: Column(
@@ -842,8 +1016,10 @@ class _EventListScreenState extends State<EventListScreen> {
         children: [
           Text(
             label,
-            style: const TextStyle(
-                fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500),
+            style: TextStyle(
+                fontSize: 10,
+                color: labelColor,
+                fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 2),
           FittedBox(

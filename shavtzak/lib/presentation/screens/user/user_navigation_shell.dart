@@ -185,7 +185,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
             const BottomNavigationBarItem(
               icon: Icon(Icons.assignment),
               activeIcon: Icon(Icons.assignment_turned_in),
-              label: 'המשימות שלי',
+              label: 'האירועים שלי',
             ),
             BottomNavigationBarItem(
               icon: isPermanent

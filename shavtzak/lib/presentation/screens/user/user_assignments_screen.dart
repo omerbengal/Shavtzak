@@ -35,6 +35,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   AssignmentState? _lastLoadedState;
   bool _isMutationInFlight = false;
   String _mutationMessage = '';
+  bool _isPastSectionExpanded = false;
 
   @override
   void initState() {
@@ -273,7 +274,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'המשימות שלי',
+                  'האירועים שלי',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -308,17 +309,23 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
           const SizedBox(height: 16),
 
-          // Past assignments section
-          _buildSectionHeader(
+          // Past assignments section (collapsible, closed by default)
+          _buildCollapsibleSectionHeader(
             context,
             'אירועים שעברו',
             pastGroups.length,
             Colors.grey.shade600,
+            isExpanded: _isPastSectionExpanded,
+            onToggle: () {
+              setState(() {
+                _isPastSectionExpanded = !_isPastSectionExpanded;
+              });
+            },
           ),
 
-          if (pastGroups.isEmpty)
-            _buildEmptySectionMessage('אין אירועים קודמים')
-          else
+          if (_isPastSectionExpanded && pastGroups.isEmpty)
+            _buildEmptySectionMessage('אין אירועים קודמים'),
+          if (_isPastSectionExpanded && pastGroups.isNotEmpty)
             ...pastGroups.map(
               (assignmentGroup) => _buildAssignmentCard(
                   context, assignmentGroup,
@@ -366,6 +373,68 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCollapsibleSectionHeader(
+    BuildContext context,
+    String title,
+    int count,
+    Color color, {
+    required bool isExpanded,
+    required VoidCallback onToggle,
+  }) {
+    return Material(
+      color: Colors.grey.shade100,
+      child: InkWell(
+        onTap: onToggle,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Colors.grey.shade300, width: 1),
+            ),
+          ),
+          child: Row(
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withAlpha((255 * 0.15).round()),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              AnimatedRotation(
+                turns: isExpanded ? 0.5 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: Icon(
+                  Icons.keyboard_arrow_down,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
