@@ -16,6 +16,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
+          automaticallyImplyLeading: false,
           title: const Text('מדיניות פרטיות'),
           centerTitle: true,
         ),
