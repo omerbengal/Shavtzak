@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:url_launcher/link.dart';
 
+import '../../../core/services/environment_service.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
@@ -184,7 +186,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
       child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          title: const Text('בחירת משתמש'),
+          title: const Text('שבצק - Shavtzak'),
           centerTitle: true,
           actions: [
             IconButton(
@@ -280,6 +282,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
             Expanded(
               child: _buildTeamMembersListWidget(context),
             ),
+            _buildFooter(context),
           ],
         ),
         LoadingOverlay(
@@ -287,6 +290,52 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
           message: 'מאמת...',
         ),
       ],
+    );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24.0, 12.0, 24.0, 16.0),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border(
+          top: BorderSide(color: Colors.grey.shade300, width: 1),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Link(
+            uri: Uri.parse(
+              '${EnvironmentService.instance.routePrefix}/privacy-policy',
+            ),
+            target: LinkTarget.self,
+            builder: (context, followLink) => TextButton.icon(
+              onPressed: followLink,
+              icon: const Icon(Icons.privacy_tip_outlined, size: 18),
+              label: const Text(
+                'מדיניות פרטיות',
+                style: TextStyle(decoration: TextDecoration.underline),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'שבצק היא מערכת לניהול צוותים ושיבוץ חברי צוות לאירועים. '
+            'מנהלים יוצרים אירועים, מגדירים את התפקידים הנדרשים ומשבצים '
+            'חברי צוות בהתאם לזמינות וליכולות שלהם. חברי הצוות יכולים '
+            'לצפות בשיבוצים האישיים שלהם, לעדכן את זמינותם ולתאם את ההגעה '
+            'לאירועים בקלות ובמקום אחד.',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade700,
+              height: 1.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
     );
   }
 
