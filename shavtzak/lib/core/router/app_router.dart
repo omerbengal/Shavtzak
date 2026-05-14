@@ -19,6 +19,8 @@ import '../../presentation/screens/event/event_list_screen.dart';
 import '../../presentation/screens/assignment/assignment_list_screen.dart';
 import '../../presentation/screens/summary/summary_screen.dart';
 import '../../presentation/screens/db/db_preview_screen.dart';
+import '../../presentation/screens/privacy_policy/privacy_policy_screen.dart';
+import '../../presentation/screens/terms_of_service/terms_of_service_screen.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 
 /// Global navigator key for showing snackbars from outside widget tree
@@ -99,6 +101,46 @@ class AppRouter {
       });
     }
 
+    // If /privacy-policy was captured in initial URL, navigate there after first frame
+    if (capturedInitialHash != null &&
+        capturedInitialHash!.contains('/privacy-policy')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_instance != null) {
+          final currentPath =
+              _instance!.routeInformationProvider.value.uri.path;
+          if (currentPath != '/privacy-policy' &&
+              currentPath != '/test/privacy-policy') {
+            final envPath = capturedInitialHash!.contains('/test/')
+                ? '/test/privacy-policy'
+                : '/privacy-policy';
+            EnvironmentService.instance.updateFromPath(envPath);
+            _instance!.go(envPath);
+            capturedInitialHash = null; // Clear after use
+          }
+        }
+      });
+    }
+
+    // If /terms-of-service was captured in initial URL, navigate there after first frame
+    if (capturedInitialHash != null &&
+        capturedInitialHash!.contains('/terms-of-service')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_instance != null) {
+          final currentPath =
+              _instance!.routeInformationProvider.value.uri.path;
+          if (currentPath != '/terms-of-service' &&
+              currentPath != '/test/terms-of-service') {
+            final envPath = capturedInitialHash!.contains('/test/')
+                ? '/test/terms-of-service'
+                : '/terms-of-service';
+            EnvironmentService.instance.updateFromPath(envPath);
+            _instance!.go(envPath);
+            capturedInitialHash = null; // Clear after use
+          }
+        }
+      });
+    }
+
     // Cancel previous subscription to prevent multiple listeners
     _blocSubscription?.cancel();
 
@@ -116,6 +158,16 @@ class AppRouter {
 
           // /db route is unauthenticated - never redirect away from it
           if (strippedRoute.startsWith('/db')) {
+            return;
+          }
+
+          // /privacy-policy route is unauthenticated - never redirect away from it
+          if (strippedRoute.startsWith('/privacy-policy')) {
+            return;
+          }
+
+          // /terms-of-service route is unauthenticated - never redirect away from it
+          if (strippedRoute.startsWith('/terms-of-service')) {
             return;
           }
 
@@ -206,6 +258,18 @@ class AppRouter {
 
         // /db route is unauthenticated - bypass ALL checks
         if (strippedRoute == '/db' || strippedRoute.startsWith('/db')) {
+          return null;
+        }
+
+        // /privacy-policy route is unauthenticated - bypass ALL checks
+        if (strippedRoute == '/privacy-policy' ||
+            strippedRoute.startsWith('/privacy-policy')) {
+          return null;
+        }
+
+        // /terms-of-service route is unauthenticated - bypass ALL checks
+        if (strippedRoute == '/terms-of-service' ||
+            strippedRoute.startsWith('/terms-of-service')) {
           return null;
         }
 
@@ -317,6 +381,23 @@ class AppRouter {
           path: '/db',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: DbPreviewScreen(key: ValueKey('db_prod')),
+          ),
+        ),
+
+        // Privacy Policy route - public, unauthenticated
+        GoRoute(
+          path: '/privacy-policy',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: PrivacyPolicyScreen(key: ValueKey('privacy_policy_prod')),
+          ),
+        ),
+
+        // Terms of Service route - public, unauthenticated
+        GoRoute(
+          path: '/terms-of-service',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child:
+                TermsOfServiceScreen(key: ValueKey('terms_of_service_prod')),
           ),
         ),
 
@@ -439,6 +520,16 @@ class AppRouter {
             path: '/test/db',
             pageBuilder: (context, state) => const NoTransitionPage(
                 child: DbPreviewScreen(key: ValueKey('db_test')))),
+        GoRoute(
+            path: '/test/privacy-policy',
+            pageBuilder: (context, state) => const NoTransitionPage(
+                child: PrivacyPolicyScreen(
+                    key: ValueKey('privacy_policy_test')))),
+        GoRoute(
+            path: '/test/terms-of-service',
+            pageBuilder: (context, state) => const NoTransitionPage(
+                child: TermsOfServiceScreen(
+                    key: ValueKey('terms_of_service_test')))),
         GoRoute(
             path: '/test/summary',
             pageBuilder: (context, state) => const NoTransitionPage(
