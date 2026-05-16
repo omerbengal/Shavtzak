@@ -6,9 +6,6 @@ import '../../domain/entities/role.dart';
 import '../bloc/assignment/assignment_bloc.dart';
 import '../bloc/assignment/assignment_event.dart';
 import '../bloc/assignment/assignment_state.dart';
-import '../bloc/team/team_bloc.dart';
-import '../bloc/team/team_event.dart';
-import '../bloc/team/team_state.dart';
 import '../bloc/role/role_bloc.dart';
 import '../bloc/role/role_state.dart';
 import '../../../core/services/service_locator.dart';
@@ -34,16 +31,13 @@ class EventTeamMembersDialog extends StatefulWidget {
 
 class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
   late final AssignmentBloc _assignmentBloc;
-  late final TeamBloc _teamBloc;
   List<Assignment>? _cachedAssignments;
-  bool _hasShownData = false;
 
   @override
   void initState() {
     super.initState();
-    // Create dedicated BLoCs for this dialog
+    // Create a dedicated BLoC for this dialog
     _assignmentBloc = serviceLocator.createAssignmentBloc();
-    _teamBloc = serviceLocator.createTeamBloc();
 
     _loadAssignments();
   }
@@ -51,45 +45,40 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
   @override
   void dispose() {
     _assignmentBloc.close();
-    _teamBloc.close();
     super.dispose();
   }
 
   void _loadAssignments() async {
-    // If we don't have cached data, prefetch it first
+    // Prefetch once so we can render immediately while the real-time
+    // stream warms up. Firestore's first snapshot can be an empty cache
+    // hit before the server result arrives, so relying on the stream
+    // alone can otherwise strand the dialog on a spinner indefinitely.
     if (_cachedAssignments == null) {
       try {
-        final assignmentRepository = serviceLocator.createAssignmentRepository();
-        final assignments = await assignmentRepository.getAssignmentsByEvent(widget.eventId);
-        _cachedAssignments = assignments;
-        _hasShownData = assignments.isNotEmpty;
+        final assignmentRepository =
+            serviceLocator.createAssignmentRepository();
+        final assignments =
+            await assignmentRepository.getAssignmentsByEvent(widget.eventId);
+        if (!mounted) return;
+        setState(() => _cachedAssignments = assignments);
       } catch (e) {
-        // If prefetch fails, continue with BLoC loading
+        // If prefetch fails, fall back to the BLoC stream only.
       }
     }
 
-    // Use the AssignmentBloc's real-time stream
+    // Subscribe to the real-time stream. Dispatch exactly once: this is a
+    // long-running emit.forEach handler, and re-dispatching it creates
+    // competing Firestore subscriptions that can lose the server result.
     _assignmentBloc.add(LoadAssignmentsByEvent(widget.eventId));
-    // Also load team members to keep them updated
-    _teamBloc.add(const LoadTeamMembers());
   }
 
   @override
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: MultiBlocProvider(
-        providers: [
-          BlocProvider<AssignmentBloc>.value(value: _assignmentBloc),
-          BlocProvider<TeamBloc>.value(value: _teamBloc),
-        ],
-        child: BlocListener<TeamBloc, TeamState>(
-          listener: (context, state) {
-            if (state is TeamLoaded) {
-              _assignmentBloc.add(LoadAssignmentsByEvent(widget.eventId));
-            }
-          },
-          child: Dialog(
+      child: BlocProvider<AssignmentBloc>.value(
+        value: _assignmentBloc,
+        child: Dialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Container(
               width: MediaQuery.of(context).size.width * 0.9,
@@ -123,28 +112,30 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                   Expanded(
                     child: BlocBuilder<AssignmentBloc, AssignmentState>(
                       builder: (context, state) {
-                        // If we have cached data and are still loading, show the cached data
-                        if (state is AssignmentLoading && _cachedAssignments != null) {
-                          if (_cachedAssignments!.isEmpty) {
-                            return _hasShownData
-                                ? const Center(child: CircularProgressIndicator())
-                                : _buildEmptyState();
-                          }
-                          return _buildAssignmentsList(context, _cachedAssignments!);
-                        }
-
-                        if (state is AssignmentLoading && _cachedAssignments == null) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
-
+                        // Prefer fresh data from the real-time stream.
                         if (state is AssignmentsLoaded) {
                           final assignments = state.assignments
                               .where((a) => a.eventId == widget.eventId)
                               .toList();
-                          if (assignments.isEmpty) {
-                            return _buildEmptyState();
-                          }
-                          return _buildAssignmentsList(context, assignments);
+                          return assignments.isEmpty
+                              ? _buildEmptyState()
+                              : _buildAssignmentsList(context, assignments);
+                        }
+
+                        // Stream hasn't produced data yet: render the
+                        // prefetched snapshot if we have one so the user
+                        // never sees an indefinite spinner while the
+                        // Firestore stream warms up.
+                        if (_cachedAssignments != null) {
+                          return _cachedAssignments!.isEmpty
+                              ? _buildEmptyState()
+                              : _buildAssignmentsList(
+                                  context, _cachedAssignments!);
+                        }
+
+                        // Definitive "no assignments" from the stream.
+                        if (state is AssignmentsEmpty) {
+                          return _buildEmptyState();
                         }
 
                         if (state is AssignmentError) {
@@ -156,6 +147,7 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                           );
                         }
 
+                        // Initial/loading with nothing prefetched yet.
                         return const Center(child: CircularProgressIndicator());
                       },
                     ),
@@ -165,7 +157,6 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
             ),
           ),
         ),
-      ),
     );
   }
 

@@ -198,6 +198,7 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                         : BlocBuilder<AssignmentBloc, AssignmentState>(
                             buildWhen: (previous, current) =>
                                 current is AssignmentsLoaded ||
+                                current is AssignmentsEmpty ||
                                 current is AssignmentLoading ||
                                 current is AssignmentError,
                             builder: (context, state) {
@@ -223,6 +224,16 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                                 return _buildAssignmentsList(
                                   context,
                                   assignments,
+                                );
+                              } else if (state is AssignmentsEmpty) {
+                                _latestAssignments = const [];
+                                return Center(
+                                  child: Text(
+                                    'אין שיבוצים לאירוע זה',
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.grey.shade600),
+                                  ),
                                 );
                               } else if (state is AssignmentError) {
                                 return Center(
