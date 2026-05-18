@@ -76,8 +76,14 @@ end to end:
   - `shavtzak/lib/data/models/event_model.dart`: `toFirestore()` writes
     `'inviteAllPermanentWhenUnassigned': inviteAllPermanentWhenUnassigned`; `fromFirestore()`
     reads `data['inviteAllPermanentWhenUnassigned'] as bool? ?? false`.
-  - It flows through `CreateEvent` / `UpdateEvent` automatically because those carry the full
-    `Event` object (`event_bloc.dart` `_onCreateEvent`/`_onUpdateEvent` ≈ lines 286–332).
+  - It flows through `CreateEvent` / `UpdateEvent` in the Dart BLoC because those carry the
+    full `Event` object (`event_bloc.dart` `_onCreateEvent`/`_onUpdateEvent` ≈ lines 286–332).
+  - **Persistence is server-side and whitelisted.** `firestore.rules` forbids client writes to
+    `events`; the app writes via the backend `event.insert`/`event.update`/`event.insertBatch`
+    mutations, which reconstruct the doc through `eventDocFromJson` (`functions/src/index.ts`
+    ≈ line 1316) — an explicit field whitelist. This whitelist **must** include
+    `inviteAllPermanentWhenUnassigned`, or the field is silently dropped and the rule never
+    fires. (This was missed in the original design and caught during manual testing.)
 
 Stored on the `events` document → automatically test/prod-isolated (env-aware collection
 prefix), and it **survives event edits**, which is what makes the behavior "sticky" with no

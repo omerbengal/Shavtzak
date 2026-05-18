@@ -1000,3 +1000,18 @@ git commit -m "Docs: mark invite-all-permanent feature implemented + manual prot
 **Placeholder scan:** No "TBD/TODO"; every code step contains complete, copy-ready code; every command has an expected result. None of the forbidden patterns are present.
 
 **Type/name consistency:** Dart `inviteAllPermanentWhenUnassigned` (entity ↔ model ↔ modal ↔ `getEventById`-loaded event) is spelled identically everywhere. Backend exports `isEligiblePermanentMember` / `shouldInviteAllPermanentForEvent` are defined in Task 5 and consumed by name in Task 5's test and Task 6's `readEventAttendeeEmails`. `readEventAttendeeEmails`'s new `eventData: Record<string, unknown>` parameter (Task 6 Step 1) matches the single call-site update (Task 6 Step 2). Firestore keys used by the backend (`isPermanent`, `isActive`, `isArchived`, `email`, `inviteAllPermanentWhenUnassigned`, `relevantForExtendedTeam`) match `team_member_model.dart` / `event_model.dart` serialization. No mismatches found.
+
+## Post-implementation correction (found during manual testing)
+
+The plan and spec assumed the new `Event` field would persist automatically because the
+Dart `CreateEvent`/`UpdateEvent` events carry the full `Event` object. That was wrong:
+`firestore.rules` forbids client writes to `events`; persistence happens server-side via the
+backend `event.insert`/`event.update`/`event.insertBatch` mutations, which rebuild the
+document through a strict field **whitelist** `eventDocFromJson` (`functions/src/index.ts`
+≈ line 1316). Because that whitelist did not list `inviteAllPermanentWhenUnassigned`, the
+field was silently dropped on every save and the rule never fired (no invitees).
+
+**Fix:** add `inviteAllPermanentWhenUnassigned: event['inviteAllPermanentWhenUnassigned'] ?? false`
+to `eventDocFromJson` (mirrors the adjacent `relevantForExtendedTeam` / `isDeactivated`
+lines). This makes the feature require a Cloud Functions deploy to work end-to-end (which it
+already did for the backend attendee mirror).

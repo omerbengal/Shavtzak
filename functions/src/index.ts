@@ -1336,6 +1336,8 @@ function eventDocFromJson(event: Record<string, unknown>): Record<string, unknow
     driveFolderLink: event['driveFolderLink'] ?? null,
     relevantForExtendedTeam: event['relevantForExtendedTeam'] ?? false,
     isDeactivated: event['isDeactivated'] ?? false,
+    inviteAllPermanentWhenUnassigned:
+      event['inviteAllPermanentWhenUnassigned'] ?? false,
   });
 }
 
