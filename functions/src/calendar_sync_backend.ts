@@ -868,15 +868,41 @@ function buildDesiredAppEventState(
   };
 }
 
+async function readEligiblePermanentMemberEmails(
+  dependencies: SyncDependencies,
+): Promise<string[]> {
+  const snapshot = await dependencies.firestore
+    .collection(dependencies.collections.teamMembers)
+    .get();
+
+  const emails = new Set<string>();
+  for (const doc of snapshot.docs) {
+    const data = doc.data() ?? {};
+    if (!isEligiblePermanentMember(data)) {
+      continue;
+    }
+    const email = normalizeOptionalText(data['email']);
+    if (email != null) {
+      emails.add(normalizeEmail(email));
+    }
+  }
+  return uniqueSortedStrings(emails);
+}
+
 async function readEventAttendeeEmails(
   dependencies: SyncDependencies,
   eventId: string,
+  eventData: Record<string, unknown>,
   teamMemberCache: Map<string, Record<string, unknown> | null>,
 ): Promise<string[]> {
   const assignmentsSnapshot = await dependencies.firestore
     .collection(dependencies.collections.assignments)
     .where('eventId', '==', eventId)
     .get();
+
+  if (shouldInviteAllPermanentForEvent(eventData, assignmentsSnapshot.size)) {
+    return readEligiblePermanentMemberEmails(dependencies);
+  }
 
   const teamMemberIds = Array.from(new Set(
     assignmentsSnapshot.docs
@@ -1100,7 +1126,7 @@ async function reconcileSingleAppEvent(
   teamMemberCache: Map<string, Record<string, unknown> | null>,
 ): Promise<AppEventItemResult> {
   const desired = buildDesiredAppEventState(eventId, eventData, dependencies.environment);
-  const desiredEmails = await readEventAttendeeEmails(dependencies, eventId, teamMemberCache);
+  const desiredEmails = await readEventAttendeeEmails(dependencies, eventId, eventData, teamMemberCache);
   const currentStateAssemblyId = optionalString(eventSyncData?.['assemblyCalendarEventId']) ?? '';
   const currentStateMainId = optionalString(eventSyncData?.['mainCalendarEventId']) ?? '';
   const currentStateStatus = optionalString(eventSyncData?.['status']) ?? '';
