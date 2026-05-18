@@ -82,6 +82,9 @@ class _EventFormModalState extends State<EventFormModal> {
   String? _selectedCategoryId; // Selected category ID for the event
   bool _relevantForExtendedTeam =
       true; // Event is relevant for extended team (UI is inverted)
+  // Calendar: invite all permanent staff while the event has no assignments.
+  // Only meaningful when the "permanent team only" switch is ON.
+  bool _inviteAllPermanentWhenUnassigned = false;
 
   // For highlighting selected role
   ScrollController?
@@ -150,6 +153,8 @@ class _EventFormModalState extends State<EventFormModal> {
       _selectedCategoryId = widget.event!.categoryId;
       // Load relevant for extended team (inverted for UI)
       _relevantForExtendedTeam = !widget.event!.relevantForExtendedTeam;
+      _inviteAllPermanentWhenUnassigned =
+          widget.event!.inviteAllPermanentWhenUnassigned;
     }
 
     _nameController.addListener(() => _isDirty = true);
@@ -572,6 +577,8 @@ class _EventFormModalState extends State<EventFormModal> {
       driveFolderLink: _isEditMode ? widget.event!.driveFolderLink : null,
       relevantForExtendedTeam:
           !_relevantForExtendedTeam, // Invert back for database
+      inviteAllPermanentWhenUnassigned:
+          _relevantForExtendedTeam && _inviteAllPermanentWhenUnassigned,
     );
 
     if (!mounted) return;
@@ -1982,8 +1989,34 @@ class _EventFormModalState extends State<EventFormModal> {
                                           value: _relevantForExtendedTeam,
                                           onChanged: (v) => setState(() {
                                             _relevantForExtendedTeam = v;
+                                            if (!v) {
+                                              // Not permanent-only: this feature
+                                              // is not applicable.
+                                              _inviteAllPermanentWhenUnassigned =
+                                                  false;
+                                            }
                                             _isDirty = true;
                                           }),
+                                        ),
+
+                                        // Invite all permanent staff to the
+                                        // calendar while the event has no
+                                        // assignments. Enabled only while
+                                        // "permanent team only" is ON.
+                                        SwitchListTile(
+                                          title: const Text(
+                                              'הזמן את כל הצוות הקבוע כשאין שיבוצים?'),
+                                          subtitle: const Text(
+                                              'כשאין אף שיבוץ באירוע, כל הצוות הקבוע עם אימייל יוזמן ליומן. עם השיבוץ הראשון – רק המשובצים יוזמנו.'),
+                                          value: _relevantForExtendedTeam &&
+                                              _inviteAllPermanentWhenUnassigned,
+                                          onChanged: _relevantForExtendedTeam
+                                              ? (v) => setState(() {
+                                                    _inviteAllPermanentWhenUnassigned =
+                                                        v;
+                                                    _isDirty = true;
+                                                  })
+                                              : null,
                                         ),
 
                                         // Duplicate Assignments (only show in duplication mode)
