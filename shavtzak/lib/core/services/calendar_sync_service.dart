@@ -675,7 +675,7 @@ class CalendarSyncService {
         final members = await _database.getTeamMembers();
         for (final member in members) {
           if (_isEligiblePermanentMember(member)) {
-            emails.add(member.email!.trim());
+            emails.add(member.email!.trim()); // ! is safe: _isEligiblePermanentMember verified email is non-empty
           }
         }
       } else {
