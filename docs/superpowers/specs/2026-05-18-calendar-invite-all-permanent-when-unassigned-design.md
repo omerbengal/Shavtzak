@@ -1,7 +1,7 @@
 # Design — Invite all permanent staff to the calendar when an event has no assignments
 
 **Date:** 2026-05-18
-**Status:** Approved (pending spec review)
+**Status:** Implemented
 **Branch:** `worktree-calendar-invite-all-permanent`
 
 ## 1. Problem & goal
