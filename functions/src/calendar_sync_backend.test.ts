@@ -122,3 +122,17 @@ test('shouldInvite: extended-team event => false even if flag on', () => {
     false,
   );
 });
+
+test('eligible: missing isActive (defaults active) with isArchived explicitly false', () => {
+  const m = buildMember();
+  delete m.isActive;
+  // isArchived is still present and false
+  assert.equal(isEligiblePermanentMember(m), true);
+});
+
+test('shouldInvite: missing inviteAllPermanentWhenUnassigned => false (old events predate the field)', () => {
+  assert.equal(
+    shouldInviteAllPermanentForEvent({relevantForExtendedTeam: false}, 0),
+    false,
+  );
+});
