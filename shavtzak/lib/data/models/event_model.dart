@@ -30,6 +30,9 @@ class EventModel {
   // Lifecycle / status
   final bool isDeactivated;
 
+  // Calendar: invite all eligible permanent members while event has 0 assignments
+  final bool inviteAllPermanentWhenUnassigned;
+
   const EventModel({
     required this.id,
     required this.name,
@@ -52,6 +55,7 @@ class EventModel {
     this.driveFolderLink,
     this.relevantForExtendedTeam = false,
     this.isDeactivated = false,
+    this.inviteAllPermanentWhenUnassigned = false,
   });
 
   static DateTime _normalizeDateOnly(DateTime date) {
@@ -112,6 +116,7 @@ class EventModel {
       driveFolderLink: entity.driveFolderLink,
       relevantForExtendedTeam: entity.relevantForExtendedTeam,
       isDeactivated: entity.isDeactivated,
+      inviteAllPermanentWhenUnassigned: entity.inviteAllPermanentWhenUnassigned,
     );
   }
 
@@ -139,6 +144,7 @@ class EventModel {
       driveFolderLink: driveFolderLink,
       relevantForExtendedTeam: relevantForExtendedTeam,
       isDeactivated: isDeactivated,
+      inviteAllPermanentWhenUnassigned: inviteAllPermanentWhenUnassigned,
     );
   }
 
@@ -171,6 +177,8 @@ class EventModel {
       relevantForExtendedTeam:
           data['relevantForExtendedTeam'] as bool? ?? false,
       isDeactivated: data['isDeactivated'] as bool? ?? false,
+      inviteAllPermanentWhenUnassigned:
+          data['inviteAllPermanentWhenUnassigned'] as bool? ?? false,
     );
   }
 
@@ -198,6 +206,7 @@ class EventModel {
       'driveFolderLink': driveFolderLink,
       'relevantForExtendedTeam': relevantForExtendedTeam,
       'isDeactivated': isDeactivated,
+      'inviteAllPermanentWhenUnassigned': inviteAllPermanentWhenUnassigned,
     };
   }
 
@@ -228,6 +237,8 @@ class EventModel {
       relevantForExtendedTeam:
           json['relevantForExtendedTeam'] as bool? ?? false,
       isDeactivated: json['isDeactivated'] as bool? ?? false,
+      inviteAllPermanentWhenUnassigned:
+          json['inviteAllPermanentWhenUnassigned'] as bool? ?? false,
     );
   }
 
@@ -255,6 +266,7 @@ class EventModel {
       'driveFolderLink': driveFolderLink,
       'relevantForExtendedTeam': relevantForExtendedTeam,
       'isDeactivated': isDeactivated,
+      'inviteAllPermanentWhenUnassigned': inviteAllPermanentWhenUnassigned,
     };
   }
 }

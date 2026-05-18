@@ -82,6 +82,9 @@ class _EventFormModalState extends State<EventFormModal> {
   String? _selectedCategoryId; // Selected category ID for the event
   bool _relevantForExtendedTeam =
       true; // Event is relevant for extended team (UI is inverted)
+  // Calendar: invite all permanent staff while the event has no assignments.
+  // Only meaningful when the "permanent team only" switch is ON.
+  bool _inviteAllPermanentWhenUnassigned = false;
 
   // For highlighting selected role
   ScrollController?
@@ -150,6 +153,14 @@ class _EventFormModalState extends State<EventFormModal> {
       _selectedCategoryId = widget.event!.categoryId;
       // Load relevant for extended team (inverted for UI)
       _relevantForExtendedTeam = !widget.event!.relevantForExtendedTeam;
+      // In duplication mode this flag intentionally stays false (its default):
+      // the DuplicateEvent save path does not carry it, so inheriting the
+      // source value would show the toggle ON while it would be saved OFF.
+      // Admins can enable it after editing the newly created event.
+      if (!widget.isDuplication) {
+        _inviteAllPermanentWhenUnassigned =
+            widget.event!.inviteAllPermanentWhenUnassigned;
+      }
     }
 
     _nameController.addListener(() => _isDirty = true);
@@ -572,6 +583,8 @@ class _EventFormModalState extends State<EventFormModal> {
       driveFolderLink: _isEditMode ? widget.event!.driveFolderLink : null,
       relevantForExtendedTeam:
           !_relevantForExtendedTeam, // Invert back for database
+      inviteAllPermanentWhenUnassigned:
+          _relevantForExtendedTeam && _inviteAllPermanentWhenUnassigned,
     );
 
     if (!mounted) return;
@@ -1982,8 +1995,43 @@ class _EventFormModalState extends State<EventFormModal> {
                                           value: _relevantForExtendedTeam,
                                           onChanged: (v) => setState(() {
                                             _relevantForExtendedTeam = v;
+                                            if (!v) {
+                                              // Not permanent-only: this feature
+                                              // is not applicable.
+                                              _inviteAllPermanentWhenUnassigned =
+                                                  false;
+                                            }
                                             _isDirty = true;
                                           }),
+                                        ),
+
+                                        // Invite all permanent staff to the
+                                        // calendar while the event has no
+                                        // assignments. Enabled only while
+                                        // "permanent team only" is ON.
+                                        // In duplication mode this toggle is
+                                        // always OFF and non-interactive:
+                                        // DuplicateEvent does not carry this
+                                        // flag, so we start it disabled to
+                                        // avoid a misleading "saved as ON"
+                                        // illusion. Enable it via edit after
+                                        // duplicating.
+                                        SwitchListTile(
+                                          title: const Text(
+                                              'הזמן את כל הצוות הקבוע כשאין שיבוצים?'),
+                                          subtitle: const Text(
+                                              'כשאין אף שיבוץ באירוע, כל הצוות הקבוע עם אימייל יוזמן ליומן. עם השיבוץ הראשון – רק המשובצים יוזמנו.'),
+                                          value: !widget.isDuplication &&
+                                              _relevantForExtendedTeam &&
+                                              _inviteAllPermanentWhenUnassigned,
+                                          onChanged: !widget.isDuplication &&
+                                                  _relevantForExtendedTeam
+                                              ? (v) => setState(() {
+                                                    _inviteAllPermanentWhenUnassigned =
+                                                        v;
+                                                    _isDirty = true;
+                                                  })
+                                              : null,
                                         ),
 
                                         // Duplicate Assignments (only show in duplication mode)

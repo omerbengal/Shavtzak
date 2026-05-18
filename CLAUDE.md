@@ -556,6 +556,9 @@ _subscription = _repository.watchItems().listen(
 - Visual test mode indicator
 - Admin vs user routing
 
+### Calendar ✅
+- Opt-in per-event toggle: invite all eligible permanent members (active, non-archived, with email) to an event's Google Calendar event(s) while the event has zero assignments; reverts to per-assignee invites once the first assignment exists (sticky + self-resuming). Coupled to the "permanent team only" switch.
+
 ### Constraints & Availability ✅
 - Permanent member constraint requests (requires approval)
 - Non-permanent member availability (immediate effect)

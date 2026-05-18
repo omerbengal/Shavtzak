@@ -630,8 +630,22 @@ class CalendarSyncService {
     }
   }
 
+  /// A member is eligible for the "invite all permanent staff" calendar
+  /// behavior when they are a permanent, active, non-archived member with a
+  /// non-empty email address.
+  bool _isEligiblePermanentMember(TeamMember member) {
+    final email = member.email?.trim() ?? '';
+    return member.isPermanent &&
+        member.isActive &&
+        !member.isArchived &&
+        email.isNotEmpty;
+  }
+
   /// Sync all attendees for app event
-  /// Fetches all assignments for event and adds all team member emails as attendees
+  /// Fetches all assignments for event and adds all team member emails as attendees.
+  /// Special case: when the event opted into "invite all permanent staff" and it
+  /// is permanent-only and currently has zero assignments, all eligible permanent
+  /// members are invited instead.
   Future<void> syncAttendeesForAppEvent(String eventId) async {
     try {
       // Get event sync state
@@ -646,15 +660,34 @@ class CalendarSyncService {
       // Get all assignments for this event
       final assignments = await _database.getAssignmentsByEvent(eventId);
 
-      // Collect all unique emails from assignments
+      // Collect all unique attendee emails.
       final emails = <String>{};
-      for (final assignment in assignments) {
-        final teamMember =
-            await _database.getTeamMemberById(assignment.teamMemberId);
-        if (teamMember != null &&
-            teamMember.email != null &&
-            teamMember.email!.isNotEmpty) {
-          emails.add(teamMember.email!);
+
+      final event = await _database.getEventById(eventId);
+      final useAllPermanent = assignments.isEmpty &&
+          event != null &&
+          event.inviteAllPermanentWhenUnassigned &&
+          !event.relevantForExtendedTeam;
+
+      if (useAllPermanent) {
+        // No assignments yet and the event opted in: invite all eligible
+        // permanent members.
+        final members = await _database.getTeamMembers();
+        for (final member in members) {
+          if (_isEligiblePermanentMember(member)) {
+            emails.add(member.email!.trim()); // ! is safe: _isEligiblePermanentMember verified email is non-empty
+          }
+        }
+      } else {
+        // Default behavior: attendees are exactly the assignees.
+        for (final assignment in assignments) {
+          final teamMember =
+              await _database.getTeamMemberById(assignment.teamMemberId);
+          if (teamMember != null &&
+              teamMember.email != null &&
+              teamMember.email!.isNotEmpty) {
+            emails.add(teamMember.email!);
+          }
         }
       }
 

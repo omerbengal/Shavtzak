@@ -28,6 +28,10 @@ class Event extends Equatable {
   // Lifecycle / status
   final bool isDeactivated; // Admin-controlled "on hold": hides from /admin/assignments, /user/assignments, summary; deletes calendar events; assignments preserved for reactivation
 
+  // Calendar: when true AND the event is permanent-only AND the event has zero
+  // assignments, invite all eligible permanent members to the calendar event(s)
+  final bool inviteAllPermanentWhenUnassigned;
+
   const Event({
     required this.id,
     required this.name,
@@ -50,6 +54,7 @@ class Event extends Equatable {
     this.driveFolderLink,
     this.relevantForExtendedTeam = false,
     this.isDeactivated = false,
+    this.inviteAllPermanentWhenUnassigned = false,
   });
 
   /// Check if event occurs on a given date
@@ -141,6 +146,7 @@ class Event extends Equatable {
     String? driveFolderLink,
     bool? relevantForExtendedTeam,
     bool? isDeactivated,
+    bool? inviteAllPermanentWhenUnassigned,
     bool clearParkingLocation = false, // Flag to explicitly clear nullable fields
     bool clearCategoryId = false,
   }) {
@@ -166,6 +172,8 @@ class Event extends Equatable {
       driveFolderLink: driveFolderLink ?? this.driveFolderLink,
       relevantForExtendedTeam: relevantForExtendedTeam ?? this.relevantForExtendedTeam,
       isDeactivated: isDeactivated ?? this.isDeactivated,
+      inviteAllPermanentWhenUnassigned:
+          inviteAllPermanentWhenUnassigned ?? this.inviteAllPermanentWhenUnassigned,
     );
   }
 
@@ -192,6 +200,7 @@ class Event extends Equatable {
         driveFolderLink,
         relevantForExtendedTeam,
         isDeactivated,
+        inviteAllPermanentWhenUnassigned,
       ];
 
   @override
