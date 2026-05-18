@@ -246,6 +246,50 @@ function uniqueSortedStrings(values: Iterable<string>): string[] {
   )).sort((left, right) => left.localeCompare(right));
 }
 
+/**
+ * A member is eligible for the "invite all permanent staff" calendar behavior
+ * when they are a permanent, active, non-archived member with a non-empty
+ * email. Mirrors the Flutter TeamMember model migration defaults: a missing
+ * `isActive` is treated as active; a missing `isArchived` is derived from
+ * `!isActive`.
+ */
+export function isEligiblePermanentMember(
+  data: Record<string, unknown> | null | undefined,
+): boolean {
+  if (data == null) {
+    return false;
+  }
+  if (data['isPermanent'] !== true) {
+    return false;
+  }
+  const isActive = data['isActive'] === false ? false : true;
+  const isArchived =
+    typeof data['isArchived'] === 'boolean'
+      ? (data['isArchived'] as boolean)
+      : !isActive;
+  if (!isActive || isArchived) {
+    return false;
+  }
+  return normalizeOptionalText(data['email']) != null;
+}
+
+/**
+ * The "invite all permanent staff" substitution applies when the event opted
+ * in, is permanent-only (a missing `relevantForExtendedTeam` is treated as
+ * permanent-only, matching the model default of `false`), and currently has
+ * zero assignment records.
+ */
+export function shouldInviteAllPermanentForEvent(
+  eventData: Record<string, unknown>,
+  assignmentCount: number,
+): boolean {
+  return (
+    assignmentCount === 0 &&
+    eventData['inviteAllPermanentWhenUnassigned'] === true &&
+    eventData['relevantForExtendedTeam'] !== true
+  );
+}
+
 function getIsraelDateKey(date: Date): string {
   const parts = israelDateFormatter.formatToParts(date);
   const year = parts.find((part) => part.type === 'year')?.value;
