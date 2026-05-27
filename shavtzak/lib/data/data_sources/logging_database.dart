@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:shavtzak/core/debug/debug_logger.dart';
 import 'package:shavtzak/core/debug/log_event.dart';
 import 'package:shavtzak/core/debug/logger.dart';
@@ -78,21 +80,54 @@ class LoggingDatabase implements DatabaseInterface {
     required Map<String, Object?> ctx,
     required Stream<List<T>> Function() inner,
   }) {
+    final start = DateTime.now().toUtc();
     DebugLogger.instance.record(LogEvent(
-      timestamp: DateTime.now().toUtc(),
+      timestamp: start,
       type: LogEventType.dbStart,
       name: op,
       context: {...ctx, 'kind': 'stream'},
     ));
-    return inner().map((snapshot) {
+
+    late StreamController<List<T>> controller;
+    StreamSubscription<List<T>>? sub;
+
+    void onDisposed() {
+      final now = DateTime.now().toUtc();
       DebugLogger.instance.record(LogEvent(
-        timestamp: DateTime.now().toUtc(),
-        type: LogEventType.dbStreamEmit,
+        timestamp: now,
+        type: LogEventType.dbEnd,
         name: op,
-        context: {...ctx, 'count': snapshot.length},
+        context: {...ctx, 'disposed': true},
+        duration: now.difference(start),
       ));
-      return snapshot;
-    });
+    }
+
+    controller = StreamController<List<T>>(
+      onListen: () {
+        sub = inner().listen(
+          (snapshot) {
+            DebugLogger.instance.record(LogEvent(
+              timestamp: DateTime.now().toUtc(),
+              type: LogEventType.dbStreamEmit,
+              name: op,
+              context: {...ctx, 'count': snapshot.length},
+            ));
+            controller.add(snapshot);
+          },
+          onError: controller.addError,
+          onDone: () {
+            onDisposed();
+            controller.close();
+          },
+        );
+      },
+      onCancel: () async {
+        await sub?.cancel();
+        sub = null;
+        onDisposed();
+      },
+    );
+    return controller.stream;
   }
 
   // ===== Team Members =====

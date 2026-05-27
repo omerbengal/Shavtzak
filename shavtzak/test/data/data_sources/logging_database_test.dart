@@ -98,4 +98,46 @@ void main() {
     expect(events.last.context['ok'], true);
     expect(events.last.context.containsKey('count'), false);
   });
+
+  test('stream subscription cancellation records DB_END with disposed: true',
+      () async {
+    final ctl = StreamController<List<Event>>();
+    final start = DateTime.utc(2026, 5, 18);
+    final end = start.add(const Duration(days: 7));
+    when(inner.watchEventsByDateRange(start, end))
+        .thenAnswer((_) => ctl.stream);
+
+    final subscription =
+        decorator.watchEventsByDateRange(start, end).listen((_) {});
+    await Future<void>.delayed(Duration.zero); // let subscription engage
+    await subscription.cancel();
+    await Future<void>.delayed(Duration.zero); // let cancellation propagate
+
+    final disposedEvent = DebugLogger.instance.events
+        .firstWhere((e) =>
+            e.type == LogEventType.dbEnd && e.context['disposed'] == true);
+    expect(disposedEvent.name, 'watchEventsByDateRange');
+    expect(disposedEvent.duration, isNotNull);
+    await ctl.close();
+  });
+
+  test('updateTeamMemberPasscode redacts the raw passcode value', () async {
+    when(inner.updateTeamMemberPasscode('m_1', 'secret123', 9))
+        .thenAnswer((_) async {});
+
+    await decorator.updateTeamMemberPasscode('m_1', 'secret123', 9);
+
+    // No LogEvent's context should contain the raw passcode value anywhere.
+    for (final ev in DebugLogger.instance.events) {
+      for (final value in ev.context.values) {
+        expect(value, isNot(contains('secret123')),
+            reason:
+                'Raw passcode leaked in ${ev.type} context entry: $value');
+      }
+    }
+    // The length signal should be preserved.
+    final startEv = DebugLogger.instance.events
+        .firstWhere((e) => e.type == LogEventType.dbStart);
+    expect(startEv.context.values, contains(9));
+  });
 }
