@@ -6,7 +6,6 @@ import '../../domain/entities/assignment.dart';
 import '../../core/constants/role_types.dart';
 import '../../core/services/drive_service.dart';
 import '../data_sources/database_interface.dart';
-import '../data_sources/firestore_database.dart';
 import '../../core/router/app_router.dart'; // Import for navigatorKey
 
 /// Exception thrown when trying to create a duplicate event
@@ -28,26 +27,12 @@ class EventRepository {
       : _driveService = driveService ?? DriveService.instance;
 
   /// Watch all events in real-time
-  Stream<List<Event>> watchEvents() {
-    // Cast to FirestoreDatabase to access stream methods
-    if (_database is FirestoreDatabase) {
-      return (_database as FirestoreDatabase).watchEvents();
-    }
-    // Fallback: convert Future to Stream for non-Firestore databases
-    return Stream.fromFuture(_database.getEvents());
-  }
+  Stream<List<Event>> watchEvents() => _database.watchEvents();
 
   /// Watch events within a date range in real-time
   /// Optimized for pagination - only loads events within the specified window
-  Stream<List<Event>> watchEventsByDateRange(DateTime start, DateTime end) {
-    // Cast to FirestoreDatabase to access stream methods
-    if (_database is FirestoreDatabase) {
-      return (_database as FirestoreDatabase)
-          .watchEventsByDateRange(start, end);
-    }
-    // Fallback: convert Future to Stream for non-Firestore databases
-    return Stream.fromFuture(_database.getEventsByDateRange(start, end));
-  }
+  Stream<List<Event>> watchEventsByDateRange(DateTime start, DateTime end) =>
+      _database.watchEventsByDateRange(start, end);
 
   /// Get all events
   Future<List<Event>> getAllEvents() async {

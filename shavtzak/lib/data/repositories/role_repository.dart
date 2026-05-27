@@ -1,7 +1,6 @@
 import 'dart:developer' as developer;
 import '../../domain/entities/role.dart';
 import '../data_sources/database_interface.dart';
-import '../data_sources/firestore_database.dart';
 
 /// Repository for role operations
 /// Provides high-level business logic on top of database operations
@@ -11,14 +10,7 @@ class RoleRepository {
   RoleRepository(this._database);
 
   /// Watch all roles in real-time
-  Stream<List<Role>> watchRoles() {
-    // Cast to FirestoreDatabase to access stream methods
-    if (_database is FirestoreDatabase) {
-      return (_database as FirestoreDatabase).watchRoles();
-    }
-    // Fallback: convert Future to Stream for non-Firestore databases
-    return Stream.fromFuture(_database.getRoles());
-  }
+  Stream<List<Role>> watchRoles() => _database.watchRoles();
 
   /// Get all roles
   Future<List<Role>> getAllRoles() async {

@@ -1,7 +1,6 @@
 import '../../domain/entities/assignment.dart';
 import '../../core/constants/role_types.dart';
 import '../data_sources/database_interface.dart';
-import '../data_sources/firestore_database.dart';
 
 /// Repository for assignment operations
 /// This is the CRITICAL repository that fixes the V1 sync problem
@@ -15,31 +14,15 @@ class AssignmentRepository {
   AssignmentRepository(this._database);
 
   /// Watch all assignments in real-time
-  Stream<List<Assignment>> watchAssignments() {
-    // Cast to FirestoreDatabase to access stream methods
-    if (_database is FirestoreDatabase) {
-      return (_database as FirestoreDatabase).watchAssignments();
-    }
-    // Fallback: convert Future to Stream for non-Firestore databases
-    return Stream.fromFuture(_database.getAssignments());
-  }
+  Stream<List<Assignment>> watchAssignments() => _database.watchAssignments();
 
   /// Watch assignments for a specific event in real-time
-  Stream<List<Assignment>> watchAssignmentsByEvent(String eventId) {
-    if (_database is FirestoreDatabase) {
-      return (_database as FirestoreDatabase).watchAssignmentsByEvent(eventId);
-    }
-    return Stream.fromFuture(_database.getAssignmentsByEvent(eventId));
-  }
+  Stream<List<Assignment>> watchAssignmentsByEvent(String eventId) =>
+      _database.watchAssignmentsByEvent(eventId);
 
   /// Watch assignments for a specific team member in real-time
-  Stream<List<Assignment>> watchAssignmentsByPerson(String teamMemberId) {
-    if (_database is FirestoreDatabase) {
-      return (_database as FirestoreDatabase)
-          .watchAssignmentsByPerson(teamMemberId);
-    }
-    return Stream.fromFuture(_database.getAssignmentsByPerson(teamMemberId));
-  }
+  Stream<List<Assignment>> watchAssignmentsByPerson(String teamMemberId) =>
+      _database.watchAssignmentsByPerson(teamMemberId);
 
   /// Get all assignments
   Future<List<Assignment>> getAllAssignments() async {
@@ -87,18 +70,8 @@ class AssignmentRepository {
   Stream<List<Assignment>> watchAssignmentsInTimeWindow({
     required DateTime windowStart,
     required DateTime windowEnd,
-  }) {
-    if (_database is FirestoreDatabase) {
-      return (_database as FirestoreDatabase).watchAssignmentsInTimeWindow(
-        windowStart,
-        windowEnd,
-      );
-    }
-    // Fallback: convert Future to Stream for non-Firestore databases
-    return Stream.fromFuture(
-      _database.getAssignmentsInTimeWindow(windowStart, windowEnd),
-    );
-  }
+  }) =>
+      _database.watchAssignmentsInTimeWindow(windowStart, windowEnd);
 
   /// Create a new assignment
   /// Validates FK relationships and checks for conflicts

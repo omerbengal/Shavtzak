@@ -1,7 +1,6 @@
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/role_types.dart';
 import '../data_sources/database_interface.dart';
-import '../data_sources/firestore_database.dart';
 
 /// Repository for team member operations
 /// Provides high-level business logic on top of database operations
@@ -14,14 +13,7 @@ class TeamRepository {
   DatabaseInterface get database => _database;
 
   /// Watch all team members in real-time
-  Stream<List<TeamMember>> watchTeamMembers() {
-    // Cast to FirestoreDatabase to access stream methods
-    if (_database is FirestoreDatabase) {
-      return (_database as FirestoreDatabase).watchTeamMembers();
-    }
-    // Fallback: convert Future to Stream for non-Firestore databases
-    return Stream.fromFuture(_database.getTeamMembers());
-  }
+  Stream<List<TeamMember>> watchTeamMembers() => _database.watchTeamMembers();
 
   /// Get all team members
   Future<List<TeamMember>> getAllTeamMembers() async {

@@ -176,6 +176,7 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   /// Watch team members in real-time
+  @override
   Stream<List<TeamMember>> watchTeamMembers() {
     return _firestore
         .collection(_teamMembersCollection)
@@ -412,6 +413,7 @@ class FirestoreDatabase implements DatabaseInterface {
   // ========== Events ==========
 
   /// Watch events in real-time
+  @override
   Stream<List<Event>> watchEvents() {
     return _firestore
         .collection(_eventsCollection)
@@ -602,6 +604,7 @@ class FirestoreDatabase implements DatabaseInterface {
   // ========== Assignments ==========
 
   /// Watch all assignments in real-time
+  @override
   Stream<List<Assignment>> watchAssignments() {
     return _firestore
         .collection(_assignmentsCollection)
@@ -617,6 +620,7 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   /// Watch assignments for a specific event in real-time
+  @override
   Stream<List<Assignment>> watchAssignmentsByEvent(String eventId) {
     return _firestore
         .collection(_assignmentsCollection)
@@ -632,6 +636,7 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   /// Watch assignments for a specific team member in real-time
+  @override
   Stream<List<Assignment>> watchAssignmentsByPerson(String teamMemberId) {
     return _firestore
         .collection(_assignmentsCollection)

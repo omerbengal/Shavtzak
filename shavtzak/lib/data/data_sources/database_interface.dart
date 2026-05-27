@@ -18,6 +18,9 @@ abstract class DatabaseInterface {
   /// Get all team members
   Future<List<TeamMember>> getTeamMembers();
 
+  /// Watch all team members in real-time
+  Stream<List<TeamMember>> watchTeamMembers();
+
   /// Get a team member by ID
   Future<TeamMember?> getTeamMemberById(String id);
 
@@ -46,6 +49,9 @@ abstract class DatabaseInterface {
 
   /// Get all events
   Future<List<Event>> getEvents();
+
+  /// Watch all events in real-time
+  Stream<List<Event>> watchEvents();
 
   /// Get an event by ID
   Future<Event?> getEventById(String id);
@@ -78,6 +84,15 @@ abstract class DatabaseInterface {
 
   /// Get all assignments
   Future<List<Assignment>> getAssignments();
+
+  /// Watch all assignments in real-time
+  Stream<List<Assignment>> watchAssignments();
+
+  /// Watch assignments for a specific event in real-time
+  Stream<List<Assignment>> watchAssignmentsByEvent(String eventId);
+
+  /// Watch assignments for a specific team member in real-time
+  Stream<List<Assignment>> watchAssignmentsByPerson(String teamMemberId);
 
   /// Get an assignment by ID
   Future<Assignment?> getAssignmentById(String id);

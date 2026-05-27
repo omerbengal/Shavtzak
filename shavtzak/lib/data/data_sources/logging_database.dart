@@ -175,6 +175,13 @@ class LoggingDatabase implements DatabaseInterface {
         action: () => _inner.deleteTeamMember(id),
       );
 
+  @override
+  Stream<List<TeamMember>> watchTeamMembers() => _wrapStream(
+        op: 'watchTeamMembers',
+        ctx: const {'collection': 'teamMembers'},
+        inner: () => _inner.watchTeamMembers(),
+      );
+
   // ===== Events =====
 
   @override
@@ -239,6 +246,13 @@ class LoggingDatabase implements DatabaseInterface {
       );
 
   @override
+  Stream<List<Event>> watchEvents() => _wrapStream(
+        op: 'watchEvents',
+        ctx: const {'collection': 'events'},
+        inner: () => _inner.watchEvents(),
+      );
+
+  @override
   Stream<List<Event>> watchEventsByDateRange(DateTime start, DateTime end) =>
       _wrapStream(
         op: 'watchEventsByDateRange',
@@ -274,6 +288,29 @@ class LoggingDatabase implements DatabaseInterface {
         ctx: const {'collection': 'assignments'},
         countOf: (r) => r.length,
         action: () => _inner.getAssignments(),
+      );
+
+  @override
+  Stream<List<Assignment>> watchAssignments() => _wrapStream(
+        op: 'watchAssignments',
+        ctx: const {'collection': 'assignments'},
+        inner: () => _inner.watchAssignments(),
+      );
+
+  @override
+  Stream<List<Assignment>> watchAssignmentsByEvent(String eventId) =>
+      _wrapStream(
+        op: 'watchAssignmentsByEvent',
+        ctx: {'collection': 'assignments', 'eventId': eventId},
+        inner: () => _inner.watchAssignmentsByEvent(eventId),
+      );
+
+  @override
+  Stream<List<Assignment>> watchAssignmentsByPerson(String teamMemberId) =>
+      _wrapStream(
+        op: 'watchAssignmentsByPerson',
+        ctx: {'collection': 'assignments', 'teamMemberId': teamMemberId},
+        inner: () => _inner.watchAssignmentsByPerson(teamMemberId),
       );
 
   @override
