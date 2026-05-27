@@ -690,7 +690,7 @@ class _EventListScreenState extends State<EventListScreen> {
   void _showEventFormModal(Event? event, {bool isDuplication = false}) async {
     Logger.action('openEventFormModal', {
       'eventId': event?.id,
-      'mode': event == null ? 'create' : 'edit',
+      'mode': event == null ? 'create' : (isDuplication ? 'duplicate' : 'edit'),
     });
     final result = await showModalBottomSheet(
       context: context,

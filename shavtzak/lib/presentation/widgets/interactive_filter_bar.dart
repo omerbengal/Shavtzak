@@ -143,7 +143,7 @@ class _InteractiveFilterBarState extends State<InteractiveFilterBar> {
           : () {
               Logger.action('filterChange', {
                 'field': widget.options[index].label,
-                'valueLen': Logger.redact(widget.options[index].label),
+                'index': index,
               });
               widget.onFilterChanged(index);
             },
