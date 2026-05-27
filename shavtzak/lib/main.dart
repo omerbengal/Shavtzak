@@ -55,6 +55,9 @@ import 'core/router/app_router.dart';
 // Theme
 import 'core/theme/app_theme.dart';
 
+// Debug
+import 'core/debug/logging_bloc_observer.dart';
+
 Future<void> main() async {
   // CRITICAL: Capture the initial URL hash BEFORE any Flutter code runs (web only)
   // This is needed for the /db route to work correctly
@@ -63,6 +66,7 @@ Future<void> main() async {
   }
 
   WidgetsFlutterBinding.ensureInitialized();
+  Bloc.observer = LoggingBlocObserver();
 
   // Ensure Rubik glyphs are registered before any Flutter text renders.
   await _preloadStartupFonts();
