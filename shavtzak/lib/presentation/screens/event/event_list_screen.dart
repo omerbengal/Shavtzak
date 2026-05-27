@@ -18,6 +18,7 @@ import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/interactive_filter_bar.dart';
+import '../../widgets/debug_log_share_fab.dart';
 import '../../widgets/map_location_picker.dart';
 import 'widgets/category_filter_modal.dart';
 import 'widgets/category_management_dialog.dart';
@@ -290,11 +291,7 @@ class _EventListScreenState extends State<EventListScreen> {
             return _buildEmptyState(const EventsEmpty('טוען...'));
           },
         ),
-        floatingActionButton: FloatingActionButton(
-          heroTag: 'event_fab',
-          onPressed: () => _showEventFormModal(null),
-          child: const Icon(Icons.add),
-        ),
+        floatingActionButton: _buildFab(context),
       ),
     );
   }
@@ -1114,5 +1111,27 @@ class _EventListScreenState extends State<EventListScreen> {
         context.go('$envPrefix/whoami');
       }
     });
+  }
+
+  Widget _buildFab(BuildContext context) {
+    final state = context.read<UserSelectionBloc>().state;
+    String? display;
+    bool isAdmin = false;
+    if (state is UserAuthenticated) {
+      display = state.user.name;
+      isAdmin = state.user.isAdmin;
+    }
+    return DebugLogShareFab(
+      currentRouteForShare:
+          '${EnvironmentService.instance.routePrefix}/admin/events',
+      userDisplay: display,
+      isAdmin: isAdmin,
+      env: EnvironmentService.instance.isTestMode ? 'test' : 'prod',
+      child: FloatingActionButton(
+        heroTag: 'event-list-fab',
+        onPressed: () => _showEventFormModal(null),
+        child: const Icon(Icons.add),
+      ),
+    );
   }
 }

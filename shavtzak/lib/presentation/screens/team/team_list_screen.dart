@@ -49,6 +49,7 @@ import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../widgets/archived_members_dialog.dart';
 import '../../utils/constraint_warning_actions.dart';
+import '../../widgets/debug_log_share_fab.dart';
 import 'dart:async';
 
 // Filter enum for team members (0=all non-archived, 1=permanent, 2=non-permanent)
@@ -313,13 +314,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
             return _buildEmptyState(const TeamEmpty('טוען...'));
           },
         ),
-        floatingActionButton: FloatingActionButton(
-          heroTag: 'team_fab',
-          onPressed: () {
-            _showTeamMemberFormModal(null);
-          },
-          child: const Icon(Icons.add),
-        ),
+        floatingActionButton: _buildFab(context),
       ),
     );
   }
@@ -977,6 +972,30 @@ class _TeamListScreenState extends State<TeamListScreen> {
         context.go('$envPrefix/whoami');
       }
     });
+  }
+
+  Widget _buildFab(BuildContext context) {
+    final state = context.read<UserSelectionBloc>().state;
+    String? display;
+    bool isAdmin = false;
+    if (state is UserAuthenticated) {
+      display = state.user.name;
+      isAdmin = state.user.isAdmin;
+    }
+    return DebugLogShareFab(
+      currentRouteForShare:
+          '${EnvironmentService.instance.routePrefix}/admin/team-members',
+      userDisplay: display,
+      isAdmin: isAdmin,
+      env: EnvironmentService.instance.isTestMode ? 'test' : 'prod',
+      child: FloatingActionButton(
+        heroTag: 'team-list-fab',
+        onPressed: () {
+          _showTeamMemberFormModal(null);
+        },
+        child: const Icon(Icons.add),
+      ),
+    );
   }
 }
 
