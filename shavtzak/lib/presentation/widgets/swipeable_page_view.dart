@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/debug/debug_logger.dart';
 import 'test_environment_indicator.dart';
 
 /// PageView-based swipeable navigation wrapper
@@ -103,6 +104,13 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
   /// Handle bottom navigation bar taps
   /// Maps bottom nav index to page index: 0=Checklist(4), 1=Assignments(3), 2=Events(2), 3=Team(1)
   void _onBottomNavTapped(int index) {
+    const routeNames = [
+      '/admin/checklist',
+      '/admin/assignments',
+      '/admin/events',
+      '/admin/team-members',
+    ];
+    DebugLogger.instance.reset(newRoute: routeNames[index]);
     final pageIndices = [4, 3, 2, 1]; // Map bottom nav to page indices
     final pageIndex = pageIndices[index];
     widget.navigationShell.goBranch(pageIndex);

@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../debug/debug_route_observer.dart';
 import '../services/environment_service.dart';
 import '../../presentation/bloc/user_selection/user_selection_bloc.dart';
 import '../../presentation/bloc/user_selection/user_selection_state.dart';
@@ -250,6 +251,9 @@ class AppRouter {
 
       // Set the global navigator key
       navigatorKey: navigatorKey,
+
+      // Reset debug buffer on every navigation
+      observers: [DebugRouteObserver()],
 
       // Redirect based on authentication state
       redirect: (context, state) {
