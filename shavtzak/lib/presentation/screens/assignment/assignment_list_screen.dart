@@ -29,6 +29,7 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/debug_log_share_fab.dart';
+import '../../../core/debug/logger.dart';
 import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
 import '../event/widgets/event_form_modal.dart';
@@ -1210,6 +1211,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           );
 
           if (confirmed == true) {
+            Logger.action('swipeDeleteAssignment', {
+              'assignmentId': slot.currentAssignment?.id,
+            });
             await _handleSlotDismiss(slot);
           }
           return false;
@@ -3025,6 +3029,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   /// Show manual assignment flow (3-step process)
   Future<void> _showManualAssignmentFlow() async {
+    Logger.action('openManualAssignmentFlow');
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,

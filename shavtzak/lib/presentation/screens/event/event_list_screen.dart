@@ -19,6 +19,7 @@ import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/debug_log_share_fab.dart';
+import '../../../core/debug/logger.dart';
 import '../../widgets/map_location_picker.dart';
 import 'widgets/category_filter_modal.dart';
 import 'widgets/category_management_dialog.dart';
@@ -687,6 +688,10 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   void _showEventFormModal(Event? event, {bool isDuplication = false}) async {
+    Logger.action('openEventFormModal', {
+      'eventId': event?.id,
+      'mode': event == null ? 'create' : 'edit',
+    });
     final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../../core/debug/logger.dart';
 
 /// Model for a filter option
 class FilterOption {
@@ -137,7 +138,15 @@ class _InteractiveFilterBarState extends State<InteractiveFilterBar> {
     }
 
     return InkWell(
-      onTap: isSelected ? null : () => widget.onFilterChanged(index),
+      onTap: isSelected
+          ? null
+          : () {
+              Logger.action('filterChange', {
+                'field': widget.options[index].label,
+                'valueLen': Logger.redact(widget.options[index].label),
+              });
+              widget.onFilterChanged(index);
+            },
       borderRadius: BorderRadius.circular(12),
       splashColor: Colors.green.withValues(alpha: 0.2),
       highlightColor: Colors.green.withValues(alpha: 0.1),

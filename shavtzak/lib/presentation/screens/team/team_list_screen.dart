@@ -50,6 +50,7 @@ import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../widgets/archived_members_dialog.dart';
 import '../../utils/constraint_warning_actions.dart';
 import '../../widgets/debug_log_share_fab.dart';
+import '../../../core/debug/logger.dart';
 import 'dart:async';
 
 // Filter enum for team members (0=all non-archived, 1=permanent, 2=non-permanent)
@@ -736,6 +737,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
   }
 
   void _showTeamMemberFormModal(TeamMember? member) {
+    Logger.action('openMemberModal', {
+      'memberId': member?.id,
+      'isPermanent': member?.isPermanent,
+    });
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
