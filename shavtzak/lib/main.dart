@@ -13,6 +13,7 @@ import 'core/web/web_stub.dart' if (dart.library.js) 'core/web/web_helper.dart';
 
 // Data layer
 import 'data/data_sources/firestore_database.dart';
+import 'data/data_sources/logging_database.dart';
 import 'data/repositories/team_repository.dart';
 import 'data/repositories/event_repository.dart';
 import 'data/repositories/assignment_repository.dart';
@@ -152,8 +153,8 @@ Future<void> _initialize() async {
     _timed('AppVersionService.init',
         () => AppVersionService.instance.initialize());
 
-    final database =
-        _timed('FirestoreDatabase creation', () => FirestoreDatabase());
+    final database = _timed('FirestoreDatabase creation',
+        () => LoggingDatabase(FirestoreDatabase()));
     await _timedAsync(
         'FirestoreDatabase.initialize', () => database.initialize());
 

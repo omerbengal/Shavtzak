@@ -6,6 +6,7 @@ import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/role_repository.dart';
 import '../../../data/data_sources/firestore_database.dart';
 import '../../../data/data_sources/database_interface.dart';
+import '../../../data/data_sources/logging_database.dart';
 import '../../../presentation/bloc/team/team_bloc.dart';
 import '../../../presentation/bloc/event/event_bloc.dart';
 import '../../../presentation/bloc/assignment/assignment_bloc.dart';
@@ -20,8 +21,11 @@ class EnvironmentAwareFactory {
   static DatabaseInterface? _database;
 
   /// Get the appropriate database instance (cached)
+  ///
+  /// The Firestore implementation is wrapped in [LoggingDatabase] so every
+  /// repository in the app records DB lifecycle events into [DebugLogger].
   static DatabaseInterface get database {
-    _database ??= FirestoreDatabase();
+    _database ??= LoggingDatabase(FirestoreDatabase());
     return _database!;
   }
 
