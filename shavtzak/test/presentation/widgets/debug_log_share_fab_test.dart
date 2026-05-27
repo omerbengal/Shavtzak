@@ -82,4 +82,14 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
     expect(find.byIcon(Icons.bug_report), findsNothing);
   });
+
+  testWidgets('second long-press hides the mini-FAB', (tester) async {
+    await _pumpHost(tester, onTap: () {});
+    await tester.longPress(find.byIcon(Icons.add));
+    await tester.pump();
+    expect(find.byIcon(Icons.bug_report), findsOneWidget);
+    await tester.longPress(find.byIcon(Icons.add));
+    await tester.pump();
+    expect(find.byIcon(Icons.bug_report), findsNothing);
+  });
 }

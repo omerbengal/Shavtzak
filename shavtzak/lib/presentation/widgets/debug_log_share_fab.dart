@@ -10,6 +10,10 @@ import '../../core/debug/logger.dart';
 /// Wraps the host screen's "+" FAB. Long-press reveals a mini-FAB; tapping
 /// the mini-FAB copies the formatted [DebugLogger] buffer to the system
 /// clipboard.
+///
+/// The [child] FAB must have an explicit [FloatingActionButton.heroTag] set.
+/// Leaving it at the default shared tag will cause a Hero conflict at
+/// runtime when the mini-FAB is simultaneously visible.
 class DebugLogShareFab extends StatefulWidget {
   const DebugLogShareFab({
     super.key,
@@ -31,6 +35,8 @@ class DebugLogShareFab extends StatefulWidget {
 }
 
 class _DebugLogShareFabState extends State<DebugLogShareFab> {
+  static const Duration _autoDismissAfter = Duration(seconds: 4);
+
   bool _menuVisible = false;
   Timer? _autoDismiss;
 
@@ -39,15 +45,16 @@ class _DebugLogShareFabState extends State<DebugLogShareFab> {
     _autoDismiss?.cancel();
     if (_menuVisible) {
       Logger.action('debugShareMenuOpen');
-      _autoDismiss = Timer(const Duration(seconds: 4), () {
+      _autoDismiss = Timer(_autoDismissAfter, () {
         if (mounted) setState(() => _menuVisible = false);
       });
     }
   }
 
   Future<void> _copyLogs() async {
+    final events = DebugLogger.instance.events;
     final text = formatBuffer(
-      events: DebugLogger.instance.events,
+      events: events,
       userDisplay: widget.userDisplay,
       isAdmin: widget.isAdmin,
       env: widget.env,
@@ -57,12 +64,12 @@ class _DebugLogShareFabState extends State<DebugLogShareFab> {
     await Clipboard.setData(ClipboardData(text: text));
     Logger.action('debugShareLogsCopied', {
       'bytes': text.length,
-      'eventCount': DebugLogger.instance.events.length,
+      'eventCount': events.length,
     });
     if (!mounted) return;
-    final count = DebugLogger.instance.events.length;
+    // All remaining code is synchronous; mounted cannot change again.
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('הלוג הועתק ללוח ($count אירועים)')),
+      SnackBar(content: Text('הלוג הועתק ללוח (${events.length} אירועים)')),
     );
     setState(() => _menuVisible = false);
     _autoDismiss?.cancel();
