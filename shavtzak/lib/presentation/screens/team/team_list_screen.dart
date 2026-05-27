@@ -736,25 +736,30 @@ class _TeamListScreenState extends State<TeamListScreen> {
     );
   }
 
-  void _showTeamMemberFormModal(TeamMember? member) {
+  Future<void> _showTeamMemberFormModal(TeamMember? member) async {
     Logger.action('openMemberModal', {
       'memberId': member?.id,
       'isPermanent': member?.isPermanent,
     });
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: false,
-      enableDrag: false,
-      backgroundColor: Colors.transparent,
-      builder: (modalContext) => _TeamMemberFormModal(
-        member: member,
-        filterIndex: FilterPersistence.teamFilterIndex,
-        onSuccess: () {
-          Navigator.of(modalContext).pop();
-        },
-      ),
-    );
+    Logger.loadingStart('memberAvailability', {'memberId': member?.id});
+    try {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        isDismissible: false,
+        enableDrag: false,
+        backgroundColor: Colors.transparent,
+        builder: (modalContext) => _TeamMemberFormModal(
+          member: member,
+          filterIndex: FilterPersistence.teamFilterIndex,
+          onSuccess: () {
+            Navigator.of(modalContext).pop();
+          },
+        ),
+      );
+    } finally {
+      Logger.loadingEnd('memberAvailability');
+    }
   }
 
   void _showArchiveConfirmation(TeamMember member) {

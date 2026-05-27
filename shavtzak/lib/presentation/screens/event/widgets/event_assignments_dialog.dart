@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/role_types.dart';
+import '../../../../core/debug/logger.dart';
 import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/assignment_label.dart';
 import '../../../../domain/entities/event.dart';
@@ -67,6 +68,8 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
   bool _useCache = false;
   bool _sortByLabel = false;
   bool _isPreparingShare = false;
+  // Used to fire loadingEnd only on the first stream emission.
+  bool _eventAssignmentsFirstEmission = false;
 
   @override
   void initState() {
@@ -81,6 +84,9 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
       context
           .read<AssignmentBloc>()
           .add(LoadAssignmentsByEvent(widget.resolvedEventId));
+      Logger.loadingStart(
+          'eventAssignments', {'eventId': widget.resolvedEventId});
+      _eventAssignmentsFirstEmission = true;
     }
   }
 
@@ -206,6 +212,10 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                                 return const Center(
                                     child: CircularProgressIndicator());
                               } else if (state is AssignmentsLoaded) {
+                                if (_eventAssignmentsFirstEmission) {
+                                  _eventAssignmentsFirstEmission = false;
+                                  Logger.loadingEnd('eventAssignments');
+                                }
                                 final assignments = _applyAssignmentLabels(
                                   state.assignments,
                                   labels,
@@ -226,6 +236,10 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                                   assignments,
                                 );
                               } else if (state is AssignmentsEmpty) {
+                                if (_eventAssignmentsFirstEmission) {
+                                  _eventAssignmentsFirstEmission = false;
+                                  Logger.loadingEnd('eventAssignments');
+                                }
                                 _latestAssignments = const [];
                                 return Center(
                                   child: Text(
@@ -236,6 +250,11 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                                   ),
                                 );
                               } else if (state is AssignmentError) {
+                                if (_eventAssignmentsFirstEmission) {
+                                  _eventAssignmentsFirstEmission = false;
+                                  Logger.loadingEnd('eventAssignments',
+                                      ok: false);
+                                }
                                 return Center(
                                   child: Text(
                                     state.message,

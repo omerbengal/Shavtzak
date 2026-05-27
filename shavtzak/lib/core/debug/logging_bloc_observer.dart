@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 
 import 'debug_logger.dart';
 import 'log_event.dart';
+import 'logger.dart';
 
 /// Records every BLoC dispatch, state transition, and error into the
 /// global [DebugLogger] buffer.
@@ -55,7 +56,7 @@ class LoggingBlocObserver extends BlocObserver {
       name: '${bloc.runtimeType} error',
       context: {
         'error': error.runtimeType.toString(),
-        'message': error.toString(),
+        'messageLen': Logger.redact(error.toString()),
         'stackHead': stackTrace.toString().split('\n').first,
       },
     ));

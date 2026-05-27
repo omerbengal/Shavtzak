@@ -66,7 +66,7 @@ class LoggingDatabase implements DatabaseInterface {
         context: {
           ...ctx,
           'error': e.runtimeType.toString(),
-          'message': e.toString(),
+          'messageLen': Logger.redact(e.toString()),
           'stackHead': s.toString().split('\n').first,
         },
         duration: now.difference(start),

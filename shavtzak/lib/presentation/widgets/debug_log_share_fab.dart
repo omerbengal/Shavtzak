@@ -61,7 +61,18 @@ class _DebugLogShareFabState extends State<DebugLogShareFab> {
       currentRoute: widget.currentRouteForShare,
       capturedAt: DateTime.now().toUtc(),
     );
-    await Clipboard.setData(ClipboardData(text: text));
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+    } catch (e) {
+      Logger.warning('clipboardFailed', {'error': e.runtimeType.toString()});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('שגיאה בהעתקה ללוח')),
+      );
+      setState(() => _menuVisible = false);
+      _autoDismiss?.cancel();
+      return;
+    }
     Logger.action('debugShareLogsCopied', {
       'bytes': text.length,
       'eventCount': events.length,
