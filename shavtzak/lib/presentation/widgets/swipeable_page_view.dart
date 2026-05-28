@@ -1,6 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/debug/debug_clipboard_share.dart';
 import '../../core/debug/debug_logger.dart';
+import '../../core/services/environment_service.dart';
+import '../bloc/user_selection/user_selection_bloc.dart';
+import '../bloc/user_selection/user_selection_state.dart';
 import 'test_environment_indicator.dart';
 
 /// PageView-based swipeable navigation wrapper
@@ -72,12 +79,9 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
       // Display the current page from the navigation shell with test environment indicator
       body: TestEnvironmentIndicator(child: widget.navigationShell),
       bottomNavigationBar: showBottomNav
-          ? BottomNavigationBar(
+          ? BottomNavWithDebugTrigger(
               currentIndex: bottomNavIndex,
               onTap: _onBottomNavTapped,
-              type: BottomNavigationBarType.fixed,
-              selectedItemColor: Theme.of(context).colorScheme.primary,
-              unselectedItemColor: Colors.grey,
               items: const [
                 BottomNavigationBarItem(
                   icon: Icon(Icons.checklist),
@@ -96,9 +100,29 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
                   label: 'צוות',
                 ),
               ],
+              tabRoutes: const [
+                '/admin/checklist',
+                '/admin/assignments',
+                '/admin/events',
+                '/admin/team-members',
+              ],
+              userDisplay: _userDisplay(context),
+              isAdmin: _isAdmin(context),
+              env: EnvironmentService.instance.isTestMode ? 'test' : 'prod',
+              miniFabHeroTag: 'debug-share-mini-fab-admin',
             )
           : null, // Hide bottom nav on home page
     );
+  }
+
+  String? _userDisplay(BuildContext context) {
+    final state = context.read<UserSelectionBloc>().state;
+    return state is UserAuthenticated ? state.user.name : null;
+  }
+
+  bool _isAdmin(BuildContext context) {
+    final state = context.read<UserSelectionBloc>().state;
+    return state is UserAuthenticated && state.user.isAdmin;
   }
 
   /// Handle bottom navigation bar taps
@@ -114,5 +138,124 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
     final pageIndices = [4, 3, 2, 1]; // Map bottom nav to page indices
     final pageIndex = pageIndices[index];
     widget.navigationShell.goBranch(pageIndex);
+  }
+}
+
+/// Wraps a [BottomNavigationBar] with long-press detection that reveals
+/// a mini-FAB above the long-pressed tab. The mini-FAB copies the
+/// [DebugLogger] buffer to the clipboard via [copyDebugLogsToClipboard].
+class BottomNavWithDebugTrigger extends StatefulWidget {
+  const BottomNavWithDebugTrigger({
+    super.key,
+    required this.currentIndex,
+    required this.onTap,
+    required this.items,
+    required this.tabRoutes,
+    required this.userDisplay,
+    required this.isAdmin,
+    required this.env,
+    required this.miniFabHeroTag,
+  });
+
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  final List<BottomNavigationBarItem> items;
+  final List<String> tabRoutes;
+  final String? userDisplay;
+  final bool isAdmin;
+  final String env;
+  final String miniFabHeroTag;
+
+  @override
+  State<BottomNavWithDebugTrigger> createState() =>
+      _BottomNavWithDebugTriggerState();
+}
+
+class _BottomNavWithDebugTriggerState extends State<BottomNavWithDebugTrigger> {
+  static const Duration _autoDismissAfter = Duration(seconds: 4);
+  static const double _miniFabRadius = 20.0;
+
+  OverlayEntry? _miniFabEntry;
+  int? _shownTabIndex;
+  Timer? _autoDismiss;
+
+  int get _tabCount => widget.items.length;
+
+  void _handleLongPressStart(LongPressStartDetails details) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final tabWidth = screenWidth / _tabCount;
+    final tabIndex = (details.localPosition.dx / tabWidth)
+        .floor()
+        .clamp(0, _tabCount - 1);
+    if (_shownTabIndex == tabIndex) {
+      _hideMiniFab();
+    } else {
+      _showMiniFab(tabIndex);
+    }
+  }
+
+  void _showMiniFab(int tabIndex) {
+    _hideMiniFab();
+    final screenWidth = MediaQuery.of(context).size.width;
+    final tabWidth = screenWidth / _tabCount;
+    final tabCenterX = tabWidth * (tabIndex + 0.5);
+    final viewPaddingBottom = MediaQuery.of(context).viewPadding.bottom;
+    _miniFabEntry = OverlayEntry(
+      builder: (overlayContext) => Positioned(
+        left: tabCenterX - _miniFabRadius,
+        bottom: kBottomNavigationBarHeight + viewPaddingBottom + 8,
+        child: FloatingActionButton.small(
+          heroTag: widget.miniFabHeroTag,
+          tooltip: 'העתק לוג תקלה',
+          onPressed: _copyAndDismiss,
+          child: const Icon(Icons.bug_report),
+        ),
+      ),
+    );
+    Overlay.of(context).insert(_miniFabEntry!);
+    setState(() => _shownTabIndex = tabIndex);
+    _autoDismiss?.cancel();
+    _autoDismiss = Timer(_autoDismissAfter, () {
+      if (mounted) _hideMiniFab();
+    });
+  }
+
+  void _hideMiniFab() {
+    _miniFabEntry?.remove();
+    _miniFabEntry = null;
+    setState(() => _shownTabIndex = null);
+    _autoDismiss?.cancel();
+    _autoDismiss = null;
+  }
+
+  Future<void> _copyAndDismiss() async {
+    await copyDebugLogsToClipboard(
+      context,
+      currentRouteForShare: widget.tabRoutes[widget.currentIndex],
+      userDisplay: widget.userDisplay,
+      isAdmin: widget.isAdmin,
+      env: widget.env,
+    );
+    if (mounted) _hideMiniFab();
+  }
+
+  @override
+  void dispose() {
+    _miniFabEntry?.remove();
+    _miniFabEntry = null;
+    _autoDismiss?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPressStart: _handleLongPressStart,
+      child: BottomNavigationBar(
+        currentIndex: widget.currentIndex,
+        onTap: widget.onTap,
+        items: widget.items,
+      ),
+    );
   }
 }
