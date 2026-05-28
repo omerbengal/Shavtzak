@@ -49,7 +49,6 @@ import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../widgets/archived_members_dialog.dart';
 import '../../utils/constraint_warning_actions.dart';
-import '../../widgets/debug_log_share_fab.dart';
 import '../../../core/debug/logger.dart';
 import 'dart:async';
 
@@ -315,7 +314,13 @@ class _TeamListScreenState extends State<TeamListScreen> {
             return _buildEmptyState(const TeamEmpty('טוען...'));
           },
         ),
-        floatingActionButton: _buildFab(context),
+        floatingActionButton: FloatingActionButton(
+          heroTag: 'team-list-fab',
+          onPressed: () {
+            _showTeamMemberFormModal(null);
+          },
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -984,29 +989,6 @@ class _TeamListScreenState extends State<TeamListScreen> {
     });
   }
 
-  Widget _buildFab(BuildContext context) {
-    final state = context.read<UserSelectionBloc>().state;
-    String? display;
-    bool isAdmin = false;
-    if (state is UserAuthenticated) {
-      display = state.user.name;
-      isAdmin = state.user.isAdmin;
-    }
-    return DebugLogShareFab(
-      currentRouteForShare:
-          '${EnvironmentService.instance.routePrefix}/admin/team-members',
-      userDisplay: display,
-      isAdmin: isAdmin,
-      env: EnvironmentService.instance.isTestMode ? 'test' : 'prod',
-      child: FloatingActionButton(
-        heroTag: 'team-list-fab',
-        onPressed: () {
-          _showTeamMemberFormModal(null);
-        },
-        child: const Icon(Icons.add),
-      ),
-    );
-  }
 }
 
 // Team Member Form Modal Widget

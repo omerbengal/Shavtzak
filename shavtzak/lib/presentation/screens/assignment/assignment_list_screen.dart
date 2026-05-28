@@ -28,7 +28,6 @@ import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/interactive_filter_bar.dart';
-import '../../widgets/debug_log_share_fab.dart';
 import '../../../core/debug/logger.dart';
 import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
@@ -462,7 +461,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             ],
           ),
         ),
-        floatingActionButton: _buildFab(context),
+        floatingActionButton: FloatingActionButton(
+          heroTag: 'assignment-list-fab',
+          backgroundColor: Colors.blue,
+          tooltip: 'שיבוץ ידני',
+          onPressed: _isMutationInFlight ? null : () => _showManualAssignmentFlow(),
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
         body: BlocListener<EventBloc, EventState>(
           listener: (context, state) {
             if (state is EventError) {
@@ -3260,28 +3265,4 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     return months[month];
   }
 
-  Widget _buildFab(BuildContext context) {
-    final state = context.read<UserSelectionBloc>().state;
-    String? display;
-    bool isAdmin = false;
-    if (state is UserAuthenticated) {
-      display = state.user.name;
-      isAdmin = state.user.isAdmin;
-    }
-    return DebugLogShareFab(
-      currentRouteForShare:
-          '${EnvironmentService.instance.routePrefix}/admin/assignments',
-      userDisplay: display,
-      isAdmin: isAdmin,
-      env: EnvironmentService.instance.isTestMode ? 'test' : 'prod',
-      child: FloatingActionButton(
-        heroTag: 'assignment-list-fab',
-        onPressed:
-            _isMutationInFlight ? null : () => _showManualAssignmentFlow(),
-        backgroundColor: Colors.blue,
-        tooltip: 'שיבוץ ידני',
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
-    );
-  }
 }
