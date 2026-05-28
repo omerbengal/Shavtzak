@@ -8,6 +8,9 @@ import '../../widgets/navigation_menu.dart';
 import '../../widgets/test_environment_indicator.dart';
 import '../../widgets/settings_dialog.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
+import '../../widgets/swipeable_page_view.dart' show BottomNavWithDebugTrigger;
+import '../../../core/debug/debug_logger.dart';
+import '../../../core/services/environment_service.dart';
 import '../../../core/services/user_cache_service.dart';
 
 // Global callback to trigger constraints sync when constraints page becomes visible
@@ -177,10 +180,19 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
 
         final isPermanent = state.user.isPermanent;
 
-        return BottomNavigationBar(
+        return BottomNavWithDebugTrigger(
           currentIndex: widget.navigationShell.currentIndex,
           onTap: (index) => _onItemTapped(index, context),
           type: BottomNavigationBarType.fixed,
+          tabRoutes: const [
+            '/user/assignments',
+            '/user/constraints',
+            '/user/checklist',
+          ],
+          userDisplay: state.user.name,
+          isAdmin: state.user.isAdmin,
+          env: EnvironmentService.instance.isTestMode ? 'test' : 'prod',
+          miniFabHeroTag: 'debug-share-mini-fab-user',
           items: [
             const BottomNavigationBarItem(
               icon: Icon(Icons.assignment),
@@ -252,6 +264,17 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
   }
 
   void _onItemTapped(int index, BuildContext context) {
+    const tabRoutes = [
+      '/user/assignments',
+      '/user/constraints',
+      '/user/checklist',
+    ];
+    if (index < tabRoutes.length) {
+      DebugLogger.instance.reset(
+        newRoute:
+            '${EnvironmentService.instance.routePrefix}${tabRoutes[index]}',
+      );
+    }
     switch (index) {
       case 0:
         widget.navigationShell.goBranch(0);
