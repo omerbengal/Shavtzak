@@ -192,11 +192,17 @@ class _BottomNavWithDebugTriggerState extends State<BottomNavWithDebugTrigger> {
   int get _tabCount => widget.items.length;
 
   void _handleLongPressStart(LongPressStartDetails details) {
+    final isRtl = Directionality.maybeOf(context) == TextDirection.rtl;
     final screenWidth = MediaQuery.of(context).size.width;
     final tabWidth = screenWidth / _tabCount;
-    final tabIndex = (details.localPosition.dx / tabWidth)
+    // Visual index: 0 = leftmost on screen, regardless of directionality.
+    final visualIndex = (details.localPosition.dx / tabWidth)
         .floor()
         .clamp(0, _tabCount - 1);
+    // Convert visual → logical. In RTL the BottomNavigationBar renders
+    // items right-to-left, so the visually leftmost slot holds the LAST
+    // logical item.
+    final tabIndex = isRtl ? (_tabCount - 1) - visualIndex : visualIndex;
 
     // Only the currently-active tab triggers the menu.
     if (tabIndex != widget.currentIndex) {
@@ -212,9 +218,12 @@ class _BottomNavWithDebugTriggerState extends State<BottomNavWithDebugTrigger> {
 
   void _showMiniFab(int tabIndex) {
     _hideMiniFab();
+    final isRtl = Directionality.maybeOf(context) == TextDirection.rtl;
     final screenWidth = MediaQuery.of(context).size.width;
     final tabWidth = screenWidth / _tabCount;
-    final tabCenterX = tabWidth * (tabIndex + 0.5);
+    // Convert logical → visual for positioning.
+    final visualIndex = isRtl ? (_tabCount - 1) - tabIndex : tabIndex;
+    final tabCenterX = tabWidth * (visualIndex + 0.5);
     final viewPaddingBottom = MediaQuery.of(context).viewPadding.bottom;
     _miniFabEntry = OverlayEntry(
       builder: (overlayContext) => Positioned(

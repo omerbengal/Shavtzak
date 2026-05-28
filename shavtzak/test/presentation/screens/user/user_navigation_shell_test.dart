@@ -12,29 +12,32 @@ Future<void> _pumpBar(
   required void Function(int) onTap,
 }) async {
   await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: const SizedBox.expand(),
-      bottomNavigationBar: BottomNavWithDebugTrigger(
-        currentIndex: initialIndex,
-        onTap: onTap,
-        tabRoutes: const [
-          '/user/assignments',
-          '/user/constraints',
-          '/user/checklist',
-        ],
-        items: const [
-          BottomNavigationBarItem(
-              icon: Icon(Icons.assignment), label: 'האירועים שלי'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.block), label: 'המגבלות שלי'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.checklist), label: 'צ\'קליסט'),
-        ],
-        userDisplay: 'Boss',
-        isAdmin: false,
-        env: 'prod',
-        miniFabHeroTag: 'debug-share-mini-fab-user',
-        type: BottomNavigationBarType.fixed,
+    home: Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        body: const SizedBox.expand(),
+        bottomNavigationBar: BottomNavWithDebugTrigger(
+          currentIndex: initialIndex,
+          onTap: onTap,
+          tabRoutes: const [
+            '/user/assignments',
+            '/user/constraints',
+            '/user/checklist',
+          ],
+          items: const [
+            BottomNavigationBarItem(
+                icon: Icon(Icons.assignment), label: 'האירועים שלי'),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.block), label: 'המגבלות שלי'),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.checklist), label: 'צ\'קליסט'),
+          ],
+          userDisplay: 'Boss',
+          isAdmin: false,
+          env: 'prod',
+          miniFabHeroTag: 'debug-share-mini-fab-user',
+          type: BottomNavigationBarType.fixed,
+        ),
       ),
     ),
   ));
@@ -55,7 +58,8 @@ void main() {
   testWidgets('user-shell: long-press tab reveals mini-FAB', (tester) async {
     await _pumpBar(tester, initialIndex: 0, onTap: (_) {});
     final size = tester.view.physicalSize / tester.view.devicePixelRatio;
-    final tabCenterX = (size.width / 3) * 0.5;
+    // RTL: logical tab 0 is at visual position 2 (rightmost of 3).
+    final tabCenterX = (size.width / 3) * 2.5;
     final tabCenterY = size.height - 28;
     await tester.longPressAt(Offset(tabCenterX, tabCenterY));
     await tester.pump();
@@ -73,7 +77,8 @@ void main() {
 
     await _pumpBar(tester, initialIndex: 0, onTap: (_) {});
     final size = tester.view.physicalSize / tester.view.devicePixelRatio;
-    await tester.longPressAt(Offset(size.width / 6, size.height - 28));
+    // RTL: logical tab 0 is at visual position 2 (rightmost of 3).
+    await tester.longPressAt(Offset((size.width / 3) * 2.5, size.height - 28));
     await tester.pump();
     await tester.tap(find.byIcon(Icons.bug_report));
     await tester.pump();
@@ -92,8 +97,9 @@ void main() {
       (tester) async {
     await _pumpBar(tester, initialIndex: 0, onTap: (_) {});
     final size = tester.view.physicalSize / tester.view.devicePixelRatio;
-    // Center of tab 2 (with 3 tabs, currentIndex 0 → tab 2 is NOT active)
-    final tabCenterX = (size.width / 3) * 2.5;
+    // RTL: visual position 0 (leftmost) = logical tab 2, which is NOT active
+    // when currentIndex=0.
+    final tabCenterX = (size.width / 3) * 0.5;
     final tabCenterY = size.height - 28;
     await tester.longPressAt(Offset(tabCenterX, tabCenterY));
     await tester.pump();
