@@ -10,6 +10,7 @@ import '../../widgets/settings_dialog.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
 import '../../widgets/swipeable_page_view.dart' show BottomNavWithDebugTrigger;
 import '../../../core/debug/debug_logger.dart';
+import '../../../core/debug/logger.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/user_cache_service.dart';
 
@@ -223,6 +224,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
 
   /// Show settings dialog
   void _showSettingsDialog(BuildContext context) {
+    Logger.action('openSettingsDialog');
     showDialog(
       context: context,
       builder: (BuildContext context) {

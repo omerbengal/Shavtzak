@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/debug/logger.dart';
 import '../../../core/utils/web_url_launcher.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/event_sorting.dart';
@@ -1780,6 +1781,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   /// Show dialog with all team members assigned to the event
   void _showEventTeamMembers(
       BuildContext context, String eventId, String eventName) {
+    Logger.action('openWhoIsWithMeDialog', {'eventId': eventId});
     final userState = context.read<UserSelectionBloc>().state;
     if (userState is! UserAuthenticated) return;
 
