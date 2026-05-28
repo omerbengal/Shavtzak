@@ -64,9 +64,9 @@ void main() {
 
   testWidgets('long-press a tab reveals the mini-FAB', (tester) async {
     await _pumpBar(tester, initialIndex: 0, onTap: (_) {});
-    // Long-press at the horizontal center of tab index 1 (events)
+    // Long-press at the horizontal center of tab index 0 (active tab)
     final size = tester.view.physicalSize / tester.view.devicePixelRatio;
-    final tabCenterX = (size.width / 4) * 1.5;
+    final tabCenterX = (size.width / 4) * 0.5;
     final tabCenterY = size.height - 28; // roughly inside the nav bar
     await tester.longPressAt(Offset(tabCenterX, tabCenterY));
     await tester.pump();
@@ -107,7 +107,9 @@ void main() {
   testWidgets('mini-FAB auto-dismisses after 4 seconds', (tester) async {
     await _pumpBar(tester, initialIndex: 0, onTap: (_) {});
     final size = tester.view.physicalSize / tester.view.devicePixelRatio;
-    await tester.longPressAt(Offset(size.width / 2, size.height - 28));
+    // Long-press at center of tab 0 (active tab)
+    await tester.longPressAt(
+        Offset((size.width / 4) * 0.5, size.height - 28));
     await tester.pump();
     expect(find.byIcon(Icons.bug_report), findsOneWidget);
     await tester.pump(const Duration(seconds: 5));
@@ -123,6 +125,17 @@ void main() {
     await tester.pump();
     expect(find.byIcon(Icons.bug_report), findsOneWidget);
     await tester.longPressAt(pos);
+    await tester.pump();
+    expect(find.byIcon(Icons.bug_report), findsNothing);
+  });
+
+  testWidgets('long-press on a non-active tab is a no-op', (tester) async {
+    await _pumpBar(tester, initialIndex: 0, onTap: (_) {});
+    final size = tester.view.physicalSize / tester.view.devicePixelRatio;
+    // Center of tab 2 (with 4 tabs, currentIndex 0 → tab 2 is NOT active)
+    final tabCenterX = (size.width / 4) * 2.5;
+    final tabCenterY = size.height - 28;
+    await tester.longPressAt(Offset(tabCenterX, tabCenterY));
     await tester.pump();
     expect(find.byIcon(Icons.bug_report), findsNothing);
   });

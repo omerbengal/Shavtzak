@@ -197,6 +197,12 @@ class _BottomNavWithDebugTriggerState extends State<BottomNavWithDebugTrigger> {
     final tabIndex = (details.localPosition.dx / tabWidth)
         .floor()
         .clamp(0, _tabCount - 1);
+
+    // Only the currently-active tab triggers the menu.
+    if (tabIndex != widget.currentIndex) {
+      return;
+    }
+
     if (_shownTabIndex == tabIndex) {
       _hideMiniFab();
     } else {

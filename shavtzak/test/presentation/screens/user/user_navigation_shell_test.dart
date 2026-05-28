@@ -87,4 +87,16 @@ void main() {
       hasLength(1),
     );
   });
+
+  testWidgets('user-shell: long-press on a non-active tab is a no-op',
+      (tester) async {
+    await _pumpBar(tester, initialIndex: 0, onTap: (_) {});
+    final size = tester.view.physicalSize / tester.view.devicePixelRatio;
+    // Center of tab 2 (with 3 tabs, currentIndex 0 → tab 2 is NOT active)
+    final tabCenterX = (size.width / 3) * 2.5;
+    final tabCenterY = size.height - 28;
+    await tester.longPressAt(Offset(tabCenterX, tabCenterY));
+    await tester.pump();
+    expect(find.byIcon(Icons.bug_report), findsNothing);
+  });
 }
