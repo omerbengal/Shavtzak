@@ -110,6 +110,9 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
               isAdmin: _isAdmin(context),
               env: EnvironmentService.instance.isTestMode ? 'test' : 'prod',
               miniFabHeroTag: 'debug-share-mini-fab-admin',
+              type: BottomNavigationBarType.fixed,
+              selectedItemColor: Theme.of(context).colorScheme.primary,
+              unselectedItemColor: Colors.grey,
             )
           : null, // Hide bottom nav on home page
     );
@@ -155,6 +158,9 @@ class BottomNavWithDebugTrigger extends StatefulWidget {
     required this.isAdmin,
     required this.env,
     required this.miniFabHeroTag,
+    this.type,
+    this.selectedItemColor,
+    this.unselectedItemColor,
   });
 
   final int currentIndex;
@@ -165,6 +171,9 @@ class BottomNavWithDebugTrigger extends StatefulWidget {
   final bool isAdmin;
   final String env;
   final String miniFabHeroTag;
+  final BottomNavigationBarType? type;
+  final Color? selectedItemColor;
+  final Color? unselectedItemColor;
 
   @override
   State<BottomNavWithDebugTrigger> createState() =>
@@ -255,6 +264,9 @@ class _BottomNavWithDebugTriggerState extends State<BottomNavWithDebugTrigger> {
         currentIndex: widget.currentIndex,
         onTap: widget.onTap,
         items: widget.items,
+        type: widget.type,
+        selectedItemColor: widget.selectedItemColor,
+        unselectedItemColor: widget.unselectedItemColor,
       ),
     );
   }

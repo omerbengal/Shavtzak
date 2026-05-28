@@ -8,8 +8,8 @@ import 'package:shavtzak/core/debug/logger.dart';
 // that is not trivial to construct in isolation. The cleanest test path
 // is to extract the "tab-trigger menu" widget into its own internal
 // stateful widget that doesn't depend on the navigation shell, then test
-// THAT widget here. See Step 3 — the implementation introduces a small
-// private widget `_BottomNavWithDebugTrigger` that the tests exercise.
+// THAT widget here. See Step 3 — the implementation introduces the public
+// widget `BottomNavWithDebugTrigger` that the tests exercise.
 //
 // If you choose to keep the logic inline in SwipeablePageView, this test
 // file becomes more complex (you need a fake navigation shell). The
