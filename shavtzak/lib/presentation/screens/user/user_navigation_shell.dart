@@ -30,6 +30,12 @@ class UserNavigationShell extends StatefulWidget {
 }
 
 class _UserNavigationShellState extends State<UserNavigationShell> {
+  static const List<String> _kUserTabRoutes = [
+    '/user/assignments',
+    '/user/constraints',
+    '/user/checklist',
+  ];
+
   int? _previousIndex;
 
   @override
@@ -184,11 +190,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
           currentIndex: widget.navigationShell.currentIndex,
           onTap: (index) => _onItemTapped(index, context),
           type: BottomNavigationBarType.fixed,
-          tabRoutes: const [
-            '/user/assignments',
-            '/user/constraints',
-            '/user/checklist',
-          ],
+          tabRoutes: _kUserTabRoutes,
           userDisplay: state.user.name,
           isAdmin: state.user.isAdmin,
           env: EnvironmentService.instance.isTestMode ? 'test' : 'prod',
@@ -264,16 +266,8 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
   }
 
   void _onItemTapped(int index, BuildContext context) {
-    const tabRoutes = [
-      '/user/assignments',
-      '/user/constraints',
-      '/user/checklist',
-    ];
-    if (index < tabRoutes.length) {
-      DebugLogger.instance.reset(
-        newRoute:
-            '${EnvironmentService.instance.routePrefix}${tabRoutes[index]}',
-      );
+    if (index < _kUserTabRoutes.length) {
+      DebugLogger.instance.reset(newRoute: _kUserTabRoutes[index]);
     }
     switch (index) {
       case 0:
