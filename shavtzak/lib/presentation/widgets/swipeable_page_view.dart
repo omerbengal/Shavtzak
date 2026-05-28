@@ -232,15 +232,18 @@ class _BottomNavWithDebugTriggerState extends State<BottomNavWithDebugTrigger> {
   void _hideMiniFab() {
     _miniFabEntry?.remove();
     _miniFabEntry = null;
-    setState(() => _shownTabIndex = null);
+    if (mounted) setState(() => _shownTabIndex = null);
     _autoDismiss?.cancel();
     _autoDismiss = null;
   }
 
   Future<void> _copyAndDismiss() async {
+    // Snapshot the route at trigger time — widget.currentIndex may change
+    // during the async clipboard call if the user navigates mid-share.
+    final routeAtTrigger = widget.tabRoutes[widget.currentIndex];
     await copyDebugLogsToClipboard(
       context,
-      currentRouteForShare: widget.tabRoutes[widget.currentIndex],
+      currentRouteForShare: routeAtTrigger,
       userDisplay: widget.userDisplay,
       isAdmin: widget.isAdmin,
       env: widget.env,
@@ -250,9 +253,12 @@ class _BottomNavWithDebugTriggerState extends State<BottomNavWithDebugTrigger> {
 
   @override
   void dispose() {
+    // Skip setState — calling setState in dispose() throws even when mounted.
+    // Only clean up the overlay entry and timer directly.
     _miniFabEntry?.remove();
     _miniFabEntry = null;
     _autoDismiss?.cancel();
+    _autoDismiss = null;
     super.dispose();
   }
 
