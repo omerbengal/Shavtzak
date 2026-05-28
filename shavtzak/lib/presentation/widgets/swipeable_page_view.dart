@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/debug/debug_clipboard_share.dart';
 import '../../core/debug/debug_logger.dart';
+import '../../core/debug/logger.dart';
 import '../../core/services/environment_service.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
@@ -223,6 +224,7 @@ class _BottomNavWithDebugTriggerState extends State<BottomNavWithDebugTrigger> {
     );
     Overlay.of(context).insert(_miniFabEntry!);
     setState(() => _shownTabIndex = tabIndex);
+    Logger.action('debugShareMenuOpen');
     _autoDismiss?.cancel();
     _autoDismiss = Timer(_autoDismissAfter, () {
       if (mounted) _hideMiniFab();
