@@ -87,6 +87,7 @@ void main() {
     final warnings = DebugLogger.instance.events
         .where((e) => e.name == 'clipboardFailed');
     expect(warnings, hasLength(1));
+    expect(warnings.single.context['code'], 'denied');
 
     // Error snackbar shown
     expect(find.text('שגיאה בהעתקה ללוח'), findsOneWidget);
@@ -96,5 +97,33 @@ void main() {
         DebugLogger.instance.events
             .where((e) => e.name == 'debugShareLogsCopied'),
         isEmpty);
+  });
+
+  testWidgets('formats payload with "-" when userDisplay is null',
+      (tester) async {
+    String? capturedText;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        capturedText = (call.arguments as Map)['text'] as String;
+      }
+      return null;
+    });
+
+    await _pumpHost(tester, onTap: (ctx) async {
+      await copyDebugLogsToClipboard(
+        ctx,
+        currentRouteForShare: '/admin/events',
+        userDisplay: null,
+        isAdmin: false,
+        env: 'prod',
+      );
+    });
+
+    await tester.tap(find.text('go'));
+    await tester.pump();
+
+    expect(capturedText, isNotNull);
+    expect(capturedText!, contains('User: -'));
   });
 }

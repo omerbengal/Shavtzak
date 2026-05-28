@@ -21,6 +21,8 @@ Future<void> copyDebugLogsToClipboard(
   required bool isAdmin,
   required String env,
 }) async {
+  // Snapshot before recording the share event itself, so eventCount
+  // reflects the buffer size at share time.
   final events = DebugLogger.instance.events;
   final text = formatBuffer(
     events: events,
@@ -33,7 +35,13 @@ Future<void> copyDebugLogsToClipboard(
   try {
     await Clipboard.setData(ClipboardData(text: text));
   } catch (e) {
-    Logger.warning('clipboardFailed', {'error': e.runtimeType.toString()});
+    final extra = e is PlatformException
+        ? <String, Object?>{'code': e.code, 'message': e.message ?? ''}
+        : <String, Object?>{'detail': e.toString()};
+    Logger.warning('clipboardFailed', {
+      'error': e.runtimeType.toString(),
+      ...extra,
+    });
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('שגיאה בהעתקה ללוח')),
