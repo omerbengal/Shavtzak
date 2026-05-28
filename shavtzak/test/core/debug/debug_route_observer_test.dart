@@ -31,10 +31,22 @@ void main() {
     expect(DebugLogger.instance.events.single.name, '/admin/assignments');
   });
 
-  test('didPop resets with the destination route name', () {
+  test('didPop of a PageRoute (page back-nav) resets to the revealed page', () {
     final obs = DebugRouteObserver();
-    obs.didPop(route('/admin/events'), route('/admin/team-members'));
-    expect(DebugLogger.instance.events.single.name, '/admin/team-members');
+    obs.didPop(
+      MaterialPageRoute<void>(
+        builder: (_) => const SizedBox.shrink(),
+        settings: const RouteSettings(name: '/admin/events'),
+      ),
+      MaterialPageRoute<void>(
+        builder: (_) => const SizedBox.shrink(),
+        settings: const RouteSettings(name: '/admin/team-members'),
+      ),
+    );
+    final ev = DebugLogger.instance.events;
+    expect(ev, hasLength(1));
+    expect(ev.single.type, LogEventType.nav);
+    expect(ev.single.name, '/admin/team-members');
   });
 
   test('null route name falls back to "<unknown>"', () {
@@ -103,27 +115,59 @@ void main() {
         contains('precondition'));
   });
 
-  test('didPop back to a PopupRoute does NOT reset', () {
+  test('didPop of a ModalBottomSheetRoute (revealing a page) does NOT reset',
+      () {
+    // Reproduces the production bug: closing a dialog/sheet was wiping the
+    // buffer because the guard checked previousRoute (the page beneath)
+    // instead of route (the popup being dismissed).
     DebugLogger.instance.record(LogEvent(
       timestamp: DateTime.utc(2026, 5, 28),
       type: LogEventType.action,
       name: 'precondition',
       context: const {},
     ));
-    // Construct a DialogRoute lazily — we don't need to push it through
-    // a real Navigator, just hand it to the observer as the previousRoute.
-    // Since DialogRoute requires a BuildContext, use a simpler PopupRoute
-    // surrogate: a ModalBottomSheetRoute.
     final sheetRoute = ModalBottomSheetRoute<void>(
       builder: (_) => const SizedBox.shrink(),
       isScrollControlled: false,
     );
-    final poppedPage = MaterialPageRoute<void>(
+    final pageBeneath = MaterialPageRoute<void>(
       builder: (_) => const SizedBox.shrink(),
-      settings: const RouteSettings(name: '/x'),
+      settings: const RouteSettings(name: '/user/assignments'),
     );
     final obs = DebugRouteObserver();
-    obs.didPop(poppedPage, sheetRoute);
+    // route = the sheet being popped; previousRoute = the page revealed
+    obs.didPop(sheetRoute, pageBeneath);
+    // Buffer must still contain 'precondition' — dismissing a sheet must
+    // NOT reset.
+    expect(DebugLogger.instance.events.map((e) => e.name),
+        contains('precondition'));
+  });
+
+  testWidgets('didPop of a DialogRoute (revealing a page) does NOT reset',
+      (tester) async {
+    DebugLogger.instance.record(LogEvent(
+      timestamp: DateTime.utc(2026, 5, 28),
+      type: LogEventType.action,
+      name: 'precondition',
+      context: const {},
+    ));
+    late BuildContext capturedContext;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(builder: (ctx) {
+        capturedContext = ctx;
+        return const SizedBox.shrink();
+      }),
+    ));
+    final dialogRoute = DialogRoute<void>(
+      context: capturedContext,
+      builder: (_) => const SizedBox.shrink(),
+    );
+    final pageBeneath = MaterialPageRoute<void>(
+      builder: (_) => const SizedBox.shrink(),
+      settings: const RouteSettings(name: '/user/assignments'),
+    );
+    final obs = DebugRouteObserver();
+    obs.didPop(dialogRoute, pageBeneath);
     expect(DebugLogger.instance.events.map((e) => e.name),
         contains('precondition'));
   });

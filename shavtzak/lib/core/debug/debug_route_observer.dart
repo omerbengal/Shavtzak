@@ -22,7 +22,12 @@ class DebugRouteObserver extends NavigatorObserver {
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (previousRoute is! PageRoute) return;
+    // Only reset when a full PAGE is popped (genuine back-navigation to a
+    // previous page). Dismissing a dialog or modal sheet pops a PopupRoute,
+    // which must NOT reset — otherwise the context the user generated inside
+    // that dialog (actions, DB reads, BLoC events) is wiped on close.
+    if (route is! PageRoute) return;
+    if (previousRoute == null) return;
     _reset(previousRoute);
   }
 
