@@ -430,23 +430,51 @@ class MyApp extends StatelessWidget {
                 final roleBloc = context.read<RoleBloc>();
                 final categoryBloc = context.read<CategoryBloc>();
 
-                return BlocListener<UserSelectionBloc, UserSelectionState>(
-                  listener: (context, state) {
-                    if (state is UserAuthenticated) {
-                      AuditContextService.instance.setCurrentUser(state.user);
-                      teamBloc.add(const LoadTeamMembers());
-                      roleBloc.add(const LoadRoles());
-                      categoryBloc.add(const LoadCategories());
-                    } else if (state is UserSignedOut) {
-                      AuditContextService.instance.clear();
-                    }
-
-                    // Clear all BLoC states when user signs out
-                    if (state is UserSignedOut) {
-                      teamBloc.add(const ClearTeamState());
-                      // TODO: Add similar clear events for EventBloc and AssignmentBloc
-                    }
-                  },
+                return MultiBlocListener(
+                  listeners: [
+                    // Always-on: keep audit context fresh on every auth emission +
+                    // handle sign-out (clear audit context + clear team state).
+                    BlocListener<UserSelectionBloc, UserSelectionState>(
+                      listener: (context, state) {
+                        if (state is UserAuthenticated) {
+                          AuditContextService.instance
+                              .setCurrentUser(state.user);
+                        } else if (state is UserSignedOut) {
+                          AuditContextService.instance.clear();
+                          teamBloc.add(const ClearTeamState());
+                          // TODO: Add similar clear events for EventBloc and AssignmentBloc
+                        }
+                      },
+                    ),
+                    // Gated: (re)load reference data only on first authentication
+                    // or when identity/access changes. Avoids redundant reloads on
+                    // unrelated UserAuthenticated re-emissions (e.g. self-edit of
+                    // name/phone/email).
+                    BlocListener<UserSelectionBloc, UserSelectionState>(
+                      listenWhen: (prev, curr) {
+                        if (curr is! UserAuthenticated) return false;
+                        // First authentication.
+                        if (prev is! UserAuthenticated) return true;
+                        // Both authenticated: reload only if identity or access
+                        // changed.
+                        return curr.user.id != prev.user.id ||
+                            curr.user.isAdmin != prev.user.isAdmin ||
+                            curr.user.canAccessSummaryScreen !=
+                                prev.user.canAccessSummaryScreen ||
+                            curr.user.canAccessShamapExport !=
+                                prev.user.canAccessShamapExport ||
+                            curr.user.canAccessConstraintsExamining !=
+                                prev.user.canAccessConstraintsExamining;
+                      },
+                      listener: (context, state) {
+                        if (state is UserAuthenticated) {
+                          teamBloc.add(const LoadTeamMembers());
+                          roleBloc.add(const LoadRoles());
+                          categoryBloc.add(const LoadCategories());
+                        }
+                      },
+                    ),
+                  ],
                   child: VersionBlockingOverlay(
                     child: OfflineBlockingOverlay(
                       child: MaterialApp.router(
