@@ -609,21 +609,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Also listen for team member changes
       _teamMemberSubscription = _teamRepository.watchTeamMembers().listen(
-        (updatedMembers) async {
+        (updatedMembers) {
           // Update member cache
           cachedMembersMap.clear();
           cachedMembersMap.addAll({for (var tm in updatedMembers) tm.id: tm});
-          // CRITICAL FIX: Fetch FRESH assignments from DB when team members change
-          // This prevents stale cached data after member changes
-          final freshAssignments = await _repository.getAssignmentsInTimeWindow(
-            windowStart: windowStart,
-            windowEnd: windowEnd,
-          );
-          // Update cache with fresh data
-          _repository.cacheCurrentAssignments(freshAssignments);
-          // Trigger rebuild with fresh data - use _currentEventFilter to preserve user's filter
-          add(RebuildAssignmentSlotsFromData(freshAssignments, cachedEventsMap,
-              cachedMembersMap, _currentEventFilter));
+          // Assignments are kept live by the watchAssignmentsInTimeWindow listener
+          // (the source of truth); reuse its cache instead of re-querying.
+          final currentAssignments = _repository.getCurrentAssignments();
+          add(RebuildAssignmentSlotsFromData(currentAssignments,
+              cachedEventsMap, cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
           _emitOrLog(emit, AssignmentError('שגיאה בהאזנה לחברי צוות: $e'));
@@ -637,26 +631,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         windowEnd,
       )
           .listen(
-        (updatedEvents) async {
+        (updatedEvents) {
           // Update event cache
           cachedEventsMap.clear();
           cachedEventsMap.addAll({for (var e in updatedEvents) e.id: e});
 
-          // CRITICAL FIX: Add a small delay to ensure Firestore consistency
-          // This prevents stale cached data after quota changes
-          await Future.delayed(const Duration(milliseconds: 100));
-
-          // Fetch FRESH assignments from DB when events change
-          // This prevents stale cached data after quota changes
-          final freshAssignments = await _repository.getAssignmentsInTimeWindow(
-            windowStart: windowStart,
-            windowEnd: windowEnd,
-          );
-          // Update cache with fresh data
-          _repository.cacheCurrentAssignments(freshAssignments);
-          // Trigger rebuild with fresh data - use _currentEventFilter to preserve user's filter
-          add(RebuildAssignmentSlotsFromData(freshAssignments, cachedEventsMap,
-              cachedMembersMap, _currentEventFilter));
+          // Assignments are kept live by the watchAssignmentsInTimeWindow listener
+          // (the source of truth); reuse its cache instead of re-querying.
+          final currentAssignments = _repository.getCurrentAssignments();
+          add(RebuildAssignmentSlotsFromData(currentAssignments,
+              cachedEventsMap, cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
           _emitOrLog(emit, AssignmentError('שגיאה בהאזנה לאירועים: $e'));
@@ -665,17 +649,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Also listen for role changes
       _roleSubscription = _roleRepository.watchRoles().listen(
-        (updatedRoles) async {
-          // When roles change (e.g., reordering), rebuild slots with fresh assignments
-          final freshAssignments = await _repository.getAssignmentsInTimeWindow(
-            windowStart: windowStart,
-            windowEnd: windowEnd,
-          );
-          // Update cache with fresh data
-          _repository.cacheCurrentAssignments(freshAssignments);
-          // Trigger rebuild with fresh data - use _currentEventFilter to preserve user's filter
-          add(RebuildAssignmentSlotsFromData(freshAssignments, cachedEventsMap,
-              cachedMembersMap, _currentEventFilter));
+        (updatedRoles) {
+          // When roles change (e.g., reordering), rebuild slots. Assignments are
+          // kept live by the watchAssignmentsInTimeWindow listener (the source of
+          // truth); reuse its cache instead of re-querying.
+          final currentAssignments = _repository.getCurrentAssignments();
+          add(RebuildAssignmentSlotsFromData(currentAssignments,
+              cachedEventsMap, cachedMembersMap, _currentEventFilter));
         },
         onError: (e) {
           _emitOrLog(emit, AssignmentError('שגיאה בהאזנה לתפקידים: $e'));
