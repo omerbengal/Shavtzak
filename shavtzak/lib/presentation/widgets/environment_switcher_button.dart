@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/services/environment_service.dart';
+import '../../core/debug/logger.dart';
 import 'dart:developer' as developer;
 
 /// Button to switch between production and test environments
@@ -22,6 +23,7 @@ class EnvironmentSwitcherButton extends StatelessWidget {
           ),
           tooltip: isTestMode ? 'עבור לסביבת ייצור' : 'עבור לסביבת בדיקות',
           onPressed: () {
+            Logger.action('toggle:environment', {'on': !isTestMode});
             // Get current route
             final currentRoute = GoRouterState.of(context).uri.path;
             developer.log('EnvironmentSwitcherButton: Pressed! currentRoute=$currentRoute, isTestMode=$isTestMode', name: 'EnvironmentSwitcher');

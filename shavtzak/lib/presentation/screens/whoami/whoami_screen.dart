@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/link.dart';
 
+import '../../../core/debug/logger.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../domain/entities/team_member.dart';
@@ -192,7 +193,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
             IconButton(
               icon: const Icon(Icons.cleaning_services),
               tooltip: 'ניקוי מטמון',
-              onPressed: () => _showClearCacheDialog(context),
+              onPressed: () { Logger.action('tap:clearCache'); _showClearCacheDialog(context); },
               iconSize: 24,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
@@ -223,11 +224,11 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
           content: const Text('האם את/ה בטוח/ה שברצונך לנקות את המטמון ולהתחיל מחדש?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () { Logger.action('tap:cancel:clearCacheDialog'); Navigator.of(context).pop(false); },
               child: const Text('ביטול'),
             ),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () { Logger.action('tap:confirmClearCache'); Navigator.of(context).pop(true); },
               child: const Text('נקה מטמון'),
             ),
           ],
@@ -312,7 +313,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
             ),
             target: LinkTarget.self,
             builder: (context, followLink) => TextButton.icon(
-              onPressed: followLink,
+              onPressed: followLink == null ? null : () { Logger.action('tap:privacyPolicy'); followLink(); },
               icon: const Icon(Icons.privacy_tip_outlined, size: 18),
               label: const Text(
                 'מדיניות פרטיות',
@@ -382,6 +383,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () {
+                Logger.action('tap:retryLoad');
                 setState(() {
                   _errorMessage = null;
                   _isLoading = true;
@@ -416,6 +418,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () {
+                Logger.action('tap:refresh');
                 setState(() => _isLoading = true);
                 context.read<UserSelectionBloc>().add(const LoadAllTeamMembers());
               },
@@ -482,6 +485,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
               return _TeamMemberCard(
                 teamMember: teamMember,
                 onTap: () async {
+                  Logger.action('tap:selectMember', {'memberId': teamMember.id});
                   await _handleTeamMemberSelection(context, teamMember);
                 },
               );

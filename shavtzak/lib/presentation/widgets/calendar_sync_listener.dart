@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/debug/logger.dart';
 import '../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../bloc/calendar_sync/calendar_sync_state.dart';
 
@@ -54,6 +55,7 @@ class CalendarSyncListener extends StatelessWidget {
                 label: 'נסה שוב',
                 textColor: Colors.white,
                 onPressed: () {
+                  Logger.action('tap:retryCalendarSync');
                   // TODO: Implement retry action when constraint data is available
                 },
               )
@@ -152,6 +154,7 @@ class SyncAllButton extends StatelessWidget {
             onPressed: isLoading || isDisabled
                 ? null
                 : () {
+                    Logger.action('tap:syncAll');
                     // This requires team member data - should be triggered from a screen
                     // with access to the team data
                   },

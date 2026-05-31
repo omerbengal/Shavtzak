@@ -4,6 +4,7 @@ import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
 import 'chat_bubble.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
+import '../../../core/debug/logger.dart';
 
 /// Modal dialog showing the full notes conversation for a checklist item
 class ChecklistNotesModal extends StatefulWidget {
@@ -138,7 +139,11 @@ class _ChecklistNotesModalState extends State<ChecklistNotesModal> {
                         ),
                       ),
                       IconButton(
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: () {
+                          Logger.action('tap:close:checklistNotesModal',
+                              {'checklistItemId': widget.item.id});
+                          Navigator.pop(context);
+                        },
                         icon: const Icon(Icons.close),
                       ),
                     ],
@@ -221,7 +226,11 @@ class _ChecklistNotesModalState extends State<ChecklistNotesModal> {
                             ),
                             maxLines: null,
                             textInputAction: TextInputAction.send,
-                            onSubmitted: (_) => _submitNote(),
+                            onSubmitted: (_) {
+                              Logger.action('tap:submit:note',
+                                  {'checklistItemId': widget.item.id, 'length': Logger.redact(_noteController.text.trim())});
+                              _submitNote();
+                            },
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -231,7 +240,11 @@ class _ChecklistNotesModalState extends State<ChecklistNotesModal> {
                             shape: BoxShape.circle,
                           ),
                           child: IconButton(
-                            onPressed: _submitNote,
+                            onPressed: () {
+                              Logger.action('tap:submitNote',
+                                  {'checklistItemId': widget.item.id});
+                              _submitNote();
+                            },
                             icon: const Icon(
                               Icons.send,
                               color: Colors.white,

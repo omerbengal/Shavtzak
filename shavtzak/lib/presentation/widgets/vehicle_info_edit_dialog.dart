@@ -7,6 +7,7 @@ import '../../domain/entities/vehicle_info.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
+import '../../core/debug/logger.dart';
 import '../../core/services/utilities_service.dart';
 import '../../core/utils/crud_action_result.dart';
 import '../../core/utils/rtl_text_field_utils.dart';
@@ -190,6 +191,8 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
                         );
                       }).toList(),
                       onChanged: (value) {
+                        Logger.action('select:manufacturer',
+                            {'manufacturer': Logger.redact(value ?? '')});
                         setState(() {
                           _selectedManufacturer = value;
                           _isDirty = true;
@@ -254,6 +257,7 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
                   onPressed: _isSaving
                       ? null
                       : () {
+                          Logger.action('tap:clearVehicleInfo');
                           setState(() {
                             _vehicleNumberController.clear();
                             _selectedManufacturer = null;
@@ -271,11 +275,21 @@ class _VehicleInfoEditDialogState extends State<VehicleInfoEditDialog> {
                   ),
                 ),
               TextButton(
-                onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                onPressed: _isSaving
+                    ? null
+                    : () {
+                        Logger.action('tap:cancel:vehicleInfoDialog');
+                        Navigator.of(context).pop();
+                      },
                 child: const Text('ביטול'),
               ),
               ElevatedButton(
-                onPressed: (_isDirty && !_isSaving) ? _saveVehicleInfo : null,
+                onPressed: (_isDirty && !_isSaving)
+                    ? () {
+                        Logger.action('tap:saveVehicleInfo');
+                        _saveVehicleInfo();
+                      }
+                    : null,
                 child: _isSaving
                     ? const SizedBox(
                         width: 18,

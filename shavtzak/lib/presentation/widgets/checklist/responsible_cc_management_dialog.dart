@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../domain/entities/checklist_item.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
+import '../../../core/debug/logger.dart';
 
 /// Dialog for responsible users to manage CC members
 class ResponsibleCcManagementDialog extends StatefulWidget {
@@ -91,7 +92,7 @@ class _ResponsibleCcManagementDialogState extends State<ResponsibleCcManagementD
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   IconButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () { Logger.action('tap:close:ccManagementDialog'); Navigator.pop(context); },
                     icon: const Icon(Icons.close),
                   ),
                 ],
@@ -130,7 +131,7 @@ class _ResponsibleCcManagementDialogState extends State<ResponsibleCcManagementD
                                 title: Text(member.name),
                                 trailing: IconButton(
                                   icon: const Icon(Icons.remove_circle, size: 20),
-                                  onPressed: () => _removeCcMember(member),
+                                  onPressed: () { Logger.action('tap:removeCcMember', {'memberId': member.id}); _removeCcMember(member); },
                                   tooltip: 'הסר מהרשימה',
                                 ),
                               ),
@@ -187,7 +188,7 @@ class _ResponsibleCcManagementDialogState extends State<ResponsibleCcManagementD
                                 title: Text(member.name),
                                 trailing: IconButton(
                                   icon: const Icon(Icons.add_circle, size: 20),
-                                  onPressed: () => _addCcMember(member),
+                                  onPressed: () { Logger.action('tap:addCcMember', {'memberId': member.id}); _addCcMember(member); },
                                   tooltip: 'הוסף לרשימת המיודעים',
                                 ),
                               ),
@@ -202,7 +203,7 @@ class _ResponsibleCcManagementDialogState extends State<ResponsibleCcManagementD
               // Close button
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () { Logger.action('tap:close:ccManagementDialog'); Navigator.pop(context); },
                 child: const Text('סגור'),
               ),
             ],

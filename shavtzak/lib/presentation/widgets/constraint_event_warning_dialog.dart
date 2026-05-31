@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/debug/logger.dart';
 import '../../core/utils/time_range_utils.dart';
 import '../../core/utils/constraint_event_overlap.dart';
 
@@ -161,11 +162,17 @@ class ConstraintEventWarningDialog extends StatelessWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () {
+              Logger.action('tap:cancel:constraintEventWarningDialog');
+              Navigator.of(context).pop(false);
+            },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () {
+              Logger.action('tap:confirmConstraintWarning');
+              Navigator.of(context).pop(true);
+            },
             child: Text(confirmText),
           ),
         ],

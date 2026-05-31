@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/role_types.dart';
+import '../../../../core/debug/logger.dart';
 import '../quota_reduction_analyzer.dart';
 
 /// Dialog for selecting which assignments to remove when reducing role quotas
@@ -191,12 +192,20 @@ class _QuotaReductionDialogState extends State<QuotaReductionDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(null),
+            onPressed: () {
+              Logger.action('tap:cancel:quotaReductionDialog');
+              Navigator.of(context).pop(null);
+            },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
             onPressed: _isValidSelection()
-                ? () => Navigator.of(context).pop(_getAllSelectedIds())
+                ? () {
+                    Logger.action('tap:confirmQuotaReduction', {
+                      'count': _getAllSelectedIds().length,
+                    });
+                    Navigator.of(context).pop(_getAllSelectedIds());
+                  }
                 : null,
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
@@ -258,6 +267,11 @@ class _QuotaReductionDialogState extends State<QuotaReductionDialog> {
           return CheckboxListTile(
             value: isSelected,
             onChanged: (bool? value) {
+              Logger.action('toggle:assignmentSelection', {
+                'assignmentId': assignment.id,
+                'roleKey': conflict.roleKey,
+                'on': value ?? false,
+              });
               setState(() {
                 if (value == true) {
                   _selectedAssignments[conflict.roleKey]!.add(assignment.id);

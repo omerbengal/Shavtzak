@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/debug/logger.dart';
 import '../../core/services/app_version_service.dart';
 
 /// A global blocking overlay shown when the local app version is outdated.
@@ -170,6 +171,7 @@ class _VersionBlockingDialog extends StatelessWidget {
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () async {
+                          Logger.action('tap:refreshApp');
                           await AppVersionService.instance.refreshApp();
                         },
                         style: ElevatedButton.styleFrom(

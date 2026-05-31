@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../../core/debug/logger.dart';
 import '../../core/utils/rtl_text_field_utils.dart';
 
 // Conditional imports for web-specific geolocation API
@@ -261,6 +262,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   }
 
   void _onMapTap(TapPosition tapPosition, LatLng point) {
+    Logger.action('tap:mapLocation');
     setState(() {
       _selectedLocation = point;
       _selectedLocationName = null; // Clear name when tapping manually
@@ -269,6 +271,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   }
 
   void _confirmSelection() {
+    Logger.action('tap:confirmLocation');
     if (_selectedLocation != null) {
       Navigator.of(context).pop(MapLocationResult(
         latitude: _selectedLocation!.latitude,
@@ -279,6 +282,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
   }
 
   void _cancel() {
+    Logger.action('tap:cancel:mapLocationPicker');
     Navigator.of(context).pop();
   }
 
@@ -348,6 +352,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
 
   /// Select a search result
   void _selectSearchResult(_SearchResult result) {
+    Logger.action('select:searchResult', {'index': _searchResults.indexOf(result)});
     final location = LatLng(result.latitude, result.longitude);
     setState(() {
       _selectedLocation = location;
@@ -362,6 +367,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
 
   /// Get current user location using browser geolocation API (web only)
   Future<void> _getCurrentLocation() async {
+    Logger.action('tap:currentLocation');
     if (!kIsWeb) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -426,6 +432,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
               label: 'הסבר',
               textColor: Colors.white,
               onPressed: () {
+                Logger.action('open:locationPermissionDialog');
                 _showLocationPermissionDialog();
               },
             ),
@@ -477,7 +484,10 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                Logger.action('tap:close:locationPermissionDialog');
+                Navigator.pop(context);
+              },
               child: const Text('הבנתי'),
             ),
           ],
@@ -525,7 +535,10 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.close),
-                      onPressed: _cancel,
+                      onPressed: () {
+                        Logger.action('tap:close:mapLocationPicker');
+                        Navigator.of(context).pop();
+                      },
                     ),
                   ],
                 ),
@@ -615,6 +628,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                             ? IconButton(
                                                 icon: const Icon(Icons.clear),
                                                 onPressed: () {
+                                                  Logger.action('tap:clearSearch');
                                                   _searchController.clear();
                                                   setState(() {
                                                     _searchResults = [];
@@ -647,7 +661,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                     ],
                                   ),
                                   child: IconButton(
-                                    onPressed: _isGettingLocation ? null : _getCurrentLocation,
+                                    onPressed: _isGettingLocation ? null : () { _getCurrentLocation(); },
                                     icon: _isGettingLocation
                                         ? const SizedBox(
                                             width: 20,
@@ -689,7 +703,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                                   itemBuilder: (context, index) {
                                     final result = _searchResults[index];
                                     return InkWell(
-                                      onTap: () => _selectSearchResult(result),
+                                      onTap: () { _selectSearchResult(result); },
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 16,
@@ -804,7 +818,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                           children: [
                             Expanded(
                               child: OutlinedButton(
-                                onPressed: _cancel,
+                                onPressed: () { _cancel(); },
                                 style: OutlinedButton.styleFrom(
                                   backgroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -816,7 +830,7 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                             Expanded(
                               child: ElevatedButton.icon(
                                 onPressed: _selectedLocation != null
-                                    ? _confirmSelection
+                                    ? () { _confirmSelection(); }
                                     : null,
                                 icon: const Icon(Icons.check),
                                 label: const Text('אישור'),

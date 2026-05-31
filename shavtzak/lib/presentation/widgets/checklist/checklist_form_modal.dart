@@ -10,6 +10,7 @@ import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_state.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../loading_overlay.dart';
+import '../../../core/debug/logger.dart';
 
 /// Modal form for creating or editing a checklist item
 class ChecklistFormModal extends StatefulWidget {
@@ -221,11 +222,18 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
+              onPressed: () {
+                Logger.action('tap:cancel:deleteChecklistItem');
+                Navigator.pop(dialogContext, false);
+              },
               child: const Text('ביטול'),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
+              onPressed: () {
+                Logger.action('tap:confirmDeleteChecklistItem',
+                    {'checklistItemId': widget.item?.id});
+                Navigator.pop(dialogContext, true);
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
@@ -299,13 +307,20 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                             // Delete button (only when editing an existing item)
                             if (widget.item != null && widget.onDelete != null)
                               IconButton(
-                                onPressed: _delete,
+                                onPressed: () {
+                                  Logger.action('tap:deleteChecklistItem',
+                                      {'checklistItemId': widget.item?.id});
+                                  _delete();
+                                },
                                 icon:
                                     const Icon(Icons.delete, color: Colors.red),
                                 tooltip: 'מחק פריט',
                               ),
                             IconButton(
-                              onPressed: () => Navigator.pop(context),
+                              onPressed: () {
+                                Logger.action('tap:close:checklistFormModal');
+                                Navigator.pop(context);
+                              },
                               icon: const Icon(Icons.close),
                             ),
                           ],
@@ -475,8 +490,11 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                                   ),
                                 ))
                             .toList(),
-                        onChanged: (value) =>
-                            setState(() => _selectedEvent = value),
+                        onChanged: (value) {
+                          Logger.action(
+                              'select:event', {'eventId': value?.id});
+                          setState(() => _selectedEvent = value);
+                        },
                       ),
                 const SizedBox(height: 16),
 
@@ -521,6 +539,8 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                                 ))
                             .toList(),
                         onChanged: (value) {
+                          Logger.action(
+                              'select:responsible', {'memberId': value?.id});
                           setState(() {
                             _selectedResponsible = value;
                           });
@@ -587,6 +607,8 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                       ),
                       selected: isSelected,
                       onSelected: (selected) {
+                        Logger.action('toggle:ccMember',
+                            {'memberId': member.id, 'on': selected});
                         setState(() {
                           if (selected) {
                             _selectedCcMembers.add(member);
@@ -605,7 +627,10 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
                   title: const Text('סטטוס'),
                   subtitle: Text(_status ? 'קיים' : 'לא קיים'),
                   value: _status,
-                  onChanged: (value) => setState(() => _status = value),
+                  onChanged: (value) {
+                    Logger.action('toggle:status', {'on': value});
+                    setState(() => _status = value);
+                  },
                   activeColor: Colors.green,
                   inactiveThumbColor: Colors.red,
                   inactiveTrackColor: Colors.red.withOpacity(0.5),
@@ -617,7 +642,13 @@ class _ChecklistFormModalState extends State<ChecklistFormModal> {
 
           // Save button
           ElevatedButton(
-            onPressed: _isSaving ? null : _save,
+            onPressed: _isSaving
+                ? null
+                : () {
+                    Logger.action('tap:saveChecklistItem',
+                        {'checklistItemId': widget.item?.id});
+                    _save();
+                  },
             child: Text(widget.item == null ? 'צור פריט' : 'שמור שינויים'),
           ),
         ],

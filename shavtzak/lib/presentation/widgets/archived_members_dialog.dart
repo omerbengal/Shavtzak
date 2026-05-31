@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../core/debug/logger.dart';
 import '../../core/utils/crud_action_result.dart';
 import '../../domain/entities/team_member.dart';
 import '../bloc/team/team_bloc.dart';
@@ -47,7 +48,10 @@ class ArchivedMembersDialog extends StatelessWidget {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () {
+                  Logger.action('tap:close:archivedMembersDialog');
+                  Navigator.of(context).pop();
+                },
                 child: const Text('סגור'),
               ),
             ],
@@ -106,7 +110,10 @@ class ArchivedMembersDialog extends StatelessWidget {
           style: TextStyle(color: Colors.grey[600]),
         ),
         trailing: ElevatedButton.icon(
-          onPressed: () => _restoreMember(context, member),
+          onPressed: () {
+                Logger.action('tap:restoreMember', {'memberId': member.id});
+                _restoreMember(context, member);
+              },
           icon: const Icon(Icons.restore, size: 18),
           label: const Text('שחזור'),
           style: ElevatedButton.styleFrom(
@@ -134,13 +141,17 @@ class ArchivedMembersDialog extends StatelessWidget {
                 TextButton(
                   onPressed: isRestoring
                       ? null
-                      : () => Navigator.of(dialogContext).pop(),
+                      : () {
+                          Logger.action('tap:cancel:restoreMember', {'memberId': member.id});
+                          Navigator.of(dialogContext).pop();
+                        },
                   child: const Text('ביטול'),
                 ),
                 ElevatedButton(
                   onPressed: isRestoring
                       ? null
                       : () async {
+                          Logger.action('tap:confirmRestoreMember', {'memberId': member.id});
                           setDialogState(() => isRestoring = true);
                           final updatedMember = member.copyWith(
                             isArchived: false,

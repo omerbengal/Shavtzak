@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/debug/logger.dart';
 import '../../../../core/services/drive_service.dart';
 import '../../../../core/utils/web_url_launcher.dart';
 import '../../../../data/repositories/event_repository.dart';
@@ -345,7 +346,7 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
               ),
               IconButton(
                 icon: const Icon(Icons.refresh),
-                onPressed: _loadFiles,
+                onPressed: () { Logger.action('tap:refreshFiles', {'eventId': widget.eventId}); _loadFiles(); },
                 color: Colors.red.shade600,
               ),
             ],
@@ -405,7 +406,7 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
             if (_currentFolderId != null && _currentFolderId!.isNotEmpty) ...[
               // Manual refresh button
               IconButton(
-                onPressed: _isLoading ? null : _loadFiles,
+                onPressed: _isLoading ? null : () { Logger.action('tap:refreshFiles', {'eventId': widget.eventId}); _loadFiles(); },
                 icon: const Icon(Icons.refresh),
                 tooltip: 'רענן קבצים',
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -414,7 +415,7 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
               // Link to folder
               if (_currentFolderLink != null)
                 TextButton.icon(
-                  onPressed: () => _launchUrl(_currentFolderLink!),
+                  onPressed: () { Logger.action('tap:openDriveFolder', {'eventId': widget.eventId}); _launchUrl(_currentFolderLink!); },
                   icon: const Icon(Icons.link, size: 16),
                   label: const Text('פתח תיקייה'),
                   style: TextButton.styleFrom(
@@ -519,7 +520,7 @@ class _FileTile extends StatelessWidget {
         ),
       ),
       trailing: const Icon(Icons.open_in_new, size: 16),
-      onTap: () => _launchUrl(context, file.webViewLink),
+      onTap: () { Logger.action('tap:openDriveFile', {'fileId': file.id, 'mimeType': file.mimeType}); _launchUrl(context, file.webViewLink); },
     );
   }
 }

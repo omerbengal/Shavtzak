@@ -11,6 +11,7 @@ import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/utils/time_range_utils.dart';
 import '../../../core/utils/constraint_event_overlap.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/debug/logger.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
@@ -272,7 +273,10 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
             ),
             floatingActionButton: FloatingActionButton(
               heroTag: 'constraints_fab',
-              onPressed: () => _addConstraintRequest(context),
+              onPressed: () {
+                Logger.action('open:addConstraintRequest');
+                _addConstraintRequest(context);
+              },
               child: const Icon(Icons.add),
             ),
           );
@@ -306,8 +310,10 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                   ),
                   // History button for expired constraints
                   TextButton.icon(
-                    onPressed: () =>
-                        _showExpiredConstraintsModal(context, user),
+                    onPressed: () {
+                      Logger.action('open:expiredConstraintsModal');
+                      _showExpiredConstraintsModal(context, user);
+                    },
                     icon: const Icon(
                       Icons.history,
                       size: 20,
@@ -462,6 +468,8 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
               children: [
                 TextButton.icon(
                   onPressed: () {
+                    Logger.action(
+                        'open:editConstraint', {'constraintId': constraint.id});
                     if (constraint.repeatType != null) {
                       ScaffoldMessenger.of(context)
                         ..clearSnackBars()
@@ -484,8 +492,11 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
                 ),
                 const SizedBox(width: 8),
                 TextButton.icon(
-                  onPressed: () =>
-                      _deleteConstraint(context, user, constraint.id),
+                  onPressed: () {
+                    Logger.action(
+                        'open:deleteConstraint', {'constraintId': constraint.id});
+                    _deleteConstraint(context, user, constraint.id);
+                  },
                   icon: const Icon(Icons.delete, color: Colors.red),
                   label: const Text('מחק', style: TextStyle(color: Colors.red)),
                 ),
@@ -769,14 +780,21 @@ class _ConstraintsScreenState extends State<ConstraintsScreen> {
             content: const Text('האם את/ה בטוח/ה שברצונך למחוק את המגבלה הזו?'),
             actions: [
               TextButton(
-                onPressed:
-                    isDeleting ? null : () => Navigator.of(dialogContext).pop(),
+                onPressed: isDeleting
+                    ? null
+                    : () {
+                        Logger.action('tap:cancel:deleteConstraint',
+                            {'constraintId': constraintId});
+                        Navigator.of(dialogContext).pop();
+                      },
                 child: const Text('ביטול'),
               ),
               TextButton(
                 onPressed: isDeleting
                     ? null
                     : () async {
+                        Logger.action('tap:deleteConstraint',
+                            {'constraintId': constraintId});
                         setDialogState(() => isDeleting = true);
 
                         final result = await _dispatchTeamMutation(
@@ -905,21 +923,32 @@ class _ConstraintTypeChoiceDialog extends StatelessWidget {
                 context: context,
                 title: 'מגבלה חד פעמית',
                 icon: Icons.event_busy,
-                onTap: onOneTimeSelected,
+                onTap: () {
+                  Logger.action(
+                      'select:constraintType', {'constraintType': 'oneTime'});
+                  onOneTimeSelected();
+                },
               ),
               const SizedBox(height: 12),
               _buildOptionCard(
                 context: context,
                 title: 'מגבלה קבועה',
                 icon: Icons.repeat,
-                onTap: onRepeatingSelected,
+                onTap: () {
+                  Logger.action(
+                      'select:constraintType', {'constraintType': 'repeating'});
+                  onRepeatingSelected();
+                },
               ),
             ],
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:constraintTypeChoice');
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול'),
           ),
         ],
@@ -1095,11 +1124,17 @@ class _RepeatingConstraintDialogState
                   children: [
                     TextButton(
                       child: const Text('ביטול'),
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () {
+                        Logger.action('tap:cancel:timePicker');
+                        Navigator.of(context).pop();
+                      },
                     ),
                     TextButton(
                       child: const Text('אישור'),
-                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                      onPressed: () {
+                        Logger.action('tap:confirm:timePicker');
+                        Navigator.of(context).pop(selectedTime);
+                      },
                     ),
                   ],
                 ),
@@ -1171,6 +1206,7 @@ class _RepeatingConstraintDialogState
       height: 40,
       child: OutlinedButton(
         onPressed: () {
+          Logger.action('select:repeatType', {'repeatType': type.name});
           setState(() {
             _repeatType = type;
           });
@@ -1213,11 +1249,17 @@ class _RepeatingConstraintDialogState
           content: const Text('יום זה בחודש לא קיים בכל חודשי השנה'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () {
+                Logger.action('tap:cancel:highMonthlyDay', {'day': day});
+                Navigator.of(context).pop(false);
+              },
               child: const Text('אה, לא משנה'),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () {
+                Logger.action('tap:confirm:highMonthlyDay', {'day': day});
+                Navigator.of(context).pop(true);
+              },
               child: const Text('מאשר'),
             ),
           ],
@@ -1282,6 +1324,8 @@ class _RepeatingConstraintDialogState
                       return InkWell(
                         borderRadius: BorderRadius.circular(999),
                         onTap: () {
+                          Logger.action('select:weeklyDay',
+                              {'weekday': selected ? null : weekday});
                           setState(() {
                             _weeklyDay = selected ? null : weekday;
                           });
@@ -1330,6 +1374,8 @@ class _RepeatingConstraintDialogState
                       final isSelected = _monthlyDay == day;
                       return InkWell(
                         onTap: () async {
+                          Logger.action('select:monthlyDay',
+                              {'day': isSelected ? null : day});
                           if (isSelected) {
                             setState(() {
                               _monthlyDay = null;
@@ -1383,7 +1429,10 @@ class _RepeatingConstraintDialogState
                     final startField = TextFormField(
                       controller: _startTimeController,
                       readOnly: true,
-                      onTap: () => _showTimePickerFor(_startTimeController),
+                      onTap: () {
+                        Logger.action('open:startTimePicker');
+                        _showTimePickerFor(_startTimeController);
+                      },
                       decoration: InputDecoration(
                         labelText: 'שעת התחלה',
                         hintText: 'למשל 09:00',
@@ -1392,8 +1441,11 @@ class _RepeatingConstraintDialogState
                         suffixIcon: _startTimeController.text.isNotEmpty
                             ? IconButton(
                                 icon: const Icon(Icons.clear),
-                                onPressed: () => setState(
-                                    () => _startTimeController.clear()),
+                                onPressed: () {
+                                  Logger.action('tap:clearStartTime');
+                                  setState(
+                                      () => _startTimeController.clear());
+                                },
                               )
                             : null,
                       ),
@@ -1401,7 +1453,10 @@ class _RepeatingConstraintDialogState
                     final endField = TextFormField(
                       controller: _endTimeController,
                       readOnly: true,
-                      onTap: () => _showTimePickerFor(_endTimeController),
+                      onTap: () {
+                        Logger.action('open:endTimePicker');
+                        _showTimePickerFor(_endTimeController);
+                      },
                       decoration: InputDecoration(
                         labelText: 'שעת סיום',
                         hintText: 'למשל 17:00',
@@ -1410,8 +1465,10 @@ class _RepeatingConstraintDialogState
                         suffixIcon: _endTimeController.text.isNotEmpty
                             ? IconButton(
                                 icon: const Icon(Icons.clear),
-                                onPressed: () =>
-                                    setState(() => _endTimeController.clear()),
+                                onPressed: () {
+                                  Logger.action('tap:clearEndTime');
+                                  setState(() => _endTimeController.clear());
+                                },
                               )
                             : null,
                       ),
@@ -1452,7 +1509,10 @@ class _RepeatingConstraintDialogState
                 const Text('תאריך התחלה (לא חובה):'),
                 const SizedBox(height: 8),
                 InkWell(
-                  onTap: _selectRepeatStartDate,
+                  onTap: () {
+                    Logger.action('open:repeatStartDatePicker');
+                    _selectRepeatStartDate();
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -1475,6 +1535,7 @@ class _RepeatingConstraintDialogState
                           IconButton(
                             icon: const Icon(Icons.clear, size: 18),
                             onPressed: () {
+                              Logger.action('tap:clearRepeatStartDate');
                               setState(() {
                                 _repeatStartDate = null;
                               });
@@ -1488,7 +1549,10 @@ class _RepeatingConstraintDialogState
                 const Text('תאריך סיום (חובה):'),
                 const SizedBox(height: 8),
                 InkWell(
-                  onTap: _selectRepeatEndDate,
+                  onTap: () {
+                    Logger.action('open:repeatEndDatePicker');
+                    _selectRepeatEndDate();
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -1514,13 +1578,18 @@ class _RepeatingConstraintDialogState
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:repeatingConstraintDialog');
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
             onPressed: !_isValid
                 ? null
                 : () {
+                    Logger.action('tap:submitRepeatingConstraint',
+                        {'repeatType': _repeatType.name});
                     Navigator.of(context).pop(
                       _RepeatingConstraintResult(
                         repeatType: _repeatType,
@@ -1582,13 +1651,19 @@ class _RepeatingConstraintConfirmationDialogState
         ),
         actions: [
           TextButton(
-            onPressed: _isSaving ? null : () => Navigator.of(context).pop(null),
+            onPressed: _isSaving
+                ? null
+                : () {
+                    Logger.action('tap:cancel:repeatingConstraintConfirmation');
+                    Navigator.of(context).pop(null);
+                  },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
             onPressed: _isSaving
                 ? null
                 : () async {
+                    Logger.action('tap:confirmRepeatingConstraint');
                     setState(() => _isSaving = true);
                     final result = await widget.onConfirm();
                     if (!context.mounted) {
@@ -1793,11 +1868,17 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                   children: [
                     TextButton(
                       child: const Text('ביטול'),
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () {
+                        Logger.action('tap:cancel:timePicker');
+                        Navigator.of(context).pop();
+                      },
                     ),
                     TextButton(
                       child: const Text('אישור'),
-                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                      onPressed: () {
+                        Logger.action('tap:confirm:timePicker');
+                        Navigator.of(context).pop(selectedTime);
+                      },
                     ),
                   ],
                 ),
@@ -1837,7 +1918,10 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                 const Text('תאריכים:'),
                 const SizedBox(height: 8),
                 InkWell(
-                  onTap: _selectDateRange,
+                  onTap: () {
+                    Logger.action('open:constraintDateRangePicker');
+                    _selectDateRange();
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -1869,7 +1953,10 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                     final startField = TextFormField(
                       controller: startTimeController,
                       readOnly: true,
-                      onTap: () => _showTimePickerFor(startTimeController),
+                      onTap: () {
+                        Logger.action('open:startTimePicker');
+                        _showTimePickerFor(startTimeController);
+                      },
                       decoration: InputDecoration(
                         labelText: 'שעת התחלה',
                         hintText: 'למשל 09:00',
@@ -1882,6 +1969,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                                   color: Colors.grey,
                                 ),
                                 onPressed: () {
+                                  Logger.action('tap:clearStartTime');
                                   setState(() {
                                     startTimeController.clear();
                                   });
@@ -1893,7 +1981,10 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                     final endField = TextFormField(
                       controller: endTimeController,
                       readOnly: true,
-                      onTap: () => _showTimePickerFor(endTimeController),
+                      onTap: () {
+                        Logger.action('open:endTimePicker');
+                        _showTimePickerFor(endTimeController);
+                      },
                       decoration: InputDecoration(
                         labelText: 'שעת סיום',
                         hintText: 'למשל 17:00',
@@ -1906,6 +1997,7 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                                   color: Colors.grey,
                                 ),
                                 onPressed: () {
+                                  Logger.action('tap:clearEndTime');
                                   setState(() {
                                     endTimeController.clear();
                                   });
@@ -1980,12 +2072,18 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+            onPressed: _isSaving
+                ? null
+                : () {
+                    Logger.action('tap:cancel:constraintRequestDialog');
+                    Navigator.of(context).pop();
+                  },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
             onPressed: (_canSubmit && !_isSaving)
                 ? () async {
+                    Logger.action('tap:submitConstraintRequest');
                     if (startTimeController.text.isNotEmpty &&
                         endTimeController.text.isNotEmpty) {
                       if (!TimeRangeUtils.isValidTimeRange(
@@ -2316,11 +2414,17 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                   children: [
                     TextButton(
                       child: const Text('ביטול'),
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () {
+                        Logger.action('tap:cancel:timePicker');
+                        Navigator.of(context).pop();
+                      },
                     ),
                     TextButton(
                       child: const Text('אישור'),
-                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                      onPressed: () {
+                        Logger.action('tap:confirm:timePicker');
+                        Navigator.of(context).pop(selectedTime);
+                      },
                     ),
                   ],
                 ),
@@ -2360,7 +2464,10 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                 const Text('תאריכים:'),
                 const SizedBox(height: 8),
                 InkWell(
-                  onTap: _selectDateRange,
+                  onTap: () {
+                    Logger.action('open:constraintDateRangePicker');
+                    _selectDateRange();
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -2389,7 +2496,10 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                     final startField = TextFormField(
                       controller: startTimeController,
                       readOnly: true,
-                      onTap: () => _showTimePickerFor(startTimeController),
+                      onTap: () {
+                        Logger.action('open:startTimePicker');
+                        _showTimePickerFor(startTimeController);
+                      },
                       decoration: InputDecoration(
                         labelText: 'שעת התחלה',
                         hintText: 'למשל 09:00',
@@ -2400,6 +2510,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                                 icon:
                                     const Icon(Icons.clear, color: Colors.grey),
                                 onPressed: () {
+                                  Logger.action('tap:clearStartTime');
                                   setState(() {
                                     startTimeController.clear();
                                   });
@@ -2411,7 +2522,10 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                     final endField = TextFormField(
                       controller: endTimeController,
                       readOnly: true,
-                      onTap: () => _showTimePickerFor(endTimeController),
+                      onTap: () {
+                        Logger.action('open:endTimePicker');
+                        _showTimePickerFor(endTimeController);
+                      },
                       decoration: InputDecoration(
                         labelText: 'שעת סיום',
                         hintText: 'למשל 17:00',
@@ -2422,6 +2536,7 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                                 icon:
                                     const Icon(Icons.clear, color: Colors.grey),
                                 onPressed: () {
+                                  Logger.action('tap:clearEndTime');
                                   setState(() {
                                     endTimeController.clear();
                                   });
@@ -2495,12 +2610,18 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+            onPressed: _isSaving
+                ? null
+                : () {
+                    Logger.action('tap:cancel:editConstraintDialog');
+                    Navigator.of(context).pop();
+                  },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
             onPressed: (_canSubmit && !_isSaving)
                 ? () async {
+                    Logger.action('tap:saveConstraint');
                     if (startTimeController.text.isNotEmpty &&
                         endTimeController.text.isNotEmpty) {
                       if (!TimeRangeUtils.isValidTimeRange(
@@ -2714,7 +2835,10 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                     ),
                   ),
                   IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: () {
+                      Logger.action('tap:close:expiredConstraintsModal');
+                      Navigator.of(context).pop();
+                    },
                     icon: const Icon(Icons.close),
                   ),
                 ],
@@ -2960,6 +3084,8 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                                   children: [
                                     TextButton.icon(
                                       onPressed: () {
+                                        Logger.action('open:editExpiredConstraint',
+                                            {'constraintId': constraint.id});
                                         if (constraint.repeatType != null) {
                                           ScaffoldMessenger.of(context)
                                             ..clearSnackBars()
@@ -2986,8 +3112,12 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
                                     ),
                                     const SizedBox(width: 8),
                                     TextButton.icon(
-                                      onPressed: () => _deleteConstraint(
-                                          context, currentUser, constraint.id),
+                                      onPressed: () {
+                                        Logger.action('open:deleteConstraint',
+                                            {'constraintId': constraint.id});
+                                        _deleteConstraint(context, currentUser,
+                                            constraint.id);
+                                      },
                                       icon: const Icon(Icons.delete,
                                           size: 16, color: Colors.red),
                                       label: const Text('מחק',
@@ -3064,14 +3194,21 @@ class _ExpiredConstraintsModalState extends State<_ExpiredConstraintsModal> {
             content: const Text('האם את/ה בטוח/ה שברצונך למחוק את המגבלה הזו?'),
             actions: [
               TextButton(
-                onPressed:
-                    isDeleting ? null : () => Navigator.of(dialogContext).pop(),
+                onPressed: isDeleting
+                    ? null
+                    : () {
+                        Logger.action('tap:cancel:deleteConstraint',
+                            {'constraintId': constraintId});
+                        Navigator.of(dialogContext).pop();
+                      },
                 child: const Text('ביטול'),
               ),
               TextButton(
                 onPressed: isDeleting
                     ? null
                     : () async {
+                        Logger.action('tap:deleteConstraint',
+                            {'constraintId': constraintId});
                         setDialogState(() => isDeleting = true);
 
                         final result = await _dispatchTeamMutation(
@@ -3225,11 +3362,17 @@ class _EditExpiredConstraintDialogState
                   children: [
                     TextButton(
                       child: const Text('ביטול'),
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () {
+                        Logger.action('tap:cancel:timePicker');
+                        Navigator.of(context).pop();
+                      },
                     ),
                     TextButton(
                       child: const Text('אישור'),
-                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                      onPressed: () {
+                        Logger.action('tap:confirm:timePicker');
+                        Navigator.of(context).pop(selectedTime);
+                      },
                     ),
                   ],
                 ),
@@ -3267,7 +3410,10 @@ class _EditExpiredConstraintDialogState
               ),
               const SizedBox(height: 8),
               InkWell(
-                onTap: _selectDateRange,
+                onTap: () {
+                  Logger.action('open:constraintDateRangePicker');
+                  _selectDateRange();
+                },
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -3302,7 +3448,10 @@ class _EditExpiredConstraintDialogState
                   final startField = TextFormField(
                     controller: startTimeController,
                     readOnly: true,
-                    onTap: () => _showTimePickerFor(startTimeController),
+                    onTap: () {
+                      Logger.action('open:startTimePicker');
+                      _showTimePickerFor(startTimeController);
+                    },
                     decoration: InputDecoration(
                       labelText: 'שעת התחלה',
                       hintText: 'למשל 09:00',
@@ -3312,6 +3461,7 @@ class _EditExpiredConstraintDialogState
                           ? IconButton(
                               icon: const Icon(Icons.clear, color: Colors.grey),
                               onPressed: () {
+                                Logger.action('tap:clearStartTime');
                                 setState(() {
                                   startTimeController.clear();
                                 });
@@ -3323,7 +3473,10 @@ class _EditExpiredConstraintDialogState
                   final endField = TextFormField(
                     controller: endTimeController,
                     readOnly: true,
-                    onTap: () => _showTimePickerFor(endTimeController),
+                    onTap: () {
+                      Logger.action('open:endTimePicker');
+                      _showTimePickerFor(endTimeController);
+                    },
                     decoration: InputDecoration(
                       labelText: 'שעת סיום',
                       hintText: 'למשל 17:00',
@@ -3333,6 +3486,7 @@ class _EditExpiredConstraintDialogState
                           ? IconButton(
                               icon: const Icon(Icons.clear, color: Colors.grey),
                               onPressed: () {
+                                Logger.action('tap:clearEndTime');
                                 setState(() {
                                   endTimeController.clear();
                                 });
@@ -3397,12 +3551,21 @@ class _EditExpiredConstraintDialogState
         ),
         actions: [
           TextButton(
-            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+            onPressed: _isSaving
+                ? null
+                : () {
+                    Logger.action('tap:cancel:editExpiredConstraintDialog');
+                    Navigator.of(context).pop();
+                  },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed:
-                (_canSubmit && !_isSaving) ? _saveExpiredConstraint : null,
+            onPressed: (_canSubmit && !_isSaving)
+                ? () {
+                    Logger.action('tap:saveExpiredConstraint');
+                    _saveExpiredConstraint();
+                  }
+                : null,
             child: _isSaving
                 ? const SizedBox(
                     width: 18,

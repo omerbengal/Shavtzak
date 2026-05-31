@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/debug/logger.dart';
 import '../../../../domain/entities/category.dart';
 import '../../../bloc/category/category_bloc.dart';
 import '../../../bloc/category/category_state.dart';
@@ -136,6 +137,7 @@ class _CategoryFilterModalState extends State<CategoryFilterModal> {
                       return CheckboxListTile(
                         value: isSelected,
                         onChanged: (bool? checked) {
+                          Logger.action('filter:categoryFilter', {'categoryId': category.id, 'on': checked});
                           setState(() {
                             if (checked == true) {
                               _selectedCategoryIds.add(category.id);
@@ -172,6 +174,7 @@ class _CategoryFilterModalState extends State<CategoryFilterModal> {
                 children: [
                   ElevatedButton(
                     onPressed: () {
+                      Logger.action('tap:clearCategoryFilter');
                       setState(() {
                         _selectedCategoryIds.clear();
                       });
@@ -184,7 +187,10 @@ class _CategoryFilterModalState extends State<CategoryFilterModal> {
                     child: const Text('נקה'),
                   ),
                   ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      Logger.action('tap:close:categoryFilterModal');
+                      Navigator.pop(context);
+                    },
                     child: const Text('סגור'),
                   ),
                 ],

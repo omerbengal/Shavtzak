@@ -14,6 +14,7 @@ import '../bloc/assignment/assignment_bloc.dart';
 import '../bloc/assignment/assignment_event.dart';
 import '../bloc/assignment/assignment_state.dart';
 import 'map_location_picker.dart';
+import '../../core/debug/logger.dart';
 
 /// Dialog for copying vehicle information to clipboard
 /// Allows admins to select team members and copy their vehicle details
@@ -116,6 +117,7 @@ class _VehicleInfoCopyDialogState extends State<VehicleInfoCopyDialog> {
           if (_currentStep == 1)
             TextButton(
               onPressed: () {
+                Logger.action('tap:back:vehicleInfoStep');
                 setState(() {
                   _currentStep = 0;
                 });
@@ -123,7 +125,10 @@ class _VehicleInfoCopyDialogState extends State<VehicleInfoCopyDialog> {
               child: const Text('חזרה'),
             ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:close:vehicleInfoCopyDialog');
+              Navigator.of(context).pop();
+            },
             child: const Text('סגור', style: TextStyle(color: Colors.red)),
           ),
         ],
@@ -222,6 +227,7 @@ class _VehicleInfoCopyDialogState extends State<VehicleInfoCopyDialog> {
                           ],
                         ),
                         onTap: () {
+                          Logger.action('select:event', {'eventId': event.id});
                           setState(() {
                             _selectedEvent = event;
                           });
@@ -294,7 +300,10 @@ class _VehicleInfoCopyDialogState extends State<VehicleInfoCopyDialog> {
             child: SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _copyToClipboard,
+                onPressed: () {
+                  Logger.action('tap:copyToClipboard', {'count': _selectedMemberIds.length});
+                  _copyToClipboard();
+                },
                 icon: const Icon(Icons.copy),
                 label: Text('העתק $selectedCount פרטי רכב'),
                 style: ElevatedButton.styleFrom(
@@ -381,6 +390,7 @@ class _VehicleInfoCopyDialogState extends State<VehicleInfoCopyDialog> {
           return CheckboxListTile(
             value: isSelected,
             onChanged: (bool? value) {
+              Logger.action('toggle:memberVehicle', {'memberId': member.id, 'on': value ?? false});
               setState(() {
                 if (value == true) {
                   _selectedMemberIds.add(member.id);

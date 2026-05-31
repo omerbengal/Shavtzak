@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/debug/logger.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../domain/entities/preset.dart';
@@ -199,7 +200,10 @@ class _PresetFormModalState extends State<PresetFormModal> {
                               ),
                               IconButton(
                                 icon: const Icon(Icons.close),
-                                onPressed: () => Navigator.pop(context),
+                                onPressed: () {
+                                  Logger.action('tap:close:presetForm');
+                                  Navigator.pop(context);
+                                },
                               ),
                             ],
                           ),
@@ -243,7 +247,10 @@ class _PresetFormModalState extends State<PresetFormModal> {
                                       ),
                                     ),
                                     ElevatedButton.icon(
-                                      onPressed: _addItem,
+                                      onPressed: () {
+                                        Logger.action('tap:addItem');
+                                        _addItem();
+                                      },
                                       icon: const Icon(Icons.add,
                                           color: Colors.white),
                                       label: const Text('הוסף פריט'),
@@ -294,6 +301,7 @@ class _PresetFormModalState extends State<PresetFormModal> {
                                                   _itemsScrollController,
                                               itemCount: _items.length,
                                               onReorder: (oldIndex, newIndex) {
+                                                Logger.action('tap:reorderItem', {'oldIndex': oldIndex, 'newIndex': newIndex});
                                                 setState(() {
                                                   if (newIndex > oldIndex) {
                                                     newIndex -= 1;
@@ -345,8 +353,10 @@ class _PresetFormModalState extends State<PresetFormModal> {
                                                           icon: const Icon(
                                                               Icons.edit,
                                                               size: 20),
-                                                          onPressed: () =>
-                                                              _editItem(index),
+                                                          onPressed: () {
+                                                            Logger.action('tap:editItem', {'index': index});
+                                                            _editItem(index);
+                                                          },
                                                           tooltip: 'ערוך',
                                                         ),
                                                         IconButton(
@@ -355,9 +365,10 @@ class _PresetFormModalState extends State<PresetFormModal> {
                                                               size: 20,
                                                               color:
                                                                   Colors.red),
-                                                          onPressed: () =>
-                                                              _removeItem(
-                                                                  index),
+                                                          onPressed: () {
+                                                            Logger.action('tap:removeItem', {'index': index});
+                                                            _removeItem(index);
+                                                          },
                                                           tooltip: 'הסר',
                                                         ),
                                                         const Icon(
@@ -383,7 +394,10 @@ class _PresetFormModalState extends State<PresetFormModal> {
                           child: SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: _isSaving ? null : _save,
+                              onPressed: _isSaving ? null : () {
+                                Logger.action('tap:savePreset', {'isNew': widget.preset == null});
+                                _save();
+                              },
                               style: ElevatedButton.styleFrom(
                                 padding: const EdgeInsets.all(16),
                               ),
@@ -605,6 +619,7 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
                                 ))
                             .toList(),
                         onChanged: (value) {
+                          Logger.action('select:responsible', {'memberId': value?.id});
                           setState(() {
                             _selectedResponsible = value;
                             // Remove from CC if selected as responsible
@@ -657,6 +672,7 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
                                       label: _buildMemberChipLabel(m),
                                       selected: isSelected,
                                       onSelected: (selected) {
+                                        Logger.action('toggle:ccMember', {'memberId': m.id, 'on': selected});
                                         setState(() {
                                           if (selected) {
                                             _selectedCcMembers.add(m);
@@ -677,11 +693,17 @@ class _PresetItemEditorState extends State<_PresetItemEditor> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () {
+                  Logger.action('tap:cancel:presetItemEditor');
+                  Navigator.pop(context);
+                },
                 child: const Text('ביטול'),
               ),
               ElevatedButton(
-                onPressed: _save,
+                onPressed: () {
+                  Logger.action('tap:savePresetItem', {'isNew': widget.item == null});
+                  _save();
+                },
                 child: const Text('שמור'),
               ),
             ],

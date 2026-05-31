@@ -263,6 +263,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
 
     return RefreshIndicator(
       onRefresh: () async {
+        Logger.action('tap:refreshAssignments');
         _loadUserAssignments();
       },
       child: ListView(
@@ -318,6 +319,8 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
             Colors.grey.shade600,
             isExpanded: _isPastSectionExpanded,
             onToggle: () {
+              Logger.action('toggle:pastSection',
+                  {'on': !_isPastSectionExpanded});
               setState(() {
                 _isPastSectionExpanded = !_isPastSectionExpanded;
               });
@@ -531,7 +534,11 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                 const SizedBox(width: 8),
                 IconButton(
                   tooltip: 'קבצים בגוגל דרייב',
-                  onPressed: () => _showDriveFilesDialog(context, event),
+                  onPressed: () {
+                    Logger.action('open:driveFilesDialog',
+                        {'eventId': event.id});
+                    _showDriveFilesDialog(context, event);
+                  },
                   icon: Icon(
                     Icons.folder_open,
                     color: isUpcoming
@@ -777,10 +784,17 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                   ),
                                   if (hasMapIcons) ...[
                                     _buildGoogleMapsButton(
-                                        onTap: () =>
-                                            _openGoogleMaps(event.location)),
+                                        onTap: () {
+                                          Logger.action('tap:openGoogleMaps',
+                                              {'eventId': event.id});
+                                          _openGoogleMaps(event.location);
+                                        }),
                                     _buildWazeButton(
-                                        onTap: () => _openWaze(event.location)),
+                                        onTap: () {
+                                          Logger.action('tap:openWaze',
+                                              {'eventId': event.id});
+                                          _openWaze(event.location);
+                                        }),
                                   ],
                                 ],
                               ),
@@ -854,8 +868,13 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                       children: [
                                         GestureDetector(
                                           onTap: canEditParking
-                                              ? () => _editParkingLocation(
-                                                  context, event)
+                                              ? () {
+                                                  Logger.action(
+                                                      'tap:editParkingLocation',
+                                                      {'eventId': event.id});
+                                                  _editParkingLocation(
+                                                      context, event);
+                                                }
                                               : null,
                                           child: Text(
                                             parkingText,
@@ -881,11 +900,21 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                                         ),
                                         if (hasMapIcons) ...[
                                           _buildGoogleMapsButton(
-                                              onTap: () => _openGoogleMaps(
-                                                  event.parkingLocation!)),
+                                              onTap: () {
+                                                Logger.action(
+                                                    'tap:openGoogleMapsParking',
+                                                    {'eventId': event.id});
+                                                _openGoogleMaps(
+                                                    event.parkingLocation!);
+                                              }),
                                           _buildWazeButton(
-                                              onTap: () => _openWaze(
-                                                  event.parkingLocation!)),
+                                              onTap: () {
+                                                Logger.action(
+                                                    'tap:openWazeParking',
+                                                    {'eventId': event.id});
+                                                _openWaze(
+                                                    event.parkingLocation!);
+                                              }),
                                         ],
                                       ],
                                     ),
@@ -1769,7 +1798,10 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: _loadUserAssignments,
+            onPressed: () {
+              Logger.action('tap:retryLoadAssignments');
+              _loadUserAssignments();
+            },
             icon: const Icon(Icons.refresh),
             label: const Text('נסה שוב'),
           ),
@@ -1781,7 +1813,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
   /// Show dialog with all team members assigned to the event
   void _showEventTeamMembers(
       BuildContext context, String eventId, String eventName) {
-    Logger.action('openWhoIsWithMeDialog', {'eventId': eventId});
+    Logger.action('open:whoIsWithMe', {'eventId': eventId});
     final userState = context.read<UserSelectionBloc>().state;
     if (userState is! UserAuthenticated) return;
 
@@ -1822,7 +1854,11 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       const Expanded(child: Text('קבצים בגוגל דרייב')),
                       IconButton(
                         tooltip: 'סגור',
-                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        onPressed: () {
+                          Logger.action('tap:close:driveFilesDialog',
+                              {'eventId': event.id});
+                          Navigator.of(dialogContext).pop();
+                        },
                         icon: const Icon(Icons.close),
                       ),
                     ],

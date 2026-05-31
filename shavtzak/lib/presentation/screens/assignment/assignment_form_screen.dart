@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/role_types.dart';
+import '../../../core/debug/logger.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/role.dart';
@@ -136,7 +137,7 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
             title: Text(_isEditMode ? 'עריכת שיבוץ' : 'הוספת שיבוץ'),
             actions: [
               TextButton(
-                onPressed: _saveAssignment,
+                onPressed: () { Logger.action('tap:saveAssignment', {'mode': _isEditMode ? 'edit' : 'create'}); _saveAssignment(); },
                 child: const Text(AppStrings.save, style: TextStyle(color: Colors.white)),
               ),
             ],
@@ -176,6 +177,7 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
                               );
                             }).toList(),
                             onChanged: (event) {
+                              Logger.action('select:event', {'eventId': event?.id});
                               setState(() {
                                 _selectedEvent = event;
                                 _eventError = null;
@@ -236,6 +238,7 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
                               );
                             }).toList(),
                             onChanged: (member) {
+                              Logger.action('select:teamMember', {'memberId': member?.id});
                               setState(() {
                                 _selectedTeamMember = member;
                                 _memberError = null;
@@ -303,6 +306,7 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
                             );
                           }).toList(),
                           onChanged: (roleKey) {
+                            Logger.action('select:role', {'role': roleKey});
                             setState(() {
                               _selectedRole = roleKey;
                               _roleError = null;
@@ -379,7 +383,7 @@ class _AssignmentFormScreenState extends State<AssignmentFormScreen> {
                           child: Text(status.hebrewName),
                         );
                       }).toList(),
-                      onChanged: (v) => setState(() => _status = v!),
+                      onChanged: (v) { Logger.action('select:assignmentStatus', {'status': v?.toString()}); setState(() => _status = v!); },
                     ),
                     const SizedBox(height: 16),
 

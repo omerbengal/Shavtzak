@@ -141,7 +141,7 @@ class _InteractiveFilterBarState extends State<InteractiveFilterBar> {
       onTap: isSelected
           ? null
           : () {
-              Logger.action('filterChange', {
+              Logger.action('filter:bar', {
                 'field': widget.options[index].label,
                 'index': index,
               });

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'json_tree_view.dart';
 import 'log_document_card_view.dart';
 import '../../../../core/constants/role_types.dart';
+import '../../../../core/debug/logger.dart';
 import 'assignment_preview.dart';
 
 /// An expandable card that displays a Firestore document.
@@ -67,7 +68,10 @@ class DocumentCard extends StatelessWidget {
     final isAssignment = collectionName == 'assignments';
 
     return InkWell(
-      onTap: onToggle,
+      onTap: () {
+        Logger.action('tap:toggleDocumentCard', {'documentId': documentId, 'collectionName': collectionName, 'expanding': !isExpanded});
+        onToggle();
+      },
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
@@ -78,7 +82,10 @@ class DocumentCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   GestureDetector(
-                    onTap: () => _copyId(context),
+                    onTap: () {
+                      Logger.action('tap:copyDocumentId', {'documentId': documentId, 'collectionName': collectionName});
+                      _copyId(context);
+                    },
                     child: Row(
                       children: [
                         Flexible(

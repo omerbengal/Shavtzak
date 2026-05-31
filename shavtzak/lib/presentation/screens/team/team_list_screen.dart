@@ -163,7 +163,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
             content: Text('לא ניתן להתקשר מהמחשב\nמספר הטלפון: $phoneNumber'),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () {
+                  Logger.action('tap:close:phoneDialog');
+                  Navigator.of(context).pop();
+                },
                 child: const Text('סגור'),
               ),
             ],
@@ -207,6 +210,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
               _buildCompactIcon(
                 icon: Icons.directions_car,
                 onPressed: () {
+                  Logger.action('open:vehicleInfoCopyDialog');
                   showDialog(
                     context: context,
                     builder: (context) => const Directionality(
@@ -226,7 +230,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
               IconButton(
                 icon: const Icon(Icons.inventory_2),
                 tooltip: 'ארכיון',
-                onPressed: () => ArchivedMembersDialog.show(context),
+                onPressed: () {
+                  Logger.action('open:archivedMembersDialog');
+                  ArchivedMembersDialog.show(context);
+                },
                 iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
@@ -236,6 +243,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 icon: const Icon(Icons.home),
                 tooltip: 'בית',
                 onPressed: () {
+                  Logger.action('tap:home');
                   final envPrefix = EnvironmentService.instance.routePrefix;
                   context.go('$envPrefix/admin');
                 },
@@ -247,7 +255,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתק',
-                onPressed: () => _logout(context),
+                onPressed: () {
+                  Logger.action('tap:logout');
+                  _logout(context);
+                },
                 iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
@@ -317,6 +328,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
         floatingActionButton: FloatingActionButton(
           heroTag: 'team-list-fab',
           onPressed: () {
+            Logger.action('tap:addTeamMember');
             _showTeamMemberFormModal(null);
           },
           child: const Icon(Icons.add),
@@ -342,6 +354,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
 
     return RefreshIndicator(
       onRefresh: () async {
+        Logger.action('tap:refreshTeam');
         context.read<TeamBloc>().add(const team.RefreshTeamMembers());
         await Future.delayed(const Duration(milliseconds: 500));
       },
@@ -375,6 +388,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                       ? IconButton(
                           icon: const Icon(Icons.clear),
                           onPressed: () {
+                            Logger.action('tap:clearSearch');
                             setState(() {
                               _searchController.clear();
                               _searchQuery = '';
@@ -476,6 +490,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
     return Card(
       child: InkWell(
         onTap: () {
+          Logger.action('tap:memberCard', {'memberId': member.id});
           _showTeamMemberFormModal(member);
         },
         child: Padding(
@@ -528,7 +543,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
                       color: Colors.grey[600],
                     ),
                     tooltip: 'העבר לארכיון',
-                    onPressed: () => _showArchiveConfirmation(member),
+                    onPressed: () {
+                      Logger.action('tap:archiveMember', {'memberId': member.id});
+                      _showArchiveConfirmation(member);
+                    },
                     padding: EdgeInsets.zero,
                     constraints:
                         const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -544,7 +562,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
                   if (member.phoneNumber != null &&
                       member.phoneNumber!.isNotEmpty)
                     InkWell(
-                      onTap: () => onPhoneClicked(member.phoneNumber!),
+                      onTap: () {
+                        Logger.action('tap:callPhone', {'memberId': member.id});
+                        onPhoneClicked(member.phoneNumber!);
+                      },
                       borderRadius: BorderRadius.circular(4),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 2),
@@ -742,7 +763,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
   }
 
   Future<void> _showTeamMemberFormModal(TeamMember? member) async {
-    Logger.action('openMemberModal', {
+    Logger.action('open:memberModal', {
       'memberId': member?.id,
       'isPermanent': member?.isPermanent,
     });
@@ -780,7 +801,10 @@ class _TeamListScreenState extends State<TeamListScreen> {
           actions: [
             TextButton(
               child: const Text('ביטול'),
-              onPressed: () => Navigator.pop(dialogContext),
+              onPressed: () {
+                Logger.action('tap:cancel:archiveMember', {'memberId': member.id});
+                Navigator.pop(dialogContext);
+              },
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -789,6 +813,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
               ),
               child: const Text('העבר לארכיון'),
               onPressed: () {
+                Logger.action('tap:confirmArchiveMember', {'memberId': member.id});
                 Navigator.pop(dialogContext);
                 final updatedMember = member.copyWith(
                   isArchived: true,
@@ -808,6 +833,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                       label: 'ביטול',
                       textColor: Colors.white,
                       onPressed: () {
+                        Logger.action('tap:undoArchiveMember', {'memberId': member.id});
                         // Restore the member
                         final restoredMember = member.copyWith(
                           isArchived: false,
@@ -843,8 +869,13 @@ class _TeamListScreenState extends State<TeamListScreen> {
             actions: [
               TextButton(
                 child: const Text('ביטול'),
-                onPressed:
-                    isDeleting ? null : () => Navigator.pop(dialogContext),
+                onPressed: isDeleting
+                    ? null
+                    : () {
+                        Logger.action('tap:cancel:deleteTeamMember',
+                            {'memberId': member.id});
+                        Navigator.pop(dialogContext);
+                      },
               ),
               TextButton(
                 child: isDeleting
@@ -860,6 +891,8 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 onPressed: isDeleting
                     ? null
                     : () async {
+                        Logger.action('tap:deleteTeamMember',
+                            {'memberId': member.id});
                         setDialogState(() {
                           isDeleting = true;
                         });
@@ -927,6 +960,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
                 if (!state.isFiltered)
                   ElevatedButton.icon(
                     onPressed: () {
+                      Logger.action('tap:addFirstTeamMember');
                       _showTeamMemberFormModal(null);
                     },
                     icon: const Icon(Icons.add),
@@ -962,6 +996,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () {
+              Logger.action('tap:retryLoadTeam');
               context.read<TeamBloc>().add(const team.LoadTeamMembers());
             },
             icon: const Icon(Icons.refresh),
@@ -1541,11 +1576,17 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(null),
+                  onPressed: () {
+                    Logger.action('tap:cancel:conflictWarning');
+                    Navigator.of(dialogContext).pop(null);
+                  },
                   child: const Text('ביטול'),
                 ),
                 ElevatedButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  onPressed: () {
+                    Logger.action('tap:saveAndDeleteAssignments');
+                    Navigator.of(dialogContext).pop(true);
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
@@ -1553,7 +1594,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                   child: const Text('שמור ומחק שיבוצים'),
                 ),
                 ElevatedButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  onPressed: () {
+                    Logger.action('tap:saveAndKeepAssignments');
+                    Navigator.of(dialogContext).pop(false);
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
                     foregroundColor: Colors.white,
@@ -1581,12 +1625,16 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
             actions: [
               TextButton(
                 child: const Text('ביטול'),
-                onPressed: () => Navigator.of(dialogContext).pop(),
+                onPressed: () {
+                  Logger.action('tap:cancel:discardChanges');
+                  Navigator.of(dialogContext).pop();
+                },
               ),
               TextButton(
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
                 child: const Text('צא'),
                 onPressed: () {
+                  Logger.action('tap:confirmDiscardChanges');
                   Navigator.of(dialogContext).pop(); // Close dialog
                   widget.onSuccess(); // Close modal
                 },
@@ -1744,6 +1792,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         onPressed: isOwnProfile
                                             ? null
                                             : () {
+                                                Logger.action(
+                                                    'open:deleteMemberDialog', {
+                                                  'memberId': widget.member!.id,
+                                                });
                                                 showDialog(
                                                   context: context,
                                                   builder: (dialogContext) =>
@@ -1760,10 +1812,19 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                                         TextButton(
                                                           child: const Text(
                                                               'ביטול'),
-                                                          onPressed: () =>
-                                                              Navigator.of(
-                                                                      dialogContext)
-                                                                  .pop(),
+                                                          onPressed: () {
+                                                            Logger.action(
+                                                                'tap:cancel:deleteMember',
+                                                                {
+                                                                  'memberId':
+                                                                      widget
+                                                                          .member!
+                                                                          .id,
+                                                                });
+                                                            Navigator.of(
+                                                                    dialogContext)
+                                                                .pop();
+                                                          },
                                                         ),
                                                         TextButton(
                                                           child: const Text(
@@ -1772,6 +1833,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                                                   color: Colors
                                                                       .red)),
                                                           onPressed: () async {
+                                                            Logger.action(
+                                                                'tap:deleteMember',
+                                                                {
+                                                                  'memberId':
+                                                                      widget
+                                                                          .member!
+                                                                          .id,
+                                                                });
                                                             Navigator.of(
                                                                     dialogContext)
                                                                 .pop(); // Close dialog first
@@ -1822,7 +1891,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                   icon: const Icon(Icons.close),
                                   onPressed: (_isSaving || _isDeleting)
                                       ? null
-                                      : _handleClose,
+                                      : () {
+                                          Logger.action('tap:close:memberModal');
+                                          _handleClose();
+                                        },
                                 ),
                               ],
                             ),
@@ -1944,8 +2016,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                       // Birthday field - read-only text field with floating label
                                       TextFormField(
                                         readOnly: true,
-                                        onTap: () =>
-                                            _showBirthdayPickerDialog(),
+                                        onTap: () {
+                                          Logger.action('open:birthdayPicker');
+                                          _showBirthdayPickerDialog();
+                                        },
                                         decoration: InputDecoration(
                                           labelText: 'תאריך לידה',
                                           prefixIcon: Padding(
@@ -1986,7 +2060,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                       // Vehicle info field - read-only text field with floating label
                                       TextFormField(
                                         readOnly: true,
-                                        onTap: () => _showVehicleInfoDialog(),
+                                        onTap: () {
+                                          Logger.action('open:vehicleInfoDialog');
+                                          _showVehicleInfoDialog();
+                                        },
                                         decoration: InputDecoration(
                                           labelText: 'פרטי רכב',
                                           prefixIcon: Padding(
@@ -2019,6 +2096,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                                   icon: const Icon(Icons.clear,
                                                       size: 20),
                                                   onPressed: () {
+                                                    Logger.action(
+                                                        'tap:clearVehicleInfo');
                                                     setState(() {
                                                       _vehicleInfo = null;
                                                       _updateVehicleInfoController();
@@ -2050,6 +2129,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         ),
                                         value: _isActive,
                                         onChanged: (value) {
+                                          Logger.action('toggle:isActive',
+                                              {'on': value});
                                           setState(() {
                                             _isActive = value;
                                             _isDirty = true;
@@ -2062,6 +2143,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         title: const Text('חבר צוות קבוע'),
                                         value: _isPermanent,
                                         onChanged: (value) {
+                                          Logger.action('toggle:isPermanent',
+                                              {'on': value});
                                           setState(() {
                                             _isPermanent = value;
                                             _isDirty = true;
@@ -2077,6 +2160,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         ),
                                         value: _allowMultipleAssignments,
                                         onChanged: (value) {
+                                          Logger.action(
+                                              'toggle:allowMultipleAssignments',
+                                              {'on': value});
                                           setState(() {
                                             _allowMultipleAssignments = value;
                                             _isDirty = true;
@@ -2092,6 +2178,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         ),
                                         value: _canAccessSummaryScreen,
                                         onChanged: (value) {
+                                          Logger.action(
+                                              'toggle:canAccessSummaryScreen',
+                                              {'on': value});
                                           setState(() {
                                             _canAccessSummaryScreen = value;
                                             _isDirty = true;
@@ -2107,6 +2196,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         ),
                                         value: _canAccessShamapExport,
                                         onChanged: (value) {
+                                          Logger.action(
+                                              'toggle:canAccessShamapExport',
+                                              {'on': value});
                                           setState(() {
                                             _canAccessShamapExport = value;
                                             _isDirty = true;
@@ -2122,6 +2214,9 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                         ),
                                         value: _canAccessConstraintsExamining,
                                         onChanged: (value) {
+                                          Logger.action(
+                                              'toggle:canAccessConstraintsExamining',
+                                              {'on': value});
                                           setState(() {
                                             _canAccessConstraintsExamining =
                                                 value;
@@ -2151,6 +2246,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                                   const Spacer(),
                                                   TextButton(
                                                     onPressed: () {
+                                                      Logger.action(
+                                                          'tap:selectAllRoles');
                                                       setState(() {
                                                         // Select all roles from RoleBloc
                                                         if (roleState
@@ -2173,6 +2270,8 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                                   ),
                                                   TextButton(
                                                     onPressed: () {
+                                                      Logger.action(
+                                                          'tap:clearAllRoles');
                                                       setState(() {
                                                         // Deselect all roles from RoleBloc
                                                         if (roleState
@@ -2275,6 +2374,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                                                           .key] ??
                                                                   false,
                                                           onChanged: (value) {
+                                                            Logger.action(
+                                                                'toggle:roleCapability',
+                                                                {
+                                                                  'roleKey':
+                                                                      roleObj.key,
+                                                                  'on': value ??
+                                                                      false,
+                                                                });
                                                             setState(() {
                                                               _roleCapabilities[
                                                                       roleObj
@@ -2321,8 +2428,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                           if (_isPermanent) ...[
                                             // Add constraint button for permanent members
                                             IconButton(
-                                              onPressed: () =>
-                                                  _addConstraintOrAvailability(),
+                                              onPressed: () {
+                                                Logger.action(
+                                                    'tap:addConstraint');
+                                                _addConstraintOrAvailability();
+                                              },
                                               icon: const Icon(
                                                 Icons.add_circle_outline,
                                                 color: Colors.orange,
@@ -2335,14 +2445,17 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                                 c.status ==
                                                     ConstraintStatus.rejected))
                                               TextButton.icon(
-                                                onPressed: () =>
-                                                    _showRejectedConstraints(_constraints
-                                                        .where((c) =>
-                                                            c.isUnavailability &&
-                                                            c.status ==
-                                                                ConstraintStatus
-                                                                    .rejected)
-                                                        .toList()),
+                                                onPressed: () {
+                                                  Logger.action(
+                                                      'open:rejectedConstraints');
+                                                  _showRejectedConstraints(_constraints
+                                                      .where((c) =>
+                                                          c.isUnavailability &&
+                                                          c.status ==
+                                                              ConstraintStatus
+                                                                  .rejected)
+                                                      .toList());
+                                                },
                                                 icon: const Icon(
                                                   Icons.visibility,
                                                   size: 20,
@@ -2364,8 +2477,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                           ] else ...[
                                             // Edit availability button for non-permanent members (blue pencil)
                                             IconButton(
-                                              onPressed: () =>
-                                                  _editAvailabilityEvents(),
+                                              onPressed: () {
+                                                Logger.action(
+                                                    'open:editAvailability');
+                                                _editAvailabilityEvents();
+                                              },
                                               icon: const Icon(
                                                 Icons.edit,
                                                 color: Colors.blue,
@@ -2573,8 +2689,13 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                             ),
                                             const Spacer(),
                                             TextButton.icon(
-                                              onPressed: () =>
-                                                  _showAdminPasscodeDialog(),
+                                              onPressed: () {
+                                                Logger.action(
+                                                    'open:adminPasscodeDialog', {
+                                                  'memberId': widget.member?.id,
+                                                });
+                                                _showAdminPasscodeDialog();
+                                              },
                                               icon: const Icon(
                                                   Icons.admin_panel_settings,
                                                   size: 20),
@@ -2685,14 +2806,28 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                   child: OutlinedButton(
                                     onPressed: (_isSaving || _isDeleting)
                                         ? null
-                                        : _handleClose,
+                                        : () {
+                                            Logger.action(
+                                                'tap:cancel:memberForm');
+                                            _handleClose();
+                                          },
                                     child: const Text('ביטול'),
                                   ),
                                 ),
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: ElevatedButton(
-                                    onPressed: _isSaving ? null : _saveMember,
+                                    onPressed: _isSaving
+                                        ? null
+                                        : () {
+                                            Logger.action('tap:saveMember', {
+                                              'memberId': widget.member?.id,
+                                              'mode': _isEditMode
+                                                  ? 'edit'
+                                                  : 'create',
+                                            });
+                                            _saveMember();
+                                          },
                                     child: const Text('שמור'),
                                   ),
                                 ),
@@ -2822,12 +2957,20 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
-                  onPressed: () => _editConstraintOrAvailability(constraint),
+                  onPressed: () {
+                    Logger.action('tap:editConstraint',
+                        {'constraintId': constraint.id});
+                    _editConstraintOrAvailability(constraint);
+                  },
                   tooltip: 'ערוך',
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                  onPressed: () => _deleteConstraintOrAvailability(constraint),
+                  onPressed: () {
+                    Logger.action('tap:deleteConstraint',
+                        {'constraintId': constraint.id});
+                    _deleteConstraintOrAvailability(constraint);
+                  },
                   tooltip: 'מחק',
                 ),
               ],
@@ -2860,7 +3003,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 if (effectiveStatus == ConstraintStatus.pending)
                   // Pending: Right = Accept
                   TextButton.icon(
-                    onPressed: () => _approveConstraint(constraint.id),
+                    onPressed: () {
+                      Logger.action('tap:approveConstraint',
+                          {'constraintId': constraint.id});
+                      _approveConstraint(constraint.id);
+                    },
                     icon: const Icon(Icons.check_circle,
                         color: Colors.green, size: 20),
                     label: const Text('אשר',
@@ -2874,7 +3021,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 else if (effectiveStatus == ConstraintStatus.approved)
                   // Approved: Right = Pending
                   TextButton.icon(
-                    onPressed: () => _setPendingConstraint(constraint.id),
+                    onPressed: () {
+                      Logger.action('tap:setPendingConstraint',
+                          {'constraintId': constraint.id});
+                      _setPendingConstraint(constraint.id);
+                    },
                     icon: const Icon(Icons.hourglass_empty,
                         color: Colors.amber, size: 20),
                     label: const Text('החזר לממתין',
@@ -2887,7 +3038,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                   )
                 else // Rejected: Right = Pending
                   TextButton.icon(
-                    onPressed: () => _setPendingConstraint(constraint.id),
+                    onPressed: () {
+                      Logger.action('tap:setPendingConstraint',
+                          {'constraintId': constraint.id});
+                      _setPendingConstraint(constraint.id);
+                    },
                     icon: const Icon(Icons.hourglass_empty,
                         color: Colors.amber, size: 20),
                     label: const Text('החזר לממתין',
@@ -2905,7 +3060,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 if (effectiveStatus == ConstraintStatus.pending)
                   // Pending: Left = Reject
                   TextButton.icon(
-                    onPressed: () => _rejectConstraint(constraint.id),
+                    onPressed: () {
+                      Logger.action('tap:rejectConstraint',
+                          {'constraintId': constraint.id});
+                      _rejectConstraint(constraint.id);
+                    },
                     icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
                     label:
                         const Text('דחה', style: TextStyle(color: Colors.red)),
@@ -2918,7 +3077,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 else if (effectiveStatus == ConstraintStatus.approved)
                   // Approved: Left = Reject
                   TextButton.icon(
-                    onPressed: () => _rejectConstraint(constraint.id),
+                    onPressed: () {
+                      Logger.action('tap:rejectConstraint',
+                          {'constraintId': constraint.id});
+                      _rejectConstraint(constraint.id);
+                    },
                     icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
                     label:
                         const Text('דחה', style: TextStyle(color: Colors.red)),
@@ -2930,7 +3093,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                   )
                 else // Rejected: Left = Accept
                   TextButton.icon(
-                    onPressed: () => _approveConstraint(constraint.id),
+                    onPressed: () {
+                      Logger.action('tap:approveConstraint',
+                          {'constraintId': constraint.id});
+                      _approveConstraint(constraint.id);
+                    },
                     icon: const Icon(Icons.check_circle,
                         color: Colors.green, size: 20),
                     label: const Text('אשר',
@@ -3078,7 +3245,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 // Edit and delete buttons for availability
                 IconButton(
                   icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
-                  onPressed: () => _editConstraintOrAvailability(availability),
+                  onPressed: () {
+                    Logger.action('tap:editAvailability',
+                        {'constraintId': availability.id});
+                    _editConstraintOrAvailability(availability);
+                  },
                   tooltip: 'ערוך',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -3086,8 +3257,11 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                 const SizedBox(width: 8),
                 IconButton(
                   icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                  onPressed: () =>
-                      _deleteConstraintOrAvailability(availability),
+                  onPressed: () {
+                    Logger.action('tap:deleteAvailability',
+                        {'constraintId': availability.id});
+                    _deleteConstraintOrAvailability(availability);
+                  },
                   tooltip: 'מחק',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -3560,11 +3734,19 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
               : 'האם את/ה בטוח/ה שברצונך למחוק זמינות זו?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () {
+                Logger.action('tap:cancel:deleteConstraint',
+                    {'constraintId': constraint.id});
+                Navigator.of(context).pop(false);
+              },
               child: const Text('ביטול'),
             ),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () {
+                Logger.action('tap:confirmDeleteConstraint',
+                    {'constraintId': constraint.id});
+                Navigator.of(context).pop(true);
+              },
               style: TextButton.styleFrom(foregroundColor: Colors.red),
               child: const Text('מחק'),
             ),
@@ -3646,11 +3828,17 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
               actions: [
                 TextButton(
                   child: const Text('ביטול'),
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  onPressed: () {
+                    Logger.action('tap:cancel:singleDayConstraint');
+                    Navigator.of(dialogContext).pop(false);
+                  },
                 ),
                 ElevatedButton(
                   child: const Text('כן, מגבלה ליום בודד'),
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  onPressed: () {
+                    Logger.action('tap:confirmSingleDayConstraint');
+                    Navigator.of(dialogContext).pop(true);
+                  },
                 ),
               ],
             ),
@@ -3696,7 +3884,10 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
             children: [
               // Date selection button
               OutlinedButton.icon(
-                onPressed: _pickDates,
+                onPressed: () {
+                  Logger.action('open:constraintDatePicker');
+                  _pickDates();
+                },
                 icon: const Icon(Icons.calendar_month),
                 label: Text(
                   _startDate == null
@@ -3715,10 +3906,13 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: TextButton.icon(
-                    onPressed: () => setState(() {
-                      _startDate = null;
-                      _endDate = null;
-                    }),
+                    onPressed: () {
+                      Logger.action('tap:clearConstraintDates');
+                      setState(() {
+                        _startDate = null;
+                        _endDate = null;
+                      });
+                    },
                     icon: const Icon(Icons.clear, size: 16),
                     label: const Text('נקה'),
                     style: TextButton.styleFrom(
@@ -3749,13 +3943,17 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              Logger.action('tap:cancel:constraintDialog');
+              Navigator.pop(context);
+            },
             child: const Text(AppStrings.cancel),
           ),
           ElevatedButton(
             onPressed: _startDate == null
                 ? null
                 : () {
+                    Logger.action('tap:saveConstraintDialog');
                     final noteText = _noteController.text.trim();
                     Navigator.pop(
                       context,
@@ -3806,23 +4004,33 @@ class _AdminConstraintTypeChoiceDialog extends StatelessWidget {
                 context: context,
                 title: 'מגבלה חד פעמית',
                 icon: Icons.event_busy,
-                onTap: () => Navigator.of(context)
-                    .pop(_AdminConstraintCreateType.oneTime),
+                onTap: () {
+                  Logger.action('select:constraintType',
+                      {'constraintType': 'oneTime'});
+                  Navigator.of(context).pop(_AdminConstraintCreateType.oneTime);
+                },
               ),
               const SizedBox(height: 10),
               _buildOption(
                 context: context,
                 title: 'מגבלה קבועה',
                 icon: Icons.repeat,
-                onTap: () => Navigator.of(context)
-                    .pop(_AdminConstraintCreateType.recurring),
+                onTap: () {
+                  Logger.action('select:constraintType',
+                      {'constraintType': 'recurring'});
+                  Navigator.of(context)
+                      .pop(_AdminConstraintCreateType.recurring);
+                },
               ),
             ],
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:constraintTypeChoice');
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול'),
           ),
         ],
@@ -3985,11 +4193,17 @@ class _AdminRepeatingConstraintDialogState
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () {
+                        Logger.action('tap:cancel:timePicker');
+                        Navigator.of(context).pop();
+                      },
                       child: const Text('ביטול'),
                     ),
                     TextButton(
-                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                      onPressed: () {
+                        Logger.action('tap:confirm:timePicker');
+                        Navigator.of(context).pop(selectedTime);
+                      },
                       child: const Text('אישור'),
                     ),
                   ],
@@ -4089,6 +4303,8 @@ class _AdminRepeatingConstraintDialogState
                     _repeatType == RepeatType.monthly,
                   ],
                   onPressed: (index) {
+                    Logger.action('select:repeatType',
+                        {'repeatType': RepeatType.values[index].name});
                     setState(() => _repeatType = RepeatType.values[index]);
                   },
                   constraints:
@@ -4122,6 +4338,9 @@ class _AdminRepeatingConstraintDialogState
                         label: Text(option['label'] as String),
                         selected: selected,
                         onSelected: (_) {
+                          Logger.action('select:weeklyDay', {
+                            'weekday': selected ? null : weekday,
+                          });
                           setState(
                               () => _weeklyDay = selected ? null : weekday);
                         },
@@ -4148,9 +4367,14 @@ class _AdminRepeatingConstraintDialogState
                       final day = index + 1;
                       final selected = _monthlyDay == day;
                       return InkWell(
-                        onTap: () => setState(() {
-                          _monthlyDay = selected ? null : day;
-                        }),
+                        onTap: () {
+                          Logger.action('select:monthlyDay', {
+                            'day': selected ? null : day,
+                          });
+                          setState(() {
+                            _monthlyDay = selected ? null : day;
+                          });
+                        },
                         borderRadius: BorderRadius.circular(999),
                         child: Container(
                           alignment: Alignment.center,
@@ -4182,7 +4406,10 @@ class _AdminRepeatingConstraintDialogState
                       child: TextFormField(
                         controller: _startTimeController,
                         readOnly: true,
-                        onTap: () => _showTimePickerFor(_startTimeController),
+                        onTap: () {
+                          Logger.action('open:timePicker', {'field': 'start'});
+                          _showTimePickerFor(_startTimeController);
+                        },
                         decoration: const InputDecoration(
                           labelText: 'שעת התחלה',
                           hintText: 'למשל 09:00',
@@ -4196,7 +4423,10 @@ class _AdminRepeatingConstraintDialogState
                       child: TextFormField(
                         controller: _endTimeController,
                         readOnly: true,
-                        onTap: () => _showTimePickerFor(_endTimeController),
+                        onTap: () {
+                          Logger.action('open:timePicker', {'field': 'end'});
+                          _showTimePickerFor(_endTimeController);
+                        },
                         decoration: const InputDecoration(
                           labelText: 'שעת סיום',
                           hintText: 'למשל 17:00',
@@ -4223,7 +4453,10 @@ class _AdminRepeatingConstraintDialogState
                 const Text('תאריך התחלה (לא חובה):'),
                 const SizedBox(height: 8),
                 InkWell(
-                  onTap: _selectRepeatStartDate,
+                  onTap: () {
+                    Logger.action('open:repeatStartDatePicker');
+                    _selectRepeatStartDate();
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -4247,7 +4480,10 @@ class _AdminRepeatingConstraintDialogState
                 const Text('תאריך סיום (חובה):'),
                 const SizedBox(height: 8),
                 InkWell(
-                  onTap: _selectRepeatEndDate,
+                  onTap: () {
+                    Logger.action('open:repeatEndDatePicker');
+                    _selectRepeatEndDate();
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -4273,13 +4509,17 @@ class _AdminRepeatingConstraintDialogState
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:repeatingConstraint');
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
             onPressed: !_canSubmit
                 ? null
                 : () async {
+                    Logger.action('tap:addRepeatingConstraint');
                     final draft = _buildDraftConstraint();
                     final shouldProceed = await confirmConstraintOverlapWarning(
                       context: context,
@@ -4484,11 +4724,17 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                   children: [
                     TextButton(
                       child: const Text('ביטול'),
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () {
+                        Logger.action('tap:cancel:timePicker');
+                        Navigator.of(context).pop();
+                      },
                     ),
                     TextButton(
                       child: const Text('אישור'),
-                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                      onPressed: () {
+                        Logger.action('tap:confirm:timePicker');
+                        Navigator.of(context).pop(selectedTime);
+                      },
                     ),
                   ],
                 ),
@@ -4563,7 +4809,11 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                 const Text('תאריכים:'),
                 const SizedBox(height: 8),
                 InkWell(
-                  onTap: _pickDates,
+                  onTap: () {
+                    Logger.action('open:adminConstraintDatePicker',
+                        {'isPermanent': widget.isPermanent});
+                    _pickDates();
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -4595,7 +4845,10 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                       child: TextFormField(
                         controller: _startTimeController,
                         readOnly: true,
-                        onTap: () => _showTimePickerFor(_startTimeController),
+                        onTap: () {
+                          Logger.action('open:timePicker', {'field': 'start'});
+                          _showTimePickerFor(_startTimeController);
+                        },
                         decoration: InputDecoration(
                           labelText: 'שעת התחלה',
                           hintText: 'לדוגמה: 09:00',
@@ -4606,6 +4859,8 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                                   icon: const Icon(Icons.clear,
                                       color: Colors.grey),
                                   onPressed: () {
+                                    Logger.action('tap:clearTime',
+                                        {'field': 'start'});
                                     setState(() {
                                       _startTimeController.clear();
                                     });
@@ -4620,7 +4875,10 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                       child: TextFormField(
                         controller: _endTimeController,
                         readOnly: true,
-                        onTap: () => _showTimePickerFor(_endTimeController),
+                        onTap: () {
+                          Logger.action('open:timePicker', {'field': 'end'});
+                          _showTimePickerFor(_endTimeController);
+                        },
                         decoration: InputDecoration(
                           labelText: 'שעת סיום',
                           hintText: 'לדוגמה: 17:00',
@@ -4631,6 +4889,8 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                                   icon: const Icon(Icons.clear,
                                       color: Colors.grey),
                                   onPressed: () {
+                                    Logger.action('tap:clearTime',
+                                        {'field': 'end'});
                                     setState(() {
                                       _endTimeController.clear();
                                     });
@@ -4699,12 +4959,20 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:adminConstraintDialog',
+                  {'isPermanent': widget.isPermanent});
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
             onPressed: _canSubmit
                 ? () async {
+                    Logger.action('tap:saveAdminConstraintDialog', {
+                      'isPermanent': widget.isPermanent,
+                      'mode': widget.constraint == null ? 'create' : 'edit',
+                    });
                     final draftConstraint = _buildDraftConstraint();
 
                     if (widget.isPermanent && _isEditingDateOrTime()) {
@@ -4959,7 +5227,13 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
                                       : Colors.white,
                                   child: CheckboxListTile(
                                     value: isSelected,
-                                    onChanged: (_) => _toggleEvent(event.id),
+                                    onChanged: (_) {
+                                      Logger.action('toggle:availabilityEvent', {
+                                        'eventId': event.id,
+                                        'on': !isSelected,
+                                      });
+                                      _toggleEvent(event.id);
+                                    },
                                     controlAffinity:
                                         ListTileControlAffinity.leading,
                                     title: Text(
@@ -5029,13 +5303,19 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () {
+                        Logger.action('tap:cancel:availabilityDialog');
+                        Navigator.of(context).pop();
+                      },
                       child: const Text('ביטול'),
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton(
-                      onPressed: () =>
-                          Navigator.of(context).pop(_selectedEventIds.toList()),
+                      onPressed: () {
+                        Logger.action('tap:saveAvailabilityDialog',
+                            {'count': _selectedEventIds.length});
+                        Navigator.of(context).pop(_selectedEventIds.toList());
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green[600],
                         foregroundColor: Colors.white,
@@ -5194,8 +5474,11 @@ class _RejectedConstraintsDialogState
                                       ConstraintStatus.pending)
                                     // Pending: Right = Accept
                                     TextButton.icon(
-                                      onPressed: () =>
-                                          _approveConstraint(constraint),
+                                      onPressed: () {
+                                        Logger.action('tap:approveConstraint',
+                                            {'constraintId': constraint.id});
+                                        _approveConstraint(constraint);
+                                      },
                                       icon: const Icon(Icons.check_circle,
                                           color: Colors.green, size: 18),
                                       label: const Text('אשר',
@@ -5212,8 +5495,11 @@ class _RejectedConstraintsDialogState
                                       ConstraintStatus.approved)
                                     // Approved: Right = Pending
                                     TextButton.icon(
-                                      onPressed: () =>
-                                          _setPendingConstraint(constraint.id),
+                                      onPressed: () {
+                                        Logger.action('tap:setPendingConstraint',
+                                            {'constraintId': constraint.id});
+                                        _setPendingConstraint(constraint.id);
+                                      },
                                       icon: const Icon(Icons.hourglass_empty,
                                           color: Colors.amber, size: 18),
                                       label: const Text('החזר לממתין',
@@ -5228,8 +5514,11 @@ class _RejectedConstraintsDialogState
                                     )
                                   else // Rejected: Right = Pending
                                     TextButton.icon(
-                                      onPressed: () =>
-                                          _setPendingConstraint(constraint.id),
+                                      onPressed: () {
+                                        Logger.action('tap:setPendingConstraint',
+                                            {'constraintId': constraint.id});
+                                        _setPendingConstraint(constraint.id);
+                                      },
                                       icon: const Icon(Icons.hourglass_empty,
                                           color: Colors.amber, size: 18),
                                       label: const Text('החזר לממתין',
@@ -5251,8 +5540,11 @@ class _RejectedConstraintsDialogState
                                       ConstraintStatus.pending)
                                     // Pending: Left = Reject
                                     TextButton.icon(
-                                      onPressed: () =>
-                                          _rejectConstraint(constraint.id),
+                                      onPressed: () {
+                                        Logger.action('tap:rejectConstraint',
+                                            {'constraintId': constraint.id});
+                                        _rejectConstraint(constraint.id);
+                                      },
                                       icon: const Icon(Icons.cancel,
                                           color: Colors.red, size: 18),
                                       label: const Text('דחה',
@@ -5268,8 +5560,11 @@ class _RejectedConstraintsDialogState
                                       ConstraintStatus.approved)
                                     // Approved: Left = Reject
                                     TextButton.icon(
-                                      onPressed: () =>
-                                          _rejectConstraint(constraint.id),
+                                      onPressed: () {
+                                        Logger.action('tap:rejectConstraint',
+                                            {'constraintId': constraint.id});
+                                        _rejectConstraint(constraint.id);
+                                      },
                                       icon: const Icon(Icons.cancel,
                                           color: Colors.red, size: 18),
                                       label: const Text('דחה',
@@ -5283,8 +5578,11 @@ class _RejectedConstraintsDialogState
                                     )
                                   else // Rejected: Left = Accept
                                     TextButton.icon(
-                                      onPressed: () =>
-                                          _approveConstraint(constraint),
+                                      onPressed: () {
+                                        Logger.action('tap:approveConstraint',
+                                            {'constraintId': constraint.id});
+                                        _approveConstraint(constraint);
+                                      },
                                       icon: const Icon(Icons.check_circle,
                                           color: Colors.green, size: 18),
                                       label: const Text('אשר',
@@ -5302,8 +5600,11 @@ class _RejectedConstraintsDialogState
 
                                   // Edit button
                                   IconButton(
-                                    onPressed: () =>
-                                        _editConstraint(constraint),
+                                    onPressed: () {
+                                      Logger.action('tap:editConstraint',
+                                          {'constraintId': constraint.id});
+                                      _editConstraint(constraint);
+                                    },
                                     icon: const Icon(Icons.edit, size: 18),
                                     color: Colors.blue,
                                     tooltip: 'ערוך',
@@ -5315,8 +5616,11 @@ class _RejectedConstraintsDialogState
 
                                   // Delete button
                                   IconButton(
-                                    onPressed: () =>
-                                        _deleteConstraint(constraint),
+                                    onPressed: () {
+                                      Logger.action('tap:deleteConstraint',
+                                          {'constraintId': constraint.id});
+                                      _deleteConstraint(constraint);
+                                    },
                                     icon: const Icon(Icons.delete, size: 18),
                                     color: Colors.red,
                                     tooltip: 'מחק',
@@ -5337,7 +5641,10 @@ class _RejectedConstraintsDialogState
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:close:rejectedConstraints');
+              Navigator.of(context).pop();
+            },
             child: const Text('סגור'),
           ),
         ],
@@ -5401,11 +5708,19 @@ class _RejectedConstraintsDialogState
           content: const Text('האם את/ה בטוח/ה שברצונך למחוק את המגבלה הזו?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () {
+                Logger.action('tap:cancel:deleteConstraint',
+                    {'constraintId': constraint.id});
+                Navigator.of(context).pop(false);
+              },
               child: const Text('ביטול'),
             ),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () {
+                Logger.action('tap:confirmDeleteConstraint',
+                    {'constraintId': constraint.id});
+                Navigator.of(context).pop(true);
+              },
               style: TextButton.styleFrom(foregroundColor: Colors.red),
               child: const Text('מחק'),
             ),
@@ -5599,6 +5914,7 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
                   );
                 }),
                 onChanged: (value) {
+                  Logger.action('select:birthdayDay');
                   setState(() {
                     _selectedDay = value;
                     _isDirty = true;
@@ -5618,6 +5934,7 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
                   );
                 }),
                 onChanged: (value) {
+                  Logger.action('select:birthdayMonth');
                   setState(() {
                     _selectedMonth = value;
                     _isDirty = true;
@@ -5638,6 +5955,7 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
                   );
                 }),
                 onChanged: (value) {
+                  Logger.action('select:birthdayYear');
                   setState(() {
                     _selectedYear = value;
                     _isDirty = true;
@@ -5657,6 +5975,7 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
                 const SizedBox(height: 12),
                 TextButton.icon(
                   onPressed: () {
+                    Logger.action('tap:clearBirthday');
                     setState(() {
                       _selectedDay = null;
                       _selectedMonth = null;
@@ -5675,12 +5994,16 @@ class _BirthdayPickerDialogState extends State<_BirthdayPickerDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:birthdayPicker');
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
             onPressed: _isDirty
                 ? () {
+                    Logger.action('tap:saveBirthday');
                     // Validate: either all fields filled or all empty
                     if (_hasPartialSelection) {
                       setState(() {
@@ -5885,6 +6208,8 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
                       );
                     }).toList(),
                     onChanged: (value) {
+                      Logger.action('select:vehicleManufacturer',
+                          {'manufacturer': value});
                       setState(() {
                         _selectedManufacturer = value;
                         _modelController.clear();
@@ -5950,6 +6275,7 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
                   _colorController.text.isNotEmpty)
                 TextButton.icon(
                   onPressed: () {
+                    Logger.action('tap:clearVehicleDetails');
                     setState(() {
                       _vehicleNumberController.clear();
                       _selectedManufacturer = null;
@@ -5965,11 +6291,19 @@ class _VehicleInfoDialogState extends State<_VehicleInfoDialog> {
                       style: TextStyle(color: Colors.red)),
                 ),
               TextButton(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () {
+                  Logger.action('tap:cancel:vehicleInfoDialog');
+                  Navigator.of(context).pop();
+                },
                 child: const Text('ביטול'),
               ),
               ElevatedButton(
-                onPressed: _isDirty ? _saveVehicleInfo : null,
+                onPressed: _isDirty
+                    ? () {
+                        Logger.action('tap:saveVehicleInfo');
+                        _saveVehicleInfo();
+                      }
+                    : null,
                 child: const Text('שמור'),
               ),
             ],

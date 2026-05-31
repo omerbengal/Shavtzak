@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/debug/logger.dart';
 import '../../../../core/services/environment_service.dart';
 import '../../../../core/constants/role_types.dart';
 import 'document_card.dart';
@@ -613,7 +614,10 @@ class _CollectionViewerState extends State<CollectionViewer> {
             collectionName: widget.collectionName,
             collectionsData: widget.collectionsData
                 ?.cast<String, Map<String, Map<String, dynamic>>>(),
-            onToggle: () => widget.onToggleDocument(doc.id),
+            onToggle: () {
+              Logger.action('tap:toggleDocument', {'documentId': doc.id, 'collection': widget.collectionName});
+              widget.onToggleDocument(doc.id);
+            },
           );
         }),
         if (_isLazyCollection && visibleCount < totalDocuments)
@@ -628,6 +632,7 @@ class _CollectionViewerState extends State<CollectionViewer> {
                       const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                 ),
                 onPressed: () {
+                  Logger.action('tap:loadMore', {'collection': widget.collectionName});
                   setState(() {
                     _visibleDocumentsCount += _lazyPageSize;
                   });
@@ -753,6 +758,7 @@ class _CollectionViewerState extends State<CollectionViewer> {
                       const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                 ),
                 onPressed: () {
+                  Logger.action('tap:loadMore', {'collection': widget.collectionName});
                   setState(() {
                     _visibleDocumentsCount += _lazyPageSize;
                   });
@@ -785,7 +791,10 @@ class _CollectionViewerState extends State<CollectionViewer> {
           collectionName: widget.collectionName,
           collectionsData:
               widget.collectionsData?.cast<String, Map<String, Map<String, dynamic>>>(),
-          onToggle: () => widget.onToggleDocument(parentDoc.id),
+          onToggle: () {
+            Logger.action('tap:toggleDocument', {'documentId': parentDoc.id, 'collection': widget.collectionName});
+            widget.onToggleDocument(parentDoc.id);
+          },
         ),
         if (shouldShowChildren && group.visibleChildren.isNotEmpty)
           Padding(
@@ -830,7 +839,10 @@ class _CollectionViewerState extends State<CollectionViewer> {
                       collectionName: widget.collectionName,
                       collectionsData: widget.collectionsData
                           ?.cast<String, Map<String, Map<String, dynamic>>>(),
-                      onToggle: () => widget.onToggleDocument(childDoc.id),
+                      onToggle: () {
+                        Logger.action('tap:toggleDocument', {'documentId': childDoc.id, 'collection': widget.collectionName});
+                        widget.onToggleDocument(childDoc.id);
+                      },
                     );
                   }),
                 ],

@@ -92,6 +92,7 @@ class _EventListScreenState extends State<EventListScreen> {
 
   /// Handle filter change
   void _onFilterChanged(int newIndex) {
+    Logger.action('filter:eventScope', {'index': newIndex});
     setState(() {
       FilterPersistence.eventFilterIndex = newIndex;
     });
@@ -99,6 +100,7 @@ class _EventListScreenState extends State<EventListScreen> {
 
   /// Show category filter modal
   void _showCategoryFilterModal() {
+    Logger.action('open:categoryFilterModal');
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -106,6 +108,7 @@ class _EventListScreenState extends State<EventListScreen> {
       builder: (context) => CategoryFilterModal(
         selectedCategoryIds: _selectedCategoryIds,
         onFilterChanged: (selectedIds) {
+          Logger.action('filter:categories', {'count': selectedIds.length});
           setState(() {
             _selectedCategoryIds = selectedIds;
             FilterPersistence.selectedEventCategoryIds = selectedIds;
@@ -195,6 +198,7 @@ class _EventListScreenState extends State<EventListScreen> {
                 icon: const Icon(Icons.work),
                 tooltip: 'ניהול תפקידים',
                 onPressed: () {
+                  Logger.action('open:roleManagementDialog');
                   showDialog(
                     context: context,
                     builder: (context) => const RoleManagementDialog(),
@@ -208,6 +212,7 @@ class _EventListScreenState extends State<EventListScreen> {
                 icon: const Icon(Icons.category),
                 tooltip: 'ניהול קטגוריות',
                 onPressed: () {
+                  Logger.action('open:categoryManagementDialog');
                   showDialog(
                     context: context,
                     builder: (context) => const CategoryManagementDialog(),
@@ -221,6 +226,7 @@ class _EventListScreenState extends State<EventListScreen> {
                 icon: const Icon(Icons.home),
                 tooltip: 'בית',
                 onPressed: () {
+                  Logger.action('tap:home');
                   final envPrefix = EnvironmentService.instance.routePrefix;
                   context.go('$envPrefix/admin');
                 },
@@ -231,7 +237,10 @@ class _EventListScreenState extends State<EventListScreen> {
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתק',
-                onPressed: () => _logout(context),
+                onPressed: () {
+                  Logger.action('tap:logout');
+                  _logout(context);
+                },
                 iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
@@ -293,7 +302,10 @@ class _EventListScreenState extends State<EventListScreen> {
         ),
         floatingActionButton: FloatingActionButton(
           heroTag: 'event-list-fab',
-          onPressed: () => _showEventFormModal(null),
+          onPressed: () {
+            Logger.action('tap:addEvent');
+            _showEventFormModal(null);
+          },
           child: const Icon(Icons.add),
         ),
       ),
@@ -324,6 +336,7 @@ class _EventListScreenState extends State<EventListScreen> {
 
     return RefreshIndicator(
       onRefresh: () async {
+        Logger.action('tap:refreshEvents');
         context.read<EventBloc>().add(const RefreshEvents());
         await Future.delayed(const Duration(milliseconds: 500));
       },
@@ -359,6 +372,7 @@ class _EventListScreenState extends State<EventListScreen> {
                         IconButton(
                           icon: const Icon(Icons.clear),
                           onPressed: () {
+                            Logger.action('tap:clearSearch');
                             setState(() {
                               _searchController.clear();
                               _searchQuery = '';
@@ -535,7 +549,10 @@ class _EventListScreenState extends State<EventListScreen> {
     return Card(
       color: cardColor,
       child: InkWell(
-        onTap: () => _showEventFormModal(event),
+        onTap: () {
+          Logger.action('tap:eventCard', {'eventId': event.id});
+          _showEventFormModal(event);
+        },
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -691,7 +708,7 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   void _showEventFormModal(Event? event, {bool isDuplication = false}) async {
-    Logger.action('openEventFormModal', {
+    Logger.action('open:eventFormModal', {
       'eventId': event?.id,
       'mode': event == null ? 'create' : (isDuplication ? 'duplicate' : 'edit'),
     });
@@ -726,6 +743,7 @@ class _EventListScreenState extends State<EventListScreen> {
   /// as events get deactivated/reactivated. Tapping an event opens the edit
   /// modal (where it can be reactivated).
   void _showDeactivatedEventsDialog() {
+    Logger.action('open:deactivatedEventsDialog');
     final screenHeight = MediaQuery.of(context).size.height;
     final dialogHeight = (screenHeight * 0.8).clamp(420.0, 760.0);
 
@@ -764,7 +782,10 @@ class _EventListScreenState extends State<EventListScreen> {
                       ),
                       IconButton(
                         tooltip: 'סגור',
-                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        onPressed: () {
+                          Logger.action('tap:close:deactivatedEventsDialog');
+                          Navigator.of(dialogContext).pop();
+                        },
                         icon: const Icon(Icons.close),
                       ),
                     ],
@@ -854,8 +875,13 @@ class _EventListScreenState extends State<EventListScreen> {
               actions: [
                 TextButton(
                   child: const Text('ביטול'),
-                  onPressed:
-                      isDeleting ? null : () => Navigator.pop(dialogContext),
+                  onPressed: isDeleting
+                      ? null
+                      : () {
+                          Logger.action('tap:cancel:deleteEvent',
+                              {'eventId': event.id});
+                          Navigator.pop(dialogContext);
+                        },
                 ),
                 TextButton(
                   child: isDeleting
@@ -871,6 +897,7 @@ class _EventListScreenState extends State<EventListScreen> {
                   onPressed: isDeleting
                       ? null
                       : () async {
+                          Logger.action('tap:deleteEvent', {'eventId': event.id});
                           setDialogState(() {
                             isDeleting = true;
                           });
@@ -901,6 +928,7 @@ class _EventListScreenState extends State<EventListScreen> {
   }
 
   void _showDriveFilesDialog(BuildContext context, Event event) {
+    Logger.action('open:driveFilesDialog', {'eventId': event.id});
     final screenHeight = MediaQuery.of(context).size.height;
     final dialogHeight = (screenHeight * 0.72).clamp(420.0, 760.0);
     final filesListHeight = (dialogHeight - 170).clamp(200.0, 580.0);
@@ -933,7 +961,11 @@ class _EventListScreenState extends State<EventListScreen> {
                       ),
                       IconButton(
                         tooltip: 'סגור',
-                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        onPressed: () {
+                          Logger.action('tap:close:driveFilesDialog',
+                              {'eventId': event.id});
+                          Navigator.of(dialogContext).pop();
+                        },
                         icon: const Icon(Icons.close),
                       ),
                     ],
@@ -1070,6 +1102,7 @@ class _EventListScreenState extends State<EventListScreen> {
                 if (!state.isFiltered)
                   ElevatedButton.icon(
                     onPressed: () {
+                      Logger.action('tap:addFirstEvent');
                       _showEventFormModal(null);
                     },
                     icon: const Icon(Icons.add),
@@ -1095,7 +1128,10 @@ class _EventListScreenState extends State<EventListScreen> {
               textAlign: TextAlign.center),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: () => context.read<EventBloc>().add(const LoadEvents()),
+            onPressed: () {
+              Logger.action('tap:retryLoadEvents');
+              context.read<EventBloc>().add(const LoadEvents());
+            },
             icon: const Icon(Icons.refresh),
             label: const Text('נסה שוב'),
           ),

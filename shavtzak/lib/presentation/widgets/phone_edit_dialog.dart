@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
+import '../../core/debug/logger.dart';
 import '../../core/utils/crud_action_result.dart';
 import '../../core/utils/validators.dart';
 import '../../core/utils/phone_input_formatter.dart';
@@ -106,11 +107,11 @@ class _PhoneEditDialogState extends State<PhoneEditDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+            onPressed: _isSaving ? null : () { Logger.action('tap:cancel:phoneEditDialog'); Navigator.of(context).pop(); },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: (_isDirty && !_isSaving) ? _savePhone : null,
+            onPressed: (_isDirty && !_isSaving) ? () { Logger.action('tap:savePhone'); _savePhone(); } : null,
             child: _isSaving
                 ? const SizedBox(
                     width: 18,

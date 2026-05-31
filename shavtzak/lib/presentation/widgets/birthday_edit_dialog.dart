@@ -6,6 +6,7 @@ import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../../core/utils/crud_action_result.dart';
+import '../../core/debug/logger.dart';
 
 /// Dialog for editing user's birthday
 class BirthdayEditDialog extends StatefulWidget {
@@ -145,6 +146,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
                     );
                   }),
                   onChanged: (value) {
+                    Logger.action('select:day', {'day': value});
                     setState(() {
                       _selectedDay = value;
                       _isDirty = true;
@@ -163,6 +165,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
                     );
                   }),
                   onChanged: (value) {
+                    Logger.action('select:month', {'month': value});
                     setState(() {
                       _selectedMonth = value;
                       _isDirty = true;
@@ -181,6 +184,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
                     );
                   }),
                   onChanged: (value) {
+                    Logger.action('select:year', {'year': value});
                     setState(() {
                       _selectedYear = value;
                       _isDirty = true;
@@ -200,6 +204,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
                   const SizedBox(height: 12),
                   TextButton.icon(
                     onPressed: () {
+                      Logger.action('tap:clearBirthday');
                       setState(() {
                         _selectedDay = null;
                         _selectedMonth = null;
@@ -222,7 +227,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+            onPressed: _isSaving ? null : () { Logger.action('tap:cancel:birthdayEdit'); Navigator.of(context).pop(); },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
@@ -244,6 +249,7 @@ class _BirthdayEditDialogState extends State<BirthdayEditDialog> {
   }
 
   Future<void> _saveBirthday() async {
+    Logger.action('tap:saveBirthday');
     if (_isSaving) return;
 
     // Check if selection is valid before saving

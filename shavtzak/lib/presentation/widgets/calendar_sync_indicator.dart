@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/debug/logger.dart';
 import '../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../bloc/calendar_sync/calendar_sync_state.dart';
 
@@ -77,7 +78,12 @@ class CalendarSyncIndicator extends StatelessWidget {
     }
 
     return InkWell(
-      onTap: onTap,
+      onTap: onTap == null
+          ? null
+          : () {
+              Logger.action('tap:calendarSyncIndicator');
+              onTap!();
+            },
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

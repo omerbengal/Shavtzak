@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/debug/logger.dart';
 import '../../core/services/environment_service.dart';
 import '../../core/services/export_service.dart';
 import '../../core/utils/date_utils.dart' as app_date_utils;
@@ -124,12 +125,19 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:assignmentExportDialog');
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול'),
           ),
           FilledButton.icon(
             onPressed: canExport
                 ? () async {
+                    Logger.action('tap:exportAssignments', {
+                      'mode': _mode.toString(),
+                      'eventCount': _selectedEventIds.length,
+                    });
                     final mode = _mode;
                     final eventIds = _selectedEventIds.toList();
                     Navigator.of(context).pop();
@@ -164,6 +172,7 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
       selected: {_mode},
       onSelectionChanged: (selection) {
         final nextMode = selection.first;
+        Logger.action('select:exportMode', {'mode': nextMode.toString()});
         if (isTestMode && nextMode == AssignmentExportMode.perEvent) {
           return;
         }
@@ -244,6 +253,10 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
                   subtitle: Text(_formatEventSubtitle(event)),
                   controlAffinity: ListTileControlAffinity.leading,
                   onChanged: (value) {
+                    Logger.action('toggle:selectExportEvent', {
+                      'eventId': event.id,
+                      'on': value == true,
+                    });
                     setState(() {
                       if (value == true) {
                         _selectedEventIds.add(event.id);

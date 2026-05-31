@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
+import '../../../../core/debug/logger.dart';
 import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/checklist_item.dart';
@@ -94,6 +95,7 @@ class EventSummaryTile extends StatelessWidget {
               icon: const Icon(Icons.people_outline),
               tooltip: 'צפה בשיבוצים',
               onPressed: () {
+                Logger.action('open:eventAssignmentsDialog', {'eventId': data.event.id});
                 // Filter assignments for this event from the already-loaded list
                 final eventAssignments = allAssignments
                     .where((a) => a.eventId == data.event.id)
@@ -476,6 +478,7 @@ class EventSummaryTile extends StatelessWidget {
                   hasConstrainedMembers: constrainedMembers.isNotEmpty,
                 ),
                 onChanged: (selectedValue) async {
+                  Logger.action('select:roleAssignmentMember', {'eventId': event.id, 'roleKey': roleKey, 'selectedValue': selectedValue});
                   if (selectedValue == null) return;
 
                   if (selectedValue == '__show_already_assigned__') {
@@ -824,11 +827,15 @@ class EventSummaryTile extends StatelessWidget {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: () {
+                Logger.action('tap:cancel:assignmentConfirmation', {'eventId': event.id, 'roleKey': roleKey, 'memberId': memberId});
+                Navigator.of(dialogContext).pop();
+              },
               child: const Text('ביטול'),
             ),
             ElevatedButton(
               onPressed: () {
+                Logger.action('tap:confirmAssignment', {'eventId': event.id, 'roleKey': roleKey, 'memberId': memberId});
                 Navigator.of(dialogContext).pop();
                 final now = DateTime.now();
                 // Calculate slot index - find first available slot for this role
@@ -1008,8 +1015,10 @@ class EventSummaryTile extends StatelessWidget {
                           ),
                           subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
                           trailing: ElevatedButton(
-                            onPressed: () =>
-                                Navigator.of(dialogContext).pop(member),
+                            onPressed: () {
+                              Logger.action('tap:assignAlreadyAssigned', {'eventId': event.id, 'roleKey': roleKey, 'memberId': member.id});
+                              Navigator.of(dialogContext).pop(member);
+                            },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.blue,
                               foregroundColor: Colors.white,
@@ -1022,7 +1031,10 @@ class EventSummaryTile extends StatelessWidget {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
+                onPressed: () {
+                  Logger.action('tap:close:alreadyAssignedDialog', {'eventId': event.id, 'roleKey': roleKey});
+                  Navigator.of(dialogContext).pop();
+                },
                 child: const Text('סגור'),
               ),
             ],
@@ -1112,8 +1124,10 @@ class EventSummaryTile extends StatelessWidget {
                                 color: Colors.red.shade600, fontSize: 12),
                           ),
                           trailing: ElevatedButton(
-                            onPressed: () =>
-                                Navigator.of(dialogContext).pop(member),
+                            onPressed: () {
+                              Logger.action('tap:assignConstrained', {'eventId': event.id, 'memberId': member.id});
+                              Navigator.of(dialogContext).pop(member);
+                            },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.orange,
                               foregroundColor: Colors.white,
@@ -1126,7 +1140,10 @@ class EventSummaryTile extends StatelessWidget {
                   ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
+                onPressed: () {
+                  Logger.action('tap:close:constrainedMembersDialog', {'eventId': event.id});
+                  Navigator.of(dialogContext).pop();
+                },
                 child: const Text('סגור'),
               ),
             ],

@@ -93,6 +93,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   /// Handle filter change
   void _onFilterChanged(int newIndex) {
+    Logger.action('filter:assignmentStatus', {'index': newIndex});
     setState(() {
       FilterPersistence.assignmentFilterIndex = newIndex;
     });
@@ -377,6 +378,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                 child: GestureDetector(
                   onTap: () {
+                    Logger.action('toggle:showPastEvents', {
+                      'on': !FilterPersistence.showPastEvents,
+                    });
                     setState(() {
                       FilterPersistence.showPastEvents =
                           !FilterPersistence.showPastEvents;
@@ -429,6 +433,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 icon: const Icon(Icons.label_outline),
                 tooltip: 'ניהול לייבלים',
                 onPressed: () {
+                  Logger.action('open:assignmentLabelManagementDialog');
                   showDialog(
                     context: context,
                     builder: (context) =>
@@ -443,6 +448,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 icon: const Icon(Icons.home),
                 tooltip: 'בית',
                 onPressed: () {
+                  Logger.action('tap:home');
                   final envPrefix = EnvironmentService.instance.routePrefix;
                   context.go('$envPrefix/admin');
                 },
@@ -453,7 +459,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתק',
-                onPressed: () => _logout(context),
+                onPressed: () {
+                  Logger.action('tap:logout');
+                  _logout(context);
+                },
                 iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
@@ -612,6 +621,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
         return RefreshIndicator(
           onRefresh: () async {
+            Logger.action('tap:refreshSlots');
             context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
             await Future.delayed(const Duration(milliseconds: 500));
           },
@@ -648,6 +658,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                             IconButton(
                               icon: const Icon(Icons.clear),
                               onPressed: () {
+                                Logger.action('tap:clearSearch');
                                 setState(() {
                                   _searchController.clear();
                                   _searchQuery = '';
@@ -666,7 +677,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                     : null,
                               ),
                             ),
-                            onPressed: () => _showFilterModal(context, state),
+                            onPressed: () {
+                              Logger.action('open:filterModal');
+                              _showFilterModal(context, state);
+                            },
                             tooltip: activeFilterCount == 0
                                 ? 'סינון לפי אירוע ולייבל'
                                 : 'קיימים $activeFilterCount מסננים פעילים',
@@ -842,7 +856,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         GestureDetector(
-                          onTap: () => _showEventFormModal(slot.event),
+                          onTap: () {
+                            Logger.action('open:eventFormModal', {
+                              'eventId': slot.event.id,
+                            });
+                            _showEventFormModal(slot.event);
+                          },
                           child: Text(
                             slot.event.name,
                             style: const TextStyle(
@@ -945,8 +964,14 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       children: [
                         // Role name text (always centered)
                         GestureDetector(
-                          onTap: () => _showEventFormModal(slot.event,
-                              selectedRoleKey: slot.role.key),
+                          onTap: () {
+                            Logger.action('open:eventFormModal', {
+                              'eventId': slot.event.id,
+                              'role': slot.role.key,
+                            });
+                            _showEventFormModal(slot.event,
+                                selectedRoleKey: slot.role.key);
+                          },
                           child: Text(
                             slot.role.hebrewName,
                             textAlign: TextAlign.center,
@@ -971,6 +996,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                   'משובץ גם ל: ${slot.otherRoles.join(", ")}',
                               child: InkWell(
                                 onTap: () {
+                                  Logger.action('open:doubleAssignmentDialog', {
+                                    'eventId': slot.event.id,
+                                    'role': slot.role.key,
+                                  });
                                   showDialog(
                                     context: context,
                                     builder: (dialogContext) => Directionality(
@@ -990,9 +1019,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                         ),
                                         actions: [
                                           TextButton(
-                                            onPressed: () =>
-                                                Navigator.of(dialogContext)
-                                                    .pop(),
+                                            onPressed: () {
+                                              Logger.action(
+                                                  'tap:close:doubleAssignmentDialog');
+                                              Navigator.of(dialogContext).pop();
+                                            },
                                             child: const Text('סגור'),
                                           ),
                                         ],
@@ -1179,6 +1210,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         if (direction == DismissDirection.startToEnd) {
           // Notes swipe - show notes dialog
           if (slot.isFilled && slot.currentAssignment != null) {
+            Logger.action('swipeEdit:notesDialog', {
+              'assignmentId': slot.currentAssignment?.id,
+            });
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
                 _showNotesDialog(slot);
@@ -1203,12 +1237,21 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 actions: [
                   TextButton(
                     child: const Text('ביטול'),
-                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    onPressed: () {
+                      Logger.action('tap:cancel:deleteSlot');
+                      Navigator.of(dialogContext).pop(false);
+                    },
                   ),
                   TextButton(
                     child:
                         const Text('מחק', style: TextStyle(color: Colors.red)),
-                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    onPressed: () {
+                      Logger.action('tap:confirm:deleteSlot', {
+                        'eventId': slot.event.id,
+                        'role': slot.role.key,
+                      });
+                      Navigator.of(dialogContext).pop(true);
+                    },
                   ),
                 ],
               ),
@@ -1216,7 +1259,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           );
 
           if (confirmed == true) {
-            Logger.action('swipeDeleteAssignment', {
+            Logger.action('swipeDelete:assignment', {
               'assignmentId': slot.currentAssignment?.id,
             });
             await _handleSlotDismiss(slot);
@@ -1406,6 +1449,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                     onTap: isSaving
                                         ? null
                                         : () async {
+                                            Logger.action(
+                                                'open:assignmentLabelPicker', {
+                                              'assignmentId': assignment.id,
+                                            });
                                             await _settleDialogFocus(
                                               dialogContext,
                                             );
@@ -1532,6 +1579,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     onPressed: isSaving
                         ? null
                         : () async {
+                            Logger.action('tap:cancel:notesDialog');
                             await _settleDialogFocus(dialogContext);
                             if (!dialogContext.mounted) {
                               return;
@@ -1544,6 +1592,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     onPressed: isSaving
                         ? null
                         : () async {
+                            Logger.action('tap:saveNotes', {
+                              'assignmentId': assignment.id,
+                            });
                             final assignmentBloc =
                                 context.read<AssignmentBloc>();
                             if (!formKey.currentState!.validate()) {
@@ -1696,6 +1747,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                     ? Text(searchQuery.trim())
                                     : null,
                                 onTap: () async {
+                                  Logger.action(
+                                      'open:createAssignmentLabelDialog');
                                   await _settleDialogFocus(dialogContext);
                                   if (!dialogContext.mounted) {
                                     return;
@@ -1743,6 +1796,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                   title: const Text('ללא לייבל'),
                                   selected: selectedLabelId == null,
                                   onTap: () {
+                                    Logger.action('select:label', {
+                                      'labelId': null,
+                                    });
                                     Navigator.of(dialogContext).pop(
                                       const _AssignmentLabelSelectionResult(
                                         selectedLabelId: null,
@@ -1765,6 +1821,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                     ),
                                     selected: selectedLabelId == label.id,
                                     onTap: () {
+                                      Logger.action('select:label', {
+                                        'labelId': label.id,
+                                      });
                                       Navigator.of(dialogContext).pop(
                                         _AssignmentLabelSelectionResult(
                                           selectedLabelId: label.id,
@@ -1800,6 +1859,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 actions: [
                   TextButton(
                     onPressed: () async {
+                      Logger.action('tap:cancel:assignmentLabelPicker');
                       await _settleDialogFocus(dialogContext);
                       if (!dialogContext.mounted) {
                         return;
@@ -1947,6 +2007,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               onTap: isSaving
                                   ? null
                                   : () {
+                                      Logger.action('select:labelColor', {
+                                        'color': colorHex,
+                                      });
                                       setDialogState(() {
                                         selectedColor = colorHex;
                                       });
@@ -1985,6 +2048,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     onPressed: isSaving
                         ? null
                         : () async {
+                            Logger.action('tap:cancel:createLabelDialog');
                             await _settleDialogFocus(dialogContext);
                             if (!dialogContext.mounted) {
                               return;
@@ -1996,7 +2060,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   ElevatedButton(
                     onPressed: isSaving
                         ? null
-                        : () => saveLabel(shouldSelectLabel: false),
+                        : () {
+                            Logger.action('tap:createLabel', {
+                              'shouldSelectLabel': false,
+                            });
+                            saveLabel(shouldSelectLabel: false);
+                          },
                     child: isSaving
                         ? const SizedBox(
                             width: 18,
@@ -2008,7 +2077,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                   ElevatedButton(
                     onPressed: isSaving
                         ? null
-                        : () => saveLabel(shouldSelectLabel: true),
+                        : () {
+                            Logger.action('tap:createLabel', {
+                              'shouldSelectLabel': true,
+                            });
+                            saveLabel(shouldSelectLabel: true);
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
                       foregroundColor: Colors.white,
@@ -2405,6 +2479,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     items: items,
                     onChanged: hasOptions
                         ? (selectedValue) {
+                            Logger.action('select:assignmentMember', {
+                              'eventId': slot.event.id,
+                              'role': slot.role.key,
+                              'value': selectedValue,
+                            });
                             if (selectedValue == '__show_already_assigned__') {
                               // Show dialog for already-assigned members
                               _showAlreadyAssignedDialog(slot);
@@ -2440,7 +2519,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         // "ניקוי" button - only show if slot is filled AND currentMember is valid
         if (slot.isFilled && currentMember != null)
           IconButton(
-            onPressed: () => _handleClearAssignment(slot),
+            onPressed: () {
+              Logger.action('tap:clearAssignment', {
+                'assignmentId': slot.currentAssignment?.id,
+              });
+              _handleClearAssignment(slot);
+            },
             icon: const Icon(Icons.clear, size: 20),
             color: Colors.red,
             padding: EdgeInsets.zero,
@@ -2562,7 +2646,14 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                           ),
                           subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
                           trailing: ElevatedButton(
-                            onPressed: () => Navigator.of(context).pop(member),
+                            onPressed: () {
+                              Logger.action('tap:assignAnyway', {
+                                'eventId': slot.event.id,
+                                'role': slot.role.key,
+                                'memberId': member.id,
+                              });
+                              Navigator.of(context).pop(member);
+                            },
                             child: const Text('שבץ בכל זאת'),
                           ),
                         );
@@ -2575,7 +2666,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                Logger.action('tap:close:alreadyAssignedDialog');
+                Navigator.of(context).pop();
+              },
               child: const Text('סגור'),
             ),
           ],
@@ -2736,7 +2830,14 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                 color: Colors.red.shade600, fontSize: 12),
                           ),
                           trailing: ElevatedButton(
-                            onPressed: () => Navigator.of(context).pop(member),
+                            onPressed: () {
+                              Logger.action('tap:assignConstrainedAnyway', {
+                                'eventId': slot.event.id,
+                                'role': slot.role.key,
+                                'memberId': member.id,
+                              });
+                              Navigator.of(context).pop(member);
+                            },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.orange,
                               foregroundColor: Colors.white,
@@ -2753,7 +2854,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                Logger.action('tap:close:constrainedMembersDialog');
+                Navigator.of(context).pop();
+              },
               child: const Text('סגור'),
             ),
           ],
@@ -2917,8 +3021,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               style: const TextStyle(fontSize: 18, color: Colors.red)),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: () =>
-                context.read<AssignmentBloc>().add(const LoadAssignmentSlots()),
+            onPressed: () {
+              Logger.action('tap:retryLoadSlots');
+              context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+            },
             icon: const Icon(Icons.refresh),
             label: const Text('נסה שוב'),
           ),
@@ -2967,6 +3073,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   Future<void> _showFilterModal(
       BuildContext context, AssignmentSlotsLoaded state) async {
     void applyFilter(Set<String> selectedEventIds) {
+      Logger.action('filter:events', {'count': selectedEventIds.length});
       if (!mounted) return;
       setState(() {});
       if (selectedEventIds.isEmpty) {
@@ -3034,7 +3141,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   /// Show manual assignment flow (3-step process)
   Future<void> _showManualAssignmentFlow() async {
-    Logger.action('openManualAssignmentFlow');
+    Logger.action('open:manualAssignmentFlow');
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,

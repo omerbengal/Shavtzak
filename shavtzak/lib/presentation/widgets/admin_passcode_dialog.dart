@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/debug/logger.dart';
 import 'passcode_setup_dialog.dart';
 
 /// Dialog for admins to manage team member passcodes
@@ -105,7 +106,10 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
                                 ),
                               )
                             : IconButton(
-                                onPressed: _togglePasscodeVisibility,
+                                onPressed: () {
+                                  Logger.action('toggle:passcodeVisibility', {'on': !_showPasscode});
+                                  _togglePasscodeVisibility();
+                                },
                                 icon: Icon(
                                   _showPasscode
                                       ? Icons.visibility_off
@@ -135,7 +139,10 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   ElevatedButton(
-                    onPressed: () => _showSetPasscodeDialog(context),
+                    onPressed: () {
+                      Logger.action('open:passcodeSetupDialog', {'hasExisting': widget.currentLength != null});
+                      _showSetPasscodeDialog(context);
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: widget.currentLength != null
                           ? Theme.of(context).primaryColor
@@ -150,7 +157,10 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
                   if (widget.currentLength != null) ...[
                     const SizedBox(width: 12),
                     ElevatedButton(
-                      onPressed: () => _showRemoveConfirmation(context),
+                      onPressed: () {
+                        Logger.action('open:passcodeRemoveConfirmation');
+                        _showRemoveConfirmation(context);
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red,
                         foregroundColor: Colors.white,
@@ -167,7 +177,10 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:close:adminPasscodeDialog');
+              Navigator.of(context).pop();
+            },
             child: const Text('סגור', textAlign: TextAlign.center),
           ),
         ],
@@ -249,11 +262,17 @@ class _AdminPasscodeDialogState extends State<AdminPasscodeDialog> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () {
+                Logger.action('tap:cancel:passcodeRemoveConfirmation');
+                Navigator.of(context).pop(false);
+              },
               child: const Text('ביטול', textAlign: TextAlign.center),
             ),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () {
+                Logger.action('tap:removePasscode');
+                Navigator.of(context).pop(true);
+              },
               style: TextButton.styleFrom(
                 foregroundColor: Colors.red,
               ),

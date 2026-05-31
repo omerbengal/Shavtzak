@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../domain/entities/category.dart';
@@ -85,6 +86,7 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                       IconButton(
                         icon: Icon(_showArchive ? Icons.list : Icons.history),
                         onPressed: () {
+                          Logger.action('toggle:archiveView', {'on': !_showArchive});
                           setState(() {
                             _showArchive = !_showArchive;
                           });
@@ -94,7 +96,10 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                       // Close button
                       IconButton(
                         icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: () {
+                          Logger.action('tap:close:categoryDialog');
+                          Navigator.of(context).pop();
+                        },
                       ),
                     ],
                   ),
@@ -164,7 +169,10 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () => _showAddCategoryDialog(context),
+                      onPressed: () {
+                        Logger.action('open:addCategoryDialog');
+                        _showAddCategoryDialog(context);
+                      },
                       icon: const Icon(Icons.add),
                       label: const Text('צור קטגוריה חדשה'),
                       style: ElevatedButton.styleFrom(
@@ -197,6 +205,7 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
     return ReorderableListView.builder(
       itemCount: activeCategories.length,
       onReorder: (oldIndex, newIndex) {
+        Logger.action('reorder:category', {'from': oldIndex, 'to': newIndex});
         final categories = List<Category>.from(activeCategories);
         if (newIndex > oldIndex) {
           newIndex -= 1;
@@ -297,6 +306,7 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                   textDirection: TextDirection.rtl,
                   child: ElevatedButton.icon(
                     onPressed: () async {
+                      Logger.action('tap:restoreCategory', {'categoryId': category.id});
                       final result = await _runCategoryMutation(
                         action: () => _waitForCategoryAction(
                           (completion) => context.read<CategoryBloc>().add(
@@ -332,7 +342,10 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                 IconButton(
                   icon: const Icon(Icons.archive, color: Colors.orange, size: 20),
                   tooltip: 'העבר לארכיון',
-                  onPressed: () => _confirmArchiveCategory(context, category),
+                  onPressed: () {
+                    Logger.action('tap:archiveCategory', {'categoryId': category.id});
+                    _confirmArchiveCategory(context, category);
+                  },
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -341,7 +354,10 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                 IconButton(
                   icon: const Icon(Icons.delete, color: Colors.red, size: 20),
                   tooltip: 'מחק לצמיתות',
-                  onPressed: () => _confirmDeleteCategory(context, category),
+                  onPressed: () {
+                    Logger.action('tap:deleteCategory', {'categoryId': category.id});
+                    _confirmDeleteCategory(context, category);
+                  },
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -351,7 +367,10 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
         ),
         onTap: isArchived
             ? null
-            : () => _showRenameDialog(context, category),
+            : () {
+                Logger.action('open:renameDialog', {'categoryId': category.id});
+                _showRenameDialog(context, category);
+              },
       ),
     );
   }
@@ -367,11 +386,17 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
           content: Text('האם להעביר את הקטגוריה "${category.name}" לארכיון?\n\nניתן יהיה לשחזר את הקטגוריה מהארכיון לאחר מכן.'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () {
+                Logger.action('tap:cancel:archiveCategory', {'categoryId': category.id});
+                Navigator.of(context).pop(false);
+              },
               child: const Text('ביטול'),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () {
+                Logger.action('tap:confirmArchiveCategory', {'categoryId': category.id});
+                Navigator.of(context).pop(true);
+              },
               child: const Text('העבר לארכיון'),
             ),
           ],
@@ -442,11 +467,17 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(null),
+                onPressed: () {
+                  Logger.action('tap:cancel:deleteCategory', {'categoryId': category.id});
+                  Navigator.of(context).pop(null);
+                },
                 child: const Text('ביטול'),
               ),
               ElevatedButton.icon(
-                onPressed: () => Navigator.of(context).pop('archive'),
+                onPressed: () {
+                  Logger.action('tap:archiveCategoryInstead', {'categoryId': category.id});
+                  Navigator.of(context).pop('archive');
+                },
                 icon: const Icon(Icons.archive, color: Colors.white),
                 label: const Text('העבר לארכיון'),
                 style: ElevatedButton.styleFrom(
@@ -455,7 +486,13 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () => Navigator.of(context).pop('clear_and_delete'),
+                onPressed: () {
+                  Logger.action('tap:clearAndDeleteCategory', {
+                    'categoryId': category.id,
+                    'affectedCount': affectedEvents.length,
+                  });
+                  Navigator.of(context).pop('clear_and_delete');
+                },
                 icon: const Icon(Icons.delete, color: Colors.white),
                 label: const Text('הסר מכל האירועים ומחק לצמיתות'),
                 style: ElevatedButton.styleFrom(
@@ -526,11 +563,17 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
             content: Text('האם למחוק את הקטגוריה "${category.name}" לצמיתות?\n\nלא ניתן יהיה לשחזר את הקטגוריה לאחר מחיקה!'),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
+                onPressed: () {
+                  Logger.action('tap:cancel:deleteCategory', {'categoryId': category.id});
+                  Navigator.of(context).pop(false);
+                },
                 child: const Text('ביטול'),
               ),
               ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
+                onPressed: () {
+                  Logger.action('tap:confirmDeleteCategory', {'categoryId': category.id});
+                  Navigator.of(context).pop(true);
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
@@ -587,13 +630,19 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
             ),
             actions: [
               TextButton(
-                onPressed: isSaving ? null : () => Navigator.of(dialogContext).pop(),
+                onPressed: isSaving
+                    ? null
+                    : () {
+                        Logger.action('tap:cancel:addCategory');
+                        Navigator.of(dialogContext).pop();
+                      },
                 child: const Text('ביטול'),
               ),
               ElevatedButton(
                 onPressed: isSaving
                     ? null
                     : () async {
+                        Logger.action('tap:createCategory');
                         if (controller.text.trim().isEmpty) {
                           return;
                         }
@@ -664,13 +713,19 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
             ),
             actions: [
               TextButton(
-                onPressed: isSaving ? null : () => Navigator.of(dialogContext).pop(),
+                onPressed: isSaving
+                    ? null
+                    : () {
+                        Logger.action('tap:cancel:renameCategory', {'categoryId': category.id});
+                        Navigator.of(dialogContext).pop();
+                      },
                 child: const Text('ביטול'),
               ),
               ElevatedButton(
                 onPressed: isSaving
                     ? null
                     : () async {
+                        Logger.action('tap:renameCategory', {'categoryId': category.id});
                         if (controller.text.trim().isEmpty ||
                             controller.text.trim() == category.name) {
                           return;

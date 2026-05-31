@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../core/debug/logger.dart';
 import '../../core/utils/date_utils.dart' as app_date_utils;
 import '../../domain/entities/assignment.dart';
 import '../../domain/entities/event.dart';
@@ -154,11 +155,20 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
     if (_currentStep == 0) {
       return [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            Logger.action('tap:cancel:shamapExport');
+            Navigator.of(context).pop();
+          },
           child: const Text('ביטול', style: TextStyle(color: Colors.red)),
         ),
         ElevatedButton(
-          onPressed: _selectedEvent == null ? null : _goToLocationStep,
+          onPressed: _selectedEvent == null
+              ? null
+              : () {
+                  Logger.action('tap:continueToLocation',
+                      {'eventId': _selectedEvent!.id});
+                  _goToLocationStep();
+                },
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.teal,
             foregroundColor: Colors.white,
@@ -173,11 +183,20 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
           _shamapLocationController.text.trim().isNotEmpty;
       return [
         TextButton(
-          onPressed: () => _goToStep(0),
+          onPressed: () {
+            Logger.action('tap:back:locationStep');
+            _goToStep(0);
+          },
           child: const Text('אחורה'),
         ),
         ElevatedButton(
-          onPressed: hasShamapLocation ? _goToMembersStep : null,
+          onPressed: hasShamapLocation
+              ? () {
+                  Logger.action('tap:continueToMembers',
+                      {'eventId': _selectedEvent?.id});
+                  _goToMembersStep();
+                }
+              : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.teal,
             foregroundColor: Colors.white,
@@ -190,15 +209,29 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
     final selectedCount = _selectedMemberIds.length;
     return [
       TextButton(
-        onPressed: () => _goToStep(1),
+        onPressed: () {
+          Logger.action('tap:back:membersStep');
+          _goToStep(1);
+        },
         child: const Text('אחורה'),
       ),
       TextButton(
-        onPressed: () => Navigator.of(context).pop(),
+        onPressed: () {
+          Logger.action('tap:close:shamapExport');
+          Navigator.of(context).pop();
+        },
         child: const Text('סגירה'),
       ),
       ElevatedButton.icon(
-        onPressed: selectedCount > 0 ? _copyToClipboard : null,
+        onPressed: selectedCount > 0
+            ? () {
+                Logger.action('tap:copyToClipboard', {
+                  'eventId': _selectedEvent?.id,
+                  'count': selectedCount,
+                });
+                _copyToClipboard();
+              }
+            : null,
         icon: Icon(
           _copied ? Icons.check_circle : Icons.copy,
           color: _copied ? const Color(0xFF00E676) : Colors.white,
@@ -287,6 +320,8 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
                   events: _futureEvents,
                   isExpanded: _isFutureExpanded,
                   onToggle: () {
+                    Logger.action('toggle:futureEventsSection',
+                        {'on': !_isFutureExpanded});
                     setState(() {
                       _isFutureExpanded = !_isFutureExpanded;
                     });
@@ -298,6 +333,8 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
                   events: _pastEvents,
                   isExpanded: _isPastExpanded,
                   onToggle: () {
+                    Logger.action('toggle:pastEventsSection',
+                        {'on': !_isPastExpanded});
                     setState(() {
                       _isPastExpanded = !_isPastExpanded;
                     });
@@ -305,6 +342,8 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
                   visibleCount: _visiblePastCount,
                   onLoadMore: _pastEvents.length > _visiblePastCount
                       ? () {
+                          Logger.action('tap:loadMorePastEvents',
+                              {'visibleCount': _visiblePastCount});
                           setState(() {
                             _visiblePastCount += 10;
                           });
@@ -507,6 +546,7 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
           ],
         ),
         onTap: () {
+          Logger.action('select:event', {'eventId': event.id});
           final isDifferentEvent = _selectedEvent?.id != event.id;
           setState(() {
             _selectedEvent = event;
@@ -584,6 +624,8 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
                         controlAffinity: ListTileControlAffinity.leading,
                         dense: true,
                         onChanged: (value) {
+                          Logger.action('toggle:shamapMember',
+                              {'memberId': member.id, 'on': value ?? false});
                           setState(() {
                             if (value == true) {
                               _selectedMemberIds.add(member.id);

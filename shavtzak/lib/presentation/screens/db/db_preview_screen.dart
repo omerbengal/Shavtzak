@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import '../../../core/debug/logger.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
@@ -1023,6 +1024,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
               IconButton(
                 icon: const Icon(Icons.unfold_less),
                 onPressed: () {
+                  Logger.action('tap:collapseAll');
                   setState(() {
                     // Collapse all collections
                     _expandedCollections.clear();
@@ -1037,6 +1039,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
                 IconButton(
                   icon: const Icon(Icons.clear),
                   onPressed: () {
+                    Logger.action('tap:clearSearch');
                     _searchController.clear();
                     setState(() {
                       _searchQuery = '';
@@ -1146,6 +1149,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
               isExpanded ? Icons.expand_less : Icons.expand_more,
             ),
             onTap: () {
+              Logger.action('tap:toggleCollection', {'collection': config.name, 'expanded': !isExpanded});
               setState(() {
                 if (isExpanded) {
                   _expandedCollections.remove(config.name);

@@ -128,11 +128,19 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                     tooltip: 'שתף תמונת שיבוצים',
                     onPressed: _isPreparingShare || widget.event == null
                         ? null
-                        : _openSharePreviewDialog,
+                        : () {
+                            Logger.action('open:assignmentsSharePreview',
+                                {'eventId': widget.resolvedEventId});
+                            _openSharePreviewDialog();
+                          },
                   ),
                   IconButton(
                     icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: () {
+                      Logger.action('tap:close:eventAssignmentsDialog',
+                          {'eventId': widget.resolvedEventId});
+                      Navigator.of(context).pop();
+                    },
                   ),
                 ],
               ),
@@ -140,6 +148,7 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
               SwitchListTile.adaptive(
                 value: _sortByLabel,
                 onChanged: (value) {
+                  Logger.action('toggle:sortByLabel', {'on': value});
                   setState(() {
                     _sortByLabel = value;
                   });
@@ -744,12 +753,16 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                   (assignment.alternativePhoneNumber != null &&
                       assignment.alternativePhoneNumber!.isNotEmpty)) ...[
                 InkWell(
-                  onTap: () => _makePhoneCall(
-                    (member.phoneNumber != null &&
-                            member.phoneNumber!.isNotEmpty)
-                        ? member.phoneNumber!
-                        : assignment.alternativePhoneNumber!,
-                  ),
+                  onTap: () {
+                    Logger.action(
+                        'tap:callPhone', {'memberId': member.id});
+                    _makePhoneCall(
+                      (member.phoneNumber != null &&
+                              member.phoneNumber!.isNotEmpty)
+                          ? member.phoneNumber!
+                          : assignment.alternativePhoneNumber!,
+                    );
+                  },
                   child: Icon(
                     Icons.phone,
                     size: 22,

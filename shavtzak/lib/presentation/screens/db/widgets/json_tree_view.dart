@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../../core/debug/logger.dart';
 
 /// A recursive widget that renders JSON/Map data as an expandable tree view.
 /// Handles special Firestore types like Timestamp and GeoPoint.
@@ -85,7 +86,10 @@ class _JsonTreeViewState extends State<JsonTreeView> {
     return Padding(
       padding: EdgeInsets.only(right: indent, top: 4, bottom: 4),
       child: InkWell(
-        onLongPress: () => _copyToClipboard('$key: $value'),
+        onLongPress: () {
+          Logger.action('longPress:treeLeaf', {'indentLevel': widget.indentLevel});
+          _copyToClipboard('$key: $value');
+        },
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -125,6 +129,7 @@ class _JsonTreeViewState extends State<JsonTreeView> {
           padding: EdgeInsets.only(right: indent, top: 4, bottom: 4),
           child: InkWell(
             onTap: () {
+              Logger.action('tap:expandTreeNode', {'expanding': !isExpanded, 'indentLevel': widget.indentLevel});
               setState(() {
                 _expandedKeys[key] = !isExpanded;
               });
@@ -180,6 +185,7 @@ class _JsonTreeViewState extends State<JsonTreeView> {
           padding: EdgeInsets.only(right: indent, top: 4, bottom: 4),
           child: InkWell(
             onTap: () {
+              Logger.action('tap:expandTreeNode', {'expanding': !isExpanded, 'indentLevel': widget.indentLevel});
               setState(() {
                 _expandedKeys[key] = !isExpanded;
               });

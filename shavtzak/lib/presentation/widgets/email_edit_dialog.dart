@@ -7,6 +7,7 @@ import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../../core/utils/crud_action_result.dart';
 import '../../core/utils/validators.dart';
+import '../../core/debug/logger.dart';
 
 /// Dialog for editing user's email address
 class EmailEditDialog extends StatefulWidget {
@@ -102,11 +103,11 @@ class _EmailEditDialogState extends State<EmailEditDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+            onPressed: _isSaving ? null : () { Logger.action('tap:cancel:emailEditDialog'); Navigator.of(context).pop(); },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: (_isDirty && !_isSaving) ? _saveEmail : null,
+            onPressed: (_isDirty && !_isSaving) ? () { Logger.action('tap:saveEmail'); _saveEmail(); } : null,
             child: _isSaving
                 ? const SizedBox(
                     width: 18,

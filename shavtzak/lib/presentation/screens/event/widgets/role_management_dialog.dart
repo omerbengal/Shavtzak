@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../domain/entities/role.dart';
@@ -84,6 +85,7 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                       IconButton(
                         icon: Icon(_showArchive ? Icons.list : Icons.history),
                         onPressed: () {
+                          Logger.action('toggle:archiveView', {'on': !_showArchive});
                           setState(() {
                             _showArchive = !_showArchive;
                           });
@@ -93,7 +95,10 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                       // Close button
                       IconButton(
                         icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: () {
+                          Logger.action('tap:close:roleManagementDialog');
+                          Navigator.of(context).pop();
+                        },
                       ),
                     ],
                   ),
@@ -148,7 +153,10 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () => _showAddRoleDialog(context),
+                      onPressed: () {
+                        Logger.action('open:addRoleDialog');
+                        _showAddRoleDialog(context);
+                      },
                       icon: const Icon(Icons.add),
                       label: const Text('הוסף תפקיד חדש'),
                       style: ElevatedButton.styleFrom(
@@ -181,6 +189,10 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
     return ReorderableListView.builder(
       itemCount: activeRoles.length,
       onReorder: (oldIndex, newIndex) {
+        Logger.action('reorder:role', {
+          'oldIndex': oldIndex,
+          'newIndex': newIndex,
+        });
         final roles = List<Role>.from(activeRoles);
         if (newIndex > oldIndex) {
           newIndex -= 1;
@@ -263,6 +275,10 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                 ),
                 tooltip: role.isVisible ? 'הסתר' : 'הצג',
                 onPressed: () async {
+                  Logger.action('toggle:roleVisibility', {
+                    'roleId': role.id,
+                    'on': !role.isVisible,
+                  });
                   final result = await _runRoleMutation(
                     action: () => _waitForRoleAction(
                       (completion) => context.read<RoleBloc>().add(
@@ -316,6 +332,7 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                 // Restore button
                 ElevatedButton.icon(
                   onPressed: () async {
+                    Logger.action('tap:restoreRole', {'roleId': role.id});
                     final result = await _runRoleMutation(
                       action: () => _waitForRoleAction(
                         (completion) => context.read<RoleBloc>().add(
@@ -344,7 +361,10 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                 IconButton(
                   icon: const Icon(Icons.delete_forever, color: Colors.red),
                   tooltip: 'מחק לצמיתות',
-                  onPressed: () => _confirmDeleteRole(context, role),
+                  onPressed: () {
+                    Logger.action('open:confirmDeleteRole', {'roleId': role.id});
+                    _confirmDeleteRole(context, role);
+                  },
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -356,7 +376,10 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                 IconButton(
                   icon: const Icon(Icons.archive, color: Colors.orange, size: 20),
                   tooltip: 'העבר לארכיון',
-                  onPressed: () => _confirmArchiveRole(context, role),
+                  onPressed: () {
+                    Logger.action('open:confirmArchiveRole', {'roleId': role.id});
+                    _confirmArchiveRole(context, role);
+                  },
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -365,7 +388,10 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                 IconButton(
                   icon: const Icon(Icons.delete_forever, color: Colors.red, size: 20),
                   tooltip: 'מחק לצמיתות',
-                  onPressed: () => _confirmDeleteRole(context, role),
+                  onPressed: () {
+                    Logger.action('open:confirmDeleteRole', {'roleId': role.id});
+                    _confirmDeleteRole(context, role);
+                  },
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -375,7 +401,10 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
         ),
         onTap: isArchived
             ? null
-            : () => _showRenameDialog(context, role),
+            : () {
+                Logger.action('open:renameRoleDialog', {'roleId': role.id});
+                _showRenameDialog(context, role);
+              },
       ),
     );
   }
@@ -391,11 +420,17 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
           content: Text('האם להעביר את התפקיד "${role.hebrewName}" לארכיון?\n\nניתן יהיה לשחזר את התפקיד מהארכיון לאחר מכן.'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () {
+                Logger.action('tap:cancel:archiveRole', {'roleId': role.id});
+                Navigator.of(context).pop(false);
+              },
               child: const Text('ביטול'),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () {
+                Logger.action('tap:archiveRole', {'roleId': role.id});
+                Navigator.of(context).pop(true);
+              },
               child: const Text('העבר לארכיון'),
             ),
           ],
@@ -432,11 +467,17 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
           content: Text('האם למחוק את התפקיד "${role.hebrewName}" לצמיתות?\n\nלא ניתן יהיה לשחזר את התפקיד לאחר מחיקה!'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () {
+                Logger.action('tap:cancel:deleteRole', {'roleId': role.id});
+                Navigator.of(context).pop(false);
+              },
               child: const Text('ביטול'),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () {
+                Logger.action('tap:deleteRole', {'roleId': role.id});
+                Navigator.of(context).pop(true);
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
@@ -499,6 +540,7 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
                       Checkbox(
                         value: isVisible,
                         onChanged: (value) {
+                          Logger.action('toggle:newRoleVisible', {'on': value ?? true});
                           setState(() {
                             isVisible = value ?? true;
                           });
@@ -511,14 +553,19 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
               ),
               actions: [
                 TextButton(
-                  onPressed:
-                      isSaving ? null : () => Navigator.of(dialogContext).pop(),
+                  onPressed: isSaving
+                      ? null
+                      : () {
+                          Logger.action('tap:cancel:addRoleDialog');
+                          Navigator.of(dialogContext).pop();
+                        },
                   child: const Text('ביטול'),
                 ),
                 ElevatedButton(
                   onPressed: isSaving
                       ? null
                       : () async {
+                          Logger.action('tap:createRole');
                           if (controller.text.trim().isEmpty) {
                             return;
                           }
@@ -591,14 +638,19 @@ class _RoleManagementDialogState extends State<RoleManagementDialog> {
             ),
             actions: [
               TextButton(
-                onPressed:
-                    isSaving ? null : () => Navigator.of(dialogContext).pop(),
+                onPressed: isSaving
+                    ? null
+                    : () {
+                        Logger.action('tap:cancel:renameRoleDialog', {'roleId': role.id});
+                        Navigator.of(dialogContext).pop();
+                      },
                 child: const Text('ביטול'),
               ),
               ElevatedButton(
                 onPressed: isSaving
                     ? null
                     : () async {
+                        Logger.action('tap:renameRole', {'roleId': role.id});
                         if (controller.text.trim().isEmpty ||
                             controller.text.trim() == role.hebrewName) {
                           return;

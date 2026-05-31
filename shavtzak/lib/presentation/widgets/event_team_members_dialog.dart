@@ -9,6 +9,7 @@ import '../bloc/assignment/assignment_state.dart';
 import '../bloc/role/role_bloc.dart';
 import '../bloc/role/role_state.dart';
 import '../../../core/services/service_locator.dart';
+import '../../core/debug/logger.dart';
 
 /// Dialog showing all team members assigned to an event, grouped by role
 /// Uses the same UI layout as EventAssignmentsDialog
@@ -103,7 +104,10 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                       ),
                       IconButton(
                         icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: () {
+                          Logger.action('tap:close:eventTeamMembersDialog');
+                          Navigator.of(context).pop();
+                        },
                       ),
                     ],
                   ),
@@ -306,11 +310,14 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                         ] else if (hasPhoneNumber) ...[
                           // Phone icon with fallback: member phone → assignment alternative phone
                           InkWell(
-                            onTap: () => _makePhoneCall(
-                              (member.phoneNumber != null && member.phoneNumber!.isNotEmpty)
-                                  ? member.phoneNumber!
-                                  : assignment.alternativePhoneNumber!,
-                            ),
+                            onTap: () {
+                              Logger.action('tap:callPhone', {'memberId': member.id});
+                              _makePhoneCall(
+                                (member.phoneNumber != null && member.phoneNumber!.isNotEmpty)
+                                    ? member.phoneNumber!
+                                    : assignment.alternativePhoneNumber!,
+                              );
+                            },
                             child: Icon(
                               Icons.phone,
                               size: 22,

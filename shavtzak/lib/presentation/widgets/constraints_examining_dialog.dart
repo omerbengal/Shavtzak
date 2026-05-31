@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/constants/calendar_constants.dart';
 import '../../core/constants/constraint_status.dart';
+import '../../core/debug/logger.dart';
 import '../../domain/entities/team_member.dart';
 import '../bloc/team/team_bloc.dart';
 import '../bloc/team/team_event.dart' as team;
@@ -125,6 +126,7 @@ class _ConstraintsExaminingDialogState
                             ? IconButton(
                                 icon: const Icon(Icons.clear),
                                 onPressed: () {
+                                  Logger.action('tap:clearSearch');
                                   _searchController.clear();
                                   _onSearchChanged('');
                                 },
@@ -211,7 +213,10 @@ class _ConstraintsExaminingDialogState
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:close:constraintsExaminingDialog');
+              Navigator.of(context).pop();
+            },
             child: const Text('סגור'),
           ),
         ],
@@ -502,22 +507,36 @@ class _ConstraintsExaminingDialogState
                                     label: 'אשר',
                                     color: Colors.green,
                                     isCompact: isCompact,
-                                    onPressed: () => _onConstraintAction(
-                                      member: member,
-                                      constraint: constraint,
-                                      newStatus: ConstraintStatus.approved,
-                                    ),
+                                    onPressed: () {
+                                      Logger.action('tap:approveConstraint', {
+                                        'memberId': member.id,
+                                        'constraintId': constraint.id,
+                                        'newStatus': ConstraintStatus.approved.name,
+                                      });
+                                      _onConstraintAction(
+                                        member: member,
+                                        constraint: constraint,
+                                        newStatus: ConstraintStatus.approved,
+                                      );
+                                    },
                                   )
                                 : _buildActionButton(
                                     icon: Icons.hourglass_empty,
                                     label: pendingLabel,
                                     color: Colors.amber,
                                     isCompact: isCompact,
-                                    onPressed: () => _onConstraintAction(
-                                      member: member,
-                                      constraint: constraint,
-                                      newStatus: ConstraintStatus.pending,
-                                    ),
+                                    onPressed: () {
+                                      Logger.action('tap:setConstraintPending', {
+                                        'memberId': member.id,
+                                        'constraintId': constraint.id,
+                                        'newStatus': ConstraintStatus.pending.name,
+                                      });
+                                      _onConstraintAction(
+                                        member: member,
+                                        constraint: constraint,
+                                        newStatus: ConstraintStatus.pending,
+                                      );
+                                    },
                                   ),
                           ),
                           const SizedBox(width: 8),
@@ -528,22 +547,36 @@ class _ConstraintsExaminingDialogState
                                     label: 'אשר',
                                     color: Colors.green,
                                     isCompact: isCompact,
-                                    onPressed: () => _onConstraintAction(
-                                      member: member,
-                                      constraint: constraint,
-                                      newStatus: ConstraintStatus.approved,
-                                    ),
+                                    onPressed: () {
+                                      Logger.action('tap:approveConstraint', {
+                                        'memberId': member.id,
+                                        'constraintId': constraint.id,
+                                        'newStatus': ConstraintStatus.approved.name,
+                                      });
+                                      _onConstraintAction(
+                                        member: member,
+                                        constraint: constraint,
+                                        newStatus: ConstraintStatus.approved,
+                                      );
+                                    },
                                   )
                                 : _buildActionButton(
                                     icon: Icons.cancel,
                                     label: 'דחה',
                                     color: Colors.red,
                                     isCompact: isCompact,
-                                    onPressed: () => _onConstraintAction(
-                                      member: member,
-                                      constraint: constraint,
-                                      newStatus: ConstraintStatus.rejected,
-                                    ),
+                                    onPressed: () {
+                                      Logger.action('tap:rejectConstraint', {
+                                        'memberId': member.id,
+                                        'constraintId': constraint.id,
+                                        'newStatus': ConstraintStatus.rejected.name,
+                                      });
+                                      _onConstraintAction(
+                                        member: member,
+                                        constraint: constraint,
+                                        newStatus: ConstraintStatus.rejected,
+                                      );
+                                    },
                                   ),
                           ),
                         ],

@@ -13,6 +13,7 @@ import '../../bloc/team/team_state.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../bloc/calendar_sync/calendar_sync_state.dart';
+import '../../../core/debug/logger.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/export_service.dart';
 import '../../../core/services/user_cache_service.dart';
@@ -136,13 +137,17 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
               if (retryLabel != null && onRetry != null)
                 TextButton(
                   onPressed: () {
+                    Logger.action('tap:retry:calendarSync');
                     Navigator.of(dialogContext).pop();
                     onRetry();
                   },
                   child: Text(retryLabel),
                 ),
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
+                onPressed: () {
+                  Logger.action('tap:close:calendarSyncResponseDialog');
+                  Navigator.of(dialogContext).pop();
+                },
                 child: const Text('סגירה'),
               ),
             ],
@@ -251,8 +256,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                 title: 'איזור אישי',
                                 subtitle: 'צפה בשיבוצים ובקשות מגבלות',
                                 isCompact: isCompact,
-                                onTap: () =>
-                                    context.go('$envPrefix/user/assignments'),
+                                onTap: () {
+                                  Logger.action('tap:personalArea');
+                                  context.go('$envPrefix/user/assignments');
+                                },
                               ),
 
                               SizedBox(height: cardSpacing),
@@ -270,8 +277,11 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                       title: 'ניהול שבצק',
                                       subtitle: 'ניהול צוות, אירועים ושיבוצים',
                                       isCompact: isCompact,
-                                      onTap: () => context
-                                          .go('$envPrefix/admin/team-members'),
+                                      onTap: () {
+                                        Logger.action('tap:management');
+                                        context
+                                            .go('$envPrefix/admin/team-members');
+                                      },
                                       badgeCount: pendingCount,
                                     );
                                   },
@@ -288,7 +298,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                   title: 'מסך מנהלים',
                                   subtitle: 'צפה בסיכום כללי',
                                   isCompact: isCompact,
-                                  onTap: () => context.go('$envPrefix/summary'),
+                                  onTap: () {
+                                    Logger.action('tap:summary');
+                                    context.go('$envPrefix/summary');
+                                  },
                                 ),
 
                               // Shamap export card
@@ -303,6 +316,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                   subtitle: 'העתקת פרטי שמ"פ ללוח',
                                   isCompact: isCompact,
                                   onTap: () {
+                                    Logger.action('open:shamapExportDialog');
                                     showDialog(
                                       context: context,
                                       builder: (context) =>
@@ -332,6 +346,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                           'צפייה ועדכון סטטוס מגבלות צוות',
                                       isCompact: isCompact,
                                       onTap: () {
+                                        Logger.action(
+                                            'open:constraintsExaminingDialog');
                                         showDialog(
                                           context: context,
                                           builder: (context) =>
@@ -545,8 +561,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                         IconButton(
                           icon: const Icon(Icons.calendar_month),
                           tooltip: 'הגדרות יומן גוגל',
-                          onPressed: () =>
-                              _showGoogleCalendarSettingsDialog(context),
+                          onPressed: () {
+                            Logger.action('open:googleCalendarSettingsDialog');
+                            _showGoogleCalendarSettingsDialog(context);
+                          },
                           iconSize: 22,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 4, vertical: 6),
@@ -557,7 +575,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                         IconButton(
                           icon: const Icon(Icons.storage),
                           tooltip: 'ייצוא בסיס נתונים',
-                          onPressed: () => _showFullExportDialog(context),
+                          onPressed: () {
+                            Logger.action('open:fullExportDialog');
+                            _showFullExportDialog(context);
+                          },
                           iconSize: 22,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 4, vertical: 6),
@@ -573,7 +594,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                 IconButton(
                   icon: const Icon(Icons.cloud),
                   tooltip: 'ייצוא שיבוצים',
-                  onPressed: () => _showAssignmentsExportDialog(context),
+                  onPressed: () {
+                    Logger.action('open:assignmentsExportDialog');
+                    _showAssignmentsExportDialog(context);
+                  },
                   iconSize: 22,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -584,7 +608,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתקות',
-                onPressed: () => _showLogoutDialog(context),
+                onPressed: () {
+                  Logger.action('open:logoutDialog');
+                  _showLogoutDialog(context);
+                },
                 iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
@@ -611,11 +638,15 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
+                onPressed: () {
+                  Logger.action('tap:cancel:fullExport');
+                  Navigator.of(dialogContext).pop();
+                },
                 child: const Text('ביטול'),
               ),
               TextButton(
                 onPressed: () {
+                  Logger.action('tap:confirmFullExport');
                   Navigator.of(dialogContext).pop();
                   _performExport(context, isFullExport: true);
                 },
@@ -772,8 +803,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                           child: SizedBox(
                             height: 48,
                             child: TextButton(
-                              onPressed: () =>
-                                  Navigator.of(dialogContext).pop(),
+                              onPressed: () {
+                                Logger.action('tap:close:exportSuccessDialog');
+                                Navigator.of(dialogContext).pop();
+                              },
                               style: TextButton.styleFrom(
                                 padding:
                                     const EdgeInsets.symmetric(horizontal: 4),
@@ -803,6 +836,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                 style: TextStyle(fontSize: 12),
                               ),
                               onPressed: () async {
+                                Logger.action('tap:copyToClipboard:exportUrl');
                                 await Clipboard.setData(
                                     ClipboardData(text: url));
                                 setState(() => copied = true);
@@ -828,6 +862,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                             height: 48,
                             child: ElevatedButton(
                               onPressed: () {
+                                Logger.action('tap:openExportSheet');
                                 Navigator.of(dialogContext).pop();
                                 launchUrl(Uri.parse(url),
                                     mode: LaunchMode.externalApplication);
@@ -876,7 +911,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
             content: Text('הייצוא נכשל:\n$error'),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
+                onPressed: () {
+                  Logger.action('tap:close:exportErrorDialog');
+                  Navigator.of(dialogContext).pop();
+                },
                 child: const Text('סגירה'),
               ),
             ],
@@ -899,12 +937,14 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
             actions: [
               TextButton(
                 onPressed: () {
+                  Logger.action('tap:cancel:logout');
                   Navigator.of(context).pop();
                 },
                 child: const Text('ביטול'),
               ),
               TextButton(
                 onPressed: () {
+                  Logger.action('tap:confirmLogout');
                   Navigator.of(context).pop();
                   context.read<UserSelectionBloc>().add(const SignOut());
                 },
@@ -1095,6 +1135,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                         isStatusLoading
                                     ? null
                                     : () {
+                                        Logger.action(
+                                            'tap:syncEventsAndConstraints');
                                         screenContext
                                             .read<CalendarSyncBloc>()
                                             .add(
@@ -1139,10 +1181,13 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                               child: TextButton(
                                 onPressed: isStatusLoading
                                     ? null
-                                    : () => refreshStatus(
+                                    : () {
+                                        Logger.action('tap:refreshStatus');
+                                        refreshStatus(
                                           setState,
                                           dialogContext,
-                                        ),
+                                        );
+                                      },
                                 child: const Text(
                                   'רענן סטטוס',
                                   textAlign: TextAlign.center,
@@ -1157,8 +1202,11 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                             child: SizedBox(
                               height: 52,
                               child: TextButton(
-                                onPressed: () =>
-                                    Navigator.of(dialogContext).pop(),
+                                onPressed: () {
+                                  Logger.action(
+                                      'tap:close:googleCalendarSettingsDialog');
+                                  Navigator.of(dialogContext).pop();
+                                },
                                 child: const Text(
                                   'סגירה',
                                   textAlign: TextAlign.center,
@@ -1177,6 +1225,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                       onPressed: isStatusLoading
                                           ? null
                                           : () async {
+                                              Logger.action(
+                                                  'tap:disconnectGoogleCalendar');
                                               // Close main dialog first
                                               Navigator.of(dialogContext).pop();
 
@@ -1245,6 +1295,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                       onPressed: isStatusLoading
                                           ? null
                                           : () async {
+                                              Logger.action(
+                                                  'tap:connectGoogleCalendar');
                                               // Close main dialog first
                                               Navigator.of(dialogContext).pop();
 
@@ -1356,7 +1408,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
+                onPressed: () {
+                  Logger.action('tap:close:connectSuccessDialog');
+                  Navigator.of(dialogContext).pop();
+                },
                 child: const Text('סגירה'),
               ),
             ],
@@ -1387,7 +1442,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
+                onPressed: () {
+                  Logger.action('tap:close:connectErrorDialog');
+                  Navigator.of(dialogContext).pop();
+                },
                 child: const Text('סגירה'),
               ),
             ],
@@ -1418,7 +1476,10 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
+                onPressed: () {
+                  Logger.action('tap:close:disconnectSuccessDialog');
+                  Navigator.of(dialogContext).pop();
+                },
                 child: const Text('סגירה'),
               ),
             ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/role_types.dart';
+import '../../../../core/debug/logger.dart';
 import '../../../bloc/event/event_state.dart';
 import '../../../bloc/role/role_bloc.dart';
 import '../../../bloc/role/role_state.dart';
@@ -219,7 +220,10 @@ class _DuplicationConflictResolutionDialogState
                 ),
               ),
               IconButton(
-                onPressed: () => Navigator.of(context).pop(null),
+                onPressed: () {
+                  Logger.action('tap:close:duplicationConflictDialog');
+                  Navigator.of(context).pop(null);
+                },
                 icon: const Icon(Icons.close),
                 tooltip: 'ביטול',
               ),
@@ -503,6 +507,10 @@ class _DuplicationConflictResolutionDialogState
           ),
           child: InkWell(
             onTap: () {
+              Logger.action('toggle:availabilityConflictAssignment', {
+                'assignmentId': info.assignment.id,
+                'markedForRemoval': !isMarkedForRemoval,
+              });
               setState(() {
                 if (isMarkedForRemoval) {
                   _markedForRemoval.remove(info.assignment.id);
@@ -650,6 +658,10 @@ class _DuplicationConflictResolutionDialogState
           // Expandable role header
           InkWell(
             onTap: () {
+              Logger.action('toggle:quotaRoleExpanded', {
+                'roleKey': roleKey,
+                'expanded': !isExpanded,
+              });
               setState(() {
                 if (isExpanded) {
                   _expandedRoles.remove(roleKey);
@@ -733,6 +745,10 @@ class _DuplicationConflictResolutionDialogState
 
     return InkWell(
       onTap: () {
+        Logger.action('toggle:quotaAssignment', {
+          'assignmentId': info.assignment.id,
+          'markedForRemoval': !isMarkedForRemoval,
+        });
         setState(() {
           if (isMarkedForRemoval) {
             _markedForRemoval.remove(info.assignment.id);
@@ -900,7 +916,10 @@ class _DuplicationConflictResolutionDialogState
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(null),
+                  onPressed: () {
+                    Logger.action('tap:cancel:duplicationConflictDialog');
+                    Navigator.of(context).pop(null);
+                  },
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
@@ -911,7 +930,13 @@ class _DuplicationConflictResolutionDialogState
               Expanded(
                 flex: 2,
                 child: ElevatedButton(
-                  onPressed: isValid ? () => Navigator.of(context).pop(_markedForRemoval) : null,
+                  onPressed: isValid ? () {
+                    Logger.action('tap:confirmDuplication', {
+                      'keptCount': keptCount,
+                      'removedCount': removedCount,
+                    });
+                    Navigator.of(context).pop(_markedForRemoval);
+                  } : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,

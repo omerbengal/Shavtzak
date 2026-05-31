@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../../core/constants/role_types.dart';
+import '../../../../core/debug/logger.dart';
 import 'json_tree_view.dart';
 
 enum _LogCardMode { summary, raw }
@@ -73,7 +74,10 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
     final theme = Theme.of(context);
 
     return InkWell(
-      onTap: widget.onToggle,
+      onTap: () {
+        Logger.action('tap:toggleLogCard', {'documentId': widget.documentId});
+        widget.onToggle();
+      },
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(
@@ -129,7 +133,10 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
                   const SizedBox(height: 10),
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => _copyId(context),
+                    onTap: () {
+                      Logger.action('tap:copyDocumentId', {'documentId': widget.documentId});
+                      _copyId(context);
+                    },
                     child: Row(
                       children: [
                         Icon(
@@ -211,6 +218,7 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
           label: const Text('סקירה'),
           selected: _mode == _LogCardMode.summary,
           onSelected: (_) {
+            Logger.action('select:logCardMode', {'mode': _LogCardMode.summary.name});
             setState(() {
               _mode = _LogCardMode.summary;
             });
@@ -220,6 +228,7 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
           label: const Text('נתונים גולמיים'),
           selected: _mode == _LogCardMode.raw,
           onSelected: (_) {
+            Logger.action('select:logCardMode', {'mode': _LogCardMode.raw.name});
             setState(() {
               _mode = _LogCardMode.raw;
             });
@@ -2217,6 +2226,7 @@ class _LogDetailRowState extends State<_LogDetailRow> {
           InkWell(
             borderRadius: BorderRadius.circular(12),
             onTap: () {
+              Logger.action('tap:toggleDetailRow', {'expanded': !_isExpanded});
               setState(() {
                 _isExpanded = !_isExpanded;
               });

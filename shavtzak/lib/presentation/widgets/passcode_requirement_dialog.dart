@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/debug/logger.dart';
 
 /// Dialog that prompts users without a passcode to set one
 class PasscodeRequirementDialog extends StatelessWidget {
@@ -75,6 +76,7 @@ class PasscodeRequirementDialog extends StatelessWidget {
                       width: double.infinity,
                       child: TextButton(
                         onPressed: () {
+                          Logger.action('tap:cancel:passcodeRequirement');
                           Navigator.of(context).pop();
                           onDismiss?.call();
                         },
@@ -93,6 +95,7 @@ class PasscodeRequirementDialog extends StatelessWidget {
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () {
+                          Logger.action('tap:goToSettings');
                           Navigator.of(context).pop();
                           onGoToSettings();
                         },
@@ -112,6 +115,7 @@ class PasscodeRequirementDialog extends StatelessWidget {
                   children: [
                     TextButton(
                       onPressed: () {
+                        Logger.action('tap:cancel:passcodeRequirement');
                         Navigator.of(context).pop();
                         onDismiss?.call();
                       },
@@ -127,6 +131,7 @@ class PasscodeRequirementDialog extends StatelessWidget {
                     const SizedBox(width: 8),
                     ElevatedButton(
                       onPressed: () {
+                        Logger.action('tap:goToSettings');
                         Navigator.of(context).pop();
                         onGoToSettings();
                       },

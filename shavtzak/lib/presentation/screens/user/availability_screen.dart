@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/debug/logger.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/team/team_bloc.dart';
@@ -248,7 +249,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
                       ),
                       // History button for past events
                       TextButton.icon(
-                        onPressed: () => _showPastEventsModal(context, user),
+                        onPressed: () {
+                          Logger.action('open:pastEventsModal');
+                          _showPastEventsModal(context, user);
+                        },
                         icon: const Icon(
                           Icons.history,
                           size: 20,
@@ -364,6 +368,7 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
         value: isAvailable,
         onChanged: (bool? value) {
           if (value != null) {
+            Logger.action('toggle:eventAvailability', {'eventId': event.id, 'on': value});
             _toggleEventAvailability(context, event, user, value);
           }
         },
@@ -485,7 +490,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                Logger.action('tap:close:pastEventsModal');
+                Navigator.of(context).pop();
+              },
               child: const Text('הבנתי'),
             ),
           ],

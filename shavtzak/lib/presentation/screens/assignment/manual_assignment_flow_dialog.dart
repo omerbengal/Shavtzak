@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/debug/logger.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/role.dart';
@@ -141,6 +142,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
           if (_currentStep == 1 || _currentStep == 2)
             TextButton(
               onPressed: () {
+                Logger.action('tap:back:manualAssignmentFlow', {'step': _currentStep});
                 setState(() {
                   _currentStep--;
                   // Clear search query when going back
@@ -165,7 +167,10 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
             ),
           // Cancel button - role selection auto-completes the assignment
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:manualAssignmentFlow', {'step': _currentStep});
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול', style: TextStyle(color: Colors.red)),
           ),
         ],
@@ -253,6 +258,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 18),
                       onPressed: () {
+                        Logger.action('tap:clearSearch:event');
                         setState(() {
                           _eventSearchController.clear();
                           _eventSearchQuery = '';
@@ -332,6 +338,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                           ],
                         ),
                         onTap: () {
+                          Logger.action('select:event', {'eventId': event.id});
                           // Update selection if different event
                           if (!isSelected) {
                             setState(() {
@@ -414,6 +421,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 18),
                       onPressed: () {
+                        Logger.action('tap:clearSearch:member');
                         setState(() {
                           _memberSearchController.clear();
                           _memberSearchQuery = '';
@@ -491,6 +499,12 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                             ? Icon(Icons.warning, color: Colors.orange.shade700)
                             : null,
                         onTap: () {
+                          Logger.action('select:teamMember', {
+                            'memberId': teamMember.id,
+                            'hasConflict': hasConflict,
+                            'hasAvailabilityIssue': hasAvailabilityIssue,
+                            'hasSameDay': hasSameDay,
+                          });
                           if (hasConflict || hasAvailabilityIssue || hasSameDay) {
                             _showConstraintWarning(teamMember, hasAvailabilityIssue, hasSameDay: hasSameDay);
                           } else {
@@ -609,6 +623,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                       ? IconButton(
                           icon: const Icon(Icons.clear, size: 18),
                           onPressed: () {
+                            Logger.action('tap:clearSearch:role');
                             setState(() {
                               _roleSearchController.clear();
                               _roleSearchQuery = '';
@@ -662,6 +677,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                           color: isSelected ? Colors.blue.shade50 : Colors.white,
                           child: InkWell(
                             onTap: () {
+                              Logger.action('select:role', {'roleKey': role.key});
                               // Update selection if different role
                               if (!isSelected) {
                                 setState(() {
@@ -919,11 +935,15 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: () {
+                Logger.action('tap:cancel:constraintWarning', {'memberId': teamMember.id});
+                Navigator.of(dialogContext).pop();
+              },
               child: const Text('ביטול'),
             ),
             ElevatedButton(
               onPressed: () {
+                Logger.action('tap:confirmAssignDespiteWarning', {'memberId': teamMember.id});
                 Navigator.of(dialogContext).pop();
                 setState(() {
                   _selectedTeamMember = teamMember;

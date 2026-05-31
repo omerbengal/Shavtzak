@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/debug/logger.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../domain/entities/preset.dart';
 import '../../../domain/entities/event.dart';
@@ -178,7 +179,10 @@ class _PresetsDialogState extends State<PresetsDialog>
                             ),
                             IconButton(
                               icon: const Icon(Icons.close),
-                              onPressed: () => Navigator.pop(context),
+                              onPressed: () {
+                                Logger.action('tap:close:presetsDialog');
+                                Navigator.pop(context);
+                              },
                             ),
                           ],
                         ),
@@ -232,8 +236,10 @@ class _PresetsDialogState extends State<PresetsDialog>
                 Text(state.message, style: const TextStyle(color: Colors.red)),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: () =>
-                      context.read<PresetBloc>().add(LoadPresets()),
+                  onPressed: () {
+                    Logger.action('tap:retryLoadPresets');
+                    context.read<PresetBloc>().add(LoadPresets());
+                  },
                   child: const Text('נסה שוב'),
                 ),
               ],
@@ -253,7 +259,10 @@ class _PresetsDialogState extends State<PresetsDialog>
                 child: ElevatedButton.icon(
                   onPressed: _isMutating
                       ? null
-                      : () => _showPresetFormModal(context, null),
+                      : () {
+                          Logger.action('open:presetFormModal', {'mode': 'create'});
+                          _showPresetFormModal(context, null);
+                        },
                   icon: const Icon(Icons.add, color: Colors.white),
                   label: const Text('הוסף פריסט'),
                 ),
@@ -286,10 +295,13 @@ class _PresetsDialogState extends State<PresetsDialog>
                                   icon: const Icon(Icons.edit),
                                   onPressed: _isMutating
                                       ? null
-                                      : () => _showPresetFormModal(
+                                      : () {
+                                          Logger.action('open:presetFormModal', {'mode': 'edit', 'presetId': preset.id});
+                                          _showPresetFormModal(
                                             context,
                                             preset,
-                                          ),
+                                          );
+                                        },
                                   tooltip: 'ערוך',
                                 ),
                                 IconButton(
@@ -297,7 +309,10 @@ class _PresetsDialogState extends State<PresetsDialog>
                                       color: Colors.red),
                                   onPressed: _isMutating
                                       ? null
-                                      : () => _confirmDelete(context, preset),
+                                      : () {
+                                          Logger.action('open:deletePresetDialog', {'presetId': preset.id});
+                                          _confirmDelete(context, preset);
+                                        },
                                   tooltip: 'מחק',
                                 ),
                               ],
@@ -365,8 +380,10 @@ class _PresetsDialogState extends State<PresetsDialog>
                                   ),
                                 ))
                             .toList(),
-                        onChanged: (value) =>
-                            setState(() => _selectedPreset = value),
+                        onChanged: (value) {
+                          Logger.action('select:preset', {'presetId': value?.id});
+                          setState(() => _selectedPreset = value);
+                        },
                       ),
                       const SizedBox(height: 16),
 
@@ -396,8 +413,10 @@ class _PresetsDialogState extends State<PresetsDialog>
                                   ),
                                 ))
                             .toList(),
-                        onChanged: (value) =>
-                            setState(() => _selectedEvent = value),
+                        onChanged: (value) {
+                          Logger.action('select:event', {'eventId': value?.id});
+                          setState(() => _selectedEvent = value);
+                        },
                       ),
                       const SizedBox(height: 24),
 
@@ -467,7 +486,13 @@ class _PresetsDialogState extends State<PresetsDialog>
                                 _selectedPreset == null ||
                                 _selectedEvent == null
                             ? null
-                            : _handleLoadPresetIntoEvent,
+                            : () {
+                                Logger.action('tap:loadPresetIntoEvent', {
+                                  'presetId': _selectedPreset?.id,
+                                  'eventId': _selectedEvent?.id,
+                                });
+                                _handleLoadPresetIntoEvent();
+                              },
                         icon: const Icon(Icons.download, color: Colors.white),
                         label: const Text('טען לאירוע'),
                         style: ElevatedButton.styleFrom(
@@ -555,11 +580,15 @@ class _PresetsDialogState extends State<PresetsDialog>
               Text('האם אתה בטוח שברצונך למחוק את הפריסט "${preset.name}"?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+              onPressed: () {
+                Logger.action('tap:cancel:deletePresetDialog', {'presetId': preset.id});
+                Navigator.pop(dialogContext);
+              },
               child: const Text('ביטול'),
             ),
             TextButton(
               onPressed: () async {
+                Logger.action('tap:confirmDeletePreset', {'presetId': preset.id});
                 Navigator.pop(dialogContext);
                 final result = await _runPresetMutation(
                   message: 'מוחק פריסט...',

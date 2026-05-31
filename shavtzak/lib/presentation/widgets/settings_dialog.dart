@@ -6,6 +6,7 @@ import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../bloc/user_selection/user_selection_event.dart';
 import '../../data/repositories/user_selection_repository.dart';
+import '../../core/debug/logger.dart';
 import '../../core/utils/crud_action_result.dart';
 import '../../core/utils/validators.dart';
 import 'passcode_setup_dialog.dart';
@@ -116,13 +117,17 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 TextButton(
                   onPressed: isProcessing
                       ? null
-                      : () => Navigator.of(dialogContext).pop(),
+                      : () {
+                          Logger.action('tap:cancel:confirmDialog');
+                          Navigator.of(dialogContext).pop();
+                        },
                   child: const Text('ביטול'),
                 ),
                 TextButton(
                   onPressed: isProcessing
                       ? null
                       : () async {
+                          Logger.action('tap:confirm:confirmDialog');
                           setDialogState(() => isProcessing = true);
                           final result = await onConfirm();
 
@@ -260,7 +265,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     ElevatedButton.icon(
                                       onPressed: _isMutating
                                           ? null
-                                          : () => _showPhoneEditDialog(context),
+                                          : () {
+                                              Logger.action(
+                                                  'open:phoneEditDialog');
+                                              _showPhoneEditDialog(context);
+                                            },
                                       icon: Icon(Icons.edit,
                                           size: iconSize, color: Colors.white),
                                       label: Text('ערוך',
@@ -284,7 +293,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     OutlinedButton.icon(
                                       onPressed: _isMutating
                                           ? null
-                                          : () => _deletePhoneNumber(context),
+                                          : () {
+                                              Logger.action(
+                                                  'tap:deletePhoneNumber');
+                                              _deletePhoneNumber(context);
+                                            },
                                       icon: Icon(Icons.delete,
                                           size: iconSize, color: Colors.red),
                                       label: Text(
@@ -347,7 +360,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 ElevatedButton.icon(
                                   onPressed: _isMutating
                                       ? null
-                                      : () => _showPhoneEditDialog(context),
+                                      : () {
+                                          Logger.action('open:phoneEditDialog');
+                                          _showPhoneEditDialog(context);
+                                        },
                                   icon: Icon(Icons.add,
                                       color: Colors.white, size: iconSize),
                                   label: Text(
@@ -430,7 +446,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     ElevatedButton.icon(
                                       onPressed: _isMutating
                                           ? null
-                                          : () => _showEmailEditDialog(context),
+                                          : () {
+                                              Logger.action(
+                                                  'open:emailEditDialog');
+                                              _showEmailEditDialog(context);
+                                            },
                                       icon: Icon(Icons.edit,
                                           size: iconSize, color: Colors.white),
                                       label: Text('ערוך',
@@ -454,7 +474,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     OutlinedButton.icon(
                                       onPressed: _isMutating
                                           ? null
-                                          : () => _deleteEmail(context),
+                                          : () {
+                                              Logger.action('tap:deleteEmail');
+                                              _deleteEmail(context);
+                                            },
                                       icon: Icon(Icons.delete,
                                           size: iconSize, color: Colors.red),
                                       label: Text(
@@ -517,7 +540,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 ElevatedButton.icon(
                                   onPressed: _isMutating
                                       ? null
-                                      : () => _showEmailEditDialog(context),
+                                      : () {
+                                          Logger.action('open:emailEditDialog');
+                                          _showEmailEditDialog(context);
+                                        },
                                   icon: Icon(Icons.add,
                                       color: Colors.white, size: iconSize),
                                   label: Text(
@@ -602,8 +628,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     ElevatedButton.icon(
                                       onPressed: _isMutating
                                           ? null
-                                          : () =>
-                                              _showBirthdayEditDialog(context),
+                                          : () {
+                                              Logger.action(
+                                                  'open:birthdayEditDialog');
+                                              _showBirthdayEditDialog(context);
+                                            },
                                       icon: Icon(Icons.edit,
                                           size: iconSize, color: Colors.white),
                                       label: Text('ערוך',
@@ -627,7 +656,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     OutlinedButton.icon(
                                       onPressed: _isMutating
                                           ? null
-                                          : () => _deleteBirthday(context),
+                                          : () {
+                                              Logger.action(
+                                                  'tap:deleteBirthday');
+                                              _deleteBirthday(context);
+                                            },
                                       icon: Icon(Icons.delete,
                                           size: iconSize, color: Colors.red),
                                       label: Text(
@@ -690,7 +723,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 ElevatedButton.icon(
                                   onPressed: _isMutating
                                       ? null
-                                      : () => _showBirthdayEditDialog(context),
+                                      : () {
+                                          Logger.action(
+                                              'open:birthdayEditDialog');
+                                          _showBirthdayEditDialog(context);
+                                        },
                                   icon: Icon(Icons.add,
                                       color: Colors.white, size: iconSize),
                                   label: Text(
@@ -774,8 +811,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     ElevatedButton.icon(
                                       onPressed: _isMutating
                                           ? null
-                                          : () => _showVehicleInfoEditDialog(
-                                              context),
+                                          : () {
+                                              Logger.action(
+                                                  'open:vehicleInfoEditDialog');
+                                              _showVehicleInfoEditDialog(
+                                                  context);
+                                            },
                                       icon: Icon(Icons.edit,
                                           size: iconSize, color: Colors.white),
                                       label: Text('ערוך',
@@ -799,7 +840,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     OutlinedButton.icon(
                                       onPressed: _isMutating
                                           ? null
-                                          : () => _deleteVehicleInfo(context),
+                                          : () {
+                                              Logger.action(
+                                                  'tap:deleteVehicleInfo');
+                                              _deleteVehicleInfo(context);
+                                            },
                                       icon: Icon(Icons.delete,
                                           size: iconSize, color: Colors.red),
                                       label: Text(
@@ -862,8 +907,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 ElevatedButton.icon(
                                   onPressed: _isMutating
                                       ? null
-                                      : () =>
-                                          _showVehicleInfoEditDialog(context),
+                                      : () {
+                                          Logger.action(
+                                              'open:vehicleInfoEditDialog');
+                                          _showVehicleInfoEditDialog(context);
+                                        },
                                   icon: Icon(Icons.add,
                                       color: Colors.white, size: iconSize),
                                   label: Text(
@@ -943,8 +991,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     ElevatedButton.icon(
                                       onPressed: _isMutating
                                           ? null
-                                          : () => _showChangePasscodeDialog(
-                                              context),
+                                          : () {
+                                              Logger.action(
+                                                  'open:passcodeChangeDialog');
+                                              _showChangePasscodeDialog(
+                                                  context);
+                                            },
                                       icon: _isActionLoading('change_passcode')
                                           ? SizedBox(
                                               width: iconSize,
@@ -979,8 +1031,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                     OutlinedButton.icon(
                                       onPressed: _isMutating
                                           ? null
-                                          : () => _showRemovePasscodeDialog(
-                                              context),
+                                          : () {
+                                              Logger.action(
+                                                  'open:removePasscodeDialog');
+                                              _showRemovePasscodeDialog(
+                                                  context);
+                                            },
                                       icon: Icon(Icons.delete,
                                           size: iconSize, color: Colors.red),
                                       label: Text(
@@ -1043,7 +1099,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 ElevatedButton.icon(
                                   onPressed: _isMutating
                                       ? null
-                                      : () => _showSetupPasscodeDialog(context),
+                                      : () {
+                                          Logger.action(
+                                              'open:setupPasscodeDialog');
+                                          _showSetupPasscodeDialog(context);
+                                        },
                                   icon: _isActionLoading('setup_passcode')
                                       ? SizedBox(
                                           width: iconSize,
@@ -1079,7 +1139,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ),
           actions: [
             TextButton(
-              onPressed: _isMutating ? null : () => Navigator.of(context).pop(),
+              onPressed: _isMutating
+                  ? null
+                  : () {
+                      Logger.action('tap:close:settingsDialog');
+                      Navigator.of(context).pop();
+                    },
               child: const Text('סגור'),
             ),
           ],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/debug/logger.dart';
 import 'passcode_digit_field.dart';
 
 /// Dialog for changing an existing passcode
@@ -135,7 +136,10 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
         Align(
           alignment: Alignment.center,
           child: TextButton.icon(
-            onPressed: () => setState(() => _obscureCurrent = !_obscureCurrent),
+            onPressed: () {
+              Logger.action('toggle:obscureCurrent', {'on': !_obscureCurrent});
+              setState(() => _obscureCurrent = !_obscureCurrent);
+            },
             icon: Icon(
               _obscureCurrent ? Icons.visibility_off : Icons.visibility,
               size: _iconSize,
@@ -173,7 +177,10 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
   Widget _buildLengthOption(int length) {
     final isSelected = _selectedLength == length;
     return GestureDetector(
-      onTap: () => setState(() => _selectedLength = length),
+      onTap: () {
+        Logger.action('select:passcodeLength', {'length': length});
+        setState(() => _selectedLength = length);
+      },
       child: Container(
         width: 80,
         height: 80,
@@ -239,7 +246,10 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
         Align(
           alignment: Alignment.center,
           child: TextButton.icon(
-            onPressed: () => setState(() => _obscureNew = !_obscureNew),
+            onPressed: () {
+              Logger.action('toggle:obscureNew', {'on': !_obscureNew});
+              setState(() => _obscureNew = !_obscureNew);
+            },
             icon: Icon(
               _obscureNew ? Icons.visibility_off : Icons.visibility,
               size: _iconSize,
@@ -256,12 +266,19 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       case 0:
         return [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:passcodeChangeDialog');
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול', textAlign: TextAlign.center),
           ),
           ElevatedButton(
-            onPressed:
-                _isVerifyingCurrentPasscode ? null : _verifyCurrentPasscode,
+            onPressed: _isVerifyingCurrentPasscode
+                ? null
+                : () {
+                    Logger.action('tap:verifyCurrentPasscode');
+                    _verifyCurrentPasscode();
+                  },
             child: _isVerifyingCurrentPasscode
                 ? const SizedBox(
                     width: 18,
@@ -274,36 +291,54 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
       case 1:
         return [
           TextButton(
-            onPressed: () => setState(() => _currentStep = 0),
+            onPressed: () {
+              Logger.action('tap:cancel:lengthSelection');
+              setState(() => _currentStep = 0);
+            },
             child: const Text('חזור', textAlign: TextAlign.center),
           ),
           ElevatedButton(
-            onPressed: _nextStep,
+            onPressed: () {
+              Logger.action('tap:confirmLength', {'length': _selectedLength});
+              _nextStep();
+            },
             child: const Text('הבא', textAlign: TextAlign.center),
           ),
         ];
       case 2:
         return [
           TextButton(
-            onPressed: () => setState(() => _currentStep = 1),
+            onPressed: () {
+              Logger.action('tap:cancel:newPasscodeEntry');
+              setState(() => _currentStep = 1);
+            },
             child: const Text('חזור', textAlign: TextAlign.center),
           ),
           ElevatedButton(
-            onPressed: _validateAndProceed,
+            onPressed: () {
+              Logger.action('tap:proceedToConfirm');
+              _validateAndProceed();
+            },
             child: const Text('הבא', textAlign: TextAlign.center),
           ),
         ];
       case 3:
         return [
           TextButton(
-            onPressed: () => setState(() {
-              _currentStep = 2;
-              _obscureNew = true; // Reset visibility state when going back
-            }),
+            onPressed: () {
+              Logger.action('tap:cancel:confirmPasscode');
+              setState(() {
+                _currentStep = 2;
+                _obscureNew = true; // Reset visibility state when going back
+              });
+            },
             child: const Text('חזור', textAlign: TextAlign.center),
           ),
           ElevatedButton(
-            onPressed: _validateAndConfirm,
+            onPressed: () {
+              Logger.action('tap:confirmPasscodeChange');
+              _validateAndConfirm();
+            },
             child: const Text('אישור', textAlign: TextAlign.center),
           ),
         ];
@@ -414,7 +449,10 @@ class _PasscodeChangeDialogState extends State<PasscodeChangeDialog> {
           actionsAlignment: MainAxisAlignment.center,
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                Logger.action('tap:close:passcodeError');
+                Navigator.of(context).pop();
+              },
               child: const Text('אישור', textAlign: TextAlign.center),
             ),
           ],

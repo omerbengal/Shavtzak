@@ -19,6 +19,7 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../widgets/checklist/checklist_form_modal.dart';
 import '../../widgets/checklist/checklist_item_card.dart';
 import '../../widgets/checklist/presets_dialog.dart';
+import '../../../core/debug/logger.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
@@ -87,11 +88,15 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
           content: const Text('האם את/ה בטוח/ה שברצונך להתנתק?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                Logger.action('tap:cancel:logout');
+                Navigator.of(context).pop();
+              },
               child: const Text('ביטול'),
             ),
             TextButton(
               onPressed: () {
+                Logger.action('tap:logout');
                 Navigator.of(context).pop();
                 context.read<UserSelectionBloc>().add(const SignOut());
               },
@@ -199,7 +204,10 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
               // Leading: filter icon
               IconButton(
                 icon: const Icon(Icons.filter_list),
-                onPressed: _showFilterSheet,
+                onPressed: () {
+                  Logger.action('open:filterSheet');
+                  _showFilterSheet();
+                },
                 tooltip: 'סינון',
                 iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -216,6 +224,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                 icon: const Icon(Icons.home),
                 tooltip: 'בית',
                 onPressed: () {
+                  Logger.action('tap:home');
                   final envPrefix = EnvironmentService.instance.routePrefix;
                   context.go('$envPrefix/admin');
                 },
@@ -226,7 +235,10 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתק',
-                onPressed: () => _logout(context),
+                onPressed: () {
+                  Logger.action('open:logoutDialog');
+                  _logout(context);
+                },
                 iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
@@ -276,6 +288,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
         ),
         floatingActionButton: FloatingActionButton(
           onPressed: () {
+            Logger.action('open:addMenu');
             showModalBottomSheet(
               context: context,
               builder: (bottomSheetContext) => Directionality(
@@ -288,6 +301,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                         leading: const Icon(Icons.add),
                         title: const Text('הוסף פריט'),
                         onTap: () {
+                          Logger.action('open:addItemModal');
                           Navigator.pop(bottomSheetContext);
                           _showAddModal();
                         },
@@ -296,6 +310,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                         leading: const Icon(Icons.bookmark),
                         title: const Text('פריסטים'),
                         onTap: () {
+                          Logger.action('open:presetsDialog');
                           Navigator.pop(bottomSheetContext);
                           PresetsDialog.show(context);
                         },
@@ -339,7 +354,10 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                 Chip(
                   label: const Text('נקה סינונים'),
                   deleteIcon: const Icon(Icons.clear),
-                  onDeleted: _clearFilters,
+                  onDeleted: () {
+                    Logger.action('tap:clearFilters');
+                    _clearFilters();
+                  },
                 ),
               ],
             ),
@@ -364,9 +382,12 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                           Text(state.message),
                           const SizedBox(height: 16),
                           ElevatedButton(
-                            onPressed: () => context
-                                .read<ChecklistBloc>()
-                                .add(LoadChecklistItems()),
+                            onPressed: () {
+                              Logger.action('tap:retryLoad');
+                              context
+                                  .read<ChecklistBloc>()
+                                  .add(LoadChecklistItems());
+                            },
                             child: const Text('נסה שוב'),
                           ),
                         ],
@@ -415,8 +436,16 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                           allTeamMembers: allTeamMembers,
                           isAdmin: true,
                           currentUserId: currentUserId,
-                          onTap: () => _showEditModal(item),
+                          onTap: () {
+                            Logger.action(
+                                'open:editModal', {'checklistItemId': item.id});
+                            _showEditModal(item);
+                          },
                           onStatusChanged: (newStatus) {
+                            Logger.action('toggle:itemStatus', {
+                              'on': newStatus,
+                              'checklistItemId': item.id,
+                            });
                             context.read<ChecklistBloc>().add(
                                   UpdateChecklistItemStatus(
                                     itemId: item.id,
@@ -425,6 +454,8 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                                 );
                           },
                           onAddNote: (content) {
+                            Logger.action(
+                                'tap:addNote', {'checklistItemId': item.id});
                             context.read<ChecklistBloc>().add(
                                   AddChecklistNote(
                                     itemId: item.id,
@@ -510,8 +541,16 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                               allTeamMembers: allTeamMembers,
                               isAdmin: true,
                               currentUserId: currentUserId,
-                              onTap: () => _showEditModal(item),
+                              onTap: () {
+                                Logger.action('open:editModal',
+                                    {'checklistItemId': item.id});
+                                _showEditModal(item);
+                              },
                               onStatusChanged: (newStatus) {
+                                Logger.action('toggle:itemStatus', {
+                                  'on': newStatus,
+                                  'checklistItemId': item.id,
+                                });
                                 context.read<ChecklistBloc>().add(
                                       UpdateChecklistItemStatus(
                                         itemId: item.id,
@@ -520,6 +559,8 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                                     );
                               },
                               onAddNote: (content) {
+                                Logger.action('tap:addNote',
+                                    {'checklistItemId': item.id});
                                 context.read<ChecklistBloc>().add(
                                       AddChecklistNote(
                                         itemId: item.id,
@@ -644,6 +685,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                             ],
                             items: eventItems,
                             onChanged: (value) {
+                              Logger.action('filter:event', {'eventId': value});
                               setModalState(() => _selectedEventId = value);
                               setState(() => _selectedEventId = value);
                             },
@@ -686,6 +728,8 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                             ],
                             items: memberItems,
                             onChanged: (value) {
+                              Logger.action(
+                                  'filter:responsible', {'memberId': value});
                               setModalState(
                                   () => _selectedResponsibleId = value);
                               setState(() => _selectedResponsibleId = value);
@@ -725,6 +769,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                         ),
                       ],
                       onChanged: (value) {
+                        Logger.action('filter:status', {'value': value});
                         setModalState(() => _statusFilter = value);
                         setState(() => _statusFilter = value);
                       },
@@ -735,6 +780,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                       children: [
                         ElevatedButton(
                           onPressed: () {
+                            Logger.action('tap:clearFilters');
                             setModalState(() {
                               _selectedEventId = null;
                               _selectedResponsibleId = null;
@@ -753,7 +799,10 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                           child: const Text('נקה'),
                         ),
                         ElevatedButton(
-                          onPressed: () => Navigator.pop(context),
+                          onPressed: () {
+                            Logger.action('tap:close:filterSheet');
+                            Navigator.pop(context);
+                          },
                           child: const Text('סגור'),
                         ),
                       ],
@@ -788,7 +837,10 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
                 ),
               ),
         ),
-        onDelete: () => _deleteItem(item),
+        onDelete: () {
+          Logger.action('tap:deleteItem', {'checklistItemId': item.id});
+          return _deleteItem(item);
+        },
       ),
     );
   }

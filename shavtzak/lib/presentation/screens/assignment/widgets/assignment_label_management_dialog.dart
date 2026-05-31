@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/constants/assignment_label_palette.dart';
+import '../../../../core/debug/logger.dart';
 import '../../../../data/repositories/assignment_label_repository.dart';
 import '../../../../data/repositories/assignment_repository.dart';
 import '../../../../domain/entities/assignment_label.dart';
@@ -127,6 +128,8 @@ class _AssignmentLabelManagementDialogState
                             icon:
                                 Icon(_showArchive ? Icons.list : Icons.history),
                             onPressed: () {
+                              Logger.action('toggle:showArchive',
+                                  {'on': !_showArchive});
                               setState(() {
                                 _showArchive = !_showArchive;
                                 _pendingReorderedLabels = null;
@@ -138,7 +141,10 @@ class _AssignmentLabelManagementDialogState
                           ),
                           IconButton(
                             icon: const Icon(Icons.close),
-                            onPressed: () => Navigator.of(context).pop(),
+                            onPressed: () {
+                              Logger.action('tap:close:labelManagement');
+                              Navigator.of(context).pop();
+                            },
                           ),
                         ],
                       ),
@@ -184,7 +190,11 @@ class _AssignmentLabelManagementDialogState
                       child: SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: () => _showAddOrEditLabelDialog(),
+                          onPressed: () {
+                            Logger.action('open:labelFormDialog',
+                                {'mode': 'create'});
+                            _showAddOrEditLabelDialog();
+                          },
                           icon: const Icon(Icons.add),
                           label: const Text('צור לייבל חדש'),
                           style: ElevatedButton.styleFrom(
@@ -216,6 +226,8 @@ class _AssignmentLabelManagementDialogState
     return ReorderableListView.builder(
       itemCount: activeLabels.length,
       onReorder: (oldIndex, newIndex) {
+        Logger.action('reorder:label',
+            {'oldIndex': oldIndex, 'newIndex': newIndex});
         final reordered = List<AssignmentLabel>.from(activeLabels);
         if (newIndex > oldIndex) {
           newIndex -= 1;
@@ -332,9 +344,12 @@ class _AssignmentLabelManagementDialogState
                 Directionality(
                   textDirection: TextDirection.rtl,
                   child: ElevatedButton.icon(
-                    onPressed: () => _runMutation(
-                      () => _repository.restoreAssignmentLabel(label.id),
-                    ),
+                    onPressed: () {
+                      Logger.action('tap:restoreLabel', {'labelId': label.id});
+                      _runMutation(
+                        () => _repository.restoreAssignmentLabel(label.id),
+                      );
+                    },
                     icon: const Icon(
                       Icons.restore,
                       size: 16,
@@ -356,7 +371,10 @@ class _AssignmentLabelManagementDialogState
                   icon:
                       const Icon(Icons.archive, color: Colors.orange, size: 20),
                   tooltip: 'העבר לארכיון',
-                  onPressed: () => _confirmArchiveLabel(label),
+                  onPressed: () {
+                    Logger.action('tap:archiveLabel', {'labelId': label.id});
+                    _confirmArchiveLabel(label);
+                  },
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -364,7 +382,10 @@ class _AssignmentLabelManagementDialogState
                 IconButton(
                   icon: const Icon(Icons.delete, color: Colors.red, size: 20),
                   tooltip: 'מחק לצמיתות',
-                  onPressed: () => _confirmDeleteLabel(label),
+                  onPressed: () {
+                    Logger.action('tap:deleteLabel', {'labelId': label.id});
+                    _confirmDeleteLabel(label);
+                  },
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -372,8 +393,13 @@ class _AssignmentLabelManagementDialogState
             ],
           ),
         ),
-        onTap:
-            isArchived ? null : () => _showAddOrEditLabelDialog(label: label),
+        onTap: isArchived
+            ? null
+            : () {
+                Logger.action('open:labelFormDialog',
+                    {'mode': 'edit', 'labelId': label.id});
+                _showAddOrEditLabelDialog(label: label);
+              },
       ),
     );
   }
@@ -388,11 +414,19 @@ class _AssignmentLabelManagementDialogState
           content: Text('להעביר את "${label.hebrewName}" לארכיון?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () {
+                Logger.action('tap:cancel:archiveLabel',
+                    {'labelId': label.id});
+                Navigator.of(context).pop(false);
+              },
               child: const Text('ביטול'),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () {
+                Logger.action('tap:confirmArchiveLabel',
+                    {'labelId': label.id});
+                Navigator.of(context).pop(true);
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange,
                 foregroundColor: Colors.white,
@@ -475,11 +509,18 @@ class _AssignmentLabelManagementDialogState
           content: Text('האם למחוק את "${label.hebrewName}" לצמיתות?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
+              onPressed: () {
+                Logger.action('tap:cancel:deleteLabel', {'labelId': label.id});
+                Navigator.of(dialogContext).pop(false);
+              },
               child: const Text('ביטול'),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
+              onPressed: () {
+                Logger.action('tap:confirmDeleteLabelWarning',
+                    {'labelId': label.id});
+                Navigator.of(dialogContext).pop(true);
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
@@ -507,6 +548,8 @@ class _AssignmentLabelManagementDialogState
         return StatefulBuilder(
           builder: (context, setDialogState) {
             Future<void> deleteLabel() async {
+              Logger.action('tap:confirmDeleteLabelExecute',
+                  {'labelId': label.id});
               if (isDeleting) {
                 return;
               }
@@ -544,7 +587,11 @@ class _AssignmentLabelManagementDialogState
                   TextButton(
                     onPressed: isDeleting
                         ? null
-                        : () => Navigator.of(dialogContext).pop(false),
+                        : () {
+                            Logger.action('tap:cancel:deleteLabelExecute',
+                                {'labelId': label.id});
+                            Navigator.of(dialogContext).pop(false);
+                          },
                     child: const Text('ביטול'),
                   ),
                   ElevatedButton(
@@ -609,6 +656,10 @@ class _AssignmentLabelManagementDialogState
             );
 
             Future<void> save() async {
+              Logger.action('tap:saveLabel', {
+                'mode': label == null ? 'create' : 'edit',
+                'labelId': label?.id,
+              });
               if (trimmedName.isEmpty) {
                 setDialogState(() {
                   errorText = 'יש להזין שם ללייבל';
@@ -705,6 +756,8 @@ class _AssignmentLabelManagementDialogState
                               onTap: isSaving
                                   ? null
                                   : () {
+                                      Logger.action('select:labelColor',
+                                          {'color': colorHex});
                                       setDialogState(() {
                                         selectedColor = colorHex;
                                       });
@@ -742,7 +795,13 @@ class _AssignmentLabelManagementDialogState
                   TextButton(
                     onPressed: isSaving
                         ? null
-                        : () => Navigator.of(dialogContext).pop(false),
+                        : () {
+                            Logger.action('tap:cancel:labelForm', {
+                              'mode': label == null ? 'create' : 'edit',
+                              'labelId': label?.id,
+                            });
+                            Navigator.of(dialogContext).pop(false);
+                          },
                     child: const Text('ביטול'),
                   ),
                   ElevatedButton(

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
+import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/validators.dart';
@@ -307,11 +308,17 @@ class _EventFormModalState extends State<EventFormModal> {
                   children: [
                     TextButton(
                       child: const Text('ביטול'),
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () {
+                        Logger.action('tap:cancel:timePicker');
+                        Navigator.of(context).pop();
+                      },
                     ),
                     TextButton(
                       child: const Text('אישור'),
-                      onPressed: () => Navigator.of(context).pop(selectedTime),
+                      onPressed: () {
+                        Logger.action('tap:confirm:timePicker');
+                        Navigator.of(context).pop(selectedTime);
+                      },
                     ),
                   ],
                 ),
@@ -659,7 +666,11 @@ class _EventFormModalState extends State<EventFormModal> {
           actions: [
             TextButton(
               child: const Text('ביטול'),
-              onPressed: () => Navigator.of(dialogContext).pop(false),
+              onPressed: () {
+                Logger.action('tap:cancel:toggleDeactivation',
+                    {'eventId': widget.event!.id});
+                Navigator.of(dialogContext).pop(false);
+              },
             ),
             TextButton(
               style: TextButton.styleFrom(
@@ -667,7 +678,13 @@ class _EventFormModalState extends State<EventFormModal> {
                     isCurrentlyDeactivated ? Colors.green : Colors.red,
               ),
               child: Text(isCurrentlyDeactivated ? 'הפעל מחדש' : 'השבת אירוע'),
-              onPressed: () => Navigator.of(dialogContext).pop(true),
+              onPressed: () {
+                Logger.action('tap:confirmToggleDeactivation', {
+                  'eventId': widget.event!.id,
+                  'isCurrentlyDeactivated': isCurrentlyDeactivated,
+                });
+                Navigator.of(dialogContext).pop(true);
+              },
             ),
           ],
         ),
@@ -719,12 +736,16 @@ class _EventFormModalState extends State<EventFormModal> {
             actions: [
               TextButton(
                 child: const Text('ביטול'),
-                onPressed: () => Navigator.of(dialogContext).pop(),
+                onPressed: () {
+                  Logger.action('tap:cancel:discardChanges');
+                  Navigator.of(dialogContext).pop();
+                },
               ),
               TextButton(
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
                 child: const Text('צא'),
                 onPressed: () {
+                  Logger.action('tap:confirmDiscardChanges');
                   Navigator.of(dialogContext).pop(); // Close dialog
                   widget.onSuccess(); // Close modal
                 },
@@ -822,8 +843,17 @@ class _EventFormModalState extends State<EventFormModal> {
                                           ? Colors.green
                                           : Colors.red,
                                     ),
-                                    onPressed:
-                                        _isSaving ? null : _handleToggleDeactivation,
+                                    onPressed: _isSaving
+                                        ? null
+                                        : () {
+                                            Logger.action(
+                                                'tap:toggleDeactivation', {
+                                              'eventId': widget.event!.id,
+                                              'isDeactivated':
+                                                  widget.event!.isDeactivated,
+                                            });
+                                            _handleToggleDeactivation();
+                                          },
                                     tooltip: widget.event!.isDeactivated
                                         ? 'הפעל אירוע מחדש'
                                         : 'השבת אירוע',
@@ -835,6 +865,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                     onPressed: _isSaving
                                         ? null
                                         : () {
+                                      Logger.action('open:deleteEventDialog',
+                                          {'eventId': widget.event!.id});
                                       showDialog(
                                         context: context,
                                         builder: (dialogContext) =>
@@ -848,15 +880,26 @@ class _EventFormModalState extends State<EventFormModal> {
                                             actions: [
                                               TextButton(
                                                 child: const Text('ביטול'),
-                                                onPressed: () =>
-                                                    Navigator.of(dialogContext)
-                                                        .pop(),
+                                                onPressed: () {
+                                                  Logger.action(
+                                                      'tap:cancel:deleteEvent',
+                                                      {
+                                                        'eventId':
+                                                            widget.event!.id
+                                                      });
+                                                  Navigator.of(dialogContext)
+                                                      .pop();
+                                                },
                                               ),
                                               TextButton(
                                                 child: const Text('מחק',
                                                     style: TextStyle(
                                                         color: Colors.red)),
                                                 onPressed: () async {
+                                                  Logger.action(
+                                                      'tap:deleteEvent', {
+                                                    'eventId': widget.event!.id
+                                                  });
                                                   Navigator.of(dialogContext)
                                                       .pop();
                                                   if (mounted) {
@@ -905,6 +948,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                     onPressed: _isSaving
                                         ? null
                                         : () {
+                                      Logger.action('tap:duplicateEvent',
+                                          {'eventId': widget.event!.id});
                                       // Close the current modal and signal duplication intent
                                       Navigator.of(context).pop({
                                         'action': 'duplicate',
@@ -915,7 +960,13 @@ class _EventFormModalState extends State<EventFormModal> {
                                   ),
                                 IconButton(
                                   icon: const Icon(Icons.close),
-                                  onPressed: _isSaving ? null : _handleClose,
+                                  onPressed: _isSaving
+                                      ? null
+                                      : () {
+                                          Logger.action(
+                                              'tap:close:eventFormModal');
+                                          _handleClose();
+                                        },
                                 ),
                               ],
                             ),
@@ -1306,6 +1357,9 @@ class _EventFormModalState extends State<EventFormModal> {
                                                   ),
                                                 ],
                                                 onChanged: (value) {
+                                                  Logger.action(
+                                                      'select:category',
+                                                      {'categoryId': value});
                                                   if (value ==
                                                       '__create_new_category__') {
                                                     // Don't update state, just show dialog
@@ -1397,6 +1451,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                       color: Colors.blue),
                                                   tooltip: 'בחר מיקום במפה',
                                                   onPressed: () async {
+                                                    Logger.action(
+                                                        'open:mapLocationPicker');
                                                     // Try to parse existing coordinates from raw location value
                                                     // Only use if user hasn't manually edited the field
                                                     double? initialLat;
@@ -1478,6 +1534,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                         color: Colors.grey),
                                                     tooltip: 'נקה מיקום',
                                                     onPressed: () {
+                                                      Logger.action(
+                                                          'tap:clearLocation');
                                                       setState(() {
                                                         _rawLocationValue =
                                                             null;
@@ -1526,6 +1584,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                   tooltip:
                                                       'בחר מיקום חנייה במפה',
                                                   onPressed: () async {
+                                                    Logger.action(
+                                                        'open:parkingLocationPicker');
                                                     // Get current event location from form (not from DB)
                                                     String
                                                         currentEventLocation =
@@ -1590,6 +1650,13 @@ class _EventFormModalState extends State<EventFormModal> {
                                                   tooltip:
                                                       'עורכים מורשים למיקום חנייה',
                                                   onPressed: () async {
+                                                    Logger.action(
+                                                        'open:parkingEditorsDialog',
+                                                        {
+                                                          'count':
+                                                              _parkingEditorIds
+                                                                  .length
+                                                        });
                                                     final result =
                                                         await ParkingEditorsDialog
                                                             .show(
@@ -1616,6 +1683,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                         color: Colors.grey),
                                                     tooltip: 'נקה מיקום חנייה',
                                                     onPressed: () {
+                                                      Logger.action(
+                                                          'tap:clearParkingLocation');
                                                       setState(() {
                                                         _rawParkingLocationValue =
                                                             null;
@@ -1665,6 +1734,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                 Expanded(
                                                   child: OutlinedButton.icon(
                                                     onPressed: () async {
+                                                      Logger.action(
+                                                          'open:datePicker');
                                                       final result =
                                                           await showDialog<
                                                               Map<String,
@@ -1792,12 +1863,15 @@ class _EventFormModalState extends State<EventFormModal> {
                                                         const EdgeInsets.only(
                                                             right: 8),
                                                     child: IconButton(
-                                                      onPressed: () =>
-                                                          setState(() {
-                                                        _startDate = null;
-                                                        _endDate = null;
-                                                        _isDirty = true;
-                                                      }),
+                                                      onPressed: () {
+                                                        Logger.action(
+                                                            'tap:clearDates');
+                                                        setState(() {
+                                                          _startDate = null;
+                                                          _endDate = null;
+                                                          _isDirty = true;
+                                                        });
+                                                      },
                                                       icon: const Icon(
                                                           Icons.clear,
                                                           color: Colors.red),
@@ -1848,8 +1922,12 @@ class _EventFormModalState extends State<EventFormModal> {
                                         TextFormField(
                                           controller: _assemblyTimeController,
                                           readOnly: true,
-                                          onTap: () => _showTimePickerFor(
-                                              _assemblyTimeController),
+                                          onTap: () {
+                                            Logger.action(
+                                                'open:timePicker:assembly');
+                                            _showTimePickerFor(
+                                                _assemblyTimeController);
+                                          },
                                           decoration: InputDecoration(
                                             labelText:
                                                 'שעת התייצבות (אופציונלי)',
@@ -1864,6 +1942,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                         Icons.clear,
                                                         color: Colors.grey),
                                                     onPressed: () {
+                                                      Logger.action(
+                                                          'tap:clearTime:assembly');
                                                       setState(() {
                                                         _assemblyTimeController
                                                             .clear();
@@ -1881,8 +1961,12 @@ class _EventFormModalState extends State<EventFormModal> {
                                         TextFormField(
                                           controller: _startTimeController,
                                           readOnly: true,
-                                          onTap: () => _showTimePickerFor(
-                                              _startTimeController),
+                                          onTap: () {
+                                            Logger.action(
+                                                'open:timePicker:start');
+                                            _showTimePickerFor(
+                                                _startTimeController);
+                                          },
                                           decoration: InputDecoration(
                                             labelText:
                                                 'שעת התכנסות קהל (אופציונלי)',
@@ -1897,6 +1981,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                         Icons.clear,
                                                         color: Colors.grey),
                                                     onPressed: () {
+                                                      Logger.action(
+                                                          'tap:clearTime:start');
                                                       setState(() {
                                                         _startTimeController
                                                             .clear();
@@ -1915,8 +2001,12 @@ class _EventFormModalState extends State<EventFormModal> {
                                           controller:
                                               _actualShowStartTimeController,
                                           readOnly: true,
-                                          onTap: () => _showTimePickerFor(
-                                              _actualShowStartTimeController),
+                                          onTap: () {
+                                            Logger.action(
+                                                'open:timePicker:actualShowStart');
+                                            _showTimePickerFor(
+                                                _actualShowStartTimeController);
+                                          },
                                           decoration: InputDecoration(
                                             labelText:
                                                 'שעת תחילת המופע בפועל (אופציונלי)',
@@ -1932,6 +2022,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                             Icons.clear,
                                                             color: Colors.grey),
                                                         onPressed: () {
+                                                          Logger.action(
+                                                              'tap:clearTime:actualShowStart');
                                                           setState(() {
                                                             _actualShowStartTimeController
                                                                 .clear();
@@ -1949,8 +2041,12 @@ class _EventFormModalState extends State<EventFormModal> {
                                         TextFormField(
                                           controller: _endTimeController,
                                           readOnly: true,
-                                          onTap: () => _showTimePickerFor(
-                                              _endTimeController),
+                                          onTap: () {
+                                            Logger.action(
+                                                'open:timePicker:end');
+                                            _showTimePickerFor(
+                                                _endTimeController);
+                                          },
                                           decoration: InputDecoration(
                                             labelText: 'שעת סיום (אופציונלי)',
                                             hintText: 'לדוגמה: 23:00',
@@ -1964,6 +2060,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                         Icons.clear,
                                                         color: Colors.grey),
                                                     onPressed: () {
+                                                      Logger.action(
+                                                          'tap:clearTime:end');
                                                       setState(() {
                                                         _endTimeController
                                                             .clear();
@@ -1981,10 +2079,14 @@ class _EventFormModalState extends State<EventFormModal> {
                                         SwitchListTile(
                                           title: const Text('דרוש חמוש'),
                                           value: _requiresArmed,
-                                          onChanged: (v) => setState(() {
-                                            _requiresArmed = v;
-                                            _isDirty = true;
-                                          }),
+                                          onChanged: (v) {
+                                            Logger.action('toggle:requiresArmed',
+                                                {'on': v});
+                                            setState(() {
+                                              _requiresArmed = v;
+                                              _isDirty = true;
+                                            });
+                                          },
                                         ),
 
                                         // Permanent Team Only (inverted logic for UI)
@@ -1993,16 +2095,21 @@ class _EventFormModalState extends State<EventFormModal> {
                                           subtitle: const Text(
                                               'האם האירוע מיועד לצוות הקבוע בלבד (לא לצוות המורחב)?'),
                                           value: _relevantForExtendedTeam,
-                                          onChanged: (v) => setState(() {
-                                            _relevantForExtendedTeam = v;
-                                            if (!v) {
-                                              // Not permanent-only: this feature
-                                              // is not applicable.
-                                              _inviteAllPermanentWhenUnassigned =
-                                                  false;
-                                            }
-                                            _isDirty = true;
-                                          }),
+                                          onChanged: (v) {
+                                            Logger.action(
+                                                'toggle:permanentTeamOnly',
+                                                {'on': v});
+                                            setState(() {
+                                              _relevantForExtendedTeam = v;
+                                              if (!v) {
+                                                // Not permanent-only: this feature
+                                                // is not applicable.
+                                                _inviteAllPermanentWhenUnassigned =
+                                                    false;
+                                              }
+                                              _isDirty = true;
+                                            });
+                                          },
                                         ),
 
                                         // Invite all permanent staff to the
@@ -2026,11 +2133,16 @@ class _EventFormModalState extends State<EventFormModal> {
                                               _inviteAllPermanentWhenUnassigned,
                                           onChanged: !widget.isDuplication &&
                                                   _relevantForExtendedTeam
-                                              ? (v) => setState(() {
+                                              ? (v) {
+                                                  Logger.action(
+                                                      'toggle:inviteAllPermanentWhenUnassigned',
+                                                      {'on': v});
+                                                  setState(() {
                                                     _inviteAllPermanentWhenUnassigned =
                                                         v;
                                                     _isDirty = true;
-                                                  })
+                                                  });
+                                                }
                                               : null,
                                         ),
 
@@ -2046,10 +2158,15 @@ class _EventFormModalState extends State<EventFormModal> {
                                                   : 'רק פרטי האירוע ישוכפלו, ללא שיבוצים',
                                             ),
                                             value: _duplicateAssignments,
-                                            onChanged: (v) => setState(() {
-                                              _duplicateAssignments = v;
-                                              _isDirty = true;
-                                            }),
+                                            onChanged: (v) {
+                                              Logger.action(
+                                                  'toggle:duplicateAssignments',
+                                                  {'on': v});
+                                              setState(() {
+                                                _duplicateAssignments = v;
+                                                _isDirty = true;
+                                              });
+                                            },
                                           ),
                                           const SizedBox(height: 8),
                                         ],
@@ -2125,6 +2242,12 @@ class _EventFormModalState extends State<EventFormModal> {
                                                             icon: const Icon(Icons
                                                                 .remove_circle_outline),
                                                             onPressed: () {
+                                                              Logger.action(
+                                                                  'tap:decrementRoleQuota',
+                                                                  {
+                                                                    'role':
+                                                                        role.key
+                                                                  });
                                                               if ((_roleRequirements[
                                                                           role.key] ??
                                                                       0) >
@@ -2162,6 +2285,12 @@ class _EventFormModalState extends State<EventFormModal> {
                                                             icon: const Icon(Icons
                                                                 .add_circle_outline),
                                                             onPressed: () {
+                                                              Logger.action(
+                                                                  'tap:incrementRoleQuota',
+                                                                  {
+                                                                    'role':
+                                                                        role.key
+                                                                  });
                                                               setState(() {
                                                                 _roleRequirements[
                                                                         role.key] =
@@ -2251,6 +2380,11 @@ class _EventFormModalState extends State<EventFormModal> {
                                                           icon: const Icon(Icons
                                                               .remove_circle_outline),
                                                           onPressed: () {
+                                                            Logger.action(
+                                                                'tap:decrementRoleQuota',
+                                                                {
+                                                                  'role': roleKey
+                                                                });
                                                             if (_roleRequirements[
                                                                     roleKey]! >
                                                                 0) {
@@ -2285,6 +2419,11 @@ class _EventFormModalState extends State<EventFormModal> {
                                                           icon: const Icon(Icons
                                                               .add_circle_outline),
                                                           onPressed: () {
+                                                            Logger.action(
+                                                                'tap:incrementRoleQuota',
+                                                                {
+                                                                  'role': roleKey
+                                                                });
                                                             setState(() {
                                                               _roleRequirements[
                                                                       roleKey] =
@@ -2348,14 +2487,31 @@ class _EventFormModalState extends State<EventFormModal> {
                               children: [
                                 Expanded(
                                   child: OutlinedButton(
-                                    onPressed: _isSaving ? null : _handleClose,
+                                    onPressed: _isSaving
+                                        ? null
+                                        : () {
+                                            Logger.action(
+                                                'tap:cancel:eventFormModal');
+                                            _handleClose();
+                                          },
                                     child: const Text('ביטול'),
                                   ),
                                 ),
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: ElevatedButton(
-                                    onPressed: _isSaving ? null : _saveEvent,
+                                    onPressed: _isSaving
+                                        ? null
+                                        : () {
+                                            Logger.action('tap:saveEvent', {
+                                              'mode': widget.isDuplication
+                                                  ? 'duplicate'
+                                                  : (_isEditMode
+                                                      ? 'edit'
+                                                      : 'create'),
+                                            });
+                                            _saveEvent();
+                                          },
                                     child: _isSaving
                                         ? const SizedBox(
                                             height: 20,
@@ -2420,11 +2576,15 @@ class _EventFormModalState extends State<EventFormModal> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: () {
+                Logger.action('tap:cancel:createCategory');
+                Navigator.of(dialogContext).pop();
+              },
               child: const Text('ביטול'),
             ),
             ElevatedButton(
               onPressed: () {
+                Logger.action('tap:createCategory');
                 if (controller.text.trim().isNotEmpty) {
                   context.read<CategoryBloc>().add(CreateCategory(
                         controller.text.trim(),

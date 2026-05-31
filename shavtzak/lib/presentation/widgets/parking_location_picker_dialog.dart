@@ -5,6 +5,7 @@ import '../bloc/team/team_bloc.dart';
 import '../bloc/team/team_state.dart';
 import 'map_location_picker.dart';
 import '../../core/utils/rtl_text_field_utils.dart';
+import '../../core/debug/logger.dart';
 
 /// Result from parking location picker dialog
 class ParkingLocationResult {
@@ -149,7 +150,10 @@ class _ParkingLocationPickerDialogState
 
               // Map picker button
               ElevatedButton.icon(
-                onPressed: _openMapPicker,
+                onPressed: () {
+                  Logger.action('tap:openMapPicker');
+                  _openMapPicker();
+                },
                 icon: const Icon(Icons.map),
                 label: const Text('בחר במפה'),
               ),
@@ -158,7 +162,10 @@ class _ParkingLocationPickerDialogState
 
               // Copy event location button
               OutlinedButton.icon(
-                onPressed: _copyEventLocation,
+                onPressed: () {
+                  Logger.action('tap:copyEventLocation');
+                  _copyEventLocation();
+                },
                 icon: const Icon(Icons.content_copy),
                 label: const Text('העתק מיקום אירוע'),
               ),
@@ -168,7 +175,10 @@ class _ParkingLocationPickerDialogState
                   _selectedParkingLocation!.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 TextButton.icon(
-                  onPressed: _clear,
+                  onPressed: () {
+                    Logger.action('tap:clearParkingLocation');
+                    _clear();
+                  },
                   icon: const Icon(Icons.delete_outline, color: Colors.red),
                   label: const Text(
                     'נקה',
@@ -184,11 +194,17 @@ class _ParkingLocationPickerDialogState
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:parkingLocationPicker');
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: _save,
+            onPressed: () {
+              Logger.action('tap:saveParkingLocation');
+              _save();
+            },
             child: const Text('שמור'),
           ),
         ],
@@ -358,6 +374,7 @@ class _ParkingEditorsDialogState extends State<ParkingEditorsDialog> {
                               label: _buildMemberChipLabel(member),
                               selected: isSelected,
                               onSelected: (selected) {
+                                Logger.action('toggle:parkingEditor', {'memberId': member.id, 'on': selected});
                                 setState(() {
                                   if (selected) {
                                     _selectedEditorIds.add(member.id);
@@ -381,11 +398,17 @@ class _ParkingEditorsDialogState extends State<ParkingEditorsDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:parkingEditorsDialog');
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול'),
           ),
           ElevatedButton(
-            onPressed: _save,
+            onPressed: () {
+              Logger.action('tap:saveParkingEditors');
+              _save();
+            },
             child: const Text('שמור'),
           ),
         ],

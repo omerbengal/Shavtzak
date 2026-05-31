@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/debug/logger.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/event_assignment_status.dart';
 import '../../../domain/entities/category.dart';
@@ -109,6 +110,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   icon: const Icon(Icons.home),
                   tooltip: 'בית',
                   onPressed: () {
+                    Logger.action('tap:home', {'isAdmin': state is UserAuthenticated && state.isAdmin});
                     final envPrefix = EnvironmentService.instance.routePrefix;
                     if (state is UserAuthenticated && state.isAdmin) {
                       // Admin goes back to /admin
@@ -130,7 +132,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
             IconButton(
               icon: const Icon(Icons.logout),
               tooltip: 'התנתק',
-              onPressed: () => _showLogoutDialog(context),
+              onPressed: () { Logger.action('open:logoutDialog'); _showLogoutDialog(context); },
               iconSize: 24,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
@@ -608,12 +610,14 @@ class _SummaryScreenState extends State<SummaryScreen> {
             actions: [
               TextButton(
                 onPressed: () {
+                  Logger.action('tap:cancel:logoutDialog');
                   Navigator.of(dialogContext).pop();
                 },
                 child: const Text('ביטול'),
               ),
               TextButton(
                 onPressed: () {
+                  Logger.action('tap:logout');
                   Navigator.of(dialogContext).pop();
                   context.read<UserSelectionBloc>().add(const SignOut());
                 },

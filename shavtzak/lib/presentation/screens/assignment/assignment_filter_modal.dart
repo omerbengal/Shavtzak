@@ -5,6 +5,7 @@ import '../../../domain/entities/assignment_label.dart';
 import '../../../domain/entities/category.dart';
 import '../../../domain/entities/event.dart';
 import '../../../core/utils/filter_persistence.dart';
+import '../../../core/debug/logger.dart';
 import '../../bloc/category/category_bloc.dart';
 import '../../bloc/category/category_state.dart';
 
@@ -164,6 +165,7 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                             // Categories section with dropdown arrow (always visible)
                             InkWell(
                               onTap: () {
+                                Logger.action('toggle:categoriesExpanded', {'on': !_categoriesExpanded});
                                 setState(() {
                                   _categoriesExpanded = !_categoriesExpanded;
                                 });
@@ -246,6 +248,7 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                                   return CheckboxListTile(
                                     value: isSelected,
                                     onChanged: (value) {
+                                      Logger.action('filter:category', {'categoryId': category.id, 'on': value ?? false});
                                       setState(() {
                                         if (value == true) {
                                           // Add category to selection
@@ -294,6 +297,7 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                             // Labels section
                             InkWell(
                               onTap: () {
+                                Logger.action('toggle:labelsExpanded', {'on': !_labelsExpanded});
                                 setState(() {
                                   _labelsExpanded = !_labelsExpanded;
                                 });
@@ -350,6 +354,7 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                               SwitchListTile(
                                 value: _sortBySemanticLabel,
                                 onChanged: (value) {
+                                  Logger.action('toggle:sortBySemanticLabel', {'on': value});
                                   setState(() {
                                     _sortBySemanticLabel = value;
                                   });
@@ -391,6 +396,7 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                                   return CheckboxListTile(
                                     value: isSelected,
                                     onChanged: (value) {
+                                      Logger.action('filter:label', {'labelId': label.id, 'on': value ?? false});
                                       setState(() {
                                         if (value == true) {
                                           _selectedLabelIds.add(label.id);
@@ -433,6 +439,7 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                             // Events section with dropdown arrow
                             InkWell(
                               onTap: () {
+                                Logger.action('toggle:eventsExpanded', {'on': !_eventsExpanded});
                                 setState(() {
                                   _eventsExpanded = !_eventsExpanded;
                                 });
@@ -506,6 +513,7 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                                   return CheckboxListTile(
                                     value: isSelected,
                                     onChanged: (value) {
+                                      Logger.action('filter:event', {'eventId': event.id, 'on': value ?? false});
                                       setState(() {
                                         if (value == true) {
                                           _selectedEventIds.add(event.id);
@@ -551,6 +559,7 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                 children: [
                   ElevatedButton(
                     onPressed: () {
+                      Logger.action('tap:clearAssignmentFilters');
                       setState(() {
                         _selectedEventIds.clear();
                         _selectedCategoryIds.clear();
@@ -566,7 +575,10 @@ class _AssignmentFilterModalState extends State<AssignmentFilterModal> {
                     child: const Text('נקה'),
                   ),
                   ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      Logger.action('tap:close:assignmentFilterModal');
+                      Navigator.pop(context);
+                    },
                     child: const Text('סגור'),
                   ),
                 ],

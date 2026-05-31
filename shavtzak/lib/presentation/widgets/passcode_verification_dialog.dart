@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/debug/logger.dart';
 import 'passcode_digit_field.dart';
 
 /// Dialog for verifying passcode before allowing user selection
@@ -79,7 +80,10 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
               Align(
                 alignment: Alignment.center,
                 child: TextButton.icon(
-                  onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
+                  onPressed: () {
+                    Logger.action('toggle:obscurePasscode', {'on': !_obscurePasscode});
+                    setState(() => _obscurePasscode = !_obscurePasscode);
+                  },
                   icon: Icon(
                     _obscurePasscode ? Icons.visibility_off : Icons.visibility,
                     size: _iconSize,
@@ -92,11 +96,17 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:passcodeDialog');
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול', textAlign: TextAlign.center),
           ),
           ElevatedButton(
-            onPressed: _verifyPasscode,
+            onPressed: () {
+              Logger.action('tap:verifyPasscode');
+              _verifyPasscode();
+            },
             child: const Text('אישור', textAlign: TextAlign.center),
           ),
         ],
@@ -133,7 +143,10 @@ class _PasscodeVerificationDialogState extends State<PasscodeVerificationDialog>
           actionsAlignment: MainAxisAlignment.center,
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                Logger.action('tap:close:passcodeError');
+                Navigator.of(context).pop();
+              },
               child: const Text('אישור', textAlign: TextAlign.center),
             ),
           ],

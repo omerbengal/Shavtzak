@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/debug/logger.dart';
 import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/event.dart';
 import 'event_summary_tile.dart';
@@ -71,7 +72,13 @@ class _CategorySummaryCardState extends State<CategorySummaryCard> {
           Material(
             color: headerColor,
             child: InkWell(
-              onTap: () => setState(() => _isExpanded = !_isExpanded),
+              onTap: () {
+                Logger.action('tap:toggleCategoryExpand', {
+                  'categoryId': widget.categoryId,
+                  'expanded': !_isExpanded,
+                });
+                setState(() => _isExpanded = !_isExpanded);
+              },
               child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

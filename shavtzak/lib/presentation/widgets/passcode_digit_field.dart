@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../core/debug/logger.dart';
 
 /// A single digit input field for passcodes with proper backspace handling
 class PasscodeDigitField extends StatefulWidget {
@@ -44,6 +45,7 @@ class _PasscodeDigitFieldState extends State<PasscodeDigitField> {
 
   /// Handle tap on this field - redirect to first empty field if needed
   void _handleTap() {
+    Logger.action('tap:passcodeDigitField', {'index': widget.index});
     final targetIndex = _findFirstEmptyFieldIndex();
     if (targetIndex != widget.index) {
       // Redirect focus to the correct field
@@ -153,6 +155,7 @@ class _PasscodeInputRowState extends State<PasscodeInputRow> {
           // Find the currently focused field
           for (int i = 0; i < widget.digitCount; i++) {
             if (widget.focusNodes[i].hasFocus) {
+              Logger.action('tap:backspacePasscodeDigit', {'index': i});
               // Always clear current field if it has content
               if (widget.controllers[i].text.isNotEmpty) {
                 widget.controllers[i].clear();

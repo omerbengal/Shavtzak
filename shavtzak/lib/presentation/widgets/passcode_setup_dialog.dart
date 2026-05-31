@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/debug/logger.dart';
 import 'passcode_digit_field.dart';
 
 /// Dialog for setting up a new passcode
@@ -110,7 +111,10 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
   Widget _buildLengthOption(int length) {
     final isSelected = _selectedLength == length;
     return GestureDetector(
-      onTap: () => setState(() => _selectedLength = length),
+      onTap: () {
+        Logger.action('select:passcodeLength', {'length': length});
+        setState(() => _selectedLength = length);
+      },
       child: Container(
         width: 80,
         height: 80,
@@ -170,7 +174,10 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
         Align(
           alignment: Alignment.center,
           child: TextButton.icon(
-            onPressed: () => setState(() => _obscurePasscode = !_obscurePasscode),
+            onPressed: () {
+              Logger.action('toggle:passcodeVisibility', {'on': !_obscurePasscode});
+              setState(() => _obscurePasscode = !_obscurePasscode);
+            },
             icon: Icon(
               _obscurePasscode ? Icons.visibility_off : Icons.visibility,
               size: _iconSize,
@@ -187,36 +194,54 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
       case 0:
         return [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Logger.action('tap:cancel:passcodeSetup');
+              Navigator.of(context).pop();
+            },
             child: const Text('ביטול', textAlign: TextAlign.center),
           ),
           ElevatedButton(
-            onPressed: _nextStep,
+            onPressed: () {
+              Logger.action('tap:nextStep', {'step': 0});
+              _nextStep();
+            },
             child: const Text('הבא', textAlign: TextAlign.center),
           ),
         ];
       case 1:
         return [
           TextButton(
-            onPressed: () => setState(() => _currentStep = 0),
+            onPressed: () {
+              Logger.action('tap:back:passcodeEntry');
+              setState(() => _currentStep = 0);
+            },
             child: const Text('חזור', textAlign: TextAlign.center),
           ),
           ElevatedButton(
-            onPressed: _validateAndProceed,
+            onPressed: () {
+              Logger.action('tap:nextStep', {'step': 1});
+              _validateAndProceed();
+            },
             child: const Text('הבא', textAlign: TextAlign.center),
           ),
         ];
       case 2:
         return [
           TextButton(
-            onPressed: () => setState(() {
-              _currentStep = 1;
-              _obscurePasscode = true; // Reset visibility state when going back
-            }),
+            onPressed: () {
+              Logger.action('tap:back:passcodeConfirm');
+              setState(() {
+                _currentStep = 1;
+                _obscurePasscode = true; // Reset visibility state when going back
+              });
+            },
             child: const Text('חזור', textAlign: TextAlign.center),
           ),
           ElevatedButton(
-            onPressed: _validateAndConfirm,
+            onPressed: () {
+              Logger.action('tap:confirmPasscode');
+              _validateAndConfirm();
+            },
             child: const Text('אישור', textAlign: TextAlign.center),
           ),
         ];
@@ -292,7 +317,10 @@ class _PasscodeSetupDialogState extends State<PasscodeSetupDialog> {
           actionsAlignment: MainAxisAlignment.center,
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                Logger.action('tap:dismissError');
+                Navigator.of(context).pop();
+              },
               child: const Text('אישור', textAlign: TextAlign.center),
             ),
           ],

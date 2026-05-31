@@ -140,7 +140,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
             leading: IconButton(
               icon: const Icon(Icons.settings),
               tooltip: 'הגדרות',
-              onPressed: () => _showSettingsDialog(context),
+              onPressed: () { Logger.action('open:settingsDialog'); _showSettingsDialog(context); },
               iconSize: 24,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
@@ -161,7 +161,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
                     IconButton(
                       icon: const Icon(Icons.logout),
                       tooltip: 'התנתקות',
-                      onPressed: () => _showLogoutDialog(context),
+                      onPressed: () { Logger.action('open:logoutDialog'); _showLogoutDialog(context); },
                     ),
                   ],
                 ),
@@ -224,7 +224,6 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
 
   /// Show settings dialog
   void _showSettingsDialog(BuildContext context) {
-    Logger.action('openSettingsDialog');
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -246,12 +245,14 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
             actions: [
               TextButton(
                 onPressed: () {
+                  Logger.action('tap:cancel:logoutDialog');
                   Navigator.of(context).pop(); // Close dialog
                 },
                 child: const Text('ביטול'),
               ),
               TextButton(
                 onPressed: () {
+                  Logger.action('tap:logout');
                   Navigator.of(context).pop(); // Close dialog
                   context.read<UserSelectionBloc>().add(const SignOut());
                 },
@@ -268,6 +269,7 @@ class _UserNavigationShellState extends State<UserNavigationShell> {
   }
 
   void _onItemTapped(int index, BuildContext context) {
+    Logger.action('select:tab', {'tabIndex': index});
     if (index < _kUserTabRoutes.length) {
       DebugLogger.instance.reset(newRoute: _kUserTabRoutes[index]);
     }

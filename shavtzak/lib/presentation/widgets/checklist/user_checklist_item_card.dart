@@ -10,6 +10,7 @@ import '../../widgets/map_location_picker.dart';
 import '../../bloc/checklist/checklist_bloc.dart';
 import 'chat_bubble.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
+import '../../../core/debug/logger.dart';
 
 /// Card widget for displaying a checklist item in the user view
 class UserChecklistItemCard extends StatelessWidget {
@@ -71,7 +72,7 @@ class UserChecklistItemCard extends StatelessWidget {
         border: Border.all(color: Colors.grey.shade300),
       ),
       child: ListTile(
-        onTap: onEditItem,
+        onTap: onEditItem == null ? null : () { Logger.action('tap:editChecklistItem', {'checklistItemId': item.id}); onEditItem!(); },
         title: Text(
           item.name,
           style: const TextStyle(fontWeight: FontWeight.bold),
@@ -116,7 +117,7 @@ class UserChecklistItemCard extends StatelessWidget {
             // Notes section - always show button to access conversation
             const SizedBox(height: 6),
             InkWell(
-                onTap: () => _showNotesModal(context),
+                onTap: () { Logger.action('open:checklistNotesModal', {'checklistItemId': item.id}); _showNotesModal(context); },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   decoration: BoxDecoration(
@@ -179,7 +180,7 @@ class UserChecklistItemCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: InkWell(
-                  onTap: () => onStatusChanged?.call(!item.status),
+                  onTap: () { Logger.action('toggle:checklistItemStatus', {'checklistItemId': item.id, 'on': !item.status}); onStatusChanged?.call(!item.status); },
                   borderRadius: BorderRadius.circular(20),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -359,7 +360,7 @@ class _UserNotesModalWrapperState extends State<_UserNotesModalWrapper> {
                     ),
                   ),
                   IconButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () { Logger.action('tap:close:checklistNotesModal', {'checklistItemId': widget.item.id}); Navigator.pop(context); },
                     icon: const Icon(Icons.close),
                   ),
                 ],
@@ -427,7 +428,7 @@ class _UserNotesModalWrapperState extends State<_UserNotesModalWrapper> {
                         ),
                         maxLines: null,
                         textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _submitNote(),
+                        onSubmitted: (_) { Logger.action('tap:submitNote', {'checklistItemId': widget.item.id}); _submitNote(); },
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -437,7 +438,7 @@ class _UserNotesModalWrapperState extends State<_UserNotesModalWrapper> {
                         shape: BoxShape.circle,
                       ),
                       child: IconButton(
-                        onPressed: _submitNote,
+                        onPressed: () { Logger.action('tap:submitNote', {'checklistItemId': widget.item.id}); _submitNote(); },
                         icon: const Icon(Icons.send, color: Colors.white, size: 20),
                         padding: const EdgeInsets.all(8),
                         constraints: const BoxConstraints(),

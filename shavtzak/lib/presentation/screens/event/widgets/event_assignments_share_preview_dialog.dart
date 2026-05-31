@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../../../../core/debug/logger.dart';
 import '../../../../core/services/assignment_share_image_service.dart';
 import 'event_assignments_share_card.dart';
 import 'event_assignments_share_models.dart';
@@ -158,7 +159,10 @@ class _EventAssignmentsSharePreviewDialogState
             leading: IconButton(
               icon: const Icon(Icons.close),
               tooltip: 'סגירה',
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                Logger.action('tap:close:sharePreview');
+                Navigator.of(context).pop();
+              },
             ),
           ),
           body: SafeArea(
@@ -205,7 +209,10 @@ class _EventAssignmentsSharePreviewDialogState
                         children: [
                           Expanded(
                             child: FilledButton.icon(
-                              onPressed: _isBusy ? null : _shareImage,
+                              onPressed: _isBusy ? null : () {
+                                Logger.action('tap:shareImage');
+                                _shareImage();
+                              },
                               icon: _activeAction == _ShareImageAction.share
                                   ? const _ButtonProgressIndicator()
                                   : const Icon(Icons.ios_share),
@@ -219,7 +226,10 @@ class _EventAssignmentsSharePreviewDialogState
                           const SizedBox(width: 12),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: _isBusy ? null : _copyImage,
+                              onPressed: _isBusy ? null : () {
+                                Logger.action('tap:copyImage');
+                                _copyImage();
+                              },
                               icon: _activeAction == _ShareImageAction.copy
                                   ? const _ButtonProgressIndicator()
                                   : const Icon(Icons.copy),

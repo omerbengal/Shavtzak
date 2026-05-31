@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:calendar_date_picker2/calendar_date_picker2.dart';
+import '../../core/debug/logger.dart';
 
 /// A reusable date picker dialog that supports both single date and date range selection.
 ///
@@ -328,6 +329,10 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                       ),
                       value: _selectedDates,
                       onValueChanged: (dates) {
+                        Logger.action('select:date', {
+                          'count': dates.length,
+                          'mode': widget.isSingleDate ? 'single' : 'range',
+                        });
                         setState(() {
                           _selectedDates = dates;
                           _errorMessage = null; // Clear error on selection
@@ -345,12 +350,20 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      Logger.action('tap:cancel:datePicker');
+                      Navigator.pop(context);
+                    },
                     child: const Text('ביטול'),
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton(
-                    onPressed: _handleSave,
+                    onPressed: () {
+                      Logger.action('tap:confirmDatePicker', {
+                        'mode': widget.isSingleDate ? 'single' : 'range',
+                      });
+                      _handleSave();
+                    },
                     child: const Text('אישור'),
                   ),
                 ],
