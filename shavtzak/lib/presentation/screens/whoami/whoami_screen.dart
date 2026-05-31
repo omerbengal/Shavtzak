@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/link.dart';
 
 import '../../../core/debug/logger.dart';
+import '../../../core/debug/search_action_logger.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../domain/entities/team_member.dart';
@@ -23,6 +24,7 @@ class WhoamiScreen extends StatefulWidget {
 
 class _WhoamiScreenState extends State<WhoamiScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final SearchActionLogger _searchLog = SearchActionLogger('whoami');
   late final FocusNode _searchFocusNode;
 
   List<TeamMember> _allTeamMembers = [];
@@ -50,6 +52,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
   void dispose() {
     _searchFocusNode.dispose();
     _searchController.dispose();
+    _searchLog.dispose();
     super.dispose();
   }
 
@@ -66,6 +69,7 @@ class _WhoamiScreenState extends State<WhoamiScreen> {
 
   void _onSearchChanged() {
     final query = _searchController.text.toLowerCase().trim();
+    _searchLog.onQueryChanged(query);
     setState(() {
       _searchQuery = query;
       _applySearchFilter();

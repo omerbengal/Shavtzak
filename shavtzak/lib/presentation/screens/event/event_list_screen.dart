@@ -26,6 +26,7 @@ import 'widgets/event_form_modal.dart';
 import 'widgets/event_drive_files_section.dart';
 import 'widgets/role_management_dialog.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
+import '../../../core/debug/search_action_logger.dart';
 
 // Filter enum for events (0=all, 1=future, 2=past)
 enum EventFilter { all, future, past }
@@ -39,6 +40,7 @@ class EventListScreen extends StatefulWidget {
 
 class _EventListScreenState extends State<EventListScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final SearchActionLogger _searchLog = SearchActionLogger('events');
   late final FocusNode _searchFocusNode;
   String _searchQuery = '';
   EventsLoaded? _lastLoadedState;
@@ -79,12 +81,14 @@ class _EventListScreenState extends State<EventListScreen> {
 
   @override
   void dispose() {
+    _searchLog.dispose();
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   void _onSearchChanged(String query) {
+    _searchLog.onQueryChanged(query);
     setState(() {
       _searchQuery = query;
     });

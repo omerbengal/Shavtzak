@@ -50,6 +50,7 @@ import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../widgets/archived_members_dialog.dart';
 import '../../utils/constraint_warning_actions.dart';
 import '../../../core/debug/logger.dart';
+import '../../../core/debug/search_action_logger.dart';
 import 'dart:async';
 
 // Filter enum for team members (0=all non-archived, 1=permanent, 2=non-permanent)
@@ -64,6 +65,7 @@ class TeamListScreen extends StatefulWidget {
 
 class _TeamListScreenState extends State<TeamListScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final SearchActionLogger _searchLog = SearchActionLogger('teamMembers');
   late final FocusNode _searchFocusNode;
   String _searchQuery = '';
   TeamLoaded? _lastLoadedState;
@@ -93,6 +95,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchLog.dispose();
     _searchFocusNode.dispose();
     // Unregister callback
     onTeamPageVisible = null;
@@ -100,6 +103,7 @@ class _TeamListScreenState extends State<TeamListScreen> {
   }
 
   void _onSearchChanged(String query) {
+    _searchLog.onQueryChanged(query);
     setState(() {
       _searchQuery = query;
     });

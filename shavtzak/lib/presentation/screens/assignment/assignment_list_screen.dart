@@ -39,6 +39,7 @@ import '../../../core/utils/validators.dart';
 import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/utils/search_utils.dart';
+import '../../../core/debug/search_action_logger.dart';
 
 class AssignmentListScreen extends StatefulWidget {
   const AssignmentListScreen({super.key});
@@ -76,6 +77,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   // Search functionality
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  final SearchActionLogger _searchLog = SearchActionLogger('assignments');
   bool _isMutationInFlight = false;
   String _mutationMessage = '';
 
@@ -88,6 +90,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchLog.dispose();
     super.dispose();
   }
 
@@ -698,6 +701,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       ),
                     ),
                     onChanged: (value) {
+                      _searchLog.onQueryChanged(value);
                       setState(() {
                         _searchQuery = value;
                       });

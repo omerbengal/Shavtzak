@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/debug/logger.dart';
+import '../../../core/debug/search_action_logger.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/role.dart';
@@ -41,6 +42,11 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
   final TextEditingController _memberSearchController = TextEditingController();
   final TextEditingController _roleSearchController = TextEditingController();
 
+  // Debounced search action loggers for each step
+  final SearchActionLogger _eventSearchLog = SearchActionLogger('manualFlowEvent');
+  final SearchActionLogger _memberSearchLog = SearchActionLogger('manualFlowMember');
+  final SearchActionLogger _roleSearchLog = SearchActionLogger('manualFlowRole');
+
   // Scroll controllers for each step
   final ScrollController _eventScrollController = ScrollController();
   final ScrollController _memberScrollController = ScrollController();
@@ -56,6 +62,9 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     _eventSearchController.dispose();
     _memberSearchController.dispose();
     _roleSearchController.dispose();
+    _eventSearchLog.dispose();
+    _memberSearchLog.dispose();
+    _roleSearchLog.dispose();
     _eventScrollController.dispose();
     _memberScrollController.dispose();
     _roleScrollController.dispose();
@@ -276,6 +285,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
             ),
             style: const TextStyle(fontSize: 14),
             onChanged: (value) {
+              _eventSearchLog.onQueryChanged(value);
               setState(() {
                 _eventSearchQuery = value;
               });
@@ -439,6 +449,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
             ),
             style: const TextStyle(fontSize: 14),
             onChanged: (value) {
+              _memberSearchLog.onQueryChanged(value);
               setState(() {
                 _memberSearchQuery = value;
               });
@@ -641,6 +652,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                 ),
                 style: const TextStyle(fontSize: 14),
                 onChanged: (value) {
+                  _roleSearchLog.onQueryChanged(value);
                   setState(() {
                     _roleSearchQuery = value;
                   });

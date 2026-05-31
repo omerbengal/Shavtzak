@@ -20,6 +20,7 @@ import '../../widgets/checklist/checklist_form_modal.dart';
 import '../../widgets/checklist/checklist_item_card.dart';
 import '../../widgets/checklist/presets_dialog.dart';
 import '../../../core/debug/logger.dart';
+import '../../../core/debug/search_action_logger.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
@@ -36,6 +37,7 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
+  final SearchActionLogger _searchLog = SearchActionLogger('checklist');
   late final FocusNode _searchFocusNode;
   String _searchQuery = '';
   String? _selectedEventId;
@@ -59,10 +61,12 @@ class _AdminChecklistScreenState extends State<AdminChecklistScreen>
     _tabController.dispose();
     _searchFocusNode.dispose();
     _searchController.dispose();
+    _searchLog.dispose();
     super.dispose();
   }
 
   void _onSearchChanged(String value) {
+    _searchLog.onQueryChanged(value);
     setState(() {
       _searchQuery = value;
     });
