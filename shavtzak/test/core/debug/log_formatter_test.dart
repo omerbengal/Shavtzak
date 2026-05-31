@@ -32,8 +32,42 @@ void main() {
       expect(out, contains('User: Boss (admin)'));
       expect(out, contains('Env: prod'));
       expect(out, contains('Route: /admin/assignments'));
-      expect(out, contains('Captured: 2026-05-18T14:30:00.123Z'));
+      // Timestamp renders in the device-local timezone with an explicit
+      // offset, so we assert structure (date + time + +HH:mm/-HH:mm offset)
+      // rather than a fixed UTC string — keeps the test timezone-independent.
+      expect(
+        out,
+        matches(RegExp(
+            r'Captured: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2} \| Events: 0')),
+      );
       expect(out, contains('Events: 0'));
+    });
+
+    test('event timestamp renders in device-local time with offset', () {
+      final instant = DateTime.utc(2026, 5, 18, 14, 30, 45, 678);
+      final local = instant.toLocal();
+      String two(int n) => n.toString().padLeft(2, '0');
+      String three(int n) => n.toString().padLeft(3, '0');
+      final off = local.timeZoneOffset;
+      final sign = off.isNegative ? '-' : '+';
+      final mins = off.inMinutes.abs();
+      final expectedTime =
+          '${two(local.hour)}:${two(local.minute)}:${two(local.second)}.'
+          '${three(local.millisecond)}'
+          '$sign${two(mins ~/ 60)}:${two(mins % 60)}';
+      final out = formatBuffer(
+        events: [
+          LogEvent(
+            timestamp: instant,
+            type: LogEventType.action,
+            name: 'tap:saveEvent',
+            context: const {},
+          ),
+        ],
+        userDisplay: '-', isAdmin: true, env: 'prod',
+        currentRoute: '/x', capturedAt: instant,
+      );
+      expect(out, contains('[$expectedTime] ACTION tap:saveEvent'));
     });
 
     test('non-admin user is rendered without (admin)', () {

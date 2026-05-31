@@ -9,11 +9,15 @@ const int _maxFieldChars = 200;
 /// ```
 /// === Shavtzak Debug Log ===
 /// User: <display> [(admin)] | Env: <env> | Route: <route>
-/// Captured: <ISO-Z> | Events: <n>
+/// Captured: <ISO local, e.g. 2026-05-28T20:09:25.024+03:00> | Events: <n>
 ///
-/// [HH:mm:ss.SSSZ] TYPE name {ctx} (duration ms)
+/// [HH:mm:ss.SSS+OF:FS] TYPE name {ctx} (duration ms)
 /// ...
 /// ```
+///
+/// Timestamps render in the device-local timezone with an explicit offset
+/// (DST-aware), so a log shared from Israel shows `+03:00` in summer and
+/// `+02:00` in winter without ambiguity.
 String formatBuffer({
   required List<LogEvent> events,
   required String? userDisplay,
@@ -90,19 +94,34 @@ String _renderValue(Object? v) {
   return s;
 }
 
-String _iso(DateTime utc) {
-  final d = utc.toUtc();
-  String two(int n) => n.toString().padLeft(2, '0');
-  String three(int n) => n.toString().padLeft(3, '0');
-  return '${d.year}-${two(d.month)}-${two(d.day)}T'
-      '${two(d.hour)}:${two(d.minute)}:${two(d.second)}.'
-      '${three(d.millisecond)}Z';
+String _two(int n) => n.toString().padLeft(2, '0');
+String _three(int n) => n.toString().padLeft(3, '0');
+
+/// Renders the device-local UTC offset as `+HH:mm` / `-HH:mm`.
+///
+/// Uses [DateTime.timeZoneOffset], which is DST-aware on the host (e.g. on
+/// the browser for Flutter Web). So in Israel this yields `+03:00` during
+/// daylight saving and `+02:00` in winter, automatically.
+String _offset(DateTime local) {
+  final off = local.timeZoneOffset;
+  final sign = off.isNegative ? '-' : '+';
+  final mins = off.inMinutes.abs();
+  return '$sign${_two(mins ~/ 60)}:${_two(mins % 60)}';
 }
 
-String _timeOnly(DateTime utc) {
-  final d = utc.toUtc();
-  String two(int n) => n.toString().padLeft(2, '0');
-  String three(int n) => n.toString().padLeft(3, '0');
-  return '${two(d.hour)}:${two(d.minute)}:${two(d.second)}.'
-      '${three(d.millisecond)}Z';
+/// Full ISO-8601 local timestamp with offset, e.g.
+/// `2026-05-28T20:09:25.024+03:00`. Input may be UTC or local; it is
+/// converted to device-local for display.
+String _iso(DateTime ts) {
+  final d = ts.toLocal();
+  return '${d.year}-${_two(d.month)}-${_two(d.day)}T'
+      '${_two(d.hour)}:${_two(d.minute)}:${_two(d.second)}.'
+      '${_three(d.millisecond)}${_offset(d)}';
+}
+
+/// Time-of-day local timestamp with offset, e.g. `20:09:25.024+03:00`.
+String _timeOnly(DateTime ts) {
+  final d = ts.toLocal();
+  return '${_two(d.hour)}:${_two(d.minute)}:${_two(d.second)}.'
+      '${_three(d.millisecond)}${_offset(d)}';
 }
