@@ -23,6 +23,13 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
   // Stream subscription for manual control to prevent memory leaks
   StreamSubscription<List<TeamMember>>? _teamSubscription;
 
+  // Subscription state: subscribe to watchTeamMembers() ONCE and serve the
+  // active/all filter from cache. The single long-lived subscription keeps the
+  // live stream flowing so real-time updates are preserved.
+  bool _isWatching = false;
+  bool _activeOnly = false;
+  List<TeamMember> _lastMembers = const [];
+
   // Store constraint managers for each team member
   final Map<String, LocalConstraintManager> _constraintManagers = {};
 
@@ -64,56 +71,67 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     on<_TeamMembersUpdated>(_onTeamMembersUpdated);
   }
 
-  /// Load all team members with real-time updates
+  /// Load all team members with real-time updates.
+  ///
+  /// Sets the filter to "all" and ensures the single live subscription is
+  /// running. Never cancels/re-subscribes on a repeat Load — see
+  /// [_ensureWatching].
   Future<void> _onLoadTeamMembers(
     LoadTeamMembers event,
     Emitter<TeamState> emit,
   ) async {
-    emit(const TeamLoading());
-
-    try {
-      // Cancel previous subscription before starting new one to prevent memory leaks
-      await _teamSubscription?.cancel();
-
-      // Use explicit subscription management instead of emit.forEach
-      _teamSubscription = _repository.watchTeamMembers().listen(
-        (members) {
-          add(_TeamMembersUpdated(members, activeOnly: false));
-        },
-        onError: (error, stackTrace) {
-          developer.log('TeamBloc._onLoadTeamMembers: Error - $error',
-              name: 'TeamBloc', error: error, stackTrace: stackTrace);
-          add(_TeamMembersUpdated(const [], activeOnly: false));
-        },
-      );
-    } catch (e) {
-      developer.log('TeamBloc._onLoadTeamMembers: Exception - $e',
-          name: 'TeamBloc', error: e);
-      emit(TeamError('שגיאה בטעינת חברי הצוות: $e'));
-    }
+    _activeOnly = false;
+    _ensureWatching(emit);
   }
 
-  /// Load active team members only (with real-time updates)
+  /// Load active team members only (with real-time updates).
+  ///
+  /// Sets the filter to "active" and ensures the single live subscription is
+  /// running. The filter switch is served from cache — no second subscription.
   Future<void> _onLoadActiveTeamMembers(
     LoadActiveTeamMembers event,
     Emitter<TeamState> emit,
   ) async {
+    _activeOnly = true;
+    _ensureWatching(emit);
+  }
+
+  /// Subscribe to [TeamRepository.watchTeamMembers] exactly once.
+  ///
+  /// On the first call this opens the single long-lived Firestore subscription.
+  /// On every subsequent call (repeat Load or a filter switch) it does NOT
+  /// cancel/re-subscribe — it just reflects the current cache through the
+  /// (possibly new) filter instantly, with no Firestore re-read. This is what
+  /// preserves real-time updates: the single subscription keeps flowing.
+  void _ensureWatching(Emitter<TeamState> emit) {
+    if (_isWatching) {
+      // Already streaming live data. Don't cancel/re-subscribe — just
+      // reflect the current cache through the (possibly new) filter,
+      // instantly, with no Firestore re-read.
+      add(_TeamMembersUpdated(_lastMembers, activeOnly: _activeOnly));
+      return;
+    }
+
     emit(const TeamLoading());
-
+    _isWatching = true;
     try {
-      // Cancel previous subscription before starting new one to prevent memory leaks
-      await _teamSubscription?.cancel();
-
-      // Use explicit subscription management instead of emit.forEach
       _teamSubscription = _repository.watchTeamMembers().listen(
-        (allMembers) {
-          add(_TeamMembersUpdated(allMembers, activeOnly: true));
+        (members) {
+          _lastMembers = members;
+          // Read the CURRENT _activeOnly (not a captured constant) so a
+          // later filter switch is honoured by the same live subscription.
+          add(_TeamMembersUpdated(members, activeOnly: _activeOnly));
         },
         onError: (error, stackTrace) {
-          add(_TeamMembersUpdated(const [], activeOnly: true));
+          developer.log('TeamBloc._ensureWatching: Error - $error',
+              name: 'TeamBloc', error: error, stackTrace: stackTrace);
+          add(_TeamMembersUpdated(const [], activeOnly: _activeOnly));
         },
       );
     } catch (e) {
+      _isWatching = false;
+      developer.log('TeamBloc._ensureWatching: Exception - $e',
+          name: 'TeamBloc', error: e);
       emit(TeamError('שגיאה בטעינת חברי הצוות: $e'));
     }
   }
@@ -124,6 +142,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     Emitter<TeamState> emit,
   ) async {
     final members = event.members;
+
+    // Always mirror the latest live data into the cache — including the path
+    // where the very first emission arrives — so filter switches and repeat
+    // Loads can be served from cache.
+    _lastMembers = members;
 
     if (event.activeOnly) {
       // Filter for active members only
@@ -868,9 +891,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
     ClearTeamState event,
     Emitter<TeamState> emit,
   ) async {
-    // Cancel stream subscription
+    // Cancel stream subscription (legitimate teardown on sign-out)
     await _teamSubscription?.cancel();
     _teamSubscription = null;
+    _isWatching = false;
+    _lastMembers = const [];
     // Clear constraint managers
     _constraintManagers.clear();
     // Reset to initial state
@@ -893,8 +918,11 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
 
   @override
   Future<void> close() async {
-    // Cancel stream subscription to prevent memory leaks
+    // Cancel stream subscription to prevent memory leaks (legitimate teardown
+    // on dispose)
     await _teamSubscription?.cancel();
+    _teamSubscription = null;
+    _isWatching = false;
     // Clear constraint managers
     _constraintManagers.clear();
     return super.close();
