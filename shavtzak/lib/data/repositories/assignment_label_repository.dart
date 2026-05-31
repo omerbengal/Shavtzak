@@ -1,3 +1,4 @@
+import 'package:rxdart/rxdart.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants/assignment_label_palette.dart';
@@ -9,8 +10,14 @@ class AssignmentLabelRepository {
 
   AssignmentLabelRepository(this._database);
 
+  // Single shared stream: one underlying Firestore listener feeds all
+  // StreamBuilders, and shareValue() replays the latest list to late
+  // subscribers so rebuilds/navigation don't re-read the collection.
+  Stream<List<AssignmentLabel>>? _sharedLabels;
+
   Stream<List<AssignmentLabel>> watchAssignmentLabels() {
-    return _database.watchAssignmentLabels().map(_sortLabels);
+    return _sharedLabels ??=
+        _database.watchAssignmentLabels().map(_sortLabels).shareValue();
   }
 
   Stream<List<AssignmentLabel>> watchActiveAssignmentLabels() {
