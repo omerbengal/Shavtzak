@@ -51,6 +51,15 @@ class MockDatabaseInterface extends _i1.Mock implements _i2.DatabaseInterface {
       ) as _i3.Future<List<_i4.TeamMember>>);
 
   @override
+  _i3.Stream<List<_i4.TeamMember>> watchTeamMembers() => (super.noSuchMethod(
+        Invocation.method(
+          #watchTeamMembers,
+          [],
+        ),
+        returnValue: _i3.Stream<List<_i4.TeamMember>>.empty(),
+      ) as _i3.Stream<List<_i4.TeamMember>>);
+
+  @override
   _i3.Future<_i4.TeamMember?> getTeamMemberById(String? id) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -139,6 +148,15 @@ class MockDatabaseInterface extends _i1.Mock implements _i2.DatabaseInterface {
         ),
         returnValue: _i3.Future<List<_i5.Event>>.value(<_i5.Event>[]),
       ) as _i3.Future<List<_i5.Event>>);
+
+  @override
+  _i3.Stream<List<_i5.Event>> watchEvents() => (super.noSuchMethod(
+        Invocation.method(
+          #watchEvents,
+          [],
+        ),
+        returnValue: _i3.Stream<List<_i5.Event>>.empty(),
+      ) as _i3.Stream<List<_i5.Event>>);
 
   @override
   _i3.Future<_i5.Event?> getEventById(String? id) => (super.noSuchMethod(
@@ -246,6 +264,36 @@ class MockDatabaseInterface extends _i1.Mock implements _i2.DatabaseInterface {
         ),
         returnValue: _i3.Future<List<_i6.Assignment>>.value(<_i6.Assignment>[]),
       ) as _i3.Future<List<_i6.Assignment>>);
+
+  @override
+  _i3.Stream<List<_i6.Assignment>> watchAssignments() => (super.noSuchMethod(
+        Invocation.method(
+          #watchAssignments,
+          [],
+        ),
+        returnValue: _i3.Stream<List<_i6.Assignment>>.empty(),
+      ) as _i3.Stream<List<_i6.Assignment>>);
+
+  @override
+  _i3.Stream<List<_i6.Assignment>> watchAssignmentsByEvent(String? eventId) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #watchAssignmentsByEvent,
+          [eventId],
+        ),
+        returnValue: _i3.Stream<List<_i6.Assignment>>.empty(),
+      ) as _i3.Stream<List<_i6.Assignment>>);
+
+  @override
+  _i3.Stream<List<_i6.Assignment>> watchAssignmentsByPerson(
+          String? teamMemberId) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #watchAssignmentsByPerson,
+          [teamMemberId],
+        ),
+        returnValue: _i3.Stream<List<_i6.Assignment>>.empty(),
+      ) as _i3.Stream<List<_i6.Assignment>>);
 
   @override
   _i3.Future<_i6.Assignment?> getAssignmentById(String? id) =>
