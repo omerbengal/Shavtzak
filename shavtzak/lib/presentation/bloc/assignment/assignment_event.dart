@@ -203,13 +203,28 @@ class LoadUserAssignments extends AssignmentEvent {
 }
 
 /// Internal event to rebuild user assignments (triggered by real-time streams)
+///
+/// When [assignments] is provided (the populated payload from the
+/// watchAssignmentsByPerson stream), the rebuild uses it directly and does NOT
+/// re-fetch — this removes the redundant "re-fetch the data the stream just
+/// gave us" round-trip on the assignment-change path.
+///
+/// When [assignments] is null (the watchEvents path, or an error fallback), the
+/// rebuild re-fetches via getAssignmentsByPerson so that fresh event relations
+/// are re-populated. This is REQUIRED for correctness: watchAssignmentsByPerson
+/// only re-emits on assignment-document changes, not on event changes, so a
+/// deactivated/deleted event must trigger a re-fetch to drop the assignment.
 class RebuildUserAssignments extends AssignmentEvent {
   final String teamMemberId;
 
-  const RebuildUserAssignments(this.teamMemberId);
+  /// Populated assignments straight from watchAssignmentsByPerson. When set,
+  /// the handler uses these instead of re-fetching. Null forces a re-fetch.
+  final List<Assignment>? assignments;
+
+  const RebuildUserAssignments(this.teamMemberId, {this.assignments});
 
   @override
-  List<Object?> get props => [teamMemberId];
+  List<Object?> get props => [teamMemberId, assignments];
 }
 
 /// Internal event to rebuild slots from cached data (for real-time updates)

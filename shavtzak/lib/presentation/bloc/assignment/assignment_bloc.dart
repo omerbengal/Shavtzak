@@ -1913,18 +1913,33 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _cancelSlotsSubscriptions();
       await _cancelUserAssignmentsSubscriptions();
 
-      // Subscribe to assignments stream for this user
+      // Subscribe to assignments stream for this user.
+      //
+      // watchAssignmentsByPerson already POPULATES relations (event/teamMember)
+      // exactly like getAssignmentsByPerson, so we pass its payload straight
+      // through to the rebuild instead of re-fetching the same data — this is
+      // the redundant round-trip the live log surfaced. On error we fall back
+      // to a re-fetch (null payload).
       _userAssignmentSubscription =
           _repository.watchAssignmentsByPerson(event.teamMemberId).listen(
-        (_) {
-          add(RebuildUserAssignments(event.teamMemberId));
+        (assignments) {
+          add(RebuildUserAssignments(
+            event.teamMemberId,
+            assignments: assignments,
+          ));
         },
         onError: (e) {
           add(RebuildUserAssignments(event.teamMemberId));
         },
       );
 
-      // Subscribe to events stream to detect changes/deletions
+      // Subscribe to events stream to detect changes/deletions.
+      //
+      // watchAssignmentsByPerson only re-emits on assignment-document changes,
+      // NOT on event changes, so an event being deactivated/deleted does not
+      // trigger the assignment stream. This listener forces a re-fetch (null
+      // payload) so getAssignmentsByPerson re-populates FRESH event relations —
+      // a now-deactivated event is then filtered out of the user's list.
       _userEventSubscription = _eventRepository.watchEvents().listen(
         (_) {
           add(RebuildUserAssignments(event.teamMemberId));
@@ -1934,22 +1949,29 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         },
       );
 
-      // Initial load
-      add(RebuildUserAssignments(event.teamMemberId));
+      // No explicit initial add: both Firestore snapshot streams emit on
+      // subscribe (the assignment stream with a populated payload, the event
+      // stream forcing the single initial fetch that populates fresh events),
+      // so the load is covered without a third redundant rebuild.
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
     }
   }
 
-  /// Internal handler to rebuild user assignments (triggered by streams)
-  /// Note: No debounce flag - we always want fresh data when streams fire
+  /// Internal handler to rebuild user assignments (triggered by streams).
+  ///
+  /// If [event.assignments] is provided (the populated watchAssignmentsByPerson
+  /// payload) we use it directly — no re-fetch. Otherwise (watchEvents path /
+  /// error fallback) we re-fetch so fresh event relations are re-populated,
+  /// which is what makes a deactivated/deleted event drop from the list.
   Future<void> _onRebuildUserAssignments(
     RebuildUserAssignments event,
     Emitter<AssignmentState> emit,
   ) async {
     try {
-      // Fetch fresh data from repository (with populated relations)
-      final allAssignments =
+      // Use the streamed (already-populated) payload when available; only
+      // re-fetch when none was supplied (event-change/error paths).
+      final allAssignments = event.assignments ??
           await _repository.getAssignmentsByPerson(event.teamMemberId);
 
       // Hide assignments whose event is deactivated — preserved in DB but
