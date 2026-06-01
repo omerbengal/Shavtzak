@@ -333,4 +333,91 @@ void main() {
       verify(roleRepo.getAllRoles()).called(1);
     },
   );
+
+  // ---------------------------------------------------------------------------
+  // Filter-change slot-build roles-cache fix tests.
+  //
+  // Bug: _buildSlotsFromAssignments (the filter-change path,
+  // RebuildAssignmentSlots -> _onRebuildAssignmentSlots) re-fetched roles via
+  // getAllRoles() on every filter change, even though _cachedRoles is already
+  // seeded at load and kept fresh by the watchRoles() listener.
+  //
+  // Fix: reuse _cachedRoles in _buildSlotsFromAssignments (roles are global /
+  // window-independent and getAllRoles() returns the same set already cached),
+  // falling back to a one-shot getAllRoles() only if the cache is empty. The
+  // full-dataset getAllEvents()/getActiveTeamMembers()/getAllAssignments()
+  // fetches on this path are intentionally left untouched.
+  // ---------------------------------------------------------------------------
+
+  test(
+    'filter change (RebuildAssignmentSlots) does NOT re-fetch roles',
+    () async {
+      // The filter path uses the FULL datasets (getAllEvents/getAllAssignments),
+      // distinct from the windowed hot-path mocks; stub them here.
+      when(eventRepo.getAllEvents())
+          .thenAnswer((_) async => [futureEvent('e1')]);
+      when(assignmentRepo.getAllAssignments())
+          .thenAnswer((_) async => const <Assignment>[]);
+
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+
+      bloc.add(const LoadAssignmentSlots());
+      // Let the initial load complete: this seeds _cachedRoles via a single
+      // getAllRoles() call.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      // Dispatch a filter change. This drives _onRebuildAssignmentSlots ->
+      // _buildSlotsFromAssignments.
+      bloc.add(const RebuildAssignmentSlots(preservedFilter: {'e1'}));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      // CORE ASSERTION: getAllRoles called only ONCE total (the load seed); the
+      // filter rebuild reused _cachedRoles. Against pre-fix code this is 2
+      // (load seed + filter-rebuild re-fetch).
+      verify(roleRepo.getAllRoles()).called(1);
+
+      // The filter path still uses the full event/assignment datasets (expected,
+      // unchanged) and produced a valid slots state.
+      expect(bloc.state, isA<AssignmentSlotsLoaded>());
+      expect((bloc.state as AssignmentSlotsLoaded).totalSlots, 1);
+    },
+  );
+
+  test(
+    'real-time role change flows into the filter-change build path',
+    () async {
+      when(eventRepo.getAllEvents())
+          .thenAnswer((_) async => [futureEvent('e1')]);
+      when(assignmentRepo.getAllAssignments())
+          .thenAnswer((_) async => const <Assignment>[]);
+
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+
+      bloc.add(const LoadAssignmentSlots());
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      // A role rename arrives via watchRoles(), updating _cachedRoles.
+      final renamed = [medicRole(hebrewName: 'פרמדיק')];
+      roleStream.add(renamed);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      // A subsequent filter change rebuilds via _buildSlotsFromAssignments.
+      bloc.add(const RebuildAssignmentSlots(preservedFilter: {'e1'}));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      // The rebuilt slot reflects the updated (cached) role name...
+      expect(bloc.state, isA<AssignmentSlotsLoaded>());
+      final slots = (bloc.state as AssignmentSlotsLoaded).slots;
+      expect(slots, hasLength(1));
+      expect(slots.single.role.hebrewName, 'פרמדיק',
+          reason: 'filter rebuild must use the live-updated cached roles');
+
+      // ...and it did so WITHOUT an extra getAllRoles fetch: still 1 total (the
+      // load seed). The role change came via watchRoles, the filter rebuild used
+      // the cache.
+      verify(roleRepo.getAllRoles()).called(1);
+    },
+  );
 }

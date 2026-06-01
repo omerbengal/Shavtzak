@@ -1374,9 +1374,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // 3. Load all active team members
     final allMembers = await _teamRepository.getActiveTeamMembers();
 
-    // 4. Load roles and sort by sortOrder
-    final allRoles = await _roleRepository.getAllRoles();
-    final sortedRoles = allRoles
+    // 4. Load roles and sort by sortOrder.
+    // Roles are global (window-independent) and kept live in _cachedRoles by
+    // the watchRoles() subscription; reuse the cache instead of re-fetching on
+    // every filter change. Fall back to a one-shot fetch if not yet seeded.
+    final allRoles = _cachedRoles.isNotEmpty
+        ? _cachedRoles
+        : await _roleRepository.getAllRoles();
+    // Sort a COPY so the shared _cachedRoles list is never mutated in place.
+    final sortedRoles = [...allRoles]
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
     // Create a mapping from role key to Role for easy lookup
