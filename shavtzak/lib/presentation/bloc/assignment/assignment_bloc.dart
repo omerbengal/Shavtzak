@@ -42,6 +42,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   // Keep the current event filter independent of state
   Set<String> _currentEventFilter = <String>{};
 
+  // Cached roles for the slots grid. Seeded once at slots-load time and
+  // refreshed by the watchRoles listener when roles actually change. The
+  // RebuildAssignmentSlotsFromData handler reads this cache instead of
+  // re-fetching getAllRoles() on every rebuild (the windowed assignment/team/
+  // event/role stream listeners each trigger a rebuild on their initial emit,
+  // which previously caused ~5 identical getAllRoles fetches per load).
+  // watchRoles() emits the SAME role set as getAllRoles() (both read
+  // utilities/Lists 'Roles' with identical mapping + sortOrder sort, no
+  // filtering), so the listener can cache its stream payload directly.
+  List<Role> _cachedRoles = const [];
+
   // Keep pending operations independent of state (survives error states)
   Map<String, PendingOperation> _pendingOperations = {};
 
@@ -576,6 +587,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final cachedEventsMap = <String, Event>{};
       cachedEventsMap.addAll({for (var e in cachedEvents) e.id: e});
 
+      // Seed the roles cache once. The RebuildAssignmentSlotsFromData handler
+      // reads _cachedRoles instead of re-fetching on every rebuild; the
+      // watchRoles listener below keeps it fresh on actual role changes.
+      _cachedRoles = await _roleRepository.getAllRoles();
+
       // Initial load - get assignments within time window FIRST
       // This ensures we emit a state immediately, preventing endless loading
       final initialAssignments = await _repository.getAssignmentsInTimeWindow(
@@ -650,9 +666,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Also listen for role changes
       _roleSubscription = _roleRepository.watchRoles().listen(
         (updatedRoles) {
-          // When roles change (e.g., reordering), rebuild slots. Assignments are
-          // kept live by the watchAssignmentsInTimeWindow listener (the source of
-          // truth); reuse its cache instead of re-querying.
+          // When roles change (rename/reorder/add/archive), refresh the cache
+          // from the stream payload so the rebuild reflects the change. This is
+          // the ONLY place roles are refreshed after the initial load; the
+          // rebuild handler never re-fetches them. watchRoles() emits the same
+          // set getAllRoles() returns, so caching the payload directly is safe.
+          // Assignments are kept live by the watchAssignmentsInTimeWindow
+          // listener (the source of truth); reuse its cache instead of
+          // re-querying.
+          _cachedRoles = updatedRoles;
           final currentAssignments = _repository.getCurrentAssignments();
           add(RebuildAssignmentSlotsFromData(currentAssignments,
               cachedEventsMap, cachedMembersMap, _currentEventFilter));
@@ -1615,9 +1637,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final teamMembersMap = rebuildEvent.teamMembers;
       final teamMembers = rebuildEvent.teamMembers.values.toList();
 
-      // Load roles and sort by sortOrder
-      final allRoles = await _roleRepository.getAllRoles();
-      final sortedRoles = allRoles
+      // Read roles from the cache (seeded at load, refreshed by the watchRoles
+      // listener) instead of re-fetching on every rebuild. Sort a COPY so the
+      // cached list is never mutated in place.
+      final sortedRoles = [..._cachedRoles]
         ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
       // Create a mapping from role key to Role for easy lookup

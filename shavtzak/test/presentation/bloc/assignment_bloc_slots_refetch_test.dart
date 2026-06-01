@@ -55,6 +55,10 @@ void main() {
   late StreamController<List<Event>> eventStream;
   late StreamController<List<Role>> roleStream;
 
+  // Mutable source for getAllRoles() so the roles-cache tests can change the
+  // role set between fetches (proving watchRoles refreshes the cache).
+  late List<Role> currentRoles;
+
   final now = DateTime(2026, 1, 1);
 
   // ---- Builders for minimal valid entities --------------------------------
@@ -104,10 +108,10 @@ void main() {
         updatedAt: now,
       );
 
-  Role medicRole() => Role(
+  Role medicRole({String hebrewName = 'חובש'}) => Role(
         id: 'role-medic',
         key: 'medic',
-        hebrewName: 'חובש',
+        hebrewName: hebrewName,
         sortOrder: 0,
         createdAt: now,
         updatedAt: now,
@@ -152,8 +156,10 @@ void main() {
       windowEnd: anyNamed('windowEnd'),
     )).thenAnswer((_) async => const <Assignment>[]);
 
-    // Roles fetched inside RebuildAssignmentSlotsFromData.
-    when(roleRepo.getAllRoles()).thenAnswer((_) async => [medicRole()]);
+    // Roles: getAllRoles() returns a snapshot of the mutable currentRoles list.
+    currentRoles = [medicRole()];
+    when(roleRepo.getAllRoles())
+        .thenAnswer((_) async => List<Role>.from(currentRoles));
   });
 
   tearDown(() async {
@@ -237,6 +243,94 @@ void main() {
       expect(bloc.state, isA<AssignmentSlotsLoaded>());
       expect((bloc.state as AssignmentSlotsLoaded).filledSlots, 1,
           reason: 'live assignment change must rebuild slots with no reload');
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Roles-cache performance fix tests.
+  //
+  // Bug: _onRebuildAssignmentSlotsFromData called getAllRoles() on EVERY
+  // rebuild. On a slots load, four stream subscriptions each fire an initial
+  // emit, producing ~5 RebuildAssignmentSlotsFromData dispatches and thus ~5
+  // identical getAllRoles fetches.
+  //
+  // Fix: cache roles (_cachedRoles); the rebuild reads the cache; getAllRoles
+  // is fetched only at initial load. watchRoles() emits the SAME role set as
+  // getAllRoles() (verified: both read utilities/Lists 'Roles', same mapping +
+  // sort, no filtering), so the watchRoles listener caches its stream payload
+  // directly (Variant A) and rebuilds. Net: ~5 fetches/load -> 1.
+  // ---------------------------------------------------------------------------
+
+  test(
+    'getAllRoles is NOT re-fetched per rebuild during a slots load',
+    () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+
+      bloc.add(const LoadAssignmentSlots());
+
+      // Let the initial load complete + the four listeners attach. The bloc
+      // dispatches one RebuildAssignmentSlotsFromData immediately for the seed.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      // In the live app each Firestore snapshot stream fires an initial emit on
+      // subscribe, producing ~4 more rebuilds (~5 total). The mock broadcast
+      // streams don't auto-emit on subscribe, so reproduce that here: fire one
+      // initial emit per stream. Each rebuild that re-fetches roles would call
+      // getAllRoles again under the old code.
+      assignmentStream.add(const <Assignment>[]);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      teamStream.add([member('m1')]);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      eventStream.add([futureEvent('e1')]);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      roleStream.add([medicRole()]);
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      // CORE ASSERTION: getAllRoles is called at most once across the whole
+      // multi-rebuild load (the single seed of _cachedRoles). Before the fix it
+      // was called once per rebuild (~5x).
+      verify(roleRepo.getAllRoles()).called(1);
+
+      // Sanity: the load produced a valid slots state (e1 has 1 medic quota).
+      expect(bloc.state, isA<AssignmentSlotsLoaded>());
+      expect((bloc.state as AssignmentSlotsLoaded).totalSlots, 1);
+    },
+  );
+
+  test(
+    'real-time role change still updates slots (cache refreshed, no reload)',
+    () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+
+      bloc.add(const LoadAssignmentSlots());
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      // Baseline: the single medic slot carries the original Hebrew name.
+      expect(bloc.state, isA<AssignmentSlotsLoaded>());
+      var slots = (bloc.state as AssignmentSlotsLoaded).slots;
+      expect(slots, hasLength(1));
+      expect(slots.single.role.hebrewName, 'חובש',
+          reason: 'baseline role name before the rename');
+
+      // Simulate a role change in Firestore (rename). watchRoles() emits the
+      // new role set; the listener must update _cachedRoles and rebuild slots
+      // live (Variant A: the listener caches the stream payload directly).
+      final renamed = [medicRole(hebrewName: 'פרמדיק')];
+      roleStream.add(renamed);
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      // CRITICAL: the slots grid reflects the renamed role with no reload.
+      expect(bloc.state, isA<AssignmentSlotsLoaded>());
+      slots = (bloc.state as AssignmentSlotsLoaded).slots;
+      expect(slots, hasLength(1));
+      expect(slots.single.role.hebrewName, 'פרמדיק',
+          reason: 'role rename must flow into rebuilt slots in real time');
+
+      // Invariant: getAllRoles is still called only once total (the load seed).
+      // The real-time change came through the watchRoles stream, not a re-fetch.
+      verify(roleRepo.getAllRoles()).called(1);
     },
   );
 }
