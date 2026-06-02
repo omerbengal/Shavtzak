@@ -22,6 +22,12 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   StreamSubscription<List<Event>>? _eventsSubscription;
   StreamSubscription<List<Assignment>>? _assignmentsSubscription;
 
+  // True once the combined streams have been subscribed. Repeat Loads then
+  // re-emit from the cached values instead of tearing down + rebuilding both
+  // live streams (which would re-read all events + assignments and flash
+  // EventLoading). The live streams stay subscribed to preserve real-time.
+  bool _isWatching = false;
+
   // Cache latest values for combining streams
   List<Event> _latestEvents = [];
   List<Assignment> _latestAssignments = [];
@@ -56,13 +62,25 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     LoadEvents event,
     Emitter<EventState> emit,
   ) async {
-    emit(const EventLoading());
     _upcomingOnly = false;
+    await _ensureWatching(emit);
+  }
 
+  /// Subscribe to the combined streams exactly once. On subsequent calls
+  /// (repeat Loads / filter switches) reflect the current cache through the
+  /// current _upcomingOnly filter instantly — no re-subscribe, no loading flash.
+  Future<void> _ensureWatching(Emitter<EventState> emit) async {
+    if (_isWatching) {
+      _emitCombinedIfReady();
+      return;
+    }
+    emit(const EventLoading());
+    _isWatching = true;
     try {
-      // Start combined stream subscriptions
+      // Start combined stream subscriptions (first watch only).
       await _startCombinedStreams();
     } catch (e) {
+      _isWatching = false;
       emit(EventError('שגיאה בטעינת אירועים: $e'));
     }
   }
@@ -227,15 +245,11 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     LoadUpcomingEvents event,
     Emitter<EventState> emit,
   ) async {
-    emit(const EventLoading());
     _upcomingOnly = true;
-
-    try {
-      // Start combined stream subscriptions
-      await _startCombinedStreams();
-    } catch (e) {
-      emit(EventError('שגיאה בטעינת אירועים: $e'));
-    }
+    // When already watching, this re-emits from cache through the upcoming
+    // filter instantly via _emitCombinedIfReady (which reads _upcomingOnly);
+    // no re-subscribe.
+    await _ensureWatching(emit);
   }
 
   /// Search events
