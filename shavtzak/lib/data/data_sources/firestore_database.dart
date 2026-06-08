@@ -25,6 +25,8 @@ import '../models/event_model.dart';
 import '../models/preset_model.dart';
 import '../models/role_model.dart';
 import '../models/team_member_model.dart';
+import '../../core/debug/debug_logger.dart';
+import '../../core/debug/log_event.dart';
 import 'database_interface.dart';
 
 /// Firestore implementation of DatabaseInterface
@@ -78,6 +80,28 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> close() async {
     // Firestore connections are managed automatically
+  }
+
+  /// Finer-grained DB tracing for things the [LoggingDatabase] wrapper cannot
+  /// see because they happen INSIDE this class — the raw snapshot arriving in a
+  /// stream's asyncMap (before relation population) and each one-shot whereIn
+  /// `.get()` inside [_populateAssignmentRelations]. Used to locate where an
+  /// assignment stream stalls: if a `*:raw` marker logs but the wrapper's
+  /// DB_STREAM_EMIT never does, a populate get below is hanging; if `*:raw`
+  /// never logs, the listen target itself is wedged.
+  void _logDb(
+    LogEventType type,
+    String op,
+    Map<String, Object?> ctx, [
+    Duration? duration,
+  ]) {
+    DebugLogger.instance.record(LogEvent(
+      timestamp: DateTime.now().toUtc(),
+      type: type,
+      name: op,
+      context: ctx,
+      duration: duration,
+    ));
   }
 
   Future<Map<String, dynamic>> _invokeMutation(
@@ -627,6 +651,14 @@ class FirestoreDatabase implements DatabaseInterface {
         .where('eventId', isEqualTo: eventId)
         .snapshots()
         .asyncMap((snapshot) async {
+      // Raw snapshot arrived, BEFORE populate. Distinguishes "listen target
+      // wedged" (this never logs) from "populate get hung" (this logs but the
+      // wrapper's DB_STREAM_EMIT never does).
+      _logDb(LogEventType.dbStreamEmit, 'watchAssignmentsByEvent:raw', {
+        'collection': 'assignments',
+        'eventId': eventId,
+        'count': snapshot.docs.length,
+      });
       final assignments = snapshot.docs
           .map((doc) => AssignmentModel.fromFirestore(doc).toEntity())
           .toList();
@@ -643,6 +675,11 @@ class FirestoreDatabase implements DatabaseInterface {
         .where('teamMemberId', isEqualTo: teamMemberId)
         .snapshots()
         .asyncMap((snapshot) async {
+      _logDb(LogEventType.dbStreamEmit, 'watchAssignmentsByPerson:raw', {
+        'collection': 'assignments',
+        'teamMemberId': teamMemberId,
+        'count': snapshot.docs.length,
+      });
       final assignments = snapshot.docs
           .map((doc) => AssignmentModel.fromFirestore(doc).toEntity())
           .toList();
@@ -1149,6 +1186,9 @@ class FirestoreDatabase implements DatabaseInterface {
 
     // Batch fetch events (Firestore allows 30 items per whereIn query)
     final events = <String, Event>{};
+    final tEvents = DateTime.now().toUtc();
+    _logDb(LogEventType.dbStart, 'populate.events',
+        {'collection': 'events', 'ids': eventIds.length});
     for (int i = 0; i < eventIds.length; i += 30) {
       final chunk = eventIds.skip(i).take(30).toList();
       final snapshot = await _firestore
@@ -1161,9 +1201,17 @@ class FirestoreDatabase implements DatabaseInterface {
         events[event.id] = event;
       }
     }
+    _logDb(
+        LogEventType.dbEnd,
+        'populate.events',
+        {'collection': 'events', 'ids': eventIds.length, 'count': events.length},
+        DateTime.now().toUtc().difference(tEvents));
 
     // Batch fetch team members (same pattern)
     final members = <String, TeamMember>{};
+    final tMembers = DateTime.now().toUtc();
+    _logDb(LogEventType.dbStart, 'populate.members',
+        {'collection': 'teamMembers', 'ids': memberIds.length});
     for (int i = 0; i < memberIds.length; i += 30) {
       final chunk = memberIds.skip(i).take(30).toList();
       final snapshot = await _firestore
@@ -1176,9 +1224,21 @@ class FirestoreDatabase implements DatabaseInterface {
         members[member.id] = member;
       }
     }
+    _logDb(
+        LogEventType.dbEnd,
+        'populate.members',
+        {
+          'collection': 'teamMembers',
+          'ids': memberIds.length,
+          'count': members.length
+        },
+        DateTime.now().toUtc().difference(tMembers));
 
     // Batch fetch semantic labels (same pattern)
     final labels = <String, AssignmentLabel>{};
+    final tLabels = DateTime.now().toUtc();
+    _logDb(LogEventType.dbStart, 'populate.labels',
+        {'collection': 'assignmentLabels', 'ids': labelIds.length});
     for (int i = 0; i < labelIds.length; i += 30) {
       final chunk = labelIds.skip(i).take(30).toList();
       final snapshot = await _firestore
@@ -1191,6 +1251,15 @@ class FirestoreDatabase implements DatabaseInterface {
         labels[label.id] = label;
       }
     }
+    _logDb(
+        LogEventType.dbEnd,
+        'populate.labels',
+        {
+          'collection': 'assignmentLabels',
+          'ids': labelIds.length,
+          'count': labels.length
+        },
+        DateTime.now().toUtc().difference(tLabels));
 
     // Populate relations using cached data
     return assignments.map((assignment) {
