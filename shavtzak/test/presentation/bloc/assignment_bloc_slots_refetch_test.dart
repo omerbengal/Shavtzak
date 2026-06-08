@@ -77,9 +77,16 @@ void main() {
   // A future event so it survives the showPastEvents filter, with a quota of 1
   // for the 'medic' role so a single assignment makes the slot transition
   // unfilled -> filled (observable as a distinct AssignmentSlotsLoaded state).
+  //
+  // The date is computed RELATIVE TO DateTime.now() (30 days out) rather than
+  // hard-coded, so the event is always genuinely in the future regardless of
+  // the wall-clock date the suite runs on. A fixed calendar date silently
+  // "expires" once the real date passes it, which would make the showPastEvents
+  // filter drop the event and collapse every slot count to 0.
   Event futureEvent(String id) {
-    final start = DateTime(2026, 6, 1, 9, 0);
-    final end = DateTime(2026, 6, 1, 17, 0);
+    final base = DateTime.now().add(const Duration(days: 30));
+    final start = DateTime(base.year, base.month, base.day, 9, 0);
+    final end = DateTime(base.year, base.month, base.day, 17, 0);
     return Event(
       id: id,
       name: 'event-$id',
@@ -186,19 +193,20 @@ void main() {
       bloc.add(const LoadAssignmentSlots());
 
       // Let the initial load complete (1 getAssignmentsInTimeWindow for the seed)
-      // and all four listeners attach.
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      // and all four listeners attach. pumpEventQueue drains microtasks+timers
+      // until idle, so the async pipeline settles deterministically.
+      await pumpEventQueue();
 
       // Push member / event / role updates. None of these change the set of
       // assignments, so none should trigger an assignment re-fetch.
       teamStream.add([member('m1'), member('m2')]);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await pumpEventQueue();
       eventStream.add([futureEvent('e1'), futureEvent('e2')]);
-      // The event listener used to await a 100ms delay before re-fetching; give
-      // it well over that so an (unwanted) re-fetch would have happened.
-      await Future<void>.delayed(const Duration(milliseconds: 250));
+      // The event listener used to await a 100ms delay before re-fetching; pump
+      // until idle so an (unwanted) re-fetch would have happened by now.
+      await pumpEventQueue();
       roleStream.add([medicRole()]);
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await pumpEventQueue();
 
       // CORE ASSERTION: getAssignmentsInTimeWindow called exactly once total
       // (the initial seed). Before the fix it was called 3 extra times.
@@ -224,7 +232,7 @@ void main() {
       addTearDown(() async => bloc.close());
 
       bloc.add(const LoadAssignmentSlots());
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await pumpEventQueue();
 
       // Initially the single medic slot for e1 is unfilled.
       expect(bloc.state, isA<AssignmentSlotsLoaded>());
@@ -233,7 +241,7 @@ void main() {
       // Push a CHANGED assignment list on the windowed assignment stream.
       final updated = [assignment('a1', 'e1', 'm1')];
       assignmentStream.add(updated);
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await pumpEventQueue();
 
       // The windowed listener cached the pushed list...
       expect(assignmentRepo.getCurrentAssignments(), equals(updated),
@@ -271,7 +279,7 @@ void main() {
 
       // Let the initial load complete + the four listeners attach. The bloc
       // dispatches one RebuildAssignmentSlotsFromData immediately for the seed.
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await pumpEventQueue();
 
       // In the live app each Firestore snapshot stream fires an initial emit on
       // subscribe, producing ~4 more rebuilds (~5 total). The mock broadcast
@@ -279,13 +287,13 @@ void main() {
       // initial emit per stream. Each rebuild that re-fetches roles would call
       // getAllRoles again under the old code.
       assignmentStream.add(const <Assignment>[]);
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await pumpEventQueue();
       teamStream.add([member('m1')]);
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await pumpEventQueue();
       eventStream.add([futureEvent('e1')]);
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await pumpEventQueue();
       roleStream.add([medicRole()]);
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await pumpEventQueue();
 
       // CORE ASSERTION: getAllRoles is called at most once across the whole
       // multi-rebuild load (the single seed of _cachedRoles). Before the fix it
@@ -305,7 +313,7 @@ void main() {
       addTearDown(() async => bloc.close());
 
       bloc.add(const LoadAssignmentSlots());
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await pumpEventQueue();
 
       // Baseline: the single medic slot carries the original Hebrew name.
       expect(bloc.state, isA<AssignmentSlotsLoaded>());
@@ -319,7 +327,7 @@ void main() {
       // live (Variant A: the listener caches the stream payload directly).
       final renamed = [medicRole(hebrewName: 'פרמדיק')];
       roleStream.add(renamed);
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await pumpEventQueue();
 
       // CRITICAL: the slots grid reflects the renamed role with no reload.
       expect(bloc.state, isA<AssignmentSlotsLoaded>());
@@ -365,12 +373,12 @@ void main() {
       bloc.add(const LoadAssignmentSlots());
       // Let the initial load complete: this seeds _cachedRoles via a single
       // getAllRoles() call.
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await pumpEventQueue();
 
       // Dispatch a filter change. This drives _onRebuildAssignmentSlots ->
       // _buildSlotsFromAssignments.
       bloc.add(const RebuildAssignmentSlots(preservedFilter: {'e1'}));
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await pumpEventQueue();
 
       // CORE ASSERTION: getAllRoles called only ONCE total (the load seed); the
       // filter rebuild reused _cachedRoles. Against pre-fix code this is 2
@@ -396,16 +404,16 @@ void main() {
       addTearDown(() async => bloc.close());
 
       bloc.add(const LoadAssignmentSlots());
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await pumpEventQueue();
 
       // A role rename arrives via watchRoles(), updating _cachedRoles.
       final renamed = [medicRole(hebrewName: 'פרמדיק')];
       roleStream.add(renamed);
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await pumpEventQueue();
 
       // A subsequent filter change rebuilds via _buildSlotsFromAssignments.
       bloc.add(const RebuildAssignmentSlots(preservedFilter: {'e1'}));
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await pumpEventQueue();
 
       // The rebuilt slot reflects the updated (cached) role name...
       expect(bloc.state, isA<AssignmentSlotsLoaded>());
