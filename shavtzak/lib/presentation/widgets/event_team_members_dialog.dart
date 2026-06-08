@@ -18,11 +18,16 @@ class EventTeamMembersDialog extends StatefulWidget {
   final String currentUserId;
   final String eventName;
 
+  /// Optional injected BLoC. When null (production), the dialog creates and owns
+  /// its own AssignmentBloc. Tests inject one so they can drive the stream.
+  final AssignmentBloc? assignmentBloc;
+
   const EventTeamMembersDialog({
     super.key,
     required this.eventId,
     required this.currentUserId,
     required this.eventName,
+    this.assignmentBloc,
   });
 
   @override
@@ -32,45 +37,43 @@ class EventTeamMembersDialog extends StatefulWidget {
 
 class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
   late final AssignmentBloc _assignmentBloc;
-  List<Assignment>? _cachedAssignments;
+  late final bool _ownsBloc;
 
   @override
   void initState() {
     super.initState();
-    // Create a dedicated BLoC for this dialog
-    _assignmentBloc = serviceLocator.createAssignmentBloc();
+    // A dedicated BLoC is required: the ambient AssignmentBloc on the
+    // /user/assignments screen is in "by person" mode, so reusing it would
+    // clobber that screen's state. Tests inject one; production creates+owns it.
+    final injected = widget.assignmentBloc;
+    if (injected != null) {
+      _assignmentBloc = injected;
+      _ownsBloc = false;
+    } else {
+      _assignmentBloc = serviceLocator.createAssignmentBloc();
+      _ownsBloc = true;
+    }
 
-    _loadAssignments();
+    // Stream-first: paint from the real-time watchAssignmentsByEvent stream,
+    // which serves cached data immediately and self-heals from the server.
+    //
+    // We deliberately do NOT prefetch via a one-shot getAssignmentsByEvent()
+    // here. A one-shot .get() uses Firestore's default source (server-first)
+    // and can park for ~30s on a transport hiccup, while listeners on the SAME
+    // connection keep emitting in ~100ms — which previously froze this dialog
+    // on a spinner. Every other assignment view paints from a stream; so does
+    // this one now. Dispatch exactly once (the handler is a long-running
+    // emit.forEach; re-dispatching spawns competing subscriptions).
+    _assignmentBloc.add(LoadAssignmentsByEvent(widget.eventId));
   }
 
   @override
   void dispose() {
-    _assignmentBloc.close();
-    super.dispose();
-  }
-
-  void _loadAssignments() async {
-    // Prefetch once so we can render immediately while the real-time
-    // stream warms up. Firestore's first snapshot can be an empty cache
-    // hit before the server result arrives, so relying on the stream
-    // alone can otherwise strand the dialog on a spinner indefinitely.
-    if (_cachedAssignments == null) {
-      try {
-        final assignmentRepository =
-            serviceLocator.createAssignmentRepository();
-        final assignments =
-            await assignmentRepository.getAssignmentsByEvent(widget.eventId);
-        if (!mounted) return;
-        setState(() => _cachedAssignments = assignments);
-      } catch (e) {
-        // If prefetch fails, fall back to the BLoC stream only.
-      }
+    // Only close the BLoC if we created it — never close an injected one.
+    if (_ownsBloc) {
+      _assignmentBloc.close();
     }
-
-    // Subscribe to the real-time stream. Dispatch exactly once: this is a
-    // long-running emit.forEach handler, and re-dispatching it creates
-    // competing Firestore subscriptions that can lose the server result.
-    _assignmentBloc.add(LoadAssignmentsByEvent(widget.eventId));
+    super.dispose();
   }
 
   @override
@@ -116,7 +119,7 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                   Expanded(
                     child: BlocBuilder<AssignmentBloc, AssignmentState>(
                       builder: (context, state) {
-                        // Prefer fresh data from the real-time stream.
+                        // Paint from the real-time stream.
                         if (state is AssignmentsLoaded) {
                           final assignments = state.assignments
                               .where((a) => a.eventId == widget.eventId)
@@ -124,17 +127,6 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                           return assignments.isEmpty
                               ? _buildEmptyState()
                               : _buildAssignmentsList(context, assignments);
-                        }
-
-                        // Stream hasn't produced data yet: render the
-                        // prefetched snapshot if we have one so the user
-                        // never sees an indefinite spinner while the
-                        // Firestore stream warms up.
-                        if (_cachedAssignments != null) {
-                          return _cachedAssignments!.isEmpty
-                              ? _buildEmptyState()
-                              : _buildAssignmentsList(
-                                  context, _cachedAssignments!);
                         }
 
                         // Definitive "no assignments" from the stream.
@@ -151,7 +143,8 @@ class _EventTeamMembersDialogState extends State<EventTeamMembersDialog> {
                           );
                         }
 
-                        // Initial/loading with nothing prefetched yet.
+                        // Initial/loading: brief spinner until the stream's
+                        // first emission (typically ~100ms).
                         return const Center(child: CircularProgressIndicator());
                       },
                     ),
