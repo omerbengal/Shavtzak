@@ -3,9 +3,19 @@ import assert from 'node:assert/strict';
 import {
   isEligiblePermanentMember,
   shouldInviteAllPermanentForEvent,
+  planAppEventReconciliation,
+  type AppEventPartSummary,
 } from './calendar_sync_backend';
 
 type Mutable = Record<string, unknown>;
+
+function buildPart(
+  id: string,
+  eventType: string | null,
+  status: string | null = 'confirmed',
+): AppEventPartSummary {
+  return {id, eventType, status};
+}
 
 function buildMember(overrides: Mutable = {}): Mutable {
   return {
@@ -135,4 +145,102 @@ test('shouldInvite: missing inviteAllPermanentWhenUnassigned => false (old event
     shouldInviteAllPermanentForEvent({relevantForExtendedTeam: false}, 0),
     false,
   );
+});
+
+// --- planAppEventReconciliation: convergent de-duplication of app-event calendar parts ---
+
+test('reconcile plan: reuses an existing main event when stored state is empty (no duplicate create)', () => {
+  const plan = planAppEventReconciliation({
+    discovered: [buildPart('main-a', 'main')],
+    currentStateAssemblyId: '',
+    currentStateMainId: '',
+    shouldHaveAssemblyPart: false,
+  });
+  assert.equal(plan.createMain, false);
+  assert.equal(plan.keepMainId, 'main-a');
+  assert.deepEqual(plan.deleteMainIds, []);
+});
+
+test('reconcile plan: keeps the stored main and deletes a duplicate orphan', () => {
+  const plan = planAppEventReconciliation({
+    discovered: [buildPart('main-stored', 'main'), buildPart('main-orphan', 'main')],
+    currentStateAssemblyId: '',
+    currentStateMainId: 'main-stored',
+    shouldHaveAssemblyPart: false,
+  });
+  assert.equal(plan.createMain, false);
+  assert.equal(plan.keepMainId, 'main-stored');
+  assert.deepEqual(plan.deleteMainIds, ['main-orphan']);
+});
+
+test('reconcile plan: creates a main event when none exist', () => {
+  const plan = planAppEventReconciliation({
+    discovered: [],
+    currentStateAssemblyId: '',
+    currentStateMainId: '',
+    shouldHaveAssemblyPart: false,
+  });
+  assert.equal(plan.createMain, true);
+  assert.equal(plan.keepMainId, null);
+  assert.deepEqual(plan.deleteMainIds, []);
+});
+
+test('reconcile plan: deletes assembly events when the event should not have an assembly part', () => {
+  const plan = planAppEventReconciliation({
+    discovered: [buildPart('main-a', 'main'), buildPart('asm-x', 'assembly')],
+    currentStateAssemblyId: 'asm-x',
+    currentStateMainId: 'main-a',
+    shouldHaveAssemblyPart: false,
+  });
+  assert.equal(plan.createAssembly, false);
+  assert.equal(plan.keepAssemblyId, null);
+  assert.deepEqual(plan.deleteAssemblyIds, ['asm-x']);
+});
+
+test('reconcile plan: ignores cancelled events and creates a replacement', () => {
+  const plan = planAppEventReconciliation({
+    discovered: [buildPart('main-dead', 'main', 'cancelled')],
+    currentStateAssemblyId: '',
+    currentStateMainId: 'main-dead',
+    shouldHaveAssemblyPart: false,
+  });
+  assert.equal(plan.createMain, true);
+  assert.equal(plan.keepMainId, null);
+  assert.deepEqual(plan.deleteMainIds, []);
+});
+
+test('reconcile plan: de-duplicates the reported 4-pair case down to one canonical pair', () => {
+  const plan = planAppEventReconciliation({
+    discovered: [
+      buildPart('main-1', 'main'),
+      buildPart('main-2', 'main'),
+      buildPart('main-3', 'main'),
+      buildPart('main-4', 'main'),
+      buildPart('asm-1', 'assembly'),
+      buildPart('asm-2', 'assembly'),
+      buildPart('asm-3', 'assembly'),
+      buildPart('asm-4', 'assembly'),
+    ],
+    currentStateAssemblyId: 'asm-4',
+    currentStateMainId: 'main-4',
+    shouldHaveAssemblyPart: true,
+  });
+  assert.equal(plan.createMain, false);
+  assert.equal(plan.createAssembly, false);
+  assert.equal(plan.keepMainId, 'main-4');
+  assert.equal(plan.keepAssemblyId, 'asm-4');
+  assert.deepEqual(plan.deleteMainIds.sort(), ['main-1', 'main-2', 'main-3']);
+  assert.deepEqual(plan.deleteAssemblyIds.sort(), ['asm-1', 'asm-2', 'asm-3']);
+});
+
+test('reconcile plan: treats main and allDay as the same (main) slot', () => {
+  const plan = planAppEventReconciliation({
+    discovered: [buildPart('day-1', 'allDay'), buildPart('day-2', 'allDay')],
+    currentStateAssemblyId: '',
+    currentStateMainId: 'day-2',
+    shouldHaveAssemblyPart: false,
+  });
+  assert.equal(plan.createMain, false);
+  assert.equal(plan.keepMainId, 'day-2');
+  assert.deepEqual(plan.deleteMainIds, ['day-1']);
 });

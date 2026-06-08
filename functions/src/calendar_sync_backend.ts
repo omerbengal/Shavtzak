@@ -600,10 +600,10 @@ function asManagedCalendarEventSummary(value: unknown): ManagedCalendarEventSumm
   };
 }
 
-function pickCanonicalCandidate(
-  candidates: ManagedCalendarEventSummary[],
+function pickCanonicalCandidate<T extends {id: string}>(
+  candidates: T[],
   preferredId?: string | null,
-): ManagedCalendarEventSummary | null {
+): T | null {
   if (preferredId != null && preferredId.length > 0) {
     const preferred = candidates.find((candidate) => candidate.id === preferredId);
     if (preferred != null) {
@@ -612,6 +612,89 @@ function pickCanonicalCandidate(
   }
   const sorted = [...candidates].sort((left, right) => left.id.localeCompare(right.id));
   return sorted[0] ?? null;
+}
+
+/**
+ * Minimal shape of a managed calendar event needed to plan app-event reconciliation.
+ * Kept narrow so the planner stays pure and trivially testable.
+ */
+export type AppEventPartSummary = {
+  id: string;
+  eventType: string | null;
+  status: string | null;
+};
+
+export type AppEventReconciliationInput = {
+  /** All managed calendar events discovered for one app event (may include duplicates/orphans). */
+  discovered: AppEventPartSummary[];
+  currentStateAssemblyId: string;
+  currentStateMainId: string;
+  shouldHaveAssemblyPart: boolean;
+};
+
+export type AppEventReconciliationPlan = {
+  keepMainId: string | null;
+  keepAssemblyId: string | null;
+  createMain: boolean;
+  createAssembly: boolean;
+  deleteMainIds: string[];
+  deleteAssemblyIds: string[];
+};
+
+/**
+ * Pure decision logic for converging an app event to exactly one main part and
+ * (optionally) one assembly part, given everything currently on the calendar.
+ *
+ * This is the fix for duplicate Google Calendar events: previously reconciliation
+ * only looked at the single stored id and blindly created a new event whenever that
+ * lookup came back empty (e.g. a concurrent sync had not yet persisted its id, or a
+ * transient 404), leaking the previously-created event as a permanent orphan. By
+ * discovering ALL managed events for the app event and keeping one canonical part
+ * per slot while deleting the rest, every sync becomes convergent/self-healing —
+ * mirroring the constraint sync path.
+ *
+ */
+export function planAppEventReconciliation(
+  input: AppEventReconciliationInput,
+): AppEventReconciliationPlan {
+  const active = input.discovered.filter((event) => event.status !== 'cancelled');
+  const assemblyEvents = active.filter((event) => event.eventType === 'assembly');
+  // The main slot is anything that is not an assembly part ('main' or 'allDay').
+  const mainEvents = active.filter((event) => event.eventType !== 'assembly');
+
+  const mainCanonical = pickCanonicalCandidate(mainEvents, input.currentStateMainId);
+  const keepMainId = mainCanonical?.id ?? null;
+  const createMain = mainCanonical == null;
+  const deleteMainIds = mainEvents
+    .map((event) => event.id)
+    .filter((id) => id !== keepMainId);
+
+  let keepAssemblyId: string | null = null;
+  let createAssembly = false;
+  let deleteAssemblyIds: string[];
+  if (input.shouldHaveAssemblyPart) {
+    const assemblyCanonical = pickCanonicalCandidate(
+      assemblyEvents,
+      input.currentStateAssemblyId,
+    );
+    keepAssemblyId = assemblyCanonical?.id ?? null;
+    createAssembly = assemblyCanonical == null;
+    deleteAssemblyIds = assemblyEvents
+      .map((event) => event.id)
+      .filter((id) => id !== keepAssemblyId);
+  } else {
+    // No assembly part wanted: every discovered assembly event is an orphan.
+    deleteAssemblyIds = assemblyEvents.map((event) => event.id);
+  }
+
+  return {
+    keepMainId,
+    keepAssemblyId,
+    createMain,
+    createAssembly,
+    deleteMainIds,
+    deleteAssemblyIds,
+  };
 }
 
 function normalizeComparableAttendeeEmails(
@@ -1131,33 +1214,62 @@ async function reconcileSingleAppEvent(
   const currentStateMainId = optionalString(eventSyncData?.['mainCalendarEventId']) ?? '';
   const currentStateStatus = optionalString(eventSyncData?.['status']) ?? '';
   const shouldHaveAssemblyPart = shouldEventHaveAssemblyPart(desired);
-  let finalAssemblyId = shouldHaveAssemblyPart ? currentStateAssemblyId : '';
-  let finalMainId = currentStateMainId;
+
+  // Discover EVERY managed calendar event for this app event, then merge in the stored
+  // ids (in case discovery missed one). This lets reconciliation converge to a single
+  // canonical main + assembly part and delete any duplicates/orphans left behind by
+  // earlier concurrent syncs, instead of blindly creating a new event whenever the
+  // single stored id lookup comes back empty. Mirrors the self-healing constraint path.
+  const discovered = await listManagedCalendarEvents(dependencies, {kind: 'app', eventId});
+  const summaryById = new Map<string, ManagedCalendarEventSummary>();
+  for (const managedEvent of discovered) {
+    summaryById.set(managedEvent.id, managedEvent);
+  }
+  for (const storedId of [currentStateAssemblyId, currentStateMainId]) {
+    if (storedId.length === 0 || summaryById.has(storedId)) {
+      continue;
+    }
+    const managedEvent = await getManagedCalendarEvent(dependencies, storedId);
+    if (managedEvent != null) {
+      summaryById.set(storedId, managedEvent);
+    }
+  }
+
+  const plan = planAppEventReconciliation({
+    discovered: Array.from(summaryById.values()),
+    currentStateAssemblyId,
+    currentStateMainId,
+    shouldHaveAssemblyPart,
+  });
 
   let createdEventPartCount = 0;
   let deletedEventPartCount = 0;
   let updatedAttendeeEventCount = 0;
   let repairedEventSyncStateCount = 0;
 
-  if (!shouldHaveAssemblyPart && currentStateAssemblyId.length > 0) {
-    await deleteAppEventById(dependencies, currentStateAssemblyId, 'assembly');
+  // Remove duplicate/orphaned parts first so the calendar converges to one of each.
+  for (const calendarEventId of plan.deleteAssemblyIds) {
+    await deleteAppEventById(dependencies, calendarEventId, 'assembly');
+    deletedEventPartCount += 1;
+  }
+  for (const calendarEventId of plan.deleteMainIds) {
+    await deleteAppEventById(
+      dependencies,
+      calendarEventId,
+      summaryById.get(calendarEventId)?.eventType ?? 'main',
+    );
     deletedEventPartCount += 1;
   }
 
+  let finalAssemblyId = '';
   if (shouldHaveAssemblyPart) {
-    let managedAssemblyEvent: ManagedCalendarEventSummary | null = null;
-    if (finalAssemblyId.length > 0) {
-      managedAssemblyEvent = await getManagedCalendarEvent(dependencies, finalAssemblyId);
-    }
-    if (managedAssemblyEvent == null || managedAssemblyEvent.status === 'cancelled') {
-      finalAssemblyId = await createAppEventPart(
-        dependencies,
-        desired.payload,
-        'assembly',
-      );
-      managedAssemblyEvent = await getManagedCalendarEvent(dependencies, finalAssemblyId);
+    if (plan.keepAssemblyId != null) {
+      finalAssemblyId = plan.keepAssemblyId;
+    } else {
+      finalAssemblyId = await createAppEventPart(dependencies, desired.payload, 'assembly');
       createdEventPartCount += 1;
     }
+    const managedAssemblyEvent = await getManagedCalendarEvent(dependencies, finalAssemblyId);
     updatedAttendeeEventCount += await syncEventPartAttendees(
       dependencies,
       finalAssemblyId,
@@ -1166,19 +1278,18 @@ async function reconcileSingleAppEvent(
     );
   }
 
-  let managedMainEvent: ManagedCalendarEventSummary | null = null;
-  if (finalMainId.length > 0) {
-    managedMainEvent = await getManagedCalendarEvent(dependencies, finalMainId);
-  }
-  if (managedMainEvent == null || managedMainEvent.status === 'cancelled') {
+  let finalMainId: string;
+  if (plan.keepMainId != null) {
+    finalMainId = plan.keepMainId;
+  } else {
     finalMainId = await createAppEventPart(
       dependencies,
       desired.payload,
       desired.useAllDay ? 'allDay' : 'main',
     );
-    managedMainEvent = await getManagedCalendarEvent(dependencies, finalMainId);
     createdEventPartCount += 1;
   }
+  const managedMainEvent = await getManagedCalendarEvent(dependencies, finalMainId);
   updatedAttendeeEventCount += await syncEventPartAttendees(
     dependencies,
     finalMainId,
