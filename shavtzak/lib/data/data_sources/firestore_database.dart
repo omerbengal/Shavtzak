@@ -32,7 +32,14 @@ import 'database_interface.dart';
 /// Firestore implementation of DatabaseInterface
 class FirestoreDatabase implements DatabaseInterface {
   final FirebaseFirestore _firestore;
-  final BackendApiService _backendApiService;
+
+  // Lazily created so the database can be constructed in tests with a fake
+  // Firestore without touching FirebaseAuth (BackendApiService's ctor reads
+  // FirebaseAuth.instance). Production behaviour is unchanged — it is created on
+  // the first mutation.
+  BackendApiService? _backendApiServiceInstance;
+  BackendApiService get _backendApiService =>
+      _backendApiServiceInstance ??= BackendApiService();
 
   // Collection names with environment prefix
   String get _teamMembersCollection {
@@ -68,8 +75,7 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   FirestoreDatabase({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance,
-        _backendApiService = BackendApiService();
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   @override
   Future<void> initialize() async {
@@ -79,16 +85,74 @@ class FirestoreDatabase implements DatabaseInterface {
 
   @override
   Future<void> close() async {
-    // Firestore connections are managed automatically
+    await _eventsCacheSub?.cancel();
+    await _membersCacheSub?.cancel();
+    await _labelsCacheSub?.cancel();
+  }
+
+  // ===== Live relation cache =====
+  // Related entities (events, team members, labels) are held in memory and kept
+  // current by long-lived listeners, so relation population is a synchronous
+  // in-memory join — NO per-read one-shot `.get()`s (which on this web setup can
+  // park ~20-30s and freeze the populating stream). Each backing stream reads
+  // the FULL collection (snapshots + orderBy, no where), so the cache is
+  // complete: a join never misses a doc a one-shot get would have found.
+  bool _relationCacheStarted = false;
+  Map<String, Event> _eventsById = const {};
+  Map<String, TeamMember> _membersById = const {};
+  Map<String, AssignmentLabel> _labelsById = const {};
+  StreamSubscription<List<Event>>? _eventsCacheSub;
+  StreamSubscription<List<TeamMember>>? _membersCacheSub;
+  StreamSubscription<List<AssignmentLabel>>? _labelsCacheSub;
+  final Completer<void> _eventsCacheReady = Completer<void>();
+  final Completer<void> _membersCacheReady = Completer<void>();
+  final Completer<void> _labelsCacheReady = Completer<void>();
+
+  /// Start the relation-cache listeners once. Each updates its map on every
+  /// emit (stays live) and completes its `ready` Completer on the first emit
+  /// (or on error, so population never hangs waiting on a dead stream).
+  void _startRelationCache() {
+    if (_relationCacheStarted) return;
+    _relationCacheStarted = true;
+
+    void markReady(Completer<void> c) {
+      if (!c.isCompleted) c.complete();
+    }
+
+    _eventsCacheSub = watchEvents().listen(
+      (events) {
+        _eventsById = {for (final e in events) e.id: e};
+        _logDb(LogEventType.dbStreamEmit, 'relationCache:events',
+            {'count': _eventsById.length});
+        markReady(_eventsCacheReady);
+      },
+      onError: (_) => markReady(_eventsCacheReady),
+    );
+    _membersCacheSub = watchTeamMembers().listen(
+      (members) {
+        _membersById = {for (final m in members) m.id: m};
+        _logDb(LogEventType.dbStreamEmit, 'relationCache:members',
+            {'count': _membersById.length});
+        markReady(_membersCacheReady);
+      },
+      onError: (_) => markReady(_membersCacheReady),
+    );
+    _labelsCacheSub = watchAssignmentLabels().listen(
+      (labels) {
+        _labelsById = {for (final l in labels) l.id: l};
+        _logDb(LogEventType.dbStreamEmit, 'relationCache:labels',
+            {'count': _labelsById.length});
+        markReady(_labelsCacheReady);
+      },
+      onError: (_) => markReady(_labelsCacheReady),
+    );
   }
 
   /// Finer-grained DB tracing for things the [LoggingDatabase] wrapper cannot
   /// see because they happen INSIDE this class — the raw snapshot arriving in a
-  /// stream's asyncMap (before relation population) and each one-shot whereIn
-  /// `.get()` inside [_populateAssignmentRelations]. Used to locate where an
-  /// assignment stream stalls: if a `*:raw` marker logs but the wrapper's
-  /// DB_STREAM_EMIT never does, a populate get below is hanging; if `*:raw`
-  /// never logs, the listen target itself is wedged.
+  /// stream's asyncMap (`*:raw`, before relation population), the live relation
+  /// cache's emits (`relationCache:*`), and any unresolved relation
+  /// (`populate:cacheMiss`).
   void _logDb(
     LogEventType type,
     String op,
@@ -1175,102 +1239,41 @@ class FirestoreDatabase implements DatabaseInterface {
       List<Assignment> assignments) async {
     if (assignments.isEmpty) return assignments;
 
-    // Get unique event IDs, team member IDs, and label IDs
-    final eventIds = assignments.map((a) => a.eventId).toSet().toList();
-    final memberIds = assignments.map((a) => a.teamMemberId).toSet().toList();
-    final labelIds = assignments
-        .map((a) => a.semanticLabelId)
-        .whereType<String>()
-        .toSet()
-        .toList();
+    // Hydrate relations from the live in-memory cache (kept current by
+    // long-lived listeners) — a synchronous join, NO one-shot gets. Awaiting
+    // each cache's first emit is a fast, reliable LISTENER wait (~10ms), not a
+    // server `.get()`, so it cannot park the way the old per-read whereIn gets
+    // could (the ~20-30s freezes seen in prod).
+    _startRelationCache();
+    await Future.wait([
+      _eventsCacheReady.future,
+      _membersCacheReady.future,
+      _labelsCacheReady.future,
+    ]);
 
-    // Batch fetch events (Firestore allows 30 items per whereIn query)
-    final events = <String, Event>{};
-    final tEvents = DateTime.now().toUtc();
-    _logDb(LogEventType.dbStart, 'populate.events',
-        {'collection': 'events', 'ids': eventIds.length});
-    for (int i = 0; i < eventIds.length; i += 30) {
-      final chunk = eventIds.skip(i).take(30).toList();
-      final snapshot = await _firestore
-          .collection(_eventsCollection)
-          .where(FieldPath.documentId, whereIn: chunk)
-          .get();
-
-      for (final doc in snapshot.docs) {
-        final event = EventModel.fromFirestore(doc).toEntity();
-        events[event.id] = event;
-      }
-    }
-    _logDb(
-        LogEventType.dbEnd,
-        'populate.events',
-        {'collection': 'events', 'ids': eventIds.length, 'count': events.length},
-        DateTime.now().toUtc().difference(tEvents));
-
-    // Batch fetch team members (same pattern)
-    final members = <String, TeamMember>{};
-    final tMembers = DateTime.now().toUtc();
-    _logDb(LogEventType.dbStart, 'populate.members',
-        {'collection': 'teamMembers', 'ids': memberIds.length});
-    for (int i = 0; i < memberIds.length; i += 30) {
-      final chunk = memberIds.skip(i).take(30).toList();
-      final snapshot = await _firestore
-          .collection(_teamMembersCollection)
-          .where(FieldPath.documentId, whereIn: chunk)
-          .get();
-
-      for (final doc in snapshot.docs) {
-        final member = TeamMemberModel.fromFirestore(doc).toEntity();
-        members[member.id] = member;
-      }
-    }
-    _logDb(
-        LogEventType.dbEnd,
-        'populate.members',
-        {
-          'collection': 'teamMembers',
-          'ids': memberIds.length,
-          'count': members.length
-        },
-        DateTime.now().toUtc().difference(tMembers));
-
-    // Batch fetch semantic labels (same pattern)
-    final labels = <String, AssignmentLabel>{};
-    final tLabels = DateTime.now().toUtc();
-    _logDb(LogEventType.dbStart, 'populate.labels',
-        {'collection': 'assignmentLabels', 'ids': labelIds.length});
-    for (int i = 0; i < labelIds.length; i += 30) {
-      final chunk = labelIds.skip(i).take(30).toList();
-      final snapshot = await _firestore
-          .collection(_assignmentLabelsCollection)
-          .where(FieldPath.documentId, whereIn: chunk)
-          .get();
-
-      for (final doc in snapshot.docs) {
-        final label = AssignmentLabelModel.fromFirestore(doc).toEntity();
-        labels[label.id] = label;
-      }
-    }
-    _logDb(
-        LogEventType.dbEnd,
-        'populate.labels',
-        {
-          'collection': 'assignmentLabels',
-          'ids': labelIds.length,
-          'count': labels.length
-        },
-        DateTime.now().toUtc().difference(tLabels));
-
-    // Populate relations using cached data
-    return assignments.map((assignment) {
+    var missed = 0;
+    final populated = assignments.map((assignment) {
+      final event = _eventsById[assignment.eventId];
+      final member = _membersById[assignment.teamMemberId];
+      if (event == null) missed++;
+      if (member == null) missed++;
       return assignment.withRelations(
-        event: events[assignment.eventId],
-        teamMember: members[assignment.teamMemberId],
+        event: event,
+        teamMember: member,
         semanticLabel: () => assignment.semanticLabelId == null
             ? null
-            : labels[assignment.semanticLabelId!],
+            : _labelsById[assignment.semanticLabelId!],
       );
     }).toList();
+
+    if (missed > 0) {
+      // A relation id absent from a full-collection cache means a dangling FK
+      // (referenced doc deleted) — or, if this ever spikes, cache
+      // incompleteness worth investigating.
+      _logDb(LogEventType.warning, 'populate:cacheMiss',
+          {'missed': missed, 'assignments': assignments.length});
+    }
+    return populated;
   }
 
   // ========== Calendar Sync State ==========
