@@ -23,6 +23,11 @@ class EventRepository {
   final DatabaseInterface _database;
   final DriveService _driveService;
 
+  /// Event ids whose Drive folder is currently being created (either the
+  /// initial background creation or a later reconciliation). Shared by both
+  /// paths so concurrent triggers can't create duplicate folders.
+  final Set<String> _foldersBeingCreated = {};
+
   EventRepository(this._database, {DriveService? driveService})
       : _driveService = driveService ?? DriveService.instance;
 
@@ -363,8 +368,18 @@ class EventRepository {
     }
   }
 
-  /// Show error snackbar with Drive error details
-  void _showDriveErrorSnackBar(String error) {
+  /// Show error snackbar with Drive error details.
+  ///
+  /// A [isNetworkError] failure is a transient connectivity issue (dropped
+  /// connection / timeout), so we show a calm "try again" message instead of
+  /// the alarming "screenshot Omer" message reserved for genuine failures.
+  void _showDriveErrorSnackBar(String error, {bool isNetworkError = false}) {
+    final message = isNetworkError
+        ? 'לא הצלחנו לעדכן את הדרייב עקב בעיית תקשורת. '
+            'הפעולה תנוסה שוב אוטומטית בפעם הבאה שתפתחו את האירוע.'
+        : 'אירעה שגיאה בעת ניסיון עדכון הדרייב. השגיאה:\n$error\n'
+            'נא לצלם לעומר בנגל ולשלוח בוואטסאפ!';
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final context = navigatorKey.currentContext;
       if (context != null) {
@@ -373,11 +388,9 @@ class EventRepository {
           SnackBar(
             content: Directionality(
               textDirection: TextDirection.rtl,
-              child: Text(
-                'אירעה שגיאה בעת ניסיון עדכון הדרייב. השגיאה:\n$error\nנא לצלם לעומר בנגל ולשלוח בוואטסאפ!',
-              ),
+              child: Text(message),
             ),
-            backgroundColor: Colors.red,
+            backgroundColor: isNetworkError ? Colors.orange : Colors.red,
             duration: const Duration(seconds: 20),
             action: SnackBarAction(
               label: 'סגור',
@@ -392,9 +405,67 @@ class EventRepository {
     });
   }
 
+  /// Reconcile a missing Drive folder for [event].
+  ///
+  /// Every event is supposed to have a Drive folder (auto-created on
+  /// insert/duplicate). If that background creation failed — e.g. a network
+  /// blip like the one that dropped `drive/action` — the event is left with a
+  /// null folder id and nothing ever retries it. Call this when such an event
+  /// is opened to self-heal: if it has no folder, create one and persist the
+  /// id. Silent by design (no snackbar); safe to call repeatedly (a no-op once
+  /// a folder exists, and guarded against concurrent duplicate creation).
+  /// Returns the [CreateFolderResult] of the attempt, or `null` when it was
+  /// skipped (Drive off, folder already present, or a creation already in
+  /// flight for this event) so callers can surface a real failure to the user.
+  Future<CreateFolderResult?> ensureDriveFolder(Event event) async {
+    if (!_driveService.isInitialized) return null;
+    if (event.hasDriveFolder) return null;
+    // add() returns false when the id is already present => already in flight.
+    if (!_foldersBeingCreated.add(event.id)) return null;
+
+    try {
+      final result = await _driveService.createFolder(
+        eventName: event.name,
+        date: event.startDate,
+        endDate: event.endDate,
+      );
+
+      if (result.success && result.folderId != null) {
+        await _database.updateEvent(event.copyWith(
+          driveFolderId: result.folderId,
+          driveFolderLink: result.folderLink,
+        ));
+        developer.log(
+          'EventRepository: Reconciled Drive folder ${result.folderId} '
+          'for event ${event.id}',
+          name: 'EventRepository',
+        );
+      } else {
+        developer.log(
+          'EventRepository.ensureDriveFolder: create failed for ${event.id}: '
+          '${result.error} (network=${result.isNetworkError})',
+          name: 'EventRepository',
+          error: result.error,
+        );
+      }
+      return result;
+    } catch (e) {
+      developer.log(
+        'EventRepository.ensureDriveFolder: failed for ${event.id}: $e',
+        name: 'EventRepository',
+        error: e,
+      );
+      return CreateFolderResult(success: false, error: e.toString());
+    } finally {
+      _foldersBeingCreated.remove(event.id);
+    }
+  }
+
   /// Create Drive folder in background
   Future<void> _createDriveFolderInBackground(Event event) async {
     if (!_driveService.isInitialized) return;
+    // Guard against a concurrent reconciliation creating a second folder.
+    if (!_foldersBeingCreated.add(event.id)) return;
 
     try {
       final result = await _driveService.createFolder(
@@ -420,7 +491,10 @@ class EventRepository {
           name: 'EventRepository',
           error: result.error,
         );
-        _showDriveErrorSnackBar(result.error ?? 'שגיאה ביצירת תיקיית דרייב');
+        _showDriveErrorSnackBar(
+          result.error ?? 'שגיאה ביצירת תיקיית דרייב',
+          isNetworkError: result.isNetworkError,
+        );
       }
     } catch (e) {
       developer.log(
@@ -429,6 +503,8 @@ class EventRepository {
         error: e,
       );
       _showDriveErrorSnackBar(e.toString());
+    } finally {
+      _foldersBeingCreated.remove(event.id);
     }
   }
 

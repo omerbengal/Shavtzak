@@ -1,5 +1,7 @@
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart';
+
 import 'backend_api_service.dart';
 
 /// Represents a file in Google Drive
@@ -50,11 +52,16 @@ class CreateFolderResult {
   final String? folderLink;
   final String? error;
 
+  /// True when the failure was a network/connectivity issue (no server
+  /// response) rather than a genuine backend error. Retryable.
+  final bool isNetworkError;
+
   const CreateFolderResult({
     required this.success,
     this.folderId,
     this.folderLink,
     this.error,
+    this.isNetworkError = false,
   });
 }
 
@@ -81,9 +88,18 @@ class DriveService {
     return _instance!;
   }
 
-  DriveService._();
+  DriveService._({BackendApiService? backendApiService})
+      : _backendApiService = backendApiService ?? BackendApiService();
 
-  final BackendApiService _backendApiService = BackendApiService();
+  /// Test-only constructor that injects a backend so error handling can be
+  /// exercised without a live Firebase app.
+  @visibleForTesting
+  factory DriveService.forTesting({
+    required BackendApiService backendApiService,
+  }) =>
+      DriveService._(backendApiService: backendApiService);
+
+  final BackendApiService _backendApiService;
   bool _isInitialized = false;
 
   /// Initialize the backend-backed Drive service.
@@ -109,11 +125,12 @@ class DriveService {
       developer.log(
         'DriveService._post error: ${e.message}',
         name: 'DriveService',
-        error: e,
+        error: e.cause ?? e,
       );
       return {
         'success': false,
         'error': e.message,
+        'isNetworkError': e.isNetworkError,
       };
     } catch (e) {
       developer.log(
@@ -124,6 +141,7 @@ class DriveService {
       return {
         'success': false,
         'error': e.toString(),
+        'isNetworkError': BackendApiService.isTransientError(e),
       };
     }
   }
@@ -151,6 +169,7 @@ class DriveService {
     return CreateFolderResult(
       success: false,
       error: result['error'] as String?,
+      isNetworkError: result['isNetworkError'] == true,
     );
   }
 

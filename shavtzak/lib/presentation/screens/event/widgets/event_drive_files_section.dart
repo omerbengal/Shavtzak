@@ -89,10 +89,50 @@ class _EventDriveFilesSectionState extends State<EventDriveFilesSection> {
       _isWaitingForFolder = true;
     });
 
+    // Actively try to (re)create a missing folder. This self-heals events whose
+    // background folder creation failed (e.g. a network drop while duplicating),
+    // which would otherwise poll here forever waiting on a folder that no one
+    // is creating.
+    unawaited(_attemptFolderReconciliation());
+
     // Poll every 2 seconds
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       await _checkForFolder();
     });
+  }
+
+  /// Ask the repository to create a Drive folder for this event if it is
+  /// missing one. On success the poll loop below picks up the new folder; on
+  /// failure we stop spinning and show the actual error instead of waiting
+  /// forever on a folder no one is creating.
+  Future<void> _attemptFolderReconciliation() async {
+    if (!DriveService.instance.isInitialized) return;
+    final eventRepository = context.read<EventRepository>();
+    try {
+      final event = await eventRepository.getEventById(widget.eventId);
+      if (event == null || event.hasDriveFolder) return;
+
+      final result = await eventRepository.ensureDriveFolder(event);
+      // null => skipped (e.g. another creation already in flight): keep polling.
+      if (result == null) return;
+
+      if (!result.success && mounted) {
+        _stopPolling();
+        setState(() {
+          _isWaitingForFolder = false;
+          _error = result.error ?? 'שגיאה ביצירת תיקיית דרייב';
+        });
+      }
+      // On success the poll loop / stream refresh reveals the new folder.
+    } catch (e) {
+      if (mounted) {
+        _stopPolling();
+        setState(() {
+          _isWaitingForFolder = false;
+          _error = e.toString();
+        });
+      }
+    }
   }
 
   /// Check if the event now has a Drive folder

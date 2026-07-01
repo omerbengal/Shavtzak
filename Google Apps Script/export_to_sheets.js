@@ -82,10 +82,27 @@ function handleCreateFolder(request) {
   const folderName = formatFolderName(name, date, endDate);
   const parentFolder = DriveApp.getFolderById(CONFIG.PARENT_FOLDER_ID);
 
-  // Check if folder with same name already exists (shouldn't happen due to DB validation, but just in case)
+  // Idempotent create: if a folder with this name already exists, return it
+  // instead of failing. Event name+date is unique (enforced by the DB), so a
+  // same-named folder is THIS event's folder from an earlier attempt that
+  // succeeded on Drive but whose response was lost to the client (e.g. a
+  // network drop). Returning it lets the client link the orphaned event to its
+  // real folder and makes retries safe (no duplicate folders).
   const existing = parentFolder.getFoldersByName(folderName);
   if (existing.hasNext()) {
-    return jsonResponse({ success: false, error: 'Folder already exists' }, 409);
+    const folder = existing.next();
+    try {
+      folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+    } catch (e) {
+      console.log('Could not refresh sharing on existing folder:', e);
+    }
+    console.log('Folder already exists, returning existing:', folderName, 'ID:', folder.getId());
+    return jsonResponse({
+      success: true,
+      folderId: folder.getId(),
+      folderLink: folder.getUrl(),
+      alreadyExisted: true
+    });
   }
 
   const newFolder = parentFolder.createFolder(folderName);

@@ -592,18 +592,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // watchRoles listener below keeps it fresh on actual role changes.
       _cachedRoles = await _roleRepository.getAllRoles();
 
-      // Initial load - get assignments within time window FIRST
-      // This ensures we emit a state immediately, preventing endless loading
-      final initialAssignments = await _repository.getAssignmentsInTimeWindow(
-        windowStart: windowStart,
-        windowEnd: windowEnd,
-      );
-      _repository.cacheCurrentAssignments(initialAssignments);
-
-      // Emit the loaded state immediately with initial data
-      add(RebuildAssignmentSlotsFromData(initialAssignments, cachedEventsMap,
-          cachedMembersMap, currentFilter));
-
+      // First paint comes from the assignments STREAM's first emit — NOT an
+      // awaited one-shot getAssignmentsInTimeWindow(). A one-shot `.get()` can
+      // park ~30s on this web setup (WebChannel handshake) while `.snapshots()`
+      // returns the same data in ~90ms; gating first paint on the get froze the
+      // spinner for the full park. `.snapshots()` fires immediately with current
+      // data, and watchAssignmentsInTimeWindow emits on the first chunk (no
+      // wait-for-all), so the listener below both paints initially and stays
+      // live. See memory: firestore-stream-first-first-paint.
+      //
       // Subscribe to real-time updates on assignments within time window
       _assignmentSubscription = _repository
           .watchAssignmentsInTimeWindow(
