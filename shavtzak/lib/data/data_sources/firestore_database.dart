@@ -1527,6 +1527,24 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Stream<Map<String, CalendarSyncStatus>> watchEventCalendarSyncStates() {
+    return _firestore
+        .collection(_eventCalendarSyncCollection)
+        .snapshots()
+        .map((snapshot) {
+      final result = <String, CalendarSyncStatus>{};
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final statusRaw = data['status'];
+        result[doc.id] = statusRaw is String
+            ? CalendarSyncStatusExtension.fromString(statusRaw)
+            : CalendarSyncStatus.pending;
+      }
+      return result;
+    });
+  }
+
+  @override
   Future<void> removeEventCalendarSyncState(String eventId) async {
     try {
       await _invokeMutation(

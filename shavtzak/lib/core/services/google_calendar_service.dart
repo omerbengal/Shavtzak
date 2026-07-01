@@ -1,4 +1,5 @@
 import 'dart:developer' as developer;
+import 'dart:math' as math;
 
 import '../../domain/entities/team_member.dart';
 import 'backend_api_service.dart';
@@ -349,42 +350,142 @@ class GoogleCalendarService {
     );
   }
 
-  Future<EventsAndConstraintsSyncResult> syncEventsAndConstraints() async {
+  /// Number of events reconciled per backend request during a chunked sync.
+  /// Small enough that a single request stays well under the client's 30s
+  /// request timeout even when every event needs Google Calendar API calls.
+  static const int _eventSyncChunkSize = 10;
+
+  /// Sync all in-scope events and constraints to Google Calendar.
+  ///
+  /// Runs as a *chunked* sequence of short backend requests instead of one long
+  /// request: first it fetches the work list ('plan'), then reconciles events a
+  /// handful at a time, then constraints. This keeps every request short enough
+  /// to avoid the client/function timeout that made the one-shot sync fail once
+  /// many events existed. [onEventProgress] reports `(done, total)` events as
+  /// each chunk completes so callers can show live progress.
+  Future<EventsAndConstraintsSyncResult> syncEventsAndConstraints({
+    void Function(int done, int total)? onEventProgress,
+  }) async {
     await _ensureAuthenticated();
 
-    final response = await _backendApiService.post(
+    // 1. Fetch the list of events to sync (cheap: Firestore only, no Google).
+    final planResponse = await _backendApiService.post(
       'calendar/sync-events-and-constraints',
       requireAuth: true,
+      body: const {'mode': 'plan'},
+    );
+    final eventIds = _readStringList(planResponse['eventIds']);
+    final totalEvents = eventIds.length;
+
+    var scannedEventCount = 0;
+    var syncedEventCount = 0;
+    var skippedEventCount = 0;
+    var failedEventCount = 0;
+    final failedEventIds = <String>[];
+
+    onEventProgress?.call(0, totalEvents);
+
+    // 2. Reconcile events in small chunks, one short request each.
+    for (var start = 0; start < eventIds.length; start += _eventSyncChunkSize) {
+      final end = math.min(start + _eventSyncChunkSize, eventIds.length);
+      final chunk = eventIds.sublist(start, end);
+
+      final response = await _backendApiService.post(
+        'calendar/sync-events-and-constraints',
+        requireAuth: true,
+        body: {'mode': 'events', 'eventIds': chunk},
+      );
+
+      scannedEventCount += _readInt(response['scannedEventCount']);
+      syncedEventCount += _readInt(response['syncedEventCount']);
+      skippedEventCount += _readInt(response['skippedEventCount']);
+      failedEventCount += _readInt(response['failedEventCount']);
+      failedEventIds.addAll(_readStringList(response['failedEventIds']));
+
+      onEventProgress?.call(end, totalEvents);
+    }
+
+    // 3. Sync constraints in a single bounded request (far fewer than events).
+    final constraintResponse = await _backendApiService.post(
+      'calendar/sync-events-and-constraints',
+      requireAuth: true,
+      body: const {'mode': 'constraints'},
     );
 
-    final failedEventIds =
-        (response['failedEventIds'] as List<dynamic>? ?? const [])
-            .map((value) => value.toString())
-            .where((value) => value.isNotEmpty)
-            .toList(growable: false);
+    final scannedConstraintCount =
+        _readInt(constraintResponse['scannedConstraintCount']);
+    final rejectedConstraintCount =
+        _readInt(constraintResponse['rejectedConstraintCount']);
+    final retriedConstraintCount =
+        _readInt(constraintResponse['retriedConstraintCount']);
+    final successfulConstraintRetryCount =
+        _readInt(constraintResponse['successfulConstraintRetryCount']);
+    final skippedConstraintCount =
+        _readInt(constraintResponse['skippedConstraintCount']);
+    final failedConstraintCount =
+        _readInt(constraintResponse['failedConstraintCount']);
     final failedConstraintIds =
-        (response['failedConstraintIds'] as List<dynamic>? ?? const [])
-            .map((value) => value.toString())
-            .where((value) => value.isNotEmpty)
-            .toList(growable: false);
+        _readStringList(constraintResponse['failedConstraintIds']);
 
     return EventsAndConstraintsSyncResult(
-      scannedEventCount: _readInt(response['scannedEventCount']),
-      syncedEventCount: _readInt(response['syncedEventCount']),
-      skippedEventCount: _readInt(response['skippedEventCount']),
-      failedEventCount: _readInt(response['failedEventCount']),
+      scannedEventCount: scannedEventCount,
+      syncedEventCount: syncedEventCount,
+      skippedEventCount: skippedEventCount,
+      failedEventCount: failedEventCount,
       failedEventIds: failedEventIds,
-      scannedConstraintCount: _readInt(response['scannedConstraintCount']),
-      rejectedConstraintCount: _readInt(response['rejectedConstraintCount']),
-      retriedConstraintCount: _readInt(response['retriedConstraintCount']),
-      successfulConstraintRetryCount:
-          _readInt(response['successfulConstraintRetryCount']),
-      skippedConstraintCount: _readInt(response['skippedConstraintCount']),
-      failedConstraintCount: _readInt(response['failedConstraintCount']),
+      scannedConstraintCount: scannedConstraintCount,
+      rejectedConstraintCount: rejectedConstraintCount,
+      retriedConstraintCount: retriedConstraintCount,
+      successfulConstraintRetryCount: successfulConstraintRetryCount,
+      skippedConstraintCount: skippedConstraintCount,
+      failedConstraintCount: failedConstraintCount,
       failedConstraintIds: failedConstraintIds,
-      message:
-          response['message']?.toString() ?? 'סנכרון אירועים ומגבלות הושלם.',
+      message: _buildCombinedSyncMessage(
+        scannedEventCount: scannedEventCount,
+        syncedEventCount: syncedEventCount,
+        skippedEventCount: skippedEventCount,
+        failedEventCount: failedEventCount,
+        scannedConstraintCount: scannedConstraintCount,
+        syncedConstraintCount: successfulConstraintRetryCount,
+        skippedConstraintCount: skippedConstraintCount,
+        failedConstraintCount: failedConstraintCount,
+        rejectedConstraintCount: rejectedConstraintCount,
+      ),
     );
+  }
+
+  /// Hebrew summary shown after a chunked sync. Mirrors the backend's
+  /// `buildCombinedSyncMessage` so the wording stays consistent with the
+  /// legacy one-shot path.
+  String _buildCombinedSyncMessage({
+    required int scannedEventCount,
+    required int syncedEventCount,
+    required int skippedEventCount,
+    required int failedEventCount,
+    required int scannedConstraintCount,
+    required int syncedConstraintCount,
+    required int skippedConstraintCount,
+    required int failedConstraintCount,
+    required int rejectedConstraintCount,
+  }) {
+    final parts = <String>[
+      'אירועים: בוצעו שינויים ב-$syncedEventCount מתוך $scannedEventCount, '
+          'כבר היו תקינים $skippedEventCount, נכשלו $failedEventCount.',
+      'מגבלות: בוצעו שינויים ב-$syncedConstraintCount מתוך $scannedConstraintCount, '
+          'כבר היו תקינות $skippedConstraintCount, נכשלו $failedConstraintCount.',
+    ];
+    if (rejectedConstraintCount > 0) {
+      parts.add('מגבלות: $rejectedConstraintCount מגבלות נדחו בעקבות מחיקה ביומן.');
+    }
+    return 'סנכרון אירועים ומגבלות הושלם. ${parts.join(' ')}';
+  }
+
+  List<String> _readStringList(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .map((entry) => entry.toString())
+        .where((entry) => entry.isNotEmpty)
+        .toList(growable: false);
   }
 
   Map<String, dynamic> _serializeTeamMember(TeamMember teamMember) {

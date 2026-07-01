@@ -192,9 +192,16 @@ void main() {
 
       bloc.add(const LoadAssignmentSlots());
 
-      // Let the initial load complete (1 getAssignmentsInTimeWindow for the seed)
-      // and all four listeners attach. pumpEventQueue drains microtasks+timers
-      // until idle, so the async pipeline settles deterministically.
+      // Let the initial load run and all four listeners attach. pumpEventQueue
+      // drains microtasks+timers until idle, so the async pipeline settles
+      // deterministically.
+      await pumpEventQueue();
+
+      // First paint is stream-driven: emit the initial (empty) assignment set on
+      // the windowed stream so the bloc leaves AssignmentLoading. In the live app
+      // this comes from `.snapshots()` firing on subscribe; the mock broadcast
+      // stream doesn't auto-emit, so we reproduce it here.
+      assignmentStream.add(const <Assignment>[]);
       await pumpEventQueue();
 
       // Push member / event / role updates. None of these change the set of
@@ -208,12 +215,14 @@ void main() {
       roleStream.add([medicRole()]);
       await pumpEventQueue();
 
-      // CORE ASSERTION: getAssignmentsInTimeWindow called exactly once total
-      // (the initial seed). Before the fix it was called 3 extra times.
-      verify(assignmentRepo.getAssignmentsInTimeWindow(
+      // CORE ASSERTION: getAssignmentsInTimeWindow is never called. First paint
+      // and all live updates are now driven by the watchAssignmentsInTimeWindow
+      // stream, so the windowed one-shot fetch must never run — not at load, and
+      // not on the member/event/role changes (which previously each re-fetched).
+      verifyNever(assignmentRepo.getAssignmentsInTimeWindow(
         windowStart: anyNamed('windowStart'),
         windowEnd: anyNamed('windowEnd'),
-      )).called(1);
+      ));
 
       // The member/event/role changes must still update the UI: the bloc is in
       // the slots-loaded state and reflects the updated event set (2 events).
@@ -232,6 +241,12 @@ void main() {
       addTearDown(() async => bloc.close());
 
       bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+
+      // First paint is stream-driven: emit the initial (empty) assignment set so
+      // the bloc leaves AssignmentLoading (the mock broadcast stream doesn't
+      // auto-emit on subscribe the way `.snapshots()` does in the live app).
+      assignmentStream.add(const <Assignment>[]);
       await pumpEventQueue();
 
       // Initially the single medic slot for e1 is unfilled.
@@ -313,6 +328,11 @@ void main() {
       addTearDown(() async => bloc.close());
 
       bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+
+      // First paint is stream-driven: emit the initial (empty) assignment set so
+      // the bloc leaves AssignmentLoading.
+      assignmentStream.add(const <Assignment>[]);
       await pumpEventQueue();
 
       // Baseline: the single medic slot carries the original Hebrew name.

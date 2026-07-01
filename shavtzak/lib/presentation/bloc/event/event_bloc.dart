@@ -5,6 +5,7 @@ import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/assignment.dart';
+import '../../../core/constants/calendar_constants.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
@@ -56,6 +57,17 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     on<ReactivateEventRequested>(_onReactivateEvent);
     on<_EventsDataUpdated>(_onEventsDataUpdated);
   }
+
+  /// Live stream of each event's Google Calendar sync status, keyed by event
+  /// id. Exposed for the admin event list to badge events whose calendar entry
+  /// is missing or failed. A broadcast stream so multiple widgets can listen.
+  Stream<Map<String, CalendarSyncStatus>> watchCalendarSyncStates() =>
+      _repository.watchEventCalendarSyncStates();
+
+  /// Re-run the Google Calendar sync for a single event. Used by the event
+  /// list's "not synced" badge so an admin can retry one event on demand
+  /// without editing it. Reuses the same path as create/update.
+  void resyncEventToCalendar(Event event) => _syncEventToCalendar(event);
 
   /// Load all events with real-time updates (including assignment counts)
   Future<void> _onLoadEvents(

@@ -788,6 +788,17 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<Map<String, dynamic>?>);
 
   @override
+  _i4.Stream<Map<String, _i9.CalendarSyncStatus>>
+      watchEventCalendarSyncStates() => (super.noSuchMethod(
+            Invocation.method(
+              #watchEventCalendarSyncStates,
+              [],
+            ),
+            returnValue:
+                _i4.Stream<Map<String, _i9.CalendarSyncStatus>>.empty(),
+          ) as _i4.Stream<Map<String, _i9.CalendarSyncStatus>>);
+
+  @override
   _i4.Future<void> removeEventCalendarSyncState(String? eventId) =>
       (super.noSuchMethod(
         Invocation.method(

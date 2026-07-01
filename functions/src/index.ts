@@ -26,10 +26,16 @@ import {
 } from './calendar_integration';
 import {
   deleteAppEventCalendarArtifacts,
+  listInScopeAppEventIds,
   syncAppEventCalendars,
   syncAssignedEventsBestEffort,
   syncAssignedFutureEventsForMemberEmailChange,
+  syncConstraintCalendars,
   syncEventsAndConstraints,
+} from './calendar_sync_backend';
+import type {
+  AppEventSyncReport,
+  ConstraintSyncReport,
 } from './calendar_sync_backend';
 
 initializeApp();
@@ -3788,65 +3794,105 @@ app.post('/calendar/sync-app-event-attendees', async (request: Request, response
   }
 });
 
+function serializeAppEventSyncReport(
+  eventSummary: AppEventSyncReport,
+): Record<string, unknown> {
+  return {
+    scannedEventCount: eventSummary.scannedCount,
+    syncedEventCount: eventSummary.changedCount,
+    skippedEventCount: eventSummary.upToDateCount,
+    failedEventCount: eventSummary.failedEventIds.length,
+    failedEventIds: eventSummary.failedEventIds,
+    createdEventPartCount: eventSummary.createdEventPartCount,
+    updatedEventPartCount: eventSummary.updatedEventPartCount,
+    deletedEventPartCount: eventSummary.deletedEventPartCount,
+    updatedAttendeeEventCount: eventSummary.updatedAttendeeEventCount,
+    repairedEventSyncStateCount: eventSummary.repairedEventSyncStateCount,
+    removedOrphanedEventCount: eventSummary.removedOrphanedCount,
+    cleanedEventSyncStateCount: eventSummary.cleanedSyncStateCount,
+  };
+}
+
+function serializeConstraintSyncReport(
+  constraintSummary: ConstraintSyncReport,
+): Record<string, unknown> {
+  return {
+    scannedConstraintCount: constraintSummary.scannedCount,
+    changedConstraintCount: constraintSummary.changedCount,
+    upToDateConstraintCount: constraintSummary.upToDateCount,
+    rejectedConstraintCount: constraintSummary.rejectedConstraintCount,
+    retriedConstraintCount:
+      constraintSummary.changedCount + constraintSummary.failedConstraintIds.length,
+    successfulConstraintRetryCount: constraintSummary.changedCount,
+    skippedConstraintCount: constraintSummary.upToDateCount,
+    failedConstraintCount: constraintSummary.failedConstraintIds.length,
+    failedConstraintIds: constraintSummary.failedConstraintIds,
+    createdConstraintEventCount: constraintSummary.createdConstraintEventCount,
+    updatedConstraintEventCount: constraintSummary.updatedConstraintEventCount,
+    deletedConstraintEventCount: constraintSummary.deletedConstraintEventCount,
+    repairedConstraintSyncStateCount: constraintSummary.repairedConstraintSyncStateCount,
+    cleanedConstraintSyncStateCount: constraintSummary.cleanedSyncStateCount,
+  };
+}
+
 app.post('/calendar/sync-events-and-constraints', async (request: Request, response: Response) => {
   try {
     const authContext = await authenticateRequest(request);
     requireAdmin(authContext.actor);
 
-    const combined = await syncEventsAndConstraints(
-      {
-        firestore: db,
-        actor: {
-          memberId: authContext.actor.memberId,
-          isAdmin: authContext.actor.isAdmin,
-        },
-        environment: authContext.environment,
-        collections: authContext.collections,
-        rejectConstraint: async (teamMemberId: string, constraintId: string) =>
-          await updateConstraintStatusForTeamMember(
-            authContext.collections,
-            authContext.actor,
-            teamMemberId,
-            constraintId,
-            'rejected',
-            {
-              wasAutoRejectedFromCalendar: true,
-            },
-          ),
+    const dependencies = {
+      firestore: db,
+      actor: {
+        memberId: authContext.actor.memberId,
+        isAdmin: authContext.actor.isAdmin,
       },
-    );
-    const eventSummary = combined.appEvents;
-    const constraintSummary = combined.constraints;
+      environment: authContext.environment,
+      collections: authContext.collections,
+      rejectConstraint: async (teamMemberId: string, constraintId: string) =>
+        await updateConstraintStatusForTeamMember(
+          authContext.collections,
+          authContext.actor,
+          teamMemberId,
+          constraintId,
+          'rejected',
+          {
+            wasAutoRejectedFromCalendar: true,
+          },
+        ),
+    };
+
+    // Chunked sync protocol. The client fetches the work list ('plan'), then
+    // reconciles events in small batches ('events') so no single request runs
+    // long enough to hit the client/function timeout, and finally syncs
+    // constraints ('constraints'). Omitting `mode` runs the legacy one-shot
+    // full sync so older clients keep working.
+    const mode = optionalString(request.body?.mode) ?? 'all';
+
+    if (mode === 'plan') {
+      const eventIds = await listInScopeAppEventIds(dependencies);
+      response.json({ok: true, eventIds});
+      return;
+    }
+
+    if (mode === 'events') {
+      const eventIds = optionalStringArray(request.body?.eventIds);
+      const eventSummary = await syncAppEventCalendars(dependencies, {eventIds});
+      response.json({ok: true, ...serializeAppEventSyncReport(eventSummary)});
+      return;
+    }
+
+    if (mode === 'constraints') {
+      const constraintSummary = await syncConstraintCalendars(dependencies);
+      response.json({ok: true, ...serializeConstraintSyncReport(constraintSummary)});
+      return;
+    }
+
+    const combined = await syncEventsAndConstraints(dependencies);
 
     response.json({
       ok: true,
-      scannedEventCount: eventSummary.scannedCount,
-      syncedEventCount: eventSummary.changedCount,
-      skippedEventCount: eventSummary.upToDateCount,
-      failedEventCount: eventSummary.failedEventIds.length,
-      failedEventIds: eventSummary.failedEventIds,
-      scannedConstraintCount: constraintSummary.scannedCount,
-      changedConstraintCount: constraintSummary.changedCount,
-      upToDateConstraintCount: constraintSummary.upToDateCount,
-      rejectedConstraintCount: constraintSummary.rejectedConstraintCount,
-      retriedConstraintCount:
-        constraintSummary.changedCount + constraintSummary.failedConstraintIds.length,
-      successfulConstraintRetryCount: constraintSummary.changedCount,
-      skippedConstraintCount: constraintSummary.upToDateCount,
-      failedConstraintCount: constraintSummary.failedConstraintIds.length,
-      failedConstraintIds: constraintSummary.failedConstraintIds,
-      createdEventPartCount: eventSummary.createdEventPartCount,
-      updatedEventPartCount: eventSummary.updatedEventPartCount,
-      deletedEventPartCount: eventSummary.deletedEventPartCount,
-      updatedAttendeeEventCount: eventSummary.updatedAttendeeEventCount,
-      repairedEventSyncStateCount: eventSummary.repairedEventSyncStateCount,
-      createdConstraintEventCount: constraintSummary.createdConstraintEventCount,
-      updatedConstraintEventCount: constraintSummary.updatedConstraintEventCount,
-      deletedConstraintEventCount: constraintSummary.deletedConstraintEventCount,
-      repairedConstraintSyncStateCount: constraintSummary.repairedConstraintSyncStateCount,
-      removedOrphanedEventCount: eventSummary.removedOrphanedCount,
-      cleanedEventSyncStateCount: eventSummary.cleanedSyncStateCount,
-      cleanedConstraintSyncStateCount: constraintSummary.cleanedSyncStateCount,
+      ...serializeAppEventSyncReport(combined.appEvents),
+      ...serializeConstraintSyncReport(combined.constraints),
       message: combined.message,
     });
   } catch (error) {

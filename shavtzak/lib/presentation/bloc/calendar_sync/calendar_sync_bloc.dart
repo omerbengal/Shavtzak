@@ -516,7 +516,18 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     ));
 
     try {
-      final result = await _calendarService.syncEventsAndConstraints();
+      final result = await _calendarService.syncEventsAndConstraints(
+        onEventProgress: (done, total) {
+          // Keep the same constraintId so the dialog's in-progress spinner
+          // stays up while the chunked sync advances event by event.
+          if (total > 0 && !emit.isDone) {
+            emit(CalendarSyncInProgress(
+              constraintId: 'events_and_constraints',
+              message: 'מסנכרן אירועים עם יומן גוגל... $done/$total',
+            ));
+          }
+        },
+      );
 
       emit(CalendarEventsAndConstraintsSyncComplete(
         scannedEventCount: result.scannedEventCount,

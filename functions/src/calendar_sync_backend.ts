@@ -1537,10 +1537,27 @@ async function reconcileSingleConstraint(
   };
 }
 
+/// Returns the ids of every event currently in the default calendar scope
+/// (active + not past). Cheap — a single Firestore read, no Google API calls —
+/// so the client can fetch the work list up front and drive a chunked sync
+/// with real progress instead of one long serial request.
+export async function listInScopeAppEventIds(
+  dependencies: SyncDependencies,
+): Promise<string[]> {
+  const eventsSnapshot = await dependencies.firestore
+    .collection(dependencies.collections.events)
+    .get();
+  const todayKey = getIsraelDateKey(new Date());
+  return eventsSnapshot.docs
+    .filter((doc) => isEventInDefaultScope(doc.data() ?? {}, todayKey))
+    .map((doc) => doc.id);
+}
+
 export async function syncAppEventCalendars(
   dependencies: SyncDependencies,
   options: {
     eventId?: string | null;
+    eventIds?: string[] | null;
   } = {},
 ): Promise<AppEventSyncReport> {
   const failedEventIds: string[] = [];
@@ -1603,6 +1620,65 @@ export async function syncAppEventCalendars(
     } catch (error) {
       console.error(`Failed to reconcile app event ${eventId}:`, error);
       failedEventIds.push(eventId);
+    }
+
+    return {
+      scannedCount,
+      changedCount,
+      upToDateCount,
+      failedEventIds,
+      createdEventPartCount,
+      updatedEventPartCount,
+      deletedEventPartCount,
+      updatedAttendeeEventCount,
+      repairedEventSyncStateCount,
+      removedOrphanedCount,
+      cleanedSyncStateCount,
+    };
+  }
+
+  // Batch path: reconcile only the given ids (one chunk of a chunked sync).
+  // Each event is independent (per-event reconcile handles its own orphans),
+  // so a subset can be processed safely without any cross-event cleanup.
+  if (options.eventIds != null) {
+    const uniqueIds = uniqueSortedStrings(options.eventIds);
+    for (const eventId of uniqueIds) {
+      const eventData = await readEventById(
+        dependencies.firestore,
+        dependencies.collections,
+        eventId,
+      );
+      // Skip ids that were deleted between planning and this chunk.
+      if (eventData == null) continue;
+
+      const syncStateDoc = await dependencies.firestore
+        .collection(dependencies.collections.eventCalendarSync)
+        .doc(eventId)
+        .get();
+
+      scannedCount += 1;
+      try {
+        const result = await reconcileSingleAppEvent(
+          dependencies,
+          eventId,
+          eventData,
+          syncStateDoc.exists ? syncStateDoc.data() ?? null : null,
+          teamMemberCache,
+        );
+        createdEventPartCount += result.createdEventPartCount;
+        updatedEventPartCount += result.updatedEventPartCount;
+        deletedEventPartCount += result.deletedEventPartCount;
+        updatedAttendeeEventCount += result.updatedAttendeeEventCount;
+        repairedEventSyncStateCount += result.repairedEventSyncStateCount;
+        if (result.changed) {
+          changedCount += 1;
+        } else {
+          upToDateCount += 1;
+        }
+      } catch (error) {
+        console.error(`Failed to reconcile app event ${eventId}:`, error);
+        failedEventIds.push(eventId);
+      }
     }
 
     return {

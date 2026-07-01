@@ -8,6 +8,8 @@ import '../../../core/utils/filter_persistence.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/search_utils.dart';
 import '../../../core/services/environment_service.dart';
+import '../../../core/services/google_calendar_service.dart';
+import '../../../core/constants/calendar_constants.dart';
 import '../../../domain/entities/event.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
@@ -46,6 +48,11 @@ class _EventListScreenState extends State<EventListScreen> {
   EventsLoaded? _lastLoadedState;
   Set<String> _selectedCategoryIds = {};
 
+  /// Live per-event Google Calendar sync status, used to badge events whose
+  /// calendar entry is missing/failed. Cached once so rebuilds don't
+  /// re-subscribe to the underlying Firestore stream.
+  late final Stream<Map<String, CalendarSyncStatus>> _calendarSyncStates;
+
   /// Build a compact icon button for the leading AppBar section
   Widget _buildCompactIcon(
       {required IconData icon,
@@ -75,6 +82,8 @@ class _EventListScreenState extends State<EventListScreen> {
   void initState() {
     super.initState();
     _searchFocusNode = createRtlCursorFixedFocusNode(_searchController);
+    _calendarSyncStates =
+        context.read<EventBloc>().watchCalendarSyncStates().asBroadcastStream();
     // Always load ALL events - filtering happens in UI
     context.read<EventBloc>().add(const LoadEvents());
   }
@@ -415,14 +424,22 @@ class _EventListScreenState extends State<EventListScreen> {
             ),
           ),
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 80),
-              itemCount: filteredEvents.length,
-              itemBuilder: (context, index) {
-                return _buildEventCard(
-                  filteredEvents[index],
-                  state.assignmentCounts,
-                  state.eventBirthdays,
+            child: StreamBuilder<Map<String, CalendarSyncStatus>>(
+              stream: _calendarSyncStates,
+              builder: (context, snapshot) {
+                final syncStates =
+                    snapshot.data ?? const <String, CalendarSyncStatus>{};
+                return ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 80),
+                  itemCount: filteredEvents.length,
+                  itemBuilder: (context, index) {
+                    return _buildEventCard(
+                      filteredEvents[index],
+                      state.assignmentCounts,
+                      state.eventBirthdays,
+                      calendarSyncStates: syncStates,
+                    );
+                  },
                 );
               },
             ),
@@ -537,11 +554,51 @@ class _EventListScreenState extends State<EventListScreen> {
     return null;
   }
 
+  /// Whether [event] should have a Google Calendar entry but currently does
+  /// not have a healthy one — used to show the "not synced" badge. True only
+  /// when the calendar integration is connected, the event is active, in the
+  /// future (in scope), and its sync status is anything other than `synced`
+  /// (missing state, pending, failed, or removed).
+  bool _needsCalendarSync(
+    Event event,
+    Map<String, CalendarSyncStatus> states,
+  ) {
+    // Without a connected calendar, every event would look unsynced.
+    if (!GoogleCalendarService.instance.isAuthenticated) return false;
+    // Deactivated events intentionally have no calendar entry.
+    if (event.isDeactivated) return false;
+    // Past events are out of the calendar sync scope.
+    final now = DateTime.now();
+    final todayDate = DateTime(now.year, now.month, now.day);
+    final endDate =
+        DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
+    if (endDate.isBefore(todayDate)) return false;
+
+    return states[event.id] != CalendarSyncStatus.synced;
+  }
+
+  /// Retry the Google Calendar sync for a single event from the badge.
+  void _resyncEventToCalendar(Event event) {
+    Logger.action('tap:resyncEventCalendar', {'eventId': event.id});
+    context.read<EventBloc>().resyncEventToCalendar(event);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Text('מסנכרן את האירוע ליומן גוגל...'),
+        ),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
   Widget _buildEventCard(
     Event event,
     Map<String, int> assignmentCounts,
-    Map<String, List<String>> eventBirthdays,
-  ) {
+    Map<String, List<String>> eventBirthdays, {
+    Map<String, CalendarSyncStatus> calendarSyncStates =
+        const <String, CalendarSyncStatus>{},
+  }) {
     // Check if start and end dates are the same
     final isSameDate = event.startDate.year == event.endDate.year &&
         event.startDate.month == event.endDate.month &&
@@ -620,6 +677,15 @@ class _EventListScreenState extends State<EventListScreen> {
                     ),
                   ),
                   const SizedBox(width: 4),
+                  if (_needsCalendarSync(event, calendarSyncStates))
+                    IconButton(
+                      tooltip: 'האירוע לא סונכרן ליומן גוגל — הקש/י לסנכרון',
+                      onPressed: () => _resyncEventToCalendar(event),
+                      icon: Icon(
+                        Icons.event_busy,
+                        color: Colors.orange.shade800,
+                      ),
+                    ),
                   IconButton(
                     tooltip: 'קבצים בגוגל דרייב',
                     onPressed: () => _showDriveFilesDialog(context, event),

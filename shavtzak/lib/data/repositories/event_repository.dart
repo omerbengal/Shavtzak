@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/assignment.dart';
+import '../../core/constants/calendar_constants.dart';
 import '../../core/constants/role_types.dart';
 import '../../core/services/drive_service.dart';
 import '../data_sources/database_interface.dart';
@@ -33,6 +34,11 @@ class EventRepository {
 
   /// Watch all events in real-time
   Stream<List<Event>> watchEvents() => _database.watchEvents();
+
+  /// Watch each event's Google Calendar sync status (keyed by event id) so the
+  /// UI can flag events whose calendar entry is missing or failed.
+  Stream<Map<String, CalendarSyncStatus>> watchEventCalendarSyncStates() =>
+      _database.watchEventCalendarSyncStates();
 
   /// Watch events within a date range in real-time
   /// Optimized for pagination - only loads events within the specified window

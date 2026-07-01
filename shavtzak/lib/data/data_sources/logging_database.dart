@@ -806,6 +806,10 @@ class LoggingDatabase implements DatabaseInterface {
         action: () => _inner.removeEventCalendarSyncState(eventId),
       );
 
+  @override
+  Stream<Map<String, CalendarSyncStatus>> watchEventCalendarSyncStates() =>
+      _inner.watchEventCalendarSyncStates();
+
   // ===== Constraint operations =====
 
   @override

@@ -4,10 +4,38 @@ import {
   isEligiblePermanentMember,
   shouldInviteAllPermanentForEvent,
   planAppEventReconciliation,
+  listInScopeAppEventIds,
   type AppEventPartSummary,
 } from './calendar_sync_backend';
 
 type Mutable = Record<string, unknown>;
+
+function fakeEventsFirestore(events: Array<{id: string; data: Mutable}>) {
+  return {
+    collection: (_name: string) => ({
+      get: async () => ({
+        docs: events.map((event) => ({
+          id: event.id,
+          data: () => event.data,
+        })),
+      }),
+    }),
+  };
+}
+
+test('listInScopeAppEventIds: keeps active future events, drops past and deactivated', async () => {
+  const deps = {
+    firestore: fakeEventsFirestore([
+      {id: 'future', data: {endDate: '2999-12-31', isDeactivated: false}},
+      {id: 'past', data: {endDate: '2000-01-01', isDeactivated: false}},
+      {id: 'future-off', data: {endDate: '2999-12-31', isDeactivated: true}},
+    ]),
+    collections: {events: 'events'},
+  } as unknown as Parameters<typeof listInScopeAppEventIds>[0];
+
+  const ids = await listInScopeAppEventIds(deps);
+  assert.deepEqual(ids, ['future']);
+});
 
 function buildPart(
   id: string,

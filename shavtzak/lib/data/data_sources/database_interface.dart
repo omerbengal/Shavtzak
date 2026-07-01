@@ -262,6 +262,13 @@ abstract class DatabaseInterface {
   /// Get event calendar sync state
   Future<Map<String, dynamic>?> getEventCalendarSyncState(String eventId);
 
+  /// Watch the calendar sync status of every event, keyed by event id.
+  ///
+  /// Live stream over the whole event-calendar-sync collection so the admin
+  /// event list can flag events whose Google Calendar entry is missing or
+  /// failed. Events absent from the map have no sync state at all.
+  Stream<Map<String, CalendarSyncStatus>> watchEventCalendarSyncStates();
+
   /// Remove event calendar sync state
   Future<void> removeEventCalendarSyncState(String eventId);
 
