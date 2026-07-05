@@ -56,28 +56,21 @@ class _SharePreviewDialogState extends State<SharePreviewDialog> {
         if (!mounted) {
           return;
         }
-        _shareImage(showFailureMessage: false);
+        _shareImage();
       });
     }
   }
 
-  Future<void> _shareImage({bool showFailureMessage = true}) async {
-    await _runImageAction(
-      action: _ShareImageAction.share,
-      showFailureMessage: showFailureMessage,
-    );
+  Future<void> _shareImage() async {
+    await _runImageAction(action: _ShareImageAction.share);
   }
 
   Future<void> _copyImage() async {
-    await _runImageAction(
-      action: _ShareImageAction.copy,
-      showFailureMessage: true,
-    );
+    await _runImageAction(action: _ShareImageAction.copy);
   }
 
   Future<void> _runImageAction({
     required _ShareImageAction action,
-    required bool showFailureMessage,
   }) async {
     if (!mounted || _isBusy) {
       return;

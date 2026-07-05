@@ -623,13 +623,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
   Future<void> _openCalendarShareFlow() async {
     setState(() => _isPreparingCalendarShare = true);
     try {
-      List<Event> events;
-      final eventState = context.read<EventBloc>().state;
-      if (eventState is EventsLoaded) {
-        events = eventState.events;
-      } else {
-        events = await context.read<EventRepository>().getAllEvents();
-      }
+      final events = await context.read<EventRepository>().getAllEvents();
       if (!mounted) {
         return;
       }

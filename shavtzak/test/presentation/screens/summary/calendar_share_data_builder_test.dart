@@ -443,5 +443,26 @@ void main() {
       expect(jul31.events.single.isContinuation, isFalse);
       expect(aug1.events.single.isContinuation, isTrue);
     });
+
+    test('December→January range wraps the year with correct titles', () {
+      final data = CalendarShareDataBuilder.build(
+        events: const [],
+        rangeStart: DateTime(2026, 12, 20),
+        rangeEnd: DateTime(2027, 1, 5),
+        mode: CalendarShareMode.months,
+        today: today,
+      );
+      expect(data.months, hasLength(2));
+      expect(data.months[0].title, 'דצמבר 2026');
+      expect(data.months[1].title, 'ינואר 2027');
+      final januaryDays = data.months[1].weeks
+          .expand((w) => w.days)
+          .whereType<CalendarShareDay>()
+          .toList();
+      for (final d in januaryDays) {
+        expect(d.date.year, 2027);
+        expect(d.date.month, 1);
+      }
+    });
   });
 }

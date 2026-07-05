@@ -96,9 +96,12 @@ Set<DateTime> _collectEventDates(List<Event> events) {
     }
     var day = _dateOnly(event.startDate);
     final last = _dateOnly(event.endDate);
-    while (!day.isAfter(last)) {
+    // Defensive bound: corrupt endDate must not freeze the UI building rings.
+    var guard = 0;
+    while (!day.isAfter(last) && guard < 370) {
       dates.add(day);
       day = DateTime(day.year, day.month, day.day + 1);
+      guard++;
     }
   }
   return dates;
