@@ -750,7 +750,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     } catch (_) {
       hebrew = key; // unknown key → show the raw key rather than crash
     }
-    final now = DateTime.now();
+    // Deterministic per key so two rebuilds produce an EQUAL synthesized Role
+    // (Role.props includes createdAt/updatedAt); otherwise _emitOrLog's
+    // no-op suppression breaks for any event with a deleted-role assignment.
+    final epoch = DateTime.fromMillisecondsSinceEpoch(0);
     return Role(
       id: key,
       key: key,
@@ -758,8 +761,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       isVisible: false,
       isArchived: true,
       sortOrder: 1 << 20, // sort after all real roles
-      createdAt: now,
-      updatedAt: now,
+      createdAt: epoch,
+      updatedAt: epoch,
     );
   }
 
@@ -935,6 +938,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Start with database assignments
       for (final slot in eventSlots) {
+        if (slot.isOffQuota) continue;
         final slotKey = _getSlotKey(slot);
         slotAssignments[slotKey] = slot.currentAssignment?.teamMemberId;
       }
