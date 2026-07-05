@@ -738,7 +738,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   }
 
   int _compareAssignmentSlots(AssignmentSlot a, AssignmentSlot b) {
-    final eventCompare = compareEventsChronologically(a.event, b.event);
+    // Past ON → newest→oldest so "load older" reads downward (like /db);
+    // Past OFF (default/upcoming view) → oldest→newest, unchanged.
+    final eventCompare = FilterPersistence.showPastEvents
+        ? compareEventsChronologicallyDescending(a.event, b.event)
+        : compareEventsChronologically(a.event, b.event);
     if (eventCompare != 0) {
       return eventCompare;
     }
