@@ -279,10 +279,12 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                           color: Colors.grey,
                           fontSize: isMobile ? 11 : 14,
                         ),
-                        // Set the minimum date that can be viewed/selected
-                        firstDate: widget.minDate ?? DateTime.now(),
-                        // Set the current date to initially display
-                        currentDate: widget.minDate ?? DateTime.now(),
+                        // Minimum selectable/navigable date. Null minDate =
+                        // navigable up to 3 years back.
+                        firstDate: widget.minDate ??
+                            DateTime(DateTime.now().year - 3, 1, 1),
+                        // The "today" marker in the day grid.
+                        currentDate: DateTime.now(),
                         selectableDayPredicate: widget.minDate != null
                             ? (day) => !day.isBefore(widget.minDate!)
                             : (day) => true,

@@ -3803,12 +3803,15 @@ class _ConstraintDialogState extends State<_ConstraintDialog> {
   }
 
   Future<void> _pickDates() async {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
     final result = await showDialog<Map<String, DateTime?>>(
       context: context,
       builder: (context) => DualCalendarDatePicker(
         isSingleDate: false,
         initialStartDate: _startDate,
         initialEndDate: _endDate,
+        minDate: todayDate, // Prevent selecting dates before today
         title: 'בחר תאריכי מגבלה',
       ),
     );

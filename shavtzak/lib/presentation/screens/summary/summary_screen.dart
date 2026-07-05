@@ -23,6 +23,9 @@ import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/checklist/checklist_bloc.dart';
 import '../../../data/repositories/assignment_label_repository.dart';
+import '../../../data/repositories/category_repository.dart';
+import '../../../data/repositories/event_repository.dart';
+import 'widgets/calendar_share/calendar_share_flow_dialog.dart';
 import 'widgets/summary_header_cards.dart';
 import 'widgets/events_overview_chart.dart';
 import 'widgets/staffing_status_chart.dart';
@@ -41,6 +44,7 @@ class SummaryScreen extends StatefulWidget {
 
 class _SummaryScreenState extends State<SummaryScreen> {
   List<Assignment> _lastKnownAssignments = const [];
+  bool _isPreparingCalendarShare = false;
 
   @override
   void initState() {
@@ -103,6 +107,26 @@ class _SummaryScreenState extends State<SummaryScreen> {
           centerTitle: true,
           automaticallyImplyLeading: false,
           actions: [
+            // Events calendar image export (spec: summary calendar share)
+            IconButton(
+              icon: _isPreparingCalendarShare
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.calendar_month),
+              tooltip: 'לוח אירועים',
+              onPressed: _isPreparingCalendarShare
+                  ? null
+                  : () {
+                      Logger.action('open:calendarShareFlow');
+                      _openCalendarShareFlow();
+                    },
+              iconSize: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+            ),
             // Home button (appears closest to title in RTL)
             BlocBuilder<UserSelectionBloc, UserSelectionState>(
               builder: (context, state) {
@@ -595,6 +619,34 @@ class _SummaryScreenState extends State<SummaryScreen> {
       ),
       eventSummaries: eventSummaries,
     );
+  }
+
+  Future<void> _openCalendarShareFlow() async {
+    setState(() => _isPreparingCalendarShare = true);
+    try {
+      final events = await context.read<EventRepository>().getAllEvents();
+      if (!mounted) {
+        return;
+      }
+      final categories =
+          await context.read<CategoryRepository>().getCategories();
+      if (!mounted) {
+        return;
+      }
+      await startCalendarShareFlow(context, events, categories: categories);
+    } catch (e) {
+      Logger.action('error:calendarShareFlow', {'error': e.toString()});
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('לא ניתן להכין לוח אירועים')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isPreparingCalendarShare = false);
+      }
+    }
   }
 
   /// Show logout confirmation dialog

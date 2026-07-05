@@ -1,15 +1,13 @@
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 
-import '../../../../core/debug/logger.dart';
-import '../../../../core/services/assignment_share_image_service.dart';
+import '../../../widgets/share_preview_dialog.dart';
 import 'event_assignments_share_card.dart';
 import 'event_assignments_share_models.dart';
 
-class EventAssignmentsSharePreviewDialog extends StatefulWidget {
+/// Thin wrapper over [SharePreviewDialog] for the assignments-image share.
+/// Public API is unchanged — the call site in event_assignments_dialog.dart
+/// must not need any modification.
+class EventAssignmentsSharePreviewDialog extends StatelessWidget {
   final EventAssignmentsShareData data;
   final bool autoStartShare;
 
@@ -20,123 +18,18 @@ class EventAssignmentsSharePreviewDialog extends StatefulWidget {
   });
 
   @override
-  State<EventAssignmentsSharePreviewDialog> createState() =>
-      _EventAssignmentsSharePreviewDialogState();
-}
-
-class _EventAssignmentsSharePreviewDialogState
-    extends State<EventAssignmentsSharePreviewDialog> {
-  final GlobalKey _captureKey = GlobalKey();
-  _ShareImageAction? _activeAction;
-  String _message = 'אפשר לצלם את המסך הזה כתמונה אחת';
-
-  bool get _isBusy => _activeAction != null;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.autoStartShare) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
-          return;
-        }
-        _shareImage(showFailureMessage: false);
-      });
-    }
-  }
-
-  Future<void> _shareImage({bool showFailureMessage = true}) async {
-    await _runImageAction(
-      action: _ShareImageAction.share,
-      showFailureMessage: showFailureMessage,
+  Widget build(BuildContext context) {
+    return SharePreviewDialog(
+      card: EventAssignmentsShareCard(data: data),
+      appBarTitle: 'תמונת שיבוצים',
+      filename: _buildFilename(data.eventName),
+      shareTitle: 'תמונת שיבוצים',
+      shareText: 'שיבוצים ל${data.eventName}',
+      closeLogAction: 'tap:close:sharePreview',
+      shareLogAction: 'tap:shareImage',
+      copyLogAction: 'tap:copyImage',
+      autoStartShare: autoStartShare,
     );
-  }
-
-  Future<void> _copyImage() async {
-    await _runImageAction(
-      action: _ShareImageAction.copy,
-      showFailureMessage: true,
-    );
-  }
-
-  Future<void> _runImageAction({
-    required _ShareImageAction action,
-    required bool showFailureMessage,
-  }) async {
-    if (!mounted || _isBusy) {
-      return;
-    }
-
-    setState(() {
-      _activeAction = action;
-      _message = action == _ShareImageAction.share
-          ? 'מכין תמונה לשיתוף...'
-          : 'מכין תמונה להעתקה...';
-    });
-
-    try {
-      final pngBytes = await _capturePngBytes();
-      final result = action == _ShareImageAction.share
-          ? await const AssignmentShareImageService().sharePng(
-              pngBytes: pngBytes,
-              filename: _buildFilename(widget.data.eventName),
-              title: 'תמונת שיבוצים',
-              text: 'שיבוצים ל${widget.data.eventName}',
-            )
-          : await const AssignmentShareImageService().copyPng(
-              pngBytes: pngBytes,
-            );
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _message = switch (result) {
-          AssignmentShareImageResult.shared => 'התמונה נשלחה לשיתוף',
-          AssignmentShareImageResult.copiedImage =>
-            'התמונה הועתקה. אפשר להדביק אותה בצ׳אט',
-          AssignmentShareImageResult.needsManualScreenshot => showFailureMessage
-              ? 'אפשר לצלם את המסך הזה כתמונה אחת'
-              : 'אפשר לצלם את המסך הזה כתמונה אחת',
-        };
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _message = 'אפשר לצלם את המסך הזה כתמונה אחת';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _activeAction = null;
-        });
-      }
-    }
-  }
-
-  Future<Uint8List> _capturePngBytes() async {
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) {
-      throw StateError('Share preview is no longer mounted');
-    }
-
-    final renderObject = _captureKey.currentContext?.findRenderObject();
-    if (renderObject is! RenderRepaintBoundary) {
-      throw StateError('Share card is not ready for capture');
-    }
-
-    final image = await renderObject.toImage(pixelRatio: 1.0);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    image.dispose();
-
-    if (byteData == null) {
-      throw StateError('Failed to encode share card as PNG');
-    }
-
-    return Uint8List.view(byteData.buffer);
   }
 
   String _buildFilename(String eventName) {
@@ -146,128 +39,5 @@ class _EventAssignmentsSharePreviewDialogState
         .replaceAll(RegExp(r'_+'), '_');
     final suffix = safeName.isEmpty ? 'event' : safeName;
     return 'shavtzak_assignments_$suffix.png';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Dialog.fullscreen(
-        child: Scaffold(
-          appBar: AppBar(
-            title: const Text('תמונת שיבוצים'),
-            leading: IconButton(
-              icon: const Icon(Icons.close),
-              tooltip: 'סגירה',
-              onPressed: () {
-                Logger.action('tap:close:sharePreview');
-                Navigator.of(context).pop();
-              },
-            ),
-          ),
-          body: SafeArea(
-            child: Column(
-              children: [
-                Expanded(
-                  child: Container(
-                    color: const Color(0xFFE2E8F0),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return SingleChildScrollView(
-                          padding: const EdgeInsets.all(16),
-                          child: SizedBox(
-                            width: constraints.maxWidth,
-                            child: FittedBox(
-                              fit: BoxFit.fitWidth,
-                              alignment: Alignment.topCenter,
-                              child: RepaintBoundary(
-                                key: _captureKey,
-                                child: EventAssignmentsShareCard(
-                                  data: widget.data,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        _message,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: _isBusy ? null : () {
-                                Logger.action('tap:shareImage');
-                                _shareImage();
-                              },
-                              icon: _activeAction == _ShareImageAction.share
-                                  ? const _ButtonProgressIndicator()
-                                  : const Icon(Icons.ios_share),
-                              label: Text(
-                                _activeAction == _ShareImageAction.share
-                                    ? 'משתף...'
-                                    : 'שתף',
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _isBusy ? null : () {
-                                Logger.action('tap:copyImage');
-                                _copyImage();
-                              },
-                              icon: _activeAction == _ShareImageAction.copy
-                                  ? const _ButtonProgressIndicator()
-                                  : const Icon(Icons.copy),
-                              label: Text(
-                                _activeAction == _ShareImageAction.copy
-                                    ? 'מעתיק...'
-                                    : 'העתק תמונה',
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-enum _ShareImageAction {
-  share,
-  copy,
-}
-
-class _ButtonProgressIndicator extends StatelessWidget {
-  const _ButtonProgressIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      width: 18,
-      height: 18,
-      child: CircularProgressIndicator(strokeWidth: 2),
-    );
   }
 }

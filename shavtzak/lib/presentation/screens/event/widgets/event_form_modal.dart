@@ -1736,6 +1736,13 @@ class _EventFormModalState extends State<EventFormModal> {
                                                     onPressed: () async {
                                                       Logger.action(
                                                           'open:datePicker');
+                                                      final today =
+                                                          DateTime.now();
+                                                      final todayDate =
+                                                          DateTime(
+                                                              today.year,
+                                                              today.month,
+                                                              today.day);
                                                       final result =
                                                           await showDialog<
                                                               Map<String,
@@ -1748,6 +1755,9 @@ class _EventFormModalState extends State<EventFormModal> {
                                                               _startDate,
                                                           initialEndDate:
                                                               _endDate,
+                                                          // Prevent selecting
+                                                          // dates before today
+                                                          minDate: todayDate,
                                                           title:
                                                               'בחר תאריכי אירוע',
                                                         ),

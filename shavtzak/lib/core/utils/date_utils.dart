@@ -18,24 +18,28 @@ class DateUtils {
     return '${formatDate(date)} ${formatTime(date)}';
   }
 
+  /// Hebrew month names. Index 0 = ינואר. Prefer [hebrewMonthName].
+  static const List<String> hebrewMonths = [
+    'ינואר',
+    'פברואר',
+    'מרץ',
+    'אפריל',
+    'מאי',
+    'יוני',
+    'יולי',
+    'אוגוסט',
+    'ספטמבר',
+    'אוקטובר',
+    'נובמבר',
+    'דצמבר',
+  ];
+
+  /// Hebrew name for a 1-indexed month (1 = ינואר).
+  static String hebrewMonthName(int month) => hebrewMonths[month - 1];
+
   /// Format date as day and month (e.g., "3 בספטמבר")
   static String formatDayMonth(DateTime date) {
-    final hebrewMonths = [
-      'ינואר',
-      'פברואר',
-      'מרץ',
-      'אפריל',
-      'מאי',
-      'יוני',
-      'יולי',
-      'אוגוסט',
-      'סptמבר',
-      'אוקטובר',
-      'נובמבר',
-      'דצמבר',
-    ];
-
-    return '${date.day} ב${hebrewMonths[date.month - 1]}';
+    return '${date.day} ב${hebrewMonthName(date.month)}';
   }
 
   /// Format date as weekday and date (e.g., "יום שלישי, 3 בספטמבר")
@@ -84,21 +88,7 @@ class DateUtils {
 
     if (start.month == end.month && start.year == end.year) {
       // Same month: "3-5 בספטמבר"
-      final hebrewMonths = [
-        'ינואר',
-        'פברואר',
-        'מרץ',
-        'אפריל',
-        'מאי',
-        'יוני',
-        'יולי',
-        'אוגוסט',
-        'ספטמבר',
-        'אוקטובר',
-        'נובמבר',
-        'דצמבר',
-      ];
-      return '${start.day}-${end.day} ב${hebrewMonths[start.month - 1]}';
+      return '${start.day}-${end.day} ב${hebrewMonthName(start.month)}';
     }
 
     // Different months: "3 בספטמבר - 2 באוקטובר"

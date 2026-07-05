@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/debug/logger.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../domain/entities/category.dart';
@@ -11,6 +12,90 @@ import '../../../bloc/category/category_bloc.dart';
 import '../../../bloc/category/category_event.dart';
 import '../../../bloc/category/category_state.dart';
 import '../../../widgets/loading_overlay.dart';
+
+/// Dispatches a category BLoC event that reports back via a completer, and
+/// awaits the result. Shared by the main dialog and its add/edit sub-dialogs
+/// (kept top-level since it doesn't touch any instance state).
+Future<CrudActionResult> _waitForCategoryAction(
+  void Function(CrudActionCompleter completion) dispatch,
+) async {
+  final completion = Completer<CrudActionResult>();
+  dispatch(completion);
+  return await completion.future;
+}
+
+/// Swatch picker for choosing an optional category color.
+/// Shows a "no color" tile followed by one circle per preset palette color.
+class _CategoryColorPicker extends StatelessWidget {
+  final int? selectedColorValue;
+  final ValueChanged<int?> onChanged;
+
+  const _CategoryColorPicker({
+    required this.selectedColorValue,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _buildNoColorTile(),
+        ...AppTheme.categoryColorPalette.map(_buildColorTile),
+      ],
+    );
+  }
+
+  Widget _buildNoColorTile() {
+    final isSelected = selectedColorValue == null;
+    return Tooltip(
+      message: 'ללא צבע',
+      child: InkWell(
+        onTap: () => onChanged(null),
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.grey.shade200,
+            border: Border.all(
+              color: isSelected ? Colors.black87 : Colors.grey.shade400,
+              width: isSelected ? 2.5 : 1,
+            ),
+          ),
+          child: Icon(
+            Icons.format_color_reset,
+            size: 18,
+            color: Colors.grey.shade700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColorTile(Color color) {
+    final colorValue = color.toARGB32();
+    final isSelected = selectedColorValue == colorValue;
+    // Keep the checkmark visible on light swatches (yellow/lime)
+    final checkColor = color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
+    return InkWell(
+      onTap: () => onChanged(colorValue),
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          border: isSelected ? Border.all(color: Colors.black87, width: 2.5) : null,
+        ),
+        child: isSelected ? Icon(Icons.check, size: 18, color: checkColor) : null,
+      ),
+    );
+  }
+}
 
 /// Dialog for managing categories (add, rename, archive, restore, reorder)
 class CategoryManagementDialog extends StatefulWidget {
@@ -27,14 +112,6 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
   /// Local optimistic state for reordering - updates immediately via setState
   /// before BLoC/Firestore responds. Cleared when BLoC state updates.
   List<Category>? _pendingReorderedCategories;
-
-  Future<CrudActionResult> _waitForCategoryAction(
-    void Function(CrudActionCompleter completion) dispatch,
-  ) async {
-    final completion = Completer<CrudActionResult>();
-    dispatch(completion);
-    return await completion.future;
-  }
 
   Future<CrudActionResult> _runCategoryMutation({
     required Future<CrudActionResult> Function() action,
@@ -281,7 +358,16 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
       child: ListTile(
         leading: isArchived
             ? const Icon(Icons.archive, color: Colors.grey)
-            : const Icon(Icons.category, color: Colors.blue),
+            : (category.colorValue != null
+                ? Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(category.colorValue!),
+                    ),
+                  )
+                : const Icon(Icons.category, color: Colors.blue)),
         title: Text(
           category.name,
           style: TextStyle(
@@ -607,171 +693,288 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
     }
   }
 
-  /// Show dialog to add a new category
+  /// Show dialog to add a new category.
+  /// The controller/focus node are owned by _AddCategoryDialogState and
+  /// disposed in State.dispose() — NOT in a showDialog().then(), which would
+  /// fire on pop-initiation while the dialog is still mounted through its
+  /// exit transition (use-after-dispose crash).
   void _showAddCategoryDialog(BuildContext context) {
-    final controller = TextEditingController();
-    final focusNode = createRtlCursorFixedFocusNode(controller);
-    bool isSaving = false;
-
     showDialog(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            title: const Text('צור קטגוריה חדשה'),
-            content: TextField(
-              controller: controller,
-              focusNode: focusNode,
-              decoration: const InputDecoration(
-                labelText: 'שם הקטגוריה',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: isSaving
-                    ? null
-                    : () {
-                        Logger.action('tap:cancel:addCategory');
-                        Navigator.of(dialogContext).pop();
-                      },
-                child: const Text('ביטול'),
-              ),
-              ElevatedButton(
-                onPressed: isSaving
-                    ? null
-                    : () async {
-                        Logger.action('tap:createCategory');
-                        if (controller.text.trim().isEmpty) {
-                          return;
-                        }
-                        setDialogState(() => isSaving = true);
-                        final result = await _waitForCategoryAction(
-                          (completion) => context.read<CategoryBloc>().add(
-                                CreateCategory(
-                                  controller.text.trim(),
-                                  completion: completion,
-                                ),
-                              ),
-                        );
-                        if (!dialogContext.mounted) {
-                          return;
-                        }
-                        if (result.isFailure) {
-                          setDialogState(() => isSaving = false);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                result.message ?? 'שגיאה ביצירת קטגוריה',
-                              ),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                          return;
-                        }
-                        Navigator.of(dialogContext).pop();
-                      },
-                child: isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('צור'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ).then((_) {
-      focusNode.dispose();
-      controller.dispose();
-    });
+      builder: (_) => const _AddCategoryDialog(),
+    );
   }
 
-  /// Show dialog to rename a category
+  /// Show dialog to edit a category (name and/or color).
+  /// Same ownership fix as _showAddCategoryDialog above.
   void _showRenameDialog(BuildContext context, Category category) {
-    final controller = TextEditingController(text: category.name);
-    final focusNode = createRtlCursorFixedFocusNode(controller);
-    bool isSaving = false;
-
     showDialog(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            title: const Text('שנה שם קטגוריה'),
-            content: TextField(
-              controller: controller,
-              focusNode: focusNode,
+      builder: (_) => _EditCategoryDialog(category: category),
+    );
+  }
+}
+
+/// Dialog for creating a new category. A StatefulWidget so the
+/// TextEditingController/FocusNode are owned by the State and disposed in
+/// State.dispose() — guaranteed to run only after this widget unmounts,
+/// unlike a showDialog().then() callback which fires as soon as the pop is
+/// initiated (before the exit transition finishes).
+class _AddCategoryDialog extends StatefulWidget {
+  const _AddCategoryDialog();
+
+  @override
+  State<_AddCategoryDialog> createState() => _AddCategoryDialogState();
+}
+
+class _AddCategoryDialogState extends State<_AddCategoryDialog> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  bool _isSaving = false;
+  int? _selectedColorValue;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+    _focusNode = createRtlCursorFixedFocusNode(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text('צור קטגוריה חדשה'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _controller,
+              focusNode: _focusNode,
               decoration: const InputDecoration(
                 labelText: 'שם הקטגוריה',
                 border: OutlineInputBorder(),
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: isSaving
-                    ? null
-                    : () {
-                        Logger.action('tap:cancel:renameCategory', {'categoryId': category.id});
-                        Navigator.of(dialogContext).pop();
-                      },
-                child: const Text('ביטול'),
-              ),
-              ElevatedButton(
-                onPressed: isSaving
-                    ? null
-                    : () async {
-                        Logger.action('tap:renameCategory', {'categoryId': category.id});
-                        if (controller.text.trim().isEmpty ||
-                            controller.text.trim() == category.name) {
-                          return;
-                        }
-                        setDialogState(() => isSaving = true);
-                        final result = await _waitForCategoryAction(
-                          (completion) => context.read<CategoryBloc>().add(
-                                RenameCategory(
-                                  category.id,
-                                  controller.text.trim(),
-                                  completion: completion,
-                                ),
-                              ),
-                        );
-                        if (!dialogContext.mounted) {
-                          return;
-                        }
-                        if (result.isFailure) {
-                          setDialogState(() => isSaving = false);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                result.message ?? 'שגיאה בעדכון שם קטגוריה',
-                              ),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                          return;
-                        }
-                        Navigator.of(dialogContext).pop();
-                      },
-                child: isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('שמור'),
-              ),
-            ],
-          ),
+            const SizedBox(height: 12),
+            const Align(
+              alignment: Alignment.centerRight,
+              child: Text('צבע (אופציונלי)', style: TextStyle(fontWeight: FontWeight.w500)),
+            ),
+            const SizedBox(height: 8),
+            _CategoryColorPicker(
+              selectedColorValue: _selectedColorValue,
+              onChanged: (value) => setState(() => _selectedColorValue = value),
+            ),
+          ],
         ),
+        actions: [
+          TextButton(
+            onPressed: _isSaving
+                ? null
+                : () {
+                    Logger.action('tap:cancel:addCategory');
+                    Navigator.of(context).pop();
+                  },
+            child: const Text('ביטול'),
+          ),
+          ElevatedButton(
+            onPressed: _isSaving
+                ? null
+                : () async {
+                    Logger.action('tap:createCategory');
+                    if (_controller.text.trim().isEmpty) {
+                      return;
+                    }
+                    setState(() => _isSaving = true);
+                    final result = await _waitForCategoryAction(
+                      (completion) => context.read<CategoryBloc>().add(
+                            CreateCategory(
+                              _controller.text.trim(),
+                              colorValue: _selectedColorValue,
+                              completion: completion,
+                            ),
+                          ),
+                    );
+                    if (!context.mounted) {
+                      return;
+                    }
+                    if (result.isFailure) {
+                      setState(() => _isSaving = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            result.message ?? 'שגיאה ביצירת קטגוריה',
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.of(context).pop();
+                  },
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('צור'),
+          ),
+        ],
       ),
-    ).then((_) {
-      focusNode.dispose();
-      controller.dispose();
-    });
+    );
+  }
+}
+
+/// Dialog for editing a category's name/color. Same StatefulWidget ownership
+/// fix as _AddCategoryDialog above.
+class _EditCategoryDialog extends StatefulWidget {
+  final Category category;
+
+  const _EditCategoryDialog({required this.category});
+
+  @override
+  State<_EditCategoryDialog> createState() => _EditCategoryDialogState();
+}
+
+class _EditCategoryDialogState extends State<_EditCategoryDialog> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  bool _isSaving = false;
+  int? _selectedColorValue;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.category.name);
+    _focusNode = createRtlCursorFixedFocusNode(_controller);
+    _selectedColorValue = widget.category.colorValue;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final category = widget.category;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text('עריכת קטגוריה'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              decoration: const InputDecoration(
+                labelText: 'שם הקטגוריה',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Align(
+              alignment: Alignment.centerRight,
+              child: Text('צבע (אופציונלי)', style: TextStyle(fontWeight: FontWeight.w500)),
+            ),
+            const SizedBox(height: 8),
+            _CategoryColorPicker(
+              selectedColorValue: _selectedColorValue,
+              onChanged: (value) => setState(() => _selectedColorValue = value),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _isSaving
+                ? null
+                : () {
+                    Logger.action('tap:cancel:renameCategory', {'categoryId': category.id});
+                    Navigator.of(context).pop();
+                  },
+            child: const Text('ביטול'),
+          ),
+          ElevatedButton(
+            onPressed: _isSaving
+                ? null
+                : () async {
+                    Logger.action('tap:renameCategory', {'categoryId': category.id});
+                    // Resolve the freshest category from live bloc state so we
+                    // don't write back stale fields (e.g. sortOrder/isArchived
+                    // changed by another admin since the dialog was opened).
+                    final blocState = context.read<CategoryBloc>().state;
+                    final freshCategory = blocState is CategoriesLoaded
+                        ? [
+                            ...blocState.activeCategories,
+                            ...blocState.archivedCategories,
+                          ].firstWhere(
+                            (c) => c.id == category.id,
+                            orElse: () => category,
+                          )
+                        : category;
+                    final trimmedName = _controller.text.trim();
+                    final nameChanged =
+                        trimmedName.isNotEmpty && trimmedName != freshCategory.name;
+                    final colorChanged = _selectedColorValue != freshCategory.colorValue;
+                    if (trimmedName.isEmpty || (!nameChanged && !colorChanged)) {
+                      return;
+                    }
+                    setState(() => _isSaving = true);
+                    final updatedCategory = freshCategory.copyWith(
+                      name: trimmedName,
+                      colorValue: _selectedColorValue,
+                      clearColorValue: _selectedColorValue == null,
+                    );
+                    final result = await _waitForCategoryAction(
+                      (completion) => context.read<CategoryBloc>().add(
+                            UpdateCategory(
+                              updatedCategory,
+                              completion: completion,
+                            ),
+                          ),
+                    );
+                    if (!context.mounted) {
+                      return;
+                    }
+                    if (result.isFailure) {
+                      setState(() => _isSaving = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            result.message ?? 'שגיאה בעדכון קטגוריה',
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.of(context).pop();
+                  },
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('שמור'),
+          ),
+        ],
+      ),
+    );
   }
 }

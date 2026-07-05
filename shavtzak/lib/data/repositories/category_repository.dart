@@ -29,7 +29,7 @@ class CategoryRepository {
   }
 
   /// Create a new category
-  Future<Category> createCategory(String name, {int? sortOrder}) async {
+  Future<Category> createCategory(String name, {int? sortOrder, int? colorValue}) async {
     final now = DateTime.now();
     final categories = await getCategories();
 
@@ -46,6 +46,7 @@ class CategoryRepository {
       name: name,
       sortOrder: finalSortOrder,
       isArchived: false,
+      colorValue: colorValue,
       createdAt: now,
       updatedAt: now,
     );
