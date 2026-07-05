@@ -38,8 +38,16 @@ class CalendarShareDataBuilder {
         ),
       );
     }
-    // Months mode is implemented in the next task.
-    throw UnimplementedError('months mode not implemented yet');
+    return CalendarShareData(
+      rangeTitle: rangeTitle,
+      mode: mode,
+      months: _buildMonths(
+        rangeStart: start,
+        rangeEnd: end,
+        events: active,
+        today: today,
+      ),
+    );
   }
 
   /// One week per row from [gridStart] (a Sunday) to [gridEnd] (a Saturday).
@@ -82,6 +90,40 @@ class CalendarShareDataBuilder {
       cursor = _addDays(cursor, 7);
     }
     return weeks;
+  }
+
+  static List<CalendarShareMonth> _buildMonths({
+    required DateTime rangeStart,
+    required DateTime rangeEnd,
+    required List<Event> events,
+    required DateTime today,
+  }) {
+    final months = <CalendarShareMonth>[];
+    var year = rangeStart.year;
+    var month = rangeStart.month;
+    while (year < rangeEnd.year ||
+        (year == rangeEnd.year && month <= rangeEnd.month)) {
+      final firstOfMonth = DateTime(year, month, 1);
+      final lastOfMonth = DateTime(year, month + 1, 0);
+      months.add(CalendarShareMonth(
+        title: '${app_date_utils.DateUtils.hebrewMonthName(month)} $year',
+        weeks: _buildWeeks(
+          gridStart: _sundayOnOrBefore(firstOfMonth),
+          gridEnd: _saturdayOnOrAfter(lastOfMonth),
+          rangeStart: rangeStart,
+          rangeEnd: rangeEnd,
+          monthBounds: (first: firstOfMonth, last: lastOfMonth),
+          events: events,
+          today: today,
+        ),
+      ));
+      month++;
+      if (month == 13) {
+        month = 1;
+        year++;
+      }
+    }
+    return months;
   }
 
   static List<CalendarShareEvent> _eventsForDay(

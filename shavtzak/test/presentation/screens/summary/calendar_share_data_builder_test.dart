@@ -345,4 +345,103 @@ void main() {
       expect(data.rangeTitle, '8 ביולי 2026');
     });
   });
+
+  group('build — months mode', () {
+    test('one grid per calendar month intersecting the range', () {
+      final data = CalendarShareDataBuilder.build(
+        events: const [],
+        rangeStart: DateTime(2026, 7, 20),
+        rangeEnd: DateTime(2026, 8, 3),
+        mode: CalendarShareMode.months,
+        today: today,
+      );
+      expect(data.mode, CalendarShareMode.months);
+      expect(data.weeks, isEmpty);
+      expect(data.months, hasLength(2));
+      expect(data.months[0].title, 'יולי 2026');
+      expect(data.months[1].title, 'אוגוסט 2026');
+    });
+
+    test('out-of-month cells are null, out-of-range days are dimmed', () {
+      final data = CalendarShareDataBuilder.build(
+        events: const [],
+        rangeStart: DateTime(2026, 7, 20),
+        rangeEnd: DateTime(2026, 8, 3),
+        mode: CalendarShareMode.months,
+        today: today,
+      );
+      final july = data.months[0];
+      // 2026-07-01 is a Wednesday: Sun/Mon/Tue of the first week are blank.
+      expect(july.weeks.first.days[0], isNull);
+      expect(july.weeks.first.days[1], isNull);
+      expect(july.weeks.first.days[2], isNull);
+      expect(july.weeks.first.days[3]!.date, DateTime(2026, 7, 1));
+      expect(july.weeks.first.days[3]!.inRange, isFalse); // before 20.7
+      // A day inside the picked range:
+      final allJulyDays = july.weeks
+          .expand((w) => w.days)
+          .whereType<CalendarShareDay>()
+          .toList();
+      expect(
+        allJulyDays.firstWhere((d) => d.date == DateTime(2026, 7, 20)).inRange,
+        isTrue,
+      );
+      // Every in-month day belongs to July.
+      for (final d in allJulyDays) {
+        expect(d.date.month, 7);
+      }
+    });
+
+    test('events land in the right month grid', () {
+      final data = CalendarShareDataBuilder.build(
+        events: [
+          makeEvent(id: 'jul', name: 'ביולי', startDate: DateTime(2026, 7, 25)),
+          makeEvent(id: 'aug', name: 'באוגוסט', startDate: DateTime(2026, 8, 1)),
+        ],
+        rangeStart: DateTime(2026, 7, 20),
+        rangeEnd: DateTime(2026, 8, 3),
+        mode: CalendarShareMode.months,
+        today: today,
+      );
+      final julyEvents = data.months[0].weeks
+          .expand((w) => w.days)
+          .whereType<CalendarShareDay>()
+          .expand((d) => d.events)
+          .map((e) => e.name)
+          .toList();
+      final augustEvents = data.months[1].weeks
+          .expand((w) => w.days)
+          .whereType<CalendarShareDay>()
+          .expand((d) => d.events)
+          .map((e) => e.name)
+          .toList();
+      expect(julyEvents, ['ביולי']);
+      expect(augustEvents, ['באוגוסט']);
+    });
+
+    test('event spanning a month boundary continues into the next grid', () {
+      final data = CalendarShareDataBuilder.build(
+        events: [
+          makeEvent(
+            startDate: DateTime(2026, 7, 31),
+            endDate: DateTime(2026, 8, 2),
+          ),
+        ],
+        rangeStart: DateTime(2026, 7, 20),
+        rangeEnd: DateTime(2026, 8, 3),
+        mode: CalendarShareMode.months,
+        today: today,
+      );
+      final jul31 = data.months[0].weeks
+          .expand((w) => w.days)
+          .whereType<CalendarShareDay>()
+          .firstWhere((d) => d.date == DateTime(2026, 7, 31));
+      final aug1 = data.months[1].weeks
+          .expand((w) => w.days)
+          .whereType<CalendarShareDay>()
+          .firstWhere((d) => d.date == DateTime(2026, 8, 1));
+      expect(jul31.events.single.isContinuation, isFalse);
+      expect(aug1.events.single.isContinuation, isTrue);
+    });
+  });
 }
