@@ -102,7 +102,7 @@ class CategoryBloc extends Bloc<CategoryEvent, CategoryState> {
     Emitter<CategoryState> emit,
   ) async {
     try {
-      await _categoryRepository.createCategory(event.name);
+      await _categoryRepository.createCategory(event.name, colorValue: event.colorValue);
       _completeActionSuccess(event.completion, 'הקטגוריה נוצרה בהצלחה');
     } catch (e) {
       _completeActionFailure(event.completion, 'שגיאה ביצירת קטגוריה: $e');

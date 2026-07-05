@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/debug/logger.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../domain/entities/category.dart';
@@ -11,6 +12,77 @@ import '../../../bloc/category/category_bloc.dart';
 import '../../../bloc/category/category_event.dart';
 import '../../../bloc/category/category_state.dart';
 import '../../../widgets/loading_overlay.dart';
+
+/// Swatch picker for choosing an optional category color.
+/// Shows a "no color" tile followed by one circle per preset palette color.
+class _CategoryColorPicker extends StatelessWidget {
+  final int? selectedColorValue;
+  final ValueChanged<int?> onChanged;
+
+  const _CategoryColorPicker({
+    required this.selectedColorValue,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _buildNoColorTile(),
+        ...AppTheme.categoryColorPalette.map(_buildColorTile),
+      ],
+    );
+  }
+
+  Widget _buildNoColorTile() {
+    final isSelected = selectedColorValue == null;
+    return Tooltip(
+      message: 'ללא צבע',
+      child: InkWell(
+        onTap: () => onChanged(null),
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.grey.shade200,
+            border: Border.all(
+              color: isSelected ? Colors.black87 : Colors.grey.shade400,
+              width: isSelected ? 2.5 : 1,
+            ),
+          ),
+          child: Icon(
+            Icons.format_color_reset,
+            size: 18,
+            color: Colors.grey.shade700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColorTile(Color color) {
+    final colorValue = color.toARGB32();
+    final isSelected = selectedColorValue == colorValue;
+    return InkWell(
+      onTap: () => onChanged(colorValue),
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          border: isSelected ? Border.all(color: Colors.black87, width: 2.5) : null,
+        ),
+        child: isSelected ? const Icon(Icons.check, size: 18, color: Colors.white) : null,
+      ),
+    );
+  }
+}
 
 /// Dialog for managing categories (add, rename, archive, restore, reorder)
 class CategoryManagementDialog extends StatefulWidget {
@@ -281,7 +353,16 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
       child: ListTile(
         leading: isArchived
             ? const Icon(Icons.archive, color: Colors.grey)
-            : const Icon(Icons.category, color: Colors.blue),
+            : (category.colorValue != null
+                ? Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(category.colorValue!),
+                    ),
+                  )
+                : const Icon(Icons.category, color: Colors.blue)),
         title: Text(
           category.name,
           style: TextStyle(
@@ -612,6 +693,7 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
     final controller = TextEditingController();
     final focusNode = createRtlCursorFixedFocusNode(controller);
     bool isSaving = false;
+    int? selectedColorValue;
 
     showDialog(
       context: context,
@@ -620,13 +702,29 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
           textDirection: TextDirection.rtl,
           child: AlertDialog(
             title: const Text('צור קטגוריה חדשה'),
-            content: TextField(
-              controller: controller,
-              focusNode: focusNode,
-              decoration: const InputDecoration(
-                labelText: 'שם הקטגוריה',
-                border: OutlineInputBorder(),
-              ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  decoration: const InputDecoration(
+                    labelText: 'שם הקטגוריה',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Align(
+                  alignment: Alignment.centerRight,
+                  child: Text('צבע (אופציונלי)', style: TextStyle(fontWeight: FontWeight.w500)),
+                ),
+                const SizedBox(height: 8),
+                _CategoryColorPicker(
+                  selectedColorValue: selectedColorValue,
+                  onChanged: (value) => setDialogState(() => selectedColorValue = value),
+                ),
+              ],
             ),
             actions: [
               TextButton(
@@ -651,6 +749,7 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                           (completion) => context.read<CategoryBloc>().add(
                                 CreateCategory(
                                   controller.text.trim(),
+                                  colorValue: selectedColorValue,
                                   completion: completion,
                                 ),
                               ),
@@ -690,11 +789,12 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
     });
   }
 
-  /// Show dialog to rename a category
+  /// Show dialog to edit a category (name and/or color)
   void _showRenameDialog(BuildContext context, Category category) {
     final controller = TextEditingController(text: category.name);
     final focusNode = createRtlCursorFixedFocusNode(controller);
     bool isSaving = false;
+    int? selectedColorValue = category.colorValue;
 
     showDialog(
       context: context,
@@ -702,14 +802,30 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
         builder: (context, setDialogState) => Directionality(
           textDirection: TextDirection.rtl,
           child: AlertDialog(
-            title: const Text('שנה שם קטגוריה'),
-            content: TextField(
-              controller: controller,
-              focusNode: focusNode,
-              decoration: const InputDecoration(
-                labelText: 'שם הקטגוריה',
-                border: OutlineInputBorder(),
-              ),
+            title: const Text('עריכת קטגוריה'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  decoration: const InputDecoration(
+                    labelText: 'שם הקטגוריה',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Align(
+                  alignment: Alignment.centerRight,
+                  child: Text('צבע (אופציונלי)', style: TextStyle(fontWeight: FontWeight.w500)),
+                ),
+                const SizedBox(height: 8),
+                _CategoryColorPicker(
+                  selectedColorValue: selectedColorValue,
+                  onChanged: (value) => setDialogState(() => selectedColorValue = value),
+                ),
+              ],
             ),
             actions: [
               TextButton(
@@ -726,16 +842,22 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                     ? null
                     : () async {
                         Logger.action('tap:renameCategory', {'categoryId': category.id});
-                        if (controller.text.trim().isEmpty ||
-                            controller.text.trim() == category.name) {
+                        final trimmedName = controller.text.trim();
+                        final nameChanged = trimmedName.isNotEmpty && trimmedName != category.name;
+                        final colorChanged = selectedColorValue != category.colorValue;
+                        if (trimmedName.isEmpty || (!nameChanged && !colorChanged)) {
                           return;
                         }
                         setDialogState(() => isSaving = true);
+                        final updatedCategory = category.copyWith(
+                          name: trimmedName,
+                          colorValue: selectedColorValue,
+                          clearColorValue: selectedColorValue == null,
+                        );
                         final result = await _waitForCategoryAction(
                           (completion) => context.read<CategoryBloc>().add(
-                                RenameCategory(
-                                  category.id,
-                                  controller.text.trim(),
+                                UpdateCategory(
+                                  updatedCategory,
                                   completion: completion,
                                 ),
                               ),
@@ -748,7 +870,7 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                result.message ?? 'שגיאה בעדכון שם קטגוריה',
+                                result.message ?? 'שגיאה בעדכון קטגוריה',
                               ),
                               backgroundColor: Colors.red,
                             ),

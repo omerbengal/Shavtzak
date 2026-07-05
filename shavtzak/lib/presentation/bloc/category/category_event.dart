@@ -14,9 +14,10 @@ class LoadCategories extends CategoryEvent {
 /// Create a new category
 class CreateCategory extends CategoryEvent {
   final String name;
+  final int? colorValue;
   final CrudActionCompleter? completion;
 
-  const CreateCategory(this.name, {this.completion});
+  const CreateCategory(this.name, {this.colorValue, this.completion});
 }
 
 /// Update a category
