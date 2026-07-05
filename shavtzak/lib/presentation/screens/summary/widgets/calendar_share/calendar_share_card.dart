@@ -44,6 +44,17 @@ class CalendarShareCard extends StatelessWidget {
                   height: 1.35,
                 ),
               ),
+              if (data.legend.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 14,
+                  runSpacing: 6,
+                  children: [
+                    for (final item in data.legend) _LegendChip(item: item),
+                  ],
+                ),
+              ],
               const SizedBox(height: 24),
               if (data.mode == CalendarShareMode.weeks) ...[
                 const _WeekdayHeaderRow(),
@@ -84,6 +95,38 @@ class CalendarShareCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LegendChip extends StatelessWidget {
+  final CalendarShareLegendItem item;
+
+  const _LegendChip({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: Color(item.colorValue),
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          item.name,
+          style: const TextStyle(
+            color: Color(0xFF334155),
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -230,6 +273,14 @@ class _EventBlock extends StatelessWidget {
       color: const Color(0xFF334155),
     );
 
+    final categoryColor = event.categoryColorValue;
+    final blockColor = categoryColor != null
+        ? Color.alphaBlend(Color(categoryColor).withAlpha(56), Colors.white)
+        : const Color(0xFFF1F5F9);
+    final borderColor = categoryColor != null
+        ? Color(categoryColor).withAlpha(120)
+        : const Color(0xFFE2E8F0);
+
     return Opacity(
       // Past events are shown but visually muted (spec: ~45%).
       opacity: event.isPast ? 0.45 : 1.0,
@@ -241,9 +292,9 @@ class _EventBlock extends StatelessWidget {
           vertical: dense ? 3 : 5,
         ),
         decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9),
+          color: blockColor,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: borderColor),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

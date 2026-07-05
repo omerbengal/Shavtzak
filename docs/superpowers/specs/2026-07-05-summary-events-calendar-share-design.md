@@ -23,8 +23,13 @@ interactive calendar.
    `canAccessSummaryScreen`).
 2. Flow: pick **date range** first → then choose **שבועי (weeks)** or
    **חודשי (months)** presentation → preview → share/copy as PNG.
-3. Every non-deactivated event occurring in the range appears, styled uniformly
-   (no category/status color coding).
+3. Every non-deactivated event occurring in the range appears. (Revised
+   2026-07-05, supersedes the original no-colors decision:) events whose
+   category has a color (`Category.colorValue`, added the same day) are
+   tinted with a pale version of that color, and the card shows a compact
+   legend (color dot + category name) under the header for the colored
+   categories present in range; colorless/uncategorized events keep the
+   neutral gray style.
 4. Per event: name, time range(s) **matching the Google Calendar sync semantics**
    (see Time semantics), and location (coordinates stripped).
 5. Past events (relative to today) appear with full details but **visually muted**

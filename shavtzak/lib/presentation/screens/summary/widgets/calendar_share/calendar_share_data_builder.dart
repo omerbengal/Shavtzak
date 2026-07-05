@@ -1,5 +1,6 @@
 import '../../../../../core/utils/date_utils.dart' as app_date_utils;
 import '../../../../../core/utils/event_sorting.dart';
+import '../../../../../domain/entities/category.dart';
 import '../../../../../domain/entities/event.dart';
 import '../../../../widgets/map_location_picker.dart';
 import 'calendar_share_models.dart';
@@ -16,12 +17,35 @@ class CalendarShareDataBuilder {
     required DateTime rangeEnd,
     required CalendarShareMode mode,
     required DateTime today,
+    required List<Category> categories,
   }) {
     final start = _dateOnly(rangeStart);
     final end = _dateOnly(rangeEnd);
     final active = events.where((e) => !e.isDeactivated).toList()
       ..sort(compareEventsChronologically);
     final rangeTitle = _formatRangeTitle(start, end);
+    final colorByCategoryId = {
+      for (final c in categories)
+        if (c.colorValue != null) c.id: c.colorValue!,
+    };
+
+    // Categories (with colors) that appear on at least one in-range event —
+    // archived categories are deliberately included here when referenced.
+    final usedCategoryIds = <String>{
+      for (final event in active)
+        if (event.categoryId != null &&
+            !_dateOnly(event.endDate).isBefore(start) &&
+            !_dateOnly(event.startDate).isAfter(end))
+          event.categoryId!,
+    };
+    final legendCategories = categories
+        .where((c) => c.colorValue != null && usedCategoryIds.contains(c.id))
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final legend = [
+      for (final c in legendCategories)
+        CalendarShareLegendItem(name: c.name, colorValue: c.colorValue!),
+    ];
 
     if (mode == CalendarShareMode.weeks) {
       return CalendarShareData(
@@ -35,7 +59,9 @@ class CalendarShareDataBuilder {
           monthBounds: null,
           events: active,
           today: today,
+          colorByCategoryId: colorByCategoryId,
         ),
+        legend: legend,
       );
     }
     return CalendarShareData(
@@ -46,7 +72,9 @@ class CalendarShareDataBuilder {
         rangeEnd: end,
         events: active,
         today: today,
+        colorByCategoryId: colorByCategoryId,
       ),
+      legend: legend,
     );
   }
 
@@ -61,6 +89,7 @@ class CalendarShareDataBuilder {
     required ({DateTime first, DateTime last})? monthBounds,
     required List<Event> events,
     required DateTime today,
+    required Map<String, int> colorByCategoryId,
   }) {
     final weeks = <CalendarShareWeek>[];
     var cursor = gridStart;
@@ -75,14 +104,14 @@ class CalendarShareDataBuilder {
           days.add(null);
           continue;
         }
-        final inRange =
-            !date.isBefore(rangeStart) && !date.isAfter(rangeEnd);
+        final inRange = !date.isBefore(rangeStart) && !date.isAfter(rangeEnd);
         days.add(CalendarShareDay(
           date: date,
           inRange: inRange,
           isPast: date.isBefore(today),
           events: inRange
-              ? _eventsForDay(events, date, rangeStart, today)
+              ? _eventsForDay(
+                  events, date, rangeStart, today, colorByCategoryId)
               : const [],
         ));
       }
@@ -97,6 +126,7 @@ class CalendarShareDataBuilder {
     required DateTime rangeEnd,
     required List<Event> events,
     required DateTime today,
+    required Map<String, int> colorByCategoryId,
   }) {
     final months = <CalendarShareMonth>[];
     var year = rangeStart.year;
@@ -115,6 +145,7 @@ class CalendarShareDataBuilder {
           monthBounds: (first: firstOfMonth, last: lastOfMonth),
           events: events,
           today: today,
+          colorByCategoryId: colorByCategoryId,
         ),
       ));
       month++;
@@ -131,6 +162,7 @@ class CalendarShareDataBuilder {
     DateTime date,
     DateTime rangeStart,
     DateTime today,
+    Map<String, int> colorByCategoryId,
   ) {
     final result = <CalendarShareEvent>[];
     for (final event in events) {
@@ -144,6 +176,9 @@ class CalendarShareDataBuilder {
         event,
         today: today,
         isContinuation: date.isAfter(firstVisibleDay),
+        categoryColorValue: event.categoryId == null
+            ? null
+            : colorByCategoryId[event.categoryId],
       ));
     }
     return result;
@@ -180,6 +215,7 @@ class CalendarShareDataBuilder {
     Event event, {
     required DateTime today,
     required bool isContinuation,
+    int? categoryColorValue,
   }) {
     final isPast = _dateOnly(event.endDate).isBefore(today);
     if (isContinuation) {
@@ -187,6 +223,7 @@ class CalendarShareDataBuilder {
         name: event.name,
         isPast: isPast,
         isContinuation: true,
+        categoryColorValue: categoryColorValue,
       );
     }
     final location = event.location.trim().isEmpty
@@ -197,6 +234,7 @@ class CalendarShareDataBuilder {
       timeLines: _buildTimeLines(event),
       locationLine: location,
       isPast: isPast,
+      categoryColorValue: categoryColorValue,
     );
   }
 

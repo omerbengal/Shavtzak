@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/domain/entities/category.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/presentation/screens/summary/widgets/calendar_share/calendar_share_data_builder.dart';
 import 'package:shavtzak/presentation/screens/summary/widgets/calendar_share/calendar_share_models.dart';
@@ -14,6 +15,7 @@ Event makeEvent({
   String actualShowStartTime = '',
   String location = 'גן הפסלים||32.794000,34.989600',
   bool isDeactivated = false,
+  String? categoryId,
 }) {
   final start = startDate ?? DateTime(2026, 7, 15);
   return Event(
@@ -31,6 +33,25 @@ Event makeEvent({
     createdAt: DateTime(2026, 1, 1),
     updatedAt: DateTime(2026, 1, 1),
     isDeactivated: isDeactivated,
+    categoryId: categoryId,
+  );
+}
+
+Category makeCategory({
+  String id = 'c1',
+  String name = 'קטגוריה',
+  int sortOrder = 0,
+  int? colorValue,
+  bool isArchived = false,
+}) {
+  return Category(
+    id: id,
+    name: name,
+    sortOrder: sortOrder,
+    isArchived: isArchived,
+    colorValue: colorValue,
+    createdAt: DateTime(2026, 1, 1),
+    updatedAt: DateTime(2026, 1, 1),
   );
 }
 
@@ -144,6 +165,7 @@ void main() {
         rangeEnd: DateTime(2026, 7, 15), // Wednesday
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       expect(data.mode, CalendarShareMode.weeks);
       expect(data.months, isEmpty);
@@ -172,6 +194,7 @@ void main() {
         rangeEnd: DateTime(2026, 7, 8),
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       expect(data.weeks, hasLength(1));
       final inRangeDays = data.weeks.first.days
@@ -189,6 +212,7 @@ void main() {
         rangeEnd: DateTime(2026, 7, 6),
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       final days = <DateTime, CalendarShareDay>{
         for (final w in data.weeks)
@@ -206,6 +230,7 @@ void main() {
         rangeEnd: DateTime(2026, 7, 15),
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       final wednesday = data.weeks.first.days[3]!; // index 3 = Wednesday
       expect(wednesday.date, DateTime(2026, 7, 8));
@@ -227,6 +252,7 @@ void main() {
         rangeEnd: DateTime(2026, 7, 15),
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       final week = data.weeks.first;
       expect(week.days[3]!.events.single.isContinuation, isFalse); // 8.7
@@ -248,6 +274,7 @@ void main() {
         rangeEnd: DateTime(2026, 7, 15),
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       final week = data.weeks.first;
       expect(week.days[0]!.events, isEmpty); // 5.7 out of range
@@ -258,11 +285,14 @@ void main() {
 
     test('deactivated events are excluded', () {
       final data = CalendarShareDataBuilder.build(
-        events: [makeEvent(startDate: DateTime(2026, 7, 8), isDeactivated: true)],
+        events: [
+          makeEvent(startDate: DateTime(2026, 7, 8), isDeactivated: true)
+        ],
         rangeStart: DateTime(2026, 7, 6),
         rangeEnd: DateTime(2026, 7, 15),
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       for (final week in data.weeks) {
         for (final day in week.days) {
@@ -294,6 +324,7 @@ void main() {
         rangeEnd: DateTime(2026, 7, 8),
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       final day = data.weeks.first.days
           .whereType<CalendarShareDay>()
@@ -310,6 +341,7 @@ void main() {
         rangeEnd: DateTime(2026, 7, 31),
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       expect(data.rangeTitle, '5–31 ביולי 2026');
     });
@@ -321,6 +353,7 @@ void main() {
         rangeEnd: DateTime(2026, 8, 3),
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       expect(data.rangeTitle, '20 ביולי – 3 באוגוסט 2026');
     });
@@ -332,6 +365,7 @@ void main() {
         rangeEnd: DateTime(2027, 1, 10),
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       expect(data.rangeTitle, '15 בדצמבר 2026 – 10 בינואר 2027');
     });
@@ -343,6 +377,7 @@ void main() {
         rangeEnd: DateTime(2026, 7, 8),
         mode: CalendarShareMode.weeks,
         today: today,
+        categories: const [],
       );
       expect(data.rangeTitle, '8 ביולי 2026');
     });
@@ -356,6 +391,7 @@ void main() {
         rangeEnd: DateTime(2026, 8, 3),
         mode: CalendarShareMode.months,
         today: today,
+        categories: const [],
       );
       expect(data.mode, CalendarShareMode.months);
       expect(data.weeks, isEmpty);
@@ -371,6 +407,7 @@ void main() {
         rangeEnd: DateTime(2026, 8, 3),
         mode: CalendarShareMode.months,
         today: today,
+        categories: const [],
       );
       final july = data.months[0];
       // 2026-07-01 is a Wednesday: Sun/Mon/Tue of the first week are blank.
@@ -398,12 +435,14 @@ void main() {
       final data = CalendarShareDataBuilder.build(
         events: [
           makeEvent(id: 'jul', name: 'ביולי', startDate: DateTime(2026, 7, 25)),
-          makeEvent(id: 'aug', name: 'באוגוסט', startDate: DateTime(2026, 8, 1)),
+          makeEvent(
+              id: 'aug', name: 'באוגוסט', startDate: DateTime(2026, 8, 1)),
         ],
         rangeStart: DateTime(2026, 7, 20),
         rangeEnd: DateTime(2026, 8, 3),
         mode: CalendarShareMode.months,
         today: today,
+        categories: const [],
       );
       final julyEvents = data.months[0].weeks
           .expand((w) => w.days)
@@ -433,6 +472,7 @@ void main() {
         rangeEnd: DateTime(2026, 8, 3),
         mode: CalendarShareMode.months,
         today: today,
+        categories: const [],
       );
       final jul31 = data.months[0].weeks
           .expand((w) => w.days)
@@ -453,6 +493,7 @@ void main() {
         rangeEnd: DateTime(2027, 1, 5),
         mode: CalendarShareMode.months,
         today: today,
+        categories: const [],
       );
       expect(data.months, hasLength(2));
       expect(data.months[0].title, 'דצמבר 2026');
@@ -465,6 +506,135 @@ void main() {
         expect(d.date.year, 2027);
         expect(d.date.month, 1);
       }
+    });
+  });
+
+  group('build — category colors & legend', () {
+    test(
+        'event with a colored category carries the color; continuation day '
+        'carries the same color', () {
+      final data = CalendarShareDataBuilder.build(
+        events: [
+          makeEvent(
+            categoryId: 'c1',
+            startDate: DateTime(2026, 7, 8),
+            endDate: DateTime(2026, 7, 10),
+          ),
+        ],
+        rangeStart: DateTime(2026, 7, 6),
+        rangeEnd: DateTime(2026, 7, 15),
+        mode: CalendarShareMode.weeks,
+        today: today,
+        categories: [makeCategory(id: 'c1', colorValue: 0xFFAABBCC)],
+      );
+      final week = data.weeks.first;
+      final firstDay = week.days[3]!.events.single; // 8.7 — first in-range
+      final continuationDay = week.days[4]!.events.single; // 9.7
+      expect(firstDay.isContinuation, isFalse);
+      expect(firstDay.categoryColorValue, 0xFFAABBCC);
+      expect(continuationDay.isContinuation, isTrue);
+      expect(continuationDay.categoryColorValue, 0xFFAABBCC);
+    });
+
+    test(
+        'categoryColorValue is null for a colorless category, an unknown '
+        'categoryId, or no categoryId at all', () {
+      final data = CalendarShareDataBuilder.build(
+        events: [
+          makeEvent(
+            id: 'colorless',
+            categoryId: 'c-no-color',
+            startDate: DateTime(2026, 7, 8),
+          ),
+          makeEvent(
+            id: 'unknown',
+            categoryId: 'does-not-exist',
+            startDate: DateTime(2026, 7, 9),
+          ),
+          makeEvent(id: 'uncategorized', startDate: DateTime(2026, 7, 10)),
+        ],
+        rangeStart: DateTime(2026, 7, 6),
+        rangeEnd: DateTime(2026, 7, 15),
+        mode: CalendarShareMode.weeks,
+        today: today,
+        categories: [makeCategory(id: 'c-no-color')],
+      );
+      final week = data.weeks.first;
+      expect(week.days[3]!.events.single.categoryColorValue, isNull); // 8.7
+      expect(week.days[4]!.events.single.categoryColorValue, isNull); // 9.7
+      expect(week.days[5]!.events.single.categoryColorValue, isNull); // 10.7
+    });
+
+    test(
+        'legend contains only colored categories used in range, ordered by '
+        'sortOrder', () {
+      final data = CalendarShareDataBuilder.build(
+        events: [
+          makeEvent(
+            id: 'e-a',
+            categoryId: 'a',
+            startDate: DateTime(2026, 7, 8),
+          ),
+          makeEvent(
+            id: 'e-b',
+            categoryId: 'b',
+            startDate: DateTime(2026, 7, 9),
+          ),
+          makeEvent(
+            id: 'e-d',
+            categoryId: 'd',
+            startDate: DateTime(2026, 7, 10),
+          ),
+        ],
+        rangeStart: DateTime(2026, 7, 6),
+        rangeEnd: DateTime(2026, 7, 15),
+        mode: CalendarShareMode.weeks,
+        today: today,
+        categories: [
+          makeCategory(
+            id: 'a',
+            name: 'קטגוריה א',
+            sortOrder: 2,
+            colorValue: 0xFF111111,
+          ),
+          makeCategory(
+            id: 'b',
+            name: 'קטגוריה ב',
+            sortOrder: 1,
+            colorValue: 0xFF222222,
+          ),
+          // Colored but never used in range — must be excluded.
+          makeCategory(
+            id: 'c',
+            name: 'קטגוריה ג',
+            sortOrder: 0,
+            colorValue: 0xFF333333,
+          ),
+          // Used in range but colorless — must be excluded.
+          makeCategory(id: 'd', name: 'קטגוריה ד', sortOrder: 3),
+        ],
+      );
+      expect(data.legend, hasLength(2));
+      expect(data.legend[0].name, 'קטגוריה ב');
+      expect(data.legend[0].colorValue, 0xFF222222);
+      expect(data.legend[1].name, 'קטגוריה א');
+      expect(data.legend[1].colorValue, 0xFF111111);
+    });
+
+    test(
+        'empty categories list yields an empty legend and null colors '
+        '(mechanical call-site guard)', () {
+      final data = CalendarShareDataBuilder.build(
+        events: [makeEvent(categoryId: 'c1', startDate: DateTime(2026, 7, 8))],
+        rangeStart: DateTime(2026, 7, 6),
+        rangeEnd: DateTime(2026, 7, 15),
+        mode: CalendarShareMode.weeks,
+        today: today,
+        categories: const [],
+      );
+      expect(data.legend, isEmpty);
+      final week = data.weeks.first;
+      expect(week.days[3]!.events.single.categoryColorValue, isNull);
     });
   });
 }

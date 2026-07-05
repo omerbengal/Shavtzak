@@ -23,13 +23,24 @@ class CalendarShareEvent {
   /// True on the 2nd+ visible day of a multi-day event ("(המשך)" rendering).
   final bool isContinuation;
 
+  /// ARGB color of the event's category; null = uncolored (neutral gray block).
+  final int? categoryColorValue;
+
   const CalendarShareEvent({
     required this.name,
     this.timeLines = const [],
     this.locationLine = '',
     required this.isPast,
     this.isContinuation = false,
+    this.categoryColorValue,
   });
+}
+
+class CalendarShareLegendItem {
+  final String name;
+  final int colorValue;
+
+  const CalendarShareLegendItem({required this.name, required this.colorValue});
 }
 
 class CalendarShareDay {
@@ -77,10 +88,15 @@ class CalendarShareData {
   /// Populated in months mode; empty in weeks mode.
   final List<CalendarShareMonth> months;
 
+  /// Categories (with colors) that appear among in-range events, in category
+  /// sortOrder — rendered as a legend on the card.
+  final List<CalendarShareLegendItem> legend;
+
   const CalendarShareData({
     required this.rangeTitle,
     required this.mode,
     this.weeks = const [],
     this.months = const [],
+    this.legend = const [],
   });
 }

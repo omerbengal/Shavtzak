@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../../core/debug/logger.dart';
 import '../../../../../core/utils/israel_calendar.dart';
+import '../../../../../domain/entities/category.dart';
 import '../../../../../domain/entities/event.dart';
 import '../../../../widgets/date_picker_dialog.dart';
 import 'calendar_share_data_builder.dart';
@@ -18,8 +19,9 @@ bool calendarShareRangeExceedsMax(DateTime start, DateTime end) {
 /// share preview. Re-opens the range picker when the range exceeds the cap.
 Future<void> startCalendarShareFlow(
   BuildContext context,
-  List<Event> events,
-) async {
+  List<Event> events, {
+  required List<Category> categories,
+}) async {
   DateTime? initialStart;
   DateTime? initialEnd;
 
@@ -75,6 +77,7 @@ Future<void> startCalendarShareFlow(
       rangeEnd: end,
       mode: mode,
       today: IsraelCalendar.calendarDay(DateTime.now()),
+      categories: categories,
     );
     await showDialog(
       context: context,

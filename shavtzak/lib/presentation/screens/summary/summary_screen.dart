@@ -23,6 +23,7 @@ import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/checklist/checklist_bloc.dart';
 import '../../../data/repositories/assignment_label_repository.dart';
+import '../../../data/repositories/category_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import 'widgets/calendar_share/calendar_share_flow_dialog.dart';
 import 'widgets/summary_header_cards.dart';
@@ -627,7 +628,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
       if (!mounted) {
         return;
       }
-      await startCalendarShareFlow(context, events);
+      final categories =
+          await context.read<CategoryRepository>().getCategories();
+      if (!mounted) {
+        return;
+      }
+      await startCalendarShareFlow(context, events, categories: categories);
     } catch (e) {
       Logger.action('error:calendarShareFlow', {'error': e.toString()});
       if (!mounted) {
