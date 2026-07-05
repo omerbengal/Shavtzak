@@ -71,6 +71,10 @@ abstract class DatabaseInterface {
   /// Get events by date range
   Future<List<Event>> getEventsByDateRange(DateTime start, DateTime end);
 
+  /// Get events strictly older than [cursor], newest-first, capped to [limit].
+  /// Used for paging back through history beyond the assignments time window.
+  Future<List<Event>> getEventsBeforeDate(DateTime cursor, {required int limit});
+
   /// Watch events within a date range in real-time
   /// Optimized for pagination - only loads events within the specified window
   Stream<List<Event>> watchEventsByDateRange(DateTime start, DateTime end);
@@ -118,6 +122,9 @@ abstract class DatabaseInterface {
     DateTime windowStart,
     DateTime windowEnd,
   );
+
+  /// Get all assignments for the given event ids (batched whereIn, ≤30/chunk).
+  Future<List<Assignment>> getAssignmentsByEventIds(List<String> eventIds);
 
   /// Watch assignments within a time window in real-time (optimized for pagination)
   /// Returns a stream that emits updated assignment lists for events in the time window

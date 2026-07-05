@@ -281,6 +281,20 @@ class LoggingDatabase implements DatabaseInterface {
       );
 
   @override
+  Future<List<Event>> getEventsBeforeDate(DateTime cursor,
+          {required int limit}) =>
+      _runFuture(
+        op: 'getEventsBeforeDate',
+        ctx: {
+          'collection': 'events',
+          'cursor': cursor.toIso8601String(),
+          'limit': limit,
+        },
+        countOf: (r) => r.length,
+        action: () => _inner.getEventsBeforeDate(cursor, limit: limit),
+      );
+
+  @override
   Stream<List<Event>> watchEvents() => _wrapStream(
         op: 'watchEvents',
         ctx: const {'collection': 'events'},
@@ -403,6 +417,18 @@ class LoggingDatabase implements DatabaseInterface {
         },
         countOf: (r) => r.length,
         action: () => _inner.getAssignmentsInTimeWindow(windowStart, windowEnd),
+      );
+
+  @override
+  Future<List<Assignment>> getAssignmentsByEventIds(List<String> eventIds) =>
+      _runFuture(
+        op: 'getAssignmentsByEventIds',
+        ctx: {
+          'collection': 'assignments',
+          'eventIdCount': eventIds.length,
+        },
+        countOf: (r) => r.length,
+        action: () => _inner.getAssignmentsByEventIds(eventIds),
       );
 
   @override
