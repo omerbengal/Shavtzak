@@ -748,11 +748,20 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               // Grid rows
               Expanded(
                 child: hasVisibleSlots
-                    ? ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 80),
-                        itemCount: slots.length,
-                        itemBuilder: (context, index) {
-                          return _buildSlotRow(slots[index]);
+                    ? Builder(
+                        builder: (context) {
+                          final showLoadMore =
+                              FilterPersistence.showPastEvents && state.hasMorePast;
+                          return ListView.builder(
+                            padding: const EdgeInsets.only(bottom: 80),
+                            itemCount: slots.length + (showLoadMore ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (showLoadMore && index == slots.length) {
+                                return _buildLoadMorePastButton(state);
+                              }
+                              return _buildSlotRow(slots[index]);
+                            },
+                          );
                         },
                       )
                     : Center(
@@ -783,6 +792,37 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildLoadMorePastButton(AssignmentSlotsLoaded state) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      child: Align(
+        alignment: Alignment.center,
+        child: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            backgroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          ),
+          onPressed: state.isLoadingMorePast
+              ? null
+              : () {
+                  Logger.action('tap:loadMorePast');
+                  context
+                      .read<AssignmentBloc>()
+                      .add(const LoadMorePastAssignmentSlots());
+                },
+          icon: state.isLoadingMorePast
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.expand_more),
+          label: const Text('טען עוד'),
+        ),
+      ),
     );
   }
 
