@@ -810,22 +810,15 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             : labelsById[assignment.semanticLabelId!],
       );
 
-      return AssignmentSlot(
-        event: slot.event,
-        role: slot.role,
-        slotIndex: slot.slotIndex,
-        currentAssignment: updatedAssignment,
-        availableMembers: slot.availableMembers,
-        alreadyAssignedMembers: slot.alreadyAssignedMembers,
-        hasDoubleAssignment: slot.hasDoubleAssignment,
-        otherRoles: slot.otherRoles,
-        sameDayAssignedMembers: slot.sameDayAssignedMembers,
-        sameDayEventInfo: slot.sameDayEventInfo,
-      );
+      return slot.copyWith(currentAssignment: updatedAssignment);
     }).toList();
   }
 
   Widget _buildSlotRow(AssignmentSlot slot) {
+    if (slot.isOffQuota) {
+      return _buildOffQuotaRow(slot);
+    }
+
     final hasNotes = slot.isFilled &&
         slot.currentAssignment != null &&
         slot.currentAssignment!.notes.isNotEmpty;
@@ -1272,6 +1265,129 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         }
       },
       child: rowContent,
+    );
+  }
+
+  /// A row for an assignment that has no matching quota slot. Display + delete
+  /// only: no dropdown, no notes-edit swipe. Swipe-left deletes just the
+  /// assignment document (no quota change — it is already outside the quota).
+  Widget _buildOffQuotaRow(AssignmentSlot slot) {
+    final assignment = slot.currentAssignment!;
+    final memberName = assignment.teamMember?.name ?? 'לא ידוע';
+
+    return Dismissible(
+      key: Key('offquota_${assignment.id}'),
+      direction: DismissDirection.endToStart,
+      secondaryBackground: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        color: Colors.red,
+        child: const Icon(Icons.delete, color: Colors.white, size: 32),
+      ),
+      background: const SizedBox.shrink(),
+      dismissThresholds: const {DismissDirection.endToStart: 0.5},
+      confirmDismiss: (direction) async {
+        final assignmentRepo = context.read<AssignmentRepository>();
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: const Text('מחיקת שיבוץ מחוץ למכסה'),
+              content: const Text(
+                'שיבוץ זה נמצא מחוץ למכסת האירוע. האם למחוק אותו?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('ביטול'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (confirmed == true) {
+          Logger.action('delete:offQuotaAssignment', {
+            'assignmentId': assignment.id,
+          });
+          try {
+            await assignmentRepo.deleteAssignment(assignment.id);
+            if (mounted) {
+              _showAssignmentSnackBar('השיבוץ נמחק בהצלחה',
+                  backgroundColor: Colors.green);
+            }
+          } catch (e) {
+            if (mounted) {
+              _showAssignmentSnackBar('שגיאה במחיקת השיבוץ: $e',
+                  backgroundColor: Colors.red);
+            }
+          }
+        }
+        return false; // real-time stream removes the row after delete
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.amber.shade50,
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.shade400, width: 1.5),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(slot.event.name,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 13)),
+                  Text(_formatEventDatesHebrew(slot.event),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 11, color: Colors.grey.shade600)),
+                ],
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text(slot.role.hebrewName,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold)),
+            ),
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(memberName,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade200,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Text('מחוץ למכסה',
+                        style: TextStyle(
+                            fontSize: 10, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
