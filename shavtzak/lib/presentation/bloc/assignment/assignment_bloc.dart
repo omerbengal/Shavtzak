@@ -844,6 +844,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     required bool isDelete,
   }) {
     return slots.map((slot) {
+      if (slot.isOffQuota) return slot;
       final slotKey = _getSlotKey(slot);
 
       if (slotKey == targetSlotKey) {
