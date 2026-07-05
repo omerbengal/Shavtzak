@@ -18,6 +18,11 @@ class AssignmentSlot extends Equatable {
   final List<TeamMember> sameDayAssignedMembers; // Members assigned to OTHER events on same day(s)
   final Map<String, List<String>> sameDayEventInfo; // memberId -> other event names
 
+  /// True when this row represents an assignment that has no matching quota
+  /// slot (quota reduced below its slotIndex, duplicate slotIndex, or a
+  /// permanently-deleted role). Rendered as "מחוץ למכסה" and delete-only.
+  final bool isOffQuota;
+
   const AssignmentSlot({
     required this.event,
     required this.role,
@@ -29,7 +34,39 @@ class AssignmentSlot extends Equatable {
     this.otherRoles = const [],
     this.sameDayAssignedMembers = const [],
     this.sameDayEventInfo = const {},
+    this.isOffQuota = false,
   });
+
+  /// Create a copy with updated fields (preserves every field, incl. isOffQuota)
+  AssignmentSlot copyWith({
+    Event? event,
+    Role? role,
+    int? slotIndex,
+    Assignment? currentAssignment,
+    List<TeamMember>? availableMembers,
+    List<TeamMember>? alreadyAssignedMembers,
+    bool? hasDoubleAssignment,
+    List<String>? otherRoles,
+    List<TeamMember>? sameDayAssignedMembers,
+    Map<String, List<String>>? sameDayEventInfo,
+    bool? isOffQuota,
+  }) {
+    return AssignmentSlot(
+      event: event ?? this.event,
+      role: role ?? this.role,
+      slotIndex: slotIndex ?? this.slotIndex,
+      currentAssignment: currentAssignment ?? this.currentAssignment,
+      availableMembers: availableMembers ?? this.availableMembers,
+      alreadyAssignedMembers:
+          alreadyAssignedMembers ?? this.alreadyAssignedMembers,
+      hasDoubleAssignment: hasDoubleAssignment ?? this.hasDoubleAssignment,
+      otherRoles: otherRoles ?? this.otherRoles,
+      sameDayAssignedMembers:
+          sameDayAssignedMembers ?? this.sameDayAssignedMembers,
+      sameDayEventInfo: sameDayEventInfo ?? this.sameDayEventInfo,
+      isOffQuota: isOffQuota ?? this.isOffQuota,
+    );
+  }
 
   /// Whether this slot is currently filled
   bool get isFilled => currentAssignment != null;
@@ -58,6 +95,7 @@ class AssignmentSlot extends Equatable {
         otherRoles,
         sameDayAssignedMembers,
         sameDayEventInfo,
+        isOffQuota,
       ];
 
   @override

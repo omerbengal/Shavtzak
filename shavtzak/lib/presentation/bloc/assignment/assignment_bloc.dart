@@ -53,6 +53,24 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   // filtering), so the listener can cache its stream payload directly.
   List<Role> _cachedRoles = const [];
 
+  // --- Past-history pagination (load more) ---
+  static const int _pastLoadMoreRowChunk = 25; // rows revealed per tap
+  static const int _pastEventFetchBatch = 15; // events fetched per round-trip
+
+  // Live 90-day window data, promoted to fields so the load-more handler can
+  // trigger a rebuild that merges the extra-past cache on top.
+  final Map<String, Event> _windowEventsMap = {};
+  final Map<String, TeamMember> _windowMembersMap = {};
+  DateTime? _slotsWindowStart; // now - 90d; boundary between window and "extra-past"
+
+  // Events/assignments older than the window, loaded on demand.
+  final Map<String, Event> _extraPastEventsMap = {};
+  final List<Assignment> _extraPastAssignments = [];
+  int _extraPastRowsRevealed = 0; // reveal cap for extra-past rows
+  DateTime? _oldestLoadedEventStart; // pagination cursor
+  bool _pastPagingExhausted = false; // reached the start of history
+  bool _loadingMorePast = false; // authoritative in-flight guard (state field can be stomped by concurrent rebuilds)
+
   // Keep pending operations independent of state (survives error states)
   Map<String, PendingOperation> _pendingOperations = {};
 
@@ -90,6 +108,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<OptimisticCreateAssignment>(_onOptimisticCreateAssignment);
     on<OptimisticUpdateAssignment>(_onOptimisticUpdateAssignment);
     on<OptimisticDeleteAssignment>(_onOptimisticDeleteAssignment);
+    on<LoadMorePastAssignmentSlots>(_onLoadMorePastAssignmentSlots);
+    on<ExternalExtraPastMutation>(_onExternalExtraPastMutation);
   }
 
   /// Load all assignments with real-time updates
@@ -269,6 +289,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       await _repository.createAssignment(event.assignment);
       _syncAttendeesForAffectedEvents(nextAssignment: event.assignment);
+      await _refreshExtraPastEvent(event.assignment.eventId);
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
 
@@ -342,6 +363,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         previousAssignment: previousAssignment,
         nextAssignment: event.assignment,
       );
+      await _refreshExtraPastEvent(event.assignment.eventId);
+      if (previousAssignment != null &&
+          previousAssignment.eventId != event.assignment.eventId) {
+        await _refreshExtraPastEvent(previousAssignment.eventId);
+      }
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ עודכן בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ עודכן בהצלחה');
 
@@ -399,6 +425,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Sync attendees for calendar event (will remove the deleted attendee)
       _syncAttendeesForAffectedEvents(previousAssignment: assignmentToDelete);
+      if (assignmentToDelete != null) {
+        await _refreshExtraPastEvent(assignmentToDelete.eventId);
+      }
 
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ נמחק בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ נמחק בהצלחה');
@@ -582,10 +611,20 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Load all team members (small dataset, ~50-100)
       final cachedMembers = await _teamRepository.getActiveTeamMembers();
 
-      final cachedMembersMap = <String, TeamMember>{};
-      cachedMembersMap.addAll({for (var tm in cachedMembers) tm.id: tm});
-      final cachedEventsMap = <String, Event>{};
-      cachedEventsMap.addAll({for (var e in cachedEvents) e.id: e});
+      _windowMembersMap
+        ..clear()
+        ..addAll({for (var tm in cachedMembers) tm.id: tm});
+      _windowEventsMap
+        ..clear()
+        ..addAll({for (var e in cachedEvents) e.id: e});
+
+      // Reset past-history pagination on every (re)load, incl. toggling past.
+      _slotsWindowStart = windowStart;
+      _extraPastEventsMap.clear();
+      _extraPastAssignments.clear();
+      _extraPastRowsRevealed = 0;
+      _oldestLoadedEventStart = windowStart; // fetch events strictly older than the window
+      _pastPagingExhausted = false;
 
       // Seed the roles cache once. The RebuildAssignmentSlotsFromData handler
       // reads _cachedRoles instead of re-fetching on every rebuild; the
@@ -612,8 +651,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Cache current assignments for rebuild purposes
           _repository.cacheCurrentAssignments(assignments);
           // Rebuild slots using cached data - use _currentEventFilter to preserve user's filter
-          add(RebuildAssignmentSlotsFromData(assignments, cachedEventsMap,
-              cachedMembersMap, _currentEventFilter));
+          add(RebuildAssignmentSlotsFromData(assignments, _windowEventsMap,
+              _windowMembersMap, _currentEventFilter));
         },
         onError: (e) {
           _emitOrLog(emit, AssignmentError('שגיאה בהאזנה לשיבוצים: $e'));
@@ -624,13 +663,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _teamMemberSubscription = _teamRepository.watchTeamMembers().listen(
         (updatedMembers) {
           // Update member cache
-          cachedMembersMap.clear();
-          cachedMembersMap.addAll({for (var tm in updatedMembers) tm.id: tm});
+          _windowMembersMap.clear();
+          _windowMembersMap.addAll({for (var tm in updatedMembers) tm.id: tm});
           // Assignments are kept live by the watchAssignmentsInTimeWindow listener
           // (the source of truth); reuse its cache instead of re-querying.
           final currentAssignments = _repository.getCurrentAssignments();
           add(RebuildAssignmentSlotsFromData(currentAssignments,
-              cachedEventsMap, cachedMembersMap, _currentEventFilter));
+              _windowEventsMap, _windowMembersMap, _currentEventFilter));
         },
         onError: (e) {
           _emitOrLog(emit, AssignmentError('שגיאה בהאזנה לחברי צוות: $e'));
@@ -646,14 +685,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           .listen(
         (updatedEvents) {
           // Update event cache
-          cachedEventsMap.clear();
-          cachedEventsMap.addAll({for (var e in updatedEvents) e.id: e});
+          _windowEventsMap.clear();
+          _windowEventsMap.addAll({for (var e in updatedEvents) e.id: e});
 
           // Assignments are kept live by the watchAssignmentsInTimeWindow listener
           // (the source of truth); reuse its cache instead of re-querying.
           final currentAssignments = _repository.getCurrentAssignments();
           add(RebuildAssignmentSlotsFromData(currentAssignments,
-              cachedEventsMap, cachedMembersMap, _currentEventFilter));
+              _windowEventsMap, _windowMembersMap, _currentEventFilter));
         },
         onError: (e) {
           _emitOrLog(emit, AssignmentError('שגיאה בהאזנה לאירועים: $e'));
@@ -674,7 +713,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           _cachedRoles = updatedRoles;
           final currentAssignments = _repository.getCurrentAssignments();
           add(RebuildAssignmentSlotsFromData(currentAssignments,
-              cachedEventsMap, cachedMembersMap, _currentEventFilter));
+              _windowEventsMap, _windowMembersMap, _currentEventFilter));
         },
         onError: (e) {
           _emitOrLog(emit, AssignmentError('שגיאה בהאזנה לתפקידים: $e'));
@@ -737,8 +776,64 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(next);
   }
 
+  /// Resolve a Role for an assignment's roleType key. Uses the roles cache
+  /// (which includes archived roles). If the role was PERMANENTLY deleted,
+  /// synthesize a display-only Role so the assignment still renders a name.
+  Role _resolveRoleForKey(String key) {
+    for (final role in _cachedRoles) {
+      if (role.key == key) return role;
+    }
+    String hebrew;
+    try {
+      hebrew = RoleTypeExtension.fromString(key).hebrewName;
+    } catch (_) {
+      hebrew = key; // unknown key → show the raw key rather than crash
+    }
+    // Deterministic per key so two rebuilds produce an EQUAL synthesized Role
+    // (Role.props includes createdAt/updatedAt); otherwise _emitOrLog's
+    // no-op suppression breaks for any event with a deleted-role assignment.
+    final epoch = DateTime.fromMillisecondsSinceEpoch(0);
+    return Role(
+      id: key,
+      key: key,
+      hebrewName: hebrew,
+      isVisible: false,
+      isArchived: true,
+      sortOrder: 1 << 20, // sort after all real roles
+      createdAt: epoch,
+      updatedAt: epoch,
+    );
+  }
+
+  /// Build "off-quota" rows for every [eventAssignments] entry whose id is NOT
+  /// in [placedAssignmentIds] (i.e. it never landed in a normal quota slot).
+  List<AssignmentSlot> _buildOffQuotaSlots(
+    Event event,
+    List<Assignment> eventAssignments,
+    Set<String> placedAssignmentIds,
+  ) {
+    final result = <AssignmentSlot>[];
+    for (final assignment in eventAssignments) {
+      if (placedAssignmentIds.contains(assignment.id)) continue;
+      result.add(AssignmentSlot(
+        event: event,
+        role: _resolveRoleForKey(assignment.roleType),
+        slotIndex: assignment.slotIndex,
+        currentAssignment: assignment,
+        availableMembers: const [],
+        alreadyAssignedMembers: const [],
+        isOffQuota: true,
+      ));
+    }
+    return result;
+  }
+
   int _compareAssignmentSlots(AssignmentSlot a, AssignmentSlot b) {
-    final eventCompare = compareEventsChronologically(a.event, b.event);
+    // Past ON → newest→oldest so "load older" reads downward (like /db);
+    // Past OFF (default/upcoming view) → oldest→newest, unchanged.
+    final eventCompare = FilterPersistence.showPastEvents
+        ? compareEventsChronologicallyDescending(a.event, b.event)
+        : compareEventsChronologically(a.event, b.event);
     if (eventCompare != 0) {
       return eventCompare;
     }
@@ -746,6 +841,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final eventNameCompare = a.event.name.compareTo(b.event.name);
     if (eventNameCompare != 0) {
       return eventNameCompare;
+    }
+
+    // Off-quota rows sort AFTER their event's normal rows.
+    if (a.isOffQuota != b.isOffQuota) {
+      return a.isOffQuota ? 1 : -1;
     }
 
     final roleOrderCompare = a.role.sortOrder.compareTo(b.role.sortOrder);
@@ -786,6 +886,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     required bool isDelete,
   }) {
     return slots.map((slot) {
+      if (slot.isOffQuota) return slot;
       final slotKey = _getSlotKey(slot);
 
       if (slotKey == targetSlotKey) {
@@ -876,6 +977,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Start with database assignments
       for (final slot in eventSlots) {
+        if (slot.isOffQuota) continue;
         final slotKey = _getSlotKey(slot);
         slotAssignments[slotKey] = slot.currentAssignment?.teamMemberId;
       }
@@ -903,6 +1005,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Recalculate member availability for all slots in this event
       for (final slot in eventSlots) {
+        if (slot.isOffQuota) continue;
         final slotKey = _getSlotKey(slot);
         final operation = activeOperations[slotKey];
 
@@ -956,6 +1059,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // Now apply the optimistic currentAssignment changes
     // After this, we need to re-run double assignment detection for affected events
     final resultSlots = databaseSlots.map((dbSlot) {
+      if (dbSlot.isOffQuota) return dbSlot;
       final slotKey = _getSlotKey(dbSlot);
       final operation = activeOperations[slotKey];
 
@@ -1050,6 +1154,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           resultSlots.where((s) => s.event.id == eventId).toList();
 
       for (final slot in eventResultSlots) {
+        if (slot.isOffQuota) continue;
         if (slot.isFilled) {
           // Check if member has allowMultipleAssignments - skip double assignment warning
           final teamMember = slot.currentAssignment!.teamMember;
@@ -1142,6 +1247,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
 
       _syncAttendeesForAffectedEvents(nextAssignment: event.assignment);
+      await _refreshExtraPastEvent(event.assignment.eventId);
 
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
@@ -1220,6 +1326,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         previousAssignment: previousAssignment,
         nextAssignment: event.assignment,
       );
+      await _refreshExtraPastEvent(event.assignment.eventId);
+      if (previousAssignment != null &&
+          previousAssignment.eventId != event.assignment.eventId) {
+        await _refreshExtraPastEvent(previousAssignment.eventId);
+      }
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
       _emitOrLog(emit, AssignmentSlotsLoaded(
@@ -1300,6 +1411,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Sync calendar attendees (will remove the deleted attendee)
       _syncAttendeesForAffectedEvents(previousAssignment: assignmentToDelete);
+      if (assignmentToDelete != null) {
+        await _refreshExtraPastEvent(assignmentToDelete.eventId);
+      }
 
       // CRITICAL FIX: Remove pending operation after successful delete
       _pendingOperations.remove(event.slotKey);
@@ -1343,6 +1457,40 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     for (final eventId in affectedEventIds) {
       calendarSyncBloc.add(SyncAttendeesForAppEvent(eventId: eventId));
     }
+  }
+
+  /// If [eventId] is an event older than the window (its rows come from the
+  /// extra-past cache, not the live stream), re-fetch its assignments so an
+  /// edit/delete is reflected instead of being reverted by the next rebuild.
+  Future<void> _refreshExtraPastEvent(String eventId) async {
+    if (!_extraPastEventsMap.containsKey(eventId)) return;
+    try {
+      final freshEvent = await _eventRepository.getEventById(eventId);
+      if (freshEvent == null) {
+        _extraPastEventsMap.remove(eventId);
+      } else {
+        _extraPastEventsMap[eventId] = freshEvent;
+      }
+      final fresh = await _repository.getAssignmentsByEventIds([eventId]);
+      _extraPastAssignments.removeWhere((a) => a.eventId == eventId);
+      _extraPastAssignments.addAll(fresh);
+    } catch (_) {
+      // Best-effort; the next full reload will reconcile.
+    }
+  }
+
+  /// Screen performed a direct-repository mutation (swipe-delete / quota
+  /// reduce) on [event.eventId]. If that event lives in the extra-past cache
+  /// (older than the window, loaded via "load more"), the live window stream
+  /// can't cover it, so refresh its cache entry and rebuild. No-op for
+  /// in-window events — the live stream already handles those.
+  Future<void> _onExternalExtraPastMutation(
+    ExternalExtraPastMutation event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    if (!_extraPastEventsMap.containsKey(event.eventId)) return;
+    await _refreshExtraPastEvent(event.eventId);
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
   /// Build complete slots state from assignments
@@ -1392,6 +1540,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final slots = <AssignmentSlot>[];
 
     for (final event in events) {
+      final placedAssignmentIds = <String>{};
       // Iterate through roles in sortOrder (not enum order)
       for (final role in sortedRoles) {
         final requiredCount = event.roleRequirements[role.key] ?? 0;
@@ -1511,14 +1660,25 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             sameDayAssignedMembers: sameDayAssignedMembers,
             sameDayEventInfo: sameDayEventInfoMap,
           ));
+          if (assignment != null) placedAssignmentIds.add(assignment.id);
         }
       }
+
+      final eventAssignmentsAll =
+          assignments.where((a) => a.eventId == event.id).toList();
+      slots.addAll(
+        _buildOffQuotaSlots(event, eventAssignmentsAll, placedAssignmentIds),
+      );
     }
 
     // 6. Detect double assignments (person assigned to multiple roles in same event)
     // Skip for members with allowMultipleAssignments since it's expected behavior
     final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
     for (final slot in slots) {
+      if (slot.isOffQuota) {
+        slotsWithDoubleAssignmentDetection.add(slot);
+        continue;
+      }
       if (slot.isFilled) {
         // Check if member has allowMultipleAssignments - skip double assignment warning
         final teamMember = slot.currentAssignment!.teamMember;
@@ -1616,10 +1776,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         _pendingOperations,
       );
 
+      final capped = _applyPastRevealCap(mergedSlots);
+
       _emitOrLog(emit, AssignmentSlotsLoaded(
-        mergedSlots,
+        capped.slots,
         selectedEventIds: filterToUse,
         pendingOperations: _pendingOperations,
+        hasMorePast: capped.hasMore,
+        isLoadingMorePast: _loadingMorePast,
       ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -1635,8 +1799,21 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Update the repository's cached assignments
       _repository.cacheCurrentAssignments(rebuildEvent.assignments);
 
+      // Merge the live window data with the extra-past cache (populated by
+      // the load-more handler) so history rows beyond the 90-day window can
+      // be revealed without disturbing the window's own live stream data.
+      final mergedEvents = <String, Event>{
+        ...rebuildEvent.events,
+        ..._extraPastEventsMap,
+      };
+      final mergedAssignmentsById = <String, Assignment>{
+        for (final a in rebuildEvent.assignments) a.id: a,
+        for (final a in _extraPastAssignments) a.id: a,
+      };
+      final mergedAssignments = mergedAssignmentsById.values.toList();
+
       // Convert maps to lists for the build method
-      final eventsList = rebuildEvent.events.values.toList();
+      final eventsList = mergedEvents.values.toList();
       final teamMembersMap = rebuildEvent.teamMembers;
       final teamMembers = rebuildEvent.teamMembers.values.toList();
 
@@ -1669,17 +1846,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Build slots using the existing method
       final slots = <AssignmentSlot>[];
       for (final eventData in filteredEvents) {
+        final placedAssignmentIds = <String>{};
         // Iterate through roles in sortOrder (not enum order)
         for (final role in sortedRoles) {
           final requiredCount = eventData.roleRequirements[role.key] ?? 0;
           if (requiredCount == 0) continue; // Skip roles with 0 requirement
 
           // Get assignments for this event+role from the assignments list
-          final roleAssignments = rebuildEvent.assignments
+          final roleAssignments = mergedAssignments
               .where((a) => a.eventId == eventData.id && a.roleType == role.key)
               .map((a) => a.withRelations(
                     event: eventData,
-                    teamMember: teamMembersMap[a.teamMemberId],
+                    teamMember: teamMembersMap[a.teamMemberId] ?? a.teamMember,
                   ))
               .toList();
 
@@ -1691,7 +1869,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 .firstWhere((a) => a?.slotIndex == i, orElse: () => null);
 
             // Get all assignments for this event to check who's already assigned
-            final eventAssignments = rebuildEvent.assignments
+            final eventAssignments = mergedAssignments
                 .where((a) => a.eventId == eventData.id)
                 .toList();
             final assignedMemberIds =
@@ -1701,12 +1879,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             final sameDayAssignedMembersMap = <String, TeamMember>{};
             final sameDayEventInfoMap = <String, List<String>>{};
 
-            for (final otherAssignment in rebuildEvent.assignments) {
+            for (final otherAssignment in mergedAssignments) {
               // Skip assignments to THIS event
               if (otherAssignment.eventId == eventData.id) continue;
 
               // Find the other event
-              final otherEvent = rebuildEvent.events[otherAssignment.eventId];
+              final otherEvent = mergedEvents[otherAssignment.eventId];
 
               // Skip if event not found
               if (otherEvent == null) continue;
@@ -1787,13 +1965,29 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               sameDayAssignedMembers: sameDayAssignedMembers,
               sameDayEventInfo: sameDayEventInfoMap,
             ));
+            if (assignment != null) placedAssignmentIds.add(assignment.id);
           }
         }
+
+        final eventAssignmentsAll = mergedAssignments
+            .where((a) => a.eventId == eventData.id)
+            .map((a) => a.withRelations(
+                  event: eventData,
+                  teamMember: teamMembersMap[a.teamMemberId] ?? a.teamMember,
+                ))
+            .toList();
+        slots.addAll(
+          _buildOffQuotaSlots(eventData, eventAssignmentsAll, placedAssignmentIds),
+        );
       }
 
       // Detect double assignments
       final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
       for (final slot in slots) {
+        if (slot.isOffQuota) {
+          slotsWithDoubleAssignmentDetection.add(slot);
+          continue;
+        }
         if (slot.isFilled) {
           // Check if member has allowMultipleAssignments - skip double assignment warning
           final teamMember = slot.currentAssignment!.teamMember;
@@ -1852,10 +2046,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         _pendingOperations,
       );
 
+      final capped = _applyPastRevealCap(mergedSlots);
+
       _emitOrLog(emit, AssignmentSlotsLoaded(
-        mergedSlots,
+        capped.slots,
         selectedEventIds: rebuildEvent.selectedEventIds,
         pendingOperations: _pendingOperations,
+        hasMorePast: capped.hasMore,
+        isLoadingMorePast: _loadingMorePast,
       ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בבניית שיבוצים: $e'));
@@ -1874,6 +2072,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _repository.createAssignmentWithBypass(event.assignment);
 
       _syncAttendeesForAffectedEvents(nextAssignment: event.assignment);
+      await _refreshExtraPastEvent(event.assignment.eventId);
 
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
@@ -2005,6 +2204,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         alternativePhoneNumber: event.alternativePhoneNumber,
         semanticLabelId: event.semanticLabelId,
       );
+      if (_extraPastEventsMap.isNotEmpty) {
+        try {
+          final fresh = await _repository
+              .getAssignmentsByEventIds(_extraPastEventsMap.keys.toList());
+          _extraPastAssignments
+            ..clear()
+            ..addAll(fresh);
+        } catch (_) {
+          // best-effort; next reload reconciles
+        }
+      }
       _emitOrLog(emit, const AssignmentOperationSuccess('פרטי השיבוץ עודכנו בהצלחה'));
       _completeActionSuccess(event.completion, 'פרטי השיבוץ עודכנו בהצלחה');
 
@@ -2035,5 +2245,137 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // Check for overlap: events overlap if one starts before the other ends
     return aStart.isBefore(bEnd.add(const Duration(days: 1))) &&
         bStart.isBefore(aEnd.add(const Duration(days: 1)));
+  }
+
+  /// Count how many display rows the given events would produce (quota slots +
+  /// off-quota rows), for non-deactivated events. Lightweight mirror of the
+  /// slot-build loops, used to decide how many older events to fetch per tap.
+  int _countDisplayRows(Iterable<Event> events, List<Assignment> assignments) {
+    var count = 0;
+    for (final event in events) {
+      if (event.isDeactivated) continue;
+      final placed = <String>{};
+      for (final role in _cachedRoles) {
+        final required = event.roleRequirements[role.key] ?? 0;
+        if (required == 0) continue;
+        count += required;
+        final roleAssignments = assignments
+            .where((a) => a.eventId == event.id && a.roleType == role.key)
+            .toList();
+        for (int i = 0; i < required; i++) {
+          Assignment? match;
+          for (final a in roleAssignments) {
+            if (a.slotIndex == i) {
+              match = a;
+              break;
+            }
+          }
+          if (match != null) placed.add(match.id);
+        }
+      }
+      count += assignments
+          .where((a) => a.eventId == event.id && !placed.contains(a.id))
+          .length;
+    }
+    return count;
+  }
+
+  /// Keep all window rows plus the first [_extraPastRowsRevealed] extra-past
+  /// rows (rows for events older than the window). Only applies when past is
+  /// shown; otherwise past rows are already removed by the showPastEvents
+  /// filter. Returns the capped list and whether more history is available.
+  ({List<AssignmentSlot> slots, bool hasMore}) _applyPastRevealCap(
+      List<AssignmentSlot> sorted) {
+    final windowStart = _slotsWindowStart;
+    if (!FilterPersistence.showPastEvents || windowStart == null) {
+      return (slots: sorted, hasMore: false);
+    }
+    final kept = <AssignmentSlot>[];
+    var extraShown = 0;
+    var extraTotal = 0;
+    for (final slot in sorted) {
+      final isExtraPast = slot.event.startDate.isBefore(windowStart);
+      if (!isExtraPast) {
+        kept.add(slot);
+      } else {
+        extraTotal++;
+        if (extraShown < _extraPastRowsRevealed) {
+          kept.add(slot);
+          extraShown++;
+        }
+      }
+    }
+    final hasMore = extraShown < extraTotal || !_pastPagingExhausted;
+    return (slots: kept, hasMore: hasMore);
+  }
+
+  /// Reveal the next 25 rows of history older than the 90-day window. Fetches
+  /// older events (and their assignments) on demand until enough rows exist,
+  /// then rebuilds with the extra-past cache merged in.
+  Future<void> _onLoadMorePastAssignmentSlots(
+    LoadMorePastAssignmentSlots event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    if (state is! AssignmentSlotsLoaded) return;
+    final current = state as AssignmentSlotsLoaded;
+    // Use the private flag as the authoritative re-entrancy guard: the state's
+    // isLoadingMorePast can be stomped false by an unrelated concurrent rebuild.
+    if (_loadingMorePast || !current.hasMorePast) return;
+
+    _loadingMorePast = true;
+    _emitOrLog(emit, current.copyWith(isLoadingMorePast: true));
+
+    final target = _extraPastRowsRevealed + _pastLoadMoreRowChunk;
+
+    try {
+      while (!_pastPagingExhausted &&
+          _countDisplayRows(_extraPastEventsMap.values, _extraPastAssignments) <
+              target) {
+        final cursor = _oldestLoadedEventStart;
+        if (cursor == null) {
+          _pastPagingExhausted = true;
+          break;
+        }
+        final batch = await _eventRepository.getEventsBeforeDate(
+          cursor,
+          limit: _pastEventFetchBatch,
+        );
+        if (batch.isEmpty) {
+          _pastPagingExhausted = true;
+          break;
+        }
+        for (final e in batch) {
+          _extraPastEventsMap[e.id] = e;
+        }
+        _oldestLoadedEventStart = batch
+            .map((e) => e.startDate)
+            .reduce((a, b) => a.isBefore(b) ? a : b);
+        final freshIds = batch.map((e) => e.id).toList();
+        final newAssignments =
+            await _repository.getAssignmentsByEventIds(freshIds);
+        _extraPastAssignments.addAll(newAssignments);
+        if (batch.length < _pastEventFetchBatch) {
+          _pastPagingExhausted = true;
+        }
+      }
+
+      _extraPastRowsRevealed = target;
+
+      // Clear the in-flight flag BEFORE the rebuild so its emit carries
+      // isLoadingMorePast: _loadingMorePast == false.
+      _loadingMorePast = false;
+
+      // Rebuild from the live window data with the extra-past cache merged in.
+      add(RebuildAssignmentSlotsFromData(
+        _repository.getCurrentAssignments(),
+        _windowEventsMap,
+        _windowMembersMap,
+        _currentEventFilter,
+      ));
+    } catch (e) {
+      _loadingMorePast = false;
+      _emitOrLog(emit, current.copyWith(isLoadingMorePast: false));
+      _emitOrLog(emit, AssignmentError('שגיאה בטעינת היסטוריה: $e'));
+    }
   }
 }

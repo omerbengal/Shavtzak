@@ -326,6 +326,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         return originalCompare;
       }
 
+      // Off-quota rows always sort below their in-quota siblings, mirroring the
+      // BLoC's _compareAssignmentSlots (a duplicate-slotIndex off-quota row
+      // shares its sibling's slot-key and could otherwise render above it).
+      if (a.isOffQuota != b.isOffQuota) {
+        return a.isOffQuota ? 1 : -1;
+      }
+
       final aLabel = a.currentAssignment?.semanticLabel;
       final bLabel = b.currentAssignment?.semanticLabel;
 
@@ -748,11 +755,20 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               // Grid rows
               Expanded(
                 child: hasVisibleSlots
-                    ? ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 80),
-                        itemCount: slots.length,
-                        itemBuilder: (context, index) {
-                          return _buildSlotRow(slots[index]);
+                    ? Builder(
+                        builder: (context) {
+                          final showLoadMore =
+                              FilterPersistence.showPastEvents && state.hasMorePast;
+                          return ListView.builder(
+                            padding: const EdgeInsets.only(bottom: 80),
+                            itemCount: slots.length + (showLoadMore ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (showLoadMore && index == slots.length) {
+                                return _buildLoadMorePastButton(state);
+                              }
+                              return _buildSlotRow(slots[index]);
+                            },
+                          );
                         },
                       )
                     : Center(
@@ -786,6 +802,37 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
   }
 
+  Widget _buildLoadMorePastButton(AssignmentSlotsLoaded state) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      child: Align(
+        alignment: Alignment.center,
+        child: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            backgroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          ),
+          onPressed: state.isLoadingMorePast
+              ? null
+              : () {
+                  Logger.action('tap:loadMorePast');
+                  context
+                      .read<AssignmentBloc>()
+                      .add(const LoadMorePastAssignmentSlots());
+                },
+          icon: state.isLoadingMorePast
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.expand_more),
+          label: const Text('טען עוד'),
+        ),
+      ),
+    );
+  }
+
   List<AssignmentSlot> _applyAssignmentLabelsToSlots(
     List<AssignmentSlot> slots,
     List<AssignmentLabel> labels,
@@ -810,22 +857,15 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             : labelsById[assignment.semanticLabelId!],
       );
 
-      return AssignmentSlot(
-        event: slot.event,
-        role: slot.role,
-        slotIndex: slot.slotIndex,
-        currentAssignment: updatedAssignment,
-        availableMembers: slot.availableMembers,
-        alreadyAssignedMembers: slot.alreadyAssignedMembers,
-        hasDoubleAssignment: slot.hasDoubleAssignment,
-        otherRoles: slot.otherRoles,
-        sameDayAssignedMembers: slot.sameDayAssignedMembers,
-        sameDayEventInfo: slot.sameDayEventInfo,
-      );
+      return slot.copyWith(currentAssignment: updatedAssignment);
     }).toList();
   }
 
   Widget _buildSlotRow(AssignmentSlot slot) {
+    if (slot.isOffQuota) {
+      return _buildOffQuotaRow(slot);
+    }
+
     final hasNotes = slot.isFilled &&
         slot.currentAssignment != null &&
         slot.currentAssignment!.notes.isNotEmpty;
@@ -1275,6 +1315,133 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
   }
 
+  /// A row for an assignment that has no matching quota slot. Display + delete
+  /// only: no dropdown, no notes-edit swipe. Swipe-left deletes just the
+  /// assignment document (no quota change — it is already outside the quota).
+  Widget _buildOffQuotaRow(AssignmentSlot slot) {
+    final assignment = slot.currentAssignment!;
+    final memberName = assignment.teamMember?.name ?? 'לא ידוע';
+
+    return Dismissible(
+      key: Key('offquota_${assignment.id}'),
+      direction: DismissDirection.endToStart,
+      secondaryBackground: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        color: Colors.red,
+        child: const Icon(Icons.delete, color: Colors.white, size: 32),
+      ),
+      background: const SizedBox.shrink(),
+      dismissThresholds: const {DismissDirection.endToStart: 0.5},
+      confirmDismiss: (direction) async {
+        final assignmentRepo = context.read<AssignmentRepository>();
+        final assignmentBloc = context.read<AssignmentBloc>();
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: const Text('מחיקת שיבוץ מחוץ למכסה'),
+              content: const Text(
+                'שיבוץ זה נמצא מחוץ למכסת האירוע. האם למחוק אותו?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('ביטול'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('מחק', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (confirmed == true) {
+          Logger.action('delete:offQuotaAssignment', {
+            'assignmentId': assignment.id,
+          });
+          try {
+            await assignmentRepo.deleteAssignment(assignment.id);
+            // Refresh extra-past cache if this row is from an event older than
+            // the live window (no-op for in-window events).
+            assignmentBloc.add(ExternalExtraPastMutation(assignment.eventId));
+            if (mounted) {
+              _showAssignmentSnackBar('השיבוץ נמחק בהצלחה',
+                  backgroundColor: Colors.green);
+            }
+          } catch (e) {
+            if (mounted) {
+              _showAssignmentSnackBar('שגיאה במחיקת השיבוץ: $e',
+                  backgroundColor: Colors.red);
+            }
+          }
+        }
+        return false; // real-time stream removes the row after delete
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.amber.shade50,
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.shade400, width: 1.5),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(slot.event.name,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 13)),
+                  Text(_formatEventDatesHebrew(slot.event),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 11, color: Colors.grey.shade600)),
+                ],
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text(slot.role.hebrewName,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold)),
+            ),
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(memberName,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade200,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Text('מחוץ למכסה',
+                        style: TextStyle(
+                            fontSize: 10, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Handle dismissing a slot - removes role slot from event (reduces capacity)
   /// If the slot is filled, also deletes the assignment
   Future<void> _handleSlotDismiss(AssignmentSlot slot) async {
@@ -1286,6 +1453,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     try {
       final assignmentRepo = context.read<AssignmentRepository>();
       final eventBloc = context.read<EventBloc>();
+      final assignmentBloc = context.read<AssignmentBloc>();
 
       // Step 1: Delete the assignment if it exists (filled slot)
       if (slot.currentAssignment != null) {
@@ -1344,6 +1512,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       }
 
       _finishMutation();
+
+      // Refresh extra-past cache if this event is older than the live window
+      // (no-op for in-window events; dispatch via captured bloc, not context).
+      assignmentBloc.add(ExternalExtraPastMutation(slot.event.id));
 
       // Show success message
       if (mounted) {

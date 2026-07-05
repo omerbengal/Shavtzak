@@ -180,6 +180,11 @@ class ClearEventFilter extends AssignmentEvent {
   const ClearEventFilter();
 }
 
+/// Reveal the next page (25 rows) of history older than the 90-day window.
+class LoadMorePastAssignmentSlots extends AssignmentEvent {
+  const LoadMorePastAssignmentSlots();
+}
+
 /// Internal event to rebuild slots (triggered by real-time streams)
 /// Note: Should only be used internally by AssignmentBloc
 class RebuildAssignmentSlots extends AssignmentEvent {
@@ -189,6 +194,16 @@ class RebuildAssignmentSlots extends AssignmentEvent {
 
   @override
   List<Object?> get props => [preservedFilter];
+}
+
+/// Screen did a direct-repository mutation on [eventId]; refresh the
+/// extra-past cache for it and rebuild (no-op for in-window events — the
+/// live window stream already covers those).
+class ExternalExtraPastMutation extends AssignmentEvent {
+  final String eventId;
+  const ExternalExtraPastMutation(this.eventId);
+  @override
+  List<Object?> get props => [eventId];
 }
 
 /// Load assignments for a specific user with real-time updates for both assignments AND events
