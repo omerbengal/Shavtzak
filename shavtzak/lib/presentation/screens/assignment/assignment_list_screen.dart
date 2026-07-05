@@ -326,6 +326,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         return originalCompare;
       }
 
+      // Off-quota rows always sort below their in-quota siblings, mirroring the
+      // BLoC's _compareAssignmentSlots (a duplicate-slotIndex off-quota row
+      // shares its sibling's slot-key and could otherwise render above it).
+      if (a.isOffQuota != b.isOffQuota) {
+        return a.isOffQuota ? 1 : -1;
+      }
+
       final aLabel = a.currentAssignment?.semanticLabel;
       final bLabel = b.currentAssignment?.semanticLabel;
 
@@ -1328,6 +1335,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       dismissThresholds: const {DismissDirection.endToStart: 0.5},
       confirmDismiss: (direction) async {
         final assignmentRepo = context.read<AssignmentRepository>();
+        final assignmentBloc = context.read<AssignmentBloc>();
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => Directionality(
@@ -1356,6 +1364,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           });
           try {
             await assignmentRepo.deleteAssignment(assignment.id);
+            // Refresh extra-past cache if this row is from an event older than
+            // the live window (no-op for in-window events).
+            assignmentBloc.add(ExternalExtraPastMutation(assignment.eventId));
             if (mounted) {
               _showAssignmentSnackBar('השיבוץ נמחק בהצלחה',
                   backgroundColor: Colors.green);
@@ -1442,6 +1453,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     try {
       final assignmentRepo = context.read<AssignmentRepository>();
       final eventBloc = context.read<EventBloc>();
+      final assignmentBloc = context.read<AssignmentBloc>();
 
       // Step 1: Delete the assignment if it exists (filled slot)
       if (slot.currentAssignment != null) {
@@ -1500,6 +1512,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       }
 
       _finishMutation();
+
+      // Refresh extra-past cache if this event is older than the live window
+      // (no-op for in-window events; dispatch via captured bloc, not context).
+      assignmentBloc.add(ExternalExtraPastMutation(slot.event.id));
 
       // Show success message
       if (mounted) {

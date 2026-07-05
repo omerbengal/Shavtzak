@@ -109,6 +109,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<OptimisticUpdateAssignment>(_onOptimisticUpdateAssignment);
     on<OptimisticDeleteAssignment>(_onOptimisticDeleteAssignment);
     on<LoadMorePastAssignmentSlots>(_onLoadMorePastAssignmentSlots);
+    on<ExternalExtraPastMutation>(_onExternalExtraPastMutation);
   }
 
   /// Load all assignments with real-time updates
@@ -1464,12 +1465,32 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   Future<void> _refreshExtraPastEvent(String eventId) async {
     if (!_extraPastEventsMap.containsKey(eventId)) return;
     try {
+      final freshEvent = await _eventRepository.getEventById(eventId);
+      if (freshEvent == null) {
+        _extraPastEventsMap.remove(eventId);
+      } else {
+        _extraPastEventsMap[eventId] = freshEvent;
+      }
       final fresh = await _repository.getAssignmentsByEventIds([eventId]);
       _extraPastAssignments.removeWhere((a) => a.eventId == eventId);
       _extraPastAssignments.addAll(fresh);
     } catch (_) {
       // Best-effort; the next full reload will reconcile.
     }
+  }
+
+  /// Screen performed a direct-repository mutation (swipe-delete / quota
+  /// reduce) on [event.eventId]. If that event lives in the extra-past cache
+  /// (older than the window, loaded via "load more"), the live window stream
+  /// can't cover it, so refresh its cache entry and rebuild. No-op for
+  /// in-window events — the live stream already handles those.
+  Future<void> _onExternalExtraPastMutation(
+    ExternalExtraPastMutation event,
+    Emitter<AssignmentState> emit,
+  ) async {
+    if (!_extraPastEventsMap.containsKey(event.eventId)) return;
+    await _refreshExtraPastEvent(event.eventId);
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
   /// Build complete slots state from assignments
