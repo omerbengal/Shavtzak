@@ -57,6 +57,7 @@ class EventAssignmentsShareDataBuilder {
       eventName: event.name,
       dateLine: _formatEventDatesHebrew(event),
       timeLine: _formatTimeFields(event),
+      participantsLine: _formatParticipantsLine(event),
       locationLine: _formatLocationLine(event.location),
       eventNoteLine: event.comments.trim(),
       sections: sections,
@@ -278,10 +279,20 @@ class EventAssignmentsShareDataBuilder {
       parts.add('תחילת מופע - ${event.actualShowStartTime}');
     }
     if (event.endTime.isNotEmpty) {
-      parts.add('סיום - ${event.endTime}');
+      parts.add('סיום המופע - ${event.endTime}');
+    }
+    if (event.teamEndTime.isNotEmpty) {
+      parts.add('סיום הצוות - ${event.teamEndTime}');
     }
 
     return parts.join(' | ');
+  }
+
+  static String _formatParticipantsLine(Event event) {
+    if (event.participantCount == null) {
+      return '';
+    }
+    return 'כמות משתתפים: ${event.participantCount}';
   }
 
   static String _getFullHebrewDayName(int weekday) {

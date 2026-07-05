@@ -112,8 +112,10 @@ class DuplicateEvent extends EventEvent {
   final DateTime newEndDate;
   final String newStartTime;
   final String newEndTime;
+  final String newTeamEndTime;
   final String newAssemblyTime;
   final String newActualShowStartTime;
+  final int? newParticipantCount;
   final bool newRequiresArmed;
   final Map<String, int> newRoleRequirements;
   final bool duplicateAssignments;
@@ -129,8 +131,10 @@ class DuplicateEvent extends EventEvent {
     required this.newEndDate,
     required this.newStartTime,
     required this.newEndTime,
+    this.newTeamEndTime = '',
     required this.newAssemblyTime,
     this.newActualShowStartTime = '',
+    this.newParticipantCount,
     required this.newRequiresArmed,
     required this.newRoleRequirements,
     this.duplicateAssignments = false,
@@ -148,8 +152,10 @@ class DuplicateEvent extends EventEvent {
         newEndDate,
         newStartTime,
         newEndTime,
+        newTeamEndTime,
         newAssemblyTime,
         newActualShowStartTime,
+        newParticipantCount,
         newRequiresArmed,
         newRoleRequirements,
         duplicateAssignments,

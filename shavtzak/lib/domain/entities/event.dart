@@ -7,9 +7,11 @@ class Event extends Equatable {
   final DateTime startDate;
   final DateTime endDate;
   final String startTime; // Format: "HH:mm" - Audience gathering time (שעת התכנסות קהל)
-  final String endTime; // Format: "HH:mm"
+  final String endTime; // Format: "HH:mm" - Show estimated end time (שעת סיום משוערת של המופע)
+  final String teamEndTime; // Format: "HH:mm" - Team estimated end time (שעת סיום משוערת של הצוות)
   final String assemblyTime; // Format: "HH:mm"
   final String actualShowStartTime; // Format: "HH:mm" - Actual show start time (שעת תחילת המופע בפועל)
+  final int? participantCount; // Number of participants/audience (כמות משתתפים); null = unset
   final String location;
   final String? parkingLocation; // Parking location in "Name||lat,lng" format
   final List<String> parkingEditorIds; // IDs of team members who can edit parking
@@ -39,8 +41,10 @@ class Event extends Equatable {
     required this.endDate,
     required this.startTime,
     required this.endTime,
+    this.teamEndTime = '',
     required this.assemblyTime,
     this.actualShowStartTime = '',
+    this.participantCount,
     this.location = '',
     this.parkingLocation,
     this.parkingEditorIds = const [],
@@ -131,8 +135,11 @@ class Event extends Equatable {
     DateTime? endDate,
     String? startTime,
     String? endTime,
+    String? teamEndTime,
     String? assemblyTime,
     String? actualShowStartTime,
+    int? participantCount,
+    bool clearParticipantCount = false,
     String? location,
     String? parkingLocation,
     List<String>? parkingEditorIds,
@@ -157,8 +164,11 @@ class Event extends Equatable {
       endDate: endDate ?? this.endDate,
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
+      teamEndTime: teamEndTime ?? this.teamEndTime,
       assemblyTime: assemblyTime ?? this.assemblyTime,
       actualShowStartTime: actualShowStartTime ?? this.actualShowStartTime,
+      participantCount:
+          clearParticipantCount ? null : (participantCount ?? this.participantCount),
       location: location ?? this.location,
       parkingLocation: clearParkingLocation ? null : (parkingLocation ?? this.parkingLocation),
       parkingEditorIds: parkingEditorIds ?? this.parkingEditorIds,
@@ -185,8 +195,10 @@ class Event extends Equatable {
         endDate,
         startTime,
         endTime,
+        teamEndTime,
         assemblyTime,
         actualShowStartTime,
+        participantCount,
         location,
         parkingLocation,
         parkingEditorIds,

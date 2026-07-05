@@ -2,6 +2,7 @@ class EventAssignmentsShareData {
   final String eventName;
   final String dateLine;
   final String timeLine;
+  final String participantsLine;
   final String locationLine;
   final String eventNoteLine;
   final List<EventAssignmentsShareSection> sections;
@@ -11,6 +12,7 @@ class EventAssignmentsShareData {
     required this.eventName,
     required this.dateLine,
     required this.timeLine,
+    this.participantsLine = '',
     required this.locationLine,
     this.eventNoteLine = '',
     required this.sections,

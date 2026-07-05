@@ -70,6 +70,7 @@ class _Header extends StatelessWidget {
     final detailLines = [
       data.dateLine,
       if (data.timeLine.trim().isNotEmpty) data.timeLine,
+      if (data.participantsLine.trim().isNotEmpty) data.participantsLine,
       if (data.locationLine.trim().isNotEmpty) data.locationLine,
     ];
 

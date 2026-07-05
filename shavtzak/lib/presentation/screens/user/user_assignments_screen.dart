@@ -1045,7 +1045,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                 ),
               ),
 
-            // 3. End time (סיום)
+            // 3. Show end time (סיום המופע)
             if (event.endTime.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
@@ -1059,7 +1059,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'סיום:',
+                      'סיום המופע:',
                       style: TextStyle(
                         fontSize: _getResponsiveFontSize(context,
                             minSize: 13.0, maxSize: 14.0),
@@ -1070,6 +1070,78 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     const SizedBox(width: 4),
                     Text(
                       event.endTime,
+                      style: TextStyle(
+                        fontSize: _getResponsiveFontSize(context,
+                            minSize: 13.0, maxSize: 14.0),
+                        fontWeight: FontWeight.w500,
+                        color: textColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // 4. Team end time (סיום הצוות)
+            if (event.teamEndTime.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.flag_outlined,
+                      size: _getResponsiveIconSize(context,
+                          minSize: 16.0, maxSize: 18.0),
+                      color: iconColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'סיום הצוות:',
+                      style: TextStyle(
+                        fontSize: _getResponsiveFontSize(context,
+                            minSize: 13.0, maxSize: 14.0),
+                        fontWeight: FontWeight.w600,
+                        color: textColor,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      event.teamEndTime,
+                      style: TextStyle(
+                        fontSize: _getResponsiveFontSize(context,
+                            minSize: 13.0, maxSize: 14.0),
+                        fontWeight: FontWeight.w500,
+                        color: textColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // 5. Participant count (כמות משתתפים)
+            if (event.participantCount != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.groups,
+                      size: _getResponsiveIconSize(context,
+                          minSize: 16.0, maxSize: 18.0),
+                      color: iconColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'כמות משתתפים:',
+                      style: TextStyle(
+                        fontSize: _getResponsiveFontSize(context,
+                            minSize: 13.0, maxSize: 14.0),
+                        fontWeight: FontWeight.w600,
+                        color: textColor,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${event.participantCount}',
                       style: TextStyle(
                         fontSize: _getResponsiveFontSize(context,
                             minSize: 13.0, maxSize: 14.0),

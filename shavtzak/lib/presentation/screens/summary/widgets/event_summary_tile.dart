@@ -147,6 +147,15 @@ class EventSummaryTile extends StatelessWidget {
                     color: Colors.grey.shade600,
                   ),
                 ),
+              // Participant count (hidden when unset)
+              if (data.event.participantCount != null)
+                Text(
+                  'כמות משתתפים: ${data.event.participantCount}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
               const SizedBox(height: 6),
               // Status indicators
               _buildStatusRow(),
@@ -1180,7 +1189,10 @@ class EventSummaryTile extends StatelessWidget {
       parts.add('תחילת מופע - ${event.actualShowStartTime}');
     }
     if (event.endTime.isNotEmpty) {
-      parts.add('סיום - ${event.endTime}');
+      parts.add('סיום המופע - ${event.endTime}');
+    }
+    if (event.teamEndTime.isNotEmpty) {
+      parts.add('סיום הצוות - ${event.teamEndTime}');
     }
 
     return parts.join(' | ');

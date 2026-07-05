@@ -244,6 +244,7 @@ class CalendarShareDataBuilder {
     return CalendarShareEvent(
       name: event.name,
       timeLines: _buildTimeLines(event),
+      participantsLine: _buildParticipantsLine(event),
       locationLine: location,
       isPast: isPast,
       categoryColorValue: categoryColorValue,
@@ -253,6 +254,7 @@ class CalendarShareDataBuilder {
   static List<String> _buildTimeLines(Event event) {
     final assemblyTime = event.assemblyTime.trim();
     final endTime = event.endTime.trim();
+    final teamEndTime = event.teamEndTime.trim();
     final actualShowStartTime = event.actualShowStartTime.trim();
     final startTime = event.startTime.trim();
 
@@ -276,7 +278,17 @@ class CalendarShareDataBuilder {
       final effectiveStart = separator.isNotEmpty ? separator : assemblyTime;
       lines.add('מופע $effectiveStart–$endTime');
     }
+    if (teamEndTime.isNotEmpty) {
+      lines.add('סיום צוות $teamEndTime');
+    }
     return lines;
+  }
+
+  static String _buildParticipantsLine(Event event) {
+    if (event.participantCount == null) {
+      return '';
+    }
+    return '${event.participantCount}';
   }
 
   static DateTime _dateOnly(DateTime date) =>

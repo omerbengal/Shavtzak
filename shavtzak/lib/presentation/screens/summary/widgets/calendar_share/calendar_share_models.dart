@@ -18,6 +18,10 @@ class CalendarShareEvent {
   /// on continuation days.
   final String locationLine;
 
+  /// Participant count as a display string. Empty when unset or on
+  /// continuation days.
+  final String participantsLine;
+
   final bool isPast;
 
   /// True on the 2nd+ visible day of a multi-day event ("(המשך)" rendering).
@@ -29,6 +33,7 @@ class CalendarShareEvent {
   const CalendarShareEvent({
     required this.name,
     this.timeLines = const [],
+    this.participantsLine = '',
     this.locationLine = '',
     required this.isPast,
     this.isContinuation = false,

@@ -728,9 +728,15 @@ class _EventListScreenState extends State<EventListScreen> {
                     if (event.assemblyTime.isNotEmpty ||
                         event.startTime.isNotEmpty ||
                         event.actualShowStartTime.isNotEmpty ||
-                        event.endTime.isNotEmpty)
+                        event.endTime.isNotEmpty ||
+                        event.teamEndTime.isNotEmpty)
                       _buildFieldItemWithResponsiveFont(
                           'שעות', _formatTimeFields(event),
+                          isDeactivated: event.isDeactivated),
+                    // Line 4: Participant count (hidden when unset)
+                    if (event.participantCount != null)
+                      _buildFieldItem(
+                          'כמות משתתפים', '${event.participantCount}',
                           isDeactivated: event.isDeactivated),
                   ],
                 ),
@@ -1076,7 +1082,10 @@ class _EventListScreenState extends State<EventListScreen> {
       parts.add('תחילת מופע: ${event.actualShowStartTime}');
     }
     if (event.endTime.isNotEmpty) {
-      parts.add('סיום: ${event.endTime}');
+      parts.add('סיום המופע: ${event.endTime}');
+    }
+    if (event.teamEndTime.isNotEmpty) {
+      parts.add('סיום הצוות: ${event.teamEndTime}');
     }
 
     return parts.join(' | ');

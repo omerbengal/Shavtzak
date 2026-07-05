@@ -43,7 +43,8 @@ class AppStrings {
   static const String startDate = 'תאריך התחלה';
   static const String endDate = 'תאריך סיום';
   static const String startTime = 'שעת התחלה';
-  static const String endTime = 'שעת סיום';
+  static const String endTime = 'שעת סיום משוערת של המופע';
+  static const String teamEndTime = 'שעת סיום משוערת של הצוות';
   static const String assemblyTime = 'שעת התייצבות';
   static const String location = 'מיקום';
   static const String requiresArmed = 'דורש חמוש';

@@ -10,8 +10,10 @@ class EventModel {
   final DateTime endDate;
   final String startTime;
   final String endTime;
+  final String teamEndTime;
   final String assemblyTime;
   final String actualShowStartTime;
+  final int? participantCount;
   final String location;
   final String? parkingLocation;
   final List<String> parkingEditorIds;
@@ -40,8 +42,10 @@ class EventModel {
     required this.endDate,
     required this.startTime,
     required this.endTime,
+    this.teamEndTime = '',
     required this.assemblyTime,
     this.actualShowStartTime = '',
+    this.participantCount,
     required this.location,
     this.parkingLocation,
     this.parkingEditorIds = const [],
@@ -101,8 +105,10 @@ class EventModel {
       endDate: entity.endDate,
       startTime: entity.startTime,
       endTime: entity.endTime,
+      teamEndTime: entity.teamEndTime,
       assemblyTime: entity.assemblyTime,
       actualShowStartTime: entity.actualShowStartTime,
+      participantCount: entity.participantCount,
       location: entity.location,
       parkingLocation: entity.parkingLocation,
       parkingEditorIds: entity.parkingEditorIds,
@@ -129,8 +135,10 @@ class EventModel {
       endDate: endDate,
       startTime: startTime,
       endTime: endTime,
+      teamEndTime: teamEndTime,
       assemblyTime: assemblyTime,
       actualShowStartTime: actualShowStartTime,
+      participantCount: participantCount,
       location: location,
       parkingLocation: parkingLocation,
       parkingEditorIds: parkingEditorIds,
@@ -159,8 +167,10 @@ class EventModel {
       endDate: _normalizeDateOnly((data['endDate'] as Timestamp).toDate()),
       startTime: data['startTime'] as String,
       endTime: data['endTime'] as String,
+      teamEndTime: data['teamEndTime'] as String? ?? '',
       assemblyTime: data['assemblyTime'] as String,
       actualShowStartTime: data['actualShowStartTime'] as String? ?? '',
+      participantCount: (data['participantCount'] as num?)?.toInt(),
       location: data['location'] as String? ?? '',
       parkingLocation: data['parkingLocation'] as String?,
       parkingEditorIds:
@@ -191,8 +201,10 @@ class EventModel {
       'endDate': Timestamp.fromDate(_normalizeDateOnlyUtc(endDate)),
       'startTime': startTime,
       'endTime': endTime,
+      'teamEndTime': teamEndTime,
       'assemblyTime': assemblyTime,
       'actualShowStartTime': actualShowStartTime,
+      'participantCount': participantCount,
       'location': location,
       'parkingLocation': parkingLocation,
       'parkingEditorIds': parkingEditorIds,
@@ -219,8 +231,10 @@ class EventModel {
       endDate: _parseDateOnlyJsonValue(json['endDate'], 'endDate'),
       startTime: json['startTime'] as String,
       endTime: json['endTime'] as String,
+      teamEndTime: json['teamEndTime'] as String? ?? '',
       assemblyTime: json['assemblyTime'] as String,
       actualShowStartTime: json['actualShowStartTime'] as String? ?? '',
+      participantCount: (json['participantCount'] as num?)?.toInt(),
       location: json['location'] as String? ?? '',
       parkingLocation: json['parkingLocation'] as String?,
       parkingEditorIds:
@@ -251,8 +265,10 @@ class EventModel {
       'endDate': _formatDateOnly(endDate),
       'startTime': startTime,
       'endTime': endTime,
+      'teamEndTime': teamEndTime,
       'assemblyTime': assemblyTime,
       'actualShowStartTime': actualShowStartTime,
+      'participantCount': participantCount,
       'location': location,
       'parkingLocation': parkingLocation,
       'parkingEditorIds': parkingEditorIds,

@@ -163,4 +163,25 @@ class DateUtils {
     final endOnly = startOfDay(end);
     return endOnly.difference(startOnly).inDays;
   }
+
+  /// Shift an "HH:mm" time string by [minutes] (can be negative), wrapping
+  /// around midnight so the result is always a valid time-of-day.
+  ///
+  /// Used to derive dependent event times, e.g. שעת התייצבות = 2h before
+  /// שעת התכנסות קהל (-120), or שעת סיום הצוות = 1h after שעת סיום המופע (+60).
+  /// Returns null when [time] is empty or not a valid "HH:mm" value.
+  static String? shiftHmByMinutes(String time, int minutes) {
+    final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(time.trim());
+    if (match == null) return null;
+
+    final hours = int.parse(match.group(1)!);
+    final mins = int.parse(match.group(2)!);
+    if (hours > 23 || mins > 59) return null;
+
+    // Wrap into [0, 1440) so crossing midnight stays a valid time-of-day.
+    final total = (((hours * 60 + mins + minutes) % 1440) + 1440) % 1440;
+    final outHours = total ~/ 60;
+    final outMins = total % 60;
+    return '${outHours.toString().padLeft(2, '0')}:${outMins.toString().padLeft(2, '0')}';
+  }
 }

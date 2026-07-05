@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/crud_action_result.dart';
+import '../../../../core/utils/date_utils.dart' as app_date_utils;
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/event.dart';
@@ -59,8 +61,10 @@ class _EventFormModalState extends State<EventFormModal> {
   final _commentsController = TextEditingController();
   final _startTimeController = TextEditingController();
   final _endTimeController = TextEditingController();
+  final _teamEndTimeController = TextEditingController();
   final _assemblyTimeController = TextEditingController();
   final _actualShowStartTimeController = TextEditingController();
+  final _participantCountController = TextEditingController();
 
   DateTime? _startDate;
   DateTime? _endDate;
@@ -134,8 +138,11 @@ class _EventFormModalState extends State<EventFormModal> {
       _commentsController.text = widget.event!.comments;
       _startTimeController.text = widget.event!.startTime;
       _endTimeController.text = widget.event!.endTime;
+      _teamEndTimeController.text = widget.event!.teamEndTime;
       _assemblyTimeController.text = widget.event!.assemblyTime;
       _actualShowStartTimeController.text = widget.event!.actualShowStartTime;
+      _participantCountController.text =
+          widget.event!.participantCount?.toString() ?? '';
 
       if (widget.isDuplication) {
         // For duplication mode, reset dates to allow user to select new ones
@@ -205,8 +212,10 @@ class _EventFormModalState extends State<EventFormModal> {
     _commentsController.dispose();
     _startTimeController.dispose();
     _endTimeController.dispose();
+    _teamEndTimeController.dispose();
     _assemblyTimeController.dispose();
     _actualShowStartTimeController.dispose();
+    _participantCountController.dispose();
     _nameFocusNode.dispose();
     _locationFocusNode.dispose();
     _parkingLocationFocusNode.dispose();
@@ -262,7 +271,10 @@ class _EventFormModalState extends State<EventFormModal> {
     });
   }
 
-  Future<void> _showTimePickerFor(TextEditingController controller) async {
+  Future<void> _showTimePickerFor(
+    TextEditingController controller, {
+    void Function(String value)? onPicked,
+  }) async {
     // Parse existing value as initial time, default to current time
     final now = DateTime.now();
     DateTime initialTime = now;
@@ -331,11 +343,112 @@ class _EventFormModalState extends State<EventFormModal> {
 
     if (result != null) {
       setState(() {
-        controller.text =
+        final value =
             '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
+        controller.text = value;
         _isDirty = true;
+        onPicked?.call(value);
       });
     }
+  }
+
+  /// Parse the participant-count field into an int, or null when empty/invalid.
+  int? _parseParticipantCount() {
+    final raw = _participantCountController.text.trim();
+    if (raw.isEmpty) return null;
+    return int.tryParse(raw);
+  }
+
+  /// Overwrite [target] with [source] shifted by [offsetMinutes]. Used by the
+  /// derive arrows (שעתיים לפני / שעה אחרי) and the live empty-target auto-fill.
+  void _deriveTime(
+    TextEditingController source,
+    TextEditingController target,
+    int offsetMinutes,
+  ) {
+    final derived =
+        app_date_utils.DateUtils.shiftHmByMinutes(source.text.trim(), offsetMinutes);
+    if (derived == null) return;
+    setState(() {
+      target.text = derived;
+      _isDirty = true;
+    });
+  }
+
+  /// A read-only time-picker field (tap opens the wheel picker). Extracted so
+  /// the five event time fields share one definition instead of duplicating it.
+  Widget _buildTimeField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData prefixIcon,
+    required String logKey,
+    void Function(String value)? onPicked,
+  }) {
+    return TextFormField(
+      controller: controller,
+      readOnly: true,
+      onTap: () {
+        Logger.action('open:timePicker:$logKey');
+        _showTimePickerFor(controller, onPicked: onPicked);
+      },
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        prefixIcon: Icon(prefixIcon),
+        border: const OutlineInputBorder(),
+        suffixIcon: controller.text.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.clear, color: Colors.grey),
+                onPressed: () {
+                  Logger.action('tap:clearTime:$logKey');
+                  setState(() {
+                    controller.clear();
+                    _isDirty = true;
+                  });
+                },
+              )
+            : null,
+      ),
+    );
+  }
+
+  /// A small up/down arrow button placed between a source and a target time
+  /// field. Tapping it overwrites the target with the source shifted by
+  /// [offsetMinutes]. Only shown once the source field has a value.
+  Widget _buildDeriveArrow({
+    required TextEditingController source,
+    required TextEditingController target,
+    required int offsetMinutes,
+    required bool pointsUp,
+    required String label,
+    required String logKey,
+  }) {
+    if (source.text.trim().isEmpty) {
+      return const SizedBox(height: 4);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          onPressed: () {
+            Logger.action('tap:deriveTime:$logKey');
+            _deriveTime(source, target, offsetMinutes);
+          },
+          icon: Icon(
+            pointsUp ? Icons.arrow_upward : Icons.arrow_downward,
+            size: 18,
+          ),
+          label: Text(label),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _saveEvent() async {
@@ -405,8 +518,10 @@ class _EventFormModalState extends State<EventFormModal> {
             newEndDate: _endDate!,
             newStartTime: _startTimeController.text,
             newEndTime: _endTimeController.text,
+            newTeamEndTime: _teamEndTimeController.text,
             newAssemblyTime: _assemblyTimeController.text,
             newActualShowStartTime: _actualShowStartTimeController.text,
+            newParticipantCount: _parseParticipantCount(),
             newRequiresArmed: _requiresArmed,
             newRoleRequirements: Map.from(_roleRequirements),
             duplicateAssignments: _duplicateAssignments,
@@ -574,8 +689,10 @@ class _EventFormModalState extends State<EventFormModal> {
       endDate: _endDate!,
       startTime: _startTimeController.text.trim(),
       endTime: _endTimeController.text.trim(),
+      teamEndTime: _teamEndTimeController.text.trim(),
       assemblyTime: _assemblyTimeController.text.trim(),
       actualShowStartTime: _actualShowStartTimeController.text.trim(),
+      participantCount: _parseParticipantCount(),
       location: locationValue,
       parkingLocation: _rawParkingLocationValue,
       parkingEditorIds: _parkingEditorIds,
@@ -1928,142 +2045,141 @@ class _EventFormModalState extends State<EventFormModal> {
 
                                         const SizedBox(height: 16),
 
-                                        // Assembly Time
-                                        TextFormField(
+                                        // Assembly Time (שעת התייצבות)
+                                        _buildTimeField(
                                           controller: _assemblyTimeController,
-                                          readOnly: true,
-                                          onTap: () {
-                                            Logger.action(
-                                                'open:timePicker:assembly');
-                                            _showTimePickerFor(
-                                                _assemblyTimeController);
-                                          },
-                                          decoration: InputDecoration(
-                                            labelText:
-                                                'שעת התייצבות (אופציונלי)',
-                                            hintText: 'לדוגמה: 17:00',
-                                            prefixIcon:
-                                                const Icon(Icons.access_time),
-                                            border: const OutlineInputBorder(),
-                                            suffixIcon: _assemblyTimeController
-                                                    .text.isNotEmpty
-                                                ? IconButton(
-                                                    icon: const Icon(
-                                                        Icons.clear,
-                                                        color: Colors.grey),
-                                                    onPressed: () {
-                                                      Logger.action(
-                                                          'tap:clearTime:assembly');
-                                                      setState(() {
-                                                        _assemblyTimeController
-                                                            .clear();
-                                                        _isDirty = true;
-                                                      });
-                                                    },
-                                                  )
-                                                : null,
-                                          ),
+                                          label: 'שעת התייצבות (אופציונלי)',
+                                          hint: 'לדוגמה: 17:00',
+                                          prefixIcon: Icons.access_time,
+                                          logKey: 'assembly',
                                         ),
 
-                                        const SizedBox(height: 16),
+                                        // Derive arrow: התכנסות קהל → התייצבות
+                                        // (2h before). Points up toward the
+                                        // target field above.
+                                        _buildDeriveArrow(
+                                          source: _startTimeController,
+                                          target: _assemblyTimeController,
+                                          offsetMinutes: -120,
+                                          pointsUp: true,
+                                          label: 'שעתיים לפני',
+                                          logKey: 'assemblyFromStart',
+                                        ),
+
+                                        const SizedBox(height: 8),
 
                                         // Start Time (Audience Gathering Time)
-                                        TextFormField(
+                                        _buildTimeField(
                                           controller: _startTimeController,
-                                          readOnly: true,
-                                          onTap: () {
-                                            Logger.action(
-                                                'open:timePicker:start');
-                                            _showTimePickerFor(
-                                                _startTimeController);
+                                          label: 'שעת התכנסות קהל (אופציונלי)',
+                                          hint: 'לדוגמה: 18:00',
+                                          prefixIcon: Icons.access_time,
+                                          logKey: 'start',
+                                          onPicked: (value) {
+                                            // Live auto-fill: if התייצבות is
+                                            // still empty, default it to 2h
+                                            // before the gathering time.
+                                            if (_assemblyTimeController.text
+                                                .trim()
+                                                .isEmpty) {
+                                              final derived = app_date_utils
+                                                  .DateUtils
+                                                  .shiftHmByMinutes(value, -120);
+                                              if (derived != null) {
+                                                _assemblyTimeController.text =
+                                                    derived;
+                                              }
+                                            }
                                           },
-                                          decoration: InputDecoration(
-                                            labelText:
-                                                'שעת התכנסות קהל (אופציונלי)',
-                                            hintText: 'לדוגמה: 18:00',
-                                            prefixIcon:
-                                                const Icon(Icons.access_time),
-                                            border: const OutlineInputBorder(),
-                                            suffixIcon: _startTimeController
-                                                    .text.isNotEmpty
-                                                ? IconButton(
-                                                    icon: const Icon(
-                                                        Icons.clear,
-                                                        color: Colors.grey),
-                                                    onPressed: () {
-                                                      Logger.action(
-                                                          'tap:clearTime:start');
-                                                      setState(() {
-                                                        _startTimeController
-                                                            .clear();
-                                                        _isDirty = true;
-                                                      });
-                                                    },
-                                                  )
-                                                : null,
-                                          ),
                                         ),
 
                                         const SizedBox(height: 16),
 
                                         // Actual Show Start Time
-                                        TextFormField(
+                                        _buildTimeField(
                                           controller:
                                               _actualShowStartTimeController,
-                                          readOnly: true,
-                                          onTap: () {
-                                            Logger.action(
-                                                'open:timePicker:actualShowStart');
-                                            _showTimePickerFor(
-                                                _actualShowStartTimeController);
-                                          },
-                                          decoration: InputDecoration(
-                                            labelText:
-                                                'שעת תחילת המופע בפועל (אופציונלי)',
-                                            hintText: 'לדוגמה: 19:00',
-                                            prefixIcon: const Icon(
-                                                Icons.play_circle_outline),
-                                            border: const OutlineInputBorder(),
-                                            suffixIcon:
-                                                _actualShowStartTimeController
-                                                        .text.isNotEmpty
-                                                    ? IconButton(
-                                                        icon: const Icon(
-                                                            Icons.clear,
-                                                            color: Colors.grey),
-                                                        onPressed: () {
-                                                          Logger.action(
-                                                              'tap:clearTime:actualShowStart');
-                                                          setState(() {
-                                                            _actualShowStartTimeController
-                                                                .clear();
-                                                            _isDirty = true;
-                                                          });
-                                                        },
-                                                      )
-                                                    : null,
-                                          ),
+                                          label:
+                                              'שעת תחילת המופע בפועל (אופציונלי)',
+                                          hint: 'לדוגמה: 19:00',
+                                          prefixIcon: Icons.play_circle_outline,
+                                          logKey: 'actualShowStart',
                                         ),
 
                                         const SizedBox(height: 16),
 
-                                        // End Time
-                                        TextFormField(
+                                        // End Time (show estimated end)
+                                        _buildTimeField(
                                           controller: _endTimeController,
-                                          readOnly: true,
-                                          onTap: () {
-                                            Logger.action(
-                                                'open:timePicker:end');
-                                            _showTimePickerFor(
-                                                _endTimeController);
+                                          label:
+                                              'שעת סיום משוערת של המופע (אופציונלי)',
+                                          hint: 'לדוגמה: 23:00',
+                                          prefixIcon: Icons.access_time,
+                                          logKey: 'end',
+                                          onPicked: (value) {
+                                            // Live auto-fill: if סיום הצוות is
+                                            // still empty, default it to 1h
+                                            // after the show end time.
+                                            if (_teamEndTimeController.text
+                                                .trim()
+                                                .isEmpty) {
+                                              final derived = app_date_utils
+                                                  .DateUtils
+                                                  .shiftHmByMinutes(value, 60);
+                                              if (derived != null) {
+                                                _teamEndTimeController.text =
+                                                    derived;
+                                              }
+                                            }
+                                          },
+                                        ),
+
+                                        // Derive arrow: סיום המופע → סיום הצוות
+                                        // (1h after). Points down toward the
+                                        // target field below.
+                                        _buildDeriveArrow(
+                                          source: _endTimeController,
+                                          target: _teamEndTimeController,
+                                          offsetMinutes: 60,
+                                          pointsUp: false,
+                                          label: 'שעה אחרי',
+                                          logKey: 'teamEndFromEnd',
+                                        ),
+
+                                        const SizedBox(height: 8),
+
+                                        // Team End Time (שעת סיום משוערת של הצוות)
+                                        _buildTimeField(
+                                          controller: _teamEndTimeController,
+                                          label:
+                                              'שעת סיום משוערת של הצוות (אופציונלי)',
+                                          hint: 'לדוגמה: 00:00',
+                                          prefixIcon: Icons.access_time,
+                                          logKey: 'teamEnd',
+                                        ),
+
+                                        const SizedBox(height: 16),
+
+                                        // Participant count (כמות משתתפים)
+                                        TextFormField(
+                                          controller: _participantCountController,
+                                          keyboardType: TextInputType.number,
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter
+                                                .digitsOnly,
+                                            LengthLimitingTextInputFormatter(7),
+                                          ],
+                                          onChanged: (_) {
+                                            _isDirty = true;
                                           },
                                           decoration: InputDecoration(
-                                            labelText: 'שעת סיום (אופציונלי)',
-                                            hintText: 'לדוגמה: 23:00',
+                                            labelText:
+                                                'כמות משתתפים (אופציונלי)',
+                                            hintText: 'לדוגמה: 250',
                                             prefixIcon:
-                                                const Icon(Icons.access_time),
+                                                const Icon(Icons.groups),
                                             border: const OutlineInputBorder(),
-                                            suffixIcon: _endTimeController
+                                            suffixIcon: _participantCountController
                                                     .text.isNotEmpty
                                                 ? IconButton(
                                                     icon: const Icon(
@@ -2071,9 +2187,9 @@ class _EventFormModalState extends State<EventFormModal> {
                                                         color: Colors.grey),
                                                     onPressed: () {
                                                       Logger.action(
-                                                          'tap:clearTime:end');
+                                                          'tap:clearParticipantCount');
                                                       setState(() {
-                                                        _endTimeController
+                                                        _participantCountController
                                                             .clear();
                                                         _isDirty = true;
                                                       });

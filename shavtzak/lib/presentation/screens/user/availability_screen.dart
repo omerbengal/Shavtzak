@@ -549,7 +549,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
       parts.add('תחילת מופע - ${event.actualShowStartTime}');
     }
     if (event.endTime.isNotEmpty) {
-      parts.add('סיום - ${event.endTime}');
+      parts.add('סיום המופע - ${event.endTime}');
+    }
+    if (event.teamEndTime.isNotEmpty) {
+      parts.add('סיום הצוות - ${event.teamEndTime}');
     }
     return parts.join(' | ');
   }

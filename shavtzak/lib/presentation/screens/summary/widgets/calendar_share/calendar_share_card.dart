@@ -319,6 +319,11 @@ class _EventBlock extends StatelessWidget {
                   child: Text(line, softWrap: false, style: detailStyle),
                 ),
               ),
+            if (event.participantsLine.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text('👥 ${event.participantsLine}', style: detailStyle),
+              ),
             if (event.locationLine.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 2),

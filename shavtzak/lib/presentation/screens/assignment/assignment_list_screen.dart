@@ -965,7 +965,15 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                     ),
                                   if (slot.event.endTime.isNotEmpty)
                                     Text(
-                                      'סיום: ${slot.event.endTime}',
+                                      'סיום המופע: ${slot.event.endTime}',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey.shade600),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  if (slot.event.teamEndTime.isNotEmpty)
+                                    Text(
+                                      'סיום הצוות: ${slot.event.teamEndTime}',
                                       style: TextStyle(
                                           fontSize: 10,
                                           color: Colors.grey.shade600),
@@ -3516,7 +3524,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       parts.add('תחילת מופע - ${event.actualShowStartTime}');
     }
     if (event.endTime.isNotEmpty) {
-      parts.add('סיום - ${event.endTime}');
+      parts.add('סיום המופע - ${event.endTime}');
+    }
+    if (event.teamEndTime.isNotEmpty) {
+      parts.add('סיום הצוות - ${event.teamEndTime}');
     }
 
     return parts.join(' | ');

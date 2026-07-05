@@ -341,7 +341,9 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
                             if (event.actualShowStartTime.isNotEmpty)
                               Text('שעת תחילת המופע בפועל: ${event.actualShowStartTime}'),
                             if (event.endTime.isNotEmpty)
-                              Text('שעת סיום: ${event.endTime}'),
+                              Text('שעת סיום משוערת של המופע: ${event.endTime}'),
+                            if (event.teamEndTime.isNotEmpty)
+                              Text('שעת סיום משוערת של הצוות: ${event.teamEndTime}'),
                             // Location (without coordinates)
                             if (event.location.isNotEmpty)
                               Text('מיקום: ${_formatLocationForDisplay(event.location)}'),

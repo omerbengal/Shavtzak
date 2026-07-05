@@ -35,4 +35,28 @@ void main() {
       );
     });
   });
+
+  group('DateUtils.shiftHmByMinutes', () {
+    test('subtracts two hours (שעת התייצבות derive)', () {
+      expect(DateUtils.shiftHmByMinutes('10:00', -120), '08:00');
+      expect(DateUtils.shiftHmByMinutes('20:30', -120), '18:30');
+    });
+
+    test('adds one hour (שעת סיום הצוות derive)', () {
+      expect(DateUtils.shiftHmByMinutes('12:00', 60), '13:00');
+      expect(DateUtils.shiftHmByMinutes('22:15', 60), '23:15');
+    });
+
+    test('wraps around midnight in both directions', () {
+      expect(DateUtils.shiftHmByMinutes('01:00', -120), '23:00');
+      expect(DateUtils.shiftHmByMinutes('23:30', 60), '00:30');
+    });
+
+    test('returns null for empty or malformed input', () {
+      expect(DateUtils.shiftHmByMinutes('', -120), isNull);
+      expect(DateUtils.shiftHmByMinutes('abc', 60), isNull);
+      expect(DateUtils.shiftHmByMinutes('25:00', -120), isNull);
+      expect(DateUtils.shiftHmByMinutes('10:99', 60), isNull);
+    });
+  });
 }

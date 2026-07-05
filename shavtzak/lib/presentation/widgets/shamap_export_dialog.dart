@@ -540,7 +540,10 @@ class _ShamapExportDialogState extends State<ShamapExportDialog> {
             if (event.startTime.isNotEmpty) Text('התכנסות: ${event.startTime}'),
             if (event.actualShowStartTime.isNotEmpty)
               Text('תחילת מופע: ${event.actualShowStartTime}'),
-            if (event.endTime.isNotEmpty) Text('סיום: ${event.endTime}'),
+            if (event.endTime.isNotEmpty)
+              Text('סיום המופע: ${event.endTime}'),
+            if (event.teamEndTime.isNotEmpty)
+              Text('סיום הצוות: ${event.teamEndTime}'),
             if (event.location.isNotEmpty)
               Text('מיקום: ${_formatLocationForDisplay(event.location)}'),
           ],

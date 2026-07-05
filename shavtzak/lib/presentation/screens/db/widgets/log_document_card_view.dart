@@ -1429,6 +1429,8 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
       'repeatEndDate': 'סיום חזרתיות',
       'startTime': 'שעת התחלה',
       'endTime': 'שעת סיום',
+      'teamEndTime': 'שעת סיום משוערת של הצוות',
+      'participantCount': 'כמות משתתפים',
       'wasAutoRejectedFromCalendar': 'נדחה אוטומטית ביומן',
       'semanticAction': 'פעולה סמנטית',
       'length': 'אורך',
