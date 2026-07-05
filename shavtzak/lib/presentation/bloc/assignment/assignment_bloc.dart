@@ -2184,11 +2184,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         semanticLabelId: event.semanticLabelId,
       );
       if (_extraPastEventsMap.isNotEmpty) {
-        final fresh = await _repository
-            .getAssignmentsByEventIds(_extraPastEventsMap.keys.toList());
-        _extraPastAssignments
-          ..clear()
-          ..addAll(fresh);
+        try {
+          final fresh = await _repository
+              .getAssignmentsByEventIds(_extraPastEventsMap.keys.toList());
+          _extraPastAssignments
+            ..clear()
+            ..addAll(fresh);
+        } catch (_) {
+          // best-effort; next reload reconciles
+        }
       }
       _emitOrLog(emit, const AssignmentOperationSuccess('פרטי השיבוץ עודכנו בהצלחה'));
       _completeActionSuccess(event.completion, 'פרטי השיבוץ עודכנו בהצלחה');
