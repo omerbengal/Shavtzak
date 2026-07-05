@@ -56,7 +56,7 @@ separate):
 | File | Responsibility |
 |---|---|
 | `calendar_share_models.dart` | Pure data classes: `CalendarShareMode {weeks, months}`, `CalendarShareData`, `CalendarShareMonth`, `CalendarShareWeek`, `CalendarShareDay`, `CalendarShareEvent`. No entity/widget/bloc imports. Plain immutable classes (they never enter bloc states, so the Equatable-props rule does not apply — same as `EventAssignmentsShareData`). |
-| `calendar_share_data_builder.dart` | Pure function: `build(List<Event> events, DateTime rangeStart, DateTime rangeEnd, CalendarShareMode mode, DateTime today) → CalendarShareData`. All business logic (filtering, bucketing, time formatting, week/month partitioning) lives here. `today` is a parameter for testability. |
+| `calendar_share_data_builder.dart` | Pure function: `build(List<Event> events, List<Category> categories, DateTime rangeStart, DateTime rangeEnd, CalendarShareMode mode, DateTime today) → CalendarShareData`. All business logic (filtering, bucketing, time formatting, week/month partitioning, category colors + legend) lives here. `today` is a parameter for testability. |
 | `calendar_share_card.dart` | Fixed-width (1080 logical px) RTL widget rendering `CalendarShareData`. This is the capture target. Zero knowledge of entities/blocs/Firestore. |
 | `calendar_share_flow_dialog.dart` | Two-step wizard: step 1 date range, step 2 mode choice. |
 | `calendar_share_preview_dialog.dart` | Thin wrapper over the shared `SharePreviewDialog` (see below), supplying the calendar card, titles, filename, and Logger action names. |
