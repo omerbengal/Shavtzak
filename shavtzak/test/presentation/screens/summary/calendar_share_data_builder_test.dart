@@ -331,6 +331,48 @@ void main() {
           .firstWhere((d) => d.inRange);
       expect(day.events.map((e) => e.name).toList(), ['מוקדם', 'מאוחר']);
     });
+
+    test(
+        'all-day events sort first in a day cell, timed events stay '
+        'chronologically ordered after them', () {
+      final timedEarly = makeEvent(
+        id: 'early',
+        name: 'מוקדם',
+        startDate: DateTime(2026, 7, 8),
+        assemblyTime: '08:00',
+        startTime: '09:00',
+        endTime: '12:00',
+      );
+      final timedLate = makeEvent(
+        id: 'late',
+        name: 'מאוחר',
+        startDate: DateTime(2026, 7, 8),
+        assemblyTime: '18:00',
+        startTime: '19:00',
+        endTime: '23:00',
+      );
+      final allDay = makeEvent(
+        id: 'allday',
+        name: 'כל היום',
+        startDate: DateTime(2026, 7, 8),
+        endTime: '', // empty endTime => renders as all-day (_isAllDayEvent)
+      );
+      final data = CalendarShareDataBuilder.build(
+        events: [timedLate, allDay, timedEarly], // intentionally unsorted
+        rangeStart: DateTime(2026, 7, 8),
+        rangeEnd: DateTime(2026, 7, 8),
+        mode: CalendarShareMode.weeks,
+        today: today,
+        categories: const [],
+      );
+      final day = data.weeks.first.days
+          .whereType<CalendarShareDay>()
+          .firstWhere((d) => d.inRange);
+      expect(
+        day.events.map((e) => e.name).toList(),
+        ['כל היום', 'מוקדם', 'מאוחר'],
+      );
+    });
   });
 
   group('build — range title', () {

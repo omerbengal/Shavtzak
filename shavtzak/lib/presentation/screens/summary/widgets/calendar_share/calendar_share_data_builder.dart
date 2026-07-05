@@ -157,6 +157,11 @@ class CalendarShareDataBuilder {
     return months;
   }
 
+  /// All-day events ('כל היום') sort first in a day cell, ahead of timed
+  /// events; within each group the existing chronological order is kept
+  /// (stable partition). Applies to continuation days too, since the
+  /// partition key is the underlying event's all-day-ness, not its rendered
+  /// timeLines.
   static List<CalendarShareEvent> _eventsForDay(
     List<Event> events,
     DateTime date,
@@ -164,7 +169,8 @@ class CalendarShareDataBuilder {
     DateTime today,
     Map<String, int> colorByCategoryId,
   ) {
-    final result = <CalendarShareEvent>[];
+    final allDayResults = <CalendarShareEvent>[];
+    final timedResults = <CalendarShareEvent>[];
     for (final event in events) {
       if (!event.occursOn(date)) {
         continue;
@@ -172,17 +178,23 @@ class CalendarShareDataBuilder {
       final eventStart = _dateOnly(event.startDate);
       final firstVisibleDay =
           eventStart.isBefore(rangeStart) ? rangeStart : eventStart;
-      result.add(buildShareEvent(
+      final shareEvent = buildShareEvent(
         event,
         today: today,
         isContinuation: date.isAfter(firstVisibleDay),
         categoryColorValue: event.categoryId == null
             ? null
             : colorByCategoryId[event.categoryId],
-      ));
+      );
+      (_isAllDayEvent(event) ? allDayResults : timedResults).add(shareEvent);
     }
-    return result;
+    return [...allDayResults, ...timedResults];
   }
+
+  /// Mirrors the all-day predicate in _buildTimeLines: an event with no
+  /// assembly time or no end time renders as 'כל היום'.
+  static bool _isAllDayEvent(Event event) =>
+      event.assemblyTime.trim().isEmpty || event.endTime.trim().isEmpty;
 
   static String _formatRangeTitle(DateTime start, DateTime end) {
     final startMonth = app_date_utils.DateUtils.hebrewMonthName(start.month);
@@ -246,8 +258,7 @@ class CalendarShareDataBuilder {
 
     final separator =
         actualShowStartTime.isNotEmpty ? actualShowStartTime : startTime;
-    final allDay = assemblyTime.isEmpty || endTime.isEmpty;
-    if (allDay) {
+    if (_isAllDayEvent(event)) {
       return const ['כל היום'];
     }
 
