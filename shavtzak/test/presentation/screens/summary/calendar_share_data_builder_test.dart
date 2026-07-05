@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/presentation/screens/summary/widgets/calendar_share/calendar_share_data_builder.dart';
+import 'package:shavtzak/presentation/screens/summary/widgets/calendar_share/calendar_share_models.dart';
 
 Event makeEvent({
   String id = 'e1',
@@ -130,6 +131,218 @@ void main() {
       expect(share.isContinuation, isTrue);
       expect(share.timeLines, isEmpty);
       expect(share.locationLine, '');
+    });
+  });
+
+  group('build — weeks mode', () {
+    test('pads to full Sunday-start weeks and flags out-of-range days', () {
+      final data = CalendarShareDataBuilder.build(
+        events: const [],
+        rangeStart: DateTime(2026, 7, 6), // Monday
+        rangeEnd: DateTime(2026, 7, 15), // Wednesday
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      expect(data.mode, CalendarShareMode.weeks);
+      expect(data.months, isEmpty);
+      expect(data.weeks, hasLength(2));
+
+      final firstDay = data.weeks.first.days.first!;
+      expect(firstDay.date, DateTime(2026, 7, 5)); // padded Sunday
+      expect(firstDay.inRange, isFalse);
+
+      final lastDay = data.weeks.last.days.last!;
+      expect(lastDay.date, DateTime(2026, 7, 18)); // padded Saturday
+      expect(lastDay.inRange, isFalse);
+
+      expect(data.weeks.first.days[1]!.inRange, isTrue); // Monday 6.7
+
+      for (final week in data.weeks) {
+        expect(week.days, hasLength(7));
+        expect(week.days.whereType<CalendarShareDay>(), hasLength(7));
+      }
+    });
+
+    test('single-day range yields a single week', () {
+      final data = CalendarShareDataBuilder.build(
+        events: const [],
+        rangeStart: DateTime(2026, 7, 8),
+        rangeEnd: DateTime(2026, 7, 8),
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      expect(data.weeks, hasLength(1));
+      final inRangeDays = data.weeks.first.days
+          .whereType<CalendarShareDay>()
+          .where((d) => d.inRange)
+          .toList();
+      expect(inRangeDays, hasLength(1));
+      expect(inRangeDays.single.date, DateTime(2026, 7, 8));
+    });
+
+    test('day.isPast is true strictly before today', () {
+      final data = CalendarShareDataBuilder.build(
+        events: const [],
+        rangeStart: DateTime(2026, 7, 4),
+        rangeEnd: DateTime(2026, 7, 6),
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      final days = <DateTime, CalendarShareDay>{
+        for (final w in data.weeks)
+          for (final d in w.days)
+            if (d != null) d.date: d,
+      };
+      expect(days[DateTime(2026, 7, 4)]!.isPast, isTrue);
+      expect(days[DateTime(2026, 7, 5)]!.isPast, isFalse);
+    });
+
+    test('event appears on its day with details', () {
+      final data = CalendarShareDataBuilder.build(
+        events: [makeEvent(startDate: DateTime(2026, 7, 8))],
+        rangeStart: DateTime(2026, 7, 6),
+        rangeEnd: DateTime(2026, 7, 15),
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      final wednesday = data.weeks.first.days[3]!; // index 3 = Wednesday
+      expect(wednesday.date, DateTime(2026, 7, 8));
+      expect(wednesday.events, hasLength(1));
+      expect(wednesday.events.single.name, 'אירוע בדיקה');
+      expect(wednesday.events.single.isContinuation, isFalse);
+      expect(wednesday.events.single.timeLines, isNotEmpty);
+    });
+
+    test('multi-day event: details on first day, continuation after', () {
+      final data = CalendarShareDataBuilder.build(
+        events: [
+          makeEvent(
+            startDate: DateTime(2026, 7, 8),
+            endDate: DateTime(2026, 7, 10),
+          ),
+        ],
+        rangeStart: DateTime(2026, 7, 6),
+        rangeEnd: DateTime(2026, 7, 15),
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      final week = data.weeks.first;
+      expect(week.days[3]!.events.single.isContinuation, isFalse); // 8.7
+      expect(week.days[4]!.events.single.isContinuation, isTrue); // 9.7
+      expect(week.days[5]!.events.single.isContinuation, isTrue); // 10.7
+      expect(week.days[6]!.events, isEmpty); // 11.7
+    });
+
+    test('multi-day event starting before range: details on first in-range day',
+        () {
+      final data = CalendarShareDataBuilder.build(
+        events: [
+          makeEvent(
+            startDate: DateTime(2026, 7, 4),
+            endDate: DateTime(2026, 7, 8),
+          ),
+        ],
+        rangeStart: DateTime(2026, 7, 6),
+        rangeEnd: DateTime(2026, 7, 15),
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      final week = data.weeks.first;
+      expect(week.days[0]!.events, isEmpty); // 5.7 out of range
+      expect(week.days[1]!.events.single.isContinuation, isFalse); // 6.7
+      expect(week.days[2]!.events.single.isContinuation, isTrue); // 7.7
+      expect(week.days[3]!.events.single.isContinuation, isTrue); // 8.7
+    });
+
+    test('deactivated events are excluded', () {
+      final data = CalendarShareDataBuilder.build(
+        events: [makeEvent(startDate: DateTime(2026, 7, 8), isDeactivated: true)],
+        rangeStart: DateTime(2026, 7, 6),
+        rangeEnd: DateTime(2026, 7, 15),
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      for (final week in data.weeks) {
+        for (final day in week.days) {
+          expect(day!.events, isEmpty);
+        }
+      }
+    });
+
+    test('events within a day are chronologically ordered', () {
+      final late = makeEvent(
+        id: 'late',
+        name: 'מאוחר',
+        startDate: DateTime(2026, 7, 8),
+        assemblyTime: '18:00',
+        startTime: '19:00',
+        endTime: '23:00',
+      );
+      final early = makeEvent(
+        id: 'early',
+        name: 'מוקדם',
+        startDate: DateTime(2026, 7, 8),
+        assemblyTime: '08:00',
+        startTime: '09:00',
+        endTime: '12:00',
+      );
+      final data = CalendarShareDataBuilder.build(
+        events: [late, early], // intentionally unsorted
+        rangeStart: DateTime(2026, 7, 8),
+        rangeEnd: DateTime(2026, 7, 8),
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      final day = data.weeks.first.days
+          .whereType<CalendarShareDay>()
+          .firstWhere((d) => d.inRange);
+      expect(day.events.map((e) => e.name).toList(), ['מוקדם', 'מאוחר']);
+    });
+  });
+
+  group('build — range title', () {
+    test('same month', () {
+      final data = CalendarShareDataBuilder.build(
+        events: const [],
+        rangeStart: DateTime(2026, 7, 5),
+        rangeEnd: DateTime(2026, 7, 31),
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      expect(data.rangeTitle, '5–31 ביולי 2026');
+    });
+
+    test('cross month, same year', () {
+      final data = CalendarShareDataBuilder.build(
+        events: const [],
+        rangeStart: DateTime(2026, 7, 20),
+        rangeEnd: DateTime(2026, 8, 3),
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      expect(data.rangeTitle, '20 ביולי – 3 באוגוסט 2026');
+    });
+
+    test('cross year', () {
+      final data = CalendarShareDataBuilder.build(
+        events: const [],
+        rangeStart: DateTime(2026, 12, 15),
+        rangeEnd: DateTime(2027, 1, 10),
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      expect(data.rangeTitle, '15 בדצמבר 2026 – 10 בינואר 2027');
+    });
+
+    test('single day', () {
+      final data = CalendarShareDataBuilder.build(
+        events: const [],
+        rangeStart: DateTime(2026, 7, 8),
+        rangeEnd: DateTime(2026, 7, 8),
+        mode: CalendarShareMode.weeks,
+        today: today,
+      );
+      expect(data.rangeTitle, '8 ביולי 2026');
     });
   });
 }
