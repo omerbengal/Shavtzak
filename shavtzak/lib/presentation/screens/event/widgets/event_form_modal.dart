@@ -424,9 +424,13 @@ class _EventFormModalState extends State<EventFormModal> {
     required String label,
     required String logKey,
   }) {
-    // Always render the arrow; disable (gray out) it until the source field
-    // has a value to derive from.
-    final enabled = source.text.trim().isNotEmpty;
+    // Always render the arrow; disable (gray out) it unless pressing it would
+    // actually change something — i.e. the source has a value AND the target is
+    // not already equal to the derived value. This grays the arrow after a
+    // sync, and re-enables it if the source time later changes.
+    final derived = app_date_utils.DateUtils.shiftHmByMinutes(
+        source.text.trim(), offsetMinutes);
+    final enabled = derived != null && target.text.trim() != derived;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Align(

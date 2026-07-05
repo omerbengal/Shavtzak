@@ -77,8 +77,41 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     _loadData();
   }
 
+  /// Future events = not deactivated AND ending today or later (date-only, so
+  /// events still happening today are included), sorted by start date.
+  List<Event> _futureEventsFrom(List<Event> events) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return events.where((event) {
+      final endDay = DateTime(
+          event.endDate.year, event.endDate.month, event.endDate.day);
+      return !endDay.isBefore(today) && !event.isDeactivated;
+    }).toList()
+      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+  }
+
+  List<TeamMember> _activeMembersFrom(List<TeamMember> members) {
+    return members
+        .where((member) => member.isActive && !member.isArchived)
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+  }
+
   void _loadData() async {
-    // Load events and team members
+    // Seed immediately from the blocs' CURRENT state: EventBloc/TeamBloc are
+    // app-scoped and often already loaded, in which case re-dispatching Load*
+    // emits an Equatable-equal state that Bloc suppresses — so the listeners
+    // below would never fire and the lists would stay empty.
+    final eventState = context.read<EventBloc>().state;
+    if (eventState is EventsLoaded) {
+      _futureEvents = _futureEventsFrom(eventState.events);
+    }
+    final teamState = context.read<TeamBloc>().state;
+    if (teamState is TeamLoaded) {
+      _teamMembers = _activeMembersFrom(teamState.members);
+    }
+
+    // Load events and team members (refreshes if not already watching)
     context.read<EventBloc>().add(const LoadEvents());
     context.read<TeamBloc>().add(const LoadActiveTeamMembers());
 
@@ -95,10 +128,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
           listener: (context, state) {
             if (state is EventsLoaded) {
               setState(() {
-                _futureEvents = state.events
-                    .where((event) => !event.isPast && !event.isDeactivated)
-                    .toList()
-                  ..sort((a, b) => a.startDate.compareTo(b.startDate));
+                _futureEvents = _futureEventsFrom(state.events);
               });
             }
           },
@@ -107,10 +137,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
           listener: (context, state) {
             if (state is TeamLoaded) {
               setState(() {
-                _teamMembers = state.members
-                    .where((member) => member.isActive && !member.isArchived)
-                    .toList()
-                  ..sort((a, b) => a.name.compareTo(b.name));
+                _teamMembers = _activeMembersFrom(state.members);
               });
             }
           },

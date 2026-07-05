@@ -599,27 +599,12 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       updatedRoleRequirements[entry.key] = entry.value;
     }
 
-    // Create a new event with adjusted quotas
-    return Event(
-      id: proposedEvent.id,
-      name: proposedEvent.name,
-      location: proposedEvent.location,
-      comments: proposedEvent.comments,
-      startDate: proposedEvent.startDate,
-      endDate: proposedEvent.endDate,
-      startTime: proposedEvent.startTime,
-      endTime: proposedEvent.endTime,
-      assemblyTime: proposedEvent.assemblyTime,
-      requiresArmed: proposedEvent.requiresArmed,
+    // Adjust only the quotas + timestamp; copyWith preserves every other field
+    // (times incl. teamEndTime/actualShowStartTime, participantCount, parking,
+    // isDeactivated, inviteAllPermanentWhenUnassigned, Drive fields, ...).
+    return proposedEvent.copyWith(
       roleRequirements: updatedRoleRequirements,
-      categoryId: proposedEvent.categoryId,
-      createdAt: proposedEvent.createdAt,
-      updatedAt:
-          DateTime.now(), // Update timestamp since we're modifying quotas
-      // Preserve Drive fields from proposedEvent (if any)
-      driveFolderId: proposedEvent.driveFolderId,
-      driveFolderLink: proposedEvent.driveFolderLink,
-      relevantForExtendedTeam: proposedEvent.relevantForExtendedTeam,
+      updatedAt: DateTime.now(),
     );
   }
 
