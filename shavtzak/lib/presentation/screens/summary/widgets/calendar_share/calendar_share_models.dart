@@ -1,9 +1,9 @@
-/// Pure data snapshot for the events-calendar share card.
-///
-/// Plain immutable classes with no entity/widget/bloc imports — the card
-/// renders these with zero knowledge of Firestore or domain entities (same
-/// discipline as EventAssignmentsShareData). They never enter bloc states,
-/// so Equatable is intentionally not used.
+// Pure data snapshot for the events-calendar share card.
+//
+// Plain immutable classes with no entity/widget/bloc imports — the card
+// renders these with zero knowledge of Firestore or domain entities (same
+// discipline as EventAssignmentsShareData). They never enter bloc states,
+// so Equatable is intentionally not used.
 
 enum CalendarShareMode { weeks, months }
 
