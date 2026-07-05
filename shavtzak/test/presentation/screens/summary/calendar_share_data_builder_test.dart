@@ -45,7 +45,7 @@ void main() {
         today: today,
         isContinuation: false,
       );
-      expect(share.timeLines, ['התייצבות 15:00–17:00', 'מופע 17:00–22:30']);
+      expect(share.timeLines, ['התייצבות 15:00', 'מופע 17:00–22:30']);
     });
 
     test('actualShowStartTime overrides startTime as separator', () {
@@ -54,7 +54,7 @@ void main() {
         today: today,
         isContinuation: false,
       );
-      expect(share.timeLines, ['התייצבות 15:00–18:00', 'מופע 18:00–22:30']);
+      expect(share.timeLines, ['התייצבות 15:00', 'מופע 18:00–22:30']);
     });
 
     test('all-day when assemblyTime is empty', () {
@@ -75,13 +75,15 @@ void main() {
       expect(share.timeLines, ['כל היום']);
     });
 
-    test('degraded main line when separator is empty (legacy data)', () {
+    test(
+        'main line falls back to assembly start when separator is empty '
+        '(mirrors backend calendar_integration fallback)', () {
       final share = CalendarShareDataBuilder.buildShareEvent(
         makeEvent(startTime: '', actualShowStartTime: ''),
         today: today,
         isContinuation: false,
       );
-      expect(share.timeLines, ['מופע עד 22:30']);
+      expect(share.timeLines, ['מופע 15:00–22:30']);
     });
   });
 

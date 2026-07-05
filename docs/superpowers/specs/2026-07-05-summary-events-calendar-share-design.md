@@ -121,14 +121,21 @@ allDay    = assemblyTime.isEmpty || endTime.isEmpty
 - If `allDay` → single line: **"כל היום"**.
 - Else:
   - Assembly line, if `assemblyTime.isNotEmpty && separator.isNotEmpty`:
-    **"התייצבות {assemblyTime}–{separator}"**.
+    **"התייצבות {assemblyTime}"** — the assembly END time is deliberately
+    omitted (revised 2026-07-05): it always equals the מופע start shown on the
+    next line, and the full range made the line wrap in day cells.
   - Main line, if `endTime.isNotEmpty && (separator.isNotEmpty || assemblyTime.isNotEmpty)`:
-    **"מופע {separator}–{endTime}"**; when `separator` is empty (theoretically
-    possible only for legacy data — the event form requires `startTime`), degrade
-    to **"מופע עד {endTime}"**.
+    **"מופע {effectiveStart}–{endTime}"** where
+    `effectiveStart = separator.isNotEmpty ? separator : assemblyTime` — this
+    mirrors the backend's main-event fallback (`calendar_integration.ts`,
+    main event start), so the card matches the exact block Google Calendar
+    shows even for events with only התייצבות + סיום.
 
-`startTime` is form-required, so in practice `separator` is never empty; the
-degraded form is a data-robustness guard, not an expected path.
+Note (corrected 2026-07-05): ALL time fields are optional in the event form
+(labeled "אופציונלי"), so the empty-separator case is reachable through the
+UI — the original claim that `startTime` is form-required was wrong.
+As a rendering safety net, the card wraps every time line in
+`FittedBox(scaleDown)` so no time line can ever wrap to two lines.
 
 ## Rendering spec (`CalendarShareCard`)
 
@@ -147,7 +154,7 @@ degraded form is a data-robustness guard, not an expected path.
 
   ```
   שם האירוע               (w600)
-  התייצבות 15:00–17:00
+  התייצבות 15:00
   מופע 17:00–22:30
   📍 גן הפסלים, חיפה
   ```

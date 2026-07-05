@@ -261,7 +261,12 @@ class _EventBlock extends StatelessWidget {
             for (final line in event.timeLines)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
-                child: Text(line, style: detailStyle),
+                // Time lines must never wrap: scale down to fit one line.
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(line, softWrap: false, style: detailStyle),
+                ),
               ),
             if (event.locationLine.isNotEmpty)
               Padding(

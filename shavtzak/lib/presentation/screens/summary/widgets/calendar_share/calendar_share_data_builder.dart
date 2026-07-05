@@ -214,14 +214,18 @@ class CalendarShareDataBuilder {
     }
 
     final lines = <String>[];
+    // Assembly end time is omitted: it always equals the מופע start shown on
+    // the next line (separator), so a single time keeps the cell line short.
     if (assemblyTime.isNotEmpty && separator.isNotEmpty) {
-      lines.add('התייצבות $assemblyTime–$separator');
+      lines.add('התייצבות $assemblyTime');
     }
     if (endTime.isNotEmpty &&
         (separator.isNotEmpty || assemblyTime.isNotEmpty)) {
-      lines.add(
-        separator.isNotEmpty ? 'מופע $separator–$endTime' : 'מופע עד $endTime',
-      );
+      // Mirror of the backend fallback (calendar_integration.ts, main event
+      // start): separator when present, else assembly time — so the card
+      // matches the block the boss sees in Google Calendar.
+      final effectiveStart = separator.isNotEmpty ? separator : assemblyTime;
+      lines.add('מופע $effectiveStart–$endTime');
     }
     return lines;
   }
