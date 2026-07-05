@@ -288,6 +288,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       await _repository.createAssignment(event.assignment);
       _syncAttendeesForAffectedEvents(nextAssignment: event.assignment);
+      await _refreshExtraPastEvent(event.assignment.eventId);
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
 
@@ -361,6 +362,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         previousAssignment: previousAssignment,
         nextAssignment: event.assignment,
       );
+      await _refreshExtraPastEvent(event.assignment.eventId);
+      if (previousAssignment != null &&
+          previousAssignment.eventId != event.assignment.eventId) {
+        await _refreshExtraPastEvent(previousAssignment.eventId);
+      }
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ עודכן בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ עודכן בהצלחה');
 
@@ -418,6 +424,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Sync attendees for calendar event (will remove the deleted attendee)
       _syncAttendeesForAffectedEvents(previousAssignment: assignmentToDelete);
+      if (assignmentToDelete != null) {
+        await _refreshExtraPastEvent(assignmentToDelete.eventId);
+      }
 
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ נמחק בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ נמחק בהצלחה');
@@ -1237,6 +1246,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
 
       _syncAttendeesForAffectedEvents(nextAssignment: event.assignment);
+      await _refreshExtraPastEvent(event.assignment.eventId);
 
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
@@ -1315,6 +1325,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         previousAssignment: previousAssignment,
         nextAssignment: event.assignment,
       );
+      await _refreshExtraPastEvent(event.assignment.eventId);
+      if (previousAssignment != null &&
+          previousAssignment.eventId != event.assignment.eventId) {
+        await _refreshExtraPastEvent(previousAssignment.eventId);
+      }
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
       _emitOrLog(emit, AssignmentSlotsLoaded(
@@ -1395,6 +1410,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Sync calendar attendees (will remove the deleted attendee)
       _syncAttendeesForAffectedEvents(previousAssignment: assignmentToDelete);
+      if (assignmentToDelete != null) {
+        await _refreshExtraPastEvent(assignmentToDelete.eventId);
+      }
 
       // CRITICAL FIX: Remove pending operation after successful delete
       _pendingOperations.remove(event.slotKey);
@@ -1437,6 +1455,20 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     for (final eventId in affectedEventIds) {
       calendarSyncBloc.add(SyncAttendeesForAppEvent(eventId: eventId));
+    }
+  }
+
+  /// If [eventId] is an event older than the window (its rows come from the
+  /// extra-past cache, not the live stream), re-fetch its assignments so an
+  /// edit/delete is reflected instead of being reverted by the next rebuild.
+  Future<void> _refreshExtraPastEvent(String eventId) async {
+    if (!_extraPastEventsMap.containsKey(eventId)) return;
+    try {
+      final fresh = await _repository.getAssignmentsByEventIds([eventId]);
+      _extraPastAssignments.removeWhere((a) => a.eventId == eventId);
+      _extraPastAssignments.addAll(fresh);
+    } catch (_) {
+      // Best-effort; the next full reload will reconcile.
     }
   }
 
@@ -2150,6 +2182,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         alternativePhoneNumber: event.alternativePhoneNumber,
         semanticLabelId: event.semanticLabelId,
       );
+      if (_extraPastEventsMap.isNotEmpty) {
+        final fresh = await _repository
+            .getAssignmentsByEventIds(_extraPastEventsMap.keys.toList());
+        _extraPastAssignments
+          ..clear()
+          ..addAll(fresh);
+      }
       _emitOrLog(emit, const AssignmentOperationSuccess('פרטי השיבוץ עודכנו בהצלחה'));
       _completeActionSuccess(event.completion, 'פרטי השיבוץ עודכנו בהצלחה');
 
