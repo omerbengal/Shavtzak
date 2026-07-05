@@ -69,6 +69,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   int _extraPastRowsRevealed = 0; // reveal cap for extra-past rows
   DateTime? _oldestLoadedEventStart; // pagination cursor
   bool _pastPagingExhausted = false; // reached the start of history
+  bool _loadingMorePast = false; // authoritative in-flight guard (state field can be stomped by concurrent rebuilds)
 
   // Keep pending operations independent of state (survives error states)
   Map<String, PendingOperation> _pendingOperations = {};
@@ -1729,7 +1730,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: filterToUse,
         pendingOperations: _pendingOperations,
         hasMorePast: capped.hasMore,
-        isLoadingMorePast: false,
+        isLoadingMorePast: _loadingMorePast,
       ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -1999,7 +2000,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         selectedEventIds: rebuildEvent.selectedEventIds,
         pendingOperations: _pendingOperations,
         hasMorePast: capped.hasMore,
-        isLoadingMorePast: false,
+        isLoadingMorePast: _loadingMorePast,
       ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בבניית שיבוצים: $e'));
@@ -2252,8 +2253,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   ) async {
     if (state is! AssignmentSlotsLoaded) return;
     final current = state as AssignmentSlotsLoaded;
-    if (!current.hasMorePast || current.isLoadingMorePast) return;
+    // Use the private flag as the authoritative re-entrancy guard: the state's
+    // isLoadingMorePast can be stomped false by an unrelated concurrent rebuild.
+    if (_loadingMorePast || !current.hasMorePast) return;
 
+    _loadingMorePast = true;
     _emitOrLog(emit, current.copyWith(isLoadingMorePast: true));
 
     final target = _extraPastRowsRevealed + _pastLoadMoreRowChunk;
@@ -2292,6 +2296,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       _extraPastRowsRevealed = target;
 
+      // Clear the in-flight flag BEFORE the rebuild so its emit carries
+      // isLoadingMorePast: _loadingMorePast == false.
+      _loadingMorePast = false;
+
       // Rebuild from the live window data with the extra-past cache merged in.
       add(RebuildAssignmentSlotsFromData(
         _repository.getCurrentAssignments(),
@@ -2300,6 +2308,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         _currentEventFilter,
       ));
     } catch (e) {
+      _loadingMorePast = false;
       _emitOrLog(emit, current.copyWith(isLoadingMorePast: false));
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת היסטוריה: $e'));
     }
