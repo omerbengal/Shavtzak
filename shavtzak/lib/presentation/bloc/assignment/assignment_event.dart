@@ -180,6 +180,11 @@ class ClearEventFilter extends AssignmentEvent {
   const ClearEventFilter();
 }
 
+/// Reveal the next page (25 rows) of history older than the 90-day window.
+class LoadMorePastAssignmentSlots extends AssignmentEvent {
+  const LoadMorePastAssignmentSlots();
+}
+
 /// Internal event to rebuild slots (triggered by real-time streams)
 /// Note: Should only be used internally by AssignmentBloc
 class RebuildAssignmentSlots extends AssignmentEvent {
