@@ -54,7 +54,19 @@ separate):
 | `calendar_share_data_builder.dart` | Pure function: `build(List<Event> events, DateTime rangeStart, DateTime rangeEnd, CalendarShareMode mode, DateTime today) → CalendarShareData`. All business logic (filtering, bucketing, time formatting, week/month partitioning) lives here. `today` is a parameter for testability. |
 | `calendar_share_card.dart` | Fixed-width (1080 logical px) RTL widget rendering `CalendarShareData`. This is the capture target. Zero knowledge of entities/blocs/Firestore. |
 | `calendar_share_flow_dialog.dart` | Two-step wizard: step 1 date range, step 2 mode choice. |
-| `calendar_share_preview_dialog.dart` | Pattern-copy of `EventAssignmentsSharePreviewDialog`: `RepaintBoundary` capture → PNG → שתף / העתק buttons via existing `AssignmentShareImageService`. |
+| `calendar_share_preview_dialog.dart` | Thin wrapper over the shared `SharePreviewDialog` (see below), supplying the calendar card, titles, filename, and Logger action names. |
+
+**Shared preview extraction** (decision revised 2026-07-05, supersedes the
+original "pattern-copy" approach): the capture/share machinery currently
+private to `EventAssignmentsSharePreviewDialog` (`RepaintBoundary` → PNG →
+share/copy → status messages → button row) is lifted into a new generic
+`lib/presentation/widgets/share_preview_dialog.dart` (`SharePreviewDialog`),
+parameterized by card widget, titles, filename, and Logger action names.
+`EventAssignmentsSharePreviewDialog` keeps its exact public API and becomes a
+thin wrapper delegating to it — zero call-site changes to the assignments
+feature. The calendar preview is a second thin wrapper. Rationale: the two
+dialogs differ only in data; the ~200-line behavior core is identical, and a
+third share surface is plausible.
 
 **Entry point**: new `Icons.calendar_month` action button in the SummaryScreen
 AppBar (tooltip "לוח אירועים"), alongside the existing home/logout actions. Shows
@@ -183,6 +195,9 @@ typo gets fixed as part of this work.
 
 - `flutter analyze` must pass (per CLAUDE.md; Omer runs the app himself for
   manual verification in test + production environments).
+- Manual regression smoke: the existing "שתף תמונת שיבוצים" flow still
+  previews/shares/copies correctly, since its dialog now delegates to the
+  shared `SharePreviewDialog`.
 - **Unit tests for `CalendarShareDataBuilder`** — the first tests in the repo.
   Pure Dart, no mocks/fakes needed. Coverage targets:
   - Time semantics: separator fallback (`actualShowStartTime` → `startTime`),

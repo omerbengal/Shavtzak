@@ -1395,20 +1395,34 @@ git commit -m "feat(summary): CalendarShareCard 1080px render widget"
 
 ---
 
-### Task 6: CalendarSharePreviewDialog — capture + share/copy
+### Task 6: Shared SharePreviewDialog + thin wrappers (assignments + calendar)
 
-Pattern-copy of `EventAssignmentsSharePreviewDialog` (`lib/presentation/screens/event/widgets/event_assignments_share_preview_dialog.dart`) adapted for the calendar card. The private `_ShareImageAction` enum and `_ButtonProgressIndicator` are deliberately duplicated (they are private to the source file; this matches the repo's pattern-copy style).
+Extract the generic capture/share preview machinery out of
+`EventAssignmentsSharePreviewDialog` into a reusable `SharePreviewDialog`,
+keep the assignments dialog's public API as a thin wrapper (**zero call-site
+changes** — the only call site is `event_assignments_dialog.dart:343-346`),
+and add the calendar preview as a second thin wrapper. This supersedes the
+spec's original "pattern-copy" wording (extraction approved by Omer,
+2026-07-05). The private `_ShareImageAction` enum and
+`_ButtonProgressIndicator` move into the generic file.
 
 **Files:**
+- Create: `shavtzak/lib/presentation/widgets/share_preview_dialog.dart`
+- Modify (full rewrite): `shavtzak/lib/presentation/screens/event/widgets/event_assignments_share_preview_dialog.dart`
 - Create: `shavtzak/lib/presentation/screens/summary/widgets/calendar_share/calendar_share_preview_dialog.dart`
 
 **Interfaces:**
-- Consumes: Task 2's `CalendarShareData`, Task 5's `CalendarShareCard`, `AssignmentShareImageService` (`lib/core/services/assignment_share_image_service.dart`), `Logger` (`lib/core/debug/logger.dart`).
-- Produces: `CalendarSharePreviewDialog({required CalendarShareData data, required DateTime rangeStart, required DateTime rangeEnd, bool autoStartShare = true})` — opened by Task 7's flow.
+- Consumes: Task 2's `CalendarShareData`, Task 5's `CalendarShareCard`, existing `EventAssignmentsShareCard`/`EventAssignmentsShareData`, `AssignmentShareImageService` (`lib/core/services/assignment_share_image_service.dart`), `Logger` (`lib/core/debug/logger.dart`).
+- Produces:
+  - `SharePreviewDialog({required Widget card, required String appBarTitle, required String filename, required String shareTitle, required String shareText, required String closeLogAction, required String shareLogAction, required String copyLogAction, bool autoStartShare = true})`
+  - `EventAssignmentsSharePreviewDialog({required EventAssignmentsShareData data, bool autoStartShare = true})` — public API **unchanged**.
+  - `CalendarSharePreviewDialog({required CalendarShareData data, required DateTime rangeStart, required DateTime rangeEnd, bool autoStartShare = true})` — opened by Task 7's flow.
 
-- [ ] **Step 1: Create the preview dialog**
+- [ ] **Step 1: Create the generic dialog**
 
-Create `shavtzak/lib/presentation/screens/summary/widgets/calendar_share/calendar_share_preview_dialog.dart`:
+Create `shavtzak/lib/presentation/widgets/share_preview_dialog.dart`. The body
+is a lift of the current `event_assignments_share_preview_dialog.dart` with
+the feature-specific values turned into constructor parameters:
 
 ```dart
 import 'dart:typed_data';
@@ -1416,34 +1430,45 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:intl/intl.dart';
 
-import '../../../../../core/debug/logger.dart';
-import '../../../../../core/services/assignment_share_image_service.dart';
-import 'calendar_share_card.dart';
-import 'calendar_share_models.dart';
+import '../../core/debug/logger.dart';
+import '../../core/services/assignment_share_image_service.dart';
 
-class CalendarSharePreviewDialog extends StatefulWidget {
-  final CalendarShareData data;
-  final DateTime rangeStart;
-  final DateTime rangeEnd;
+/// Generic full-screen share-preview dialog: renders a fixed-width card
+/// inside a RepaintBoundary, captures it as a PNG, and offers share / copy
+/// actions via AssignmentShareImageService.
+///
+/// Feature wrappers (assignments image, events calendar) supply the card
+/// widget, titles, filename, and Logger action names.
+class SharePreviewDialog extends StatefulWidget {
+  final Widget card;
+  final String appBarTitle;
+  final String filename;
+  final String shareTitle;
+  final String shareText;
+  final String closeLogAction;
+  final String shareLogAction;
+  final String copyLogAction;
   final bool autoStartShare;
 
-  const CalendarSharePreviewDialog({
+  const SharePreviewDialog({
     super.key,
-    required this.data,
-    required this.rangeStart,
-    required this.rangeEnd,
+    required this.card,
+    required this.appBarTitle,
+    required this.filename,
+    required this.shareTitle,
+    required this.shareText,
+    required this.closeLogAction,
+    required this.shareLogAction,
+    required this.copyLogAction,
     this.autoStartShare = true,
   });
 
   @override
-  State<CalendarSharePreviewDialog> createState() =>
-      _CalendarSharePreviewDialogState();
+  State<SharePreviewDialog> createState() => _SharePreviewDialogState();
 }
 
-class _CalendarSharePreviewDialogState
-    extends State<CalendarSharePreviewDialog> {
+class _SharePreviewDialogState extends State<SharePreviewDialog> {
   final GlobalKey _captureKey = GlobalKey();
   _ShareImageAction? _activeAction;
   String _message = 'אפשר לצלם את המסך הזה כתמונה אחת';
@@ -1497,9 +1522,9 @@ class _CalendarSharePreviewDialogState
       final result = action == _ShareImageAction.share
           ? await const AssignmentShareImageService().sharePng(
               pngBytes: pngBytes,
-              filename: _buildFilename(),
-              title: 'לוח אירועים',
-              text: 'לוח אירועים ${widget.data.rangeTitle}',
+              filename: widget.filename,
+              title: widget.shareTitle,
+              text: widget.shareText,
             )
           : await const AssignmentShareImageService().copyPng(
               pngBytes: pngBytes,
@@ -1556,13 +1581,6 @@ class _CalendarSharePreviewDialogState
     return Uint8List.view(byteData.buffer);
   }
 
-  String _buildFilename() {
-    final formatter = DateFormat('yyyy-MM-dd');
-    return 'shavtzak_events_calendar_'
-        '${formatter.format(widget.rangeStart)}_'
-        '${formatter.format(widget.rangeEnd)}.png';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -1570,12 +1588,12 @@ class _CalendarSharePreviewDialogState
       child: Dialog.fullscreen(
         child: Scaffold(
           appBar: AppBar(
-            title: const Text('לוח אירועים'),
+            title: Text(widget.appBarTitle),
             leading: IconButton(
               icon: const Icon(Icons.close),
               tooltip: 'סגירה',
               onPressed: () {
-                Logger.action('tap:close:calendarSharePreview');
+                Logger.action(widget.closeLogAction);
                 Navigator.of(context).pop();
               },
             ),
@@ -1597,9 +1615,7 @@ class _CalendarSharePreviewDialogState
                               alignment: Alignment.topCenter,
                               child: RepaintBoundary(
                                 key: _captureKey,
-                                child: CalendarShareCard(
-                                  data: widget.data,
-                                ),
+                                child: widget.card,
                               ),
                             ),
                           ),
@@ -1627,7 +1643,7 @@ class _CalendarSharePreviewDialogState
                               onPressed: _isBusy
                                   ? null
                                   : () {
-                                      Logger.action('tap:shareCalendarImage');
+                                      Logger.action(widget.shareLogAction);
                                       _shareImage();
                                     },
                               icon: _activeAction == _ShareImageAction.share
@@ -1646,7 +1662,7 @@ class _CalendarSharePreviewDialogState
                               onPressed: _isBusy
                                   ? null
                                   : () {
-                                      Logger.action('tap:copyCalendarImage');
+                                      Logger.action(widget.copyLogAction);
                                       _copyImage();
                                     },
                               icon: _activeAction == _ShareImageAction.copy
@@ -1692,14 +1708,127 @@ class _ButtonProgressIndicator extends StatelessWidget {
 }
 ```
 
-- [ ] **Step 2: Analyze and commit**
+Behavior notes (must hold): identical strings, identical
+`autoStartShare` post-frame silent share, identical capture
+(`pixelRatio: 1.0`, PNG), identical busy/disabled handling.
 
-Run: `cd shavtzak && flutter analyze`
-Expected: `No issues found!`
+- [ ] **Step 2: Rewrite the assignments dialog as a thin wrapper**
+
+Replace the ENTIRE contents of
+`shavtzak/lib/presentation/screens/event/widgets/event_assignments_share_preview_dialog.dart` with:
+
+```dart
+import 'package:flutter/material.dart';
+
+import '../../../widgets/share_preview_dialog.dart';
+import 'event_assignments_share_card.dart';
+import 'event_assignments_share_models.dart';
+
+/// Thin wrapper over [SharePreviewDialog] for the assignments-image share.
+/// Public API is unchanged — the call site in event_assignments_dialog.dart
+/// must not need any modification.
+class EventAssignmentsSharePreviewDialog extends StatelessWidget {
+  final EventAssignmentsShareData data;
+  final bool autoStartShare;
+
+  const EventAssignmentsSharePreviewDialog({
+    super.key,
+    required this.data,
+    this.autoStartShare = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SharePreviewDialog(
+      card: EventAssignmentsShareCard(data: data),
+      appBarTitle: 'תמונת שיבוצים',
+      filename: _buildFilename(data.eventName),
+      shareTitle: 'תמונת שיבוצים',
+      shareText: 'שיבוצים ל${data.eventName}',
+      closeLogAction: 'tap:close:sharePreview',
+      shareLogAction: 'tap:shareImage',
+      copyLogAction: 'tap:copyImage',
+      autoStartShare: autoStartShare,
+    );
+  }
+
+  String _buildFilename(String eventName) {
+    final safeName = eventName
+        .trim()
+        .replaceAll(RegExp(r'[\\/:*?"<>|\s]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+    final suffix = safeName.isEmpty ? 'event' : safeName;
+    return 'shavtzak_assignments_$suffix.png';
+  }
+}
+```
+
+The Logger action names are copied verbatim from the original file
+(`tap:close:sharePreview`, `tap:shareImage`, `tap:copyImage`) so existing
+debug-log traces keep their meaning.
+
+- [ ] **Step 3: Create the calendar preview wrapper**
+
+Create `shavtzak/lib/presentation/screens/summary/widgets/calendar_share/calendar_share_preview_dialog.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../../../../widgets/share_preview_dialog.dart';
+import 'calendar_share_card.dart';
+import 'calendar_share_models.dart';
+
+/// Thin wrapper over [SharePreviewDialog] for the events-calendar share.
+class CalendarSharePreviewDialog extends StatelessWidget {
+  final CalendarShareData data;
+  final DateTime rangeStart;
+  final DateTime rangeEnd;
+  final bool autoStartShare;
+
+  const CalendarSharePreviewDialog({
+    super.key,
+    required this.data,
+    required this.rangeStart,
+    required this.rangeEnd,
+    this.autoStartShare = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final formatter = DateFormat('yyyy-MM-dd');
+    return SharePreviewDialog(
+      card: CalendarShareCard(data: data),
+      appBarTitle: 'לוח אירועים',
+      filename: 'shavtzak_events_calendar_'
+          '${formatter.format(rangeStart)}_'
+          '${formatter.format(rangeEnd)}.png',
+      shareTitle: 'לוח אירועים',
+      shareText: 'לוח אירועים ${data.rangeTitle}',
+      closeLogAction: 'tap:close:calendarSharePreview',
+      shareLogAction: 'tap:shareCalendarImage',
+      copyLogAction: 'tap:copyCalendarImage',
+      autoStartShare: autoStartShare,
+    );
+  }
+}
+```
+
+- [ ] **Step 4: Verify the call site is untouched and everything compiles**
+
+Run: `grep -rn "EventAssignmentsSharePreviewDialog" shavtzak/lib`
+Expected: exactly two files — the wrapper itself and the existing call site
+`shavtzak/lib/presentation/screens/event/widgets/event_assignments_dialog.dart`
+(unchanged; `git status` must show no modification to it).
+
+Run: `cd shavtzak && flutter test && flutter analyze`
+Expected: all tests PASS; `No issues found!`
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add shavtzak/lib/presentation/screens/summary/widgets/calendar_share/calendar_share_preview_dialog.dart
-git commit -m "feat(summary): calendar share preview dialog with PNG share/copy"
+git add shavtzak/lib/presentation/widgets/share_preview_dialog.dart shavtzak/lib/presentation/screens/event/widgets/event_assignments_share_preview_dialog.dart shavtzak/lib/presentation/screens/summary/widgets/calendar_share/calendar_share_preview_dialog.dart
+git commit -m "refactor(share): extract generic SharePreviewDialog; add calendar preview wrapper"
 ```
 
 ---
@@ -2034,6 +2163,7 @@ Re-read `docs/superpowers/specs/2026-07-05-summary-events-calendar-share-design.
 - Filename `shavtzak_events_calendar_<yyyy-MM-dd>_<yyyy-MM-dd>.png`.
 - Error snackbar 'לא ניתן להכין לוח אירועים'.
 - Card: 1080px, RTL, 'לוח אירועים' header, 'נוצר משבצק' footer.
+- Shared extraction: `EventAssignmentsSharePreviewDialog`'s constructor is unchanged and `event_assignments_dialog.dart` shows no diff vs main; the generic `SharePreviewDialog` carries the exact original Hebrew strings and capture behavior.
 
 - [ ] **Step 3: Report for manual testing**
 
@@ -2042,3 +2172,4 @@ Summarize for Omer what to manually verify in the running app (he runs it himsel
 2. Share and copy buttons work in a browser that supports them; fallback message shows otherwise.
 3. A >6-month range is rejected with the snackbar and the picker re-opens.
 4. Multi-day event shows details on day 1 and '(המשך)' after.
+5. Regression smoke: the existing שתף תמונת שיבוצים flow (summary tile → צפה בשיבוצים → share icon) still previews, shares, and copies correctly — its dialog now delegates to the shared SharePreviewDialog.
