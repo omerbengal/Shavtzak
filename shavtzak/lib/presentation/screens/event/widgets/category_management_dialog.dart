@@ -67,6 +67,8 @@ class _CategoryColorPicker extends StatelessWidget {
   Widget _buildColorTile(Color color) {
     final colorValue = color.toARGB32();
     final isSelected = selectedColorValue == colorValue;
+    // Keep the checkmark visible on light swatches (yellow/lime)
+    final checkColor = color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
     return InkWell(
       onTap: () => onChanged(colorValue),
       customBorder: const CircleBorder(),
@@ -78,7 +80,7 @@ class _CategoryColorPicker extends StatelessWidget {
           color: color,
           border: isSelected ? Border.all(color: Colors.black87, width: 2.5) : null,
         ),
-        child: isSelected ? const Icon(Icons.check, size: 18, color: Colors.white) : null,
+        child: isSelected ? Icon(Icons.check, size: 18, color: checkColor) : null,
       ),
     );
   }
@@ -842,14 +844,28 @@ class _CategoryManagementDialogState extends State<CategoryManagementDialog> {
                     ? null
                     : () async {
                         Logger.action('tap:renameCategory', {'categoryId': category.id});
+                        // Resolve the freshest category from live bloc state so we
+                        // don't write back stale fields (e.g. sortOrder/isArchived
+                        // changed by another admin since the dialog was opened).
+                        final blocState = context.read<CategoryBloc>().state;
+                        final freshCategory = blocState is CategoriesLoaded
+                            ? [
+                                ...blocState.activeCategories,
+                                ...blocState.archivedCategories,
+                              ].firstWhere(
+                                (c) => c.id == category.id,
+                                orElse: () => category,
+                              )
+                            : category;
                         final trimmedName = controller.text.trim();
-                        final nameChanged = trimmedName.isNotEmpty && trimmedName != category.name;
-                        final colorChanged = selectedColorValue != category.colorValue;
+                        final nameChanged =
+                            trimmedName.isNotEmpty && trimmedName != freshCategory.name;
+                        final colorChanged = selectedColorValue != freshCategory.colorValue;
                         if (trimmedName.isEmpty || (!nameChanged && !colorChanged)) {
                           return;
                         }
                         setDialogState(() => isSaving = true);
-                        final updatedCategory = category.copyWith(
+                        final updatedCategory = freshCategory.copyWith(
                           name: trimmedName,
                           colorValue: selectedColorValue,
                           clearColorValue: selectedColorValue == null,
