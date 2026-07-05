@@ -19,7 +19,7 @@
 - Range cap: `rangeEnd` must be **strictly before** `DateTime(rangeStart.year, rangeStart.month + 6, rangeStart.day)`.
 - Time semantics must mirror `lib/core/services/calendar_sync_service.dart:355-368` exactly: `separator = actualShowStartTime.isNotEmpty ? actualShowStartTime : startTime`; all-day iff `assemblyTime.isEmpty || endTime.isEmpty`.
 - Day bucketing/`today` must use Israel calendar days (`IsraelCalendar.calendarDay`), never raw browser-local days.
-- `flutter analyze` must report "No issues found!" at the end of every task.
+- `flutter analyze` must introduce NO NEW issues. Baseline: main already has 108 pre-existing infos (deprecations etc.) — compare counts before/after; new code must contribute zero.
 - Exact user-facing strings are specified per task — copy them verbatim (Hebrew strings are load-bearing).
 - Commit at the end of every task. End each commit message body with:
   ```
@@ -147,7 +147,7 @@ Expected: PASS (all tests green).
 - [ ] **Step 5: Analyze and commit**
 
 Run: `cd shavtzak && flutter analyze`
-Expected: `No issues found!`
+Expected: no new issues vs baseline (108 pre-existing infos on main; your changes add zero)
 
 ```bash
 git add shavtzak/lib/core/utils/date_utils.dart shavtzak/test/core/utils/date_utils_test.dart
@@ -494,7 +494,7 @@ Expected: PASS.
 - [ ] **Step 6: Analyze and commit**
 
 Run: `cd shavtzak && flutter analyze`
-Expected: `No issues found!`
+Expected: no new issues vs baseline (108 pre-existing infos on main; your changes add zero)
 
 ```bash
 git add shavtzak/lib/presentation/screens/summary/widgets/calendar_share/ shavtzak/test/presentation/screens/summary/
@@ -881,7 +881,7 @@ Expected: PASS (all groups).
 - [ ] **Step 5: Analyze and commit**
 
 Run: `cd shavtzak && flutter analyze`
-Expected: `No issues found!`
+Expected: no new issues vs baseline (108 pre-existing infos on main; your changes add zero)
 
 ```bash
 git add shavtzak/lib/presentation/screens/summary/widgets/calendar_share/calendar_share_data_builder.dart shavtzak/test/presentation/screens/summary/calendar_share_data_builder_test.dart
@@ -1080,7 +1080,7 @@ Expected: PASS.
 - [ ] **Step 5: Analyze and commit**
 
 Run: `cd shavtzak && flutter analyze`
-Expected: `No issues found!`
+Expected: no new issues vs baseline (108 pre-existing infos on main; your changes add zero)
 
 ```bash
 git add shavtzak/lib/presentation/screens/summary/widgets/calendar_share/calendar_share_data_builder.dart shavtzak/test/presentation/screens/summary/calendar_share_data_builder_test.dart
@@ -1386,7 +1386,7 @@ class _EventBlock extends StatelessWidget {
 - [ ] **Step 2: Analyze and commit**
 
 Run: `cd shavtzak && flutter analyze`
-Expected: `No issues found!`
+Expected: no new issues vs baseline (108 pre-existing infos on main; your changes add zero)
 
 ```bash
 git add shavtzak/lib/presentation/screens/summary/widgets/calendar_share/calendar_share_card.dart
@@ -2148,7 +2148,7 @@ git commit -m "feat(summary): calendar share flow — range picker, mode choice,
 - [ ] **Step 1: Full clean check**
 
 Run: `cd shavtzak && flutter analyze && flutter test`
-Expected: `No issues found!` and all tests pass.
+Expected: no new issues vs baseline (108 pre-existing infos on main; your changes add zero) and all tests pass.
 
 - [ ] **Step 2: Spec conformance checklist**
 
