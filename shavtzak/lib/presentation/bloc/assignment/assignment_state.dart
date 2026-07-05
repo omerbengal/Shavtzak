@@ -74,26 +74,47 @@ class AssignmentSlotsLoaded extends AssignmentState {
   final Set<String> selectedEventIds; // Event IDs to filter by (empty = no filter)
   final Map<String, PendingOperation> pendingOperations; // Tracks pending optimistic updates
 
+  /// True when older history remains to be loaded via "load more".
+  final bool hasMorePast;
+
+  /// True while a "load more" fetch is in flight.
+  final bool isLoadingMorePast;
+
   AssignmentSlotsLoaded(
     this.slots, {
     this.selectedEventIds = const {},
     this.pendingOperations = const {},
+    this.hasMorePast = false,
+    this.isLoadingMorePast = false,
   })  : totalSlots = slots.length,
         filledSlots = slots.where((s) => s.isFilled).length,
         unfilledSlots = slots.where((s) => !s.isFilled).length;
 
   @override
-  List<Object?> get props => [slots, totalSlots, filledSlots, unfilledSlots, selectedEventIds, pendingOperations];
+  List<Object?> get props => [
+        slots,
+        totalSlots,
+        filledSlots,
+        unfilledSlots,
+        selectedEventIds,
+        pendingOperations,
+        hasMorePast,
+        isLoadingMorePast,
+      ];
 
   /// Create a copy with new filter or pending operations
   AssignmentSlotsLoaded copyWith({
     Set<String>? selectedEventIds,
     Map<String, PendingOperation>? pendingOperations,
+    bool? hasMorePast,
+    bool? isLoadingMorePast,
   }) {
     return AssignmentSlotsLoaded(
       slots,
       selectedEventIds: selectedEventIds ?? this.selectedEventIds,
       pendingOperations: pendingOperations ?? this.pendingOperations,
+      hasMorePast: hasMorePast ?? this.hasMorePast,
+      isLoadingMorePast: isLoadingMorePast ?? this.isLoadingMorePast,
     );
   }
 }

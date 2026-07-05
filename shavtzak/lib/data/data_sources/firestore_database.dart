@@ -627,6 +627,29 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<List<Event>> getEventsBeforeDate(DateTime cursor,
+      {required int limit}) async {
+    try {
+      final cursorTimestamp = Timestamp.fromDate(cursor);
+      final snapshot = await _firestore
+          .collection(_eventsCollection)
+          .where('startDate', isLessThan: cursorTimestamp)
+          .orderBy('startDate', descending: true)
+          .limit(limit)
+          .get();
+
+      final events = snapshot.docs
+          .map((doc) => EventModel.fromFirestore(doc).toEntity())
+          .toList();
+      // Newest-of-the-older first so the caller can append them below the window.
+      events.sort(compareEventsChronologicallyDescending);
+      return events;
+    } catch (e) {
+      throw DatabaseException('Failed to get events before date: $e');
+    }
+  }
+
+  @override
   Stream<List<Event>> watchEventsByDateRange(DateTime start, DateTime end) {
     final startTimestamp = Timestamp.fromDate(start);
     final endTimestamp = Timestamp.fromDate(end);
@@ -883,6 +906,27 @@ class FirestoreDatabase implements DatabaseInterface {
       return await _populateAssignmentRelations(assignments);
     } catch (e) {
       throw DatabaseException('Failed to get assignments in time window: $e');
+    }
+  }
+
+  @override
+  Future<List<Assignment>> getAssignmentsByEventIds(
+      List<String> eventIds) async {
+    try {
+      if (eventIds.isEmpty) return [];
+      final assignments = <Assignment>[];
+      for (int i = 0; i < eventIds.length; i += 30) {
+        final chunk = eventIds.skip(i).take(30).toList();
+        final snapshot = await _firestore
+            .collection(_assignmentsCollection)
+            .where('eventId', whereIn: chunk)
+            .get();
+        assignments.addAll(snapshot.docs
+            .map((doc) => AssignmentModel.fromFirestore(doc).toEntity()));
+      }
+      return await _populateAssignmentRelations(assignments);
+    } catch (e) {
+      throw DatabaseException('Failed to get assignments by event ids: $e');
     }
   }
 

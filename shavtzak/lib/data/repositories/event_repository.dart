@@ -68,6 +68,11 @@ class EventRepository {
     return await _database.getEventsByDateRange(start, end);
   }
 
+  /// Get events strictly older than [cursor], newest-first, capped to [limit].
+  Future<List<Event>> getEventsBeforeDate(DateTime cursor,
+          {required int limit}) =>
+      _database.getEventsBeforeDate(cursor, limit: limit);
+
   /// Get events occurring on a specific date
   Future<List<Event>> getEventsOnDate(DateTime date) async {
     final all = await getAllEvents();

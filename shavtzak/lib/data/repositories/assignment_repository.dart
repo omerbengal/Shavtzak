@@ -64,6 +64,11 @@ class AssignmentRepository {
     return await _database.getAssignmentsInTimeWindow(windowStart, windowEnd);
   }
 
+  /// Get all assignments for the given event ids (populated relations).
+  Future<List<Assignment>> getAssignmentsByEventIds(List<String> eventIds) {
+    return _database.getAssignmentsByEventIds(eventIds);
+  }
+
   /// Watch assignments within a time window in real-time (optimized for pagination)
   /// Returns a stream that emits updated assignment lists for events in the time window
   /// This is more efficient than watching all assignments when you only need a subset
