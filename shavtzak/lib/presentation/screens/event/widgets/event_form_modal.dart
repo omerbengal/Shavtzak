@@ -424,18 +424,20 @@ class _EventFormModalState extends State<EventFormModal> {
     required String label,
     required String logKey,
   }) {
-    if (source.text.trim().isEmpty) {
-      return const SizedBox(height: 4);
-    }
+    // Always render the arrow; disable (gray out) it until the source field
+    // has a value to derive from.
+    final enabled = source.text.trim().isNotEmpty;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
         child: TextButton.icon(
-          onPressed: () {
-            Logger.action('tap:deriveTime:$logKey');
-            _deriveTime(source, target, offsetMinutes);
-          },
+          onPressed: enabled
+              ? () {
+                  Logger.action('tap:deriveTime:$logKey');
+                  _deriveTime(source, target, offsetMinutes);
+                }
+              : null,
           icon: Icon(
             pointsUp ? Icons.arrow_upward : Icons.arrow_downward,
             size: 18,
@@ -1831,6 +1833,47 @@ class _EventFormModalState extends State<EventFormModal> {
 
                                         const SizedBox(height: 16),
 
+                                        // Participant count (כמות משתתפים)
+                                        TextFormField(
+                                          controller: _participantCountController,
+                                          keyboardType: TextInputType.number,
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter
+                                                .digitsOnly,
+                                            LengthLimitingTextInputFormatter(7),
+                                          ],
+                                          onChanged: (_) {
+                                            _isDirty = true;
+                                          },
+                                          decoration: InputDecoration(
+                                            labelText:
+                                                'כמות משתתפים (אופציונלי)',
+                                            hintText: 'לדוגמה: 250',
+                                            prefixIcon:
+                                                const Icon(Icons.groups),
+                                            border: const OutlineInputBorder(),
+                                            suffixIcon: _participantCountController
+                                                    .text.isNotEmpty
+                                                ? IconButton(
+                                                    icon: const Icon(
+                                                        Icons.clear,
+                                                        color: Colors.grey),
+                                                    onPressed: () {
+                                                      Logger.action(
+                                                          'tap:clearParticipantCount');
+                                                      setState(() {
+                                                        _participantCountController
+                                                            .clear();
+                                                        _isDirty = true;
+                                                      });
+                                                    },
+                                                  )
+                                                : null,
+                                          ),
+                                        ),
+
+                                        const SizedBox(height: 16),
+
                                         // Date Selection (Dual Calendar)
                                         Column(
                                           crossAxisAlignment:
@@ -2045,6 +2088,17 @@ class _EventFormModalState extends State<EventFormModal> {
 
                                         const SizedBox(height: 16),
 
+                                        // Label marking the start of the event
+                                        // time fields (mirrors 'תאריכי האירוע').
+                                        const Text(
+                                          'שעות האירוע',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+
                                         // Assembly Time (שעת התייצבות)
                                         _buildTimeField(
                                           controller: _assemblyTimeController,
@@ -2156,47 +2210,6 @@ class _EventFormModalState extends State<EventFormModal> {
                                           hint: 'לדוגמה: 00:00',
                                           prefixIcon: Icons.access_time,
                                           logKey: 'teamEnd',
-                                        ),
-
-                                        const SizedBox(height: 16),
-
-                                        // Participant count (כמות משתתפים)
-                                        TextFormField(
-                                          controller: _participantCountController,
-                                          keyboardType: TextInputType.number,
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter
-                                                .digitsOnly,
-                                            LengthLimitingTextInputFormatter(7),
-                                          ],
-                                          onChanged: (_) {
-                                            _isDirty = true;
-                                          },
-                                          decoration: InputDecoration(
-                                            labelText:
-                                                'כמות משתתפים (אופציונלי)',
-                                            hintText: 'לדוגמה: 250',
-                                            prefixIcon:
-                                                const Icon(Icons.groups),
-                                            border: const OutlineInputBorder(),
-                                            suffixIcon: _participantCountController
-                                                    .text.isNotEmpty
-                                                ? IconButton(
-                                                    icon: const Icon(
-                                                        Icons.clear,
-                                                        color: Colors.grey),
-                                                    onPressed: () {
-                                                      Logger.action(
-                                                          'tap:clearParticipantCount');
-                                                      setState(() {
-                                                        _participantCountController
-                                                            .clear();
-                                                        _isDirty = true;
-                                                      });
-                                                    },
-                                                  )
-                                                : null,
-                                          ),
                                         ),
 
                                         const SizedBox(height: 16),
