@@ -737,6 +737,55 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     emit(next);
   }
 
+  /// Resolve a Role for an assignment's roleType key. Uses the roles cache
+  /// (which includes archived roles). If the role was PERMANENTLY deleted,
+  /// synthesize a display-only Role so the assignment still renders a name.
+  Role _resolveRoleForKey(String key) {
+    for (final role in _cachedRoles) {
+      if (role.key == key) return role;
+    }
+    String hebrew;
+    try {
+      hebrew = RoleTypeExtension.fromString(key).hebrewName;
+    } catch (_) {
+      hebrew = key; // unknown key → show the raw key rather than crash
+    }
+    final now = DateTime.now();
+    return Role(
+      id: key,
+      key: key,
+      hebrewName: hebrew,
+      isVisible: false,
+      isArchived: true,
+      sortOrder: 1 << 20, // sort after all real roles
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  /// Build "off-quota" rows for every [eventAssignments] entry whose id is NOT
+  /// in [placedAssignmentIds] (i.e. it never landed in a normal quota slot).
+  List<AssignmentSlot> _buildOffQuotaSlots(
+    Event event,
+    List<Assignment> eventAssignments,
+    Set<String> placedAssignmentIds,
+  ) {
+    final result = <AssignmentSlot>[];
+    for (final assignment in eventAssignments) {
+      if (placedAssignmentIds.contains(assignment.id)) continue;
+      result.add(AssignmentSlot(
+        event: event,
+        role: _resolveRoleForKey(assignment.roleType),
+        slotIndex: assignment.slotIndex,
+        currentAssignment: assignment,
+        availableMembers: const [],
+        alreadyAssignedMembers: const [],
+        isOffQuota: true,
+      ));
+    }
+    return result;
+  }
+
   int _compareAssignmentSlots(AssignmentSlot a, AssignmentSlot b) {
     // Past ON → newest→oldest so "load older" reads downward (like /db);
     // Past OFF (default/upcoming view) → oldest→newest, unchanged.
@@ -750,6 +799,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final eventNameCompare = a.event.name.compareTo(b.event.name);
     if (eventNameCompare != 0) {
       return eventNameCompare;
+    }
+
+    // Off-quota rows sort AFTER their event's normal rows.
+    if (a.isOffQuota != b.isOffQuota) {
+      return a.isOffQuota ? 1 : -1;
     }
 
     final roleOrderCompare = a.role.sortOrder.compareTo(b.role.sortOrder);
@@ -907,6 +961,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // Recalculate member availability for all slots in this event
       for (final slot in eventSlots) {
+        if (slot.isOffQuota) continue;
         final slotKey = _getSlotKey(slot);
         final operation = activeOperations[slotKey];
 
@@ -960,6 +1015,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // Now apply the optimistic currentAssignment changes
     // After this, we need to re-run double assignment detection for affected events
     final resultSlots = databaseSlots.map((dbSlot) {
+      if (dbSlot.isOffQuota) return dbSlot;
       final slotKey = _getSlotKey(dbSlot);
       final operation = activeOperations[slotKey];
 
@@ -1054,6 +1110,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           resultSlots.where((s) => s.event.id == eventId).toList();
 
       for (final slot in eventResultSlots) {
+        if (slot.isOffQuota) continue;
         if (slot.isFilled) {
           // Check if member has allowMultipleAssignments - skip double assignment warning
           final teamMember = slot.currentAssignment!.teamMember;
@@ -1396,6 +1453,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final slots = <AssignmentSlot>[];
 
     for (final event in events) {
+      final placedAssignmentIds = <String>{};
       // Iterate through roles in sortOrder (not enum order)
       for (final role in sortedRoles) {
         final requiredCount = event.roleRequirements[role.key] ?? 0;
@@ -1515,14 +1573,25 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             sameDayAssignedMembers: sameDayAssignedMembers,
             sameDayEventInfo: sameDayEventInfoMap,
           ));
+          if (assignment != null) placedAssignmentIds.add(assignment.id);
         }
       }
+
+      final eventAssignmentsAll =
+          assignments.where((a) => a.eventId == event.id).toList();
+      slots.addAll(
+        _buildOffQuotaSlots(event, eventAssignmentsAll, placedAssignmentIds),
+      );
     }
 
     // 6. Detect double assignments (person assigned to multiple roles in same event)
     // Skip for members with allowMultipleAssignments since it's expected behavior
     final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
     for (final slot in slots) {
+      if (slot.isOffQuota) {
+        slotsWithDoubleAssignmentDetection.add(slot);
+        continue;
+      }
       if (slot.isFilled) {
         // Check if member has allowMultipleAssignments - skip double assignment warning
         final teamMember = slot.currentAssignment!.teamMember;
@@ -1673,6 +1742,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Build slots using the existing method
       final slots = <AssignmentSlot>[];
       for (final eventData in filteredEvents) {
+        final placedAssignmentIds = <String>{};
         // Iterate through roles in sortOrder (not enum order)
         for (final role in sortedRoles) {
           final requiredCount = eventData.roleRequirements[role.key] ?? 0;
@@ -1683,7 +1753,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               .where((a) => a.eventId == eventData.id && a.roleType == role.key)
               .map((a) => a.withRelations(
                     event: eventData,
-                    teamMember: teamMembersMap[a.teamMemberId],
+                    teamMember: teamMembersMap[a.teamMemberId] ?? a.teamMember,
                   ))
               .toList();
 
@@ -1791,13 +1861,29 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               sameDayAssignedMembers: sameDayAssignedMembers,
               sameDayEventInfo: sameDayEventInfoMap,
             ));
+            if (assignment != null) placedAssignmentIds.add(assignment.id);
           }
         }
+
+        final eventAssignmentsAll = rebuildEvent.assignments
+            .where((a) => a.eventId == eventData.id)
+            .map((a) => a.withRelations(
+                  event: eventData,
+                  teamMember: teamMembersMap[a.teamMemberId] ?? a.teamMember,
+                ))
+            .toList();
+        slots.addAll(
+          _buildOffQuotaSlots(eventData, eventAssignmentsAll, placedAssignmentIds),
+        );
       }
 
       // Detect double assignments
       final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
       for (final slot in slots) {
+        if (slot.isOffQuota) {
+          slotsWithDoubleAssignmentDetection.add(slot);
+          continue;
+        }
         if (slot.isFilled) {
           // Check if member has allowMultipleAssignments - skip double assignment warning
           final teamMember = slot.currentAssignment!.teamMember;
