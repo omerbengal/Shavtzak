@@ -2051,6 +2051,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _repository.createAssignmentWithBypass(event.assignment);
 
       _syncAttendeesForAffectedEvents(nextAssignment: event.assignment);
+      await _refreshExtraPastEvent(event.assignment.eventId);
 
       _emitOrLog(emit, const AssignmentOperationSuccess('השיבוץ נוסף בהצלחה'));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
