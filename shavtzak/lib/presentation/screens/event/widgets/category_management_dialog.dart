@@ -75,8 +75,8 @@ class _CategoryColorPicker extends StatelessWidget {
     );
   }
 
-  Widget _buildColorTile(Color color) {
-    final colorValue = color.toARGB32();
+  Widget _buildColorTile(int colorValue) {
+    final color = Color(colorValue);
     final isSelected = selectedColorValue == colorValue;
     // Keep the checkmark visible on light swatches (yellow/lime)
     final checkColor = color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;

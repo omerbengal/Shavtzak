@@ -377,11 +377,13 @@ class AppTheme {
   }
 
   /// Preset palette for category colors (same 16 Material 500 shades as
-  /// getRoleColor's rotation).
-  static const List<Color> categoryColorPalette = [
-    Color(0xFF2196F3), Color(0xFF4CAF50), Color(0xFFFF9800), Color(0xFF9C27B0),
-    Color(0xFFF44336), Color(0xFF00BCD4), Color(0xFFFFEB3B), Color(0xFF795548),
-    Color(0xFFE91E63), Color(0xFF3F51B5), Color(0xFF8BC34A), Color(0xFFFF5722),
-    Color(0xFF673AB7), Color(0xFF009688), Color(0xFFCDDC39), Color(0xFF607D8B),
+  /// getRoleColor's rotation), as ARGB int values — the form categories are
+  /// stored in. Kept as ints so no SDK-version-sensitive Color conversion
+  /// (toARGB32/.value) is needed; CI builds on an older Flutter than local.
+  static const List<int> categoryColorPalette = [
+    0xFF2196F3, 0xFF4CAF50, 0xFFFF9800, 0xFF9C27B0,
+    0xFFF44336, 0xFF00BCD4, 0xFFFFEB3B, 0xFF795548,
+    0xFFE91E63, 0xFF3F51B5, 0xFF8BC34A, 0xFFFF5722,
+    0xFF673AB7, 0xFF009688, 0xFFCDDC39, 0xFF607D8B,
   ];
 }
