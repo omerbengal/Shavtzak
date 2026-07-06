@@ -273,7 +273,10 @@ class CalendarShareDataBuilder {
     // (endTime). When only one of the two is set, show that one on its own
     // labeled line instead of a range.
     if (actualShowStartTime.isNotEmpty && endTime.isNotEmpty) {
-      lines.add('מופע - $actualShowStartTime–$endTime');
+      // Wrap the range in an LTR isolate (U+2066…U+2069) so it always renders
+      // תחילת מופע on the far left and סיום מופע next to the מופע title. Without
+      // it, the en-dash resolves as RTL and the two times display reversed.
+      lines.add('מופע - ⁦$actualShowStartTime–$endTime⁩');
     } else if (actualShowStartTime.isNotEmpty) {
       lines.add('תחילת מופע - $actualShowStartTime');
     } else if (endTime.isNotEmpty) {

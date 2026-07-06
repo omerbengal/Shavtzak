@@ -85,7 +85,9 @@ void main() {
       expect(share.timeLines, [
         'התייצבות - 15:00',
         'התכנסות - 17:00',
-        'מופע - 18:00–22:30',
+        // Range is wrapped in an LTR isolate (U+2066…U+2069) so it renders
+        // start-on-left, end-next-to-title under RTL.
+        'מופע - \u{2066}18:00–22:30\u{2069}',
       ]);
     });
 
