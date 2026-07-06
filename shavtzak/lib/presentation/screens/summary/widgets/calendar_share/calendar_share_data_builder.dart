@@ -253,33 +253,34 @@ class CalendarShareDataBuilder {
 
   static List<String> _buildTimeLines(Event event) {
     final assemblyTime = event.assemblyTime.trim();
+    final startTime = event.startTime.trim();
+    final actualShowStartTime = event.actualShowStartTime.trim();
     final endTime = event.endTime.trim();
     final teamEndTime = event.teamEndTime.trim();
-    final actualShowStartTime = event.actualShowStartTime.trim();
-    final startTime = event.startTime.trim();
 
-    final separator =
-        actualShowStartTime.isNotEmpty ? actualShowStartTime : startTime;
     if (_isAllDayEvent(event)) {
       return const ['כל היום'];
     }
 
     final lines = <String>[];
-    // Assembly end time is omitted: it always equals the מופע start shown on
-    // the next line (separator), so a single time keeps the cell line short.
-    if (assemblyTime.isNotEmpty && separator.isNotEmpty) {
-      lines.add('התייצבות $assemblyTime');
+    if (assemblyTime.isNotEmpty) {
+      lines.add('התייצבות - $assemblyTime');
     }
-    if (endTime.isNotEmpty &&
-        (separator.isNotEmpty || assemblyTime.isNotEmpty)) {
-      // Mirror of the backend fallback (calendar_integration.ts, main event
-      // start): separator when present, else assembly time — so the card
-      // matches the block the boss sees in Google Calendar.
-      final effectiveStart = separator.isNotEmpty ? separator : assemblyTime;
-      lines.add('מופע $effectiveStart–$endTime');
+    if (startTime.isNotEmpty) {
+      lines.add('התכנסות - $startTime');
+    }
+    // מופע = range between תחילת מופע (actualShowStartTime) and סיום מופע
+    // (endTime). When only one of the two is set, show that one on its own
+    // labeled line instead of a range.
+    if (actualShowStartTime.isNotEmpty && endTime.isNotEmpty) {
+      lines.add('מופע - $actualShowStartTime–$endTime');
+    } else if (actualShowStartTime.isNotEmpty) {
+      lines.add('תחילת מופע - $actualShowStartTime');
+    } else if (endTime.isNotEmpty) {
+      lines.add('סיום מופע משוער - $endTime');
     }
     if (teamEndTime.isNotEmpty) {
-      lines.add('סיום צוות $teamEndTime');
+      lines.add('סיום צוות משוער - $teamEndTime');
     }
     return lines;
   }

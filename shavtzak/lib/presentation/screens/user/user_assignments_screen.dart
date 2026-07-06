@@ -1059,7 +1059,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'סיום המופע:',
+                      'סיום מופע משוער:',
                       style: TextStyle(
                         fontSize: _getResponsiveFontSize(context,
                             minSize: 13.0, maxSize: 14.0),
@@ -1095,7 +1095,7 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'סיום הצוות:',
+                      'סיום צוות משוער:',
                       style: TextStyle(
                         fontSize: _getResponsiveFontSize(context,
                             minSize: 13.0, maxSize: 14.0),

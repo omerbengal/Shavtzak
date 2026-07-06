@@ -54,7 +54,7 @@ void main() {
       expect(data.eventName, 'טקס פתיחה');
       expect(data.dateLine, 'יום שני 4 במאי');
       expect(data.timeLine,
-          'התייצבות - 17:00 | התכנסות קהל - 18:00 | תחילת מופע - 19:30 | סיום המופע - 22:00');
+          'התייצבות - 17:00 | התכנסות קהל - 18:00 | תחילת מופע - 19:30 | סיום מופע משוער - 22:00');
       expect(data.locationLine, 'מיקום: היכל התרבות');
       expect(data.eventNoteLine, 'נא להביא חולצות ייצוגיות.');
       expect(data.sections.map((section) => section.title),

@@ -3534,10 +3534,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       parts.add('תחילת מופע - ${event.actualShowStartTime}');
     }
     if (event.endTime.isNotEmpty) {
-      parts.add('סיום המופע - ${event.endTime}');
+      parts.add('סיום מופע משוער - ${event.endTime}');
     }
     if (event.teamEndTime.isNotEmpty) {
-      parts.add('סיום הצוות - ${event.teamEndTime}');
+      parts.add('סיום צוות משוער - ${event.teamEndTime}');
     }
     return parts.join(' | ');
   }
@@ -5105,10 +5105,10 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
       parts.add('תחילת מופע - ${event.actualShowStartTime}');
     }
     if (event.endTime.isNotEmpty) {
-      parts.add('סיום המופע - ${event.endTime}');
+      parts.add('סיום מופע משוער - ${event.endTime}');
     }
     if (event.teamEndTime.isNotEmpty) {
-      parts.add('סיום הצוות - ${event.teamEndTime}');
+      parts.add('סיום צוות משוער - ${event.teamEndTime}');
     }
     return parts.join(' | ');
   }

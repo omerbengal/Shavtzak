@@ -11,6 +11,7 @@ Event makeEvent({
   DateTime? endDate,
   String startTime = '17:00',
   String endTime = '22:30',
+  String teamEndTime = '',
   String assemblyTime = '15:00',
   String actualShowStartTime = '',
   String location = 'גן הפסלים||32.794000,34.989600',
@@ -25,6 +26,7 @@ Event makeEvent({
     endDate: endDate ?? start,
     startTime: startTime,
     endTime: endTime,
+    teamEndTime: teamEndTime,
     assemblyTime: assemblyTime,
     actualShowStartTime: actualShowStartTime,
     location: location,
@@ -60,22 +62,31 @@ final today = DateTime(2026, 7, 5);
 
 void main() {
   group('buildShareEvent — time semantics (mirror of calendar sync)', () {
-    test('assembly + main lines when all times present', () {
+    test('assembly, gathering and end lines when no actual-show time', () {
       final share = CalendarShareDataBuilder.buildShareEvent(
         makeEvent(),
         today: today,
         isContinuation: false,
       );
-      expect(share.timeLines, ['התייצבות 15:00', 'מופע 17:00–22:30']);
+      // No actualShowStartTime -> no מופע range; end time shown on its own line.
+      expect(share.timeLines, [
+        'התייצבות - 15:00',
+        'התכנסות - 17:00',
+        'סיום מופע משוער - 22:30',
+      ]);
     });
 
-    test('actualShowStartTime overrides startTime as separator', () {
+    test('מופע range shown when both actual-show start and end are present', () {
       final share = CalendarShareDataBuilder.buildShareEvent(
         makeEvent(actualShowStartTime: '18:00'),
         today: today,
         isContinuation: false,
       );
-      expect(share.timeLines, ['התייצבות 15:00', 'מופע 18:00–22:30']);
+      expect(share.timeLines, [
+        'התייצבות - 15:00',
+        'התכנסות - 17:00',
+        'מופע - 18:00–22:30',
+      ]);
     });
 
     test('all-day when assemblyTime is empty', () {
@@ -96,15 +107,31 @@ void main() {
       expect(share.timeLines, ['כל היום']);
     });
 
-    test(
-        'main line falls back to assembly start when separator is empty '
-        '(mirrors backend calendar_integration fallback)', () {
+    test('only end time present -> סיום מופע משוער line (no gathering/range)',
+        () {
       final share = CalendarShareDataBuilder.buildShareEvent(
         makeEvent(startTime: '', actualShowStartTime: ''),
         today: today,
         isContinuation: false,
       );
-      expect(share.timeLines, ['מופע 15:00–22:30']);
+      expect(share.timeLines, [
+        'התייצבות - 15:00',
+        'סיום מופע משוער - 22:30',
+      ]);
+    });
+
+    test('team end time shown as its own line when present', () {
+      final share = CalendarShareDataBuilder.buildShareEvent(
+        makeEvent(teamEndTime: '23:30'),
+        today: today,
+        isContinuation: false,
+      );
+      expect(share.timeLines, [
+        'התייצבות - 15:00',
+        'התכנסות - 17:00',
+        'סיום מופע משוער - 22:30',
+        'סיום צוות משוער - 23:30',
+      ]);
     });
   });
 
