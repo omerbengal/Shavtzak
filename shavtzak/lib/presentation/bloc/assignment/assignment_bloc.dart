@@ -1437,9 +1437,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     }
   }
 
-  /// Re-sync the full attendee list for every calendar event touched by an
-  /// assignment change. This keeps Google Calendar aligned for create, update,
-  /// reassignment, and delete flows.
+  /// Notify calendar attendees for an assignment change — targeting ONLY the
+  /// member who was actually added or removed, not the whole roster.
+  ///
+  /// Previously this re-pushed the entire attendee list for every affected
+  /// event (SyncAttendeesForAppEvent), which made Google email every
+  /// already-assigned member on each change. Now it dispatches a delta so the
+  /// sync service can invite/cancel just the changed member (falling back to a
+  /// full re-sync internally only for the invite-all roster transitions).
+  ///
+  /// Covers create ([nextAssignment] only), delete ([previousAssignment] only),
+  /// role change / reassignment within one event (both, same eventId), and
+  /// reassignment across events (both, different eventIds).
   void _syncAttendeesForAffectedEvents({
     Assignment? previousAssignment,
     Assignment? nextAssignment,
@@ -1449,13 +1458,32 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       return;
     }
 
-    final affectedEventIds = <String>{
-      if (previousAssignment != null) previousAssignment.eventId,
-      if (nextAssignment != null) nextAssignment.eventId,
-    };
+    // Same event touched on both sides (role change or same-event reassignment)
+    // → one delta carrying both the added and removed member.
+    if (previousAssignment != null &&
+        nextAssignment != null &&
+        previousAssignment.eventId == nextAssignment.eventId) {
+      calendarSyncBloc.add(SyncAttendeeForAssignmentChange(
+        eventId: nextAssignment.eventId,
+        addedMemberId: nextAssignment.teamMemberId,
+        removedMemberId: previousAssignment.teamMemberId,
+      ));
+      return;
+    }
 
-    for (final eventId in affectedEventIds) {
-      calendarSyncBloc.add(SyncAttendeesForAppEvent(eventId: eventId));
+    // Otherwise each side is its own event: the previous event loses a member,
+    // the next event gains one.
+    if (previousAssignment != null) {
+      calendarSyncBloc.add(SyncAttendeeForAssignmentChange(
+        eventId: previousAssignment.eventId,
+        removedMemberId: previousAssignment.teamMemberId,
+      ));
+    }
+    if (nextAssignment != null) {
+      calendarSyncBloc.add(SyncAttendeeForAssignmentChange(
+        eventId: nextAssignment.eventId,
+        addedMemberId: nextAssignment.teamMemberId,
+      ));
     }
   }
 

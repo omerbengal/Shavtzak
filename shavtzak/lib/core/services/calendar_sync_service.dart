@@ -630,6 +630,98 @@ class CalendarSyncService {
     }
   }
 
+  /// Targeted attendee sync for a SINGLE assignment change.
+  ///
+  /// The whole-roster re-push in [syncAttendeesForAppEvent] rewrites every
+  /// attendee record with `sendUpdates: 'all'`, which makes Google email every
+  /// already-assigned member on each assignment change. This method instead
+  /// touches only the member who was actually added or removed, using the
+  /// incremental [addAttendeeToAppEvent] / [removeAttendeeFromAppEvent]
+  /// primitives (which preserve existing attendees, so Google notifies only the
+  /// changed guest).
+  ///
+  /// It defers to the full re-sync ONLY for the "invite all permanent when
+  /// unassigned" roster transitions, where the entire attendee set genuinely
+  /// changes:
+  ///   * the last assignment was removed → roster returns to all-permanent;
+  ///   * the first assignment was added → roster collapses to just the assignee.
+  Future<void> syncAttendeeForAssignmentChange({
+    required String eventId,
+    String? addedMemberId,
+    String? removedMemberId,
+  }) async {
+    try {
+      // Same member kept, only the role/slot changed → the attendee set is
+      // unchanged, so there is nothing to notify.
+      if (addedMemberId != null && addedMemberId == removedMemberId) {
+        return;
+      }
+
+      final event = await _database.getEventById(eventId);
+      if (event == null) {
+        return;
+      }
+
+      final assignments = await _database.getAssignmentsByEvent(eventId);
+
+      final optedIntoInviteAll = event.inviteAllPermanentWhenUnassigned &&
+          !event.relevantForExtendedTeam;
+
+      // Invite-all roster transitions need the whole attendee set rebuilt.
+      final returnedToInviteAll = optedIntoInviteAll && assignments.isEmpty;
+      final leftInviteAll = optedIntoInviteAll &&
+          assignments.length == 1 &&
+          addedMemberId != null &&
+          removedMemberId == null;
+      if (returnedToInviteAll || leftInviteAll) {
+        await syncAttendeesForAppEvent(eventId);
+        return;
+      }
+
+      // Steady-state per-assignee mode: apply only the delta.
+
+      // Newly assigned member → invite just them. No-op at the calendar layer
+      // if they are already an attendee (e.g. they hold another role here).
+      if (addedMemberId != null) {
+        final email = await _emailForMember(addedMemberId);
+        if (email != null) {
+          await addAttendeeToAppEvent(eventId: eventId, email: email);
+        }
+      }
+
+      // Removed member → drop them ONLY if they no longer hold any assignment
+      // in this event (a member with multiple roles stays invited).
+      if (removedMemberId != null && removedMemberId != addedMemberId) {
+        final stillAssigned =
+            assignments.any((a) => a.teamMemberId == removedMemberId);
+        if (!stillAssigned) {
+          final email = await _emailForMember(removedMemberId);
+          if (email != null) {
+            await removeAttendeeFromAppEvent(eventId: eventId, email: email);
+          }
+        }
+      }
+    } catch (e) {
+      developer.log(
+        'CalendarSyncService: Failed targeted attendee sync for app event $eventId - $e',
+        name: 'CalendarSync',
+        error: e,
+      );
+    }
+  }
+
+  /// Resolve a team member's calendar email, or null when they have none.
+  /// Uses the member's stored email verbatim (matching the per-assignee branch
+  /// of [syncAttendeesForAppEvent]) so add/remove match existing attendees.
+  Future<String?> _emailForMember(String memberId) async {
+    final member = await _database.getTeamMemberById(memberId);
+    final email = member?.email;
+    if (email == null || email.isEmpty) {
+      return null;
+    }
+    return email;
+  }
+
   /// A member is eligible for the "invite all permanent staff" calendar
   /// behavior when they are a permanent, active, non-archived member with a
   /// non-empty email address.

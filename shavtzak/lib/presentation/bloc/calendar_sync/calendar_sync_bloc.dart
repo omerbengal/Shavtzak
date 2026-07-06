@@ -39,6 +39,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     on<AddAttendeeToAppEvent>(_onAddAttendeeToAppEvent);
     on<RemoveAttendeeFromAppEvent>(_onRemoveAttendeeFromAppEvent);
     on<SyncAttendeesForAppEvent>(_onSyncAttendeesForAppEvent);
+    on<SyncAttendeeForAssignmentChange>(_onSyncAttendeeForAssignmentChange);
     on<OnTeamMemberEmailChanged>(_onTeamMemberEmailChanged);
     on<BackfillConstraintEventAttendees>(_onBackfillConstraintEventAttendees);
     on<CheckCalendarAuthOnAdminAppLoad>(_onCheckCalendarAuthOnAdminAppLoad);
@@ -732,6 +733,37 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     } catch (e) {
       developer.log(
         'CalendarSyncBloc: Failed to sync attendees - $e',
+        name: 'CalendarSyncBloc',
+        error: e,
+      );
+      // Best-effort: don't rethrow
+    }
+  }
+
+  /// Targeted attendee sync for a single assignment change (notifies only the
+  /// added/removed member instead of the whole roster).
+  Future<void> _onSyncAttendeeForAssignmentChange(
+    SyncAttendeeForAssignmentChange event,
+    Emitter<CalendarSyncState> emit,
+  ) async {
+    if (_syncService == null) {
+      developer.log(
+        'CalendarSyncBloc: Sync service not initialized, skipping assignment '
+        'attendee sync',
+        name: 'CalendarSyncBloc',
+      );
+      return;
+    }
+
+    try {
+      await _syncService!.syncAttendeeForAssignmentChange(
+        eventId: event.eventId,
+        addedMemberId: event.addedMemberId,
+        removedMemberId: event.removedMemberId,
+      );
+    } catch (e) {
+      developer.log(
+        'CalendarSyncBloc: Failed to sync assignment attendee change - $e',
         name: 'CalendarSyncBloc',
         error: e,
       );

@@ -211,6 +211,33 @@ class SyncAttendeesForAppEvent extends CalendarSyncEvent {
   List<Object?> get props => [eventId];
 }
 
+/// Targeted attendee sync for a single assignment change.
+///
+/// Unlike [SyncAttendeesForAppEvent] (which re-pushes the whole attendee
+/// roster and makes Google email every existing attendee), this notifies only
+/// the member who was actually added and/or removed. It falls back to a full
+/// re-sync internally only for the "invite all permanent when unassigned"
+/// roster transitions, where the entire attendee set genuinely changes.
+class SyncAttendeeForAssignmentChange extends CalendarSyncEvent {
+  final String eventId;
+
+  /// Member newly assigned by this change (null for a pure delete).
+  final String? addedMemberId;
+
+  /// Member whose assignment was removed/reassigned-away (null for a pure
+  /// create).
+  final String? removedMemberId;
+
+  const SyncAttendeeForAssignmentChange({
+    required this.eventId,
+    this.addedMemberId,
+    this.removedMemberId,
+  });
+
+  @override
+  List<Object?> get props => [eventId, addedMemberId, removedMemberId];
+}
+
 /// Handle team member email changed
 class OnTeamMemberEmailChanged extends CalendarSyncEvent {
   final String teamMemberId;
