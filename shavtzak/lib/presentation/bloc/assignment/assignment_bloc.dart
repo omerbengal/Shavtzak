@@ -39,6 +39,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   StreamSubscription? _userAssignmentSubscription;
   StreamSubscription? _userEventSubscription;
 
+  // Stream plumbing for the "list" view modes (all / by-event / by-person).
+  // These historically used emit.forEach directly, whose future never completes
+  // for an infinite Firestore stream — so the subscription lived for the bloc's
+  // whole lifetime and could clobber a later view (e.g. /user/assignments) with
+  // the full assignments collection. We now feed the source stream through a
+  // controller we OWN, so _cancelListSubscriptions() can close it and complete
+  // the forEach on demand when switching modes.
+  StreamSubscription? _listAssignmentSubscription;
+  StreamController<List<Assignment>>? _listAssignmentController;
+
   // Keep the current event filter independent of state
   Set<String> _currentEventFilter = <String>{};
 
@@ -125,26 +135,47 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _cancelSlotsSubscriptions();
       await _cancelUserAssignmentsSubscriptions();
 
-      // Use emit.forEach to subscribe to real-time stream
-      await emit.forEach<List<Assignment>>(
+      await _streamAssignmentsList(
+        emit,
         _repository.watchAssignments(),
-        onData: (assignments) {
-          if (assignments.isEmpty) {
-            return const AssignmentsEmpty('אין שיבוצים במערכת');
-          } else {
-            return AssignmentsLoaded.withCounts(
-              assignments,
-              filterType: 'all',
-            );
-          }
-        },
-        onError: (error, stackTrace) {
-          return AssignmentError('שגיאה בטעינת שיבוצים: $error');
-        },
+        (assignments) => assignments.isEmpty
+            ? const AssignmentsEmpty('אין שיבוצים במערכת')
+            : AssignmentsLoaded.withCounts(assignments, filterType: 'all'),
       );
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
     }
+  }
+
+  /// Subscribe a "list" view mode (all / by-event / by-person) to [source]
+  /// through a controller we own, so the stream can be cancelled when the bloc
+  /// switches to another view mode. A raw `emit.forEach` on an infinite
+  /// Firestore stream can never be stopped, which previously let a stale
+  /// list-mode subscription overwrite the /user/assignments (and slots) state.
+  Future<void> _streamAssignmentsList(
+    Emitter<AssignmentState> emit,
+    Stream<List<Assignment>> source,
+    AssignmentState Function(List<Assignment> assignments) onData,
+  ) async {
+    // Cancel any list-mode stream already running (also covers switching
+    // between all/by-event/by-person without leaking the previous one).
+    await _cancelListSubscriptions();
+
+    final controller = StreamController<List<Assignment>>();
+    _listAssignmentController = controller;
+    _listAssignmentSubscription = source.listen(
+      controller.add,
+      onError: controller.addError,
+    );
+
+    // Closing the controller (via _cancelListSubscriptions) completes this
+    // forEach cleanly, so the handler returns instead of emitting forever.
+    await emit.forEach<List<Assignment>>(
+      controller.stream,
+      onData: onData,
+      onError: (error, stackTrace) =>
+          AssignmentError('שגיאה בטעינת שיבוצים: $error'),
+    );
   }
 
   /// Load assignments for a specific event with real-time updates
@@ -158,22 +189,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _cancelSlotsSubscriptions();
       await _cancelUserAssignmentsSubscriptions();
 
-      await emit.forEach<List<Assignment>>(
+      await _streamAssignmentsList(
+        emit,
         _repository.watchAssignmentsByEvent(event.eventId),
-        onData: (assignments) {
-          if (assignments.isEmpty) {
-            return const AssignmentsEmpty('אין שיבוצים לאירוע זה');
-          } else {
-            return AssignmentsLoaded.withCounts(
-              assignments,
-              filterType: 'event',
-              filterId: event.eventId,
-            );
-          }
-        },
-        onError: (error, stackTrace) {
-          return AssignmentError('שגיאה בטעינת שיבוצים: $error');
-        },
+        (assignments) => assignments.isEmpty
+            ? const AssignmentsEmpty('אין שיבוצים לאירוע זה')
+            : AssignmentsLoaded.withCounts(
+                assignments,
+                filterType: 'event',
+                filterId: event.eventId,
+              ),
       );
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -191,22 +216,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       await _cancelSlotsSubscriptions();
       await _cancelUserAssignmentsSubscriptions();
 
-      await emit.forEach<List<Assignment>>(
+      await _streamAssignmentsList(
+        emit,
         _repository.watchAssignmentsByPerson(event.teamMemberId),
-        onData: (assignments) {
-          if (assignments.isEmpty) {
-            return const AssignmentsEmpty('אין שיבוצים לחבר צוות זה');
-          } else {
-            return AssignmentsLoaded.withCounts(
-              assignments,
-              filterType: 'person',
-              filterId: event.teamMemberId,
-            );
-          }
-        },
-        onError: (error, stackTrace) {
-          return AssignmentError('שגיאה בטעינת שיבוצים: $error');
-        },
+        (assignments) => assignments.isEmpty
+            ? const AssignmentsEmpty('אין שיבוצים לחבר צוות זה')
+            : AssignmentsLoaded.withCounts(
+                assignments,
+                filterType: 'person',
+                filterId: event.teamMemberId,
+              ),
       );
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -223,6 +242,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     try {
       await _cancelSlotsSubscriptions();
       await _cancelUserAssignmentsSubscriptions();
+      await _cancelListSubscriptions();
 
       final assignments = await _repository.getAssignmentsByDateRange(
         event.start,
@@ -252,6 +272,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     try {
       await _cancelSlotsSubscriptions();
       await _cancelUserAssignmentsSubscriptions();
+      await _cancelListSubscriptions();
 
       final assignment = await _repository.getAssignmentById(event.id);
 
@@ -520,6 +541,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     try {
       await _cancelSlotsSubscriptions();
       await _cancelUserAssignmentsSubscriptions();
+      await _cancelListSubscriptions();
 
       final assignments = await _repository.getAssignmentsWithConflicts();
 
@@ -543,6 +565,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     try {
       await _cancelSlotsSubscriptions();
       await _cancelUserAssignmentsSubscriptions();
+      await _cancelListSubscriptions();
 
       final stats = await _repository.getEventAssignmentStats(event.eventId);
       _emitOrLog(emit, EventAssignmentStatsLoaded(event.eventId, stats));
@@ -592,6 +615,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Cancel any existing subscriptions
       await _cancelSlotsSubscriptions();
       await _cancelUserAssignmentsSubscriptions();
+      await _cancelListSubscriptions();
 
       // OPTIMIZATION: Use time window instead of loading all events/assignments
       // This reduces initial load from 5000+ assignments to ~500 (90% reduction)
@@ -728,6 +752,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   Future<void> close() async {
     await _cancelSlotsSubscriptions();
     await _cancelUserAssignmentsSubscriptions();
+    await _cancelListSubscriptions();
     return super.close();
   }
 
@@ -747,6 +772,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     _userAssignmentSubscription = null;
     await _userEventSubscription?.cancel();
     _userEventSubscription = null;
+  }
+
+  /// Cancel the list-mode (all / by-event / by-person) stream. Closing the
+  /// controller completes the pending emit.forEach in _streamAssignmentsList,
+  /// so the corresponding load handler returns instead of emitting into a state
+  /// that now belongs to a different view mode.
+  Future<void> _cancelListSubscriptions() async {
+    await _listAssignmentSubscription?.cancel();
+    _listAssignmentSubscription = null;
+    await _listAssignmentController?.close();
+    _listAssignmentController = null;
   }
 
   void _completeActionSuccess(
@@ -2105,9 +2141,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     _emitOrLog(emit, const AssignmentLoading());
 
     try {
-      // Cancel any competing subscriptions from other modes
+      // Cancel any competing subscriptions from other modes. The list-mode
+      // cancel is critical here: a lingering all/by-event/by-person forEach left
+      // over from a prior load would otherwise keep emitting the full (or a
+      // differently-filtered) assignment list into THIS user's state.
       await _cancelSlotsSubscriptions();
       await _cancelUserAssignmentsSubscriptions();
+      await _cancelListSubscriptions();
 
       // Subscribe to assignments stream for this user.
       //
