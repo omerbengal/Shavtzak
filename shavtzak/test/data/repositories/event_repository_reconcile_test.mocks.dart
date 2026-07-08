@@ -246,6 +246,20 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<List<_i6.Event>>);
 
   @override
+  _i4.Future<List<_i6.Event>> getEventsBeforeDate(
+    DateTime? cursor, {
+    required int? limit,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getEventsBeforeDate,
+          [cursor],
+          {#limit: limit},
+        ),
+        returnValue: _i4.Future<List<_i6.Event>>.value(<_i6.Event>[]),
+      ) as _i4.Future<List<_i6.Event>>);
+
+  @override
   _i4.Stream<List<_i6.Event>> watchEventsByDateRange(
     DateTime? start,
     DateTime? end,
@@ -377,6 +391,17 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
             windowStart,
             windowEnd,
           ],
+        ),
+        returnValue: _i4.Future<List<_i7.Assignment>>.value(<_i7.Assignment>[]),
+      ) as _i4.Future<List<_i7.Assignment>>);
+
+  @override
+  _i4.Future<List<_i7.Assignment>> getAssignmentsByEventIds(
+          List<String>? eventIds) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getAssignmentsByEventIds,
+          [eventIds],
         ),
         returnValue: _i4.Future<List<_i7.Assignment>>.value(<_i7.Assignment>[]),
       ) as _i4.Future<List<_i7.Assignment>>);

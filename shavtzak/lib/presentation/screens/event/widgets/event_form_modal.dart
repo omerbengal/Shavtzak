@@ -721,7 +721,10 @@ class _EventFormModalState extends State<EventFormModal> {
     final bloc = context.read<EventBloc>();
     final completion = Completer<CrudActionResult>();
     if (_isEditMode) {
-      bloc.add(UpdateEvent(event, completion: completion));
+      // Pass the pre-edit event so the save doesn't await a one-shot
+      // getEventById() that can park for tens of seconds on a flaky connection.
+      bloc.add(UpdateEvent(event,
+          originalEvent: widget.event, completion: completion));
     } else {
       bloc.add(CreateEvent(event, completion: completion));
     }

@@ -127,6 +127,20 @@ class MockEventRepository extends _i1.Mock implements _i3.EventRepository {
       ) as _i4.Future<List<_i2.Event>>);
 
   @override
+  _i4.Future<List<_i2.Event>> getEventsBeforeDate(
+    DateTime? cursor, {
+    required int? limit,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getEventsBeforeDate,
+          [cursor],
+          {#limit: limit},
+        ),
+        returnValue: _i4.Future<List<_i2.Event>>.value(<_i2.Event>[]),
+      ) as _i4.Future<List<_i2.Event>>);
+
+  @override
   _i4.Future<List<_i2.Event>> getEventsOnDate(DateTime? date) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -170,16 +184,22 @@ class MockEventRepository extends _i1.Mock implements _i3.EventRepository {
       ) as _i4.Future<_i2.Event>);
 
   @override
-  _i4.Future<_i2.Event> updateEvent(_i2.Event? event) => (super.noSuchMethod(
+  _i4.Future<_i2.Event> updateEvent(
+    _i2.Event? event, {
+    _i2.Event? knownOriginal,
+  }) =>
+      (super.noSuchMethod(
         Invocation.method(
           #updateEvent,
           [event],
+          {#knownOriginal: knownOriginal},
         ),
         returnValue: _i4.Future<_i2.Event>.value(_FakeEvent_0(
           this,
           Invocation.method(
             #updateEvent,
             [event],
+            {#knownOriginal: knownOriginal},
           ),
         )),
       ) as _i4.Future<_i2.Event>);
@@ -430,6 +450,17 @@ class MockAssignmentRepository extends _i1.Mock
             #windowStart: windowStart,
             #windowEnd: windowEnd,
           },
+        ),
+        returnValue: _i4.Future<List<_i8.Assignment>>.value(<_i8.Assignment>[]),
+      ) as _i4.Future<List<_i8.Assignment>>);
+
+  @override
+  _i4.Future<List<_i8.Assignment>> getAssignmentsByEventIds(
+          List<String>? eventIds) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getAssignmentsByEventIds,
+          [eventIds],
         ),
         returnValue: _i4.Future<List<_i8.Assignment>>.value(<_i8.Assignment>[]),
       ) as _i4.Future<List<_i8.Assignment>>);

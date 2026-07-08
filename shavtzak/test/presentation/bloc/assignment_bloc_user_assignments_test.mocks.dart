@@ -168,6 +168,17 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i5.Future<List<_i6.Assignment>>);
 
   @override
+  _i5.Future<List<_i6.Assignment>> getAssignmentsByEventIds(
+          List<String>? eventIds) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getAssignmentsByEventIds,
+          [eventIds],
+        ),
+        returnValue: _i5.Future<List<_i6.Assignment>>.value(<_i6.Assignment>[]),
+      ) as _i5.Future<List<_i6.Assignment>>);
+
+  @override
   _i5.Stream<List<_i6.Assignment>> watchAssignmentsInTimeWindow({
     required DateTime? windowStart,
     required DateTime? windowEnd,
@@ -674,6 +685,20 @@ class MockEventRepository extends _i1.Mock implements _i10.EventRepository {
       ) as _i5.Future<List<_i3.Event>>);
 
   @override
+  _i5.Future<List<_i3.Event>> getEventsBeforeDate(
+    DateTime? cursor, {
+    required int? limit,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getEventsBeforeDate,
+          [cursor],
+          {#limit: limit},
+        ),
+        returnValue: _i5.Future<List<_i3.Event>>.value(<_i3.Event>[]),
+      ) as _i5.Future<List<_i3.Event>>);
+
+  @override
   _i5.Future<List<_i3.Event>> getEventsOnDate(DateTime? date) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -717,16 +742,22 @@ class MockEventRepository extends _i1.Mock implements _i10.EventRepository {
       ) as _i5.Future<_i3.Event>);
 
   @override
-  _i5.Future<_i3.Event> updateEvent(_i3.Event? event) => (super.noSuchMethod(
+  _i5.Future<_i3.Event> updateEvent(
+    _i3.Event? event, {
+    _i3.Event? knownOriginal,
+  }) =>
+      (super.noSuchMethod(
         Invocation.method(
           #updateEvent,
           [event],
+          {#knownOriginal: knownOriginal},
         ),
         returnValue: _i5.Future<_i3.Event>.value(_FakeEvent_1(
           this,
           Invocation.method(
             #updateEvent,
             [event],
+            {#knownOriginal: knownOriginal},
           ),
         )),
       ) as _i5.Future<_i3.Event>);
