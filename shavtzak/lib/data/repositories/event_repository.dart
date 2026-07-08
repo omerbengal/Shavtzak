@@ -122,7 +122,14 @@ class EventRepository {
   /// Update an existing event
   /// Renames the Drive folder in background if name/date changed and triggers archive check
   /// Throws DuplicateEventException if another event with the same name and date exists
-  Future<Event> updateEvent(Event event) async {
+  ///
+  /// [knownOriginal] is the pre-update event as the caller already holds it
+  /// (every in-app edit flow opens on an existing event). Supplying it avoids a
+  /// one-shot getEventById() on the save path: that `.get()` can park for tens
+  /// of seconds on a flaky Firestore Web connection — live snapshot streams
+  /// keep flowing, but a fresh `.get()` stalls — which would freeze the user's
+  /// save. Only used to decide whether the background Drive-folder rename runs.
+  Future<Event> updateEvent(Event event, {Event? knownOriginal}) async {
     // Check for duplicate event (excluding this event)
     try {
       final isDuplicate = await isDuplicateEvent(
@@ -145,8 +152,10 @@ class EventRepository {
       // Continue with event update if duplicate check fails (e.g., missing index)
     }
 
-    // Get the original event to check if name/date changed
-    final originalEvent = await getEventById(event.id);
+    // Original event (for the name/date-change check below). Prefer the
+    // caller-supplied copy so the save never awaits a one-shot get that can
+    // park; fall back to a fetch only if no caller provided it.
+    final originalEvent = knownOriginal ?? await getEventById(event.id);
 
     // Update event in database first
     await _database.updateEvent(event);

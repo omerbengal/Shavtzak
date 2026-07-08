@@ -131,4 +131,76 @@ void main() {
       endDate: anyNamed('endDate'),
     )).called(1);
   });
+
+  group('updateEvent', () {
+    setUp(() {
+      when(db.isDuplicateEvent(any, any,
+              excludeEventId: anyNamed('excludeEventId')))
+          .thenAnswer((_) async => false);
+    });
+
+    // Regression: the save used to await a one-shot getEventById() purely to
+    // decide whether to background-rename the Drive folder. On a flaky
+    // Firestore Web connection that .get() can park for ~30s (live snapshot
+    // streams stay fast, but a fresh .get() stalls), freezing the whole save.
+    // When the caller supplies the original event, no read must happen.
+    test('does not re-fetch the original when the caller supplies it', () async {
+      when(drive.isInitialized).thenReturn(false);
+      // If updateEvent ever awaited getEventById, this would hang the save.
+      final neverCompletes = Completer<Event?>();
+      when(db.getEventById(any)).thenAnswer((_) => neverCompletes.future);
+
+      final original = buildEvent(driveFolderId: 'folder-1');
+      final renamed = original.copyWith(name: 'שם חדש');
+
+      // Completes promptly despite getEventById never completing.
+      await repo
+          .updateEvent(renamed, knownOriginal: original)
+          .timeout(const Duration(seconds: 2));
+
+      verify(db.updateEvent(any)).called(1);
+      verifyNever(db.getEventById(any));
+    });
+
+    test('renames the Drive folder when the supplied original changed name',
+        () async {
+      when(drive.isInitialized).thenReturn(true);
+      when(drive.renameFolder(
+        folderId: anyNamed('folderId'),
+        newName: anyNamed('newName'),
+        newDate: anyNamed('newDate'),
+        newEndDate: anyNamed('newEndDate'),
+      )).thenAnswer((_) async => true);
+
+      final original = buildEvent(driveFolderId: 'folder-1');
+      final renamed = original.copyWith(name: 'שם חדש');
+
+      await repo.updateEvent(renamed, knownOriginal: original);
+
+      verify(drive.renameFolder(
+        folderId: 'folder-1',
+        newName: 'שם חדש',
+        newDate: anyNamed('newDate'),
+        newEndDate: anyNamed('newEndDate'),
+      )).called(1);
+      verifyNever(db.getEventById(any));
+    });
+
+    test('does not rename the Drive folder when name and dates are unchanged',
+        () async {
+      when(drive.isInitialized).thenReturn(true);
+
+      final original = buildEvent(driveFolderId: 'folder-1');
+      final sameNameAndDate = original.copyWith(location: 'מיקום חדש');
+
+      await repo.updateEvent(sameNameAndDate, knownOriginal: original);
+
+      verifyNever(drive.renameFolder(
+        folderId: anyNamed('folderId'),
+        newName: anyNamed('newName'),
+        newDate: anyNamed('newDate'),
+        newEndDate: anyNamed('newEndDate'),
+      ));
+    });
+  });
 }

@@ -338,8 +338,12 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     Emitter<EventState> emit,
   ) async {
     try {
-      // Don't emit EventOperating to avoid UI rebuild
-      await _repository.updateEvent(event.event);
+      // Don't emit EventOperating to avoid UI rebuild.
+      // Pass the modal's original event so the repository doesn't await a
+      // one-shot getEventById() on the save path (that .get() can park ~30s
+      // on a flaky connection and freeze the save).
+      await _repository.updateEvent(event.event,
+          knownOriginal: event.originalEvent);
 
       // Sync to Google Calendar if calendar sync is enabled
       // Note: We sync on every update to ensure calendar is always up-to-date
@@ -669,7 +673,9 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         updatedAt: DateTime.now(),
       );
 
-      await _repository.updateEvent(updated);
+      // `current` is the pre-update event — pass it so updateEvent skips the
+      // one-shot getEventById() on the save path.
+      await _repository.updateEvent(updated, knownOriginal: current);
       _syncEventToCalendar(updated);
 
       emit(const EventOperationSuccess('האירוע הושבת'));
@@ -703,7 +709,9 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         updatedAt: DateTime.now(),
       );
 
-      await _repository.updateEvent(updated);
+      // `current` is the pre-update event — pass it so updateEvent skips the
+      // one-shot getEventById() on the save path.
+      await _repository.updateEvent(updated, knownOriginal: current);
       _syncEventToCalendar(updated);
       // Re-sync attendees from the preserved assignments so calendar invites are
       // restored to whoever was on the event before it was deactivated.

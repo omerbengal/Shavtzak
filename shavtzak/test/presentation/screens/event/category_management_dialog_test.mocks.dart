@@ -351,16 +351,22 @@ class MockEventRepository extends _i1.Mock implements _i6.EventRepository {
       ) as _i5.Future<_i3.Event>);
 
   @override
-  _i5.Future<_i3.Event> updateEvent(_i3.Event? event) => (super.noSuchMethod(
+  _i5.Future<_i3.Event> updateEvent(
+    _i3.Event? event, {
+    _i3.Event? knownOriginal,
+  }) =>
+      (super.noSuchMethod(
         Invocation.method(
           #updateEvent,
           [event],
+          {#knownOriginal: knownOriginal},
         ),
         returnValue: _i5.Future<_i3.Event>.value(_FakeEvent_1(
           this,
           Invocation.method(
             #updateEvent,
             [event],
+            {#knownOriginal: knownOriginal},
           ),
         )),
       ) as _i5.Future<_i3.Event>);

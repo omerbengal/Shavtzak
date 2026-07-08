@@ -54,9 +54,15 @@ class CreateEvent extends EventEvent {
 /// Update event
 class UpdateEvent extends EventEvent {
   final Event event;
+
+  /// The pre-edit event as the modal already holds it. Passed to the
+  /// repository so the save doesn't await a one-shot getEventById() that can
+  /// park for tens of seconds on a flaky connection. Null for callers that
+  /// don't have it (the repository then falls back to a fetch).
+  final Event? originalEvent;
   final CrudActionCompleter? completion;
 
-  const UpdateEvent(this.event, {this.completion});
+  const UpdateEvent(this.event, {this.originalEvent, this.completion});
 
   @override
   List<Object?> get props => [event];
