@@ -990,6 +990,15 @@ async function getCalendarEvent(
   );
 }
 
+// Attendee actions notify guests by default (`'all'`) so a deliberate,
+// single-member invite/cancellation still emails that member. The background
+// reconciler passes `'none'` for convergence writes so re-adding drifted
+// attendees never re-emails the roster. Anything other than the literal
+// `'none'` falls back to `'all'`.
+function parseSendUpdates(value: unknown): 'all' | 'none' {
+  return value === 'none' ? 'none' : 'all';
+}
+
 async function patchCalendarEvent(
   firestore: Firestore,
   environment: CalendarEnvironmentMode,
@@ -1233,6 +1242,7 @@ async function addAttendeeToEvent(
   environment: CalendarEnvironmentMode,
   calendarEventId: string,
   email: string,
+  sendUpdates: 'all' | 'none' = 'all',
 ): Promise<void> {
   try {
     const event = await getCalendarEvent(firestore, environment, calendarEventId);
@@ -1250,7 +1260,7 @@ async function addAttendeeToEvent(
         {email},
       ],
     }, {
-      sendUpdates: 'all',
+      sendUpdates,
     });
   } catch (error) {
     if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {
@@ -1265,6 +1275,7 @@ async function removeAttendeeFromEvent(
   environment: CalendarEnvironmentMode,
   calendarEventId: string,
   email: string,
+  sendUpdates: 'all' | 'none' = 'all',
 ): Promise<void> {
   try {
     const event = await getCalendarEvent(firestore, environment, calendarEventId);
@@ -1279,7 +1290,7 @@ async function removeAttendeeFromEvent(
     await patchCalendarEvent(firestore, environment, calendarEventId, {
       attendees: nextAttendees.length > 0 ? nextAttendees : null,
     }, {
-      sendUpdates: 'all',
+      sendUpdates,
     });
   } catch (error) {
     if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {
@@ -1294,12 +1305,13 @@ async function updateEventAttendees(
   environment: CalendarEnvironmentMode,
   calendarEventId: string,
   emails: string[],
+  sendUpdates: 'all' | 'none' = 'all',
 ): Promise<void> {
   try {
     await patchCalendarEvent(firestore, environment, calendarEventId, {
       attendees: emails.length > 0 ? emails.map((email) => ({email})) : null,
     }, {
-      sendUpdates: 'all',
+      sendUpdates,
     });
   } catch (error) {
     if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {
@@ -1763,6 +1775,7 @@ export async function executeCalendarAction(
         environment,
         requireString(payload['calendarEventId'], 'calendarEventId'),
         requireString(payload['email'], 'email'),
+        parseSendUpdates(payload['sendUpdates']),
       );
       return {ok: true};
     }
@@ -1774,6 +1787,7 @@ export async function executeCalendarAction(
         environment,
         requireString(payload['calendarEventId'], 'calendarEventId'),
         requireString(payload['email'], 'email'),
+        parseSendUpdates(payload['sendUpdates']),
       );
       return {ok: true};
     }
@@ -1788,6 +1802,7 @@ export async function executeCalendarAction(
         environment,
         requireString(payload['calendarEventId'], 'calendarEventId'),
         emails,
+        parseSendUpdates(payload['sendUpdates']),
       );
       return {ok: true};
     }

@@ -35,6 +35,7 @@ import {
 } from './calendar_sync_backend';
 import type {
   AppEventSyncReport,
+  AttendeeNotifyByEvent,
   ConstraintSyncReport,
 } from './calendar_sync_backend';
 
@@ -98,15 +99,35 @@ function fireAndForgetCalendarSync(
   dependencies: Parameters<typeof syncAssignedEventsBestEffort>[0],
   eventIds: Iterable<string>,
   operationLabel: string,
+  notifyByEventId?: AttendeeNotifyByEvent,
 ): void {
   const ids = Array.from(eventIds);
-  void syncAssignedEventsBestEffort(dependencies, ids).catch((err: unknown) => {
+  void syncAssignedEventsBestEffort(dependencies, ids, notifyByEventId).catch((err: unknown) => {
     console.error(
       `[calendar-sync-error] background sync failed for ${operationLabel} ` +
         `(eventIds=${JSON.stringify(ids)}):`,
       err,
     );
   });
+}
+
+// Record that `memberId`'s assignment was added to / removed from `eventId`, so
+// the calendar reconcile emails ONLY that member for this change (everyone else
+// on the event converges silently). Ignores blank ids.
+function recordAttendeeNotify(
+  notifyByEventId: AttendeeNotifyByEvent,
+  eventId: unknown,
+  kind: 'added' | 'removed',
+  memberId: unknown,
+): void {
+  if (typeof eventId !== 'string' || eventId.length === 0) return;
+  if (typeof memberId !== 'string' || memberId.length === 0) return;
+  const entry = notifyByEventId[eventId] ?? (notifyByEventId[eventId] = {});
+  const key = kind === 'added' ? 'addedMemberIds' : 'removedMemberIds';
+  const list = (entry[key] ?? (entry[key] = [])) as string[];
+  if (!list.includes(memberId)) {
+    list.push(memberId);
+  }
 }
 
 function getEnvironmentMode(value: unknown): EnvironmentMode {
@@ -2450,6 +2471,13 @@ async function executeMutation(
       });
       const nextAssignment = assignmentDocFromJson(assignment);
       await db.collection(collections.assignments).doc(assignmentId).set(nextAssignment);
+      const insertNotify: AttendeeNotifyByEvent = {};
+      recordAttendeeNotify(
+        insertNotify,
+        nextAssignment['eventId'],
+        'added',
+        nextAssignment['teamMemberId'],
+      );
       fireAndForgetCalendarSync(
         {
           firestore: db,
@@ -2462,6 +2490,7 @@ async function executeMutation(
         },
         [String(nextAssignment['eventId'])],
         operation,
+        insertNotify,
       );
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
         after: nextAssignment,
@@ -2484,6 +2513,17 @@ async function executeMutation(
       });
       const nextAssignment = assignmentDocFromJson(assignment);
       await assignmentRef.update(nextAssignment);
+      // Reassignment/role change: the old occupant leaves (cancellation) and the
+      // new one is invited. Same member kept (role-only) records both but yields
+      // no attendee op, so no email. Only the genuinely changed member is mailed.
+      const updateNotify: AttendeeNotifyByEvent = {};
+      recordAttendeeNotify(updateNotify, existing['eventId'], 'removed', existing['teamMemberId']);
+      recordAttendeeNotify(
+        updateNotify,
+        nextAssignment['eventId'],
+        'added',
+        nextAssignment['teamMemberId'],
+      );
       fireAndForgetCalendarSync(
         {
           firestore: db,
@@ -2499,6 +2539,7 @@ async function executeMutation(
           String(nextAssignment['eventId']),
         ],
         operation,
+        updateNotify,
       );
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
         before: existing,
@@ -2551,6 +2592,8 @@ async function executeMutation(
       const existing = existingDoc.data() ?? {};
       await assignmentRef.delete();
       if (typeof existing['eventId'] === 'string') {
+        const deleteNotify: AttendeeNotifyByEvent = {};
+        recordAttendeeNotify(deleteNotify, existing['eventId'], 'removed', existing['teamMemberId']);
         fireAndForgetCalendarSync(
           {
             firestore: db,
@@ -2563,6 +2606,7 @@ async function executeMutation(
           },
           [existing['eventId'] as string],
           operation,
+          deleteNotify,
         );
       }
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
@@ -2588,6 +2632,10 @@ async function executeMutation(
         batch.delete(doc.ref);
       }
       await batch.commit();
+      const deleteByEventNotify: AttendeeNotifyByEvent = {};
+      for (const assignment of existingAssignments) {
+        recordAttendeeNotify(deleteByEventNotify, eventId, 'removed', assignment.data['teamMemberId']);
+      }
       fireAndForgetCalendarSync(
         {
           firestore: db,
@@ -2600,6 +2648,7 @@ async function executeMutation(
         },
         [eventId],
         operation,
+        deleteByEventNotify,
       );
       const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', eventId, {
@@ -2668,6 +2717,15 @@ async function executeMutation(
         batch.delete(doc.ref);
       }
       await batch.commit();
+      const deleteByPersonNotify: AttendeeNotifyByEvent = {};
+      for (const assignment of existingAssignments) {
+        recordAttendeeNotify(
+          deleteByPersonNotify,
+          assignment.data['eventId'],
+          'removed',
+          teamMemberId,
+        );
+      }
       fireAndForgetCalendarSync(
         {
           firestore: db,
@@ -2684,6 +2742,7 @@ async function executeMutation(
             : ''
         )),
         operation,
+        deleteByPersonNotify,
       );
       const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', teamMemberId, {
@@ -2750,6 +2809,15 @@ async function executeMutation(
         batch.delete(db.collection(collections.assignments).doc(String(rawId)));
       }
       await batch.commit();
+      const deleteBatchNotify: AttendeeNotifyByEvent = {};
+      for (const assignment of existingAssignments) {
+        recordAttendeeNotify(
+          deleteBatchNotify,
+          assignment.data['eventId'],
+          'removed',
+          assignment.data['teamMemberId'],
+        );
+      }
       fireAndForgetCalendarSync(
         {
           firestore: db,
@@ -2766,6 +2834,7 @@ async function executeMutation(
             : ''
         )),
         operation,
+        deleteBatchNotify,
       );
       const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', actor.memberId, {
@@ -2844,6 +2913,11 @@ async function executeMutation(
         );
       }
       await batch.commit();
+      const insertBatchNotify: AttendeeNotifyByEvent = {};
+      for (const rawAssignment of assignments) {
+        const value = rawAssignment as Record<string, unknown>;
+        recordAttendeeNotify(insertBatchNotify, value['eventId'], 'added', value['teamMemberId']);
+      }
       fireAndForgetCalendarSync(
         {
           firestore: db,
@@ -2859,6 +2933,7 @@ async function executeMutation(
           return typeof value['eventId'] === 'string' ? value['eventId'] as string : '';
         }),
         operation,
+        insertBatchNotify,
       );
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', actor.memberId, {
         count: assignments.length,
