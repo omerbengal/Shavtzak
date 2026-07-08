@@ -1153,6 +1153,27 @@ export function buildAttendeeNotifyPlan(params: {
 }
 
 /**
+ * Deduplicate the affected event ids to non-empty ids and pair each with its
+ * notify delta (empty delta = a passive sync that emails no one). One returned
+ * entry becomes one calendar-sync task, so batch operations touching the same
+ * event collapse into a single task carrying that event's full delta.
+ */
+export function planCalendarSyncTasks(
+  eventIds: Iterable<string>,
+  notifyByEventId: AttendeeNotifyByEvent = {},
+): Array<{eventId: string; delta: AttendeeNotifyDelta}> {
+  const uniqueEventIds = Array.from(new Set(
+    Array.from(eventIds).filter(
+      (eventId): eventId is string => typeof eventId === 'string' && eventId.length > 0,
+    ),
+  ));
+  return uniqueEventIds.map((eventId) => ({
+    eventId,
+    delta: notifyByEventId[eventId] ?? {},
+  }));
+}
+
+/**
  * Pure current-vs-desired attendee diff for one calendar event part, tagging
  * each add/remove with whether it should notify the affected guest. Mirrors the
  * convergence diff the reconciler applies; extracted so the notify decision is
@@ -1240,6 +1261,15 @@ async function syncEventPartAttendees(
     desiredEmails,
     notify,
   });
+
+  // Observability: sendUpdates:'all' = this guest is emailed; 'none' = touched
+  // silently (convergence). Lets us verify from logs exactly who gets notified.
+  if (adds.length > 0 || removes.length > 0) {
+    console.log(
+      `[calendar-sync] attendees part=${calendarEventId} notifyAll=${notify.notifyAll} ` +
+        `adds=${JSON.stringify(adds)} removes=${JSON.stringify(removes)}`,
+    );
+  }
 
   let changes = 0;
   for (const {email, sendUpdates} of adds) {
@@ -2043,8 +2073,21 @@ export async function syncAssignedEventsBestEffort(
 ): Promise<void> {
   const uniqueEventIds = uniqueSortedStrings(eventIds);
   for (const eventId of uniqueEventIds) {
+    const delta = notifyByEventId?.[eventId];
+    const startedAt = Date.now();
+    console.log(
+      `[calendar-sync] start eventId=${eventId} ` +
+        `added=${JSON.stringify(delta?.addedMemberIds ?? [])} ` +
+        `removed=${JSON.stringify(delta?.removedMemberIds ?? [])}`,
+    );
     try {
-      await syncAppEventCalendars(dependencies, {eventId, notifyByEventId});
+      const report = await syncAppEventCalendars(dependencies, {eventId, notifyByEventId});
+      console.log(
+        `[calendar-sync] done eventId=${eventId} ms=${Date.now() - startedAt} ` +
+          `changed=${report.changedCount} attendeeParts=${report.updatedAttendeeEventCount} ` +
+          `createdParts=${report.createdEventPartCount} deletedParts=${report.deletedEventPartCount} ` +
+          `failedEvents=${report.failedEventIds.length}`,
+      );
     } catch (error) {
       console.error(`Failed to sync app event ${eventId}:`, error);
     }

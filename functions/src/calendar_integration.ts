@@ -1125,6 +1125,14 @@ async function updateAppEventCalendarEvents(
   mainCalendarEventId: string,
   payload: CalendarEventPayload,
 ): Promise<Record<string, string> | null> {
+  // Event-detail edits push with Google's DEFAULT sendUpdates, which notifies
+  // attendees ("event updated"). Logged so those emails can be attributed to an
+  // event edit rather than an assignment change.
+  console.log(
+    `[calendar-sync] eventDetails push eventId=${payload.eventId} ` +
+      `assembly=${assemblyCalendarEventId || '-'} main=${mainCalendarEventId || '-'} ` +
+      '(default sendUpdates → notifies attendees)',
+  );
   let recreatedIds: Record<string, string> | null = null;
   let needsAssemblyRecreation = false;
   let needsMainRecreation = false;
