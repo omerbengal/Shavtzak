@@ -5,7 +5,10 @@ import {
   shouldInviteAllPermanentForEvent,
   planAppEventReconciliation,
   listInScopeAppEventIds,
+  buildAttendeeNotifyPlan,
+  planAttendeeSync,
   type AppEventPartSummary,
+  type AttendeeNotifyPlan,
 } from './calendar_sync_backend';
 
 type Mutable = Record<string, unknown>;
@@ -271,4 +274,115 @@ test('reconcile plan: treats main and allDay as the same (main) slot', () => {
   assert.equal(plan.createMain, false);
   assert.equal(plan.keepMainId, 'day-2');
   assert.deepEqual(plan.deleteMainIds, ['day-1']);
+});
+
+// --- Attendee notify plan (who gets emailed on an attendee change) ---
+
+test('notifyPlan: non-invite-all change notifies only the changed member', () => {
+  const plan = buildAttendeeNotifyPlan({
+    optedIntoInviteAll: false,
+    triggeredByChange: true,
+    notifyEmails: ['Changed@Example.com'],
+  });
+  assert.equal(plan.notifyAll, false);
+  // Emails are normalized (trim + lowercase) so they match the diff's emails.
+  assert.deepEqual(Array.from(plan.emails), ['changed@example.com']);
+});
+
+test('notifyPlan: invite-all event with a real change notifies everyone', () => {
+  const plan = buildAttendeeNotifyPlan({
+    optedIntoInviteAll: true,
+    triggeredByChange: true,
+    notifyEmails: ['a@example.com'],
+  });
+  assert.equal(plan.notifyAll, true);
+});
+
+test('notifyPlan: invite-all with NO change (passive/manual sync) stays silent', () => {
+  const plan = buildAttendeeNotifyPlan({
+    optedIntoInviteAll: true,
+    triggeredByChange: false,
+    notifyEmails: [],
+  });
+  assert.equal(plan.notifyAll, false);
+  assert.equal(plan.emails.size, 0);
+});
+
+function notify(emails: string[], notifyAll = false): AttendeeNotifyPlan {
+  return {emails: new Set(emails), notifyAll};
+}
+
+test('planAttendeeSync: adds the newly assigned member and emails ONLY them', () => {
+  const {adds, removes} = planAttendeeSync({
+    organizerEmail: 'organizer@example.com',
+    currentAttendeeEmails: ['old@example.com'],
+    desiredEmails: ['old@example.com', 'new@example.com'],
+    notify: notify(['new@example.com']),
+  });
+  assert.deepEqual(adds, [{email: 'new@example.com', sendUpdates: 'all'}]);
+  assert.deepEqual(removes, []);
+});
+
+test('planAttendeeSync: convergence catch-up (drifted member not in delta) is SILENT', () => {
+  // A member who SHOULD be on the event fell off (earlier failure). Re-adding
+  // them must NOT email — this is the anti-spam guarantee.
+  const {adds, removes} = planAttendeeSync({
+    organizerEmail: null,
+    currentAttendeeEmails: [],
+    desiredEmails: ['drifted@example.com'],
+    notify: notify(['someoneelse@example.com']),
+  });
+  assert.deepEqual(adds, [{email: 'drifted@example.com', sendUpdates: 'none'}]);
+  assert.deepEqual(removes, []);
+});
+
+test('planAttendeeSync: removed member is emailed a cancellation, others silent', () => {
+  const {adds, removes} = planAttendeeSync({
+    organizerEmail: null,
+    currentAttendeeEmails: ['leaving@example.com', 'staying@example.com', 'drift@example.com'],
+    desiredEmails: ['staying@example.com'],
+    notify: notify(['leaving@example.com']),
+  });
+  assert.deepEqual(adds, []);
+  // leaving@ is the genuine change -> 'all'; drift@ is convergence -> 'none'.
+  assert.deepEqual(
+    removes.sort((a, b) => a.email.localeCompare(b.email)),
+    [
+      {email: 'drift@example.com', sendUpdates: 'none'},
+      {email: 'leaving@example.com', sendUpdates: 'all'},
+    ],
+  );
+});
+
+test('planAttendeeSync: notifyAll emails every add/remove (invite-all boundary)', () => {
+  const {adds, removes} = planAttendeeSync({
+    organizerEmail: null,
+    currentAttendeeEmails: ['a@example.com', 'b@example.com'],
+    desiredEmails: ['a@example.com', 'c@example.com'],
+    notify: notify([], true),
+  });
+  assert.deepEqual(adds, [{email: 'c@example.com', sendUpdates: 'all'}]);
+  assert.deepEqual(removes, [{email: 'b@example.com', sendUpdates: 'all'}]);
+});
+
+test('planAttendeeSync: no diff (steady state / manual sync) does nothing, emails nobody', () => {
+  const {adds, removes} = planAttendeeSync({
+    organizerEmail: 'organizer@example.com',
+    currentAttendeeEmails: ['a@example.com', 'b@example.com'],
+    desiredEmails: ['a@example.com', 'b@example.com'],
+    notify: notify(['a@example.com', 'b@example.com']),
+  });
+  assert.deepEqual(adds, []);
+  assert.deepEqual(removes, []);
+});
+
+test('planAttendeeSync: organizer is never added or removed', () => {
+  const {adds, removes} = planAttendeeSync({
+    organizerEmail: 'organizer@example.com',
+    currentAttendeeEmails: [],
+    desiredEmails: ['organizer@example.com'],
+    notify: notify(['organizer@example.com'], true),
+  });
+  assert.deepEqual(adds, []);
+  assert.deepEqual(removes, []);
 });

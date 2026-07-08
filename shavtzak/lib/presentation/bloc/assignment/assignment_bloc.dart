@@ -18,7 +18,6 @@ import 'assignment_event.dart';
 import 'assignment_state.dart';
 import '../../screens/assignment/models/assignment_slot.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
-import '../calendar_sync/calendar_sync_event.dart';
 
 /// BLoC for managing assignments
 /// This is the KEY BLoC that solves the V1 sync problem
@@ -1484,53 +1483,27 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     }
   }
 
-  /// Notify calendar attendees for an assignment change — targeting ONLY the
-  /// member who was actually added or removed, not the whole roster.
+  /// Retired hook — the backend is now the single authority for calendar
+  /// attendee notifications.
   ///
-  /// Previously this re-pushed the entire attendee list for every affected
-  /// event (SyncAttendeesForAppEvent), which made Google email every
-  /// already-assigned member on each change. Now it dispatches a delta so the
-  /// sync service can invite/cancel just the changed member (falling back to a
-  /// full re-sync internally only for the invite-all roster transitions).
-  ///
-  /// Covers create ([nextAssignment] only), delete ([previousAssignment] only),
-  /// role change / reassignment within one event (both, same eventId), and
-  /// reassignment across events (both, different eventIds).
+  /// Every assignment write already routes through the backend `api`
+  /// (assignment.insert/update/delete/batch), which fires
+  /// `fireAndForgetCalendarSync` → `syncAppEventCalendars` →
+  /// `syncEventPartAttendees`. That path emails ONLY the member whose
+  /// assignment genuinely changed (invite on add, cancellation on remove) and
+  /// converges every other attendee silently. Dispatching a second sync from
+  /// the client here produced duplicate invites and a notify/converge race
+  /// (the silent converge could add a member before the client's invite,
+  /// suppressing it), so the client no longer touches attendees on assignment
+  /// changes. `_calendarSyncBloc` stays injected for other calendar flows.
   void _syncAttendeesForAffectedEvents({
     Assignment? previousAssignment,
     Assignment? nextAssignment,
   }) {
-    final calendarSyncBloc = _calendarSyncBloc;
-    if (calendarSyncBloc == null) {
+    // Intentionally a no-op; see the doc comment above. The field read keeps
+    // the dependency wired without re-introducing a client-side attendee sync.
+    if (_calendarSyncBloc == null) {
       return;
-    }
-
-    // Same event touched on both sides (role change or same-event reassignment)
-    // → one delta carrying both the added and removed member.
-    if (previousAssignment != null &&
-        nextAssignment != null &&
-        previousAssignment.eventId == nextAssignment.eventId) {
-      calendarSyncBloc.add(SyncAttendeeForAssignmentChange(
-        eventId: nextAssignment.eventId,
-        addedMemberId: nextAssignment.teamMemberId,
-        removedMemberId: previousAssignment.teamMemberId,
-      ));
-      return;
-    }
-
-    // Otherwise each side is its own event: the previous event loses a member,
-    // the next event gains one.
-    if (previousAssignment != null) {
-      calendarSyncBloc.add(SyncAttendeeForAssignmentChange(
-        eventId: previousAssignment.eventId,
-        removedMemberId: previousAssignment.teamMemberId,
-      ));
-    }
-    if (nextAssignment != null) {
-      calendarSyncBloc.add(SyncAttendeeForAssignmentChange(
-        eventId: nextAssignment.eventId,
-        addedMemberId: nextAssignment.teamMemberId,
-      ));
     }
   }
 

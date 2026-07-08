@@ -1106,53 +1106,156 @@ async function createAppEventPart(
   return requireString(result['calendarEventId'], 'calendarEventId');
 }
 
+/**
+ * One operation's genuine attendee change for a single app event: which members
+ * this write added to / removed from the event. Lets the reconciler notify ONLY
+ * the members whose assignment actually changed, while every other attendee
+ * (drift catch-up) is converged silently.
+ */
+export type AttendeeNotifyDelta = {
+  addedMemberIds?: readonly string[];
+  removedMemberIds?: readonly string[];
+};
+
+/** Per-event notify deltas keyed by app event id. */
+export type AttendeeNotifyByEvent = Record<string, AttendeeNotifyDelta>;
+
+/**
+ * Resolved notify decision for one calendar event part: the normalized emails
+ * that should be emailed when added/removed, plus `notifyAll` for invite-all
+ * events (where the whole permanent roster is deliberately invited/cancelled on
+ * the empty<->assigned boundary — the user opted into that mass email).
+ */
+export type AttendeeNotifyPlan = {
+  emails: Set<string>;
+  notifyAll: boolean;
+};
+
+export type AttendeeSyncOp = {email: string; sendUpdates: 'all' | 'none'};
+
+export function buildAttendeeNotifyPlan(params: {
+  optedIntoInviteAll: boolean;
+  triggeredByChange: boolean;
+  notifyEmails: Iterable<string>;
+}): AttendeeNotifyPlan {
+  const emails = new Set(
+    Array.from(params.notifyEmails)
+      .map((email) => normalizeEmail(email))
+      .filter((email) => email.length > 0),
+  );
+  return {
+    emails,
+    // Invite-all events keep emailing the whole roster — but only when a real
+    // assignment change triggered this reconcile. A passive full/manual sync
+    // carries no delta and stays silent.
+    notifyAll: params.optedIntoInviteAll && params.triggeredByChange,
+  };
+}
+
+/**
+ * Pure current-vs-desired attendee diff for one calendar event part, tagging
+ * each add/remove with whether it should notify the affected guest. Mirrors the
+ * convergence diff the reconciler applies; extracted so the notify decision is
+ * unit-testable in isolation.
+ */
+export function planAttendeeSync(params: {
+  organizerEmail: string | null;
+  currentAttendeeEmails: Iterable<string>;
+  desiredEmails: Iterable<string>;
+  notify: AttendeeNotifyPlan;
+}): {adds: AttendeeSyncOp[]; removes: AttendeeSyncOp[]} {
+  const organizerList = params.organizerEmail == null ? [] : [params.organizerEmail];
+  const currentAttendeeList = Array.from(params.currentAttendeeEmails);
+  const currentComparableEmails = normalizeComparableAttendeeEmails([
+    ...currentAttendeeList,
+    ...organizerList,
+  ]);
+  const desiredComparableEmails = normalizeComparableAttendeeEmails(
+    params.desiredEmails,
+    organizerList,
+  );
+  const currentAttendeeEmails = normalizeComparableAttendeeEmails(
+    currentAttendeeList,
+    organizerList,
+  );
+
+  const decide = (email: string): 'all' | 'none' =>
+    params.notify.notifyAll || params.notify.emails.has(email) ? 'all' : 'none';
+
+  const adds: AttendeeSyncOp[] = [];
+  for (const email of desiredComparableEmails) {
+    if (currentComparableEmails.includes(email)) {
+      continue;
+    }
+    adds.push({email, sendUpdates: decide(email)});
+  }
+
+  const removes: AttendeeSyncOp[] = [];
+  for (const email of currentAttendeeEmails) {
+    if (desiredComparableEmails.includes(email)) {
+      continue;
+    }
+    removes.push({email, sendUpdates: decide(email)});
+  }
+
+  return {adds, removes};
+}
+
+/** Resolve team member ids to their normalized calendar emails (cached). */
+async function resolveMemberEmails(
+  dependencies: SyncDependencies,
+  memberIds: Iterable<string>,
+  teamMemberCache: Map<string, Record<string, unknown> | null>,
+): Promise<string[]> {
+  const emails: string[] = [];
+  for (const memberId of memberIds) {
+    if (memberId.length === 0) {
+      continue;
+    }
+    if (!teamMemberCache.has(memberId)) {
+      teamMemberCache.set(
+        memberId,
+        await readTeamMemberById(dependencies.firestore, dependencies.collections, memberId),
+      );
+    }
+    const data = teamMemberCache.get(memberId) ?? null;
+    const email = normalizeOptionalText(data?.['email']);
+    if (email != null) {
+      emails.push(normalizeEmail(email));
+    }
+  }
+  return emails;
+}
+
 async function syncEventPartAttendees(
   dependencies: SyncDependencies,
   calendarEventId: string,
   managedEvent: ManagedCalendarEventSummary | null,
   desiredEmails: string[],
+  notify: AttendeeNotifyPlan,
 ): Promise<number> {
-  const organizerEmail = normalizeOptionalText(managedEvent?.organizerEmail);
-  const currentComparableEmails = normalizeComparableAttendeeEmails([
-    ...(managedEvent?.attendeeEmails ?? []),
-    ...(organizerEmail == null ? [] : [organizerEmail]),
-  ]);
-  const desiredComparableEmails = normalizeComparableAttendeeEmails(
+  const {adds, removes} = planAttendeeSync({
+    organizerEmail: normalizeOptionalText(managedEvent?.organizerEmail),
+    currentAttendeeEmails: managedEvent?.attendeeEmails ?? [],
     desiredEmails,
-    organizerEmail == null ? [] : [organizerEmail],
-  );
-  const currentAttendeeEmails = normalizeComparableAttendeeEmails(
-    managedEvent?.attendeeEmails ?? [],
-    organizerEmail == null ? [] : [organizerEmail],
-  );
+    notify,
+  });
 
   let changes = 0;
-  for (const email of desiredComparableEmails) {
-    if (currentComparableEmails.includes(email)) {
-      continue;
-    }
+  for (const {email, sendUpdates} of adds) {
     await executeAction(
       dependencies,
       'addAttendeeToEvent',
-      {
-        calendarEventId,
-        email,
-      },
+      {calendarEventId, email, sendUpdates},
     );
     changes += 1;
   }
 
-  for (const email of currentAttendeeEmails) {
-    if (desiredComparableEmails.includes(email)) {
-      continue;
-    }
+  for (const {email, sendUpdates} of removes) {
     await executeAction(
       dependencies,
       'removeAttendeeFromEvent',
-      {
-        calendarEventId,
-        email,
-      },
+      {calendarEventId, email, sendUpdates},
     );
     changes += 1;
   }
@@ -1207,9 +1310,31 @@ async function reconcileSingleAppEvent(
   eventData: Record<string, unknown>,
   eventSyncData: Record<string, unknown> | null,
   teamMemberCache: Map<string, Record<string, unknown> | null>,
+  notifyDelta?: AttendeeNotifyDelta,
 ): Promise<AppEventItemResult> {
   const desired = buildDesiredAppEventState(eventId, eventData, dependencies.environment);
   const desiredEmails = await readEventAttendeeEmails(dependencies, eventId, eventData, teamMemberCache);
+
+  // Notify only the members whose assignment genuinely changed in the operation
+  // that triggered this reconcile; every other attendee write (drift catch-up,
+  // manual/full sync) converges silently. Invite-all events email the whole
+  // roster on the empty<->assigned boundary (opted-in mass invite).
+  const addedMemberIds = notifyDelta?.addedMemberIds ?? [];
+  const removedMemberIds = notifyDelta?.removedMemberIds ?? [];
+  const triggeredByChange = addedMemberIds.length + removedMemberIds.length > 0;
+  const notifyEmails = await resolveMemberEmails(
+    dependencies,
+    [...addedMemberIds, ...removedMemberIds],
+    teamMemberCache,
+  );
+  const optedIntoInviteAll =
+    eventData['inviteAllPermanentWhenUnassigned'] === true &&
+    eventData['relevantForExtendedTeam'] !== true;
+  const notify = buildAttendeeNotifyPlan({
+    optedIntoInviteAll,
+    triggeredByChange,
+    notifyEmails,
+  });
   const currentStateAssemblyId = optionalString(eventSyncData?.['assemblyCalendarEventId']) ?? '';
   const currentStateMainId = optionalString(eventSyncData?.['mainCalendarEventId']) ?? '';
   const currentStateStatus = optionalString(eventSyncData?.['status']) ?? '';
@@ -1275,6 +1400,7 @@ async function reconcileSingleAppEvent(
       finalAssemblyId,
       managedAssemblyEvent,
       desiredEmails,
+      notify,
     );
   }
 
@@ -1295,6 +1421,7 @@ async function reconcileSingleAppEvent(
     finalMainId,
     managedMainEvent,
     desiredEmails,
+    notify,
   );
 
   if (
@@ -1558,6 +1685,10 @@ export async function syncAppEventCalendars(
   options: {
     eventId?: string | null;
     eventIds?: string[] | null;
+    // Per-event genuine attendee change that triggered this sync. Members named
+    // here are notified; every other attendee write converges silently. Absent
+    // for passive full/manual syncs, which are therefore entirely silent.
+    notifyByEventId?: AttendeeNotifyByEvent;
   } = {},
 ): Promise<AppEventSyncReport> {
   const failedEventIds: string[] = [];
@@ -1606,6 +1737,7 @@ export async function syncAppEventCalendars(
         eventData,
         syncStateDoc.exists ? syncStateDoc.data() ?? null : null,
         teamMemberCache,
+        options.notifyByEventId?.[eventId],
       );
       createdEventPartCount += result.createdEventPartCount;
       updatedEventPartCount += result.updatedEventPartCount;
@@ -1664,6 +1796,7 @@ export async function syncAppEventCalendars(
           eventData,
           syncStateDoc.exists ? syncStateDoc.data() ?? null : null,
           teamMemberCache,
+          options.notifyByEventId?.[eventId],
         );
         createdEventPartCount += result.createdEventPartCount;
         updatedEventPartCount += result.updatedEventPartCount;
@@ -1906,11 +2039,12 @@ export async function syncEventsAndConstraints(
 export async function syncAssignedEventsBestEffort(
   dependencies: SyncDependencies,
   eventIds: Iterable<string>,
+  notifyByEventId?: AttendeeNotifyByEvent,
 ): Promise<void> {
   const uniqueEventIds = uniqueSortedStrings(eventIds);
   for (const eventId of uniqueEventIds) {
     try {
-      await syncAppEventCalendars(dependencies, {eventId});
+      await syncAppEventCalendars(dependencies, {eventId, notifyByEventId});
     } catch (error) {
       console.error(`Failed to sync app event ${eventId}:`, error);
     }
@@ -1944,7 +2078,13 @@ export async function syncAssignedFutureEventsForMemberEmailChange(
     }
     futureEventIds.push(eventId);
   }
-  await syncAssignedEventsBestEffort(dependencies, futureEventIds);
+  // Notify the member on each event so their NEW address gets an invite; the
+  // old address is dropped silently (it is not a member id, so not in notify).
+  const notifyByEventId: AttendeeNotifyByEvent = {};
+  for (const eventId of futureEventIds) {
+    notifyByEventId[eventId] = {addedMemberIds: [teamMemberId]};
+  }
+  await syncAssignedEventsBestEffort(dependencies, futureEventIds, notifyByEventId);
 }
 
 export async function deleteAppEventCalendarArtifacts(
