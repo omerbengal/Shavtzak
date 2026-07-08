@@ -73,6 +73,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   final Map<String, TeamMember> _windowMembersMap = {};
   DateTime? _slotsWindowStart; // now - 90d; boundary between window and "extra-past"
 
+  // First-paint gate for the slots view. Each flag flips true when its stream
+  // delivers its first emit during a (re)load; _onRebuildAssignmentSlotsFromData
+  // suppresses the emit until all three are true, so the spinner clears
+  // straight to a fully-populated grid instead of flashing an empty/partial
+  // one while the streams arrive out of order. See _onLoadAssignmentSlots.
+  bool _slotsRolesReady = false;
+  bool _slotsEventsReady = false;
+  bool _slotsAssignmentsReady = false;
+
   // Events/assignments older than the window, loaded on demand.
   final Map<String, Event> _extraPastEventsMap = {};
   final List<Assignment> _extraPastAssignments = [];
@@ -626,21 +635,25 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final windowStart = now.subtract(pastWindow);
       final windowEnd = now.add(futureWindow);
 
-      // Load events within the time window only
-      final cachedEvents = await _eventRepository.getEventsByDateRange(
-        windowStart,
-        windowEnd,
-      );
+      // Stream-first load: do NOT seed these with awaited one-shot .get()s.
+      // The first `.get()` on a cold Firestore WebChannel parks ~30s (see the
+      // assignments note below); the watchX listeners subscribed just below
+      // deliver the exact same data in ~100ms. Clear any stale data from a
+      // previous load — the streams refill these on their first emit.
+      _windowMembersMap.clear();
+      _windowEventsMap.clear();
+      _cachedRoles = const [];
 
-      // Load all team members (small dataset, ~50-100)
-      final cachedMembers = await _teamRepository.getActiveTeamMembers();
-
-      _windowMembersMap
-        ..clear()
-        ..addAll({for (var tm in cachedMembers) tm.id: tm});
-      _windowEventsMap
-        ..clear()
-        ..addAll({for (var e in cachedEvents) e.id: e});
+      // Arm the first-paint gate. Held until the roles, events, AND assignments
+      // streams have EACH delivered once, so the first AssignmentSlotsLoaded is
+      // fully populated instead of flashing an empty/partial grid. (Members are
+      // intentionally excluded — assignments carry populated teamMember
+      // relations, so names render without the map; available-member lists fill
+      // a beat later and aren't visible until a slot is tapped.) The three
+      // stream listeners below flip these true.
+      _slotsRolesReady = false;
+      _slotsEventsReady = false;
+      _slotsAssignmentsReady = false;
 
       // Reset past-history pagination on every (re)load, incl. toggling past.
       _slotsWindowStart = windowStart;
@@ -649,11 +662,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _extraPastRowsRevealed = 0;
       _oldestLoadedEventStart = windowStart; // fetch events strictly older than the window
       _pastPagingExhausted = false;
-
-      // Seed the roles cache once. The RebuildAssignmentSlotsFromData handler
-      // reads _cachedRoles instead of re-fetching on every rebuild; the
-      // watchRoles listener below keeps it fresh on actual role changes.
-      _cachedRoles = await _roleRepository.getAllRoles();
 
       // First paint comes from the assignments STREAM's first emit — NOT an
       // awaited one-shot getAssignmentsInTimeWindow(). A one-shot `.get()` can
@@ -674,6 +682,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         (assignments) {
           // Cache current assignments for rebuild purposes
           _repository.cacheCurrentAssignments(assignments);
+          _slotsAssignmentsReady = true; // first-paint gate: assignments arrived
           // Rebuild slots using cached data - use _currentEventFilter to preserve user's filter
           add(RebuildAssignmentSlotsFromData(assignments, _windowEventsMap,
               _windowMembersMap, _currentEventFilter));
@@ -711,6 +720,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // Update event cache
           _windowEventsMap.clear();
           _windowEventsMap.addAll({for (var e in updatedEvents) e.id: e});
+          _slotsEventsReady = true; // first-paint gate: events arrived
 
           // Assignments are kept live by the watchAssignmentsInTimeWindow listener
           // (the source of truth); reuse its cache instead of re-querying.
@@ -735,6 +745,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // listener (the source of truth); reuse its cache instead of
           // re-querying.
           _cachedRoles = updatedRoles;
+          _slotsRolesReady = true; // first-paint gate: roles arrived
           final currentAssignments = _repository.getCurrentAssignments();
           add(RebuildAssignmentSlotsFromData(currentAssignments,
               _windowEventsMap, _windowMembersMap, _currentEventFilter));
@@ -1860,6 +1871,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     Emitter<AssignmentState> emit,
   ) async {
     try {
+      // First-paint gate: until the roles, events, and assignments streams have
+      // each streamed once (see _onLoadAssignmentSlots), suppress the emit and
+      // keep the spinner up rather than flash an empty/partial grid. All three
+      // flip true within ~150ms of load; once ready they stay ready, so live
+      // updates after first paint are never suppressed.
+      if (!_slotsRolesReady || !_slotsEventsReady || !_slotsAssignmentsReady) {
+        return;
+      }
+
       // Update the repository's cached assignments
       _repository.cacheCurrentAssignments(rebuildEvent.assignments);
 

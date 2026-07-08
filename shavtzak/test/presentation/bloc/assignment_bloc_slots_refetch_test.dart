@@ -243,9 +243,13 @@ void main() {
       bloc.add(const LoadAssignmentSlots());
       await pumpEventQueue();
 
-      // First paint is stream-driven: emit the initial (empty) assignment set so
-      // the bloc leaves AssignmentLoading (the mock broadcast stream doesn't
-      // auto-emit on subscribe the way `.snapshots()` does in the live app).
+      // First paint is now gated until the events, roles, AND assignments
+      // streams have each delivered once (the one-shot seed getEventsByDateRange
+      // / getActiveTeamMembers / getAllRoles was removed to kill a ~30s cold
+      // `.get()` park). In the live app these three are the `.snapshots()`
+      // initial emits; the mock broadcast streams don't auto-emit, so fire them.
+      eventStream.add([futureEvent('e1')]);
+      roleStream.add([medicRole()]);
       assignmentStream.add(const <Assignment>[]);
       await pumpEventQueue();
 
@@ -269,19 +273,64 @@ void main() {
     },
   );
 
+  test(
+    'first paint is held until events, roles, and assignments have each '
+    'streamed once (flicker-free gate)',
+    () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+
+      // Nothing has streamed yet → spinner holds.
+      expect(bloc.state, isA<AssignmentLoading>());
+
+      // Assignments alone are not enough — events and roles are still missing.
+      assignmentStream.add(const <Assignment>[]);
+      await pumpEventQueue();
+      expect(bloc.state, isA<AssignmentLoading>(),
+          reason: 'assignments alone must not open the gate');
+
+      // + events, still missing roles.
+      eventStream.add([futureEvent('e1')]);
+      await pumpEventQueue();
+      expect(bloc.state, isA<AssignmentLoading>(),
+          reason: 'events without roles must not open the gate');
+
+      // Members are intentionally NOT part of the gate: emitting them must not
+      // open it while roles are still missing (assignments carry populated
+      // teamMember relations, so the map isn't needed for a correct first paint).
+      teamStream.add([member('m1')]);
+      await pumpEventQueue();
+      expect(bloc.state, isA<AssignmentLoading>(),
+          reason: 'members are excluded from the gate');
+
+      // + roles → all three gated streams have now emitted → first paint lands,
+      // fully populated (no empty/partial intermediate frame was ever emitted).
+      roleStream.add([medicRole()]);
+      await pumpEventQueue();
+      expect(bloc.state, isA<AssignmentSlotsLoaded>(),
+          reason: 'gate opens only after events, roles, assignments each emit');
+      expect((bloc.state as AssignmentSlotsLoaded).totalSlots, 1);
+    },
+  );
+
   // ---------------------------------------------------------------------------
-  // Roles-cache performance fix tests.
+  // Roles-cache tests.
   //
-  // Bug: _onRebuildAssignmentSlotsFromData called getAllRoles() on EVERY
-  // rebuild. On a slots load, four stream subscriptions each fire an initial
-  // emit, producing ~5 RebuildAssignmentSlotsFromData dispatches and thus ~5
-  // identical getAllRoles fetches.
+  // History: _onRebuildAssignmentSlotsFromData once called getAllRoles() on
+  // EVERY rebuild (~5 identical fetches per load). That was first cut to a
+  // single load-time seed by caching into _cachedRoles.
   //
-  // Fix: cache roles (_cachedRoles); the rebuild reads the cache; getAllRoles
-  // is fetched only at initial load. watchRoles() emits the SAME role set as
-  // getAllRoles() (verified: both read utilities/Lists 'Roles', same mapping +
-  // sort, no filtering), so the watchRoles listener caches its stream payload
-  // directly (Variant A) and rebuilds. Net: ~5 fetches/load -> 1.
+  // Now (stream-first load): the one-shot getAllRoles() seed was removed
+  // entirely, along with getEventsByDateRange / getActiveTeamMembers, because
+  // the first cold `.get()` parked ~30s on the WebChannel handshake. _cachedRoles
+  // is seeded by the watchRoles() stream's first emit instead — watchRoles()
+  // emits the SAME role set getAllRoles() returns (both read utilities/Lists
+  // 'Roles', same mapping + sort, no filtering). Net: getAllRoles fetches per
+  // load -> 0. The rebuild reads the cache; the filter path falls back to a
+  // one-shot getAllRoles() only if the cache is somehow still empty.
   // ---------------------------------------------------------------------------
 
   test(
@@ -310,10 +359,12 @@ void main() {
       roleStream.add([medicRole()]);
       await pumpEventQueue();
 
-      // CORE ASSERTION: getAllRoles is called at most once across the whole
-      // multi-rebuild load (the single seed of _cachedRoles). Before the fix it
-      // was called once per rebuild (~5x).
-      verify(roleRepo.getAllRoles()).called(1);
+      // CORE ASSERTION: getAllRoles is NEVER called on the slots-load path.
+      // _cachedRoles is now seeded by the watchRoles stream's first emit (not a
+      // one-shot fetch), so no getAllRoles round-trip happens at load or on any
+      // of the member/event/role rebuilds. (Was ~5x pre-cache, then 1x as the
+      // load seed; now 0.)
+      verifyNever(roleRepo.getAllRoles());
 
       // Sanity: the load produced a valid slots state (e1 has 1 medic quota).
       expect(bloc.state, isA<AssignmentSlotsLoaded>());
@@ -330,8 +381,10 @@ void main() {
       bloc.add(const LoadAssignmentSlots());
       await pumpEventQueue();
 
-      // First paint is stream-driven: emit the initial (empty) assignment set so
-      // the bloc leaves AssignmentLoading.
+      // Open the first-paint gate (events + roles + assignments each once). The
+      // roles emit doubles as the seed of _cachedRoles with the ORIGINAL name.
+      eventStream.add([futureEvent('e1')]);
+      roleStream.add([medicRole()]);
       assignmentStream.add(const <Assignment>[]);
       await pumpEventQueue();
 
@@ -356,9 +409,9 @@ void main() {
       expect(slots.single.role.hebrewName, 'פרמדיק',
           reason: 'role rename must flow into rebuilt slots in real time');
 
-      // Invariant: getAllRoles is still called only once total (the load seed).
-      // The real-time change came through the watchRoles stream, not a re-fetch.
-      verify(roleRepo.getAllRoles()).called(1);
+      // Invariant: getAllRoles is never called — roles are seeded and refreshed
+      // entirely through the watchRoles stream, never a one-shot fetch.
+      verifyNever(roleRepo.getAllRoles());
     },
   );
 
@@ -391,8 +444,11 @@ void main() {
       addTearDown(() async => bloc.close());
 
       bloc.add(const LoadAssignmentSlots());
-      // Let the initial load complete: this seeds _cachedRoles via a single
-      // getAllRoles() call.
+      await pumpEventQueue();
+
+      // Seed _cachedRoles via the watchRoles stream (the new seed source, in
+      // place of the removed one-shot getAllRoles() at load).
+      roleStream.add([medicRole()]);
       await pumpEventQueue();
 
       // Dispatch a filter change. This drives _onRebuildAssignmentSlots ->
@@ -400,10 +456,10 @@ void main() {
       bloc.add(const RebuildAssignmentSlots(preservedFilter: {'e1'}));
       await pumpEventQueue();
 
-      // CORE ASSERTION: getAllRoles called only ONCE total (the load seed); the
-      // filter rebuild reused _cachedRoles. Against pre-fix code this is 2
-      // (load seed + filter-rebuild re-fetch).
-      verify(roleRepo.getAllRoles()).called(1);
+      // CORE ASSERTION: getAllRoles is never called — the load no longer seeds
+      // via a one-shot fetch, and the filter rebuild reuses the stream-seeded
+      // _cachedRoles instead of re-fetching.
+      verifyNever(roleRepo.getAllRoles());
 
       // The filter path still uses the full event/assignment datasets (expected,
       // unchanged) and produced a valid slots state.
@@ -442,10 +498,9 @@ void main() {
       expect(slots.single.role.hebrewName, 'פרמדיק',
           reason: 'filter rebuild must use the live-updated cached roles');
 
-      // ...and it did so WITHOUT an extra getAllRoles fetch: still 1 total (the
-      // load seed). The role change came via watchRoles, the filter rebuild used
-      // the cache.
-      verify(roleRepo.getAllRoles()).called(1);
+      // ...and it did so WITHOUT any getAllRoles fetch: the cache was seeded and
+      // updated purely through watchRoles, and the filter rebuild reused it.
+      verifyNever(roleRepo.getAllRoles());
     },
   );
 }
