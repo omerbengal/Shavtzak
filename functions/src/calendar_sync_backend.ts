@@ -1153,6 +1153,27 @@ export function buildAttendeeNotifyPlan(params: {
 }
 
 /**
+ * Deduplicate the affected event ids to non-empty ids and pair each with its
+ * notify delta (empty delta = a passive sync that emails no one). One returned
+ * entry becomes one calendar-sync task, so batch operations touching the same
+ * event collapse into a single task carrying that event's full delta.
+ */
+export function planCalendarSyncTasks(
+  eventIds: Iterable<string>,
+  notifyByEventId: AttendeeNotifyByEvent = {},
+): Array<{eventId: string; delta: AttendeeNotifyDelta}> {
+  const uniqueEventIds = Array.from(new Set(
+    Array.from(eventIds).filter(
+      (eventId): eventId is string => typeof eventId === 'string' && eventId.length > 0,
+    ),
+  ));
+  return uniqueEventIds.map((eventId) => ({
+    eventId,
+    delta: notifyByEventId[eventId] ?? {},
+  }));
+}
+
+/**
  * Pure current-vs-desired attendee diff for one calendar event part, tagging
  * each add/remove with whether it should notify the affected guest. Mirrors the
  * convergence diff the reconciler applies; extracted so the notify decision is

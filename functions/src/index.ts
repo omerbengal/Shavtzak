@@ -3,6 +3,7 @@ import express, {Request, Response} from 'express';
 import {randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash} from 'node:crypto';
 import {initializeApp} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
+import {getFunctions} from 'firebase-admin/functions';
 import {
   FieldValue,
   Firestore,
@@ -10,6 +11,7 @@ import {
   getFirestore,
 } from 'firebase-admin/firestore';
 import {onRequest} from 'firebase-functions/v2/https';
+import {onTaskDispatched} from 'firebase-functions/v2/tasks';
 import {
   canExecuteDriveAction,
   DriveExportValidationError,
@@ -27,6 +29,7 @@ import {
 import {
   deleteAppEventCalendarArtifacts,
   listInScopeAppEventIds,
+  planCalendarSyncTasks,
   syncAppEventCalendars,
   syncAssignedEventsBestEffort,
   syncAssignedFutureEventsForMemberEmailChange,
@@ -36,6 +39,7 @@ import {
 import type {
   AppEventSyncReport,
   AttendeeNotifyByEvent,
+  AttendeeNotifyDelta,
   ConstraintSyncReport,
 } from './calendar_sync_backend';
 
@@ -89,26 +93,88 @@ const CALENDAR_APP_EVENT_COLOR_ID = '7';
 const CALENDAR_TEST_MODE_COLOR_ID = '5';
 const CALENDAR_UNAVAILABILITY_COLOR_ID = '8';
 
-// Fire-and-forget Google Calendar sync. The HTTP handler returns immediately
-// (no `await`) so the user doesn't pay the ~5s Calendar API latency on every
-// assignment write. Per-event errors are already swallowed and logged inside
-// `syncAssignedEventsBestEffort`; this outer catch logs anything that escapes
-// the inner handler. Logs are tagged `[calendar-sync-error]` so a GCP Cloud
-// Logging alert can be configured to email on these failures.
-function fireAndForgetCalendarSync(
+// One app event's calendar-sync job, carrying the precise notify delta so only
+// the genuinely-changed member is emailed.
+type CalendarSyncTaskPayload = {
+  eventId: string;
+  environment: EnvironmentMode;
+  actor: {memberId: string; isAdmin: boolean};
+  delta: AttendeeNotifyDelta;
+};
+
+const CALENDAR_SYNC_TASK_QUEUE = 'calendarSyncTask';
+
+// Calendar sync runs on a Cloud Tasks queue rather than fire-and-forget: on
+// Cloud Run, un-awaited background work has its CPU throttled the instant the
+// HTTP response is sent, which stretched a ~3s sync into minutes. As a task it
+// runs at full CPU. `rateLimits` keep us under Google Calendar's quota BY DESIGN
+// (this is what makes the old invite storm structurally impossible), and
+// `retryConfig.maxAttempts` is capped so a persistent failure can't run away.
+// Firebase provisions + secures the queue on deploy (only Cloud Tasks + admins
+// may enqueue).
+export const calendarSyncTask = onTaskDispatched<CalendarSyncTaskPayload>(
+  {
+    region: 'us-central1',
+    retryConfig: {maxAttempts: 5, minBackoffSeconds: 5, maxBackoffSeconds: 60},
+    rateLimits: {maxConcurrentDispatches: 2, maxDispatchesPerSecond: 3},
+  },
+  async (request) => {
+    const {eventId, environment, actor, delta} = request.data;
+    const report = await syncAppEventCalendars(
+      {
+        firestore: db,
+        actor: {memberId: actor.memberId, isAdmin: actor.isAdmin},
+        environment,
+        collections: getCollections(environment),
+      },
+      {eventId, notifyByEventId: {[eventId]: delta}},
+    );
+    // syncAppEventCalendars swallows per-event failures into `failedEventIds`
+    // instead of throwing. Re-throw so Cloud Tasks retries (capped by
+    // retryConfig) — e.g. a transient Google rate-limit. The reconcile is
+    // idempotent (addAttendee no-ops if already present), so retries never
+    // double-invite.
+    if (report.failedEventIds.length > 0) {
+      throw new Error(`[calendar-sync] reconcile failed for eventId=${eventId}; will retry`);
+    }
+  },
+);
+
+// Enqueue one calendar-sync task per affected event. Awaited so each task is
+// durably created before the HTTP response returns — an un-awaited enqueue would
+// hit the very CPU-throttle problem this replaces. Enqueue failures are
+// swallowed + logged (tagged `[calendar-sync-error]`) so a queue hiccup never
+// fails the underlying assignment/event write.
+async function enqueueCalendarSync(
   dependencies: Parameters<typeof syncAssignedEventsBestEffort>[0],
   eventIds: Iterable<string>,
   operationLabel: string,
-  notifyByEventId?: AttendeeNotifyByEvent,
-): void {
-  const ids = Array.from(eventIds);
-  void syncAssignedEventsBestEffort(dependencies, ids, notifyByEventId).catch((err: unknown) => {
+  notifyByEventId: AttendeeNotifyByEvent = {},
+): Promise<void> {
+  const tasks = planCalendarSyncTasks(eventIds, notifyByEventId);
+  if (tasks.length === 0) {
+    return;
+  }
+  try {
+    const queue = getFunctions().taskQueue<CalendarSyncTaskPayload>(CALENDAR_SYNC_TASK_QUEUE);
+    await Promise.all(tasks.map((task) =>
+      queue.enqueue({
+        eventId: task.eventId,
+        environment: dependencies.environment,
+        actor: {
+          memberId: dependencies.actor.memberId,
+          isAdmin: dependencies.actor.isAdmin,
+        },
+        delta: task.delta,
+      }),
+    ));
+  } catch (err: unknown) {
     console.error(
-      `[calendar-sync-error] background sync failed for ${operationLabel} ` +
-        `(eventIds=${JSON.stringify(ids)}):`,
+      `[calendar-sync-error] failed to enqueue calendar sync for ${operationLabel} ` +
+        `(eventIds=${JSON.stringify(tasks.map((task) => task.eventId))}):`,
       err,
     );
-  });
+  }
 }
 
 // Record that `memberId`'s assignment was added to / removed from `eventId`, so
@@ -2478,7 +2544,7 @@ async function executeMutation(
         'added',
         nextAssignment['teamMemberId'],
       );
-      fireAndForgetCalendarSync(
+      await enqueueCalendarSync(
         {
           firestore: db,
           actor: {
@@ -2524,7 +2590,7 @@ async function executeMutation(
         'added',
         nextAssignment['teamMemberId'],
       );
-      fireAndForgetCalendarSync(
+      await enqueueCalendarSync(
         {
           firestore: db,
           actor: {
@@ -2594,7 +2660,7 @@ async function executeMutation(
       if (typeof existing['eventId'] === 'string') {
         const deleteNotify: AttendeeNotifyByEvent = {};
         recordAttendeeNotify(deleteNotify, existing['eventId'], 'removed', existing['teamMemberId']);
-        fireAndForgetCalendarSync(
+        await enqueueCalendarSync(
           {
             firestore: db,
             actor: {
@@ -2636,7 +2702,7 @@ async function executeMutation(
       for (const assignment of existingAssignments) {
         recordAttendeeNotify(deleteByEventNotify, eventId, 'removed', assignment.data['teamMemberId']);
       }
-      fireAndForgetCalendarSync(
+      await enqueueCalendarSync(
         {
           firestore: db,
           actor: {
@@ -2726,7 +2792,7 @@ async function executeMutation(
           teamMemberId,
         );
       }
-      fireAndForgetCalendarSync(
+      await enqueueCalendarSync(
         {
           firestore: db,
           actor: {
@@ -2818,7 +2884,7 @@ async function executeMutation(
           assignment.data['teamMemberId'],
         );
       }
-      fireAndForgetCalendarSync(
+      await enqueueCalendarSync(
         {
           firestore: db,
           actor: {
@@ -2918,7 +2984,7 @@ async function executeMutation(
         const value = rawAssignment as Record<string, unknown>;
         recordAttendeeNotify(insertBatchNotify, value['eventId'], 'added', value['teamMemberId']);
       }
-      fireAndForgetCalendarSync(
+      await enqueueCalendarSync(
         {
           firestore: db,
           actor: {

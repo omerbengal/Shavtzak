@@ -7,6 +7,7 @@ import {
   listInScopeAppEventIds,
   buildAttendeeNotifyPlan,
   planAttendeeSync,
+  planCalendarSyncTasks,
   type AppEventPartSummary,
   type AttendeeNotifyPlan,
 } from './calendar_sync_backend';
@@ -385,4 +386,32 @@ test('planAttendeeSync: organizer is never added or removed', () => {
   });
   assert.deepEqual(adds, []);
   assert.deepEqual(removes, []);
+});
+
+// --- Cloud Tasks: one sync task per affected event ---
+
+test('planCalendarSyncTasks: dedupes events, drops blanks, pairs each with its delta', () => {
+  const tasks = planCalendarSyncTasks(
+    ['e1', 'e1', '', 'e2'],
+    {e1: {addedMemberIds: ['m1']}},
+  );
+  assert.deepEqual(tasks, [
+    {eventId: 'e1', delta: {addedMemberIds: ['m1']}},
+    {eventId: 'e2', delta: {}}, // no delta for e2 -> passive sync, emails no one
+  ]);
+});
+
+test('planCalendarSyncTasks: batch delete of one event collapses to a single task', () => {
+  // deleteByEvent hands the same event id once with all removed members.
+  const tasks = planCalendarSyncTasks(
+    ['ev'],
+    {ev: {removedMemberIds: ['a', 'b', 'c']}},
+  );
+  assert.equal(tasks.length, 1);
+  assert.deepEqual(tasks[0], {eventId: 'ev', delta: {removedMemberIds: ['a', 'b', 'c']}});
+});
+
+test('planCalendarSyncTasks: no real event ids -> no tasks', () => {
+  assert.deepEqual(planCalendarSyncTasks([], {}), []);
+  assert.deepEqual(planCalendarSyncTasks(['', ''], {}), []);
 });
