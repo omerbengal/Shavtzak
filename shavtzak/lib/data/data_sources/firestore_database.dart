@@ -694,19 +694,29 @@ class FirestoreDatabase implements DatabaseInterface {
       final endOfDay =
           Timestamp.fromDate(normalizedDate.add(const Duration(days: 1)));
 
+      // Query by the day-range on `startDate` only, then match `name` in
+      // memory. A single-field range is served by Firestore's automatic
+      // single-field index, so this needs no composite index.
+      //
+      // The previous query also filtered `name` server-side
+      // (.where('name', isEqualTo: name)), pairing an equality filter with a
+      // range filter on a *different* field. Firestore can only serve that from
+      // a composite (name, startDate) index, which this project never created —
+      // so the query threw FAILED_PRECONDITION on every save. Both createEvent
+      // and updateEvent catch and swallow that error ("continue if the
+      // duplicate check fails"), which silently disabled duplicate detection.
+      // A single day holds very few events, so filtering the name here is cheap.
       final snapshot = await _firestore
           .collection(_eventsCollection)
-          .where('name', isEqualTo: name)
           .where('startDate', isGreaterThanOrEqualTo: startOfDay)
           .where('startDate', isLessThan: endOfDay)
           .get();
 
-      // If excludeEventId is provided, filter it out
-      if (excludeEventId != null) {
-        return snapshot.docs.any((doc) => doc.id != excludeEventId);
-      }
-
-      return snapshot.docs.isNotEmpty;
+      return snapshot.docs.any((doc) {
+        // Editing an event is not a self-collision.
+        if (excludeEventId != null && doc.id == excludeEventId) return false;
+        return (doc.data()['name'] as String?) == name;
+      });
     } catch (e) {
       throw DatabaseException('Failed to check for duplicate event: $e');
     }
