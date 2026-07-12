@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -148,6 +149,25 @@ Future<void> _initialize() async {
         options: DefaultFirebaseOptions.currentPlatform,
       );
     });
+
+    // Force Firestore Web onto the long-polling transport.
+    //
+    // The default streaming (WebChannel) connection is a single held-open HTTP
+    // request the server pushes down. Some proxies/firewalls/network stacks
+    // BUFFER such responses, so the browser receives nothing until an internal
+    // ~30s deadline fires and the SDK recovers — an intermittent freeze on the
+    // first server round-trip (observed on the /user/assignments first paint,
+    // where every relation read is server-backed). Long-polling uses discrete
+    // requests that each complete normally, so no held-open response can be
+    // buffered — removing the failure mode rather than detecting-and-recovering.
+    //
+    // MUST be set before the first Firestore read (AppVersionService below
+    // already reads). Settings are locked once the client has been used.
+    if (kIsWeb) {
+      FirebaseFirestore.instance.settings = const Settings(
+        webExperimentalForceLongPolling: true,
+      );
+    }
 
     // Initialize realtime app version guard (non-blocking).
     _timed('AppVersionService.init',
