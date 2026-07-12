@@ -271,6 +271,12 @@ class FirestoreDatabase implements DatabaseInterface {
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
+      // Diagnostic: cache vs server for this relation-cache source (see
+      // watchAssignmentsByPerson:raw note on the ~30s first-paint park).
+      _logDb(LogEventType.dbStreamEmit, 'watchTeamMembers:meta', {
+        'count': snapshot.docs.length,
+        'isFromCache': snapshot.metadata.isFromCache,
+      });
       return snapshot.docs
           .map((doc) => TeamMemberModel.fromFirestore(doc).toEntity())
           .toList();
@@ -508,6 +514,13 @@ class FirestoreDatabase implements DatabaseInterface {
         .orderBy('startDate', descending: true)
         .snapshots()
         .map((snapshot) {
+      // Diagnostic: is this relation-cache source served locally or from the
+      // server? A cold source's first server snapshot is where the ~30s park
+      // hides (see watchAssignmentsByPerson:raw note).
+      _logDb(LogEventType.dbStreamEmit, 'watchEvents:meta', {
+        'count': snapshot.docs.length,
+        'isFromCache': snapshot.metadata.isFromCache,
+      });
       final events = snapshot.docs
           .map((doc) => EventModel.fromFirestore(doc).toEntity())
           .toList();
@@ -776,6 +789,10 @@ class FirestoreDatabase implements DatabaseInterface {
         'collection': 'assignments',
         'teamMemberId': teamMemberId,
         'count': snapshot.docs.length,
+        // Diagnostic: distinguish a local cache hit from a server round-trip.
+        // A ~30s park on a first paint is the server round-trip stalling; the
+        // cached reads that mask it show isFromCache:true.
+        'isFromCache': snapshot.metadata.isFromCache,
       });
       final assignments = snapshot.docs
           .map((doc) => AssignmentModel.fromFirestore(doc).toEntity())
@@ -1267,6 +1284,13 @@ class FirestoreDatabase implements DatabaseInterface {
         .orderBy('sortOrder')
         .snapshots()
         .map((snapshot) {
+      // Diagnostic: labels is a small, rarely-touched collection — the prime
+      // suspect for a COLD first-paint source whose server round-trip parks
+      // ~30s (see watchAssignmentsByPerson:raw note).
+      _logDb(LogEventType.dbStreamEmit, 'watchAssignmentLabels:meta', {
+        'count': snapshot.docs.length,
+        'isFromCache': snapshot.metadata.isFromCache,
+      });
       return snapshot.docs
           .map((doc) => AssignmentLabelModel.fromFirestore(doc).toEntity())
           .toList();
