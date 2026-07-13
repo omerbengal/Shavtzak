@@ -6,6 +6,7 @@ import '../../../core/debug/logger.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/event_sorting.dart';
 import '../../../core/utils/filter_persistence.dart';
+import '../../../core/utils/same_day_assignments.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/team_repository.dart';
@@ -1640,7 +1641,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             if (otherEvent.id == event.id) continue;
 
             // Check if events share dates
-            if (_eventsShareDate(event, otherEvent)) {
+            if (eventsShareDay(event, otherEvent)) {
               final memberId = otherAssignment.teamMemberId;
               final member = allMembers.firstWhere(
                 (m) => m.id == memberId,
@@ -1951,7 +1952,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               if (otherEvent.isDeactivated) continue;
 
               // Check if events share dates
-              if (_eventsShareDate(eventData, otherEvent)) {
+              if (eventsShareDay(eventData, otherEvent)) {
                 final memberId = otherAssignment.teamMemberId;
                 final member = teamMembersMap[memberId];
 
@@ -2291,21 +2292,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _emitOrLog(emit, AssignmentError(message));
       _completeActionFailure(event.completion, message);
     }
-  }
-
-  /// Helper function to check if two events share at least one day
-  bool _eventsShareDate(Event a, Event b) {
-    // Normalize dates to day precision (ignore time)
-    final aStart =
-        DateTime(a.startDate.year, a.startDate.month, a.startDate.day);
-    final aEnd = DateTime(a.endDate.year, a.endDate.month, a.endDate.day);
-    final bStart =
-        DateTime(b.startDate.year, b.startDate.month, b.startDate.day);
-    final bEnd = DateTime(b.endDate.year, b.endDate.month, b.endDate.day);
-
-    // Check for overlap: events overlap if one starts before the other ends
-    return aStart.isBefore(bEnd.add(const Duration(days: 1))) &&
-        bStart.isBefore(aEnd.add(const Duration(days: 1)));
   }
 
   /// Count how many display rows the given events would produce (quota slots +
