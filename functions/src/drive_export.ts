@@ -784,17 +784,6 @@ type AssignmentOnlySerializeOptions = {
   mode: AssignmentExportMode;
   selectedEventIds: string[];
   roleSortOrders: Record<string, number>;
-  /**
-   * EVERY event, past ones included — the pool for "assigned elsewhere that
-   * day". Deliberately not the future-filtered set used for rows: the mark
-   * describes the person's real calendar, not what the admin happened to
-   * export. Deactivated events are filtered out here.
-   *
-   * Collapsing this into the row-scoped `eventsData` is the easy mistake — it
-   * would silently stop marking clashes with events that have already ended.
-   * Pinned by the "including one that already ended" test.
-   */
-  allEventsData: Record<string, Record<string, unknown>>;
 };
 
 type AssignmentOnlyRow = {
@@ -838,21 +827,33 @@ function eventsShareDay(
 /**
  * memberId -> eventId -> names of the OTHER events sharing a calendar day with
  * that event to which the member is also assigned, sorted by start date then
- * name. Deactivated events never count as the other event.
+ * name.
+ *
+ * `eventsData` is the future-filtered pool (`filterFutureEventsData`'s output) —
+ * the same set the export's own rows are built from, not every event ever
+ * created. This is deliberate, for parity with the UI: `/admin/assignments` and
+ * `/summary` never mark a conflict on a day that has already passed, so the
+ * export must not either. An event that has already ended is simply absent from
+ * `eventsData` and can never be named here.
+ *
+ * `filterFutureEventsData` already drops deactivated events too, so the inline
+ * `isDeactivated` check below is belt-and-braces — redundant given the caller's
+ * current pool, but it keeps this function correct standalone if ever called
+ * with a differently-filtered map.
  *
  * Symmetric by construction: if a member is in E and O on a shared day, the map
  * names O under E *and* E under O.
  */
 function buildSameDayOtherEventNames(
   assignments: FirestoreDoc[],
-  allEventsData: Record<string, Record<string, unknown>>,
+  eventsData: Record<string, Record<string, unknown>>,
 ): Map<string, Map<string, string[]>> {
   const eventIdsByMember = new Map<string, Set<string>>();
   for (const doc of assignments) {
     const memberId = asString(doc.data['teamMemberId']);
     const eventId = asString(doc.data['eventId']);
     if (memberId.length === 0 || eventId.length === 0) continue;
-    const eventData = allEventsData[eventId];
+    const eventData = eventsData[eventId];
     if (eventData == null || eventData['isDeactivated'] === true) continue;
     const ids = eventIdsByMember.get(memberId) ?? new Set<string>();
     ids.add(eventId);
@@ -870,19 +871,19 @@ function buildSameDayOtherEventNames(
         .filter(
           (otherId) =>
             otherId !== eventId &&
-            eventsShareDay(allEventsData[eventId], allEventsData[otherId]),
+            eventsShareDay(eventsData[eventId], eventsData[otherId]),
         )
         .sort((first, second) => {
-          const byDate = (eventDayRange(allEventsData[first])?.[0] ?? '').localeCompare(
-            eventDayRange(allEventsData[second])?.[0] ?? '',
+          const byDate = (eventDayRange(eventsData[first])?.[0] ?? '').localeCompare(
+            eventDayRange(eventsData[second])?.[0] ?? '',
           );
           if (byDate !== 0) return byDate;
-          return asString(allEventsData[first]['name']).localeCompare(
-            asString(allEventsData[second]['name']),
+          return asString(eventsData[first]['name']).localeCompare(
+            asString(eventsData[second]['name']),
             'he',
           );
         })
-        .map((otherId) => asString(allEventsData[otherId]['name']));
+        .map((otherId) => asString(eventsData[otherId]['name']));
       if (others.length > 0) perEvent.set(eventId, others);
     }
     if (perEvent.size > 0) result.set(memberId, perEvent);
@@ -1008,7 +1009,7 @@ function serializeAssignmentsOnly(
   // perEvent only: the boss asked for the mark in the לפי אירוע export.
   const sameDayOtherEventNames =
     options.mode === 'perEvent'
-      ? buildSameDayOtherEventNames(assignments, options.allEventsData)
+      ? buildSameDayOtherEventNames(assignments, eventsData)
       : new Map<string, Map<string, string[]>>();
 
   return {
@@ -1196,7 +1197,6 @@ export async function exportProductionDataToSheets(
         mode: options.assignmentMode ?? 'perPerson',
         selectedEventIds: options.eventIds ?? [],
         roleSortOrders,
-        allEventsData: eventsData,
       }),
     ];
 
@@ -1305,7 +1305,6 @@ export function __testSerializeAssignmentsOnly(input: {
       mode: input.mode,
       selectedEventIds: input.selectedEventIds,
       roleSortOrders: input.roleSortOrders,
-      allEventsData: input.eventsData,
     },
   ) as {sheetName: string; headers: string[]; rows: unknown[][]};
 }

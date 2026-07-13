@@ -377,11 +377,15 @@ test('per-person export never suffixes the member name', () => {
   assert.deepEqual(sheet.rows.map((row) => row[0]), ['יוסי כהן', 'יוסי כהן']);
 });
 
-test('per-event export finds the other event among ALL events, including one that already ended', () => {
-  // The only test that tells the `allEventsData` pool apart from the row-scoped
-  // `futureEventsData`: 'ended' finished BEFORE `now`, so it is absent from the
-  // future-filtered map and can only be found in the full one. Every other test
-  // dates its events on or after `now`, where the two pools are identical.
+test('per-event export does not name an other event that has already ended (matches the UI)', () => {
+  // The mark's pool is `futureEventsData` — the exact same future-filtered set the
+  // export's own rows come from — so an already-ended event is invisible to it,
+  // deliberately: this keeps the export in parity with the UI screens, which never
+  // mark a conflict on a day that has already passed. 'ended' finished BEFORE `now`,
+  // so it is filtered out of the pool even though it shared 10 July with the
+  // still-running 'anchor' event. Every other test dates its events on or after
+  // `now`, where this filtering has no visible effect — this is the one test that
+  // exercises it.
   const sheet = __testSerializeAssignmentsOnly({
     assignments: [
       {id: 'a1', data: {eventId: 'anchor', teamMemberId: 'm1', roleType: 'medic'}},
@@ -410,9 +414,7 @@ test('per-event export finds the other event among ALL events, including one tha
     now: new Date('2026-07-12T12:00:00.000Z'),
   });
 
-  assert.deepEqual(sheet.rows.map((row) => row[0]), [
-    'יוסי כהן (משובץ גם במופע ערב)',
-  ]);
+  assert.deepEqual(sheet.rows.map((row) => row[0]), ['יוסי כהן']);
 });
 
 test('per-event export sorts on the clean name, so the mark never reorders same-named members', () => {

@@ -167,11 +167,13 @@ becomes:
 יוסי כהן (משובץ גם במופע ערב, טקס)      # 2+ events, comma-joined inside one paren
 ```
 
-- The "other events" pool is **all events** (`eventsData`, not `futureEventsData`) minus
-  deactivated ones — a person's real calendar, not the export's selection. Consequence,
-  and it is correct: if the admin exports only `E`, M's row under `E` still reads
-  `(משובץ גם ב-O)` even though `O` is not in the file. If they export both, M appears
-  twice, each row naming the other.
+- The "other events" pool is `futureEventsData` — the same non-deactivated,
+  not-yet-ended set the exported rows themselves are built from — not the export's
+  *selection* (`selectedEventIds`). Consequence, and it is correct: if the admin
+  exports only `E`, M's row under `E` still reads `(משובץ גם ב-O)` even though `O` is
+  not in the file. If they export both, M appears twice, each row naming the other.
+  An event that has already ended is never named — see "Event pool parity with the
+  UI" below.
 - **The suffix is applied only in the final `rows.map(...)` projection.** The row object
   keeps the clean `teamMember` name, because the `perEvent` sort tiebreaks on
   `teamMember.localeCompare` — suffixing before sorting would shuffle rows.
@@ -181,38 +183,23 @@ becomes:
   `שם חבר צוות` column, so the script's hard-coded 10-column layout (column widths,
   the D+E merge, the notes-wrap on column J) is unaffected.
 
-## The three surfaces use different event pools (deliberate)
+## Event pool parity across all three surfaces
 
-The rule above says "every event `O`" `M` is also assigned to, but "every event" is
-not the same set on all three surfaces. This is a deliberate choice, not an
-inconsistency — recorded here so it does not get "fixed" into a bug later.
+All three surfaces use the same event pool: non-deactivated events that have not
+yet ended.
 
-- **The Excel export**'s pool is ALL events, including ones that have already ended.
-  `drive_export.ts` passes the unfiltered `eventsData` as `allEventsData` into
-  `serializeAssignmentsOnly`, deliberately not the future-filtered `futureEventsData`
-  used for the exported rows themselves.
-- **`/summary`**'s pool excludes ended events, with no way to widen it. `SummaryScreen`
-  narrows `allEvents` down to `upcomingEvents` (`endDate >= today`) before any of it
-  reaches `EventSummaryTile`.
-- **`/admin/assignments`**'s pool excludes ended events *by default*, but — unlike
-  `/summary` — the "show past events" filter widens it: `AssignmentBloc` gates the
-  narrowing on `if (!FilterPersistence.showPastEvents)`.
+- **The Excel export** and **`/summary`** use exactly that set. `drive_export.ts`
+  builds it once as `futureEventsData` (`filterFutureEventsData`) and uses it both
+  for the exported rows and as the pool for `buildSameDayOtherEventNames` — there is
+  no separate, wider pool. `SummaryScreen` narrows `allEvents` down to
+  `upcomingEvents` (`endDate >= today`) before any of it reaches `EventSummaryTile`.
+- **`/admin/assignments`** uses that same pool *by default*, but its "show past
+  events" filter can widen it — `AssignmentBloc` gates the narrowing on
+  `if (!FilterPersistence.showPastEvents)`. That is a user-controlled view of the
+  same data, not a divergence from the rule below.
 
-**Consequence:** the export can name a same-day conflict that neither UI screen shows.
-The reverse cannot happen — the export's pool is a superset of both UI pools. The gap
-only bites when the *other* event `O` has fully ENDED while the anchor event `E` is a
-still-running multi-day event: a conflict that is already history and cannot be acted
-on. Widening `/summary`'s pool to close this gap would drag ended events into a screen
-that is deliberately forward-looking only — see the reasoning inline at
-`event_summary_tile.dart`, above the `sameDayOtherEventsByMember(...)` call:
-
-> `allAssignments` is every assignment; `allEvents` is every non-deactivated event that
-> has NOT yet ended (`SummaryScreen` narrows it to `upcomingEvents` before it reaches
-> this tile). So the mark sees the member's real calendar rather than just this event's
-> roster — with one deliberate gap: a conflict on a day that has already passed inside a
-> still-running multi-day event is not marked. That conflict is history and cannot be
-> acted on, and `/admin/assignments` applies the same window by default (it can widen it
-> via the "show past events" filter; this screen has no such toggle).
+**The rule, plainly: a conflict on a day that has already passed is never marked,
+anywhere.** That conflict is history and cannot be acted on.
 
 ## Non-goals
 
