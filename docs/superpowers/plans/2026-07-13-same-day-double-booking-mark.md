@@ -1614,6 +1614,15 @@ git commit -m "feat(assignments): show the same-day mark in the מסך מנהל�
 
 ### Task 8: Mark double-booked people in the `לפי אירוע` Excel export
 
+> **⚠️ SUPERSEDED after the branch was finished (commit `55c8eb5`).** This task's
+> `allEventsData` option — an "other events" pool of ALL events including ones that had
+> already ended — was **removed** at Omer's request. The export was naming a conflict
+> the two UI screens do not, and he wanted parity. The pool is now the same
+> `futureEventsData` the exported rows are built from, so a conflict on a day that has
+> already passed is never marked, anywhere. **Do not re-apply this task's
+> `allEventsData` steps.** The living record is the spec's "Event pool parity across all
+> three surfaces" section; the code below is kept only as the execution history.
+
 The name cell becomes `יוסי כהן (משובץ גם במופע ערב)`. Nothing else in the sheet changes, so the Google Apps Script — which hard-codes the 10-column layout — needs no update.
 
 **Files:**

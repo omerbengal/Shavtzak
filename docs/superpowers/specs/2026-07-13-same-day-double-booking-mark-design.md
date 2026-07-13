@@ -172,8 +172,8 @@ becomes:
   *selection* (`selectedEventIds`). Consequence, and it is correct: if the admin
   exports only `E`, M's row under `E` still reads `(משובץ גם ב-O)` even though `O` is
   not in the file. If they export both, M appears twice, each row naming the other.
-  An event that has already ended is never named — see "Event pool parity with the
-  UI" below.
+  An event that has already ended is never named — see "Event pool parity across all
+  three surfaces" below.
 - **The suffix is applied only in the final `rows.map(...)` projection.** The row object
   keeps the clean `teamMember` name, because the `perEvent` sort tiebreaks on
   `teamMember.localeCompare` — suffixing before sorting would shuffle rows.
