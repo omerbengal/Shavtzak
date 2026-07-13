@@ -879,6 +879,7 @@ function buildSameDayOtherEventNames(
           if (byDate !== 0) return byDate;
           return asString(allEventsData[first]['name']).localeCompare(
             asString(allEventsData[second]['name']),
+            'he',
           );
         })
         .map((otherId) => asString(allEventsData[otherId]['name']));

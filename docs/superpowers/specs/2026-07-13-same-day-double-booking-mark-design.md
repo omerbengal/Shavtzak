@@ -181,6 +181,39 @@ becomes:
   `שם חבר צוות` column, so the script's hard-coded 10-column layout (column widths,
   the D+E merge, the notes-wrap on column J) is unaffected.
 
+## The three surfaces use different event pools (deliberate)
+
+The rule above says "every event `O`" `M` is also assigned to, but "every event" is
+not the same set on all three surfaces. This is a deliberate choice, not an
+inconsistency — recorded here so it does not get "fixed" into a bug later.
+
+- **The Excel export**'s pool is ALL events, including ones that have already ended.
+  `drive_export.ts` passes the unfiltered `eventsData` as `allEventsData` into
+  `serializeAssignmentsOnly`, deliberately not the future-filtered `futureEventsData`
+  used for the exported rows themselves.
+- **`/summary`**'s pool excludes ended events, with no way to widen it. `SummaryScreen`
+  narrows `allEvents` down to `upcomingEvents` (`endDate >= today`) before any of it
+  reaches `EventSummaryTile`.
+- **`/admin/assignments`**'s pool excludes ended events *by default*, but — unlike
+  `/summary` — the "show past events" filter widens it: `AssignmentBloc` gates the
+  narrowing on `if (!FilterPersistence.showPastEvents)`.
+
+**Consequence:** the export can name a same-day conflict that neither UI screen shows.
+The reverse cannot happen — the export's pool is a superset of both UI pools. The gap
+only bites when the *other* event `O` has fully ENDED while the anchor event `E` is a
+still-running multi-day event: a conflict that is already history and cannot be acted
+on. Widening `/summary`'s pool to close this gap would drag ended events into a screen
+that is deliberately forward-looking only — see the reasoning inline at
+`event_summary_tile.dart`, above the `sameDayOtherEventsByMember(...)` call:
+
+> `allAssignments` is every assignment; `allEvents` is every non-deactivated event that
+> has NOT yet ended (`SummaryScreen` narrows it to `upcomingEvents` before it reaches
+> this tile). So the mark sees the member's real calendar rather than just this event's
+> roster — with one deliberate gap: a conflict on a day that has already passed inside a
+> still-running multi-day event is not marked. That conflict is history and cannot be
+> acted on, and `/admin/assignments` applies the same window by default (it can widen it
+> via the "show past events" filter; this screen has no such toggle).
+
 ## Non-goals
 
 - The user-facing `מי איתי` popup (`EventTeamMembersDialog`) — a near-copy of surface

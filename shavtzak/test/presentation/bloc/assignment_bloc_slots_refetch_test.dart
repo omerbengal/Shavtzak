@@ -683,6 +683,61 @@ void main() {
   );
 
   test(
+    'the optimistic UPDATE emit itself — before any stream re-emit — does not '
+    "inherit the outgoing person's same-day mark",
+    () async {
+      // The test above only ever inspects bloc.state AFTER a subsequent
+      // assignmentStream event, which routes through
+      // _mergeSlotsWithOptimisticUpdates and that function's OWN, independent
+      // `sameDayOtherEvents: const []`. That masks a regression in the EARLIER
+      // step, _applyOptimisticUpdate: deleting its clear line still passes
+      // every other test in this file, because by the time any of them asserts,
+      // the merge has already re-cleared the field on its own. But
+      // _applyOptimisticUpdate's emit is not a transient frame — it IS
+      // bloc.state for however long the write takes (hundreds of ms on a real
+      // network), so a mutation there is real user-visible behavior. This test
+      // asserts on that emit directly, with no assignmentStream event fired at
+      // all since bootSameDayFixture, so it can only be reading
+      // _applyOptimisticUpdate's output.
+      when(assignmentRepo.getAssignmentById(any)).thenAnswer((_) async => null);
+      final updateGate = Completer<void>();
+      when(assignmentRepo.updateAssignment(any))
+          .thenAnswer((_) => updateGate.future);
+
+      final bloc = await bootSameDayFixture();
+
+      // Baseline: the row is m1's, and m1 IS double-booked into e2.
+      expect(
+        slotFor(bloc, 'e1', 'medic').sameDayOtherEvents.map((e) => e.id).toList(),
+        ['e2'],
+        reason: 'baseline: the current occupant (m1) is double-booked',
+      );
+
+      // Swap the occupant of that very slot: m1 -> m2. Same slot key
+      // (e1_medic_0), different person. m2 is booked nowhere else.
+      bloc.add(OptimisticUpdateAssignment(assignment('a1', 'e1', 'm2')));
+      await pumpEventQueue();
+
+      // CORE ASSERTION, read directly off the optimistic emit: no
+      // assignmentStream event has fired since bootSameDayFixture (the write
+      // itself is gated open), so this state can only be
+      // _applyOptimisticUpdate's output.
+      final medicSlot = slotFor(bloc, 'e1', 'medic');
+      expect(medicSlot.currentAssignment?.teamMemberId, 'm2',
+          reason: 'the optimistic swap must show the new occupant immediately');
+      expect(
+        medicSlot.sameDayOtherEvents,
+        isEmpty,
+        reason: 'the optimistic emit must not paint m1\'s mark onto m2 while '
+            'the write is still in flight',
+      );
+
+      updateGate.complete();
+      await pumpEventQueue();
+    },
+  );
+
+  test(
     'an optimistic DELETE clears the same-day mark along with the person',
     () async {
       when(assignmentRepo.getAssignmentById(any)).thenAnswer((_) async => null);

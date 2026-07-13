@@ -1196,8 +1196,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // can do is carry through what the database slot already worked out (hence
     // the copyWith calls above — a raw rebuild drops it). The practical effect
     // is that a newly-assigned person's OWN mark appears one stream emit later,
-    // while every already-marked row keeps its mark throughout. That lag is
-    // fine: the admin was already warned at assign time by the
+    // while every already-marked row keeps its mark throughout. The same lag
+    // has a symmetric half in the other direction: when M is instead REMOVED
+    // from E (a delete, or an update that swaps M out), M's row in the OTHER
+    // event O still names E until the stream re-emits — a stale mark, not a
+    // missing one, and mildly worse. Both directions are bounded by the same
+    // Firestore round-trip and the feature is advisory, so this is fine to
+    // ship: the admin was already warned at assign time by the
     // "בעלי מגבלות / שבץ בכל זאת" dialog. Do not "fix" this by hand-rebuilding
     // slots here — that is exactly what dropped the field in the first place.
     return annotateDoubleAssignments(resultSlots);

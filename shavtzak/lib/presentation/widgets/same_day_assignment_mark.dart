@@ -44,8 +44,11 @@ class SameDayAssignmentMark extends StatelessWidget {
     );
   }
 
-  static String _shortLabel(Event event) =>
-      '${event.name} (${event.startDate.day}/${event.startDate.month})';
+  static String _shortLabel(Event event) {
+    final day = event.startDate.day.toString().padLeft(2, '0');
+    final month = event.startDate.month.toString().padLeft(2, '0');
+    return '${event.name} ($day/$month)';
+  }
 
   void _showOtherEventsDialog(BuildContext context) {
     showDialog<void>(

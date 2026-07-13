@@ -49,7 +49,7 @@ void main() {
 
     // The hover message is the first thing the user sees, before any tap.
     expect(
-      find.byTooltip('משובץ/ת גם ב: מופע ערב (12/7), טקס (13/7)'),
+      find.byTooltip('משובץ/ת גם ב: מופע ערב (12/07), טקס (13/07)'),
       findsOneWidget,
     );
 

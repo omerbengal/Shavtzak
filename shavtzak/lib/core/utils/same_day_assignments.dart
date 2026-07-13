@@ -86,6 +86,7 @@ Map<String, Map<String, List<Event>>> buildSameDayOtherEventsIndex({
 }) {
   final index = <String, Map<String, List<Event>>>{};
   for (final event in events) {
+    if (event.isDeactivated) continue;
     final byMember = sameDayOtherEventsByMember(
       event: event,
       allEvents: events,

@@ -206,6 +206,44 @@ void main() {
 
       expect(index, isEmpty);
     });
+
+    test('a deactivated event never appears as an anchor (no index entry for it)',
+        () {
+      // Both callers of this function pre-filter isDeactivated today, which
+      // makes this unreachable in practice — but the function is public, its
+      // own doc only promises "deactivated events never count as the OTHER
+      // event", says nothing about the anchor, and the TypeScript port
+      // (buildSameDayOtherEventNames) filters both sides. This pins the Dart
+      // side to the same contract.
+      //
+      // Without the anchor-side skip, iterating onHold as an anchor would
+      // still find summer as its OTHER event (the candidate-side filter only
+      // excludes a deactivated CANDIDATE, and summer is not deactivated), and
+      // m1 is assigned to both — so index['onHold'] would wrongly appear. This
+      // is NOT symmetric with summer's own (correctly absent) entry: summer is
+      // absent because onHold is filtered out as its candidate, a mechanism
+      // this test does not touch. Only onHold's presence/absence depends on
+      // the anchor-side skip under test.
+      final summer = _event(id: 'summer', start: DateTime(2026, 7, 12));
+      final onHold = _event(
+        id: 'onHold',
+        start: DateTime(2026, 7, 12),
+        isDeactivated: true,
+      );
+
+      final index = buildSameDayOtherEventsIndex(
+        events: [summer, onHold],
+        assignments: [
+          _assignment(id: 'a1', eventId: 'summer', memberId: 'm1'),
+          _assignment(id: 'a2', eventId: 'onHold', memberId: 'm1'),
+        ],
+      );
+
+      expect(index.containsKey('onHold'), isFalse,
+          reason: 'a deactivated event must never be an anchor, even though '
+              'the member assigned to it is genuinely double-booked');
+      expect(index, isEmpty);
+    });
   });
 }
 

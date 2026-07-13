@@ -454,3 +454,42 @@ test('per-event export sorts on the clean name, so the mark never reorders same-
     'יוסי כהן',
   ]);
 });
+
+test('per-event export is symmetric: exporting both same-day events, each names the other', () => {
+  // Every test above selects a SINGLE event, so the other side of the relation
+  // is never itself in the file. Symmetry is the rule's most user-visible
+  // property (the spec: "The relation is symmetric and both sides must show
+  // it"), so this exports BOTH same-day events together and checks each row
+  // independently — not by fixed row order, since Hebrew collation order is
+  // not what this test is about.
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'a1', data: {eventId: 'summer', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a2', data: {eventId: 'evening', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      summer: {
+        name: 'אירוע קיץ',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+      evening: {
+        name: 'מופע ערב',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+    },
+    memberNames: {m1: 'יוסי כהן'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    selectedEventIds: ['summer', 'evening'],
+    now: new Date('2026-07-01T12:00:00.000Z'),
+  });
+
+  assert.equal(sheet.rows.length, 2, 'm1 is booked into both exported events, so must appear twice');
+
+  const nameByEvent = new Map(sheet.rows.map((row) => [row[2], row[0]]));
+  assert.equal(nameByEvent.get('אירוע קיץ'), 'יוסי כהן (משובץ גם במופע ערב)');
+  assert.equal(nameByEvent.get('מופע ערב'), 'יוסי כהן (משובץ גם באירוע קיץ)');
+});
