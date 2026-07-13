@@ -784,10 +784,18 @@ type AssignmentOnlySerializeOptions = {
   mode: AssignmentExportMode;
   selectedEventIds: string[];
   roleSortOrders: Record<string, number>;
+  /**
+   * EVERY event, past ones included — the pool for "assigned elsewhere that
+   * day". Deliberately not the future-filtered set used for rows: the mark
+   * describes the person's real calendar, not what the admin happened to
+   * export. Deactivated events are filtered out here.
+   */
+  allEventsData: Record<string, Record<string, unknown>>;
 };
 
 type AssignmentOnlyRow = {
   teamMember: string;
+  teamMemberId: string;
   roleKey: string;
   roleType: string;
   eventId: string;
@@ -801,6 +809,90 @@ type AssignmentOnlyRow = {
   assemblyTime: string;
   notes: string;
 };
+
+function eventDayRange(eventData: Record<string, unknown>): [string, string] | null {
+  const start = parseDate(eventData['startDate']);
+  const end = parseDate(eventData['endDate']);
+  if (start == null || end == null) return null;
+  const startKey = israelCalendarDateKey(start);
+  const endKey = israelCalendarDateKey(end);
+  if (startKey.length === 0 || endKey.length === 0) return null;
+  return [startKey, endKey];
+}
+
+/** Day-precision overlap. Date keys are 'YYYY-MM-DD', so string order is date order. */
+function eventsShareDay(
+  first: Record<string, unknown>,
+  second: Record<string, unknown>,
+): boolean {
+  const a = eventDayRange(first);
+  const b = eventDayRange(second);
+  if (a == null || b == null) return false;
+  return a[0] <= b[1] && b[0] <= a[1];
+}
+
+/**
+ * memberId -> eventId -> names of the OTHER events sharing a calendar day with
+ * that event to which the member is also assigned, sorted by start date then
+ * name. Deactivated events never count as the other event.
+ *
+ * Symmetric by construction: if a member is in E and O on a shared day, the map
+ * names O under E *and* E under O.
+ */
+function buildSameDayOtherEventNames(
+  assignments: FirestoreDoc[],
+  allEventsData: Record<string, Record<string, unknown>>,
+): Map<string, Map<string, string[]>> {
+  const eventIdsByMember = new Map<string, Set<string>>();
+  for (const doc of assignments) {
+    const memberId = asString(doc.data['teamMemberId']);
+    const eventId = asString(doc.data['eventId']);
+    if (memberId.length === 0 || eventId.length === 0) continue;
+    const eventData = allEventsData[eventId];
+    if (eventData == null || eventData['isDeactivated'] === true) continue;
+    const ids = eventIdsByMember.get(memberId) ?? new Set<string>();
+    ids.add(eventId);
+    eventIdsByMember.set(memberId, ids);
+  }
+
+  const result = new Map<string, Map<string, string[]>>();
+  for (const [memberId, eventIdSet] of eventIdsByMember) {
+    const eventIds = Array.from(eventIdSet);
+    if (eventIds.length < 2) continue;
+
+    const perEvent = new Map<string, string[]>();
+    for (const eventId of eventIds) {
+      const others = eventIds
+        .filter(
+          (otherId) =>
+            otherId !== eventId &&
+            eventsShareDay(allEventsData[eventId], allEventsData[otherId]),
+        )
+        .sort((first, second) => {
+          const byDate = (eventDayRange(allEventsData[first])?.[0] ?? '').localeCompare(
+            eventDayRange(allEventsData[second])?.[0] ?? '',
+          );
+          if (byDate !== 0) return byDate;
+          return asString(allEventsData[first]['name']).localeCompare(
+            asString(allEventsData[second]['name']),
+          );
+        })
+        .map((otherId) => asString(allEventsData[otherId]['name']));
+      if (others.length > 0) perEvent.set(eventId, others);
+    }
+    if (perEvent.size > 0) result.set(memberId, perEvent);
+  }
+  return result;
+}
+
+function decorateTeamMemberName(
+  row: AssignmentOnlyRow,
+  sameDayOtherEventNames: Map<string, Map<string, string[]>>,
+): string {
+  const others = sameDayOtherEventNames.get(row.teamMemberId)?.get(row.eventId);
+  if (others == null || others.length === 0) return row.teamMember;
+  return `${row.teamMember} (משובץ גם ב${others.join(', ')})`;
+}
 
 function serializeAssignmentsOnly(
   assignments: FirestoreDoc[],
@@ -853,6 +945,7 @@ function serializeAssignmentsOnly(
       const roleKey = asString(doc.data['roleType']);
       return {
         teamMember: memberNames[asString(doc.data['teamMemberId'])] ?? '',
+        teamMemberId: asString(doc.data['teamMemberId']),
         roleKey,
         roleType: roleHebrewNames[roleKey] ?? roleKey,
         eventId,
@@ -907,11 +1000,20 @@ function serializeAssignmentsOnly(
     return first.teamMember.localeCompare(second.teamMember);
   });
 
+  // perEvent only: the boss asked for the mark in the לפי אירוע export.
+  const sameDayOtherEventNames =
+    options.mode === 'perEvent'
+      ? buildSameDayOtherEventNames(assignments, options.allEventsData)
+      : new Map<string, Map<string, string[]>>();
+
   return {
     sheetName: 'שיבוצים',
     headers,
+    // The suffix is applied HERE, not on the row object: the perEvent sort
+    // tiebreaks on `teamMember`, and perPerson's colorByTeamMember groups rows
+    // by column A. Both must see the clean name.
     rows: rows.map((row) => [
-      row.teamMember,
+      decorateTeamMemberName(row, sameDayOtherEventNames),
       row.roleType,
       row.event,
       row.eventStartDate,
@@ -1083,6 +1185,7 @@ export async function exportProductionDataToSheets(
         mode: options.assignmentMode ?? 'perPerson',
         selectedEventIds: options.eventIds ?? [],
         roleSortOrders,
+        allEventsData: eventsData,
       }),
     ];
 
@@ -1191,6 +1294,7 @@ export function __testSerializeAssignmentsOnly(input: {
       mode: input.mode,
       selectedEventIds: input.selectedEventIds,
       roleSortOrders: input.roleSortOrders,
+      allEventsData: input.eventsData,
     },
   ) as {sheetName: string; headers: string[]; rows: unknown[][]};
 }

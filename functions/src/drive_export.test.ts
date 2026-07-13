@@ -184,3 +184,195 @@ test('per-event assignments export rejects selected past or nonexistent event ID
   assert.ok(error instanceof DriveExportValidationError);
   assert.equal(error.message, 'Selected future event IDs are invalid: past, missing');
 });
+
+test('per-event export suffixes a member who is booked in another event the same day', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'a1', data: {eventId: 'summer', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a2', data: {eventId: 'evening', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a3', data: {eventId: 'summer', teamMemberId: 'm2', roleType: 'medic'}},
+    ],
+    eventsData: {
+      summer: {
+        name: 'אירוע קיץ',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+      evening: {
+        name: 'מופע ערב',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+    },
+    memberNames: {m1: 'יוסי כהן', m2: 'דנה לוי'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    // Only 'summer' is exported — the mark still names the event that is NOT
+    // in the file, because it describes the person's real calendar.
+    selectedEventIds: ['summer'],
+    now: new Date('2026-07-01T12:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows.map((row) => row[0]), [
+    'דנה לוי',
+    'יוסי כהן (משובץ גם במופע ערב)',
+  ]);
+});
+
+test('per-event export comma-joins several same-day events, sorted by date then name', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'a1', data: {eventId: 'anchor', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a2', data: {eventId: 'later', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a3', data: {eventId: 'sooner', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      anchor: {
+        name: 'עוגן',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-14T00:00:00.000Z'),
+      },
+      later: {
+        name: 'טקס',
+        startDate: new Date('2026-07-14T00:00:00.000Z'),
+        endDate: new Date('2026-07-14T00:00:00.000Z'),
+      },
+      sooner: {
+        name: 'מופע ערב',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+    },
+    memberNames: {m1: 'יוסי כהן'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    selectedEventIds: ['anchor'],
+    now: new Date('2026-07-01T12:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows.map((row) => row[0]), [
+    'יוסי כהן (משובץ גם במופע ערב, טקס)',
+  ]);
+});
+
+test('per-event export does not suffix when the other event is on a different day', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'a1', data: {eventId: 'summer', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a2', data: {eventId: 'nextDay', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      summer: {
+        name: 'אירוע קיץ',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+      nextDay: {
+        name: 'מופע ערב',
+        startDate: new Date('2026-07-13T00:00:00.000Z'),
+        endDate: new Date('2026-07-13T00:00:00.000Z'),
+      },
+    },
+    memberNames: {m1: 'יוסי כהן'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    selectedEventIds: ['summer'],
+    now: new Date('2026-07-01T12:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows.map((row) => row[0]), ['יוסי כהן']);
+});
+
+test('per-event export never counts a deactivated event as the other event', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'a1', data: {eventId: 'summer', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a2', data: {eventId: 'onHold', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      summer: {
+        name: 'אירוע קיץ',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+      onHold: {
+        name: 'אירוע מוקפא',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+        isDeactivated: true,
+      },
+    },
+    memberNames: {m1: 'יוסי כהן'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    selectedEventIds: ['summer'],
+    now: new Date('2026-07-01T12:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows.map((row) => row[0]), ['יוסי כהן']);
+});
+
+test('per-event export lists the other event once when the member holds two roles in it', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'a1', data: {eventId: 'summer', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a2', data: {eventId: 'evening', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a3', data: {eventId: 'evening', teamMemberId: 'm1', roleType: 'commander'}},
+    ],
+    eventsData: {
+      summer: {
+        name: 'אירוע קיץ',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+      evening: {
+        name: 'מופע ערב',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+    },
+    memberNames: {m1: 'יוסי כהן'},
+    roleHebrewNames: {medic: 'חובש', commander: 'מפקד אירוע'},
+    roleSortOrders: {medic: 0, commander: 1},
+    mode: 'perEvent',
+    selectedEventIds: ['summer'],
+    now: new Date('2026-07-01T12:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows.map((row) => row[0]), [
+    'יוסי כהן (משובץ גם במופע ערב)',
+  ]);
+});
+
+test('per-person export never suffixes the member name', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'a1', data: {eventId: 'summer', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a2', data: {eventId: 'evening', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      summer: {
+        name: 'אירוע קיץ',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+      evening: {
+        name: 'מופע ערב',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+    },
+    memberNames: {m1: 'יוסי כהן'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perPerson',
+    selectedEventIds: [],
+    now: new Date('2026-07-01T12:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows.map((row) => row[0]), ['יוסי כהן', 'יוסי כהן']);
+});
