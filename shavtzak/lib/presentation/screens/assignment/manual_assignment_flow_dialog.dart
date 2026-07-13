@@ -9,6 +9,7 @@ import '../../../domain/entities/assignment.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/constants/constraint_status.dart';
 import '../../../core/utils/search_utils.dart';
+import '../../../core/utils/same_day_assignments.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
@@ -848,7 +849,7 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
       if (otherEvent.id.isEmpty) continue;
 
       // Check if events share dates
-      if (_eventsShareDate(_selectedEvent!, otherEvent)) {
+      if (eventsShareDay(_selectedEvent!, otherEvent)) {
         final memberId = assignment.teamMemberId;
         sameDayMap.putIfAbsent(memberId, () => []);
         if (!sameDayMap[memberId]!.contains(otherEvent.name)) {
@@ -860,19 +861,6 @@ class _ManualAssignmentFlowDialogState extends State<ManualAssignmentFlowDialog>
     setState(() {
       _sameDayEventsByMember = sameDayMap;
     });
-  }
-
-  /// Helper function to check if two events share at least one day
-  bool _eventsShareDate(Event a, Event b) {
-    // Normalize dates to day precision (ignore time)
-    final aStart = DateTime(a.startDate.year, a.startDate.month, a.startDate.day);
-    final aEnd = DateTime(a.endDate.year, a.endDate.month, a.endDate.day);
-    final bStart = DateTime(b.startDate.year, b.startDate.month, b.startDate.day);
-    final bEnd = DateTime(b.endDate.year, b.endDate.month, b.endDate.day);
-
-    // Check for overlap: events overlap if one starts before the other ends
-    return aStart.isBefore(bEnd.add(const Duration(days: 1))) &&
-           bStart.isBefore(aEnd.add(const Duration(days: 1)));
   }
 
   void _showConstraintWarning(TeamMember teamMember, bool isAvailabilityIssue, {bool hasSameDay = false}) {

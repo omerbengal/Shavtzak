@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../core/debug/logger.dart';
+import '../../../../core/utils/same_day_assignments.dart';
 import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/checklist_item.dart';
@@ -100,11 +101,27 @@ class EventSummaryTile extends StatelessWidget {
                 final eventAssignments = allAssignments
                     .where((a) => a.eventId == data.event.id)
                     .toList();
+                // allAssignments is every assignment; allEvents is every
+                // non-deactivated event that has NOT yet ended (SummaryScreen
+                // narrows it to upcomingEvents before it reaches this tile). So
+                // the mark sees the member's real calendar rather than just this
+                // event's roster — with one deliberate gap: a conflict on a day
+                // that has already passed inside a still-running multi-day event
+                // is not marked. That conflict is history and cannot be acted on,
+                // and /admin/assignments applies the same window by default (it
+                // can widen it via the "show past events" filter; this screen has
+                // no such toggle).
+                final sameDayOtherEvents = sameDayOtherEventsByMember(
+                  event: data.event,
+                  allEvents: allEvents,
+                  allAssignments: allAssignments,
+                );
                 showDialog(
                   context: context,
                   builder: (context) => EventAssignmentsDialog.withAssignments(
                     event: data.event,
                     assignments: eventAssignments,
+                    sameDayOtherEventsByMemberId: sameDayOtherEvents,
                   ),
                 );
               },
@@ -705,7 +722,7 @@ class EventSummaryTile extends StatelessWidget {
       if (otherEvent == null) continue;
 
       // Check if events share any day
-      if (_eventsShareDay(event, otherEvent)) {
+      if (eventsShareDay(event, otherEvent)) {
         final member = membersById[assignment.teamMemberId];
         if (member == null) continue;
 
@@ -797,22 +814,6 @@ class EventSummaryTile extends StatelessWidget {
       ..sort((a, b) => a.name.compareTo(b.name));
 
     return constrainedMembers;
-  }
-
-  /// Check if two events share any day
-  bool _eventsShareDay(Event event1, Event event2) {
-    // Get date ranges (normalize to midnight)
-    final start1 = DateTime(
-        event1.startDate.year, event1.startDate.month, event1.startDate.day);
-    final end1 =
-        DateTime(event1.endDate.year, event1.endDate.month, event1.endDate.day);
-    final start2 = DateTime(
-        event2.startDate.year, event2.startDate.month, event2.startDate.day);
-    final end2 =
-        DateTime(event2.endDate.year, event2.endDate.month, event2.endDate.day);
-
-    // Check if ranges overlap
-    return !start1.isAfter(end2) && !start2.isAfter(end1);
   }
 
   void _showAssignmentConfirmationDialog(
