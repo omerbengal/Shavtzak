@@ -935,25 +935,24 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   }) {
     return slots.map((slot) {
       if (slot.isOffQuota) return slot;
-      final slotKey = _getSlotKey(slot);
-
-      if (slotKey == targetSlotKey) {
-        // This is the target slot - apply the optimistic change
-        return AssignmentSlot(
-          event: slot.event,
-          role: slot.role,
-          slotIndex: slot.slotIndex,
-          currentAssignment: isDelete ? null : optimisticAssignment,
-          // CRITICAL: Keep database member lists unchanged
-          availableMembers: slot.availableMembers,
-          alreadyAssignedMembers: slot.alreadyAssignedMembers,
-          hasDoubleAssignment: isDelete ? false : slot.hasDoubleAssignment,
-          otherRoles: isDelete ? const [] : slot.otherRoles,
-        );
-      }
 
       // For all other slots, keep database state as-is
-      return slot;
+      if (_getSlotKey(slot) != targetSlotKey) return slot;
+
+      // This is the target slot - apply the optimistic change.
+      if (isDelete) return _emptied(slot);
+
+      // The database member lists are deliberately carried over untouched.
+      // sameDayOtherEvents is deliberately NOT: an update swaps the occupant,
+      // and the mark on this slot belongs to the person on their way out —
+      // carrying it over would pin their events on the incoming person. Cleared
+      // here, then recomputed from the database on the next stream emit, exactly
+      // as in _mergeSlotsWithOptimisticUpdates.
+      return slot.copyWith(
+        currentAssignment: optimisticAssignment,
+        clearCurrentAssignment: optimisticAssignment == null,
+        sameDayOtherEvents: const [],
+      );
     }).toList();
   }
 
@@ -1051,11 +1050,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           .cast<String>()
           .toSet();
 
-      // Recalculate member availability for all slots in this event
-      for (final slot in eventSlots) {
+      // Recalculate member availability for all slots in this event.
+      // Indexed, not indexOf: AssignmentSlot is Equatable, so indexOf matches by
+      // VALUE and would rewrite the wrong row the moment two slots compared
+      // equal.
+      for (var i = 0; i < eventSlots.length; i++) {
+        final slot = eventSlots[i];
         if (slot.isOffQuota) continue;
-        final slotKey = _getSlotKey(slot);
-        final operation = activeOperations[slotKey];
 
         // Build new member lists based on effective assigned IDs
         final availableMembersMap = <String, TeamMember>{};
@@ -1100,8 +1101,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // below hands these rebuilt slots straight back — so a raw rebuild here
         // erased sameDayOtherEvents from every row of an event the moment
         // anyone in it was assigned.
-        final slotIndex = eventSlots.indexOf(slot);
-        eventSlots[slotIndex] = slot.copyWith(
+        eventSlots[i] = slot.copyWith(
           availableMembers: availableMembersMap.values.toList(),
           alreadyAssignedMembers: alreadyAssignedMembersMap.values.toList(),
           hasDoubleAssignment: false,

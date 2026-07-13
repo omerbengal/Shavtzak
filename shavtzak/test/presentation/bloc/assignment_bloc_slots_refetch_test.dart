@@ -524,7 +524,7 @@ void main() {
   );
 
   // ---------------------------------------------------------------------------
-  // Optimistic-merge field-preservation test.
+  // Optimistic-merge field tests.
   //
   // Bug: _mergeSlotsWithOptimisticUpdates rebuilt slots with the raw
   // AssignmentSlot constructor instead of copyWith. Its member-list recalc loop
@@ -539,26 +539,52 @@ void main() {
   //
   // Fix: every rebuild in that function goes through copyWith, which carries
   // unmentioned fields through by construction.
+  //
+  // The last two tests pin the deliberate EXCEPTIONS to that rule — the only
+  // places on this branch where NOT carrying a field through is the correct
+  // behaviour. They read like oversights next to the thesis above, so they are
+  // pinned here: delete either `sameDayOtherEvents: const []` and a test fails.
   // ---------------------------------------------------------------------------
+
+  // The shared fixture: e1 (medic + driver quota) and e2 (medic quota) fall on
+  // the SAME calendar day, and m1 is booked as medic in BOTH — so e1's medic row
+  // carries sameDayOtherEvents == [e2]. That row is the subject of all three
+  // tests below.
+  final dbAssignments = [
+    assignment('a1', 'e1', 'm1'),
+    assignment('a2', 'e2', 'm1'),
+  ];
+
+  /// Boots a bloc on the fixture above, already at first paint.
+  Future<AssignmentBloc> bootSameDayFixture() async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+
+    eventStream.add([
+      futureEvent('e1', roleRequirements: const {'medic': 1, 'driver': 1}),
+      futureEvent('e2', roleRequirements: const {'medic': 1}),
+    ]);
+    roleStream.add([medicRole(), driverRole()]);
+    teamStream.add([member('m1'), member('m2')]);
+    assignmentStream.add(dbAssignments);
+    await pumpEventQueue();
+
+    expect(bloc.state, isA<AssignmentSlotsLoaded>());
+    return bloc;
+  }
+
+  AssignmentSlot slotFor(AssignmentBloc bloc, String eventId, String roleKey) =>
+      (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+            (s) => s.event.id == eventId && s.role.key == roleKey,
+          );
 
   test(
     'a pending optimistic op in an event does NOT wipe the same-day marks on '
     'its other slots',
     () async {
-      // e1 has two quota slots (medic + driver); e2 shares the same calendar day.
-      final e1 = futureEvent(
-        'e1',
-        roleRequirements: const {'medic': 1, 'driver': 1},
-      );
-      final e2 = futureEvent('e2', roleRequirements: const {'medic': 1});
-
-      // m1 is double-booked across the two same-day events (medic in each), so
-      // e1's medic slot must carry sameDayOtherEvents == [e2].
-      final dbAssignments = [
-        assignment('a1', 'e1', 'm1'),
-        assignment('a2', 'e2', 'm1'),
-      ];
-
       // Hold the DB write open so the pending operation is still in flight when
       // a rebuild lands. The handler drops the op the instant the write
       // resolves — which is precisely when the bug stops reproducing.
@@ -566,27 +592,11 @@ void main() {
       when(assignmentRepo.createAssignment(any))
           .thenAnswer((_) => createGate.future);
 
-      final bloc = buildBloc();
-      addTearDown(() async => bloc.close());
-
-      bloc.add(const LoadAssignmentSlots());
-      await pumpEventQueue();
-
-      eventStream.add([e1, e2]);
-      roleStream.add([medicRole(), driverRole()]);
-      teamStream.add([member('m1'), member('m2')]);
-      assignmentStream.add(dbAssignments);
-      await pumpEventQueue();
-
-      AssignmentSlot slotFor(String eventId, String roleKey) =>
-          (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
-                (s) => s.event.id == eventId && s.role.key == roleKey,
-              );
+      final bloc = await bootSameDayFixture();
 
       // Baseline: the mark is on the medic row before any optimistic operation.
-      expect(bloc.state, isA<AssignmentSlotsLoaded>());
       expect(
-        slotFor('e1', 'medic').sameDayOtherEvents.map((e) => e.id).toList(),
+        slotFor(bloc, 'e1', 'medic').sameDayOtherEvents.map((e) => e.id).toList(),
         ['e2'],
         reason: 'baseline: m1 is booked into e1 and e2 on the same day',
       );
@@ -607,7 +617,7 @@ void main() {
       // CORE ASSERTION: the medic row still carries its mark. Before the fix the
       // merge rebuilt that row with the raw constructor and this came back empty.
       expect(
-        slotFor('e1', 'medic').sameDayOtherEvents.map((e) => e.id).toList(),
+        slotFor(bloc, 'e1', 'medic').sameDayOtherEvents.map((e) => e.id).toList(),
         ['e2'],
         reason: 'a pending op elsewhere in the event must not erase this mark',
       );
@@ -615,13 +625,104 @@ void main() {
       // The optimistic assignment itself still lands on its own slot (copyWith
       // did not break the merge it replaced) and carries no mark of its own —
       // m2 is not double-booked, and the merge never invents a mark.
-      final driverSlot = slotFor('e1', 'driver');
+      final driverSlot = slotFor(bloc, 'e1', 'driver');
       expect(driverSlot.currentAssignment?.id, 'a3',
           reason: 'the in-flight optimistic assignment must still show');
       expect(driverSlot.sameDayOtherEvents, isEmpty);
 
       // Let the gated write finish so the bloc tears down cleanly.
       createGate.complete();
+      await pumpEventQueue();
+    },
+  );
+
+  test(
+    'an optimistic UPDATE that swaps the occupant does NOT inherit the outgoing '
+    "person's same-day mark",
+    () async {
+      when(assignmentRepo.getAssignmentById(any)).thenAnswer((_) async => null);
+      final updateGate = Completer<void>();
+      when(assignmentRepo.updateAssignment(any))
+          .thenAnswer((_) => updateGate.future);
+
+      final bloc = await bootSameDayFixture();
+
+      // Baseline: the row is m1's, and m1 IS double-booked into e2.
+      expect(
+        slotFor(bloc, 'e1', 'medic').sameDayOtherEvents.map((e) => e.id).toList(),
+        ['e2'],
+        reason: 'baseline: the current occupant (m1) is double-booked',
+      );
+
+      // Swap the occupant of that very slot: m1 -> m2. Same slot key
+      // (e1_medic_0), different person. m2 is booked nowhere else.
+      bloc.add(OptimisticUpdateAssignment(assignment('a1', 'e1', 'm2')));
+      await pumpEventQueue();
+
+      // Rebuild while the write is in flight — the DB still holds m1's row, so
+      // the database slot handed to the merge still carries the [e2] mark.
+      assignmentStream.add(dbAssignments);
+      await pumpEventQueue();
+
+      final medicSlot = slotFor(bloc, 'e1', 'medic');
+      expect(medicSlot.currentAssignment?.teamMemberId, 'm2',
+          reason: 'the optimistic swap must show the new occupant');
+
+      // CORE ASSERTION: m2 must NOT inherit m1's mark. copyWith carries fields
+      // through by default, so the merge has to clear this one explicitly —
+      // otherwise the grid pins e2 on a person who was never booked there.
+      expect(
+        medicSlot.sameDayOtherEvents,
+        isEmpty,
+        reason: "the outgoing occupant's mark must not follow the slot",
+      );
+
+      updateGate.complete();
+      await pumpEventQueue();
+    },
+  );
+
+  test(
+    'an optimistic DELETE clears the same-day mark along with the person',
+    () async {
+      when(assignmentRepo.getAssignmentById(any)).thenAnswer((_) async => null);
+      final deleteGate = Completer<void>();
+      when(assignmentRepo.deleteAssignment(any))
+          .thenAnswer((_) => deleteGate.future);
+
+      final bloc = await bootSameDayFixture();
+
+      expect(
+        slotFor(bloc, 'e1', 'medic').sameDayOtherEvents.map((e) => e.id).toList(),
+        ['e2'],
+        reason: 'baseline: the current occupant (m1) is double-booked',
+      );
+
+      // Remove m1 from the marked slot.
+      bloc.add(OptimisticDeleteAssignment(
+        assignmentId: 'a1',
+        slotKey: 'e1_medic_0',
+      ));
+      await pumpEventQueue();
+
+      // Rebuild while the delete is in flight — the DB still holds m1's row.
+      assignmentStream.add(dbAssignments);
+      await pumpEventQueue();
+
+      final medicSlot = slotFor(bloc, 'e1', 'medic');
+      expect(medicSlot.isFilled, isFalse,
+          reason: 'the optimistic delete must empty the slot');
+
+      // CORE ASSERTION: the mark describes the slot's OCCUPANT, and there is no
+      // longer one. AssignmentSlot documents sameDayOtherEvents as empty on an
+      // unfilled slot; keeping it would paint a mark on an empty row.
+      expect(
+        medicSlot.sameDayOtherEvents,
+        isEmpty,
+        reason: 'an emptied row must not keep the departed occupant\'s mark',
+      );
+
+      deleteGate.complete();
       await pumpEventQueue();
     },
   );
