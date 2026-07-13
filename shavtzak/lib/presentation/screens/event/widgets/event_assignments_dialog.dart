@@ -16,6 +16,7 @@ import '../../../bloc/assignment/assignment_state.dart';
 import '../../../bloc/role/role_bloc.dart';
 import '../../../bloc/role/role_state.dart';
 import '../../../widgets/assignment_label_chip.dart';
+import '../../../widgets/same_day_assignment_mark.dart';
 import 'event_assignments_share_data_builder.dart';
 import 'event_assignments_share_models.dart';
 import 'event_assignments_share_preview_dialog.dart';
@@ -29,12 +30,19 @@ class EventAssignmentsDialog extends StatefulWidget {
   final String? eventName;
   final List<Assignment>? assignments; // Optional: if provided, skip loading
 
+  /// memberId -> other events sharing a calendar day with this event that the
+  /// member is also assigned to, sorted by start date then name. Empty map =
+  /// no marks: the BLoC-loading constructor path has no cross-event data, so
+  /// only callers that hold every event and assignment can supply this.
+  final Map<String, List<Event>> sameDayOtherEventsByMemberId;
+
   const EventAssignmentsDialog({
     super.key,
     this.event,
     this.eventId,
     this.eventName,
     this.assignments,
+    this.sameDayOtherEventsByMemberId = const {},
   }) : assert(
           event != null || (eventId != null && eventName != null),
           'event or eventId/eventName must be provided',
@@ -47,6 +55,7 @@ class EventAssignmentsDialog extends StatefulWidget {
     this.eventId,
     this.eventName,
     required this.assignments,
+    this.sameDayOtherEventsByMemberId = const {},
   })  : assert(assignments != null,
             'assignments cannot be null in withAssignments constructor'),
         assert(
@@ -748,6 +757,14 @@ class _EventAssignmentsDialogState extends State<EventAssignmentsDialog> {
                   style: const TextStyle(fontSize: 16),
                 ),
               ),
+              if ((widget.sameDayOtherEventsByMemberId[member.id] ?? const [])
+                  .isNotEmpty) ...[
+                SameDayAssignmentMark(
+                  otherEvents: widget.sameDayOtherEventsByMemberId[member.id]!,
+                  memberName: member.name,
+                ),
+                const SizedBox(width: 8),
+              ],
               if ((member.phoneNumber != null &&
                       member.phoneNumber!.isNotEmpty) ||
                   (assignment.alternativePhoneNumber != null &&

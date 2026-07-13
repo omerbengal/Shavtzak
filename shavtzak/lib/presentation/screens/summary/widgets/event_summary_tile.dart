@@ -101,11 +101,20 @@ class EventSummaryTile extends StatelessWidget {
                 final eventAssignments = allAssignments
                     .where((a) => a.eventId == data.event.id)
                     .toList();
+                // allEvents / allAssignments are every non-deactivated event and
+                // every assignment, so the mark sees the member's real calendar
+                // — not just this event's roster.
+                final sameDayOtherEvents = sameDayOtherEventsByMember(
+                  event: data.event,
+                  allEvents: allEvents,
+                  allAssignments: allAssignments,
+                );
                 showDialog(
                   context: context,
                   builder: (context) => EventAssignmentsDialog.withAssignments(
                     event: data.event,
                     assignments: eventAssignments,
+                    sameDayOtherEventsByMemberId: sameDayOtherEvents,
                   ),
                 );
               },
