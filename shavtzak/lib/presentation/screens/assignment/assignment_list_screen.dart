@@ -28,6 +28,7 @@ import '../../bloc/user_selection/user_selection_event.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
 import 'models/assignment_slot.dart';
 import '../../widgets/interactive_filter_bar.dart';
+import '../../widgets/same_day_assignment_mark.dart';
 import '../../../core/debug/logger.dart';
 import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
@@ -1426,9 +1427,25 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Text(memberName,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 13)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(memberName,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 13)),
+                      ),
+                      if (slot.sameDayOtherEvents.isNotEmpty) ...[
+                        const SizedBox(width: 4),
+                        SameDayAssignmentMark(
+                          otherEvents: slot.sameDayOtherEvents,
+                          memberName: memberName,
+                          size: 18,
+                        ),
+                      ],
+                    ],
+                  ),
                   const SizedBox(height: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -2699,6 +2716,18 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         ),
 
         const SizedBox(width: 4),
+
+        // Same-day double-booking mark — this person is also assigned to
+        // another event sharing a day with this one.
+        if (slot.isFilled && slot.sameDayOtherEvents.isNotEmpty) ...[
+          SameDayAssignmentMark(
+            otherEvents: slot.sameDayOtherEvents,
+            memberName: currentMember?.name ??
+                slot.currentAssignment?.teamMemberName ??
+                '',
+          ),
+          const SizedBox(width: 4),
+        ],
 
         // "ניקוי" button - only show if slot is filled AND currentMember is valid
         if (slot.isFilled && currentMember != null)
