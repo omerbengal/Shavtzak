@@ -789,6 +789,10 @@ type AssignmentOnlySerializeOptions = {
    * day". Deliberately not the future-filtered set used for rows: the mark
    * describes the person's real calendar, not what the admin happened to
    * export. Deactivated events are filtered out here.
+   *
+   * Collapsing this into the row-scoped `eventsData` is the easy mistake — it
+   * would silently stop marking clashes with events that have already ended.
+   * Pinned by the "including one that already ended" test.
    */
   allEventsData: Record<string, Record<string, unknown>>;
 };
@@ -1009,9 +1013,15 @@ function serializeAssignmentsOnly(
   return {
     sheetName: 'שיבוצים',
     headers,
-    // The suffix is applied HERE, not on the row object: the perEvent sort
-    // tiebreaks on `teamMember`, and perPerson's colorByTeamMember groups rows
-    // by column A. Both must see the clean name.
+    // The suffix is applied HERE, in the projection, and never on the row object.
+    // This is load-bearing, not stylistic: the perEvent sort's last tiebreak is
+    // `first.teamMember.localeCompare(second.teamMember)`, so a decorated row would
+    // fold the mark into the sort key. Two members with the SAME name (namesakes, or
+    // both falling back to '' when a member doc is missing) tie on the clean name and
+    // keep their input order; decorate the row and the plain one jumps ahead of the
+    // marked one, silently reordering the sheet. Pinned by the "sorts on the clean
+    // name" test. (perPerson's colorByTeamMember also bands on column A, but that is
+    // separately protected by the perEvent gate above.)
     rows: rows.map((row) => [
       decorateTeamMemberName(row, sameDayOtherEventNames),
       row.roleType,

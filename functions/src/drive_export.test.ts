@@ -376,3 +376,81 @@ test('per-person export never suffixes the member name', () => {
 
   assert.deepEqual(sheet.rows.map((row) => row[0]), ['יוסי כהן', 'יוסי כהן']);
 });
+
+test('per-event export finds the other event among ALL events, including one that already ended', () => {
+  // The only test that tells the `allEventsData` pool apart from the row-scoped
+  // `futureEventsData`: 'ended' finished BEFORE `now`, so it is absent from the
+  // future-filtered map and can only be found in the full one. Every other test
+  // dates its events on or after `now`, where the two pools are identical.
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'a1', data: {eventId: 'anchor', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a2', data: {eventId: 'ended', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      // Still running on `now` (10–14 July), so it survives the future filter
+      // and can be exported.
+      anchor: {
+        name: 'אירוע קיץ',
+        startDate: new Date('2026-07-10T00:00:00.000Z'),
+        endDate: new Date('2026-07-14T00:00:00.000Z'),
+      },
+      // Over and done with, but it shared 10 July with the anchor.
+      ended: {
+        name: 'מופע ערב',
+        startDate: new Date('2026-07-10T00:00:00.000Z'),
+        endDate: new Date('2026-07-10T00:00:00.000Z'),
+      },
+    },
+    memberNames: {m1: 'יוסי כהן'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    selectedEventIds: ['anchor'],
+    now: new Date('2026-07-12T12:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows.map((row) => row[0]), [
+    'יוסי כהן (משובץ גם במופע ערב)',
+  ]);
+});
+
+test('per-event export sorts on the clean name, so the mark never reorders same-named members', () => {
+  // Two DIFFERENT people share a display name and sit in the same event and role,
+  // so the perEvent sort runs out of tiebreaks and falls through to `teamMember`.
+  // Only m1 is double-booked. The comparator must see the CLEAN names, which tie
+  // and leave the rows in input order. Decorating the row object instead of the
+  // projection would fold the suffix into the sort key: ' (' outranks nothing, so
+  // the plain namesake would jump ahead of the marked one and the export order
+  // would silently change.
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'a1', data: {eventId: 'summer', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a2', data: {eventId: 'summer', teamMemberId: 'm2', roleType: 'medic'}},
+      {id: 'a3', data: {eventId: 'evening', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      summer: {
+        name: 'אירוע קיץ',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+      evening: {
+        name: 'מופע ערב',
+        startDate: new Date('2026-07-12T00:00:00.000Z'),
+        endDate: new Date('2026-07-12T00:00:00.000Z'),
+      },
+    },
+    memberNames: {m1: 'יוסי כהן', m2: 'יוסי כהן'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    selectedEventIds: ['summer'],
+    now: new Date('2026-07-01T12:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows.map((row) => row[0]), [
+    'יוסי כהן (משובץ גם במופע ערב)',
+    'יוסי כהן',
+  ]);
+});
