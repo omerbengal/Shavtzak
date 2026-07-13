@@ -118,6 +118,7 @@ void main() {
           sameDayEventInfo: {
             'm2': ['מופע ערב']
           },
+          sameDayOtherEvents: [evening],
         ),
         _slot(event: summer, role: commander, member: member, assignmentId: 'a2'),
       ];
@@ -129,6 +130,7 @@ void main() {
       expect(result[0].sameDayEventInfo, {
         'm2': ['מופע ערב']
       });
+      expect(result[0].sameDayOtherEvents, [evening]);
     });
 
     test('skips members flagged שיבוץ מרובה', () {
@@ -159,7 +161,16 @@ void main() {
 
       final result = annotateDoubleAssignments(slots);
 
+      // The off-quota row is never flagged itself...
       expect(result[0].hasDoubleAssignment, isFalse);
+
+      // ...but it DOES count as evidence for the sibling in-quota slot: this
+      // person really is holding two roles in this event. Mirrors the inline
+      // pass in AssignmentBloc that Task 4 replaces with this function — that
+      // pass filters the "other" side on isFilled only, never on isOffQuota.
+      // Pinned here so a future tidy-up cannot silently change it.
+      expect(result[1].hasDoubleAssignment, isTrue);
+      expect(result[1].otherRoles, ['חובש']);
     });
   });
 }
