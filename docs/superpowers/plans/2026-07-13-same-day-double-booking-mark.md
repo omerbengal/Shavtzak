@@ -118,7 +118,8 @@ void main() {
       expect(result['m1']!.map((e) => e.id), ['evening']);
     });
 
-    test('omits a member who is only assigned to this event', () {
+    test('omits a member who is only assigned to this event, and one who is '
+        'only assigned to the other', () {
       final summer = _event(id: 'summer', start: DateTime(2026, 7, 12));
       final evening = _event(id: 'evening', start: DateTime(2026, 7, 12));
 
@@ -131,7 +132,10 @@ void main() {
         ],
       );
 
-      expect(result.containsKey('m1'), isFalse);
+      // m1 is in summer but nowhere else. m2 is in evening but NOT in summer —
+      // m2 must not be credited to summer at all: the map answers "who, of the
+      // people assigned to THIS event, is also booked elsewhere".
+      expect(result, isEmpty);
     });
 
     test('omits a member whose other event is on a different day', () {
@@ -353,10 +357,20 @@ Map<String, List<Event>> sameDayOtherEventsByMember({
   }
   if (otherEventsById.isEmpty) return const {};
 
+  // A member only qualifies if they are assigned to [event] itself — the
+  // function answers "who here is ALSO booked elsewhere", not "who is booked
+  // to any same-day event".
+  final eventMemberIds = <String>{};
+  for (final assignment in allAssignments) {
+    if (assignment.eventId != event.id) continue;
+    eventMemberIds.add(assignment.teamMemberId);
+  }
+
   // Inner map keyed by event id: a member holding two roles in the same other
   // event must see that event listed once.
   final byMember = <String, Map<String, Event>>{};
   for (final assignment in allAssignments) {
+    if (!eventMemberIds.contains(assignment.teamMemberId)) continue;
     final other = otherEventsById[assignment.eventId];
     if (other == null) continue;
     byMember.putIfAbsent(
