@@ -16,7 +16,7 @@
 - **UI language:** all user-facing strings in Hebrew, code comments in English.
 - **RTL:** any new dialog is wrapped in `Directionality(textDirection: TextDirection.rtl)`.
 - **Equatable rule (project-critical):** every new field on an entity or BLoC-state-carried model MUST be added to `props`, using the full object — never just an id. A field missing from `props` means the UI silently stops live-updating.
-- **`flutter analyze` baseline:** the repo already reports ~108 pre-existing infos. "Clean" means **zero NEW** issues, not zero issues.
+- **`flutter analyze` baseline:** measured on this branch at 730966e: `flutter analyze` = **110 issues found**, `flutter test` = **186 passing**, `cd functions && npm test` = **54 passing**. "Clean" means **zero NEW** issues over 110, not zero issues.
 - **Do not run the app.** Per `CLAUDE.md`, Omer runs and smoke-tests it himself. Verification here = `flutter analyze` + `flutter test` + `npm test`.
 - **The mark's rule** (copy verbatim into doc comments where relevant): for member `M` assigned to event `E`, collect every event `O` where `O.id != E.id`, `O.isDeactivated == false`, `O` overlaps `E` on ≥1 calendar day, and `M` is also assigned to `O`. Sort that set by start date, then name. The relation is **symmetric** — `M` is marked on `O` too, naming `E`. Members flagged `allowMultipleAssignments` **are** marked.
 
@@ -422,7 +422,9 @@ git commit -m "feat(assignments): shared same-day double-booking predicate and i
 
 ### Task 2: Retire the three copy-pasted "shares a day" helpers
 
-Pure refactor, no behaviour change. Three files each carry their own byte-identical implementation of the day-overlap check; point them all at `eventsShareDay`. Two of the three use `x.add(const Duration(days: 1))`, which is the DST-hazardous form — this migration also fixes that.
+Three files each carry their own implementation of the day-overlap check; point them all at `eventsShareDay`.
+
+Behaviour is identical **except at one edge**, deliberately: two of the three write the overlap as `aStart.isBefore(bEnd.add(const Duration(days: 1)))`. `Duration` is absolute, so on the night Israel enters DST that `+1 day` lands on 01:00 rather than midnight, and two events on *adjacent* days can be reported as overlapping. `eventsShareDay` uses the `!isAfter` form (which the third copy, in `EventSummaryTile`, already used) and has no such hazard. This is a fix, not a regression — but do not describe this task as behaviour-preserving.
 
 **Files:**
 - Modify: `shavtzak/lib/presentation/bloc/assignment/assignment_bloc.dart` (call sites `:1643`, `:1954`; delete `_eventsShareDate` at `:2297-2309`)
@@ -573,7 +575,7 @@ Expected: no output.
 cd shavtzak && flutter analyze && flutter test
 ```
 
-Expected: no NEW analyze issues (baseline ~108 infos), and all tests pass. If `flutter analyze` reports an unused-import or unused-element warning, you missed a deletion — fix it.
+Expected: analyze still reports 110 issues (the baseline — zero new), and all 186 tests pass. If `flutter analyze` reports an unused-import or unused-element warning, you missed a deletion — fix it.
 
 - [ ] **Step 6: Commit**
 
@@ -2023,7 +2025,7 @@ cd shavtzak && flutter analyze && flutter test
 cd ../functions && npm test
 ```
 
-Expected: no NEW analyze issues over the ~108-info baseline; every Flutter test passes; every Functions test passes. **Paste the actual output** — do not claim success without it.
+Expected: analyze still reports 110 issues (baseline, zero new); Flutter tests >= 186 passing; Functions tests >= 54 passing. **Paste the actual output** — do not claim success without it.
 
 - [ ] **Step 2: Confirm nothing outside the feature was committed**
 
@@ -2078,7 +2080,7 @@ The Google Apps Script needs **no change** — the mark rides inside the existin
 
 - **Do not `git add -A`.** Omer has uncommitted calendar work in `functions/src/`. Every task lists the exact paths to stage.
 - **Do not run the app.** Verification is `flutter analyze` + `flutter test` + `npm test`. Omer smoke-tests.
-- If `flutter analyze` shows an issue you did not introduce, leave it — the baseline is ~108 pre-existing infos.
+- If `flutter analyze` shows an issue you did not introduce, leave it — the baseline is 110 pre-existing issues.
 
 ### Two deliberate deviations from the spec's testing section
 
