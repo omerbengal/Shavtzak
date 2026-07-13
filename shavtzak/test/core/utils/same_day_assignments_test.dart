@@ -76,7 +76,8 @@ void main() {
       expect(result['m1']!.map((e) => e.id), ['evening']);
     });
 
-    test('omits a member who is only assigned to this event', () {
+    test('omits a member who is only assigned to this event, and one who is '
+        'only assigned to the other', () {
       final summer = _event(id: 'summer', start: DateTime(2026, 7, 12));
       final evening = _event(id: 'evening', start: DateTime(2026, 7, 12));
 
@@ -89,7 +90,10 @@ void main() {
         ],
       );
 
-      expect(result.containsKey('m1'), isFalse);
+      // m1 is in summer but nowhere else. m2 is in evening but NOT in summer —
+      // m2 must not be credited to summer at all: the map answers "who, of the
+      // people assigned to THIS event, is also booked elsewhere".
+      expect(result, isEmpty);
     });
 
     test('omits a member whose other event is on a different day', () {
