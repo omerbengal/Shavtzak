@@ -101,9 +101,16 @@ class EventSummaryTile extends StatelessWidget {
                 final eventAssignments = allAssignments
                     .where((a) => a.eventId == data.event.id)
                     .toList();
-                // allEvents / allAssignments are every non-deactivated event and
-                // every assignment, so the mark sees the member's real calendar
-                // — not just this event's roster.
+                // allAssignments is every assignment; allEvents is every
+                // non-deactivated event that has NOT yet ended (SummaryScreen
+                // narrows it to upcomingEvents before it reaches this tile). So
+                // the mark sees the member's real calendar rather than just this
+                // event's roster — with one deliberate gap: a conflict on a day
+                // that has already passed inside a still-running multi-day event
+                // is not marked. That conflict is history and cannot be acted on,
+                // and /admin/assignments applies the same window by default (it
+                // can widen it via the "show past events" filter; this screen has
+                // no such toggle).
                 final sameDayOtherEvents = sameDayOtherEventsByMember(
                   event: data.event,
                   allEvents: allEvents,
