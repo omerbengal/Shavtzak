@@ -53,6 +53,11 @@ class SameDayAssignmentMark extends StatelessWidget {
       builder: (dialogContext) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
+          // otherEvents is unbounded, and a non-scrollable AlertDialog lets its
+          // content overflow rather than shrink it (see the AlertDialog docs).
+          // On a phone, six events with long Hebrew names — which wrap at that
+          // width — overflow by hundreds of pixels.
+          scrollable: true,
           title: Row(
             children: const [
               Icon(Icons.event_repeat, color: _markColor),
