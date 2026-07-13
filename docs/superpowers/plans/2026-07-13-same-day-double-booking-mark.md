@@ -16,7 +16,7 @@
 - **UI language:** all user-facing strings in Hebrew, code comments in English.
 - **RTL:** any new dialog is wrapped in `Directionality(textDirection: TextDirection.rtl)`.
 - **Equatable rule (project-critical):** every new field on an entity or BLoC-state-carried model MUST be added to `props`, using the full object — never just an id. A field missing from `props` means the UI silently stops live-updating.
-- **`flutter analyze` baseline:** measured on this branch at 730966e: `flutter analyze` = **110 issues found**, `flutter test` = **186 passing**, `cd functions && npm test` = **54 passing**. "Clean" means **zero NEW** issues over 110, not zero issues.
+- **`flutter analyze` baseline:** REVISED at Task 4 (f7772e1): `flutter analyze` = **108 issues found** (down from 110 — deleting two vestigial `?? false` / `?? const []` expressions in the optimistic merge removed two `dead_null_aware_expression` warnings), `flutter test` = **208 passing**, `cd functions && npm test` = **54 passing**. "Clean" means **zero NEW** issues over 108, not zero issues.
 - **Do not run the app.** Per `CLAUDE.md`, Omer runs and smoke-tests it himself. Verification here = `flutter analyze` + `flutter test` + `npm test`.
 - **The mark's rule** (copy verbatim into doc comments where relevant): for member `M` assigned to event `E`, collect every event `O` where `O.id != E.id`, `O.isDeactivated == false`, `O` overlaps `E` on ≥1 calendar day, and `M` is also assigned to `O`. Sort that set by start date, then name. The relation is **symmetric** — `M` is marked on `O` too, naming `E`. Members flagged `allowMultipleAssignments` **are** marked.
 
@@ -2039,7 +2039,7 @@ cd shavtzak && flutter analyze && flutter test
 cd ../functions && npm test
 ```
 
-Expected: analyze still reports 110 issues (baseline, zero new); Flutter tests >= 186 passing; Functions tests >= 54 passing. **Paste the actual output** — do not claim success without it.
+Expected: analyze still reports 108 issues (baseline, zero new); Flutter tests >= 208 passing; Functions tests >= 54 passing. **Paste the actual output** — do not claim success without it.
 
 - [ ] **Step 2: Confirm nothing outside the feature was committed**
 
@@ -2094,7 +2094,7 @@ The Google Apps Script needs **no change** — the mark rides inside the existin
 
 - **Do not `git add -A`.** Omer has uncommitted calendar work in `functions/src/`. Every task lists the exact paths to stage.
 - **Do not run the app.** Verification is `flutter analyze` + `flutter test` + `npm test`. Omer smoke-tests.
-- If `flutter analyze` shows an issue you did not introduce, leave it — the baseline is 110 pre-existing issues.
+- If `flutter analyze` shows an issue you did not introduce, leave it — the baseline is 108 pre-existing issues.
 
 ### Two deliberate deviations from the spec's testing section
 
