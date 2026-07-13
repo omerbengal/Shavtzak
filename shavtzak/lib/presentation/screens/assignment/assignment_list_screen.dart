@@ -1431,19 +1431,21 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Flexible(
-                        child: Text(memberName,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 13)),
-                      ),
+                      // Mark first, so in RTL it sits to the RIGHT of the name —
+                      // matching the quota row's placement.
                       if (slot.sameDayOtherEvents.isNotEmpty) ...[
-                        const SizedBox(width: 4),
                         SameDayAssignmentMark(
                           otherEvents: slot.sameDayOtherEvents,
                           memberName: memberName,
                           size: 18,
                         ),
+                        const SizedBox(width: 4),
                       ],
+                      Flexible(
+                        child: Text(memberName,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 13)),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -2551,6 +2553,19 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
     return Row(
       children: [
+        // Same-day double-booking mark. First child, so in RTL it renders to the
+        // RIGHT of the dropdown — the same side as the role column's ⚠ double-role
+        // mark, so the two read as a pair instead of bracketing the dropdown.
+        if (slot.isFilled && slot.sameDayOtherEvents.isNotEmpty) ...[
+          SameDayAssignmentMark(
+            otherEvents: slot.sameDayOtherEvents,
+            memberName: currentMember?.name ??
+                slot.currentAssignment?.teamMemberName ??
+                '',
+          ),
+          const SizedBox(width: 4),
+        ],
+
         // Main dropdown with string values
         Expanded(
           flex: 2,
@@ -2716,18 +2731,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         ),
 
         const SizedBox(width: 4),
-
-        // Same-day double-booking mark — this person is also assigned to
-        // another event sharing a day with this one.
-        if (slot.isFilled && slot.sameDayOtherEvents.isNotEmpty) ...[
-          SameDayAssignmentMark(
-            otherEvents: slot.sameDayOtherEvents,
-            memberName: currentMember?.name ??
-                slot.currentAssignment?.teamMemberName ??
-                '',
-          ),
-          const SizedBox(width: 4),
-        ],
 
         // "ניקוי" button - only show if slot is filled AND currentMember is valid
         if (slot.isFilled && currentMember != null)
