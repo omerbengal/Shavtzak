@@ -18,6 +18,7 @@ import '../../../domain/entities/team_member.dart';
 import 'assignment_event.dart';
 import 'assignment_state.dart';
 import '../../screens/assignment/models/assignment_slot.dart';
+import '../../screens/assignment/models/assignment_slot_annotations.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
 
 /// BLoC for managing assignments
@@ -1720,57 +1721,22 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       );
     }
 
-    // 6. Detect double assignments (person assigned to multiple roles in same event)
-    // Skip for members with allowMultipleAssignments since it's expected behavior
-    final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
-    for (final slot in slots) {
-      if (slot.isOffQuota) {
-        slotsWithDoubleAssignmentDetection.add(slot);
-        continue;
-      }
-      if (slot.isFilled) {
-        // Check if member has allowMultipleAssignments - skip double assignment warning
-        final teamMember = slot.currentAssignment!.teamMember;
-        final skipDoubleAssignmentWarning =
-            teamMember?.allowMultipleAssignments ?? false;
-
-        // Check if this person has other assignments in the same event
-        final otherAssignments = slots
-            .where((s) =>
-                s.event.id == slot.event.id &&
-                s.isFilled &&
-                s.currentAssignment!.teamMemberId ==
-                    slot.currentAssignment!.teamMemberId &&
-                s.role.key != slot.role.key)
-            .toList();
-
-        if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
-          // This person has multiple roles in this event
-          final otherRoleNames =
-              otherAssignments.map((s) => s.role.hebrewName).toList();
-          slotsWithDoubleAssignmentDetection.add(AssignmentSlot(
-            event: slot.event,
-            role: slot.role,
-            slotIndex: slot.slotIndex,
-            currentAssignment: slot.currentAssignment,
-            availableMembers: slot.availableMembers,
-            alreadyAssignedMembers: slot.alreadyAssignedMembers,
-            hasDoubleAssignment: true,
-            otherRoles: otherRoleNames,
-          ));
-        } else {
-          slotsWithDoubleAssignmentDetection.add(slot);
-        }
-      } else {
-        slotsWithDoubleAssignmentDetection.add(slot);
-      }
-    }
+    // 6. Annotate the built slots. Same-day runs LAST so that no later pass can
+    //    drop it (see annotateDoubleAssignments' copyWith note). Both passes see
+    //    the full loaded window — the event filter is applied downstream, in the
+    //    widget, so narrowing the grid never erases an event's own marks.
+    var annotatedSlots = annotateDoubleAssignments(slots);
+    annotatedSlots = annotateSameDayOtherEvents(
+      annotatedSlots,
+      allEvents: events,
+      allAssignments: assignments,
+    );
 
     // 7. Sort slots deterministically so same-role rows do not flip order.
-    slotsWithDoubleAssignmentDetection.sort(_compareAssignmentSlots);
+    annotatedSlots.sort(_compareAssignmentSlots);
 
     return AssignmentSlotsLoaded(
-      slotsWithDoubleAssignmentDetection,
+      annotatedSlots,
       selectedEventIds: selectedEventIds ?? {},
     );
   }
@@ -2039,61 +2005,26 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         );
       }
 
-      // Detect double assignments
-      final slotsWithDoubleAssignmentDetection = <AssignmentSlot>[];
-      for (final slot in slots) {
-        if (slot.isOffQuota) {
-          slotsWithDoubleAssignmentDetection.add(slot);
-          continue;
-        }
-        if (slot.isFilled) {
-          // Check if member has allowMultipleAssignments - skip double assignment warning
-          final teamMember = slot.currentAssignment!.teamMember;
-          final skipDoubleAssignmentWarning =
-              teamMember?.allowMultipleAssignments ?? false;
-
-          // Check if this person has other assignments in the same event
-          final otherAssignments = slots
-              .where((s) =>
-                  s.event.id == slot.event.id &&
-                  s.isFilled &&
-                  s.currentAssignment!.teamMemberId ==
-                      slot.currentAssignment!.teamMemberId &&
-                  s.role.key != slot.role.key)
-              .toList();
-
-          if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
-            // This person has multiple roles in this event
-            final otherRoleNames =
-                otherAssignments.map((s) => s.role.hebrewName).toList();
-            slotsWithDoubleAssignmentDetection.add(AssignmentSlot(
-              event: slot.event,
-              role: slot.role,
-              slotIndex: slot.slotIndex,
-              currentAssignment: slot.currentAssignment,
-              availableMembers: slot.availableMembers,
-              alreadyAssignedMembers: slot.alreadyAssignedMembers,
-              hasDoubleAssignment: true,
-              otherRoles: otherRoleNames,
-            ));
-          } else {
-            slotsWithDoubleAssignmentDetection.add(slot);
-          }
-        } else {
-          slotsWithDoubleAssignmentDetection.add(slot);
-        }
-      }
+      // Annotate the built slots — same passes, same order as
+      // _buildSlotsFromAssignments. Runs BEFORE the event filter below, so
+      // filtering the grid to one event keeps that event's own marks.
+      var annotatedSlots = annotateDoubleAssignments(slots);
+      annotatedSlots = annotateSameDayOtherEvents(
+        annotatedSlots,
+        allEvents: filteredEvents,
+        allAssignments: mergedAssignments,
+      );
 
       // Sort slots deterministically so same-role rows do not flip order.
-      slotsWithDoubleAssignmentDetection.sort(_compareAssignmentSlots);
+      annotatedSlots.sort(_compareAssignmentSlots);
 
       // Apply filter if needed
       final filteredSlots = rebuildEvent.selectedEventIds.isNotEmpty
-          ? slotsWithDoubleAssignmentDetection
+          ? annotatedSlots
               .where((slot) =>
                   rebuildEvent.selectedEventIds.contains(slot.event.id))
               .toList()
-          : slotsWithDoubleAssignmentDetection;
+          : annotatedSlots;
 
       // Remember the filter
       _currentEventFilter = rebuildEvent.selectedEventIds;
