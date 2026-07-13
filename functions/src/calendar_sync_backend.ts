@@ -3,7 +3,7 @@ import {
   Firestore,
   Timestamp,
 } from 'firebase-admin/firestore';
-import {executeCalendarAction} from './calendar_integration';
+import {executeCalendarAction, isCalendarQuotaError} from './calendar_integration';
 
 export type BackendEnvironmentMode = 'production' | 'test';
 
@@ -38,6 +38,10 @@ export type AppEventSyncReport = {
   repairedEventSyncStateCount: number;
   removedOrphanedCount: number;
   cleanedSyncStateCount: number;
+  // At least one event failed specifically because Google's Calendar usage
+  // limit is exhausted (403 quota). The caller should defer + retry after the
+  // quota window resets rather than fast-retrying into the same wall.
+  quotaExhausted: boolean;
 };
 
 export type ConstraintSyncReport = {
@@ -1341,6 +1345,7 @@ async function reconcileSingleAppEvent(
   eventSyncData: Record<string, unknown> | null,
   teamMemberCache: Map<string, Record<string, unknown> | null>,
   notifyDelta?: AttendeeNotifyDelta,
+  notifyAllChanges = false,
 ): Promise<AppEventItemResult> {
   const desired = buildDesiredAppEventState(eventId, eventData, dependencies.environment);
   const desiredEmails = await readEventAttendeeEmails(dependencies, eventId, eventData, teamMemberCache);
@@ -1360,11 +1365,17 @@ async function reconcileSingleAppEvent(
   const optedIntoInviteAll =
     eventData['inviteAllPermanentWhenUnassigned'] === true &&
     eventData['relevantForExtendedTeam'] !== true;
-  const notify = buildAttendeeNotifyPlan({
-    optedIntoInviteAll,
-    triggeredByChange,
-    notifyEmails,
-  });
+  // `notifyAllChanges` (admin manual re-sync): email every add/remove. Because
+  // the diff below only adds members not already present and only removes
+  // members no longer desired, this emails exactly the members whose assignment
+  // changed since the last sync — never the unchanged ones.
+  const notify: AttendeeNotifyPlan = notifyAllChanges
+    ? {emails: new Set<string>(), notifyAll: true}
+    : buildAttendeeNotifyPlan({
+        optedIntoInviteAll,
+        triggeredByChange,
+        notifyEmails,
+      });
   const currentStateAssemblyId = optionalString(eventSyncData?.['assemblyCalendarEventId']) ?? '';
   const currentStateMainId = optionalString(eventSyncData?.['mainCalendarEventId']) ?? '';
   const currentStateStatus = optionalString(eventSyncData?.['status']) ?? '';
@@ -1719,6 +1730,13 @@ export async function syncAppEventCalendars(
     // here are notified; every other attendee write converges silently. Absent
     // for passive full/manual syncs, which are therefore entirely silent.
     notifyByEventId?: AttendeeNotifyByEvent;
+    // When true, EVERY genuine attendee change (add/remove) emails the affected
+    // member — regardless of per-member deltas or the invite-all toggle. Set by
+    // the admin "re-sync" button so a manual sync notifies exactly the members
+    // whose assignment changed since the last sync (unchanged members are never
+    // touched, so they get nothing). Automatic/real-time syncs leave this false
+    // and rely on `notifyByEventId`.
+    notifyAllChanges?: boolean;
   } = {},
 ): Promise<AppEventSyncReport> {
   const failedEventIds: string[] = [];
@@ -1732,6 +1750,7 @@ export async function syncAppEventCalendars(
   let repairedEventSyncStateCount = 0;
   let removedOrphanedCount = 0;
   let cleanedSyncStateCount = 0;
+  let quotaExhausted = false;
 
   const teamMemberCache = new Map<string, Record<string, unknown> | null>();
 
@@ -1751,6 +1770,7 @@ export async function syncAppEventCalendars(
         repairedEventSyncStateCount: 0,
         removedOrphanedCount: 0,
         cleanedSyncStateCount: 0,
+        quotaExhausted: false,
       };
     }
 
@@ -1768,6 +1788,7 @@ export async function syncAppEventCalendars(
         syncStateDoc.exists ? syncStateDoc.data() ?? null : null,
         teamMemberCache,
         options.notifyByEventId?.[eventId],
+        options.notifyAllChanges ?? false,
       );
       createdEventPartCount += result.createdEventPartCount;
       updatedEventPartCount += result.updatedEventPartCount;
@@ -1782,6 +1803,7 @@ export async function syncAppEventCalendars(
     } catch (error) {
       console.error(`Failed to reconcile app event ${eventId}:`, error);
       failedEventIds.push(eventId);
+      if (isCalendarQuotaError(error)) quotaExhausted = true;
     }
 
     return {
@@ -1796,6 +1818,7 @@ export async function syncAppEventCalendars(
       repairedEventSyncStateCount,
       removedOrphanedCount,
       cleanedSyncStateCount,
+      quotaExhausted,
     };
   }
 
@@ -1827,6 +1850,7 @@ export async function syncAppEventCalendars(
           syncStateDoc.exists ? syncStateDoc.data() ?? null : null,
           teamMemberCache,
           options.notifyByEventId?.[eventId],
+          options.notifyAllChanges ?? false,
         );
         createdEventPartCount += result.createdEventPartCount;
         updatedEventPartCount += result.updatedEventPartCount;
@@ -1841,7 +1865,13 @@ export async function syncAppEventCalendars(
       } catch (error) {
         console.error(`Failed to reconcile app event ${eventId}:`, error);
         failedEventIds.push(eventId);
+        if (isCalendarQuotaError(error)) quotaExhausted = true;
       }
+      // Fail fast: once Google's usage limit is exhausted, every remaining event
+      // fails the same way. Stop rather than burn the rest of the chunk (and the
+      // client's 30s request timeout) on work that cannot possibly succeed —
+      // grinding on produces a bogus "network error" instead of an honest one.
+      if (quotaExhausted) break;
     }
 
     return {
@@ -1856,6 +1886,7 @@ export async function syncAppEventCalendars(
       repairedEventSyncStateCount,
       removedOrphanedCount,
       cleanedSyncStateCount,
+      quotaExhausted,
     };
   }
 
@@ -1882,6 +1913,8 @@ export async function syncAppEventCalendars(
         doc.data() ?? {},
         syncByEventId.get(doc.id) ?? null,
         teamMemberCache,
+        undefined,
+        options.notifyAllChanges ?? false,
       );
       createdEventPartCount += result.createdEventPartCount;
       updatedEventPartCount += result.updatedEventPartCount;
@@ -1896,7 +1929,10 @@ export async function syncAppEventCalendars(
     } catch (error) {
       console.error(`Failed to reconcile app event ${doc.id}:`, error);
       failedEventIds.push(doc.id);
+      if (isCalendarQuotaError(error)) quotaExhausted = true;
     }
+    // Fail fast on quota exhaustion (see the batch path above).
+    if (quotaExhausted) break;
   }
 
   return {
@@ -1911,6 +1947,7 @@ export async function syncAppEventCalendars(
     repairedEventSyncStateCount,
     removedOrphanedCount,
     cleanedSyncStateCount,
+    quotaExhausted,
   };
 }
 
@@ -2053,9 +2090,10 @@ export async function syncConstraintCalendars(
 
 export async function syncEventsAndConstraints(
   dependencies: ConstraintDependencies,
+  notifyAllChanges = false,
 ): Promise<CombinedCalendarSyncReport> {
   const [appEvents, constraints] = await Promise.all([
-    syncAppEventCalendars(dependencies),
+    syncAppEventCalendars(dependencies, {notifyAllChanges}),
     syncConstraintCalendars(dependencies),
   ]);
 

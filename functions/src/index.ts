@@ -100,23 +100,44 @@ type CalendarSyncTaskPayload = {
   environment: EnvironmentMode;
   actor: {memberId: string; isAdmin: boolean};
   delta: AttendeeNotifyDelta;
+  // Number of times this event has already been deferred due to a Google quota
+  // (usage-limit) 403. Absent on the first enqueue; incremented on each
+  // quota-backoff re-enqueue and capped by MAX_QUOTA_BACKOFF_RETRIES.
+  quotaRetryCount?: number;
 };
 
 const CALENDAR_SYNC_TASK_QUEUE = 'calendarSyncTask';
 
+// When Google returns a quota / usage-limit 403, defer the event's retry by
+// this long (instead of Cloud Tasks' 5–60s fast-retry) so it lands after the
+// per-account usage window has reset. Bounded so a pathologically stuck event
+// cannot re-enqueue itself forever.
+const QUOTA_BACKOFF_SECONDS = 30 * 60; // 30 minutes
+const MAX_QUOTA_BACKOFF_RETRIES = 24; // ~12h of half-hourly retries, then give up
+
 // Calendar sync runs on a Cloud Tasks queue rather than fire-and-forget: on
 // Cloud Run, un-awaited background work has its CPU throttled the instant the
 // HTTP response is sent, which stretched a ~3s sync into minutes. As a task it
-// runs at full CPU. `rateLimits` keep us under Google Calendar's quota BY DESIGN
-// (this is what makes the old invite storm structurally impossible), and
-// `retryConfig.maxAttempts` is capped so a persistent failure can't run away.
-// Firebase provisions + secures the queue on deploy (only Cloud Tasks + admins
-// may enqueue).
+// runs at full CPU. Firebase provisions + secures the queue on deploy (only
+// Cloud Tasks + admins may enqueue).
+//
+// The calendar organizer is a consumer Gmail account, which has a low,
+// undocumented "Calendar usage limit" on WRITES (adding guests / patching
+// events) — not just on emails. A burst of attendee writes trips
+// `403 Calendar usage limits exceeded`. Two guards keep sync reliable without
+// paying for Workspace, trading speed for reliability:
+//   1. Throttle hard — one dispatch at a time, one every 2s — so a burst never
+//      exceeds the per-account write cap in the first place. Slow is fine here.
+//   2. Quota-aware backoff (below): on a 403 quota failure, DEFER the event to
+//      run after the window resets instead of fast-retrying into the same wall.
+//      The fast-retry-into-exhausted-quota loop is what produced the 2026-07
+//      storm (~15 events each retried 20–45×).
+// `retryConfig.maxAttempts` still caps genuinely transient (non-quota) failures.
 export const calendarSyncTask = onTaskDispatched<CalendarSyncTaskPayload>(
   {
     region: 'us-central1',
     retryConfig: {maxAttempts: 5, minBackoffSeconds: 5, maxBackoffSeconds: 60},
-    rateLimits: {maxConcurrentDispatches: 2, maxDispatchesPerSecond: 3},
+    rateLimits: {maxConcurrentDispatches: 1, maxDispatchesPerSecond: 0.5},
   },
   async (request) => {
     const {eventId, environment, actor, delta} = request.data;
@@ -129,16 +150,92 @@ export const calendarSyncTask = onTaskDispatched<CalendarSyncTaskPayload>(
       },
       {eventId, notifyByEventId: {[eventId]: delta}},
     );
-    // syncAppEventCalendars swallows per-event failures into `failedEventIds`
-    // instead of throwing. Re-throw so Cloud Tasks retries (capped by
-    // retryConfig) — e.g. a transient Google rate-limit. The reconcile is
-    // idempotent (addAttendee no-ops if already present), so retries never
-    // double-invite.
+    // Quota-aware backoff. The account's Calendar usage limit is exhausted.
+    // Re-throwing would make Cloud Tasks fast-retry (5–60s) straight back into
+    // the same wall — the self-sustaining storm. Instead, re-enqueue this event
+    // to run AFTER the quota window resets and return success so THIS attempt is
+    // not retried. The reconcile is idempotent and carries the same notify
+    // delta, so the deferred run still emails exactly the changed member (and a
+    // member already added silently in the meantime is simply not re-emailed).
+    if (report.quotaExhausted) {
+      await reenqueueCalendarSyncAfterQuota(request.data);
+      return;
+    }
+    // Non-quota per-event failure (e.g. a transient 5xx): syncAppEventCalendars
+    // swallows it into `failedEventIds` instead of throwing. Re-throw so Cloud
+    // Tasks retries (capped by retryConfig). The reconcile is idempotent
+    // (addAttendee no-ops if already present), so retries never double-invite.
     if (report.failedEventIds.length > 0) {
       throw new Error(`[calendar-sync] reconcile failed for eventId=${eventId}; will retry`);
     }
   },
 );
+
+// Re-enqueue one event's calendar sync to run after the quota window resets.
+// Returns without throwing so the current task is NOT fast-retried into the
+// still-exhausted quota. The delta is preserved, so the deferred run notifies
+// exactly the same changed member; the reconcile is idempotent so nothing is
+// double-invited. Bounded by MAX_QUOTA_BACKOFF_RETRIES.
+async function reenqueueCalendarSyncAfterQuota(
+  payload: CalendarSyncTaskPayload,
+): Promise<void> {
+  const attempt = (payload.quotaRetryCount ?? 0) + 1;
+  if (attempt > MAX_QUOTA_BACKOFF_RETRIES) {
+    console.error(
+      `[calendar-sync] quota still exhausted for eventId=${payload.eventId} after ` +
+        `${MAX_QUOTA_BACKOFF_RETRIES} deferred retries; giving up. It will re-sync the ` +
+        `next time the event is touched or on a manual "sync calendars".`,
+    );
+    return;
+  }
+  try {
+    const queue = getFunctions().taskQueue<CalendarSyncTaskPayload>(CALENDAR_SYNC_TASK_QUEUE);
+    await queue.enqueue(
+      {...payload, quotaRetryCount: attempt},
+      {scheduleDelaySeconds: QUOTA_BACKOFF_SECONDS},
+    );
+    console.log(
+      `[calendar-sync] quota exhausted for eventId=${payload.eventId}; deferred retry ` +
+        `${attempt}/${MAX_QUOTA_BACKOFF_RETRIES} in ${QUOTA_BACKOFF_SECONDS}s (no fast-retry).`,
+    );
+  } catch (err: unknown) {
+    console.error(
+      `[calendar-sync-error] failed to re-enqueue quota backoff for eventId=${payload.eventId}:`,
+      err,
+    );
+  }
+}
+
+// Master switch for AUTOMATIC (real-time) calendar sync. When false, no
+// assignment/event write ever enqueues a calendar-sync task — calendar changes
+// are applied ONLY when an admin presses "re-sync" on the admin home screen
+// (the /calendar/sync-events-and-constraints endpoint). This makes the
+// consumer-Gmail quota storm structurally impossible: normal app activity can
+// no longer trigger a burst of Google Calendar writes. Flip to true (and
+// `firebase deploy --only functions`) to restore automatic real-time sync.
+const REALTIME_CALENDAR_SYNC_ENABLED = false;
+
+// Whether a manual admin "re-sync" emails the members it adds/removes.
+//
+// KEEP THIS false until the calendar has CAUGHT UP with the app. The 2026-07
+// quota storm blocked every attendee write, so the Google events currently have
+// almost no attendees — a notifying re-sync would email the ENTIRE roster of
+// EVERY event in one burst (~100 invites) and instantly re-exhaust the quota.
+//
+// Sequence: run the catch-up re-sync silently first (this = false). Once the
+// calendar matches the app, flip to true + `firebase deploy --only functions`.
+// From then on each re-sync emails only the members whose assignment genuinely
+// changed since the previous sync — a small diff, because the reconcile only
+// adds members not already on the event and only removes ones no longer desired.
+const MANUAL_SYNC_NOTIFIES_CHANGED_MEMBERS = false;
+
+// Google's per-account Calendar usage limit is exhausted; adding guests is
+// temporarily blocked. Surfaced to the admin instead of letting the sync grind
+// through every event and die on the client's 30s timeout with a misleading
+// "check your internet connection".
+const CALENDAR_QUOTA_EXHAUSTED_MESSAGE =
+  'מכסת Google Calendar מוצתה — גוגל חוסמת זמנית הוספת מוזמנים לאירועים. ' +
+  'הסנכרון הופסק ולא בוצעו שינויים נוספים. נסה שוב בעוד מספר שעות.';
 
 // Enqueue one calendar-sync task per affected event. Awaited so each task is
 // durably created before the HTTP response returns — an un-awaited enqueue would
@@ -151,6 +248,12 @@ async function enqueueCalendarSync(
   operationLabel: string,
   notifyByEventId: AttendeeNotifyByEvent = {},
 ): Promise<void> {
+  // Real-time sync disabled: skip every automatic write-triggered sync. The
+  // manual admin "re-sync" bypasses this function (it calls syncAppEventCalendars
+  // directly), so it is unaffected.
+  if (!REALTIME_CALENDAR_SYNC_ENABLED) {
+    return;
+  }
   const tasks = planCalendarSyncTasks(eventIds, notifyByEventId);
   if (tasks.length === 0) {
     return;
@@ -1811,7 +1914,11 @@ async function executeMutation(
       await docRef.update(next);
       const previousEmail = normalizeOptionalText(existing['email']);
       const nextEmail = normalizeOptionalText(next['email']);
-      if (previousEmail !== nextEmail) {
+      // Real-time-only corrective sync (re-invite the member's new address on
+      // their future events). Gated by the master switch: when real-time is off,
+      // a manual re-sync picks up the address change and converges it (adds the
+      // new email, cancels the old).
+      if (REALTIME_CALENDAR_SYNC_ENABLED && previousEmail !== nextEmail) {
         try {
           await syncAssignedFutureEventsForMemberEmailChange(
             {
@@ -3917,6 +4024,10 @@ app.post('/calendar/sync-app-event-attendees', async (request: Request, response
       },
     );
 
+    if (summary.quotaExhausted) {
+      throw new HttpError(503, CALENDAR_QUOTA_EXHAUSTED_MESSAGE);
+    }
+
     response.json({
       ok: true,
       scannedCount: summary.scannedCount,
@@ -4019,7 +4130,16 @@ app.post('/calendar/sync-events-and-constraints', async (request: Request, respo
 
     if (mode === 'events') {
       const eventIds = optionalStringArray(request.body?.eventIds);
-      const eventSummary = await syncAppEventCalendars(dependencies, {eventIds});
+      // Manual admin re-sync. When notifying is enabled, this emails exactly the
+      // members whose assignment changed since the last sync (unchanged members
+      // are never touched → they get nothing).
+      const eventSummary = await syncAppEventCalendars(dependencies, {
+        eventIds,
+        notifyAllChanges: MANUAL_SYNC_NOTIFIES_CHANGED_MEMBERS,
+      });
+      if (eventSummary.quotaExhausted) {
+        throw new HttpError(503, CALENDAR_QUOTA_EXHAUSTED_MESSAGE);
+      }
       response.json({ok: true, ...serializeAppEventSyncReport(eventSummary)});
       return;
     }
@@ -4030,7 +4150,15 @@ app.post('/calendar/sync-events-and-constraints', async (request: Request, respo
       return;
     }
 
-    const combined = await syncEventsAndConstraints(dependencies);
+    // Legacy one-shot full sync (older clients that omit `mode`). Same manual
+    // re-sync semantics: notify only the members whose assignment changed.
+    const combined = await syncEventsAndConstraints(
+      dependencies,
+      MANUAL_SYNC_NOTIFIES_CHANGED_MEMBERS,
+    );
+    if (combined.appEvents.quotaExhausted) {
+      throw new HttpError(503, CALENDAR_QUOTA_EXHAUSTED_MESSAGE);
+    }
 
     response.json({
       ok: true,

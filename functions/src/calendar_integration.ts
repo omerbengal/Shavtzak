@@ -107,13 +107,32 @@ const CalendarEventColors = {
 
 class CalendarAuthError extends Error {}
 
-class GoogleApiError extends Error {
+export class GoogleApiError extends Error {
   status: number;
 
   constructor(status: number, message: string) {
     super(message);
     this.status = status;
   }
+}
+
+// A quota / usage-limit rejection from Google Calendar (as opposed to a
+// transient 5xx or a genuine 4xx like permission). The organizer is a consumer
+// Gmail account with a strict per-account "Calendar usage limit"; a burst of
+// attendee writes trips `403 Calendar usage limits exceeded`
+// (domain:usageLimits, reason:quotaExceeded/rateLimitExceeded). Retrying
+// immediately just hammers the same wall — the caller must back off instead.
+export function isCalendarQuotaError(error: unknown): boolean {
+  if (!(error instanceof GoogleApiError)) return false;
+  if (error.status !== 403 && error.status !== 429) return false;
+  const lower = error.message.toLowerCase();
+  return (
+    lower.includes('usagelimits') ||
+    lower.includes('usage limit') ||
+    lower.includes('quotaexceeded') ||
+    lower.includes('ratelimitexceeded') ||
+    lower.includes('rate limit')
+  );
 }
 
 function getKeysCollection(environment: CalendarEnvironmentMode): string {
