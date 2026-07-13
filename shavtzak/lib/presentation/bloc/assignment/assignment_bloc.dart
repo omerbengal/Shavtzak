@@ -1088,18 +1088,24 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           }
         }
 
-        // Update the slot with recalculated member lists
-        // Reset double assignment flags - will be recomputed after all updates
+        // Update the slot with recalculated member lists.
+        // Reset the double-assignment flags — annotateDoubleAssignments below
+        // recomputes them (it only ever SETS the flag, never clears it, so the
+        // reset here is what lets a no-longer-double assignment go back to
+        // false).
+        //
+        // copyWith, never the raw constructor: a hand-rebuilt slot silently
+        // drops every field the call forgets. This loop runs over EVERY slot of
+        // any event with a pending operation, and the `operation == null` branch
+        // below hands these rebuilt slots straight back — so a raw rebuild here
+        // erased sameDayOtherEvents from every row of an event the moment
+        // anyone in it was assigned.
         final slotIndex = eventSlots.indexOf(slot);
-        eventSlots[slotIndex] = AssignmentSlot(
-          event: slot.event,
-          role: slot.role,
-          slotIndex: slot.slotIndex,
-          currentAssignment: slot.currentAssignment,
+        eventSlots[slotIndex] = slot.copyWith(
           availableMembers: availableMembersMap.values.toList(),
           alreadyAssignedMembers: alreadyAssignedMembersMap.values.toList(),
-          hasDoubleAssignment: false, // Will be recomputed
-          otherRoles: const [], // Will be recomputed
+          hasDoubleAssignment: false,
+          otherRoles: const [],
         );
       }
     }
@@ -1123,16 +1129,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 orElse: () => dbSlot,
               )
             : dbSlot;
-        return AssignmentSlot(
-          event: baseSlot.event,
-          role: baseSlot.role,
-          slotIndex: baseSlot.slotIndex,
-          currentAssignment: null,
-          availableMembers: baseSlot.availableMembers,
-          alreadyAssignedMembers: baseSlot.alreadyAssignedMembers,
-          hasDoubleAssignment: false,
-          otherRoles: const [],
-        );
+        return _emptied(baseSlot);
       }
 
       if (operation == null) {
@@ -1161,16 +1158,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 orElse: () => dbSlot,
               )
             : dbSlot;
-        return AssignmentSlot(
-          event: baseSlot.event,
-          role: baseSlot.role,
-          slotIndex: baseSlot.slotIndex,
-          currentAssignment: null,
-          availableMembers: baseSlot.availableMembers,
-          alreadyAssignedMembers: baseSlot.alreadyAssignedMembers,
-          hasDoubleAssignment: false,
-          otherRoles: const [],
-        );
+        return _emptied(baseSlot);
       } else {
         // Create or Update
         final eventSlots = slotsByEvent[dbSlot.event.id];
@@ -1182,67 +1170,50 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 orElse: () => dbSlot,
               )
             : dbSlot;
-        return AssignmentSlot(
-          event: baseSlot.event,
-          role: baseSlot.role,
-          slotIndex: baseSlot.slotIndex,
-          currentAssignment: operation.optimisticAssignment,
-          availableMembers: baseSlot.availableMembers,
-          alreadyAssignedMembers: baseSlot.alreadyAssignedMembers,
-          hasDoubleAssignment: baseSlot.hasDoubleAssignment ?? false,
-          otherRoles: baseSlot.otherRoles ?? const [],
+        final optimistic = operation.optimisticAssignment;
+        // sameDayOtherEvents is cleared, not inherited: an UPDATE swaps the
+        // occupant, and baseSlot's mark describes the person on their way OUT.
+        // This function cannot recompute the incoming person's mark (it has no
+        // access to the full event/assignment window), and inheriting the old
+        // one would pin the wrong events on the wrong person. Empty is the
+        // honest answer until the stream re-emits — see the note below.
+        // hasDoubleAssignment/otherRoles need no such care: they are recomputed
+        // wholesale by annotateDoubleAssignments below.
+        return baseSlot.copyWith(
+          currentAssignment: optimistic,
+          clearCurrentAssignment: optimistic == null,
+          sameDayOtherEvents: const [],
         );
       }
     }).toList();
 
-    // Re-run double assignment detection for affected events
-    // This ensures hasDoubleAssignment and otherRoles are correct after optimistic updates
-    for (final eventId in operationsByEvent.keys) {
-      final eventResultSlots =
-          resultSlots.where((s) => s.event.id == eventId).toList();
-
-      for (final slot in eventResultSlots) {
-        if (slot.isOffQuota) continue;
-        if (slot.isFilled) {
-          // Check if member has allowMultipleAssignments - skip double assignment warning
-          final teamMember = slot.currentAssignment!.teamMember;
-          final skipDoubleAssignmentWarning =
-              teamMember?.allowMultipleAssignments ?? false;
-
-          // Check if this person has other assignments in the same event
-          final otherAssignments = eventResultSlots
-              .where((s) =>
-                  s.event.id == slot.event.id &&
-                  s.isFilled &&
-                  s.currentAssignment!.teamMemberId ==
-                      slot.currentAssignment!.teamMemberId &&
-                  s.role.key != slot.role.key)
-              .toList();
-
-          if (otherAssignments.isNotEmpty && !skipDoubleAssignmentWarning) {
-            // This person has multiple roles in this event
-            final otherRoleNames =
-                otherAssignments.map((s) => s.role.hebrewName).toList();
-
-            // Find and update this slot in resultSlots
-            final slotIndex = resultSlots.indexOf(slot);
-            resultSlots[slotIndex] = AssignmentSlot(
-              event: slot.event,
-              role: slot.role,
-              slotIndex: slot.slotIndex,
-              currentAssignment: slot.currentAssignment,
-              availableMembers: slot.availableMembers,
-              alreadyAssignedMembers: slot.alreadyAssignedMembers,
-              hasDoubleAssignment: true,
-              otherRoles: otherRoleNames,
-            );
-          }
-        }
-      }
-    }
-
-    return resultSlots;
+    // Re-run double-assignment detection over the merged result, using the very
+    // same pass the two slot-build paths run, so the grid cannot disagree with
+    // itself about who is double-booked.
+    //
+    // Deliberately NOT recomputed here: sameDayOtherEvents. Deriving it needs
+    // the full event + assignment window, which the merge does not have; all it
+    // can do is carry through what the database slot already worked out (hence
+    // the copyWith calls above — a raw rebuild drops it). The practical effect
+    // is that a newly-assigned person's OWN mark appears one stream emit later,
+    // while every already-marked row keeps its mark throughout. That lag is
+    // fine: the admin was already warned at assign time by the
+    // "בעלי מגבלות / שבץ בכל זאת" dialog. Do not "fix" this by hand-rebuilding
+    // slots here — that is exactly what dropped the field in the first place.
+    return annotateDoubleAssignments(resultSlots);
   }
+
+  /// A slot with its assignment removed, keeping everything the row still needs
+  /// (member lists, same-day candidate info). The double-assignment flags and
+  /// sameDayOtherEvents go with the person who left: both describe the occupant,
+  /// and AssignmentSlot documents sameDayOtherEvents as empty on an unfilled
+  /// slot, so keeping it would paint a mark on an empty row.
+  AssignmentSlot _emptied(AssignmentSlot slot) => slot.copyWith(
+        clearCurrentAssignment: true,
+        hasDoubleAssignment: false,
+        otherRoles: const [],
+        sameDayOtherEvents: const [],
+      );
 
   /// Optimistic create assignment handler
   Future<void> _onOptimisticCreateAssignment(

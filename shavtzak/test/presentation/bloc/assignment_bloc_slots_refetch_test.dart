@@ -33,6 +33,7 @@ import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_event.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_state.dart';
+import 'package:shavtzak/presentation/screens/assignment/models/assignment_slot.dart';
 
 import 'assignment_bloc_slots_refetch_test.mocks.dart';
 
@@ -83,7 +84,10 @@ void main() {
   // the wall-clock date the suite runs on. A fixed calendar date silently
   // "expires" once the real date passes it, which would make the showPastEvents
   // filter drop the event and collapse every slot count to 0.
-  Event futureEvent(String id) {
+  //
+  // All events built here land on the SAME day (now + 30d), which the same-day
+  // double-booking tests below rely on.
+  Event futureEvent(String id, {Map<String, int>? roleRequirements}) {
     final base = DateTime.now().add(const Duration(days: 30));
     final start = DateTime(base.year, base.month, base.day, 9, 0);
     final end = DateTime(base.year, base.month, base.day, 17, 0);
@@ -96,19 +100,25 @@ void main() {
       endTime: '17:00',
       assemblyTime: '08:30',
       requiresArmed: false,
-      roleRequirements: const {'medic': 1},
+      roleRequirements: roleRequirements ?? const {'medic': 1},
       createdAt: now,
       updatedAt: now,
     );
   }
 
-  Assignment assignment(String id, String eventId, String memberId) =>
+  Assignment assignment(
+    String id,
+    String eventId,
+    String memberId, {
+    String roleType = 'medic',
+    int slotIndex = 0,
+  }) =>
       Assignment(
         id: id,
         eventId: eventId,
         teamMemberId: memberId,
-        roleType: 'medic',
-        slotIndex: 0,
+        roleType: roleType,
+        slotIndex: slotIndex,
         status: AssignmentStatus.confirmed,
         notes: '',
         createdAt: now,
@@ -120,6 +130,15 @@ void main() {
         key: 'medic',
         hebrewName: hebrewName,
         sortOrder: 0,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+  Role driverRole() => Role(
+        id: 'role-driver',
+        key: 'driver',
+        hebrewName: 'נהג',
+        sortOrder: 1,
         createdAt: now,
         updatedAt: now,
       );
@@ -501,6 +520,109 @@ void main() {
       // ...and it did so WITHOUT any getAllRoles fetch: the cache was seeded and
       // updated purely through watchRoles, and the filter rebuild reused it.
       verifyNever(roleRepo.getAllRoles());
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Optimistic-merge field-preservation test.
+  //
+  // Bug: _mergeSlotsWithOptimisticUpdates rebuilt slots with the raw
+  // AssignmentSlot constructor instead of copyWith. Its member-list recalc loop
+  // runs over EVERY slot of any event holding a pending operation, and the
+  // "no operation on this slot" branch then hands those rebuilt slots straight
+  // back — so the raw rebuild silently dropped every field it forgot to copy
+  // across, sameDayOtherEvents among them.
+  //
+  // User-visible effect: the moment an admin assigned ANYONE in event E, every
+  // same-day double-booking mark already showing in E vanished until the stream
+  // re-emitted.
+  //
+  // Fix: every rebuild in that function goes through copyWith, which carries
+  // unmentioned fields through by construction.
+  // ---------------------------------------------------------------------------
+
+  test(
+    'a pending optimistic op in an event does NOT wipe the same-day marks on '
+    'its other slots',
+    () async {
+      // e1 has two quota slots (medic + driver); e2 shares the same calendar day.
+      final e1 = futureEvent(
+        'e1',
+        roleRequirements: const {'medic': 1, 'driver': 1},
+      );
+      final e2 = futureEvent('e2', roleRequirements: const {'medic': 1});
+
+      // m1 is double-booked across the two same-day events (medic in each), so
+      // e1's medic slot must carry sameDayOtherEvents == [e2].
+      final dbAssignments = [
+        assignment('a1', 'e1', 'm1'),
+        assignment('a2', 'e2', 'm1'),
+      ];
+
+      // Hold the DB write open so the pending operation is still in flight when
+      // a rebuild lands. The handler drops the op the instant the write
+      // resolves — which is precisely when the bug stops reproducing.
+      final createGate = Completer<void>();
+      when(assignmentRepo.createAssignment(any))
+          .thenAnswer((_) => createGate.future);
+
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+
+      eventStream.add([e1, e2]);
+      roleStream.add([medicRole(), driverRole()]);
+      teamStream.add([member('m1'), member('m2')]);
+      assignmentStream.add(dbAssignments);
+      await pumpEventQueue();
+
+      AssignmentSlot slotFor(String eventId, String roleKey) =>
+          (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+                (s) => s.event.id == eventId && s.role.key == roleKey,
+              );
+
+      // Baseline: the mark is on the medic row before any optimistic operation.
+      expect(bloc.state, isA<AssignmentSlotsLoaded>());
+      expect(
+        slotFor('e1', 'medic').sameDayOtherEvents.map((e) => e.id).toList(),
+        ['e2'],
+        reason: 'baseline: m1 is booked into e1 and e2 on the same day',
+      );
+
+      // Assign someone else (m2) to the OTHER slot in e1. This puts a pending
+      // operation on e1 — but NOT on the medic slot whose mark we care about.
+      bloc.add(OptimisticCreateAssignment(
+        assignment('a3', 'e1', 'm2', roleType: 'driver'),
+      ));
+      await pumpEventQueue();
+
+      // A rebuild lands while that write is still in flight (in the live app,
+      // any Firestore snapshot emit does this). The DB has not seen a3 yet, so
+      // the stream replays the unchanged assignment list.
+      assignmentStream.add(dbAssignments);
+      await pumpEventQueue();
+
+      // CORE ASSERTION: the medic row still carries its mark. Before the fix the
+      // merge rebuilt that row with the raw constructor and this came back empty.
+      expect(
+        slotFor('e1', 'medic').sameDayOtherEvents.map((e) => e.id).toList(),
+        ['e2'],
+        reason: 'a pending op elsewhere in the event must not erase this mark',
+      );
+
+      // The optimistic assignment itself still lands on its own slot (copyWith
+      // did not break the merge it replaced) and carries no mark of its own —
+      // m2 is not double-booked, and the merge never invents a mark.
+      final driverSlot = slotFor('e1', 'driver');
+      expect(driverSlot.currentAssignment?.id, 'a3',
+          reason: 'the in-flight optimistic assignment must still show');
+      expect(driverSlot.sameDayOtherEvents, isEmpty);
+
+      // Let the gated write finish so the bloc tears down cleanly.
+      createGate.complete();
+      await pumpEventQueue();
     },
   );
 }

@@ -45,11 +45,17 @@ class AssignmentSlot extends Equatable {
   });
 
   /// Create a copy with updated fields (preserves every field, incl. isOffQuota)
+  ///
+  /// [clearCurrentAssignment] empties the slot. A plain `currentAssignment: null`
+  /// cannot say that — it is indistinguishable from "not supplied" — which is
+  /// why callers that empty a slot used to reach for the raw constructor and
+  /// silently drop every field they forgot to copy across.
   AssignmentSlot copyWith({
     Event? event,
     Role? role,
     int? slotIndex,
     Assignment? currentAssignment,
+    bool clearCurrentAssignment = false,
     List<TeamMember>? availableMembers,
     List<TeamMember>? alreadyAssignedMembers,
     bool? hasDoubleAssignment,
@@ -63,7 +69,9 @@ class AssignmentSlot extends Equatable {
       event: event ?? this.event,
       role: role ?? this.role,
       slotIndex: slotIndex ?? this.slotIndex,
-      currentAssignment: currentAssignment ?? this.currentAssignment,
+      currentAssignment: clearCurrentAssignment
+          ? null
+          : (currentAssignment ?? this.currentAssignment),
       availableMembers: availableMembers ?? this.availableMembers,
       alreadyAssignedMembers:
           alreadyAssignedMembers ?? this.alreadyAssignedMembers,
