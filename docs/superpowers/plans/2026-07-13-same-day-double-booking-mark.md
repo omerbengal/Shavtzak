@@ -1281,6 +1281,11 @@ class SameDayAssignmentMark extends StatelessWidget {
       builder: (dialogContext) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
+          // otherEvents is unbounded. Without this, AlertDialog wraps content in
+          // a bare Flexible, which permits shrinking but does not prevent
+          // overflow — a person with several same-day events, or two long event
+          // names, spills outside the dialog.
+          scrollable: true,
           title: Row(
             children: const [
               Icon(Icons.event_repeat, color: _markColor),
