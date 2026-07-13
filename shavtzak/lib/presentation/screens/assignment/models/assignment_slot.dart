@@ -18,6 +18,12 @@ class AssignmentSlot extends Equatable {
   final List<TeamMember> sameDayAssignedMembers; // Members assigned to OTHER events on same day(s)
   final Map<String, List<String>> sameDayEventInfo; // memberId -> other event names
 
+  /// Other events sharing a calendar day that the slot's ASSIGNED member is
+  /// also assigned to. Empty when the slot is unfilled or the member is not
+  /// double-booked. Distinct from [sameDayAssignedMembers], which is about
+  /// CANDIDATES for this slot, not the person already in it.
+  final List<Event> sameDayOtherEvents;
+
   /// True when this row represents an assignment that has no matching quota
   /// slot (quota reduced below its slotIndex, duplicate slotIndex, or a
   /// permanently-deleted role). Rendered as "מחוץ למכסה" and delete-only.
@@ -34,6 +40,7 @@ class AssignmentSlot extends Equatable {
     this.otherRoles = const [],
     this.sameDayAssignedMembers = const [],
     this.sameDayEventInfo = const {},
+    this.sameDayOtherEvents = const [],
     this.isOffQuota = false,
   });
 
@@ -49,6 +56,7 @@ class AssignmentSlot extends Equatable {
     List<String>? otherRoles,
     List<TeamMember>? sameDayAssignedMembers,
     Map<String, List<String>>? sameDayEventInfo,
+    List<Event>? sameDayOtherEvents,
     bool? isOffQuota,
   }) {
     return AssignmentSlot(
@@ -64,6 +72,7 @@ class AssignmentSlot extends Equatable {
       sameDayAssignedMembers:
           sameDayAssignedMembers ?? this.sameDayAssignedMembers,
       sameDayEventInfo: sameDayEventInfo ?? this.sameDayEventInfo,
+      sameDayOtherEvents: sameDayOtherEvents ?? this.sameDayOtherEvents,
       isOffQuota: isOffQuota ?? this.isOffQuota,
     );
   }
@@ -95,6 +104,7 @@ class AssignmentSlot extends Equatable {
         otherRoles,
         sameDayAssignedMembers,
         sameDayEventInfo,
+        sameDayOtherEvents,
         isOffQuota,
       ];
 
