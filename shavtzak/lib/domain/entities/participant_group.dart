@@ -18,21 +18,6 @@ class ParticipantGroup extends Equatable {
     return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
   }
 
-  Map<String, dynamic> toMap() => {'label': normalizedLabel, 'count': count};
-
-  /// Parse one stored group. Returns null for anything malformed, so a bad
-  /// entry is dropped rather than breaking the whole event.
-  static ParticipantGroup? fromMap(Object? raw) {
-    if (raw is! Map) return null;
-    final count = (raw['count'] as num?)?.toInt();
-    if (count == null || count < 0) return null;
-    final label = raw['label'];
-    return ParticipantGroup(
-      label: label is String ? label : null,
-      count: count,
-    );
-  }
-
   @override
   List<Object?> get props => [normalizedLabel, count];
 }
