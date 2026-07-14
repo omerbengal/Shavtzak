@@ -16,9 +16,11 @@
 - **UI text is Hebrew. Code comments are English.** (CLAUDE.md)
 - **Equatable props take full objects, never ids or derived scalars** — required for real-time stream updates to fire. (CLAUDE.md)
 - **Do not run the app.** Omer runs it. `flutter analyze` + `flutter test` are your verification.
-- **`flutter analyze` has 108 pre-existing infos.** "Clean" means **zero NEW** ones — not zero total.
-- **Dart tests:** `cd shavtzak && flutter test`
-- **Function tests:** `cd functions && npm test` (builds via `tsc`, then `node --test`)
+- **Measured baselines on `main` (verified 2026-07-14, before any task):**
+  - `flutter analyze` → **107 issues**, all infos, zero warnings/errors. "Clean" means **107, not 0**.
+  - `flutter test` → **216 passing**
+  - `cd functions && npm test` → **63 passing**
+- **Never `git add -A`.** Omer has unrelated uncommitted work (`AGENTS.md`, two `Google_Calendar_Problem_part_*.txt`). Stage only the exact paths each task names.
 - **Max 10 participant groups.** Label max 20 characters. Count is a non-negative integer; 0 is legal.
 - **Positional numbering:** the fallback label is `נגלה {position}`, where position is the row's 1-based index in the list — *not* a count of unlabeled rows.
 - **⚠ Cloud Functions do not auto-deploy; the web app does (on merge to `main`).** `firebase deploy --only functions` MUST run **before the PR is merged**. See "Deploy" at the end.
@@ -37,12 +39,17 @@ Purely additive. `Event.participantCount` is left alone, so nothing else in the 
 **Interfaces:**
 - Produces: `ParticipantGroup({String? label, required int count})` with `String? get normalizedLabel`, `Map<String, dynamic> toMap()`, `static ParticipantGroup? fromMap(Object? raw)`. On `Event`: `final List<ParticipantGroup> participantGroups` (default `const []`) and `String? get participantsSummary`.
 
-- [ ] **Step 1: Create the branch**
+- [ ] **Step 1: Confirm you are on the feature branch**
+
+The branch already exists — the controller created it. Just verify:
 
 ```bash
 cd "/Users/omerbengal/Documents/Github Projects/Shavtzak"
-git checkout main && git checkout -b feat/participant-counts-per-nagla
+git rev-parse --abbrev-ref HEAD    # must print: feat/participant-counts-per-nagla
 ```
+
+If it prints anything else, `git checkout feat/participant-counts-per-nagla`. Do **not**
+create a new branch and do **not** touch `main`.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -269,7 +276,7 @@ Expected: PASS — 8 tests.
 - [ ] **Step 7: Verify no new analyzer findings**
 
 Run: `cd shavtzak && flutter analyze`
-Expected: no new issues beyond the 108 pre-existing infos, and **zero** warnings/errors.
+Expected: still **107 issues**, all infos — zero new ones, and zero warnings/errors.
 
 - [ ] **Step 8: Commit**
 
@@ -1518,8 +1525,14 @@ Run the `/verify` skill, or drive it manually. `flutter analyze` and `flutter te
 
 ```bash
 cd "/Users/omerbengal/Documents/Github Projects/Shavtzak"
+git status --short          # ⚠ see below before you run the deploy
 firebase deploy --only functions
 ```
+
+**⚠ `firebase deploy` ships the WORKING TREE, not `HEAD`.** Omer keeps unrelated
+uncommitted edits in the repo (`AGENTS.md`, `Google_Calendar_Problem_part_*.txt` today).
+Anything dirty under `functions/` at deploy time goes to production. Check `git status`
+and stash or commit first — this bit us on the previous branch.
 
 - **Functions first (correct).** The new function normalizes an old client's `participantCount` payload into a group, so the currently-live web build keeps working. This state is safe to sit in indefinitely.
 - **Web first (data loss).** The old function's allowlist drops the `participantGroups` it has never heard of, and writes `participantCount: event['participantCount'] ?? null` — a key the new client no longer sends. Every save would null the count, and the UI would look correct until the next reload.

@@ -304,7 +304,7 @@ throws.
 - **Update** the existing `event_assignments_share_data_builder_test.dart`, which
   asserts on the participants line.
 
-`flutter analyze` has 108 pre-existing infos; "clean" means **zero new** ones.
+`flutter analyze` has 107 pre-existing infos; "clean" means **zero new** ones.
 
 ## Deploy — order matters, and the wrong order loses data
 
