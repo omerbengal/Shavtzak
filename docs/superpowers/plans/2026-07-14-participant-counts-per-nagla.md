@@ -37,7 +37,7 @@ Purely additive. `Event.participantCount` is left alone, so nothing else in the 
 - Test: `shavtzak/test/domain/entities/event_participants_summary_test.dart`
 
 **Interfaces:**
-- Produces: `ParticipantGroup({String? label, required int count})` with `String? get normalizedLabel`, `Map<String, dynamic> toMap()`, `static ParticipantGroup? fromMap(Object? raw)`. On `Event`: `final List<ParticipantGroup> participantGroups` (default `const []`) and `String? get participantsSummary`.
+- Produces: `ParticipantGroup({String? label, required int count})` — a **pure** entity with `String? get normalizedLabel` and Equatable `props`, and **no serialization** (that lives in `ParticipantGroupModel`, Task 2). On `Event`: `final List<ParticipantGroup> participantGroups` (default `const []`) and `String? get participantsSummary`.
 
 - [ ] **Step 1: Confirm you are on the feature branch**
 
@@ -171,31 +171,21 @@ class ParticipantGroup extends Equatable {
 
   /// The label with surrounding whitespace removed, or null when absent/blank.
   /// Blank and absent are the same thing everywhere, so this is what both
-  /// serialization and equality use.
+  /// display and equality use.
   String? get normalizedLabel {
     final trimmed = label?.trim();
     return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
-  }
-
-  Map<String, dynamic> toMap() => {'label': normalizedLabel, 'count': count};
-
-  /// Parse one stored group. Returns null for anything malformed, so a bad
-  /// entry is dropped rather than breaking the whole event.
-  static ParticipantGroup? fromMap(Object? raw) {
-    if (raw is! Map) return null;
-    final count = (raw['count'] as num?)?.toInt();
-    if (count == null || count < 0) return null;
-    final label = raw['label'];
-    return ParticipantGroup(
-      label: label is String ? label : null,
-      count: count,
-    );
   }
 
   @override
   List<Object?> get props => [normalizedLabel, count];
 }
 ```
+
+> **No serialization here.** Domain entities in this codebase are pure business objects; the
+> data layer mirrors them with a `*Model` (see `VehicleInfoModel` / `DateConstraintModel` in
+> `lib/data/models/team_member_model.dart`). Task 2 adds `ParticipantGroupModel`. Do **not** put
+> `toMap`/`fromMap` on this entity — an earlier draft of this plan did, and it was reverted.
 
 - [ ] **Step 5: Add `participantGroups` and the formatter to `Event`**
 
@@ -298,8 +288,18 @@ Still additive: `participantCount` keeps being read and written. The new part is
 - Test: `shavtzak/test/data/models/event_model_participant_groups_test.dart`
 
 **Interfaces:**
-- Consumes: `ParticipantGroup` (Task 1).
-- Produces: `EventModel.participantGroups`; Firestore/JSON key `participantGroups` holding `[{label: String?, count: int}]`.
+- Consumes: `ParticipantGroup` (Task 1) — a **pure** entity: `label`, `count`, `normalizedLabel`, `props`. It has **no** `toMap`/`fromMap`; do not add any.
+- Produces: `ParticipantGroupModel` (in `event_model.dart`) with `fromEntity` / `toEntity` / `toJson` / `static tryFromJson`; `EventModel.participantGroups` typed `List<ParticipantGroupModel>`; Firestore/JSON key `participantGroups` holding `[{label: String?, count: int}]`.
+
+> **Convention (established, do not deviate):** domain entities in this codebase carry zero
+> serialization. Every nested value object is mirrored by a `*Model` in the data layer that does
+> the converting, and the parent model holds the **model**, not the entity — see `VehicleInfoModel`
+> and `DateConstraintModel` in `lib/data/models/team_member_model.dart`, and how `TeamMemberModel`
+> declares `final VehicleInfoModel? vehicleInfo` and calls `VehicleInfoModel.fromEntity(...)` /
+> `vehicleInfo?.toEntity()` / `vehicleInfo?.toJson()`. `ParticipantGroupModel` follows that shape
+> exactly. Like those two, it is a plain class — **not** `Equatable` — which is why the tests below
+> assert through `model.toEntity().participantGroups` (entities, which *are* Equatable) rather than
+> comparing models directly.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -323,7 +323,7 @@ void main() {
         ],
       });
 
-      expect(model.participantGroups, const [
+      expect(model.toEntity().participantGroups, const [
         ParticipantGroup(label: 'בוקר', count: 500),
         ParticipantGroup(count: 700),
       ]);
@@ -335,7 +335,7 @@ void main() {
         'participantCount': 500,
       });
 
-      expect(model.participantGroups, const [ParticipantGroup(count: 500)]);
+      expect(model.toEntity().participantGroups, const [ParticipantGroup(count: 500)]);
     });
 
     test('the array wins over a stale legacy scalar', () async {
@@ -347,7 +347,7 @@ void main() {
         ],
       });
 
-      expect(model.participantGroups, const [ParticipantGroup(count: 600)]);
+      expect(model.toEntity().participantGroups, const [ParticipantGroup(count: 600)]);
     });
 
     test('an empty array does NOT fall back to the scalar', () async {
@@ -357,12 +357,12 @@ void main() {
         'participantGroups': <Map<String, dynamic>>[],
       });
 
-      expect(model.participantGroups, isEmpty);
+      expect(model.toEntity().participantGroups, isEmpty);
     });
 
     test('is empty when neither field is set', () async {
       final model = await _modelFromDoc(_baseDoc());
-      expect(model.participantGroups, isEmpty);
+      expect(model.toEntity().participantGroups, isEmpty);
     });
 
     test('malformed entries are dropped, not thrown on', () async {
@@ -376,7 +376,7 @@ void main() {
         ],
       });
 
-      expect(model.participantGroups,
+      expect(model.toEntity().participantGroups,
           const [ParticipantGroup(label: 'תקין', count: 100)]);
     });
 
@@ -413,7 +413,8 @@ EventModel _model(List<ParticipantGroup> groups) {
     startTime: '18:00',
     endTime: '22:00',
     assemblyTime: '17:00',
-    participantGroups: groups,
+    participantGroups:
+        groups.map(ParticipantGroupModel.fromEntity).toList(),
     location: '',
     requiresArmed: false,
     roleRequirements: const {},
@@ -462,11 +463,51 @@ import '../../domain/entities/event.dart';
 import '../../domain/entities/participant_group.dart';
 ```
 
+Add the `ParticipantGroupModel` class at the **bottom of the file**, after `EventModel` closes — mirroring how `VehicleInfoModel` and `DateConstraintModel` sit at the bottom of `team_member_model.dart`:
+
+```dart
+/// Data model for ParticipantGroup
+class ParticipantGroupModel {
+  final String? label;
+  final int count;
+
+  const ParticipantGroupModel({this.label, required this.count});
+
+  factory ParticipantGroupModel.fromEntity(ParticipantGroup entity) {
+    return ParticipantGroupModel(
+      label: entity.normalizedLabel,
+      count: entity.count,
+    );
+  }
+
+  ParticipantGroup toEntity() => ParticipantGroup(label: label, count: count);
+
+  /// Parse one stored group, returning null for anything malformed so a single
+  /// bad entry is dropped instead of breaking the whole event. Not a `fromJson`
+  /// factory, because a factory cannot report "this entry is garbage".
+  static ParticipantGroupModel? tryFromJson(Object? raw) {
+    if (raw is! Map) return null;
+
+    final count = (raw['count'] as num?)?.toInt();
+    if (count == null || count < 0) return null;
+
+    final label = raw['label'];
+    final trimmed = label is String ? label.trim() : null;
+    return ParticipantGroupModel(
+      label: (trimmed == null || trimmed.isEmpty) ? null : trimmed,
+      count: count,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'label': label, 'count': count};
+}
+```
+
 Add the field right after `final int? participantCount;`:
 
 ```dart
   final int? participantCount;
-  final List<ParticipantGroup> participantGroups;
+  final List<ParticipantGroupModel> participantGroups;
 ```
 
 Add to the constructor right after `this.participantCount,`:
@@ -483,20 +524,20 @@ Add this helper next to the other `static` parse helpers (below `_formatDateOnly
   /// scalar for docs written before נגלות existed. An explicitly empty array
   /// means "no groups" and must NOT fall back — otherwise clearing every group
   /// would resurrect the old scalar.
-  static List<ParticipantGroup> _parseParticipantGroups(
+  static List<ParticipantGroupModel> _parseParticipantGroups(
     Object? groupsRaw,
     Object? legacyCount,
   ) {
     if (groupsRaw is List) {
       return groupsRaw
-          .map(ParticipantGroup.fromMap)
-          .whereType<ParticipantGroup>()
+          .map(ParticipantGroupModel.tryFromJson)
+          .whereType<ParticipantGroupModel>()
           .toList();
     }
 
     final legacy = (legacyCount as num?)?.toInt();
     if (legacy != null && legacy >= 0) {
-      return [ParticipantGroup(count: legacy)];
+      return [ParticipantGroupModel(count: legacy)];
     }
     return const [];
   }
@@ -507,13 +548,16 @@ Add this helper next to the other `static` parse helpers (below `_formatDateOnly
 In `fromEntity`, after `participantCount: entity.participantCount,`:
 
 ```dart
-      participantGroups: entity.participantGroups,
+      participantGroups: entity.participantGroups
+          .map(ParticipantGroupModel.fromEntity)
+          .toList(),
 ```
 
 In `toEntity`, after `participantCount: participantCount,`:
 
 ```dart
-      participantGroups: participantGroups,
+      participantGroups:
+          participantGroups.map((group) => group.toEntity()).toList(),
 ```
 
 In `fromFirestore`, after `participantCount: (data['participantCount'] as num?)?.toInt(),`:
@@ -528,7 +572,8 @@ In `fromFirestore`, after `participantCount: (data['participantCount'] as num?)?
 In `toFirestore`, after `'participantCount': participantCount,`:
 
 ```dart
-      'participantGroups': participantGroups.map((g) => g.toMap()).toList(),
+      'participantGroups':
+          participantGroups.map((group) => group.toJson()).toList(),
 ```
 
 In `fromJson`, after `participantCount: (json['participantCount'] as num?)?.toInt(),`:
@@ -543,7 +588,8 @@ In `fromJson`, after `participantCount: (json['participantCount'] as num?)?.toIn
 In `toJson`, after `'participantCount': participantCount,`:
 
 ```dart
-      'participantGroups': participantGroups.map((g) => g.toMap()).toList(),
+      'participantGroups':
+          participantGroups.map((group) => group.toJson()).toList(),
 ```
 
 - [ ] **Step 5: Run the test to verify it passes**
