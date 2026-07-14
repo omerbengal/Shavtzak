@@ -212,10 +212,19 @@ with a `+ הוסף נגלה` button beneath:
             [ + הוסף נגלה ]
 ```
 
-State moves from the one `_participantCountController` to a `List<_ParticipantRow>`,
-each holding a label controller and a count controller. **Every controller must be
-disposed** in `dispose()`, including rows removed mid-session — the current `dispose()`
-at `event_form_modal.dart:218` disposes a fixed set and will need to iterate the list.
+The section is **extracted into its own widget**, `ParticipantGroupRows`
+(`event/widgets/participant_group_rows.dart`), rather than grown inside the modal.
+`event_form_modal.dart` is already ~2000 lines, and it cannot be pumped in a widget test
+without providing `EventBloc`, `CategoryBloc` and two repositories — so an in-place
+implementation would be effectively untestable. The modal hosts the widget behind a
+`GlobalKey<ParticipantGroupRowsState>` and calls `toGroups()` on save.
+
+Internally the widget holds a `List<_ParticipantRow>`, each a label controller plus a
+count controller. **Every controller must be disposed**, including rows removed
+mid-session — and a removed row must be disposed in a **post-frame callback**, not
+inline, because during the current frame a live `EditableText` still holds it. Rows are
+keyed by object identity (`ObjectKey`) so that removing a middle row does not leave the
+row below it holding the removed row's form state.
 
 The count field keeps the existing input formatters (`digitsOnly`,
 `LengthLimitingTextInputFormatter(7)`). The label field is capped at 20 characters so a
@@ -228,7 +237,8 @@ single label cannot blow up the display string. Editing any field sets `_isDirty
   that is the "user pressed + and changed their mind" case, and it should not block them.
 - A row with a **label but no count** is a **form validation error** (`יש להזין כמות`).
   The user clearly intended something; dropping it silently would look like a bug.
-- Max **10** rows. The `+` button disables at the cap.
+- Max **10** rows. The `+` button is **hidden** at the cap rather than disabled — a
+  greyed-out button with no explanation invites "why can't I click this?".
 - Zero is a legal count.
 
 `_parseParticipantCount()` (`event_form_modal.dart:356`) is replaced by
@@ -288,8 +298,9 @@ throws.
   malformed entries are dropped rather than thrown on; and `participantCount` is written
   as `null` on **every** path, which is what neutralizes the stale scalar under
   `.update()`. `functions/src/*.test.ts` already has the harness.
-- **Form widget test** — `+` adds a row, `✕` removes it, an empty row is dropped on
-  save, a label-without-count blocks save with `יש להזין כמות`, the cap disables `+`.
+- **Form widget test** — `+` adds a row, `✕` removes it, an existing event hydrates one
+  row per group, an empty row is dropped on save, a label-without-count blocks save with
+  `יש להזין כמות`, and the cap hides `+`.
 - **Update** the existing `event_assignments_share_data_builder_test.dart`, which
   asserts on the participants line.
 
