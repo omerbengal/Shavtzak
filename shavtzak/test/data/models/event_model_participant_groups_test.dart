@@ -72,6 +72,33 @@ void main() {
           const [ParticipantGroup(label: 'תקין', count: 100)]);
     });
 
+    test('a string count inside the array is dropped, without killing siblings',
+        () async {
+      final model = await _modelFromDoc({
+        ..._baseDoc(),
+        'participantGroups': [
+          {'label': 'תקין', 'count': 100},
+          {'label': 'מחרוזת', 'count': '500'},
+          {'label': 'גם תקין', 'count': 200},
+        ],
+      });
+
+      expect(model.toEntity().participantGroups, const [
+        ParticipantGroup(label: 'תקין', count: 100),
+        ParticipantGroup(label: 'גם תקין', count: 200),
+      ]);
+    });
+
+    test('a non-numeric legacy participantCount coerces to empty, not a throw',
+        () async {
+      final model = await _modelFromDoc({
+        ..._baseDoc(),
+        'participantCount': 'oops',
+      });
+
+      expect(model.toEntity().participantGroups, isEmpty);
+    });
+
     test('toJson serializes groups and trims labels', () {
       final json = _model(const [
         ParticipantGroup(label: '  בוקר  ', count: 500),

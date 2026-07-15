@@ -114,7 +114,7 @@ class EventModel {
           .toList();
     }
 
-    final legacy = (legacyCount as num?)?.toInt();
+    final legacy = legacyCount is num ? legacyCount.toInt() : null;
     if (legacy != null && legacy >= 0) {
       return [ParticipantGroupModel(count: legacy)];
     }
@@ -200,7 +200,9 @@ class EventModel {
       teamEndTime: data['teamEndTime'] as String? ?? '',
       assemblyTime: data['assemblyTime'] as String,
       actualShowStartTime: data['actualShowStartTime'] as String? ?? '',
-      participantCount: (data['participantCount'] as num?)?.toInt(),
+      participantCount: data['participantCount'] is num
+          ? (data['participantCount'] as num).toInt()
+          : null,
       participantGroups: _parseParticipantGroups(
         data['participantGroups'],
         data['participantCount'],
@@ -270,7 +272,9 @@ class EventModel {
       teamEndTime: json['teamEndTime'] as String? ?? '',
       assemblyTime: json['assemblyTime'] as String,
       actualShowStartTime: json['actualShowStartTime'] as String? ?? '',
-      participantCount: (json['participantCount'] as num?)?.toInt(),
+      participantCount: json['participantCount'] is num
+          ? (json['participantCount'] as num).toInt()
+          : null,
       participantGroups: _parseParticipantGroups(
         json['participantGroups'],
         json['participantCount'],
@@ -351,7 +355,8 @@ class ParticipantGroupModel {
   static ParticipantGroupModel? tryFromJson(Object? raw) {
     if (raw is! Map) return null;
 
-    final count = (raw['count'] as num?)?.toInt();
+    final rawCount = raw['count'];
+    final count = rawCount is num ? rawCount.toInt() : null;
     if (count == null || count < 0) return null;
 
     final label = raw['label'];
