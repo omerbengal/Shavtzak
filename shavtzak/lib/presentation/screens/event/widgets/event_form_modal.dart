@@ -12,6 +12,10 @@ import '../../../../core/utils/date_utils.dart' as app_date_utils;
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/event.dart';
+// Re-exported (not just imported) so callers that only import this file —
+// e.g. the widget test — can reference ParticipantGroupRows /
+// ParticipantGroupRowsState. A plain `import` is not transitive in Dart.
+export 'participant_group_rows.dart';
 import '../../../../data/repositories/assignment_repository.dart';
 import '../../../../data/repositories/event_repository.dart';
 import '../../../bloc/category/category_bloc.dart';
