@@ -112,7 +112,8 @@ class EventModel {
           .toList();
     }
 
-    final legacy = legacyCount is num ? legacyCount.toInt() : null;
+    final legacy =
+        legacyCount is num && legacyCount.isFinite ? legacyCount.toInt() : null;
     if (legacy != null && legacy >= 0) {
       return [ParticipantGroupModel(count: legacy)];
     }
@@ -344,7 +345,8 @@ class ParticipantGroupModel {
     if (raw is! Map) return null;
 
     final rawCount = raw['count'];
-    final count = rawCount is num ? rawCount.toInt() : null;
+    final count =
+        rawCount is num && rawCount.isFinite ? rawCount.toInt() : null;
     if (count == null || count < 0) return null;
 
     final label = raw['label'];

@@ -58,8 +58,23 @@ test('counts are floored to integers', () => {
 });
 
 test('the array is clamped to 10 groups', () => {
-  const many = Array.from({length: 14}, (_, i) => ({label: null, count: i}));
-  assert.equal(normalizeParticipantGroups(many, null).length, 10);
+  // Interleave valid entries with malformed ones (reusing the shapes from the
+  // 'malformed entries are dropped' case above) so a regression that clamps on
+  // the RAW index instead of the count of VALID pushes shows up as a length/
+  // content mismatch instead of passing by coincidence.
+  const malformed: unknown[] = [null, {}, {count: 'x'}, {count: -1}];
+  const many: unknown[] = [];
+  for (let i = 0; i < 20; i++) {
+    many.push({label: null, count: i});
+    many.push(malformed[i % malformed.length]);
+  }
+
+  const result = normalizeParticipantGroups(many, null);
+  assert.equal(result.length, 10);
+  assert.deepEqual(
+    result.map((group) => group.count),
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  );
 });
 
 test('nothing set yields no groups', () => {

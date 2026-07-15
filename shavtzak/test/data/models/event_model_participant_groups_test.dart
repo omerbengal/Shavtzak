@@ -89,11 +89,44 @@ void main() {
       ]);
     });
 
+    test('tryFromJson drops NaN and Infinity counts instead of throwing', () {
+      expect(
+        ParticipantGroupModel.tryFromJson({'count': double.nan, 'label': 'x'}),
+        isNull,
+      );
+      expect(
+        ParticipantGroupModel.tryFromJson(
+            {'count': double.infinity, 'label': 'x'}),
+        isNull,
+      );
+    });
+
     test('a non-numeric legacy participantCount coerces to empty, not a throw',
         () async {
       final model = await _modelFromDoc({
         ..._baseDoc(),
         'participantCount': 'oops',
+      });
+
+      expect(model.toEntity().participantGroups, isEmpty);
+    });
+
+    test(
+        'a NaN legacy participantCount coerces to empty via fromJson, not a throw',
+        () {
+      final model = EventModel.fromJson({
+        'id': 'event-1',
+        'name': 'טקס פתיחה',
+        'startDate': '2026-07-20',
+        'endDate': '2026-07-20',
+        'startTime': '18:00',
+        'endTime': '22:00',
+        'assemblyTime': '17:00',
+        'requiresArmed': false,
+        'roleRequirements': <String, dynamic>{},
+        'createdAt': DateTime.utc(2026, 7, 14).toIso8601String(),
+        'updatedAt': DateTime.utc(2026, 7, 14).toIso8601String(),
+        'participantCount': double.nan,
       });
 
       expect(model.toEntity().participantGroups, isEmpty);
