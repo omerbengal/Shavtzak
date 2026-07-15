@@ -3,6 +3,7 @@ import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/assignment_label.dart';
 import 'package:shavtzak/domain/entities/event.dart';
+import 'package:shavtzak/domain/entities/participant_group.dart';
 import 'package:shavtzak/domain/entities/role.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/screens/event/widgets/event_assignments_share_data_builder.dart';
@@ -116,6 +117,37 @@ void main() {
           'נועה כהן');
       expect(data.sections.last.children.single.rows.single.memberName,
           'אורי ברק');
+    });
+
+    test('participants line lists every נגלה', () {
+      final event = _event(DateTime(2026, 5, 4, 10)).copyWith(
+        participantGroups: const [
+          ParticipantGroup(label: 'בוקר', count: 500),
+          ParticipantGroup(count: 700),
+        ],
+      );
+
+      final data = EventAssignmentsShareDataBuilder.build(
+        event: event,
+        assignments: const [],
+        activeRoles: const [],
+        labels: const [],
+        groupingMode: EventAssignmentsGroupingMode.role,
+      );
+
+      expect(data.participantsLine, 'כמות משתתפים: בוקר: 500, נגלה 2: 700');
+    });
+
+    test('participants line is empty when no groups are set', () {
+      final data = EventAssignmentsShareDataBuilder.build(
+        event: _event(DateTime(2026, 5, 4, 10)),
+        assignments: const [],
+        activeRoles: const [],
+        labels: const [],
+        groupingMode: EventAssignmentsGroupingMode.role,
+      );
+
+      expect(data.participantsLine, '');
     });
   });
 }

@@ -734,9 +734,9 @@ class _EventListScreenState extends State<EventListScreen> {
                           'שעות', _formatTimeFields(event),
                           isDeactivated: event.isDeactivated),
                     // Line 4: Participant count (hidden when unset)
-                    if (event.participantCount != null)
-                      _buildFieldItem(
-                          'כמות משתתפים', '${event.participantCount}',
+                    if (event.participantsSummary != null)
+                      _buildFieldItemWithResponsiveFont(
+                          'כמות משתתפים', event.participantsSummary!,
                           isDeactivated: event.isDeactivated),
                   ],
                 ),

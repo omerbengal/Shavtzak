@@ -1118,10 +1118,11 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
               ),
 
             // 5. Participant count (כמות משתתפים)
-            if (event.participantCount != null)
+            if (event.participantsSummary != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(
                       Icons.groups,
@@ -1140,13 +1141,15 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      '${event.participantCount}',
-                      style: TextStyle(
-                        fontSize: _getResponsiveFontSize(context,
-                            minSize: 13.0, maxSize: 14.0),
-                        fontWeight: FontWeight.w500,
-                        color: textColor,
+                    Expanded(
+                      child: Text(
+                        event.participantsSummary!,
+                        style: TextStyle(
+                          fontSize: _getResponsiveFontSize(context,
+                              minSize: 13.0, maxSize: 14.0),
+                          fontWeight: FontWeight.w500,
+                          color: textColor,
+                        ),
                       ),
                     ),
                   ],

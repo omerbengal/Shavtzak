@@ -289,10 +289,7 @@ class CalendarShareDataBuilder {
   }
 
   static String _buildParticipantsLine(Event event) {
-    if (event.participantCount == null) {
-      return '';
-    }
-    return '${event.participantCount}';
+    return event.participantsSummary ?? '';
   }
 
   static DateTime _dateOnly(DateTime date) =>
