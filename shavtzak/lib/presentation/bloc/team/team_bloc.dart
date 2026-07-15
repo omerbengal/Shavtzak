@@ -271,17 +271,6 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
 
         final calendarSyncBloc = _calendarSyncBloc;
         if (calendarSyncBloc != null) {
-          // Sync attendee changes when member email changes.
-          final oldEmail = (oldMember.email ?? '').trim();
-          final newEmail = (event.member.email ?? '').trim();
-          if (oldEmail != newEmail) {
-            calendarSyncBloc.add(OnTeamMemberEmailChanged(
-              teamMemberId: event.member.id,
-              oldEmail: oldEmail,
-              newEmail: newEmail,
-            ));
-          }
-
           // Build a map of old constraints by ID for easy lookup
           final oldConstraintsById = <String, DateConstraint>{};
           for (final constraint in oldMember.constraints) {
@@ -367,7 +356,8 @@ class TeamBloc extends Bloc<TeamEvent, TeamState> {
       final searchQuery =
           state is TeamLoaded ? (state as TeamLoaded).searchQuery : null;
       emit(TeamLoaded(allMembers, searchQuery: searchQuery));
-      _completeActionSuccess(event.completion, 'פרטי חבר/ת הצוות עודכנו בהצלחה');
+      _completeActionSuccess(
+          event.completion, 'פרטי חבר/ת הצוות עודכנו בהצלחה');
 
       // Note: We don't emit TeamMemberOperationSuccess here because it would change the state type
       // from TeamLoaded, causing the archive dialog (which checks 'state is TeamLoaded') to show empty.

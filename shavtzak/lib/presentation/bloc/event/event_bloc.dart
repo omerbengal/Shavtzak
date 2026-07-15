@@ -317,9 +317,6 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // Don't emit EventOperating to avoid UI rebuild
       await _repository.createEvent(event.event);
 
-      // Sync to Google Calendar if calendar sync is enabled
-      _syncEventToCalendar(event.event);
-
       // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('האירוע נוסף בהצלחה'));
       _completeActionSuccess(event.completion, 'האירוע נוסף בהצלחה');
@@ -344,10 +341,6 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // on a flaky connection and freeze the save).
       await _repository.updateEvent(event.event,
           knownOriginal: event.originalEvent);
-
-      // Sync to Google Calendar if calendar sync is enabled
-      // Note: We sync on every update to ensure calendar is always up-to-date
-      _syncEventToCalendar(event.event);
 
       // Emit success to show snackbar, UI will keep showing last state
       emit(const EventOperationSuccess('פרטי האירוע עודכנו בהצלחה'));
@@ -612,18 +605,10 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     );
   }
 
-  /// Helper method to sync event to Google Calendar
-  /// Always syncs to handle both creation/update AND deletion of calendar events.
-  /// Deactivated events get their calendar entries removed instead of synced.
+  /// Ask the backend to repair one event after an explicit admin retry.
   void _syncEventToCalendar(Event event) {
     final calendarSyncBloc = _calendarSyncBloc;
     if (calendarSyncBloc == null) {
-      return;
-    }
-
-    // Deactivated events have no calendar presence — remove any existing entries.
-    if (event.isDeactivated) {
-      calendarSyncBloc.add(RemoveAppEventFromCalendar(eventId: event.id));
       return;
     }
 
@@ -636,9 +621,8 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       if (cleanLocation.isEmpty) cleanLocation = null;
     }
 
-    // IMPORTANT: Always dispatch sync event, even if time fields are empty
-    // The sync service will handle deletion of calendar events when time fields are removed
-    // Dispatch sync event to calendar sync bloc
+    // The backend reads the latest Firestore event; these legacy detail fields
+    // are retained only for compatibility with the existing BLoC event shape.
     calendarSyncBloc.add(SyncAppEventToCalendar(
       eventId: event.id,
       eventName: event.name,
@@ -654,7 +638,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 
   /// Deactivate an event:
   /// - Writes isDeactivated=true to Firestore (assignments are preserved)
-  /// - Removes the event's Google Calendar entries via _syncEventToCalendar
+  /// - The backend event pipeline removes its Google Calendar entries
   Future<void> _onDeactivateEvent(
     DeactivateEventRequested event,
     Emitter<EventState> emit,
@@ -676,7 +660,6 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // `current` is the pre-update event — pass it so updateEvent skips the
       // one-shot getEventById() on the save path.
       await _repository.updateEvent(updated, knownOriginal: current);
-      _syncEventToCalendar(updated);
 
       emit(const EventOperationSuccess('האירוע הושבת'));
       _completeActionSuccess(event.completion, 'האירוע הושבת');
@@ -689,8 +672,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 
   /// Reactivate an event:
   /// - Writes isDeactivated=false to Firestore
-  /// - Recreates Google Calendar entries via _syncEventToCalendar and re-syncs attendees
-  ///   from the preserved assignments
+  /// - The backend event pipeline recreates its Google Calendar entries
   Future<void> _onReactivateEvent(
     ReactivateEventRequested event,
     Emitter<EventState> emit,
@@ -712,10 +694,6 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       // `current` is the pre-update event — pass it so updateEvent skips the
       // one-shot getEventById() on the save path.
       await _repository.updateEvent(updated, knownOriginal: current);
-      _syncEventToCalendar(updated);
-      // Re-sync attendees from the preserved assignments so calendar invites are
-      // restored to whoever was on the event before it was deactivated.
-      _calendarSyncBloc?.add(SyncAttendeesForAppEvent(eventId: updated.id));
 
       emit(const EventOperationSuccess('האירוע הופעל מחדש'));
       _completeActionSuccess(event.completion, 'האירוע הופעל מחדש');

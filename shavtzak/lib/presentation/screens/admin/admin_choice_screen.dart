@@ -18,6 +18,7 @@ import '../../../core/services/environment_service.dart';
 import '../../../core/services/export_service.dart';
 import '../../../core/services/user_cache_service.dart';
 import '../../../core/services/google_oauth_service.dart';
+import '../../../core/services/google_calendar_service.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../widgets/passcode_requirement_dialog.dart';
 import '../../widgets/assignment_export_dialog.dart';
@@ -157,6 +158,55 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
     );
   }
 
+  Future<void> _confirmAndStartGuestCleanup(
+    BuildContext context,
+    AppEventGuestCleanupMode mode,
+  ) async {
+    final isOmerOnly = mode == AppEventGuestCleanupMode.omer;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text(
+            isOmerOnly
+                ? 'הסרת עומר מאירועים עתידיים'
+                : 'הסרת כל המשתתפים מאירועים עתידיים',
+          ),
+          content: Text(
+            isOmerOnly
+                ? 'הפעולה תסיר את omerbengal7@gmail.com מכל אירועי שבצק העתידיים ביומן. שאר המשתתפים וסטטוסי המענה שלהם יישמרו.'
+                : 'הפעולה תסיר את כל המשתתפים מכל אירועי שבצק העתידיים ביומן. לא ניתן לבטל את הפעולה דרך האפליקציה.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('ביטול'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.person_remove),
+              label: const Text('התחלת ניקוי'),
+              style: isOmerOnly
+                  ? null
+                  : FilledButton.styleFrom(backgroundColor: Colors.red),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+    Logger.action('tap:startAppEventGuestCleanup', {'mode': mode.wireValue});
+    context.read<CalendarSyncBloc>().add(StartAppEventGuestCleanup(mode));
+  }
+
+  String _guestCleanupResultMessage(AppEventGuestCleanupStatus result) {
+    return 'עובדו ${result.processedPartCount} מתוך ${result.totalPartCount} חלקי אירועים. '
+        'שונו ${result.changedPartCount}, דולגו ${result.skippedPartCount}, '
+        'נכשלו ${result.failedPartCount}.';
+  }
+
   @override
   Widget build(BuildContext context) {
     // Check and show passcode dialog if user doesn't have one
@@ -279,8 +329,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                                       isCompact: isCompact,
                                       onTap: () {
                                         Logger.action('tap:management');
-                                        context
-                                            .go('$envPrefix/admin/team-members');
+                                        context.go(
+                                            '$envPrefix/admin/team-members');
                                       },
                                       badgeCount: pendingCount,
                                     );
@@ -992,9 +1042,56 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
           child: BlocListener<CalendarSyncBloc, CalendarSyncState>(
             listenWhen: (previous, current) =>
                 current is CalendarEventsAndConstraintsSyncComplete ||
+                current is CalendarGuestCleanupComplete ||
+                current is CalendarGuestCleanupFailure ||
                 (current is CalendarSyncFailure &&
                     current.constraintId == 'events_and_constraints'),
             listener: (context, state) {
+              if (state is CalendarGuestCleanupComplete) {
+                final hasFailures = state.result.failedPartCount > 0;
+                _showCalendarSyncResponseDialog(
+                  dialogContext,
+                  title: hasFailures
+                      ? 'ניקוי המשתתפים הושלם חלקית'
+                      : 'ניקוי המשתתפים הושלם',
+                  message: _guestCleanupResultMessage(state.result),
+                  icon: hasFailures
+                      ? Icons.warning_amber_rounded
+                      : Icons.check_circle,
+                  iconColor: hasFailures ? Colors.orange : Colors.green,
+                  retryLabel: hasFailures ? 'נסה שוב' : null,
+                  onRetry: hasFailures
+                      ? () => screenContext.read<CalendarSyncBloc>().add(
+                            StartAppEventGuestCleanup(state.result.mode),
+                          )
+                      : null,
+                );
+                return;
+              }
+
+              if (state is CalendarGuestCleanupFailure) {
+                final isAuthBlocked = state.result?.status == 'auth-blocked';
+                final progressMessage = state.result == null
+                    ? state.errorMessage
+                    : '${_guestCleanupResultMessage(state.result!)}\n${state.errorMessage}';
+                _showCalendarSyncResponseDialog(
+                  dialogContext,
+                  title: isAuthBlocked
+                      ? 'נדרש חיבור מחדש ליומן גוגל'
+                      : 'ניקוי המשתתפים נכשל',
+                  message: progressMessage,
+                  icon: isAuthBlocked ? Icons.link_off : Icons.error,
+                  iconColor: isAuthBlocked ? Colors.orange : Colors.red,
+                  retryLabel: isAuthBlocked ? null : 'נסה שוב',
+                  onRetry: isAuthBlocked
+                      ? null
+                      : () => screenContext.read<CalendarSyncBloc>().add(
+                            StartAppEventGuestCleanup(state.mode),
+                          ),
+                );
+                return;
+              }
+
               if (state is CalendarEventsAndConstraintsSyncComplete) {
                 final hasPartialFailures = state.failedEventCount > 0 ||
                     state.successfulConstraintRetryCount <
@@ -1002,8 +1099,8 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                 _showCalendarSyncResponseDialog(
                   dialogContext,
                   title: hasPartialFailures
-                      ? 'הסנכרון הושלם חלקית'
-                      : 'הסנכרון הושלם',
+                      ? 'אירועים בתור, סנכרון המגבלות הושלם חלקית'
+                      : 'אירועים בתור, המגבלות סונכרנו',
                   message: state.message,
                   icon: hasPartialFailures
                       ? Icons.warning_amber_rounded
@@ -1044,10 +1141,14 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
 
                 final isConnected = oauthService.isAuthenticated;
                 final userEmail = oauthService.authenticatedUserEmail;
-                final calendarState = context.watch<CalendarSyncBloc>().state;
+                final calendarBloc = context.watch<CalendarSyncBloc>();
+                final calendarState = calendarBloc.state;
                 final isCombinedSyncInProgress =
                     calendarState is CalendarSyncInProgress &&
                         calendarState.constraintId == 'events_and_constraints';
+                final guestCleanupResult = calendarBloc.activeGuestCleanup;
+                final isGuestCleanupInProgress =
+                    calendarBloc.isGuestCleanupRunning;
 
                 return AlertDialog(
                   title: const Row(
@@ -1072,102 +1173,189 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
                             ],
                           ),
                         )
-                      : Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Connection status
-                            Row(
-                              children: [
-                                const Text(
-                                  'מצב חיבור:',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(width: 8),
-                                Icon(
-                                  isConnected
-                                      ? Icons.check_circle
-                                      : Icons.cancel,
-                                  color:
-                                      isConnected ? Colors.green : Colors.red,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  isConnected ? 'מחובר' : 'לא מחובר',
-                                  style: TextStyle(
+                      : SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Connection status
+                              Row(
+                                children: [
+                                  const Text(
+                                    'מצב חיבור:',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Icon(
+                                    isConnected
+                                        ? Icons.check_circle
+                                        : Icons.cancel,
                                     color:
                                         isConnected ? Colors.green : Colors.red,
-                                    fontWeight: FontWeight.bold,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    isConnected ? 'מחובר' : 'לא מחובר',
+                                    style: TextStyle(
+                                      color: isConnected
+                                          ? Colors.green
+                                          : Colors.red,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              // Authenticated user email
+                              if (isConnected && userEmail != null) ...[
+                                const Text(
+                                  'משתמש:',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  userEmail,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              // Explanation
+                              if (!isConnected)
+                                const Text(
+                                  'התחבר/י ליומן גוגל כדי לסנכרן אירועים ומגבלות באופן אוטומטי.',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: !isConnected ||
+                                          isCombinedSyncInProgress ||
+                                          isGuestCleanupInProgress ||
+                                          isStatusLoading
+                                      ? null
+                                      : () {
+                                          Logger.action(
+                                              'tap:syncEventsAndConstraints');
+                                          screenContext
+                                              .read<CalendarSyncBloc>()
+                                              .add(
+                                                const SyncEventsAndConstraints(),
+                                              );
+                                        },
+                                  icon: isCombinedSyncInProgress
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.sync,
+                                          color: Colors.white,
+                                        ),
+                                  label: const Text('סנכרון אירועים ומגבלות'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.teal,
+                                    foregroundColor: Colors.white,
+                                    disabledBackgroundColor:
+                                        Colors.grey.shade400,
+                                    disabledForegroundColor: Colors.white70,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 14),
+                                  ),
+                                ),
+                              ),
+                              if (isConnected) ...[
+                                const SizedBox(height: 20),
+                                const Divider(),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'ניקוי משתתפים מאירועים עתידיים',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                if (guestCleanupResult != null) ...[
+                                  const SizedBox(height: 10),
+                                  LinearProgressIndicator(
+                                    value: guestCleanupResult.totalPartCount > 0
+                                        ? guestCleanupResult
+                                                .processedPartCount /
+                                            guestCleanupResult.totalPartCount
+                                        : null,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    guestCleanupResult.totalPartCount > 0
+                                        ? 'עובדו ${guestCleanupResult.processedPartCount} מתוך ${guestCleanupResult.totalPartCount} חלקי אירועים'
+                                        : 'מכין את ניקוי המשתתפים...',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ],
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: isGuestCleanupInProgress ||
+                                            isCombinedSyncInProgress
+                                        ? null
+                                        : () => _confirmAndStartGuestCleanup(
+                                              screenContext,
+                                              AppEventGuestCleanupMode.omer,
+                                            ),
+                                    icon: isGuestCleanupInProgress &&
+                                            guestCleanupResult?.mode ==
+                                                AppEventGuestCleanupMode.omer
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.person_remove),
+                                    label: const Text(
+                                      'הסר את omerbengal7@gmail.com',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: isGuestCleanupInProgress ||
+                                            isCombinedSyncInProgress
+                                        ? null
+                                        : () => _confirmAndStartGuestCleanup(
+                                              screenContext,
+                                              AppEventGuestCleanupMode.all,
+                                            ),
+                                    icon: isGuestCleanupInProgress &&
+                                            guestCleanupResult?.mode ==
+                                                AppEventGuestCleanupMode.all
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.group_remove),
+                                    label: const Text('הסר את כל המשתתפים'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.red,
+                                    ),
                                   ),
                                 ),
                               ],
-                            ),
-                            const SizedBox(height: 12),
-                            // Authenticated user email
-                            if (isConnected && userEmail != null) ...[
-                              const Text(
-                                'משתמש:',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                userEmail,
-                                style: const TextStyle(fontSize: 13),
-                              ),
-                              const SizedBox(height: 16),
                             ],
-                            // Explanation
-                            if (!isConnected)
-                              const Text(
-                                'התחבר/י ליומן גוגל כדי לאפשר הוספת משתתפים לאירועי יומן באופן אוטומטי.',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: !isConnected ||
-                                        isCombinedSyncInProgress ||
-                                        isStatusLoading
-                                    ? null
-                                    : () {
-                                        Logger.action(
-                                            'tap:syncEventsAndConstraints');
-                                        screenContext
-                                            .read<CalendarSyncBloc>()
-                                            .add(
-                                              const SyncEventsAndConstraints(),
-                                            );
-                                      },
-                                icon: isCombinedSyncInProgress
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Icon(
-                                        Icons.sync,
-                                        color: Colors.white,
-                                      ),
-                                label: const Text('סנכרון אירועים ומגבלות'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.teal,
-                                  foregroundColor: Colors.white,
-                                  disabledBackgroundColor: Colors.grey.shade400,
-                                  disabledForegroundColor: Colors.white70,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 14),
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                   actions: [
                     Padding(
@@ -1404,7 +1592,7 @@ class _AdminChoiceScreenState extends State<AdminChoiceScreen> {
             ),
             content: const Text(
               'החיבור ליומן גוגל הצליח!\n'
-              'כעת ניתן להוסיף משתתפים לאירועי יומן באופן אוטומטי.',
+              'כעת ניתן לסנכרן אירועים ומגבלות באופן אוטומטי.',
             ),
             actions: [
               TextButton(

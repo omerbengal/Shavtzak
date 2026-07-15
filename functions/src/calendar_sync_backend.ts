@@ -3,7 +3,13 @@ import {
   Firestore,
   Timestamp,
 } from 'firebase-admin/firestore';
-import {executeCalendarAction, isCalendarQuotaError} from './calendar_integration';
+import {
+  buildDeterministicAppEventCalendarId,
+  executeCalendarAction,
+  isCalendarQuotaError,
+} from './calendar_integration';
+
+export {buildDeterministicAppEventCalendarId} from './calendar_integration';
 
 export type BackendEnvironmentMode = 'production' | 'test';
 
@@ -89,7 +95,7 @@ type ManagedCalendarEventSummary = {
   isTestMode: string | null;
 };
 
-type DesiredAppEventState = {
+export type DesiredAppEventState = {
   payload: Record<string, unknown>;
   useAllDay: boolean;
   location: string | null;
@@ -150,6 +156,10 @@ type SyncDependencies = {
   actor: BackendSyncActor;
   environment: BackendEnvironmentMode;
   collections: BackendCollections;
+  calendarAction?: (
+    action: string,
+    payload: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
 };
 
 type ConstraintDependencies = SyncDependencies & {
@@ -251,7 +261,9 @@ function uniqueSortedStrings(values: Iterable<string>): string[] {
 }
 
 /**
- * A member is eligible for the "invite all permanent staff" calendar behavior
+ * @deprecated App events no longer manage guests. Retained only so code built
+ * against the former planner remains source-compatible during rollout.
+ * A member was eligible for the "invite all permanent staff" calendar behavior
  * when they are a permanent, active, non-archived member with a non-empty
  * email. Mirrors the Flutter TeamMember model migration defaults: a missing
  * `isActive` is treated as active; a missing `isArchived` is derived from
@@ -278,7 +290,8 @@ export function isEligiblePermanentMember(
 }
 
 /**
- * The "invite all permanent staff" substitution applies when the event opted
+ * @deprecated App events no longer manage guests. No reconciler calls this.
+ * The former "invite all permanent staff" substitution applied when the event opted
  * in, is permanent-only (a missing `relevantForExtendedTeam` is treated as
  * permanent-only, matching the model default of `false`), and currently has
  * zero assignment records.
@@ -741,7 +754,7 @@ function attendeesMatch(
     current.every((email, index) => email === desired[index]);
 }
 
-function appEventMatchesDesired(
+export function appEventMatchesDesired(
   managedEvent: ManagedCalendarEventSummary | null,
   desired: DesiredAppEventState,
   expectedType: 'assembly' | 'main' | 'allDay',
@@ -824,20 +837,14 @@ async function readEventById(
   return snapshot.exists ? snapshot.data() ?? null : null;
 }
 
-async function readTeamMemberById(
-  firestore: Firestore,
-  collections: BackendCollections,
-  teamMemberId: string,
-): Promise<Record<string, unknown> | null> {
-  const snapshot = await firestore.collection(collections.teamMembers).doc(teamMemberId).get();
-  return snapshot.exists ? snapshot.data() ?? null : null;
-}
-
 async function executeAction(
   dependencies: SyncDependencies,
   action: string,
   payload: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  if (dependencies.calendarAction != null) {
+    return dependencies.calendarAction(action, payload);
+  }
   return executeCalendarAction(
     dependencies.firestore,
     dependencies.actor,
@@ -898,7 +905,7 @@ async function loadManagedCalendarEventsById(
   return result;
 }
 
-function buildDesiredAppEventState(
+export function buildDesiredAppEventState(
   eventId: string,
   eventData: Record<string, unknown>,
   environment: BackendEnvironmentMode,
@@ -955,94 +962,6 @@ function buildDesiredAppEventState(
   };
 }
 
-async function readEligiblePermanentMemberEmails(
-  dependencies: SyncDependencies,
-): Promise<string[]> {
-  const snapshot = await dependencies.firestore
-    .collection(dependencies.collections.teamMembers)
-    .get();
-
-  const emails = new Set<string>();
-  for (const doc of snapshot.docs) {
-    const data = doc.data() ?? {};
-    if (!isEligiblePermanentMember(data)) {
-      continue;
-    }
-    const email = normalizeOptionalText(data['email']);
-    if (email != null) {
-      emails.add(normalizeEmail(email));
-    }
-  }
-  return uniqueSortedStrings(emails);
-}
-
-async function readEventAttendeeEmails(
-  dependencies: SyncDependencies,
-  eventId: string,
-  eventData: Record<string, unknown>,
-  teamMemberCache: Map<string, Record<string, unknown> | null>,
-): Promise<string[]> {
-  const assignmentsSnapshot = await dependencies.firestore
-    .collection(dependencies.collections.assignments)
-    .where('eventId', '==', eventId)
-    .get();
-
-  if (shouldInviteAllPermanentForEvent(eventData, assignmentsSnapshot.size)) {
-    return readEligiblePermanentMemberEmails(dependencies);
-  }
-
-  const teamMemberIds = Array.from(new Set(
-    assignmentsSnapshot.docs
-      .map((doc) => {
-        const data = doc.data() ?? {};
-        return typeof data['teamMemberId'] === 'string'
-          ? data['teamMemberId'] as string
-          : null;
-      })
-      .filter((teamMemberId): teamMemberId is string => teamMemberId != null),
-  ));
-
-  const emails = new Set<string>();
-  for (const teamMemberId of teamMemberIds) {
-    if (!teamMemberCache.has(teamMemberId)) {
-      teamMemberCache.set(
-        teamMemberId,
-        await readTeamMemberById(
-          dependencies.firestore,
-          dependencies.collections,
-          teamMemberId,
-        ),
-      );
-    }
-    const teamMemberData = teamMemberCache.get(teamMemberId) ?? null;
-    const email = normalizeOptionalText(teamMemberData?.['email']);
-    if (email != null) {
-      emails.add(normalizeEmail(email));
-    }
-  }
-
-  return uniqueSortedStrings(emails);
-}
-
-async function updateAppEventAttendees(
-  dependencies: SyncDependencies,
-  calendarEventIds: Iterable<string>,
-  emails: string[],
-): Promise<number> {
-  const uniqueIds = uniqueSortedStrings(calendarEventIds);
-  for (const calendarEventId of uniqueIds) {
-    await executeAction(
-      dependencies,
-      'updateEventAttendees',
-      {
-        calendarEventId,
-        emails,
-      },
-    );
-  }
-  return uniqueIds.length;
-}
-
 async function deleteAppEventById(
   dependencies: SyncDependencies,
   calendarEventId: string,
@@ -1072,26 +991,50 @@ async function deleteConstraintEventById(
   );
 }
 
+function isExpectedManagedAppEvent(
+  dependencies: SyncDependencies,
+  event: ManagedCalendarEventSummary | null,
+  eventId: string,
+): event is ManagedCalendarEventSummary {
+  return event != null &&
+    event.eventId === eventId &&
+    event.isTestMode === String(dependencies.environment === 'test') &&
+    (event.eventType === 'assembly' ||
+      event.eventType === 'main' ||
+      event.eventType === 'allDay');
+}
+
 async function deleteDiscoveredAppEventArtifacts(
   dependencies: SyncDependencies,
   eventId: string,
   storedIds: string[] = [],
-): Promise<void> {
+): Promise<number> {
   const managedEvents = await listManagedCalendarEvents(dependencies, {
     kind: 'app',
     eventId,
   });
   const seen = new Set<string>();
+  let deletedCount = 0;
   for (const managedEvent of managedEvents) {
+    if (!isExpectedManagedAppEvent(dependencies, managedEvent, eventId)) {
+      continue;
+    }
     seen.add(managedEvent.id);
     await deleteAppEventById(dependencies, managedEvent.id, managedEvent.eventType);
+    deletedCount += 1;
   }
-  for (const calendarEventId of storedIds) {
+  for (const calendarEventId of uniqueSortedStrings(storedIds)) {
     if (seen.has(calendarEventId)) {
       continue;
     }
-    await deleteAppEventById(dependencies, calendarEventId, null);
+    const storedEvent = await getManagedCalendarEvent(dependencies, calendarEventId);
+    if (!isExpectedManagedAppEvent(dependencies, storedEvent, eventId)) {
+      continue;
+    }
+    await deleteAppEventById(dependencies, calendarEventId, storedEvent.eventType);
+    deletedCount += 1;
   }
+  return deletedCount;
 }
 
 async function createAppEventPart(
@@ -1099,19 +1042,29 @@ async function createAppEventPart(
   payload: Record<string, unknown>,
   eventType: 'assembly' | 'main' | 'allDay',
 ): Promise<string> {
+  const eventId = requireString(payload['eventId'], 'event.eventId');
+  const calendarEventId = buildDeterministicAppEventCalendarId(
+    dependencies.environment,
+    eventId,
+    eventType,
+  );
   const result = await executeAction(
     dependencies,
     'createAppEventCalendarEventPart',
     {
       event: payload,
       eventType,
+      calendarEventId,
     },
   );
   return requireString(result['calendarEventId'], 'calendarEventId');
 }
 
 /**
- * One operation's genuine attendee change for a single app event: which members
+ * @deprecated App events no longer manage guests. The following attendee
+ * planner types/functions remain only for rollout compatibility and are not
+ * used by reconciliation or mutation handlers.
+ * One operation's former attendee change for a single app event: which members
  * this write added to / removed from the event. Lets the reconciler notify ONLY
  * the members whose assignment actually changed, while every other attendee
  * (drift catch-up) is converged silently.
@@ -1226,77 +1179,6 @@ export function planAttendeeSync(params: {
   return {adds, removes};
 }
 
-/** Resolve team member ids to their normalized calendar emails (cached). */
-async function resolveMemberEmails(
-  dependencies: SyncDependencies,
-  memberIds: Iterable<string>,
-  teamMemberCache: Map<string, Record<string, unknown> | null>,
-): Promise<string[]> {
-  const emails: string[] = [];
-  for (const memberId of memberIds) {
-    if (memberId.length === 0) {
-      continue;
-    }
-    if (!teamMemberCache.has(memberId)) {
-      teamMemberCache.set(
-        memberId,
-        await readTeamMemberById(dependencies.firestore, dependencies.collections, memberId),
-      );
-    }
-    const data = teamMemberCache.get(memberId) ?? null;
-    const email = normalizeOptionalText(data?.['email']);
-    if (email != null) {
-      emails.push(normalizeEmail(email));
-    }
-  }
-  return emails;
-}
-
-async function syncEventPartAttendees(
-  dependencies: SyncDependencies,
-  calendarEventId: string,
-  managedEvent: ManagedCalendarEventSummary | null,
-  desiredEmails: string[],
-  notify: AttendeeNotifyPlan,
-): Promise<number> {
-  const {adds, removes} = planAttendeeSync({
-    organizerEmail: normalizeOptionalText(managedEvent?.organizerEmail),
-    currentAttendeeEmails: managedEvent?.attendeeEmails ?? [],
-    desiredEmails,
-    notify,
-  });
-
-  // Observability: sendUpdates:'all' = this guest is emailed; 'none' = touched
-  // silently (convergence). Lets us verify from logs exactly who gets notified.
-  if (adds.length > 0 || removes.length > 0) {
-    console.log(
-      `[calendar-sync] attendees part=${calendarEventId} notifyAll=${notify.notifyAll} ` +
-        `adds=${JSON.stringify(adds)} removes=${JSON.stringify(removes)}`,
-    );
-  }
-
-  let changes = 0;
-  for (const {email, sendUpdates} of adds) {
-    await executeAction(
-      dependencies,
-      'addAttendeeToEvent',
-      {calendarEventId, email, sendUpdates},
-    );
-    changes += 1;
-  }
-
-  for (const {email, sendUpdates} of removes) {
-    await executeAction(
-      dependencies,
-      'removeAttendeeFromEvent',
-      {calendarEventId, email, sendUpdates},
-    );
-    changes += 1;
-  }
-
-  return changes;
-}
-
 async function deleteConstraintArtifacts(
   dependencies: SyncDependencies,
   constraintId: string,
@@ -1332,10 +1214,79 @@ function isEventInDefaultScope(eventData: Record<string, unknown>, todayKey: str
   return compareDateKeys(endDateKey, todayKey) >= 0;
 }
 
+export function shouldDeleteTargetedAppEventArtifacts(
+  eventData: Record<string, unknown> | null,
+  todayKey: string,
+): boolean {
+  return eventData == null || !isEventInDefaultScope(eventData, todayKey);
+}
+
 function shouldEventHaveAssemblyPart(desired: DesiredAppEventState): boolean {
   return desired.useAllDay === false &&
     desired.assemblyStartPrefix != null &&
     desired.assemblyEndPrefix != null;
+}
+
+export type AppEventPartDetailUpdatePlan = {
+  assemblyNeedsUpdate: boolean;
+  mainNeedsUpdate: boolean;
+  updatedEventPartCount: number;
+};
+
+export function planAppEventPartDetailUpdates(params: {
+  desired: DesiredAppEventState;
+  retainedAssembly: ManagedCalendarEventSummary | null;
+  retainedMain: ManagedCalendarEventSummary | null;
+}): AppEventPartDetailUpdatePlan {
+  const assemblyNeedsUpdate =
+    params.retainedAssembly != null &&
+    !appEventMatchesDesired(params.retainedAssembly, params.desired, 'assembly');
+  const mainNeedsUpdate =
+    params.retainedMain != null &&
+    !appEventMatchesDesired(
+      params.retainedMain,
+      params.desired,
+      params.desired.useAllDay ? 'allDay' : 'main',
+    );
+  return {
+    assemblyNeedsUpdate,
+    mainNeedsUpdate,
+    updatedEventPartCount:
+      (assemblyNeedsUpdate ? 1 : 0) + (mainNeedsUpdate ? 1 : 0),
+  };
+}
+
+async function updateAppEventParts(
+  dependencies: SyncDependencies,
+  desired: DesiredAppEventState,
+  assemblyCalendarEventId: string,
+  mainCalendarEventId: string,
+): Promise<{assemblyCalendarEventId: string; mainCalendarEventId: string}> {
+  const response = await executeAction(
+    dependencies,
+    'updateAppEventCalendarEvents',
+    {
+      assemblyCalendarEventId,
+      mainCalendarEventId,
+      event: desired.payload,
+    },
+  );
+  const rawRecreatedIds = response['result'];
+  if (
+    rawRecreatedIds == null ||
+    typeof rawRecreatedIds !== 'object' ||
+    Array.isArray(rawRecreatedIds)
+  ) {
+    return {assemblyCalendarEventId, mainCalendarEventId};
+  }
+
+  const recreatedIds = rawRecreatedIds as Record<string, unknown>;
+  return {
+    assemblyCalendarEventId:
+      optionalString(recreatedIds['assembly']) ?? assemblyCalendarEventId,
+    mainCalendarEventId:
+      optionalString(recreatedIds['main']) ?? mainCalendarEventId,
+  };
 }
 
 async function reconcileSingleAppEvent(
@@ -1343,39 +1294,8 @@ async function reconcileSingleAppEvent(
   eventId: string,
   eventData: Record<string, unknown>,
   eventSyncData: Record<string, unknown> | null,
-  teamMemberCache: Map<string, Record<string, unknown> | null>,
-  notifyDelta?: AttendeeNotifyDelta,
-  notifyAllChanges = false,
 ): Promise<AppEventItemResult> {
   const desired = buildDesiredAppEventState(eventId, eventData, dependencies.environment);
-  const desiredEmails = await readEventAttendeeEmails(dependencies, eventId, eventData, teamMemberCache);
-
-  // Notify only the members whose assignment genuinely changed in the operation
-  // that triggered this reconcile; every other attendee write (drift catch-up,
-  // manual/full sync) converges silently. Invite-all events email the whole
-  // roster on the empty<->assigned boundary (opted-in mass invite).
-  const addedMemberIds = notifyDelta?.addedMemberIds ?? [];
-  const removedMemberIds = notifyDelta?.removedMemberIds ?? [];
-  const triggeredByChange = addedMemberIds.length + removedMemberIds.length > 0;
-  const notifyEmails = await resolveMemberEmails(
-    dependencies,
-    [...addedMemberIds, ...removedMemberIds],
-    teamMemberCache,
-  );
-  const optedIntoInviteAll =
-    eventData['inviteAllPermanentWhenUnassigned'] === true &&
-    eventData['relevantForExtendedTeam'] !== true;
-  // `notifyAllChanges` (admin manual re-sync): email every add/remove. Because
-  // the diff below only adds members not already present and only removes
-  // members no longer desired, this emails exactly the members whose assignment
-  // changed since the last sync — never the unchanged ones.
-  const notify: AttendeeNotifyPlan = notifyAllChanges
-    ? {emails: new Set<string>(), notifyAll: true}
-    : buildAttendeeNotifyPlan({
-        optedIntoInviteAll,
-        triggeredByChange,
-        notifyEmails,
-      });
   const currentStateAssemblyId = optionalString(eventSyncData?.['assemblyCalendarEventId']) ?? '';
   const currentStateMainId = optionalString(eventSyncData?.['mainCalendarEventId']) ?? '';
   const currentStateStatus = optionalString(eventSyncData?.['status']) ?? '';
@@ -1389,6 +1309,9 @@ async function reconcileSingleAppEvent(
   const discovered = await listManagedCalendarEvents(dependencies, {kind: 'app', eventId});
   const summaryById = new Map<string, ManagedCalendarEventSummary>();
   for (const managedEvent of discovered) {
+    if (!isExpectedManagedAppEvent(dependencies, managedEvent, eventId)) {
+      continue;
+    }
     summaryById.set(managedEvent.id, managedEvent);
   }
   for (const storedId of [currentStateAssemblyId, currentStateMainId]) {
@@ -1396,7 +1319,7 @@ async function reconcileSingleAppEvent(
       continue;
     }
     const managedEvent = await getManagedCalendarEvent(dependencies, storedId);
-    if (managedEvent != null) {
+    if (isExpectedManagedAppEvent(dependencies, managedEvent, eventId)) {
       summaryById.set(storedId, managedEvent);
     }
   }
@@ -1407,10 +1330,17 @@ async function reconcileSingleAppEvent(
     currentStateMainId,
     shouldHaveAssemblyPart,
   });
+  const detailUpdatePlan = planAppEventPartDetailUpdates({
+    desired,
+    retainedAssembly:
+      plan.keepAssemblyId == null ? null : summaryById.get(plan.keepAssemblyId) ?? null,
+    retainedMain:
+      plan.keepMainId == null ? null : summaryById.get(plan.keepMainId) ?? null,
+  });
 
   let createdEventPartCount = 0;
+  const updatedEventPartCount = detailUpdatePlan.updatedEventPartCount;
   let deletedEventPartCount = 0;
-  let updatedAttendeeEventCount = 0;
   let repairedEventSyncStateCount = 0;
 
   // Remove duplicate/orphaned parts first so the calendar converges to one of each.
@@ -1435,14 +1365,6 @@ async function reconcileSingleAppEvent(
       finalAssemblyId = await createAppEventPart(dependencies, desired.payload, 'assembly');
       createdEventPartCount += 1;
     }
-    const managedAssemblyEvent = await getManagedCalendarEvent(dependencies, finalAssemblyId);
-    updatedAttendeeEventCount += await syncEventPartAttendees(
-      dependencies,
-      finalAssemblyId,
-      managedAssemblyEvent,
-      desiredEmails,
-      notify,
-    );
   }
 
   let finalMainId: string;
@@ -1456,14 +1378,17 @@ async function reconcileSingleAppEvent(
     );
     createdEventPartCount += 1;
   }
-  const managedMainEvent = await getManagedCalendarEvent(dependencies, finalMainId);
-  updatedAttendeeEventCount += await syncEventPartAttendees(
-    dependencies,
-    finalMainId,
-    managedMainEvent,
-    desiredEmails,
-    notify,
-  );
+
+  if (updatedEventPartCount > 0) {
+    const updatedIds = await updateAppEventParts(
+      dependencies,
+      desired,
+      finalAssemblyId,
+      finalMainId,
+    );
+    finalAssemblyId = updatedIds.assemblyCalendarEventId;
+    finalMainId = updatedIds.mainCalendarEventId;
+  }
 
   if (
     currentStateAssemblyId !== finalAssemblyId ||
@@ -1486,13 +1411,13 @@ async function reconcileSingleAppEvent(
   return {
     changed:
       createdEventPartCount > 0 ||
+      updatedEventPartCount > 0 ||
       deletedEventPartCount > 0 ||
-      updatedAttendeeEventCount > 0 ||
       repairedEventSyncStateCount > 0,
     createdEventPartCount,
-    updatedEventPartCount: 0,
+    updatedEventPartCount,
     deletedEventPartCount,
-    updatedAttendeeEventCount,
+    updatedAttendeeEventCount: 0,
     repairedEventSyncStateCount,
   };
 }
@@ -1721,21 +1646,41 @@ export async function listInScopeAppEventIds(
     .map((doc) => doc.id);
 }
 
+async function cleanTargetedAppEventArtifacts(
+  dependencies: SyncDependencies,
+  eventId: string,
+  eventSyncData: Record<string, unknown> | null,
+): Promise<{deletedEventPartCount: number; cleanedSyncStateCount: number}> {
+  const storedIds = uniqueSortedStrings([
+    optionalString(eventSyncData?.['assemblyCalendarEventId']) ?? '',
+    optionalString(eventSyncData?.['mainCalendarEventId']) ?? '',
+  ]);
+  const deletedEventPartCount = await deleteDiscoveredAppEventArtifacts(
+    dependencies,
+    eventId,
+    storedIds,
+  );
+  if (eventSyncData != null) {
+    await dependencies.firestore
+      .collection(dependencies.collections.eventCalendarSync)
+      .doc(eventId)
+      .delete();
+  }
+  return {
+    deletedEventPartCount,
+    cleanedSyncStateCount: eventSyncData == null ? 0 : 1,
+  };
+}
+
 export async function syncAppEventCalendars(
   dependencies: SyncDependencies,
   options: {
     eventId?: string | null;
     eventIds?: string[] | null;
-    // Per-event genuine attendee change that triggered this sync. Members named
-    // here are notified; every other attendee write converges silently. Absent
-    // for passive full/manual syncs, which are therefore entirely silent.
+    // Retained for compatibility with older callers. App-event reconciliation
+    // no longer reads or writes attendees, so notification deltas are ignored.
     notifyByEventId?: AttendeeNotifyByEvent;
-    // When true, EVERY genuine attendee change (add/remove) emails the affected
-    // member — regardless of per-member deltas or the invite-all toggle. Set by
-    // the admin "re-sync" button so a manual sync notifies exactly the members
-    // whose assignment changed since the last sync (unchanged members are never
-    // touched, so they get nothing). Automatic/real-time syncs leave this false
-    // and rely on `notifyByEventId`.
+    // Retained for compatibility; ignored for the same reason.
     notifyAllChanges?: boolean;
   } = {},
 ): Promise<AppEventSyncReport> {
@@ -1752,58 +1697,59 @@ export async function syncAppEventCalendars(
   let cleanedSyncStateCount = 0;
   let quotaExhausted = false;
 
-  const teamMemberCache = new Map<string, Record<string, unknown> | null>();
-
   if (options.eventId != null && options.eventId.trim().length > 0) {
     const eventId = options.eventId.trim();
-    const eventData = await readEventById(dependencies.firestore, dependencies.collections, eventId);
-    if (eventData == null) {
-      return {
-        scannedCount: 0,
-        changedCount: 0,
-        upToDateCount: 0,
-        failedEventIds,
-        createdEventPartCount: 0,
-        updatedEventPartCount: 0,
-        deletedEventPartCount: 0,
-        updatedAttendeeEventCount: 0,
-        repairedEventSyncStateCount: 0,
-        removedOrphanedCount: 0,
-        cleanedSyncStateCount: 0,
-        quotaExhausted: false,
-      };
-    }
-
-    const syncStateDoc = await dependencies.firestore
-      .collection(dependencies.collections.eventCalendarSync)
-      .doc(eventId)
-      .get();
+    const [eventData, syncStateDoc] = await Promise.all([
+      readEventById(dependencies.firestore, dependencies.collections, eventId),
+      dependencies.firestore
+        .collection(dependencies.collections.eventCalendarSync)
+        .doc(eventId)
+        .get(),
+    ]);
+    const eventSyncData = syncStateDoc.exists ? syncStateDoc.data() ?? {} : null;
 
     scannedCount = 1;
     try {
-      const result = await reconcileSingleAppEvent(
-        dependencies,
-        eventId,
-        eventData,
-        syncStateDoc.exists ? syncStateDoc.data() ?? null : null,
-        teamMemberCache,
-        options.notifyByEventId?.[eventId],
-        options.notifyAllChanges ?? false,
-      );
-      createdEventPartCount += result.createdEventPartCount;
-      updatedEventPartCount += result.updatedEventPartCount;
-      deletedEventPartCount += result.deletedEventPartCount;
-      updatedAttendeeEventCount += result.updatedAttendeeEventCount;
-      repairedEventSyncStateCount += result.repairedEventSyncStateCount;
-      if (result.changed) {
+      if (shouldDeleteTargetedAppEventArtifacts(eventData, getIsraelDateKey(new Date()))) {
+        const cleanup = await cleanTargetedAppEventArtifacts(
+          dependencies,
+          eventId,
+          eventSyncData,
+        );
+        deletedEventPartCount += cleanup.deletedEventPartCount;
+        cleanedSyncStateCount += cleanup.cleanedSyncStateCount;
+      } else {
+        if (eventData == null) {
+          throw new Error(`Missing in-scope app event ${eventId}`);
+        }
+        const result = await reconcileSingleAppEvent(
+          dependencies,
+          eventId,
+          eventData,
+          eventSyncData,
+        );
+        createdEventPartCount += result.createdEventPartCount;
+        updatedEventPartCount += result.updatedEventPartCount;
+        deletedEventPartCount += result.deletedEventPartCount;
+        updatedAttendeeEventCount += result.updatedAttendeeEventCount;
+        repairedEventSyncStateCount += result.repairedEventSyncStateCount;
+      }
+      if (
+        createdEventPartCount > 0 ||
+        updatedEventPartCount > 0 ||
+        deletedEventPartCount > 0 ||
+        repairedEventSyncStateCount > 0 ||
+        cleanedSyncStateCount > 0
+      ) {
         changedCount += 1;
       } else {
         upToDateCount += 1;
       }
     } catch (error) {
       console.error(`Failed to reconcile app event ${eventId}:`, error);
-      failedEventIds.push(eventId);
-      if (isCalendarQuotaError(error)) quotaExhausted = true;
+      // A targeted durable job needs the original error so its worker can
+      // distinguish quota, OAuth, transient, and terminal failures.
+      throw error;
     }
 
     return {
@@ -1827,37 +1773,52 @@ export async function syncAppEventCalendars(
   // so a subset can be processed safely without any cross-event cleanup.
   if (options.eventIds != null) {
     const uniqueIds = uniqueSortedStrings(options.eventIds);
+    const todayKey = getIsraelDateKey(new Date());
     for (const eventId of uniqueIds) {
-      const eventData = await readEventById(
-        dependencies.firestore,
-        dependencies.collections,
-        eventId,
-      );
-      // Skip ids that were deleted between planning and this chunk.
-      if (eventData == null) continue;
-
-      const syncStateDoc = await dependencies.firestore
-        .collection(dependencies.collections.eventCalendarSync)
-        .doc(eventId)
-        .get();
+      const [eventData, syncStateDoc] = await Promise.all([
+        readEventById(
+          dependencies.firestore,
+          dependencies.collections,
+          eventId,
+        ),
+        dependencies.firestore
+          .collection(dependencies.collections.eventCalendarSync)
+          .doc(eventId)
+          .get(),
+      ]);
+      const eventSyncData = syncStateDoc.exists ? syncStateDoc.data() ?? {} : null;
 
       scannedCount += 1;
       try {
-        const result = await reconcileSingleAppEvent(
-          dependencies,
-          eventId,
-          eventData,
-          syncStateDoc.exists ? syncStateDoc.data() ?? null : null,
-          teamMemberCache,
-          options.notifyByEventId?.[eventId],
-          options.notifyAllChanges ?? false,
-        );
-        createdEventPartCount += result.createdEventPartCount;
-        updatedEventPartCount += result.updatedEventPartCount;
-        deletedEventPartCount += result.deletedEventPartCount;
-        updatedAttendeeEventCount += result.updatedAttendeeEventCount;
-        repairedEventSyncStateCount += result.repairedEventSyncStateCount;
-        if (result.changed) {
+        let itemChanged = false;
+        if (shouldDeleteTargetedAppEventArtifacts(eventData, todayKey)) {
+          const cleanup = await cleanTargetedAppEventArtifacts(
+            dependencies,
+            eventId,
+            eventSyncData,
+          );
+          deletedEventPartCount += cleanup.deletedEventPartCount;
+          cleanedSyncStateCount += cleanup.cleanedSyncStateCount;
+          itemChanged =
+            cleanup.deletedEventPartCount > 0 || cleanup.cleanedSyncStateCount > 0;
+        } else {
+          if (eventData == null) {
+            throw new Error(`Missing in-scope app event ${eventId}`);
+          }
+          const result = await reconcileSingleAppEvent(
+            dependencies,
+            eventId,
+            eventData,
+            eventSyncData,
+          );
+          createdEventPartCount += result.createdEventPartCount;
+          updatedEventPartCount += result.updatedEventPartCount;
+          deletedEventPartCount += result.deletedEventPartCount;
+          updatedAttendeeEventCount += result.updatedAttendeeEventCount;
+          repairedEventSyncStateCount += result.repairedEventSyncStateCount;
+          itemChanged = result.changed;
+        }
+        if (itemChanged) {
           changedCount += 1;
         } else {
           upToDateCount += 1;
@@ -1912,9 +1873,6 @@ export async function syncAppEventCalendars(
         doc.id,
         doc.data() ?? {},
         syncByEventId.get(doc.id) ?? null,
-        teamMemberCache,
-        undefined,
-        options.notifyAllChanges ?? false,
       );
       createdEventPartCount += result.createdEventPartCount;
       updatedEventPartCount += result.updatedEventPartCount;
@@ -2034,6 +1992,7 @@ export async function syncConstraintCalendars(
       }
     } catch (error) {
       console.error(`Failed to reconcile constraint ${constraintId}:`, error);
+      if (isCalendarQuotaError(error)) throw error;
       failedConstraintIds.push(constraintId);
       const syncState = syncByConstraintId.get(constraintId) ?? null;
       const retryCount = readInt(syncState?.['retryCount']) ?? 0;
@@ -2107,22 +2066,17 @@ export async function syncEventsAndConstraints(
 export async function syncAssignedEventsBestEffort(
   dependencies: SyncDependencies,
   eventIds: Iterable<string>,
-  notifyByEventId?: AttendeeNotifyByEvent,
+  _notifyByEventId?: AttendeeNotifyByEvent,
 ): Promise<void> {
   const uniqueEventIds = uniqueSortedStrings(eventIds);
   for (const eventId of uniqueEventIds) {
-    const delta = notifyByEventId?.[eventId];
     const startedAt = Date.now();
-    console.log(
-      `[calendar-sync] start eventId=${eventId} ` +
-        `added=${JSON.stringify(delta?.addedMemberIds ?? [])} ` +
-        `removed=${JSON.stringify(delta?.removedMemberIds ?? [])}`,
-    );
+    console.log(`[calendar-sync] start eventId=${eventId}`);
     try {
-      const report = await syncAppEventCalendars(dependencies, {eventId, notifyByEventId});
+      const report = await syncAppEventCalendars(dependencies, {eventId});
       console.log(
         `[calendar-sync] done eventId=${eventId} ms=${Date.now() - startedAt} ` +
-          `changed=${report.changedCount} attendeeParts=${report.updatedAttendeeEventCount} ` +
+          `changed=${report.changedCount} updatedParts=${report.updatedEventPartCount} ` +
           `createdParts=${report.createdEventPartCount} deletedParts=${report.deletedEventPartCount} ` +
           `failedEvents=${report.failedEventIds.length}`,
       );
@@ -2133,39 +2087,11 @@ export async function syncAssignedEventsBestEffort(
 }
 
 export async function syncAssignedFutureEventsForMemberEmailChange(
-  dependencies: SyncDependencies,
-  teamMemberId: string,
+  _dependencies: SyncDependencies,
+  _teamMemberId: string,
 ): Promise<void> {
-  const snapshot = await dependencies.firestore
-    .collection(dependencies.collections.assignments)
-    .where('teamMemberId', '==', teamMemberId)
-    .get();
-  const eventIds = Array.from(new Set(
-    snapshot.docs
-      .map((doc) => {
-        const data = doc.data() ?? {};
-        return typeof data['eventId'] === 'string'
-          ? data['eventId'] as string
-          : null;
-      })
-      .filter((eventId): eventId is string => eventId != null),
-  ));
-  const todayKey = getIsraelDateKey(new Date());
-  const futureEventIds: string[] = [];
-  for (const eventId of eventIds) {
-    const eventData = await readEventById(dependencies.firestore, dependencies.collections, eventId);
-    if (eventData == null || !isEventInDefaultScope(eventData, todayKey)) {
-      continue;
-    }
-    futureEventIds.push(eventId);
-  }
-  // Notify the member on each event so their NEW address gets an invite; the
-  // old address is dropped silently (it is not a member id, so not in notify).
-  const notifyByEventId: AttendeeNotifyByEvent = {};
-  for (const eventId of futureEventIds) {
-    notifyByEventId[eventId] = {addedMemberIds: [teamMemberId]};
-  }
-  await syncAssignedEventsBestEffort(dependencies, futureEventIds, notifyByEventId);
+  // Retained as a compatibility no-op for older callers. Member email changes
+  // no longer have any app-event Calendar behavior.
 }
 
 export async function deleteAppEventCalendarArtifacts(

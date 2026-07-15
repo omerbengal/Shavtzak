@@ -8,20 +8,16 @@ import 'user_selection_event.dart';
 import 'user_selection_state.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
-import '../calendar_sync/calendar_sync_bloc.dart';
-import '../calendar_sync/calendar_sync_event.dart';
 
 /// BLoC for managing user selection and authentication
 class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
   final UserSelectionRepository _userSelectionRepository;
   final TeamRepository _teamRepository;
-  final CalendarSyncBloc? _calendarSyncBloc;
   StreamSubscription? _teamStreamSubscription;
 
   UserSelectionBloc(
     this._userSelectionRepository,
-    this._teamRepository,
-    this._calendarSyncBloc, [
+    this._teamRepository, [
     TeamMember? preAuthenticatedUser,
   ]) : super(preAuthenticatedUser != null
             ? UserAuthenticated(preAuthenticatedUser)
@@ -385,23 +381,10 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
         name: 'UserSelectionBloc',
       );
       try {
-        final oldEmail = currentState.user.email ?? '';
-
         await _userSelectionRepository.updateTeamMemberEmail(
           currentState.user.uniqueKey,
           event.email,
         );
-
-        // Dispatch OnTeamMemberEmailChanged to CalendarSyncBloc when email changed.
-        // This covers first-time email entry, replacements, and deletions.
-        final newEmail = event.email ?? '';
-        if (oldEmail != newEmail) {
-          _calendarSyncBloc?.add(OnTeamMemberEmailChanged(
-            teamMemberId: currentState.user.id,
-            oldEmail: oldEmail,
-            newEmail: newEmail,
-          ));
-        }
         _completeActionSuccess(
           event.completion,
           event.email == null

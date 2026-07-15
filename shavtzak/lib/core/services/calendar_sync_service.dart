@@ -430,10 +430,6 @@ class CalendarSyncService {
             status: CalendarSyncStatus.synced,
           );
 
-          // Ensure attendees are preserved when events are updated/recreated
-          // (including transitions between timed and all-day representations).
-          await syncAttendeesForAppEvent(eventId);
-
           return SyncResult.success('$newAssemblyId,$newMainId');
         }
 
@@ -464,9 +460,6 @@ class CalendarSyncService {
           mainCalendarEventId: calendarEventIds['main'] ?? '',
           status: CalendarSyncStatus.synced,
         );
-
-        // Sync attendees from existing assignments
-        await syncAttendeesForAppEvent(eventId);
 
         return SyncResult.success(
             '${calendarEventIds['assembly']},${calendarEventIds['main']}');
@@ -532,344 +525,47 @@ class CalendarSyncService {
     }
   }
 
-  /// Add attendee to app event calendar event
-  /// Used when assignment is created for team member with email
+  /// Retired app-event guest hook kept for compatibility.
   Future<void> addAttendeeToAppEvent({
     required String eventId,
     required String email,
   }) async {
-    try {
-      // Get event sync state
-      final syncState = await _database.getEventCalendarSyncState(eventId);
-      if (syncState == null) {
-        return;
-      }
-
-      final assemblyId = syncState['assemblyCalendarEventId'] as String?;
-      final mainId = syncState['mainCalendarEventId'] as String?;
-
-      // Add attendee to both events if they exist
-      if (assemblyId != null && assemblyId.isNotEmpty) {
-        try {
-          await _calendarService.addAttendeeToEvent(assemblyId, email);
-        } catch (e) {
-          developer.log(
-            'CalendarSyncService: Failed to add attendee to assembly event $assemblyId - $e',
-            name: 'CalendarSync',
-            error: e,
-          );
-        }
-      }
-
-      if (mainId != null && mainId.isNotEmpty) {
-        try {
-          await _calendarService.addAttendeeToEvent(mainId, email);
-        } catch (e) {
-          developer.log(
-            'CalendarSyncService: Failed to add attendee to main event $mainId - $e',
-            name: 'CalendarSync',
-            error: e,
-          );
-        }
-      }
-    } catch (e) {
-      developer.log(
-        'CalendarSyncService: Failed to add attendee to app event $eventId - $e',
-        name: 'CalendarSync',
-        error: e,
-      );
-    }
+    // Retained for binary/source compatibility with older BLoC events.
+    // Managed app-event guests are no longer controlled by the application.
+    return;
   }
 
-  /// Remove attendee from app event calendar event
-  /// Used when assignment is deleted
+  /// Retired app-event guest hook kept for compatibility.
   Future<void> removeAttendeeFromAppEvent({
     required String eventId,
     required String email,
   }) async {
-    try {
-      // Get event sync state
-      final syncState = await _database.getEventCalendarSyncState(eventId);
-      if (syncState == null) {
-        return;
-      }
-
-      final assemblyId = syncState['assemblyCalendarEventId'] as String?;
-      final mainId = syncState['mainCalendarEventId'] as String?;
-
-      // Remove attendee from both events if they exist
-      if (assemblyId != null && assemblyId.isNotEmpty) {
-        try {
-          await _calendarService.removeAttendeeFromEvent(assemblyId, email);
-        } catch (e) {
-          developer.log(
-            'CalendarSyncService: Failed to remove attendee from assembly event $assemblyId - $e',
-            name: 'CalendarSync',
-            error: e,
-          );
-        }
-      }
-
-      if (mainId != null && mainId.isNotEmpty) {
-        try {
-          await _calendarService.removeAttendeeFromEvent(mainId, email);
-        } catch (e) {
-          developer.log(
-            'CalendarSyncService: Failed to remove attendee from main event $mainId - $e',
-            name: 'CalendarSync',
-            error: e,
-          );
-        }
-      }
-    } catch (e) {
-      developer.log(
-        'CalendarSyncService: Failed to remove attendee from app event $eventId - $e',
-        name: 'CalendarSync',
-        error: e,
-      );
-    }
+    // Retained for binary/source compatibility with older BLoC events.
+    // The dedicated admin cleanup job is the only app-guest removal path.
+    return;
   }
 
-  /// Targeted attendee sync for a SINGLE assignment change.
-  ///
-  /// The whole-roster re-push in [syncAttendeesForAppEvent] rewrites every
-  /// attendee record with `sendUpdates: 'all'`, which makes Google email every
-  /// already-assigned member on each assignment change. This method instead
-  /// touches only the member who was actually added or removed, using the
-  /// incremental [addAttendeeToAppEvent] / [removeAttendeeFromAppEvent]
-  /// primitives (which preserve existing attendees, so Google notifies only the
-  /// changed guest).
-  ///
-  /// It defers to the full re-sync ONLY for the "invite all permanent when
-  /// unassigned" roster transitions, where the entire attendee set genuinely
-  /// changes:
-  ///   * the last assignment was removed → roster returns to all-permanent;
-  ///   * the first assignment was added → roster collapses to just the assignee.
+  /// Retired assignment-to-guest hook kept for compatibility.
   Future<void> syncAttendeeForAssignmentChange({
     required String eventId,
     String? addedMemberId,
     String? removedMemberId,
   }) async {
-    try {
-      // Same member kept, only the role/slot changed → the attendee set is
-      // unchanged, so there is nothing to notify.
-      if (addedMemberId != null && addedMemberId == removedMemberId) {
-        return;
-      }
-
-      final event = await _database.getEventById(eventId);
-      if (event == null) {
-        return;
-      }
-
-      final assignments = await _database.getAssignmentsByEvent(eventId);
-
-      final optedIntoInviteAll = event.inviteAllPermanentWhenUnassigned &&
-          !event.relevantForExtendedTeam;
-
-      // Invite-all roster transitions need the whole attendee set rebuilt.
-      final returnedToInviteAll = optedIntoInviteAll && assignments.isEmpty;
-      final leftInviteAll = optedIntoInviteAll &&
-          assignments.length == 1 &&
-          addedMemberId != null &&
-          removedMemberId == null;
-      if (returnedToInviteAll || leftInviteAll) {
-        await syncAttendeesForAppEvent(eventId);
-        return;
-      }
-
-      // Steady-state per-assignee mode: apply only the delta.
-
-      // Newly assigned member → invite just them. No-op at the calendar layer
-      // if they are already an attendee (e.g. they hold another role here).
-      if (addedMemberId != null) {
-        final email = await _emailForMember(addedMemberId);
-        if (email != null) {
-          await addAttendeeToAppEvent(eventId: eventId, email: email);
-        }
-      }
-
-      // Removed member → drop them ONLY if they no longer hold any assignment
-      // in this event (a member with multiple roles stays invited).
-      if (removedMemberId != null && removedMemberId != addedMemberId) {
-        final stillAssigned =
-            assignments.any((a) => a.teamMemberId == removedMemberId);
-        if (!stillAssigned) {
-          final email = await _emailForMember(removedMemberId);
-          if (email != null) {
-            await removeAttendeeFromAppEvent(eventId: eventId, email: email);
-          }
-        }
-      }
-    } catch (e) {
-      developer.log(
-        'CalendarSyncService: Failed targeted attendee sync for app event $eventId - $e',
-        name: 'CalendarSync',
-        error: e,
-      );
-    }
+    return;
   }
 
-  /// Resolve a team member's calendar email, or null when they have none.
-  /// Uses the member's stored email verbatim (matching the per-assignee branch
-  /// of [syncAttendeesForAppEvent]) so add/remove match existing attendees.
-  Future<String?> _emailForMember(String memberId) async {
-    final member = await _database.getTeamMemberById(memberId);
-    final email = member?.email;
-    if (email == null || email.isEmpty) {
-      return null;
-    }
-    return email;
-  }
-
-  /// A member is eligible for the "invite all permanent staff" calendar
-  /// behavior when they are a permanent, active, non-archived member with a
-  /// non-empty email address.
-  bool _isEligiblePermanentMember(TeamMember member) {
-    final email = member.email?.trim() ?? '';
-    return member.isPermanent &&
-        member.isActive &&
-        !member.isArchived &&
-        email.isNotEmpty;
-  }
-
-  /// Sync all attendees for app event
-  /// Fetches all assignments for event and adds all team member emails as attendees.
-  /// Special case: when the event opted into "invite all permanent staff" and it
-  /// is permanent-only and currently has zero assignments, all eligible permanent
-  /// members are invited instead.
+  /// Retired full-roster guest hook kept for compatibility.
   Future<void> syncAttendeesForAppEvent(String eventId) async {
-    try {
-      // Get event sync state
-      final syncState = await _database.getEventCalendarSyncState(eventId);
-      if (syncState == null) {
-        return;
-      }
-
-      final assemblyId = syncState['assemblyCalendarEventId'] as String?;
-      final mainId = syncState['mainCalendarEventId'] as String?;
-
-      // Get all assignments for this event
-      final assignments = await _database.getAssignmentsByEvent(eventId);
-
-      // Collect all unique attendee emails.
-      final emails = <String>{};
-
-      final event = await _database.getEventById(eventId);
-      final useAllPermanent = assignments.isEmpty &&
-          event != null &&
-          event.inviteAllPermanentWhenUnassigned &&
-          !event.relevantForExtendedTeam;
-
-      if (useAllPermanent) {
-        // No assignments yet and the event opted in: invite all eligible
-        // permanent members.
-        final members = await _database.getTeamMembers();
-        for (final member in members) {
-          if (_isEligiblePermanentMember(member)) {
-            emails.add(member.email!.trim()); // ! is safe: _isEligiblePermanentMember verified email is non-empty
-          }
-        }
-      } else {
-        // Default behavior: attendees are exactly the assignees.
-        for (final assignment in assignments) {
-          final teamMember =
-              await _database.getTeamMemberById(assignment.teamMemberId);
-          if (teamMember != null &&
-              teamMember.email != null &&
-              teamMember.email!.isNotEmpty) {
-            emails.add(teamMember.email!);
-          }
-        }
-      }
-
-      // Update attendees for both events if they exist
-      if (assemblyId != null && assemblyId.isNotEmpty) {
-        try {
-          await _calendarService.updateEventAttendees(
-              assemblyId, emails.toList());
-        } catch (e) {
-          developer.log(
-            'CalendarSyncService: Failed to sync attendees for assembly event $assemblyId - $e',
-            name: 'CalendarSync',
-            error: e,
-          );
-        }
-      }
-
-      if (mainId != null && mainId.isNotEmpty) {
-        try {
-          await _calendarService.updateEventAttendees(mainId, emails.toList());
-        } catch (e) {
-          developer.log(
-            'CalendarSyncService: Failed to sync attendees for main event $mainId - $e',
-            name: 'CalendarSync',
-            error: e,
-          );
-        }
-      }
-    } catch (e) {
-      developer.log(
-        'CalendarSyncService: Failed to sync attendees for app event $eventId - $e',
-        name: 'CalendarSync',
-        error: e,
-      );
-    }
+    return;
   }
 
-  /// Handle team member email change
-  /// Updates attendee email in all future events where this member is assigned
+  /// Retired member-email guest hook kept for compatibility.
   Future<void> onTeamMemberEmailChanged({
     required String teamMemberId,
     required String oldEmail,
     required String newEmail,
   }) async {
-    try {
-      final normalizedOldEmail = oldEmail.trim();
-      final normalizedNewEmail = newEmail.trim();
-
-      if (normalizedOldEmail == normalizedNewEmail) {
-        return;
-      }
-
-      // Nothing to sync when both are empty.
-      if (normalizedOldEmail.isEmpty && normalizedNewEmail.isEmpty) {
-        return;
-      }
-
-      // Get all assignments for this team member
-      final assignments = await _database.getAssignmentsByPerson(teamMemberId);
-
-      // Get event IDs for all assignments
-      final eventIds = assignments.map((a) => a.eventId).toSet();
-
-      // For each event, update the attendee
-      for (final eventId in eventIds) {
-        try {
-          if (normalizedOldEmail.isNotEmpty) {
-            // Remove old email when replacing or deleting an address.
-            await removeAttendeeFromAppEvent(
-                eventId: eventId, email: normalizedOldEmail);
-          }
-          if (normalizedNewEmail.isNotEmpty) {
-            await addAttendeeToAppEvent(
-                eventId: eventId, email: normalizedNewEmail);
-          }
-        } catch (e) {
-          developer.log(
-            'CalendarSyncService: Failed to update attendee for event $eventId - $e',
-            name: 'CalendarSync',
-            error: e,
-          );
-        }
-      }
-    } catch (e) {
-      developer.log(
-        'CalendarSyncService: Failed to handle email change for team member $teamMemberId - $e',
-        name: 'CalendarSync',
-        error: e,
-      );
-    }
+    return;
   }
 
   /// TEMP: One-time attendee backfill for existing synced constraint events.

@@ -88,8 +88,7 @@ class _EventFormModalState extends State<EventFormModal> {
   String? _selectedCategoryId; // Selected category ID for the event
   bool _relevantForExtendedTeam =
       true; // Event is relevant for extended team (UI is inverted)
-  // Calendar: invite all permanent staff while the event has no assignments.
-  // Only meaningful when the "permanent team only" switch is ON.
+  // Legacy persisted field. Hidden now that app events no longer manage guests.
   bool _inviteAllPermanentWhenUnassigned = false;
 
   // For highlighting selected role
@@ -363,8 +362,8 @@ class _EventFormModalState extends State<EventFormModal> {
     TextEditingController target,
     int offsetMinutes,
   ) {
-    final derived =
-        app_date_utils.DateUtils.shiftHmByMinutes(source.text.trim(), offsetMinutes);
+    final derived = app_date_utils.DateUtils.shiftHmByMinutes(
+        source.text.trim(), offsetMinutes);
     if (derived == null) return;
     setState(() {
       target.text = derived;
@@ -710,8 +709,7 @@ class _EventFormModalState extends State<EventFormModal> {
       driveFolderLink: _isEditMode ? widget.event!.driveFolderLink : null,
       relevantForExtendedTeam:
           !_relevantForExtendedTeam, // Invert back for database
-      inviteAllPermanentWhenUnassigned:
-          _relevantForExtendedTeam && _inviteAllPermanentWhenUnassigned,
+      inviteAllPermanentWhenUnassigned: _inviteAllPermanentWhenUnassigned,
     );
 
     if (!mounted) return;
@@ -764,7 +762,8 @@ class _EventFormModalState extends State<EventFormModal> {
                     children: [
                       Text('"$eventName" יוצג שוב במלואו:'),
                       const SizedBox(height: 8),
-                      const Text('• אירועי יומן Google ייווצרו מחדש עם המשובצים הנוכחיים'),
+                      const Text(
+                          '• אירועי יומן Google ייווצרו מחדש עם המשובצים הנוכחיים'),
                       const Text('• ההצבות יחזרו להופיע בכל המסכים'),
                     ],
                   )
@@ -825,11 +824,11 @@ class _EventFormModalState extends State<EventFormModal> {
     final completion = Completer<CrudActionResult>();
     final bloc = context.read<EventBloc>();
     if (isCurrentlyDeactivated) {
-      bloc.add(ReactivateEventRequested(widget.event!.id,
-          completion: completion));
+      bloc.add(
+          ReactivateEventRequested(widget.event!.id, completion: completion));
     } else {
-      bloc.add(DeactivateEventRequested(widget.event!.id,
-          completion: completion));
+      bloc.add(
+          DeactivateEventRequested(widget.event!.id, completion: completion));
     }
 
     final result = await completion.future;
@@ -988,80 +987,93 @@ class _EventFormModalState extends State<EventFormModal> {
                                     onPressed: _isSaving
                                         ? null
                                         : () {
-                                      Logger.action('open:deleteEventDialog',
-                                          {'eventId': widget.event!.id});
-                                      showDialog(
-                                        context: context,
-                                        builder: (dialogContext) =>
-                                            Directionality(
-                                          textDirection: TextDirection.rtl,
-                                          child: AlertDialog(
-                                            title: const Text('מחיקת אירוע'),
-                                            content: Text(
-                                              'האם אתה בטוח שברצונך למחוק את ${widget.event!.name}?\nפעולה זו תמחק גם את כל השיבוצים.',
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                child: const Text('ביטול'),
-                                                onPressed: () {
-                                                  Logger.action(
-                                                      'tap:cancel:deleteEvent',
-                                                      {
-                                                        'eventId':
-                                                            widget.event!.id
-                                                      });
-                                                  Navigator.of(dialogContext)
-                                                      .pop();
-                                                },
+                                            Logger.action(
+                                                'open:deleteEventDialog',
+                                                {'eventId': widget.event!.id});
+                                            showDialog(
+                                              context: context,
+                                              builder: (dialogContext) =>
+                                                  Directionality(
+                                                textDirection:
+                                                    TextDirection.rtl,
+                                                child: AlertDialog(
+                                                  title:
+                                                      const Text('מחיקת אירוע'),
+                                                  content: Text(
+                                                    'האם אתה בטוח שברצונך למחוק את ${widget.event!.name}?\nפעולה זו תמחק גם את כל השיבוצים.',
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      child:
+                                                          const Text('ביטול'),
+                                                      onPressed: () {
+                                                        Logger.action(
+                                                            'tap:cancel:deleteEvent',
+                                                            {
+                                                              'eventId': widget
+                                                                  .event!.id
+                                                            });
+                                                        Navigator.of(
+                                                                dialogContext)
+                                                            .pop();
+                                                      },
+                                                    ),
+                                                    TextButton(
+                                                      child: const Text('מחק',
+                                                          style: TextStyle(
+                                                              color:
+                                                                  Colors.red)),
+                                                      onPressed: () async {
+                                                        Logger.action(
+                                                            'tap:deleteEvent', {
+                                                          'eventId':
+                                                              widget.event!.id
+                                                        });
+                                                        Navigator.of(
+                                                                dialogContext)
+                                                            .pop();
+                                                        if (mounted) {
+                                                          setState(() {
+                                                            _isSaving = true;
+                                                            _loadingMessage =
+                                                                'מוחק אירוע...';
+                                                          });
+                                                        }
+                                                        final completion =
+                                                            Completer<
+                                                                CrudActionResult>();
+                                                        context
+                                                            .read<EventBloc>()
+                                                            .add(
+                                                              DeleteEvent(
+                                                                widget
+                                                                    .event!.id,
+                                                                completion:
+                                                                    completion,
+                                                              ),
+                                                            );
+                                                        final result =
+                                                            await completion
+                                                                .future;
+                                                        if (!context.mounted) {
+                                                          return;
+                                                        }
+                                                        if (result.isFailure) {
+                                                          setState(() {
+                                                            _isSaving = false;
+                                                            _loadingMessage =
+                                                                '';
+                                                          });
+                                                          return;
+                                                        }
+                                                        widget.onSuccess();
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
-                                              TextButton(
-                                                child: const Text('מחק',
-                                                    style: TextStyle(
-                                                        color: Colors.red)),
-                                                onPressed: () async {
-                                                  Logger.action(
-                                                      'tap:deleteEvent', {
-                                                    'eventId': widget.event!.id
-                                                  });
-                                                  Navigator.of(dialogContext)
-                                                      .pop();
-                                                  if (mounted) {
-                                                    setState(() {
-                                                      _isSaving = true;
-                                                      _loadingMessage =
-                                                          'מוחק אירוע...';
-                                                    });
-                                                  }
-                                                  final completion =
-                                                      Completer<
-                                                          CrudActionResult>();
-                                                  context.read<EventBloc>().add(
-                                                        DeleteEvent(
-                                                          widget.event!.id,
-                                                          completion:
-                                                              completion,
-                                                        ),
-                                                      );
-                                                  final result =
-                                                      await completion.future;
-                                                  if (!context.mounted) {
-                                                    return;
-                                                  }
-                                                  if (result.isFailure) {
-                                                    setState(() {
-                                                      _isSaving = false;
-                                                      _loadingMessage = '';
-                                                    });
-                                                    return;
-                                                  }
-                                                  widget.onSuccess();
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    },
+                                            );
+                                          },
                                     tooltip: 'מחק',
                                   ),
                                 if (_isEditMode && !widget.isDuplication)
@@ -1071,14 +1083,14 @@ class _EventFormModalState extends State<EventFormModal> {
                                     onPressed: _isSaving
                                         ? null
                                         : () {
-                                      Logger.action('tap:duplicateEvent',
-                                          {'eventId': widget.event!.id});
-                                      // Close the current modal and signal duplication intent
-                                      Navigator.of(context).pop({
-                                        'action': 'duplicate',
-                                        'event': widget.event
-                                      });
-                                    },
+                                            Logger.action('tap:duplicateEvent',
+                                                {'eventId': widget.event!.id});
+                                            // Close the current modal and signal duplication intent
+                                            Navigator.of(context).pop({
+                                              'action': 'duplicate',
+                                              'event': widget.event
+                                            });
+                                          },
                                     tooltip: 'שכפל אירוע',
                                   ),
                                 IconButton(
@@ -1840,9 +1852,9 @@ class _EventFormModalState extends State<EventFormModal> {
                                         // Participant counts, one row per נגלה
                                         ParticipantGroupRows(
                                           key: _participantRowsKey,
-                                          initialGroups: widget.event
-                                                  ?.participantGroups ??
-                                              const [],
+                                          initialGroups:
+                                              widget.event?.participantGroups ??
+                                                  const [],
                                           onChanged: () => _isDirty = true,
                                         ),
 
@@ -2110,9 +2122,10 @@ class _EventFormModalState extends State<EventFormModal> {
                                             if (_assemblyTimeController.text
                                                 .trim()
                                                 .isEmpty) {
-                                              final derived = app_date_utils
-                                                  .DateUtils
-                                                  .shiftHmByMinutes(value, -120);
+                                              final derived =
+                                                  app_date_utils.DateUtils
+                                                      .shiftHmByMinutes(
+                                                          value, -120);
                                               if (derived != null) {
                                                 _assemblyTimeController.text =
                                                     derived;
@@ -2152,7 +2165,7 @@ class _EventFormModalState extends State<EventFormModal> {
                                                 .trim()
                                                 .isEmpty) {
                                               final derived = app_date_utils
-                                                  .DateUtils
+                                                      .DateUtils
                                                   .shiftHmByMinutes(value, 60);
                                               if (derived != null) {
                                                 _teamEndTimeController.text =
@@ -2193,7 +2206,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                           title: const Text('דרוש חמוש'),
                                           value: _requiresArmed,
                                           onChanged: (v) {
-                                            Logger.action('toggle:requiresArmed',
+                                            Logger.action(
+                                                'toggle:requiresArmed',
                                                 {'on': v});
                                             setState(() {
                                               _requiresArmed = v;
@@ -2214,49 +2228,9 @@ class _EventFormModalState extends State<EventFormModal> {
                                                 {'on': v});
                                             setState(() {
                                               _relevantForExtendedTeam = v;
-                                              if (!v) {
-                                                // Not permanent-only: this feature
-                                                // is not applicable.
-                                                _inviteAllPermanentWhenUnassigned =
-                                                    false;
-                                              }
                                               _isDirty = true;
                                             });
                                           },
-                                        ),
-
-                                        // Invite all permanent staff to the
-                                        // calendar while the event has no
-                                        // assignments. Enabled only while
-                                        // "permanent team only" is ON.
-                                        // In duplication mode this toggle is
-                                        // always OFF and non-interactive:
-                                        // DuplicateEvent does not carry this
-                                        // flag, so we start it disabled to
-                                        // avoid a misleading "saved as ON"
-                                        // illusion. Enable it via edit after
-                                        // duplicating.
-                                        SwitchListTile(
-                                          title: const Text(
-                                              'הזמן את כל הצוות הקבוע כשאין שיבוצים?'),
-                                          subtitle: const Text(
-                                              'כשאין אף שיבוץ באירוע, כל הצוות הקבוע עם אימייל יוזמן ליומן. עם השיבוץ הראשון – רק המשובצים יוזמנו.'),
-                                          value: !widget.isDuplication &&
-                                              _relevantForExtendedTeam &&
-                                              _inviteAllPermanentWhenUnassigned,
-                                          onChanged: !widget.isDuplication &&
-                                                  _relevantForExtendedTeam
-                                              ? (v) {
-                                                  Logger.action(
-                                                      'toggle:inviteAllPermanentWhenUnassigned',
-                                                      {'on': v});
-                                                  setState(() {
-                                                    _inviteAllPermanentWhenUnassigned =
-                                                        v;
-                                                    _isDirty = true;
-                                                  });
-                                                }
-                                              : null,
                                         ),
 
                                         // Duplicate Assignments (only show in duplication mode)
@@ -2496,7 +2470,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                             Logger.action(
                                                                 'tap:decrementRoleQuota',
                                                                 {
-                                                                  'role': roleKey
+                                                                  'role':
+                                                                      roleKey
                                                                 });
                                                             if (_roleRequirements[
                                                                     roleKey]! >
@@ -2535,7 +2510,8 @@ class _EventFormModalState extends State<EventFormModal> {
                                                             Logger.action(
                                                                 'tap:incrementRoleQuota',
                                                                 {
-                                                                  'role': roleKey
+                                                                  'role':
+                                                                      roleKey
                                                                 });
                                                             setState(() {
                                                               _roleRequirements[

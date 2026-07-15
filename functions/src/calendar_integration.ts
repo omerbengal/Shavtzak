@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import {FieldValue, Firestore} from 'firebase-admin/firestore';
 
 export type CalendarEnvironmentMode = 'production' | 'test';
@@ -83,7 +83,7 @@ type GoogleApiOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   query?: Record<string, string | number | boolean | null | undefined>;
   body?: unknown;
-  forceRefresh?: boolean;
+  authRetryAttempted?: boolean;
 };
 
 const GOOGLE_OAUTH_SCOPE = 'https://www.googleapis.com/auth/calendar email';
@@ -97,6 +97,19 @@ const TEST_MODE_PREFIX = 'שבצק טסטינג: ';
 const TIME_ZONE = 'Asia/Jerusalem';
 const ALL_DAY_REMINDER_MINUTES_BEFORE = 420;
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+const OMER_CLEANUP_EMAIL = 'omerbengal7@gmail.com';
+
+export function buildDeterministicAppEventCalendarId(
+  environment: CalendarEnvironmentMode,
+  eventId: string,
+  eventType: 'assembly' | 'main' | 'allDay',
+): string {
+  // Google Calendar custom event IDs accept lowercase hexadecimal characters.
+  return createHash('sha256')
+    .update(`shavtzak:${environment}:${eventId}:${eventType}`)
+    .digest('hex')
+    .slice(0, 32);
+}
 
 const CalendarEventColors = {
   unavailability: '8',
@@ -105,13 +118,21 @@ const CalendarEventColors = {
   testMode: '5',
 } as const;
 
-class CalendarAuthError extends Error {}
+export class CalendarAuthError extends Error {
+  readonly code = 'CALENDAR_AUTH_REQUIRED';
+
+  constructor(message = AUTH_REQUIRED_MESSAGE) {
+    super(message);
+    this.name = 'CalendarAuthError';
+  }
+}
 
 export class GoogleApiError extends Error {
   status: number;
 
   constructor(status: number, message: string) {
     super(message);
+    this.name = 'GoogleApiError';
     this.status = status;
   }
 }
@@ -166,6 +187,13 @@ function asRecord(value: unknown, fieldName: string): Record<string, unknown> {
 
 function requireString(value: unknown, fieldName: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Missing or invalid ${fieldName}`);
+  }
+  return value;
+}
+
+function requireBoolean(value: unknown, fieldName: string): boolean {
+  if (typeof value !== 'boolean') {
     throw new Error(`Missing or invalid ${fieldName}`);
   }
   return value;
@@ -288,7 +316,7 @@ async function postForm(
 
   const payload = await parseJsonResponse(response);
   if (!response.ok) {
-    throw new Error(`Google request failed (${response.status}): ${stringifyErrorBody(payload)}`);
+    throw new GoogleApiError(response.status, stringifyErrorBody(payload));
   }
 
   return payload;
@@ -481,11 +509,7 @@ async function calendarApiRequest(
     throw new Error('Google Calendar is not configured');
   }
 
-  const accessToken = await getValidAccessToken(
-    firestore,
-    environment,
-    options.forceRefresh === true,
-  );
+  const accessToken = await getValidAccessToken(firestore, environment);
 
   const url = new URL(
     `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodeURIComponent(config.calendarId)}/${path}`,
@@ -506,15 +530,14 @@ async function calendarApiRequest(
   });
 
   const payload = await parseJsonResponse(response);
-  if (response.status === 401 && options.forceRefresh !== true) {
-    await refreshAccessToken(
-      firestore,
-      environment,
-      requireString((await readTokenState(firestore, environment)).refreshToken, 'refreshToken'),
-    );
+  if (response.status === 401 && options.authRetryAttempted !== true) {
+    // Refresh exactly once. Keeping the retry marker separate from token
+    // selection avoids refreshing twice and turns a second 401 into a typed
+    // GoogleApiError that the durable job policy can block on.
+    await getValidAccessToken(firestore, environment, true);
     return calendarApiRequest(firestore, environment, path, {
       ...options,
-      forceRefresh: true,
+      authRetryAttempted: true,
     });
   }
 
@@ -938,12 +961,16 @@ async function createCalendarEvent(
   environment: CalendarEnvironmentMode,
   eventPayload: Record<string, unknown>,
   query: Record<string, string | number | boolean | null | undefined> = {},
+  calendarEventId: string | null = null,
 ): Promise<string> {
+  const body = calendarEventId == null || calendarEventId.length === 0
+    ? eventPayload
+    : {...eventPayload, id: calendarEventId};
   const created = asRecord(
     await calendarApiRequest(firestore, environment, 'events', {
       method: 'POST',
       query,
-      body: eventPayload,
+      body,
     }),
     'createdCalendarEvent',
   );
@@ -973,6 +1000,9 @@ async function deleteCalendarEvent(
   firestore: Firestore,
   environment: CalendarEnvironmentMode,
   calendarEventId: string,
+  options: {
+    sendUpdates?: 'all' | 'none';
+  } = {},
 ): Promise<void> {
   try {
     await calendarApiRequest(
@@ -981,6 +1011,9 @@ async function deleteCalendarEvent(
       `events/${encodeURIComponent(calendarEventId)}`,
       {
         method: 'DELETE',
+        query: options.sendUpdates == null
+          ? undefined
+          : {sendUpdates: options.sendUpdates},
       },
     );
   } catch (error) {
@@ -1009,11 +1042,59 @@ async function getCalendarEvent(
   );
 }
 
-// Attendee actions notify guests by default (`'all'`) so a deliberate,
-// single-member invite/cancellation still emails that member. The background
-// reconciler passes `'none'` for convergence writes so re-adding drifted
-// attendees never re-emails the roster. Anything other than the literal
-// `'none'` falls back to `'all'`.
+function getPrivateEventProperties(
+  event: Record<string, unknown>,
+): Record<string, unknown> {
+  const extendedProperties = event['extendedProperties'];
+  if (
+    extendedProperties == null ||
+    typeof extendedProperties !== 'object' ||
+    Array.isArray(extendedProperties)
+  ) {
+    return {};
+  }
+
+  const privateProperties = (extendedProperties as Record<string, unknown>)['private'];
+  if (
+    privateProperties == null ||
+    typeof privateProperties !== 'object' ||
+    Array.isArray(privateProperties)
+  ) {
+    return {};
+  }
+  return privateProperties as Record<string, unknown>;
+}
+
+function isManagedAppEvent(event: Record<string, unknown>): boolean {
+  const eventId = getPrivateEventProperties(event)['eventId'];
+  return typeof eventId === 'string' && eventId.length > 0;
+}
+
+function appEventMetadataMatches(
+  event: Record<string, unknown>,
+  payload: CalendarEventPayload,
+  eventType: 'assembly' | 'main' | 'allDay',
+): boolean {
+  const privateProperties = getPrivateEventProperties(event);
+  return (
+    privateProperties['eventId'] === payload.eventId &&
+    privateProperties['eventType'] === eventType &&
+    privateProperties['isTestMode'] === String(payload.isTestMode)
+  );
+}
+
+function appEventIdentityMatches(
+  event: Record<string, unknown>,
+  payload: CalendarEventPayload,
+  eventType: 'assembly' | 'main' | 'allDay',
+): boolean {
+  return event['status'] !== 'cancelled' &&
+    appEventMetadataMatches(event, payload, eventType);
+}
+
+// Generic attendee actions retain their historical notification behavior for
+// constraints and unmanaged events. App-event add/replace actions are blocked
+// below so cached clients cannot recreate the retired guest-sync behavior.
 function parseSendUpdates(value: unknown): 'all' | 'none' {
   return value === 'none' ? 'none' : 'all';
 }
@@ -1074,6 +1155,69 @@ async function updateConstraintEvent(
   );
 }
 
+function buildAppEventPartPayload(
+  payload: CalendarEventPayload,
+  eventType: 'assembly' | 'main' | 'allDay',
+): Record<string, unknown> {
+  switch (eventType) {
+    case 'assembly':
+      return buildAssemblyEventPayload(payload);
+    case 'main':
+      return buildMainEventPayload(payload);
+    case 'allDay':
+      return buildAllDayEventPayload(payload);
+    default:
+      throw new Error(`Unsupported app event part type: ${String(eventType)}`);
+  }
+}
+
+async function createAppEventCalendarEventPart(
+  firestore: Firestore,
+  environment: CalendarEnvironmentMode,
+  payload: CalendarEventPayload,
+  eventType: 'assembly' | 'main' | 'allDay',
+  calendarEventId: string | null = null,
+): Promise<string> {
+  try {
+    return await createCalendarEvent(
+      firestore,
+      environment,
+      buildAppEventPartPayload(payload, eventType),
+      {sendUpdates: 'none'},
+      calendarEventId,
+    );
+  } catch (error) {
+    if (
+      !(error instanceof GoogleApiError) ||
+      error.status !== 409 ||
+      calendarEventId == null ||
+      calendarEventId.length === 0
+    ) {
+      throw error;
+    }
+
+    const existing = await getCalendarEvent(firestore, environment, calendarEventId);
+    if (appEventIdentityMatches(existing, payload, eventType)) {
+      return calendarEventId;
+    }
+    if (
+      existing['status'] === 'cancelled' &&
+      appEventMetadataMatches(existing, payload, eventType)
+    ) {
+      // Google keeps deleted IDs reserved. Recreate this confirmed managed
+      // tombstone with a server-generated ID; the single reconciler persists
+      // that replacement before any later update can run.
+      return createCalendarEvent(
+        firestore,
+        environment,
+        buildAppEventPartPayload(payload, eventType),
+        {sendUpdates: 'none'},
+      );
+    }
+    throw error;
+  }
+}
+
 async function createAppEventCalendarEvents(
   firestore: Firestore,
   environment: CalendarEnvironmentMode,
@@ -1083,57 +1227,62 @@ async function createAppEventCalendarEvents(
   const isAllDayEvent = payload.assemblyTime.length === 0 || payload.endTime.length === 0;
 
   if (isAllDayEvent) {
-    result['main'] = await createCalendarEvent(
+    result['main'] = await createAppEventCalendarEventPart(
       firestore,
       environment,
-      buildAllDayEventPayload(payload),
+      payload,
+      'allDay',
+      buildDeterministicAppEventCalendarId(environment, payload.eventId, 'allDay'),
     );
     return result;
   }
 
   if (payload.assemblyTime.length > 0 && payload.separatorTime.length > 0) {
-    result['assembly'] = await createCalendarEvent(
+    result['assembly'] = await createAppEventCalendarEventPart(
       firestore,
       environment,
-      buildAssemblyEventPayload(payload),
+      payload,
+      'assembly',
+      buildDeterministicAppEventCalendarId(environment, payload.eventId, 'assembly'),
     );
   }
 
-  result['main'] = await createCalendarEvent(
+  result['main'] = await createAppEventCalendarEventPart(
     firestore,
     environment,
-    buildMainEventPayload(payload),
+    payload,
+    'main',
+    buildDeterministicAppEventCalendarId(environment, payload.eventId, 'main'),
   );
   return result;
 }
 
-async function createAppEventCalendarEventPart(
+async function patchAppEventCalendarEvent(
   firestore: Firestore,
   environment: CalendarEnvironmentMode,
+  calendarEventId: string,
   payload: CalendarEventPayload,
   eventType: 'assembly' | 'main' | 'allDay',
-): Promise<string> {
-  switch (eventType) {
-    case 'assembly':
-      return await createCalendarEvent(
-        firestore,
-        environment,
-        buildAssemblyEventPayload(payload),
-      );
-    case 'main':
-      return await createCalendarEvent(
-        firestore,
-        environment,
-        buildMainEventPayload(payload),
-      );
-    case 'allDay':
-      return await createCalendarEvent(
-        firestore,
-        environment,
-        buildAllDayEventPayload(payload),
-      );
-    default:
-      throw new Error(`Unsupported app event part type: ${String(eventType)}`);
+): Promise<boolean> {
+  const eventPayload = buildAppEventPartPayload(payload, eventType);
+  if (eventType === 'main') {
+    eventPayload['reminders'] = {useDefault: true};
+  }
+
+  try {
+    await patchCalendarEvent(
+      firestore,
+      environment,
+      calendarEventId,
+      eventPayload,
+      {sendUpdates: 'none'},
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {
+      return false;
+    }
+    throw error;
   }
 }
 
@@ -1144,14 +1293,6 @@ async function updateAppEventCalendarEvents(
   mainCalendarEventId: string,
   payload: CalendarEventPayload,
 ): Promise<Record<string, string> | null> {
-  // Event-detail edits push with Google's DEFAULT sendUpdates, which notifies
-  // attendees ("event updated"). Logged so those emails can be attributed to an
-  // event edit rather than an assignment change.
-  console.log(
-    `[calendar-sync] eventDetails push eventId=${payload.eventId} ` +
-      `assembly=${assemblyCalendarEventId || '-'} main=${mainCalendarEventId || '-'} ` +
-      '(default sendUpdates → notifies attendees)',
-  );
   let recreatedIds: Record<string, string> | null = null;
   let needsAssemblyRecreation = false;
   let needsMainRecreation = false;
@@ -1159,35 +1300,34 @@ async function updateAppEventCalendarEvents(
 
   if (isAllDayEvent) {
     if (assemblyCalendarEventId.length > 0) {
-      await deleteCalendarEvent(firestore, environment, assemblyCalendarEventId);
+      await deleteCalendarEvent(
+        firestore,
+        environment,
+        assemblyCalendarEventId,
+        {sendUpdates: 'none'},
+      );
       recreatedIds = recreatedIds ?? {};
       recreatedIds['assembly'] = '';
     }
 
     if (mainCalendarEventId.length > 0) {
-      try {
-        await updateCalendarEvent(
-          firestore,
-          environment,
-          mainCalendarEventId,
-          buildAllDayEventPayload(payload),
-        );
-      } catch (error) {
-        if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {
-          needsMainRecreation = true;
-        } else {
-          throw error;
-        }
-      }
+      needsMainRecreation = !(await patchAppEventCalendarEvent(
+        firestore,
+        environment,
+        mainCalendarEventId,
+        payload,
+        'allDay',
+      ));
     } else {
       needsMainRecreation = true;
     }
 
     if (needsMainRecreation) {
-      const createdId = await createCalendarEvent(
+      const createdId = await createAppEventCalendarEventPart(
         firestore,
         environment,
-        buildAllDayEventPayload(payload),
+        payload,
+        'allDay',
       );
       recreatedIds = recreatedIds ?? {};
       recreatedIds['main'] = createdId;
@@ -1205,58 +1345,55 @@ async function updateAppEventCalendarEvents(
     if (assemblyCalendarEventId.length === 0) {
       needsAssemblyRecreation = true;
     } else {
-      try {
-        await updateCalendarEvent(
-          firestore,
-          environment,
-          assemblyCalendarEventId,
-          buildAssemblyEventPayload(payload),
-        );
-      } catch (error) {
-        if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {
-          needsAssemblyRecreation = true;
-        } else {
-          throw error;
-        }
-      }
+      needsAssemblyRecreation = !(await patchAppEventCalendarEvent(
+        firestore,
+        environment,
+        assemblyCalendarEventId,
+        payload,
+        'assembly',
+      ));
     }
+  } else if (assemblyCalendarEventId.length > 0) {
+    await deleteCalendarEvent(
+      firestore,
+      environment,
+      assemblyCalendarEventId,
+      {sendUpdates: 'none'},
+    );
+    recreatedIds = recreatedIds ?? {};
+    recreatedIds['assembly'] = '';
   }
 
   if (shouldHaveMain) {
     if (mainCalendarEventId.length === 0) {
       needsMainRecreation = true;
     } else {
-      try {
-        await updateCalendarEvent(
-          firestore,
-          environment,
-          mainCalendarEventId,
-          buildMainEventPayload(payload),
-        );
-      } catch (error) {
-        if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {
-          needsMainRecreation = true;
-        } else {
-          throw error;
-        }
-      }
+      needsMainRecreation = !(await patchAppEventCalendarEvent(
+        firestore,
+        environment,
+        mainCalendarEventId,
+        payload,
+        'main',
+      ));
     }
   }
 
   if (needsAssemblyRecreation || needsMainRecreation) {
-    recreatedIds = {};
+    recreatedIds = recreatedIds ?? {};
     if (needsAssemblyRecreation) {
-      recreatedIds['assembly'] = await createCalendarEvent(
+      recreatedIds['assembly'] = await createAppEventCalendarEventPart(
         firestore,
         environment,
-        buildAssemblyEventPayload(payload),
+        payload,
+        'assembly',
       );
     }
     if (needsMainRecreation) {
-      recreatedIds['main'] = await createCalendarEvent(
+      recreatedIds['main'] = await createAppEventCalendarEventPart(
         firestore,
         environment,
-        buildMainEventPayload(payload),
+        payload,
+        'main',
       );
     }
   }
@@ -1273,6 +1410,9 @@ async function addAttendeeToEvent(
 ): Promise<void> {
   try {
     const event = await getCalendarEvent(firestore, environment, calendarEventId);
+    if (isManagedAppEvent(event)) {
+      return;
+    }
     const currentAttendees = Array.isArray(event['attendees'])
       ? event['attendees'].map((entry) => asRecord(entry, 'attendee'))
       : [];
@@ -1306,6 +1446,9 @@ async function removeAttendeeFromEvent(
 ): Promise<void> {
   try {
     const event = await getCalendarEvent(firestore, environment, calendarEventId);
+    if (isManagedAppEvent(event)) {
+      return;
+    }
     const currentAttendees = Array.isArray(event['attendees'])
       ? event['attendees'].map((entry) => asRecord(entry, 'attendee'))
       : [];
@@ -1315,7 +1458,7 @@ async function removeAttendeeFromEvent(
     }
 
     await patchCalendarEvent(firestore, environment, calendarEventId, {
-      attendees: nextAttendees.length > 0 ? nextAttendees : null,
+      attendees: nextAttendees,
     }, {
       sendUpdates,
     });
@@ -1335,8 +1478,12 @@ async function updateEventAttendees(
   sendUpdates: 'all' | 'none' = 'all',
 ): Promise<void> {
   try {
+    const event = await getCalendarEvent(firestore, environment, calendarEventId);
+    if (isManagedAppEvent(event)) {
+      return;
+    }
     await patchCalendarEvent(firestore, environment, calendarEventId, {
-      attendees: emails.length > 0 ? emails.map((email) => ({email})) : null,
+      attendees: emails.map((email) => ({email})),
     }, {
       sendUpdates,
     });
@@ -1346,6 +1493,69 @@ async function updateEventAttendees(
     }
     throw error;
   }
+}
+
+async function cleanupAppEventGuests(
+  firestore: Firestore,
+  environment: CalendarEnvironmentMode,
+  calendarEventId: string,
+  mode: 'omer' | 'all',
+  expectedEventId: string,
+  expectedIsTestMode: boolean,
+): Promise<boolean> {
+  if (expectedIsTestMode !== (environment === 'test')) {
+    throw new Error('Cleanup environment does not match the requested test mode');
+  }
+
+  let event: Record<string, unknown>;
+  try {
+    event = await getCalendarEvent(firestore, environment, calendarEventId);
+  } catch (error) {
+    if (error instanceof GoogleApiError && (error.status === 404 || error.status === 410)) {
+      return false;
+    }
+    throw error;
+  }
+
+  if (event['status'] === 'cancelled') {
+    return false;
+  }
+
+  const privateProperties = getPrivateEventProperties(event);
+  const eventType = privateProperties['eventType'];
+  if (
+    privateProperties['eventId'] !== expectedEventId ||
+    privateProperties['isTestMode'] !== String(expectedIsTestMode) ||
+    (eventType !== 'assembly' && eventType !== 'main' && eventType !== 'allDay')
+  ) {
+    throw new Error('Calendar event identity does not match the cleanup request');
+  }
+
+  const currentAttendees = Array.isArray(event['attendees'])
+    ? event['attendees'].map((entry) => asRecord(entry, 'attendee'))
+    : [];
+  const nextAttendees = mode === 'all'
+    ? []
+    : currentAttendees.filter((attendee) => {
+      const email = attendee['email'];
+      return !(
+        typeof email === 'string' &&
+        email.trim().toLowerCase() === OMER_CLEANUP_EMAIL
+      );
+    });
+
+  if (nextAttendees.length === currentAttendees.length) {
+    return false;
+  }
+
+  await patchCalendarEvent(
+    firestore,
+    environment,
+    calendarEventId,
+    {attendees: nextAttendees},
+    {sendUpdates: 'none'},
+  );
+  return true;
 }
 
 function parseManagedCalendarEvent(
@@ -1463,6 +1673,12 @@ async function listManagedCalendarEvents(
         requireIdentity: true,
       });
       if (parsed == null) {
+        continue;
+      }
+
+      // Targeted eventId/constraintId queries do not include the environment
+      // property in Google's request, so enforce it again after parsing.
+      if (parsed.isTestMode !== String(environment === 'test')) {
         continue;
       }
 
@@ -1765,6 +1981,7 @@ export async function executeCalendarAction(
         environment,
         event,
         eventTypeRaw,
+        optionalString(payload['calendarEventId']),
       );
       return {calendarEventId};
     }
@@ -1787,12 +2004,47 @@ export async function executeCalendarAction(
       const assemblyCalendarEventId = optionalString(payload['assemblyCalendarEventId']);
       const mainCalendarEventId = optionalString(payload['mainCalendarEventId']);
       if (assemblyCalendarEventId != null && assemblyCalendarEventId.length > 0) {
-        await deleteCalendarEvent(firestore, environment, assemblyCalendarEventId);
+        await deleteCalendarEvent(
+          firestore,
+          environment,
+          assemblyCalendarEventId,
+          {sendUpdates: 'none'},
+        );
       }
       if (mainCalendarEventId != null && mainCalendarEventId.length > 0) {
-        await deleteCalendarEvent(firestore, environment, mainCalendarEventId);
+        await deleteCalendarEvent(
+          firestore,
+          environment,
+          mainCalendarEventId,
+          {sendUpdates: 'none'},
+        );
       }
       return {ok: true};
+    }
+
+    case 'cleanupAppEventGuests': {
+      requireAdmin(actor);
+      const modeRaw = requireString(payload['mode'], 'mode');
+      if (modeRaw !== 'omer' && modeRaw !== 'all') {
+        throw new Error('Missing or invalid mode');
+      }
+      const expectedEventId = requireString(
+        payload['eventId'] ?? payload['expectedEventId'],
+        'eventId',
+      );
+      const expectedIsTestMode = requireBoolean(
+        payload['isTestMode'] ?? payload['expectedIsTestMode'],
+        'isTestMode',
+      );
+      const changed = await cleanupAppEventGuests(
+        firestore,
+        environment,
+        requireString(payload['calendarEventId'], 'calendarEventId'),
+        modeRaw,
+        expectedEventId,
+        expectedIsTestMode,
+      );
+      return {changed};
     }
 
     case 'addAttendeeToEvent': {

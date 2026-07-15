@@ -26,20 +26,24 @@ class ServiceLocator {
   }
 
   /// Create team repository
-  TeamRepository createTeamRepository() => EnvironmentAwareFactory.createTeamRepository();
+  TeamRepository createTeamRepository() =>
+      EnvironmentAwareFactory.createTeamRepository();
 
   /// Create event repository
-  EventRepository createEventRepository() => EnvironmentAwareFactory.createEventRepository();
+  EventRepository createEventRepository() =>
+      EnvironmentAwareFactory.createEventRepository();
 
   /// Create assignment repository
-  AssignmentRepository createAssignmentRepository() => EnvironmentAwareFactory.createAssignmentRepository();
+  AssignmentRepository createAssignmentRepository() =>
+      EnvironmentAwareFactory.createAssignmentRepository();
 
   /// Create assignment label repository
   AssignmentLabelRepository createAssignmentLabelRepository() =>
       EnvironmentAwareFactory.createAssignmentLabelRepository();
 
   /// Create user selection repository
-  UserSelectionRepository createUserSelectionRepository() => EnvironmentAwareFactory.createUserSelectionRepository();
+  UserSelectionRepository createUserSelectionRepository() =>
+      EnvironmentAwareFactory.createUserSelectionRepository();
 
   /// Create team BLoC
   TeamBloc createTeamBloc() => EnvironmentAwareFactory.createTeamBloc();
@@ -48,16 +52,17 @@ class ServiceLocator {
   EventBloc createEventBloc() => EnvironmentAwareFactory.createEventBloc();
 
   /// Create assignment BLoC
-  AssignmentBloc createAssignmentBloc({CalendarSyncBloc? calendarSyncBloc}) => EnvironmentAwareFactory.createAssignmentBloc(calendarSyncBloc: calendarSyncBloc);
+  AssignmentBloc createAssignmentBloc({CalendarSyncBloc? calendarSyncBloc}) =>
+      EnvironmentAwareFactory.createAssignmentBloc(
+          calendarSyncBloc: calendarSyncBloc);
 
   /// Create user selection BLoC
   UserSelectionBloc createUserSelectionBloc({
-    CalendarSyncBloc? calendarSyncBloc,
     TeamMember? preAuthenticatedUser,
-  }) => EnvironmentAwareFactory.createUserSelectionBloc(
-    calendarSyncBloc: calendarSyncBloc,
-    preAuthenticatedUser: preAuthenticatedUser,
-  );
+  }) =>
+      EnvironmentAwareFactory.createUserSelectionBloc(
+        preAuthenticatedUser: preAuthenticatedUser,
+      );
 
   /// Reset all services
   /// Useful for environment switching or testing

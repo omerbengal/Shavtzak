@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../../core/services/google_calendar_service.dart';
 import '../../../domain/entities/team_member.dart';
 
 /// Base class for calendar sync events
@@ -119,6 +120,16 @@ class PerformBidirectionalSync extends CalendarSyncEvent {
 /// Sync app event attendees and constraints from one admin action.
 class SyncEventsAndConstraints extends CalendarSyncEvent {
   const SyncEventsAndConstraints();
+}
+
+/// Remove guests from future Shavtzak-managed app events.
+class StartAppEventGuestCleanup extends CalendarSyncEvent {
+  final AppEventGuestCleanupMode mode;
+
+  const StartAppEventGuestCleanup(this.mode);
+
+  @override
+  List<Object?> get props => [mode];
 }
 
 /// Sync an app event to the calendar

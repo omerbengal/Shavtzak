@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../core/constants/calendar_constants.dart';
+import '../../../core/services/google_calendar_service.dart';
 
 /// Base class for calendar sync states
 abstract class CalendarSyncState extends Equatable {
@@ -211,6 +212,7 @@ class CalendarSyncBidirectionalComplete extends CalendarSyncState {
 
 class CalendarEventsAndConstraintsSyncComplete extends CalendarSyncState {
   final int scannedEventCount;
+  final int queuedEventCount;
   final int syncedEventCount;
   final int skippedEventCount;
   final int failedEventCount;
@@ -222,6 +224,7 @@ class CalendarEventsAndConstraintsSyncComplete extends CalendarSyncState {
 
   const CalendarEventsAndConstraintsSyncComplete({
     required this.scannedEventCount,
+    required this.queuedEventCount,
     required this.syncedEventCount,
     required this.skippedEventCount,
     required this.failedEventCount,
@@ -235,6 +238,7 @@ class CalendarEventsAndConstraintsSyncComplete extends CalendarSyncState {
   @override
   List<Object?> get props => [
         scannedEventCount,
+        queuedEventCount,
         syncedEventCount,
         skippedEventCount,
         failedEventCount,
@@ -244,6 +248,39 @@ class CalendarEventsAndConstraintsSyncComplete extends CalendarSyncState {
         successfulConstraintRetryCount,
         message,
       ];
+}
+
+class CalendarGuestCleanupInProgress extends CalendarSyncState {
+  final AppEventGuestCleanupStatus result;
+
+  const CalendarGuestCleanupInProgress(this.result);
+
+  @override
+  List<Object?> get props => [result];
+}
+
+class CalendarGuestCleanupComplete extends CalendarSyncState {
+  final AppEventGuestCleanupStatus result;
+
+  const CalendarGuestCleanupComplete(this.result);
+
+  @override
+  List<Object?> get props => [result];
+}
+
+class CalendarGuestCleanupFailure extends CalendarSyncState {
+  final AppEventGuestCleanupMode mode;
+  final String errorMessage;
+  final AppEventGuestCleanupStatus? result;
+
+  const CalendarGuestCleanupFailure({
+    required this.mode,
+    required this.errorMessage,
+    this.result,
+  });
+
+  @override
+  List<Object?> get props => [mode, errorMessage, result];
 }
 
 /// TEMP: Summary of manual attendee backfill for existing constraint events.

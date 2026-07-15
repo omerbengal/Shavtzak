@@ -8,6 +8,11 @@ import {
   buildAttendeeNotifyPlan,
   planAttendeeSync,
   planCalendarSyncTasks,
+  appEventMatchesDesired,
+  buildDesiredAppEventState,
+  buildDeterministicAppEventCalendarId,
+  planAppEventPartDetailUpdates,
+  shouldDeleteTargetedAppEventArtifacts,
   type AppEventPartSummary,
   type AttendeeNotifyPlan,
 } from './calendar_sync_backend';
@@ -39,6 +44,32 @@ test('listInScopeAppEventIds: keeps active future events, drops past and deactiv
 
   const ids = await listInScopeAppEventIds(deps);
   assert.deepEqual(ids, ['future']);
+});
+
+test('targeted app event sync deletes missing, deactivated, and past artifacts', () => {
+  const todayKey = '2026-07-15';
+  assert.equal(shouldDeleteTargetedAppEventArtifacts(null, todayKey), true);
+  assert.equal(
+    shouldDeleteTargetedAppEventArtifacts(
+      {endDate: '2026-07-15', isDeactivated: true},
+      todayKey,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldDeleteTargetedAppEventArtifacts(
+      {endDate: '2026-07-14', isDeactivated: false},
+      todayKey,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldDeleteTargetedAppEventArtifacts(
+      {endDate: '2026-07-15', isDeactivated: false},
+      todayKey,
+    ),
+    false,
+  );
 });
 
 function buildPart(
@@ -275,6 +306,131 @@ test('reconcile plan: treats main and allDay as the same (main) slot', () => {
   assert.equal(plan.createMain, false);
   assert.equal(plan.keepMainId, 'day-2');
   assert.deepEqual(plan.deleteMainIds, ['day-1']);
+});
+
+function buildTimedDesiredEvent() {
+  return buildDesiredAppEventState(
+    'event-1',
+    {
+      name: 'Show',
+      startDate: '2999-12-30T12:00:00.000Z',
+      endDate: '2999-12-30T12:00:00.000Z',
+      assemblyTime: '18:00',
+      startTime: '19:00',
+      actualShowStartTime: '19:30',
+      endTime: '21:00',
+      location: 'Main hall',
+      attendees: [{email: 'must-not-sync@example.com'}],
+      attendeeEmails: ['must-not-sync@example.com'],
+      sendUpdates: 'all',
+    },
+    'production',
+  );
+}
+
+function buildManagedPart(
+  overrides: Mutable,
+): NonNullable<Parameters<typeof appEventMatchesDesired>[0]> {
+  return {
+    id: 'calendar-part',
+    status: 'confirmed',
+    summary: 'Show',
+    description: null,
+    organizerEmail: 'organizer@example.com',
+    location: 'Main hall',
+    colorId: '7',
+    startDate: null,
+    startDateTime: '2999-12-30T19:30:00+02:00',
+    endDate: null,
+    endDateTime: '2999-12-30T21:00:00+02:00',
+    recurrence: [],
+    attendeeEmails: ['manual-guest@example.com'],
+    attendeesKnown: true,
+    eventId: 'event-1',
+    eventType: 'main',
+    constraintId: null,
+    teamMemberId: null,
+    constraintType: null,
+    repeatType: null,
+    repeatDay: null,
+    repeatEndDate: null,
+    isTestMode: 'false',
+    ...overrides,
+  };
+}
+
+test('app event payload: excludes attendees and notification controls', () => {
+  const desired = buildTimedDesiredEvent();
+  assert.equal(Object.hasOwn(desired.payload, 'attendees'), false);
+  assert.equal(Object.hasOwn(desired.payload, 'attendeeEmails'), false);
+  assert.equal(Object.hasOwn(desired.payload, 'sendUpdates'), false);
+});
+
+test('app event details: manual attendee changes do not require an update', () => {
+  const desired = buildTimedDesiredEvent();
+  const first = buildManagedPart({
+    attendeeEmails: ['manual-a@example.com'],
+  });
+  const second = buildManagedPart({
+    attendeeEmails: ['manual-b@example.com', 'manual-c@example.com'],
+  });
+
+  assert.equal(appEventMatchesDesired(first, desired, 'main'), true);
+  assert.equal(appEventMatchesDesired(second, desired, 'main'), true);
+  assert.deepEqual(
+    planAppEventPartDetailUpdates({
+      desired,
+      retainedAssembly: null,
+      retainedMain: second,
+    }),
+    {
+      assemblyNeedsUpdate: false,
+      mainNeedsUpdate: false,
+      updatedEventPartCount: 0,
+    },
+  );
+});
+
+test('app event details: reports only retained parts whose details drifted', () => {
+  const desired = buildTimedDesiredEvent();
+  const assembly = buildManagedPart({
+    id: 'assembly',
+    eventType: 'assembly',
+    summary: 'Show - התייצבות והכנות',
+    startDateTime: '2999-12-30T18:00:00+02:00',
+    endDateTime: '2999-12-30T19:30:00+02:00',
+  });
+  const driftedMain = buildManagedPart({location: 'Old hall'});
+
+  assert.deepEqual(
+    planAppEventPartDetailUpdates({
+      desired,
+      retainedAssembly: assembly,
+      retainedMain: driftedMain,
+    }),
+    {
+      assemblyNeedsUpdate: false,
+      mainNeedsUpdate: true,
+      updatedEventPartCount: 1,
+    },
+  );
+});
+
+test('deterministic app event ids are stable, valid, and isolated by part/environment', () => {
+  const main = buildDeterministicAppEventCalendarId('production', 'event-1', 'main');
+  assert.match(main, /^[0-9a-f]{32}$/);
+  assert.equal(
+    main,
+    buildDeterministicAppEventCalendarId('production', 'event-1', 'main'),
+  );
+  assert.notEqual(
+    main,
+    buildDeterministicAppEventCalendarId('production', 'event-1', 'assembly'),
+  );
+  assert.notEqual(
+    main,
+    buildDeterministicAppEventCalendarId('test', 'event-1', 'main'),
+  );
 });
 
 // --- Attendee notify plan (who gets emailed on an attendee change) ---

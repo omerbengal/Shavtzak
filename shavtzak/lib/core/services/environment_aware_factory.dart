@@ -83,7 +83,8 @@ class EnvironmentAwareFactory {
   }
 
   /// Create assignment BLoC based on environment
-  static AssignmentBloc createAssignmentBloc({CalendarSyncBloc? calendarSyncBloc}) {
+  static AssignmentBloc createAssignmentBloc(
+      {CalendarSyncBloc? calendarSyncBloc}) {
     // For now, return standard bloc. Test blocs can be added later.
     return AssignmentBloc(
       createAssignmentRepository(),
@@ -96,13 +97,11 @@ class EnvironmentAwareFactory {
 
   /// Create user selection BLoC (same for both environments)
   static UserSelectionBloc createUserSelectionBloc({
-    CalendarSyncBloc? calendarSyncBloc,
     TeamMember? preAuthenticatedUser,
   }) {
     return UserSelectionBloc(
       createUserSelectionRepository(),
       createTeamRepository(),
-      calendarSyncBloc,
       preAuthenticatedUser,
     );
   }

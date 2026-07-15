@@ -7,10 +7,13 @@ import {getFunctions} from 'firebase-admin/functions';
 import {
   FieldValue,
   Firestore,
+  QueryDocumentSnapshot,
   Timestamp,
+  WriteBatch,
   getFirestore,
 } from 'firebase-admin/firestore';
 import {onRequest} from 'firebase-functions/v2/https';
+import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {onTaskDispatched} from 'firebase-functions/v2/tasks';
 import {
   canExecuteDriveAction,
@@ -19,27 +22,27 @@ import {
   exportProductionDataToSheets,
 } from './drive_export';
 import {
+  buildDeterministicAppEventCalendarId,
   createCalendarAuthUrl,
   disconnectCalendarAuth,
   exchangeCalendarAuthCode,
   executeCalendarAction,
   getCalendarConfigForClient,
   getCalendarStatusForClient,
+  GoogleApiError,
 } from './calendar_integration';
 import {
-  deleteAppEventCalendarArtifacts,
   listInScopeAppEventIds,
-  planCalendarSyncTasks,
   syncAppEventCalendars,
-  syncAssignedEventsBestEffort,
-  syncAssignedFutureEventsForMemberEmailChange,
   syncConstraintCalendars,
-  syncEventsAndConstraints,
 } from './calendar_sync_backend';
+import {
+  decideEventCalendarJobClaim,
+  decideEventCalendarJobCompletion,
+  type GuestCleanupPart,
+} from './calendar_job_state';
+import {classifyCalendarFailure} from './calendar_error_policy';
 import type {
-  AppEventSyncReport,
-  AttendeeNotifyByEvent,
-  AttendeeNotifyDelta,
   ConstraintSyncReport,
 } from './calendar_sync_backend';
 import {normalizeParticipantGroups} from './participant_groups';
@@ -80,6 +83,8 @@ type Collections = {
   presets: string;
   calendarSync: string;
   eventCalendarSync: string;
+  eventCalendarJobs: string;
+  calendarMaintenanceJobs: string;
   logs: string;
   privateCredentials: string;
   privateSessions: string;
@@ -94,28 +99,39 @@ const CALENDAR_APP_EVENT_COLOR_ID = '7';
 const CALENDAR_TEST_MODE_COLOR_ID = '5';
 const CALENDAR_UNAVAILABILITY_COLOR_ID = '8';
 
-// One app event's calendar-sync job, carrying the precise notify delta so only
-// the genuinely-changed member is emailed.
+// One delivery for the durable, backend-owned Calendar job queues.
 type CalendarSyncTaskPayload = {
-  eventId: string;
+  kind?: 'eventSync' | 'guestCleanup' | 'authResume';
+  eventId?: string;
+  jobId?: string;
   environment: EnvironmentMode;
   actor: {memberId: string; isAdmin: boolean};
-  delta: AttendeeNotifyDelta;
-  // Number of times this event has already been deferred due to a Google quota
-  // (usage-limit) 403. Absent on the first enqueue; incremented on each
-  // quota-backoff re-enqueue and capped by MAX_QUOTA_BACKOFF_RETRIES.
+  // Kept optional so already-enqueued legacy tasks remain decodable after the
+  // no-guests deployment. App-event reconciliation ignores this value.
+  delta?: unknown;
+  // Decoded for compatibility with tasks created by an older deployment.
   quotaRetryCount?: number;
+  scheduleToken?: string;
+  authGeneration?: string;
 };
 
 const CALENDAR_SYNC_TASK_QUEUE = 'calendarSyncTask';
+const EVENT_SYNC_DEBOUNCE_SECONDS = 5;
+const CALENDAR_JOB_LEASE_SECONDS = 5 * 60;
+const CALENDAR_TASK_RESERVATION_GRACE_SECONDS = 15 * 60;
+const CALENDAR_JOB_SWEEP_LIMIT = 100;
+const OMER_CLEANUP_EMAIL = 'omerbengal7@gmail.com';
+const GLOBAL_CALENDAR_RUNTIME_COLLECTION = 'private_google_calendar_runtime';
+const CALENDAR_QUOTA_CIRCUIT_DOC_ID = '_google_calendar_quota_circuit';
+const GUEST_CLEANUP_LOCK_DOC_ID = '_app_event_guest_cleanup_lock';
+const EVENT_DELETION_PENDING_FIELD = '_calendarDeletionPending';
+const CALENDAR_AUTH_DOC_ID = 'googleCalendar';
+const AUTH_RESUME_WINDOW_SECONDS = 20 * 60;
 
 // When Google returns a quota / usage-limit 403, defer the event's retry by
 // this long (instead of Cloud Tasks' 5–60s fast-retry) so it lands after the
-// per-account usage window has reset. Bounded so a pathologically stuck event
-// cannot re-enqueue itself forever.
+// per-account usage window has reset.
 const QUOTA_BACKOFF_SECONDS = 30 * 60; // 30 minutes
-const MAX_QUOTA_BACKOFF_RETRIES = 24; // ~12h of half-hourly retries, then give up
-
 // Calendar sync runs on a Cloud Tasks queue rather than fire-and-forget: on
 // Cloud Run, un-awaited background work has its CPU throttled the instant the
 // HTTP response is sent, which stretched a ~3s sync into minutes. As a task it
@@ -123,182 +139,40 @@ const MAX_QUOTA_BACKOFF_RETRIES = 24; // ~12h of half-hourly retries, then give 
 // Cloud Tasks + admins may enqueue).
 //
 // The calendar organizer is a consumer Gmail account, which has a low,
-// undocumented "Calendar usage limit" on WRITES (adding guests / patching
-// events) — not just on emails. A burst of attendee writes trips
-// `403 Calendar usage limits exceeded`. Two guards keep sync reliable without
+// undocumented "Calendar usage limit" on writes. A burst of event patches can
+// trip `403 Calendar usage limits exceeded`. Two guards keep sync reliable
 // paying for Workspace, trading speed for reliability:
 //   1. Throttle hard — one dispatch at a time, one every 2s — so a burst never
 //      exceeds the per-account write cap in the first place. Slow is fine here.
-//   2. Quota-aware backoff (below): on a 403 quota failure, DEFER the event to
-//      run after the window resets instead of fast-retrying into the same wall.
+//   2. One account-wide circuit breaker shared by production, test, event, and
+//      constraint writers: after a quota failure, defer every Calendar write
+//      until the usage window has had time to reset.
 //      The fast-retry-into-exhausted-quota loop is what produced the 2026-07
 //      storm (~15 events each retried 20–45×).
 // `retryConfig.maxAttempts` still caps genuinely transient (non-quota) failures.
 export const calendarSyncTask = onTaskDispatched<CalendarSyncTaskPayload>(
   {
     region: 'us-central1',
+    timeoutSeconds: 540,
+    memory: '512MiB',
     retryConfig: {maxAttempts: 5, minBackoffSeconds: 5, maxBackoffSeconds: 60},
     rateLimits: {maxConcurrentDispatches: 1, maxDispatchesPerSecond: 0.5},
   },
   async (request) => {
-    const {eventId, environment, actor, delta} = request.data;
-    const report = await syncAppEventCalendars(
-      {
-        firestore: db,
-        actor: {memberId: actor.memberId, isAdmin: actor.isAdmin},
-        environment,
-        collections: getCollections(environment),
-      },
-      {eventId, notifyByEventId: {[eventId]: delta}},
-    );
-    // Quota-aware backoff. The account's Calendar usage limit is exhausted.
-    // Re-throwing would make Cloud Tasks fast-retry (5–60s) straight back into
-    // the same wall — the self-sustaining storm. Instead, re-enqueue this event
-    // to run AFTER the quota window resets and return success so THIS attempt is
-    // not retried. The reconcile is idempotent and carries the same notify
-    // delta, so the deferred run still emails exactly the changed member (and a
-    // member already added silently in the meantime is simply not re-emailed).
-    if (report.quotaExhausted) {
-      await reenqueueCalendarSyncAfterQuota(request.data);
+    if (request.data.kind === 'authResume') {
+      await resumeRecentlyAuthorizedCalendarJobs(
+        request.data.environment,
+        request.data.authGeneration,
+      );
       return;
     }
-    // Non-quota per-event failure (e.g. a transient 5xx): syncAppEventCalendars
-    // swallows it into `failedEventIds` instead of throwing. Re-throw so Cloud
-    // Tasks retries (capped by retryConfig). The reconcile is idempotent
-    // (addAttendee no-ops if already present), so retries never double-invite.
-    if (report.failedEventIds.length > 0) {
-      throw new Error(`[calendar-sync] reconcile failed for eventId=${eventId}; will retry`);
+    if (request.data.kind === 'guestCleanup') {
+      await drainGuestCleanupJob(request.data);
+      return;
     }
+    await drainEventCalendarJob(request.data);
   },
 );
-
-// Re-enqueue one event's calendar sync to run after the quota window resets.
-// Returns without throwing so the current task is NOT fast-retried into the
-// still-exhausted quota. The delta is preserved, so the deferred run notifies
-// exactly the same changed member; the reconcile is idempotent so nothing is
-// double-invited. Bounded by MAX_QUOTA_BACKOFF_RETRIES.
-async function reenqueueCalendarSyncAfterQuota(
-  payload: CalendarSyncTaskPayload,
-): Promise<void> {
-  const attempt = (payload.quotaRetryCount ?? 0) + 1;
-  if (attempt > MAX_QUOTA_BACKOFF_RETRIES) {
-    console.error(
-      `[calendar-sync] quota still exhausted for eventId=${payload.eventId} after ` +
-        `${MAX_QUOTA_BACKOFF_RETRIES} deferred retries; giving up. It will re-sync the ` +
-        `next time the event is touched or on a manual "sync calendars".`,
-    );
-    return;
-  }
-  try {
-    const queue = getFunctions().taskQueue<CalendarSyncTaskPayload>(CALENDAR_SYNC_TASK_QUEUE);
-    await queue.enqueue(
-      {...payload, quotaRetryCount: attempt},
-      {scheduleDelaySeconds: QUOTA_BACKOFF_SECONDS},
-    );
-    console.log(
-      `[calendar-sync] quota exhausted for eventId=${payload.eventId}; deferred retry ` +
-        `${attempt}/${MAX_QUOTA_BACKOFF_RETRIES} in ${QUOTA_BACKOFF_SECONDS}s (no fast-retry).`,
-    );
-  } catch (err: unknown) {
-    console.error(
-      `[calendar-sync-error] failed to re-enqueue quota backoff for eventId=${payload.eventId}:`,
-      err,
-    );
-  }
-}
-
-// Master switch for AUTOMATIC (real-time) calendar sync. When false, no
-// assignment/event write ever enqueues a calendar-sync task — calendar changes
-// are applied ONLY when an admin presses "re-sync" on the admin home screen
-// (the /calendar/sync-events-and-constraints endpoint). This makes the
-// consumer-Gmail quota storm structurally impossible: normal app activity can
-// no longer trigger a burst of Google Calendar writes. Flip to true (and
-// `firebase deploy --only functions`) to restore automatic real-time sync.
-const REALTIME_CALENDAR_SYNC_ENABLED = false;
-
-// Whether a manual admin "re-sync" emails the members it adds/removes.
-//
-// KEEP THIS false until the calendar has CAUGHT UP with the app. The 2026-07
-// quota storm blocked every attendee write, so the Google events currently have
-// almost no attendees — a notifying re-sync would email the ENTIRE roster of
-// EVERY event in one burst (~100 invites) and instantly re-exhaust the quota.
-//
-// Sequence: run the catch-up re-sync silently first (this = false). Once the
-// calendar matches the app, flip to true + `firebase deploy --only functions`.
-// From then on each re-sync emails only the members whose assignment genuinely
-// changed since the previous sync — a small diff, because the reconcile only
-// adds members not already on the event and only removes ones no longer desired.
-const MANUAL_SYNC_NOTIFIES_CHANGED_MEMBERS = false;
-
-// Google's per-account Calendar usage limit is exhausted; adding guests is
-// temporarily blocked. Surfaced to the admin instead of letting the sync grind
-// through every event and die on the client's 30s timeout with a misleading
-// "check your internet connection".
-const CALENDAR_QUOTA_EXHAUSTED_MESSAGE =
-  'מכסת Google Calendar מוצתה — גוגל חוסמת זמנית הוספת מוזמנים לאירועים. ' +
-  'הסנכרון הופסק ולא בוצעו שינויים נוספים. נסה שוב בעוד מספר שעות.';
-
-// Enqueue one calendar-sync task per affected event. Awaited so each task is
-// durably created before the HTTP response returns — an un-awaited enqueue would
-// hit the very CPU-throttle problem this replaces. Enqueue failures are
-// swallowed + logged (tagged `[calendar-sync-error]`) so a queue hiccup never
-// fails the underlying assignment/event write.
-async function enqueueCalendarSync(
-  dependencies: Parameters<typeof syncAssignedEventsBestEffort>[0],
-  eventIds: Iterable<string>,
-  operationLabel: string,
-  notifyByEventId: AttendeeNotifyByEvent = {},
-): Promise<void> {
-  // Real-time sync disabled: skip every automatic write-triggered sync. The
-  // manual admin "re-sync" bypasses this function (it calls syncAppEventCalendars
-  // directly), so it is unaffected.
-  if (!REALTIME_CALENDAR_SYNC_ENABLED) {
-    return;
-  }
-  const tasks = planCalendarSyncTasks(eventIds, notifyByEventId);
-  if (tasks.length === 0) {
-    return;
-  }
-  try {
-    const queue = getFunctions().taskQueue<CalendarSyncTaskPayload>(CALENDAR_SYNC_TASK_QUEUE);
-    await Promise.all(tasks.map((task) =>
-      queue.enqueue({
-        eventId: task.eventId,
-        environment: dependencies.environment,
-        actor: {
-          memberId: dependencies.actor.memberId,
-          isAdmin: dependencies.actor.isAdmin,
-        },
-        delta: task.delta,
-      }),
-    ));
-  } catch (err: unknown) {
-    console.error(
-      `[calendar-sync-error] failed to enqueue calendar sync for ${operationLabel} ` +
-        `(eventIds=${JSON.stringify(tasks.map((task) => task.eventId))}):`,
-      err,
-    );
-  }
-}
-
-// Record that `memberId`'s assignment was added to / removed from `eventId`, so
-// the calendar reconcile emails ONLY that member for this change (everyone else
-// on the event converges silently). Ignores blank ids.
-function recordAttendeeNotify(
-  notifyByEventId: AttendeeNotifyByEvent,
-  eventId: unknown,
-  kind: 'added' | 'removed',
-  memberId: unknown,
-): void {
-  if (typeof eventId !== 'string' || eventId.length === 0) return;
-  if (typeof memberId !== 'string' || memberId.length === 0) return;
-  const entry = notifyByEventId[eventId] ?? (notifyByEventId[eventId] = {});
-  const key = kind === 'added' ? 'addedMemberIds' : 'removedMemberIds';
-  const list = (entry[key] ?? (entry[key] = [])) as string[];
-  if (!list.includes(memberId)) {
-    list.push(memberId);
-  }
-}
 
 function getEnvironmentMode(value: unknown): EnvironmentMode {
   return value === 'test' ? 'test' : 'production';
@@ -315,11 +189,1349 @@ function getCollections(environment: EnvironmentMode): Collections {
     presets: `${prefix}checklist_presets`,
     calendarSync: `${prefix}calendar_sync`,
     eventCalendarSync: `${prefix}event_calendar_sync`,
+    eventCalendarJobs: `${prefix}event_calendar_jobs`,
+    calendarMaintenanceJobs: `${prefix}calendar_maintenance_jobs`,
     logs: `${prefix}logs`,
     privateCredentials: `${prefix}private_member_credentials`,
     privateSessions: `${prefix}private_sessions`,
     privateGoogleCalendarAuth: `${prefix}private_google_calendar_auth`,
   };
+}
+
+type CalendarJobActor = {memberId: string; isAdmin: boolean};
+
+function timestampMillis(value: unknown): number | null {
+  return value instanceof Timestamp ? value.toMillis() : null;
+}
+
+function calendarQuotaCircuitRef() {
+  return db
+    .collection(GLOBAL_CALENDAR_RUNTIME_COLLECTION)
+    .doc(CALENDAR_QUOTA_CIRCUIT_DOC_ID);
+}
+
+function guestCleanupLockRef(collections: Collections) {
+  return db
+    .collection(collections.calendarMaintenanceJobs)
+    .doc(GUEST_CLEANUP_LOCK_DOC_ID);
+}
+
+async function openCalendarQuotaCircuit(
+  error: unknown,
+): Promise<number> {
+  const blockedUntilMs = Date.now() + QUOTA_BACKOFF_SECONDS * 1000;
+  await calendarQuotaCircuitRef().set({
+    type: 'googleCalendarQuotaCircuit',
+    blockedUntil: Timestamp.fromMillis(blockedUntilMs),
+    lastError: String(error),
+    updatedAt: FieldValue.serverTimestamp(),
+  }, {merge: true});
+  return blockedUntilMs;
+}
+
+async function activeCalendarQuotaBlockedUntil(): Promise<number | null> {
+  const snapshot = await calendarQuotaCircuitRef().get();
+  const blockedUntilMs = timestampMillis(snapshot.data()?.['blockedUntil']);
+  return blockedUntilMs != null && blockedUntilMs > Date.now()
+    ? blockedUntilMs
+    : null;
+}
+
+async function executeCalendarActionWithQuotaCircuit(
+  actor: CalendarJobActor,
+  environment: EnvironmentMode,
+  action: string,
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const blockedUntilMs = await activeCalendarQuotaBlockedUntil();
+  if (blockedUntilMs != null) {
+    throw new GoogleApiError(
+      429,
+      `Google Calendar usage limit circuit is open until ${new Date(blockedUntilMs).toISOString()}`,
+    );
+  }
+
+  try {
+    return await executeCalendarAction(
+      db,
+      actor,
+      environment,
+      action,
+      payload,
+    );
+  } catch (error: unknown) {
+    if (classifyCalendarFailure(error).kind === 'quota') {
+      await openCalendarQuotaCircuit(error);
+    }
+    throw error;
+  }
+}
+
+function markEventCalendarJob(
+  batch: WriteBatch,
+  collections: Collections,
+  eventId: string,
+  actor: CalendarJobActor,
+): void {
+  batch.set(
+    db.collection(collections.eventCalendarJobs).doc(eventId),
+    {
+      eventId,
+      revision: FieldValue.increment(1),
+      dirty: true,
+      status: 'pending',
+      dueAt: Timestamp.fromMillis(Date.now() + EVENT_SYNC_DEBOUNCE_SECONDS * 1000),
+      requestedByMemberId: actor.memberId,
+      requestedByIsAdmin: actor.isAdmin,
+      updatedAt: FieldValue.serverTimestamp(),
+      lastError: FieldValue.delete(),
+    },
+    {merge: true},
+  );
+}
+
+async function enqueueCalendarTask(
+  payload: CalendarSyncTaskPayload,
+  scheduleDelaySeconds = 0,
+  taskId?: string,
+): Promise<void> {
+  const queue = getFunctions().taskQueue<CalendarSyncTaskPayload>(CALENDAR_SYNC_TASK_QUEUE);
+  await queue.enqueue(
+    payload,
+    {
+      ...(scheduleDelaySeconds > 0 ? {scheduleDelaySeconds} : {}),
+      ...(taskId != null ? {id: taskId} : {}),
+    },
+  );
+}
+
+async function reserveCalendarTask(
+  jobRef: FirebaseFirestore.DocumentReference,
+  terminalStatuses: Set<string>,
+  scheduledForMs: number,
+): Promise<string | null> {
+  let token: string | null = null;
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(jobRef);
+    if (!snapshot.exists) return;
+    const data = snapshot.data() ?? {};
+    if (terminalStatuses.has(String(data['status'] ?? ''))) return;
+    const existingToken = typeof data['taskScheduledToken'] === 'string'
+      ? data['taskScheduledToken']
+      : null;
+    const existingScheduledForMs = timestampMillis(data['taskScheduledFor']);
+    const existingScheduledUntilMs = timestampMillis(data['taskScheduledUntil']);
+    if (
+      existingToken != null &&
+      existingScheduledForMs != null &&
+      existingScheduledUntilMs != null &&
+      existingScheduledUntilMs > Date.now() &&
+      existingScheduledForMs <= scheduledForMs
+    ) {
+      return;
+    }
+    token = randomUUID();
+    transaction.update(jobRef, {
+      taskScheduledToken: token,
+      taskScheduledFor: Timestamp.fromMillis(scheduledForMs),
+      taskScheduledUntil: Timestamp.fromMillis(
+        scheduledForMs + CALENDAR_TASK_RESERVATION_GRACE_SECONDS * 1000,
+      ),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return token;
+}
+
+async function clearCalendarTaskReservation(
+  jobRef: FirebaseFirestore.DocumentReference,
+  token: string | undefined,
+): Promise<void> {
+  if (token == null || token.length === 0) return;
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(jobRef);
+    if (snapshot.data()?.['taskScheduledToken'] !== token) return;
+    transaction.update(jobRef, {
+      taskScheduledToken: FieldValue.delete(),
+      taskScheduledFor: FieldValue.delete(),
+      taskScheduledUntil: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+}
+
+async function consumeCalendarTaskReservation(
+  jobRef: FirebaseFirestore.DocumentReference,
+  token: string | undefined,
+): Promise<boolean> {
+  let consumed = false;
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(jobRef);
+    if (!snapshot.exists) return;
+    const currentToken = snapshot.data()?.['taskScheduledToken'];
+
+    // A task whose reservation was superseded must not drain the job. Tasks
+    // from an older deployment have no token and remain valid only while no
+    // newer reservation owns the job.
+    if (token == null || token.length === 0) {
+      if (typeof currentToken === 'string' && currentToken.length > 0) return;
+      consumed = true;
+      return;
+    }
+    if (currentToken !== token) return;
+
+    transaction.update(jobRef, {
+      taskScheduledToken: FieldValue.delete(),
+      taskScheduledFor: FieldValue.delete(),
+      taskScheduledUntil: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    consumed = true;
+  });
+  return consumed;
+}
+
+async function enqueueEventCalendarJob(
+  environment: EnvironmentMode,
+  eventId: string,
+  actor: CalendarJobActor,
+  scheduleDelaySeconds = EVENT_SYNC_DEBOUNCE_SECONDS,
+): Promise<void> {
+  const collections = getCollections(environment);
+  const jobRef = db.collection(collections.eventCalendarJobs).doc(eventId);
+  const scheduledForMs = Date.now() + scheduleDelaySeconds * 1000;
+  const scheduleToken = await reserveCalendarTask(
+    jobRef,
+    new Set(['completed', 'failed', 'auth-blocked']),
+    scheduledForMs,
+  );
+  if (scheduleToken == null) return;
+  try {
+    await enqueueCalendarTask(
+      {kind: 'eventSync', environment, eventId, actor, scheduleToken},
+      scheduleDelaySeconds,
+      createHash('sha256')
+        .update(`event:${environment}:${eventId}:${scheduleToken}`)
+        .digest('hex'),
+    );
+  } catch (error: unknown) {
+    await clearCalendarTaskReservation(jobRef, scheduleToken);
+    // The Firestore job is the durable source of truth. The scheduled sweeper
+    // will enqueue it again if this best-effort nudge fails.
+    console.error(
+      `[calendar-sync-error] failed to enqueue event job eventId=${eventId}:`,
+      error,
+    );
+  }
+}
+
+async function markAndEnqueueEventCalendarJobs(
+  environment: EnvironmentMode,
+  eventIds: Iterable<string>,
+  actor: CalendarJobActor,
+): Promise<number> {
+  const collections = getCollections(environment);
+  const ids = Array.from(new Set(Array.from(eventIds).filter((id) => id.length > 0)));
+  if (ids.length === 0) return 0;
+
+  // Manual repair requests have no accompanying domain mutation, so create
+  // their durable revisions in a bounded batch here.
+  for (let start = 0; start < ids.length; start += 400) {
+    const batch = db.batch();
+    for (const eventId of ids.slice(start, start + 400)) {
+      markEventCalendarJob(batch, collections, eventId, actor);
+    }
+    await batch.commit();
+  }
+  await Promise.all(ids.map((eventId) =>
+    enqueueEventCalendarJob(environment, eventId, actor),
+  ));
+  return ids.length;
+}
+
+async function deleteEventRelatedDocuments(
+  collections: Collections,
+  eventId: string,
+): Promise<void> {
+  while (true) {
+    const [assignments, checklistItems] = await Promise.all([
+      db.collection(collections.assignments)
+        .where('eventId', '==', eventId)
+        .limit(200)
+        .get(),
+      db.collection(collections.checklistItems)
+        .where('eventId', '==', eventId)
+        .limit(200)
+        .get(),
+    ]);
+    const documents = [...assignments.docs, ...checklistItems.docs];
+    if (documents.length === 0) return;
+
+    const batch = db.batch();
+    for (const document of documents) batch.delete(document.ref);
+    await batch.commit();
+  }
+}
+
+async function finalizePendingEventDeletion(
+  collections: Collections,
+  eventId: string,
+): Promise<boolean> {
+  const eventRef = db.collection(collections.events).doc(eventId);
+  const eventSnapshot = await eventRef.get();
+  if (!eventSnapshot.exists) {
+    // Current deletions remove relations before the fenced event document. Do
+    // not touch relations after the document is gone: the same explicit ID may
+    // already have been recreated by a later import.
+    return true;
+  }
+  if (
+    eventSnapshot.data()?.[EVENT_DELETION_PENDING_FIELD] !== true
+  ) {
+    return false;
+  }
+
+  await deleteEventRelatedDocuments(collections, eventId);
+
+  let finalized = !eventSnapshot.exists;
+  await db.runTransaction(async (transaction) => {
+    const latest = await transaction.get(eventRef);
+    if (!latest.exists) {
+      finalized = true;
+      return;
+    }
+    if (latest.data()?.[EVENT_DELETION_PENDING_FIELD] !== true) return;
+    transaction.delete(eventRef);
+    finalized = true;
+  });
+  return finalized;
+}
+
+async function requireWritableEventInTransaction(
+  transaction: FirebaseFirestore.Transaction,
+  collections: Collections,
+  eventId: string,
+): Promise<void> {
+  const event = await transaction.get(
+    db.collection(collections.events).doc(eventId),
+  );
+  if (!event.exists) throw new HttpError(400, 'אירוע לא נמצא');
+  if (event.data()?.[EVENT_DELETION_PENDING_FIELD] === true) {
+    throw new HttpError(409, 'האירוע נמצא בתהליך מחיקה');
+  }
+}
+
+async function drainEventCalendarJob(payload: CalendarSyncTaskPayload): Promise<void> {
+  const eventId = payload.eventId;
+  if (eventId == null || eventId.length === 0) return;
+  const collections = getCollections(payload.environment);
+  const jobRef = db.collection(collections.eventCalendarJobs).doc(eventId);
+  if (!await consumeCalendarTaskReservation(jobRef, payload.scheduleToken)) return;
+  const nowMs = Date.now();
+
+  const claim = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(jobRef);
+    if (!snapshot.exists) return {kind: 'none'} as const;
+    const data = snapshot.data() ?? {};
+    if (data['status'] === 'auth-blocked') return {kind: 'none'} as const;
+    const revision = typeof data['revision'] === 'number' ? data['revision'] : 0;
+    const circuitSnapshot = await transaction.get(calendarQuotaCircuitRef());
+    const circuitBlockedUntilMs = timestampMillis(
+      circuitSnapshot.data()?.['blockedUntil'],
+    );
+    const storedDueAtMs = timestampMillis(data['dueAt']);
+    const effectiveDueAtMs = circuitBlockedUntilMs != null &&
+        circuitBlockedUntilMs > nowMs
+      ? Math.max(storedDueAtMs ?? 0, circuitBlockedUntilMs)
+      : storedDueAtMs;
+    const leaseUntilMs = timestampMillis(data['leaseUntil']);
+    const decision = decideEventCalendarJobClaim({
+      dirty: data['dirty'] === true,
+      dueAtMs: effectiveDueAtMs,
+      leaseUntilMs,
+      revision,
+      nowMs,
+    });
+    if (decision.kind === 'none') return decision;
+    if (decision.kind === 'delay') {
+      if (
+        circuitBlockedUntilMs != null &&
+        circuitBlockedUntilMs > nowMs &&
+        (leaseUntilMs == null || leaseUntilMs <= nowMs)
+      ) {
+        transaction.update(jobRef, {
+          status: 'backoff',
+          dueAt: Timestamp.fromMillis(effectiveDueAtMs!),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+      return decision;
+    }
+
+    const actor: CalendarJobActor = {
+      memberId:
+        typeof data['requestedByMemberId'] === 'string'
+          ? data['requestedByMemberId']
+          : payload.actor.memberId,
+      isAdmin:
+        typeof data['requestedByIsAdmin'] === 'boolean'
+          ? data['requestedByIsAdmin']
+          : payload.actor.isAdmin,
+    };
+    const consecutiveFailureCount =
+      typeof data['consecutiveFailureCount'] === 'number'
+        ? data['consecutiveFailureCount']
+        : 0;
+    const leaseUntil = Timestamp.fromMillis(
+      nowMs + CALENDAR_JOB_LEASE_SECONDS * 1000,
+    );
+    transaction.update(jobRef, {
+      status: 'processing',
+      claimedRevision: revision,
+      leaseUntil,
+      dueAt: leaseUntil,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return {kind: 'claimed', revision, actor, consecutiveFailureCount} as const;
+  });
+
+  if (claim.kind === 'none') return;
+  if (claim.kind === 'delay') {
+    await enqueueEventCalendarJob(payload.environment, eventId, payload.actor, claim.seconds);
+    return;
+  }
+
+  try {
+    const eventSnapshot = await db.collection(collections.events).doc(eventId).get();
+    if (
+      !eventSnapshot.exists ||
+      eventSnapshot.data()?.[EVENT_DELETION_PENDING_FIELD] === true
+    ) {
+      // The deletion fence and durable Calendar tombstone are atomic. Finish
+      // the potentially large relation cascade before reconciling Google.
+      await finalizePendingEventDeletion(collections, eventId);
+    }
+    const report = await syncAppEventCalendars(
+      {
+        firestore: db,
+        actor: claim.actor,
+        environment: payload.environment,
+        collections,
+      },
+      {eventId},
+    );
+    if (report.quotaExhausted) {
+      const blockedUntilMs = await openCalendarQuotaCircuit(
+        'Google Calendar quota exhausted',
+      );
+      await jobRef.set({
+        dirty: true,
+        status: 'backoff',
+        dueAt: Timestamp.fromMillis(blockedUntilMs),
+        leaseUntil: FieldValue.delete(),
+        lastError: 'Google Calendar quota exhausted',
+        updatedAt: FieldValue.serverTimestamp(),
+      }, {merge: true});
+      await enqueueEventCalendarJob(
+        payload.environment,
+        eventId,
+        claim.actor,
+        Math.max(1, Math.ceil((blockedUntilMs - Date.now()) / 1000)),
+      );
+      return;
+    }
+    if (report.failedEventIds.length > 0) {
+      throw new Error(`Calendar reconciliation failed for eventId=${eventId}`);
+    }
+
+    let needsAnotherPass = false;
+    await db.runTransaction(async (transaction) => {
+      const latest = await transaction.get(jobRef);
+      if (!latest.exists) return;
+      const latestRevision = latest.data()?.['revision'];
+      const completion = decideEventCalendarJobCompletion(
+        claim.revision,
+        typeof latestRevision === 'number' ? latestRevision : 0,
+      );
+      needsAnotherPass = completion.needsAnotherPass;
+      transaction.update(jobRef, {
+        dirty: completion.dirty,
+        status: completion.status,
+        dueAt: needsAnotherPass
+          ? Timestamp.fromMillis(Date.now() + EVENT_SYNC_DEBOUNCE_SECONDS * 1000)
+          : FieldValue.delete(),
+        leaseUntil: FieldValue.delete(),
+        lastError: FieldValue.delete(),
+        lastSuccessAt: FieldValue.serverTimestamp(),
+        consecutiveFailureCount: 0,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+    if (needsAnotherPass) {
+      await enqueueEventCalendarJob(payload.environment, eventId, claim.actor);
+    }
+  } catch (error: unknown) {
+    const failure = classifyCalendarFailure(error);
+    const failureCount = claim.consecutiveFailureCount + 1;
+
+    if (failure.kind === 'quota') {
+      const blockedUntilMs = await openCalendarQuotaCircuit(error);
+      await jobRef.set({
+        dirty: true,
+        status: 'backoff',
+        dueAt: Timestamp.fromMillis(blockedUntilMs),
+        leaseUntil: FieldValue.delete(),
+        lastError: String(error),
+        consecutiveFailureCount: failureCount,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, {merge: true});
+      await enqueueEventCalendarJob(
+        payload.environment,
+        eventId,
+        claim.actor,
+        Math.max(1, Math.ceil((blockedUntilMs - Date.now()) / 1000)),
+      );
+      return;
+    }
+
+    if (failure.kind === 'retryable-transient') {
+      const baseDelay = failure.retryAfterSeconds ?? 60;
+      const delaySeconds = Math.min(
+        QUOTA_BACKOFF_SECONDS,
+        baseDelay * (2 ** Math.min(failureCount - 1, 5)),
+      );
+      await jobRef.set({
+        dirty: true,
+        status: 'retrying',
+        dueAt: Timestamp.fromMillis(Date.now() + delaySeconds * 1000),
+        leaseUntil: FieldValue.delete(),
+        lastError: String(error),
+        consecutiveFailureCount: failureCount,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, {merge: true});
+      await enqueueEventCalendarJob(
+        payload.environment,
+        eventId,
+        claim.actor,
+        delaySeconds,
+      );
+      return;
+    }
+
+    if (failure.kind === 'auth-blocked') {
+      await jobRef.set({
+        dirty: true,
+        status: 'auth-blocked',
+        dueAt: FieldValue.delete(),
+        leaseUntil: FieldValue.delete(),
+        lastError: String(error),
+        consecutiveFailureCount: failureCount,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, {merge: true});
+      return;
+    }
+
+    let revisionChanged = false;
+    await db.runTransaction(async (transaction) => {
+      const latest = await transaction.get(jobRef);
+      if (!latest.exists) return;
+      revisionChanged = latest.data()?.['revision'] !== claim.revision;
+      transaction.update(jobRef, {
+        dirty: revisionChanged,
+        status: revisionChanged ? 'pending' : 'failed',
+        dueAt: revisionChanged
+          ? Timestamp.fromMillis(Date.now() + EVENT_SYNC_DEBOUNCE_SECONDS * 1000)
+          : FieldValue.delete(),
+        leaseUntil: FieldValue.delete(),
+        lastError: String(error),
+        consecutiveFailureCount: failureCount,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+    if (revisionChanged) {
+      await enqueueEventCalendarJob(payload.environment, eventId, claim.actor);
+    }
+  }
+}
+
+async function enqueueGuestCleanupJob(
+  environment: EnvironmentMode,
+  jobId: string,
+  actor: CalendarJobActor,
+  scheduleDelaySeconds = 0,
+): Promise<void> {
+  const collections = getCollections(environment);
+  const jobRef = db.collection(collections.calendarMaintenanceJobs).doc(jobId);
+  const scheduledForMs = Date.now() + scheduleDelaySeconds * 1000;
+  const scheduleToken = await reserveCalendarTask(
+    jobRef,
+    new Set(['completed', 'failed', 'auth-blocked']),
+    scheduledForMs,
+  );
+  if (scheduleToken == null) return;
+  try {
+    await enqueueCalendarTask(
+      {kind: 'guestCleanup', environment, jobId, actor, scheduleToken},
+      scheduleDelaySeconds,
+      createHash('sha256')
+        .update(`cleanup:${environment}:${jobId}:${scheduleToken}`)
+        .digest('hex'),
+    );
+  } catch (error: unknown) {
+    await clearCalendarTaskReservation(jobRef, scheduleToken);
+    console.error(
+      `[calendar-cleanup-error] failed to enqueue cleanup job jobId=${jobId}:`,
+      error,
+    );
+  }
+}
+
+function isEventInGuestCleanupScope(eventData: Record<string, unknown> | null): boolean {
+  if (
+    eventData == null ||
+    eventData['isDeactivated'] === true ||
+    eventData[EVENT_DELETION_PENDING_FIELD] === true
+  ) {
+    return false;
+  }
+  const endDate = asCalendarDay(eventData['endDate'], 'event.endDate');
+  const todayParts = getCalendarDatePartsInTimeZone(new Date(), ISRAEL_TIME_ZONE);
+  const today = buildTimeZoneMidnight(
+    todayParts.year,
+    todayParts.month,
+    todayParts.day,
+    ISRAEL_TIME_ZONE,
+  );
+  return endDate.getTime() >= today.getTime();
+}
+
+async function releaseGuestCleanupLock(
+  collections: Collections,
+  jobId: string,
+): Promise<void> {
+  const lockRef = guestCleanupLockRef(collections);
+  await db.runTransaction(async (transaction) => {
+    const lock = await transaction.get(lockRef);
+    if (lock.data()?.['activeJobId'] === jobId) {
+      transaction.delete(lockRef);
+    }
+  });
+}
+
+function guestCleanupPartDocumentId(calendarEventId: string): string {
+  return createHash('sha256').update(calendarEventId).digest('hex');
+}
+
+async function deleteGuestCleanupPartDocuments(
+  jobRef: FirebaseFirestore.DocumentReference,
+  generation?: string,
+): Promise<void> {
+  while (true) {
+    let query = jobRef.collection('parts').limit(400);
+    if (generation != null) {
+      query = query.where('generation', '==', generation).limit(400);
+    }
+    const snapshot = await query.get();
+    if (snapshot.empty) return;
+    const batch = db.batch();
+    for (const document of snapshot.docs) batch.delete(document.ref);
+    await batch.commit();
+  }
+}
+
+async function discoverGuestCleanupParts(
+  collections: Collections,
+  environment: EnvironmentMode,
+  actor: CalendarJobActor,
+  mode: 'omer' | 'all',
+): Promise<GuestCleanupPart[]> {
+  const dependencies = {
+    firestore: db,
+    actor,
+    environment,
+    collections,
+  };
+  const inScopeEventIds = new Set(await listInScopeAppEventIds(dependencies));
+  const listed = await executeCalendarAction(
+    db,
+    actor,
+    environment,
+    'listManagedCalendarEvents',
+    {kind: 'app'},
+  );
+  const managedEvents = Array.isArray(listed['events']) ? listed['events'] : [];
+  const partsById = new Map<string, GuestCleanupPart>();
+  for (const value of managedEvents) {
+    if (value == null || typeof value !== 'object' || Array.isArray(value)) continue;
+    const event = value as Record<string, unknown>;
+    const calendarEventId = typeof event['id'] === 'string' ? event['id'] : '';
+    const eventId = typeof event['eventId'] === 'string' ? event['eventId'] : '';
+    if (
+      calendarEventId.length === 0 ||
+      eventId.length === 0 ||
+      !inScopeEventIds.has(eventId) ||
+      event['status'] === 'cancelled' ||
+      event['isTestMode'] !== String(environment === 'test') ||
+      (event['eventType'] !== 'assembly' &&
+        event['eventType'] !== 'main' &&
+        event['eventType'] !== 'allDay')
+    ) {
+      continue;
+    }
+    const attendeeEmails = Array.isArray(event['attendeeEmails'])
+      ? event['attendeeEmails']
+          .map((email) => String(email).trim().toLowerCase())
+          .filter((email) => email.length > 0)
+      : [];
+    const matches = mode === 'all'
+      ? attendeeEmails.length > 0
+      : attendeeEmails.includes(OMER_CLEANUP_EMAIL);
+    if (matches) partsById.set(calendarEventId, {calendarEventId, eventId});
+  }
+  return Array.from(partsById.values());
+}
+
+async function saveDiscoveredGuestCleanupParts(
+  jobRef: FirebaseFirestore.DocumentReference,
+  generation: string,
+  parts: GuestCleanupPart[],
+): Promise<void> {
+  for (let start = 0; start < parts.length; start += 400) {
+    const batch = db.batch();
+    for (const part of parts.slice(start, start + 400)) {
+      batch.set(
+        jobRef.collection('parts').doc(guestCleanupPartDocumentId(part.calendarEventId)),
+        {
+          ...part,
+          generation,
+          createdAt: FieldValue.serverTimestamp(),
+        },
+      );
+    }
+    await batch.commit();
+  }
+}
+
+async function commitGuestCleanupDiscovery(
+  jobRef: FirebaseFirestore.DocumentReference,
+  leaseToken: string,
+  parts: GuestCleanupPart[],
+): Promise<{stale: boolean; terminal: boolean}> {
+  let result = {stale: false, terminal: parts.length === 0};
+  await db.runTransaction(async (transaction) => {
+    const latest = await transaction.get(jobRef);
+    const data = latest.data() ?? {};
+    if (
+      !latest.exists ||
+      data['leaseToken'] !== leaseToken ||
+      data['stage'] !== 'discovery'
+    ) {
+      result = {stale: true, terminal: false};
+      return;
+    }
+
+    const terminal = parts.length === 0;
+    transaction.update(jobRef, {
+      stage: terminal ? 'complete' : 'processing',
+      generation: terminal ? FieldValue.delete() : leaseToken,
+      status: terminal ? 'completed' : 'queued',
+      totalEventCount: new Set(parts.map((part) => part.eventId)).size,
+      totalPartCount: parts.length,
+      processedPartCount: 0,
+      changedPartCount: 0,
+      skippedPartCount: 0,
+      failedPartCount: 0,
+      leaseToken: FieldValue.delete(),
+      leaseUntil: FieldValue.delete(),
+      retryAt: FieldValue.delete(),
+      lastError: FieldValue.delete(),
+      consecutiveFailureCount: 0,
+      completedAt: terminal
+        ? FieldValue.serverTimestamp()
+        : FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    result = {stale: false, terminal};
+  });
+  return result;
+}
+
+async function commitGuestCleanupPartOutcome(
+  jobRef: FirebaseFirestore.DocumentReference,
+  partRef: FirebaseFirestore.DocumentReference,
+  leaseToken: string,
+  outcome: 'changed' | 'skipped' | 'failed',
+  error: unknown = null,
+): Promise<{stale: boolean; terminal: boolean; hasMore: boolean}> {
+  let result = {stale: false, terminal: false, hasMore: false};
+  await db.runTransaction(async (transaction) => {
+    const [latest, partSnapshot] = await Promise.all([
+      transaction.get(jobRef),
+      transaction.get(partRef),
+    ]);
+    const data = latest.data() ?? {};
+    if (
+      !latest.exists ||
+      !partSnapshot.exists ||
+      data['leaseToken'] !== leaseToken ||
+      data['currentPartId'] !== partRef.id
+    ) {
+      result = {stale: true, terminal: false, hasMore: false};
+      return;
+    }
+
+    const processedBefore = Number(data['processedPartCount']) || 0;
+    const totalPartCount = Number(data['totalPartCount']) || 0;
+    const failedBefore = Number(data['failedPartCount']) || 0;
+    const failedAfter = failedBefore + (outcome === 'failed' ? 1 : 0);
+    const terminal = processedBefore + 1 >= totalPartCount;
+    const updates: Record<string, unknown> = {
+      processedPartCount: FieldValue.increment(1),
+      changedPartCount: FieldValue.increment(outcome === 'changed' ? 1 : 0),
+      skippedPartCount: FieldValue.increment(outcome === 'skipped' ? 1 : 0),
+      failedPartCount: FieldValue.increment(outcome === 'failed' ? 1 : 0),
+      status: terminal ? (failedAfter > 0 ? 'failed' : 'completed') : 'queued',
+      currentPartId: FieldValue.delete(),
+      currentCalendarEventId: FieldValue.delete(),
+      leaseToken: FieldValue.delete(),
+      leaseUntil: FieldValue.delete(),
+      retryAt: FieldValue.delete(),
+      consecutiveFailureCount: 0,
+      updatedAt: FieldValue.serverTimestamp(),
+      completedAt: terminal
+        ? FieldValue.serverTimestamp()
+        : FieldValue.delete(),
+    };
+    if (outcome === 'failed') {
+      updates['lastError'] = String(error);
+    } else if (failedBefore === 0) {
+      updates['lastError'] = FieldValue.delete();
+    }
+    transaction.delete(partRef);
+    transaction.update(jobRef, updates);
+    result = {
+      stale: false,
+      terminal,
+      hasMore: !terminal,
+    };
+  });
+  return result;
+}
+
+async function commitGuestCleanupRetryState(
+  jobRef: FirebaseFirestore.DocumentReference,
+  leaseToken: string,
+  updates: Record<string, unknown>,
+): Promise<boolean> {
+  let applied = false;
+  await db.runTransaction(async (transaction) => {
+    const latest = await transaction.get(jobRef);
+    const data = latest.data() ?? {};
+    if (!latest.exists || data['leaseToken'] !== leaseToken) return;
+    transaction.update(jobRef, {
+      ...updates,
+      currentPartId: FieldValue.delete(),
+      currentCalendarEventId: FieldValue.delete(),
+      leaseToken: FieldValue.delete(),
+      leaseUntil: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    applied = true;
+  });
+  return applied;
+}
+
+async function drainGuestCleanupJob(payload: CalendarSyncTaskPayload): Promise<void> {
+  const jobId = payload.jobId;
+  if (jobId == null || jobId.length === 0) return;
+  const collections = getCollections(payload.environment);
+  const jobRef = db.collection(collections.calendarMaintenanceJobs).doc(jobId);
+  if (!await consumeCalendarTaskReservation(jobRef, payload.scheduleToken)) return;
+  const nowMs = Date.now();
+
+  const claim = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(jobRef);
+    if (!snapshot.exists) return {kind: 'none'} as const;
+    const job = snapshot.data() ?? {};
+    const status = typeof job['status'] === 'string' ? job['status'] : '';
+    if (status === 'completed' || status === 'failed' || status === 'auth-blocked') {
+      return {kind: 'none'} as const;
+    }
+
+    const circuitSnapshot = await transaction.get(calendarQuotaCircuitRef());
+    const circuitBlockedUntilMs = timestampMillis(
+      circuitSnapshot.data()?.['blockedUntil'],
+    );
+    const retryAtMs = timestampMillis(job['retryAt']);
+    const leaseUntilMs = timestampMillis(job['leaseUntil']);
+    const blockedUntilMs = Math.max(
+      retryAtMs ?? 0,
+      leaseUntilMs ?? 0,
+      circuitBlockedUntilMs != null && circuitBlockedUntilMs > nowMs
+        ? circuitBlockedUntilMs
+        : 0,
+    );
+    if (blockedUntilMs > nowMs) {
+      if (leaseUntilMs == null || leaseUntilMs <= nowMs) {
+        transaction.update(jobRef, {
+          status: 'backoff',
+          retryAt: Timestamp.fromMillis(blockedUntilMs),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+      return {
+        kind: 'delay',
+        seconds: Math.max(1, Math.ceil((blockedUntilMs - nowMs) / 1000)),
+      } as const;
+    }
+
+    const actor: CalendarJobActor = {
+      memberId: typeof job['requestedByMemberId'] === 'string'
+        ? job['requestedByMemberId']
+        : payload.actor.memberId,
+      isAdmin: typeof job['requestedByIsAdmin'] === 'boolean'
+        ? job['requestedByIsAdmin']
+        : payload.actor.isAdmin,
+    };
+    const mode = job['mode'] === 'all' ? 'all' as const : 'omer' as const;
+    const leaseToken = randomUUID();
+    const leaseUntil = Timestamp.fromMillis(
+      nowMs + CALENDAR_JOB_LEASE_SECONDS * 1000,
+    );
+    const generation = typeof job['generation'] === 'string' ? job['generation'] : null;
+    const isProcessing = job['stage'] === 'processing' && generation != null;
+
+    if (!isProcessing) {
+      transaction.update(jobRef, {
+        stage: 'discovery',
+        status: 'discovering',
+        leaseToken,
+        retryAt: FieldValue.delete(),
+        leaseUntil,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return {
+        kind: 'discovery',
+        actor,
+        mode,
+        leaseToken,
+        consecutiveFailureCount:
+          typeof job['consecutiveFailureCount'] === 'number'
+            ? job['consecutiveFailureCount']
+            : 0,
+      } as const;
+    }
+
+    const parts = await transaction.get(
+      jobRef.collection('parts').where('generation', '==', generation).limit(1),
+    );
+    if (parts.empty) {
+      const terminalStatus = Number(job['failedPartCount']) > 0 ? 'failed' : 'completed';
+      transaction.update(jobRef, {
+        stage: 'complete',
+        status: terminalStatus,
+        currentPartId: FieldValue.delete(),
+        currentCalendarEventId: FieldValue.delete(),
+        leaseToken: FieldValue.delete(),
+        leaseUntil: FieldValue.delete(),
+        completedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return {kind: 'terminal'} as const;
+    }
+
+    const partDocument = parts.docs[0];
+    const partData = partDocument.data() ?? {};
+    const part = {
+      calendarEventId: typeof partData['calendarEventId'] === 'string'
+        ? partData['calendarEventId']
+        : '',
+      eventId: typeof partData['eventId'] === 'string' ? partData['eventId'] : '',
+    };
+    transaction.update(jobRef, {
+      status: 'running',
+      currentCalendarEventId: part.calendarEventId,
+      currentPartId: partDocument.id,
+      leaseToken,
+      retryAt: FieldValue.delete(),
+      leaseUntil,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return {
+      kind: 'part',
+      part,
+      partRef: partDocument.ref,
+      actor,
+      mode,
+      leaseToken,
+      consecutiveFailureCount:
+        typeof job['consecutiveFailureCount'] === 'number'
+          ? job['consecutiveFailureCount']
+          : 0,
+    } as const;
+  });
+
+  if (claim.kind === 'none') return;
+  if (claim.kind === 'terminal') {
+    await releaseGuestCleanupLock(collections, jobId);
+    await deleteGuestCleanupPartDocuments(jobRef);
+    return;
+  }
+  if (claim.kind === 'delay') {
+    await enqueueGuestCleanupJob(
+      payload.environment,
+      jobId,
+      payload.actor,
+      claim.seconds,
+    );
+    return;
+  }
+
+  try {
+    if (claim.kind === 'discovery') {
+      const parts = await discoverGuestCleanupParts(
+        collections,
+        payload.environment,
+        claim.actor,
+        claim.mode,
+      );
+      await saveDiscoveredGuestCleanupParts(jobRef, claim.leaseToken, parts);
+      const completion = await commitGuestCleanupDiscovery(
+        jobRef,
+        claim.leaseToken,
+        parts,
+      );
+      if (completion.stale) {
+        await deleteGuestCleanupPartDocuments(jobRef, claim.leaseToken);
+      } else if (completion.terminal) {
+        await releaseGuestCleanupLock(collections, jobId);
+        await deleteGuestCleanupPartDocuments(jobRef);
+      } else {
+        await enqueueGuestCleanupJob(payload.environment, jobId, claim.actor);
+      }
+      return;
+    }
+
+    const part = claim.part;
+    const eventSnapshot = await db.collection(collections.events).doc(part.eventId).get();
+    const eventData = eventSnapshot.exists ? eventSnapshot.data() ?? {} : null;
+    let outcome: 'changed' | 'skipped' = 'skipped';
+    if (isEventInGuestCleanupScope(eventData)) {
+      const actionResult = await executeCalendarAction(
+        db,
+        claim.actor,
+        payload.environment,
+        'cleanupAppEventGuests',
+        {
+          calendarEventId: part.calendarEventId,
+          eventId: part.eventId,
+          isTestMode: payload.environment === 'test',
+          mode: claim.mode,
+        },
+      );
+      outcome = actionResult['changed'] === true ? 'changed' : 'skipped';
+    }
+
+    const completion = await commitGuestCleanupPartOutcome(
+      jobRef,
+      claim.partRef,
+      claim.leaseToken,
+      outcome,
+    );
+    if (completion.terminal) {
+      await releaseGuestCleanupLock(collections, jobId);
+      await deleteGuestCleanupPartDocuments(jobRef);
+    } else if (!completion.stale && completion.hasMore) {
+      await enqueueGuestCleanupJob(payload.environment, jobId, claim.actor);
+    }
+  } catch (error: unknown) {
+    const failure = classifyCalendarFailure(error);
+    const failureCount = claim.consecutiveFailureCount + 1;
+    if (failure.kind === 'quota') {
+      const blockedUntilMs = await openCalendarQuotaCircuit(error);
+      const applied = await commitGuestCleanupRetryState(jobRef, claim.leaseToken, {
+        status: 'backoff',
+        retryAt: Timestamp.fromMillis(blockedUntilMs),
+        lastError: String(error),
+        consecutiveFailureCount: failureCount,
+      });
+      if (applied) {
+        await enqueueGuestCleanupJob(
+          payload.environment,
+          jobId,
+          claim.actor,
+          Math.max(1, Math.ceil((blockedUntilMs - Date.now()) / 1000)),
+        );
+      }
+      return;
+    }
+
+    if (failure.kind === 'retryable-transient') {
+      const baseDelay = failure.retryAfterSeconds ?? 60;
+      const delaySeconds = Math.min(
+        QUOTA_BACKOFF_SECONDS,
+        baseDelay * (2 ** Math.min(failureCount - 1, 5)),
+      );
+      const applied = await commitGuestCleanupRetryState(jobRef, claim.leaseToken, {
+        status: 'backoff',
+        retryAt: Timestamp.fromMillis(Date.now() + delaySeconds * 1000),
+        lastError: String(error),
+        consecutiveFailureCount: failureCount,
+      });
+      if (applied) {
+        await enqueueGuestCleanupJob(
+          payload.environment,
+          jobId,
+          claim.actor,
+          delaySeconds,
+        );
+      }
+      return;
+    }
+
+    if (failure.kind === 'auth-blocked') {
+      await commitGuestCleanupRetryState(jobRef, claim.leaseToken, {
+        status: 'auth-blocked',
+        retryAt: FieldValue.delete(),
+        lastError: String(error),
+        consecutiveFailureCount: failureCount,
+      });
+      return;
+    }
+
+    if (claim.kind === 'discovery') {
+      const applied = await commitGuestCleanupRetryState(jobRef, claim.leaseToken, {
+        stage: 'complete',
+        status: 'failed',
+        lastError: String(error),
+        consecutiveFailureCount: failureCount,
+        completedAt: FieldValue.serverTimestamp(),
+      });
+      if (applied) {
+        await releaseGuestCleanupLock(collections, jobId);
+        await deleteGuestCleanupPartDocuments(jobRef);
+      }
+      return;
+    }
+
+    const completion = await commitGuestCleanupPartOutcome(
+      jobRef,
+      claim.partRef,
+      claim.leaseToken,
+      'failed',
+      error,
+    );
+    if (completion.terminal) {
+      await releaseGuestCleanupLock(collections, jobId);
+      await deleteGuestCleanupPartDocuments(jobRef);
+    } else if (!completion.stale && completion.hasMore) {
+      await enqueueGuestCleanupJob(payload.environment, jobId, claim.actor);
+    }
+  }
+}
+
+export const calendarJobSweep = onSchedule(
+  {region: 'us-central1', schedule: 'every 5 minutes'},
+  async () => {
+    for (const environment of ['production', 'test'] as const) {
+      const collections = getCollections(environment);
+      // OAuth reconnects open a bounded durable recovery window. This catches
+      // a worker that was already in flight during the immediate resume, even
+      // if either delayed Cloud Task could not be created.
+      await resumeRecentlyAuthorizedCalendarJobs(environment);
+      if (await activeCalendarQuotaBlockedUntil() != null) {
+        continue;
+      }
+
+      // `dueAt` is removed from completed/blocked jobs and moved to the lease
+      // expiry while a worker is active. Paging by it prevents backoff jobs
+      // from monopolizing the first page and eventually visits every due job.
+      let cursor: QueryDocumentSnapshot | null = null;
+      while (true) {
+        let query = db.collection(collections.eventCalendarJobs)
+          .where('dueAt', '<=', Timestamp.now())
+          .orderBy('dueAt', 'asc')
+          .limit(CALENDAR_JOB_SWEEP_LIMIT);
+        if (cursor != null) {
+          query = query.startAfter(cursor);
+        }
+        const dueJobs = await query.get();
+        for (const doc of dueJobs.docs) {
+          const data = doc.data() ?? {};
+          if (data['dirty'] !== true || data['status'] === 'auth-blocked') continue;
+          await enqueueEventCalendarJob(
+            environment,
+            doc.id,
+            {
+              memberId:
+                typeof data['requestedByMemberId'] === 'string'
+                  ? data['requestedByMemberId']
+                  : 'calendar-job-sweeper',
+              isAdmin: true,
+            },
+            0,
+          );
+        }
+        if (dueJobs.size < CALENDAR_JOB_SWEEP_LIMIT) break;
+        cursor = dueJobs.docs[dueJobs.docs.length - 1];
+      }
+
+      const [queuedCleanupJobs, dueCleanupRetries, expiredCleanupLeases] =
+        await Promise.all([
+          db.collection(collections.calendarMaintenanceJobs)
+            .where('status', '==', 'queued')
+            .limit(20)
+            .get(),
+          db.collection(collections.calendarMaintenanceJobs)
+            .where('retryAt', '<=', Timestamp.now())
+            .orderBy('retryAt', 'asc')
+            .limit(20)
+            .get(),
+          db.collection(collections.calendarMaintenanceJobs)
+            .where('leaseUntil', '<=', Timestamp.now())
+            .orderBy('leaseUntil', 'asc')
+            .limit(20)
+            .get(),
+        ]);
+      const cleanupDocs = new Map<string, QueryDocumentSnapshot>();
+      for (const snapshot of [queuedCleanupJobs, dueCleanupRetries, expiredCleanupLeases]) {
+        for (const doc of snapshot.docs) cleanupDocs.set(doc.id, doc);
+      }
+      for (const doc of cleanupDocs.values()) {
+        const data = doc.data() ?? {};
+        if (
+          data['type'] !== 'appEventGuestCleanup' ||
+          data['status'] === 'auth-blocked'
+        ) {
+          continue;
+        }
+        await enqueueGuestCleanupJob(
+          environment,
+          doc.id,
+          {
+            memberId:
+              typeof data['requestedByMemberId'] === 'string'
+                ? data['requestedByMemberId']
+                : 'calendar-job-sweeper',
+            isAdmin: true,
+          },
+          0,
+        );
+      }
+    }
+  },
+);
+
+async function resumeAuthBlockedCalendarJobs(
+  environment: EnvironmentMode,
+  actor: CalendarJobActor,
+): Promise<void> {
+  const collections = getCollections(environment);
+  const [eventJobs, cleanupJobs] = await Promise.all([
+    db.collection(collections.eventCalendarJobs)
+      .where('status', '==', 'auth-blocked')
+      .get(),
+    db.collection(collections.calendarMaintenanceJobs)
+      .where('status', '==', 'auth-blocked')
+      .get(),
+  ]);
+  const now = Timestamp.now();
+
+  for (let start = 0; start < eventJobs.docs.length; start += 400) {
+    const batch = db.batch();
+    for (const doc of eventJobs.docs.slice(start, start + 400)) {
+      batch.update(doc.ref, {
+        dirty: true,
+        status: 'pending',
+        dueAt: now,
+        lastError: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+  for (let start = 0; start < cleanupJobs.docs.length; start += 400) {
+    const batch = db.batch();
+    for (const doc of cleanupJobs.docs.slice(start, start + 400)) {
+      batch.update(doc.ref, {
+        status: 'queued',
+        retryAt: FieldValue.delete(),
+        lastError: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+
+  for (const doc of eventJobs.docs) {
+    await enqueueEventCalendarJob(environment, doc.id, actor, 0);
+  }
+  for (const doc of cleanupJobs.docs) {
+    await enqueueGuestCleanupJob(environment, doc.id, actor, 0);
+  }
+}
+
+async function recordAuthResumeWindow(
+  environment: EnvironmentMode,
+  actor: CalendarJobActor,
+): Promise<string> {
+  const collections = getCollections(environment);
+  const generation = randomUUID();
+  await db.collection(collections.privateGoogleCalendarAuth).doc(CALENDAR_AUTH_DOC_ID).set({
+    authResumeGeneration: generation,
+    authResumeUntil: Timestamp.fromMillis(
+      Date.now() + AUTH_RESUME_WINDOW_SECONDS * 1000,
+    ),
+    authResumeRequestedByMemberId: actor.memberId,
+    authResumeRequestedByIsAdmin: actor.isAdmin,
+  }, {merge: true});
+  return generation;
+}
+
+async function resumeRecentlyAuthorizedCalendarJobs(
+  environment: EnvironmentMode,
+  expectedGeneration?: string,
+): Promise<void> {
+  const collections = getCollections(environment);
+  const authDocument = await db
+    .collection(collections.privateGoogleCalendarAuth)
+    .doc(CALENDAR_AUTH_DOC_ID)
+    .get();
+  const data = authDocument.data() ?? {};
+  if (
+    expectedGeneration != null &&
+    data['authResumeGeneration'] !== expectedGeneration
+  ) {
+    return;
+  }
+  const resumeUntilMs = timestampMillis(data['authResumeUntil']);
+  if (resumeUntilMs == null || resumeUntilMs <= Date.now()) return;
+  await resumeAuthBlockedCalendarJobs(environment, {
+    memberId: typeof data['authResumeRequestedByMemberId'] === 'string'
+      ? data['authResumeRequestedByMemberId']
+      : 'calendar-auth-recovery',
+    isAdmin: data['authResumeRequestedByIsAdmin'] !== false,
+  });
+}
+
+async function enqueueDelayedAuthResumeTasks(
+  environment: EnvironmentMode,
+  actor: CalendarJobActor,
+  generation: string,
+): Promise<void> {
+  for (const delaySeconds of [15, CALENDAR_JOB_LEASE_SECONDS + 30]) {
+    try {
+      await enqueueCalendarTask(
+        {kind: 'authResume', environment, actor, authGeneration: generation},
+        delaySeconds,
+        createHash('sha256')
+          .update(`auth-resume:${environment}:${generation}:${delaySeconds}`)
+          .digest('hex'),
+      );
+    } catch (error) {
+      console.error('[calendar-sync-error] failed to enqueue OAuth recovery sweep:', error);
+    }
+  }
 }
 
 function requireString(value: unknown, fieldName: string): string {
@@ -710,8 +1922,7 @@ async function updateAppEventAttendees(
 ): Promise<void> {
   const uniqueIds = uniqueSortedStrings(calendarEventIds);
   for (const calendarEventId of uniqueIds) {
-    await executeCalendarAction(
-      db,
+    await executeCalendarActionWithQuotaCircuit(
       {
         memberId: actor.memberId,
         isAdmin: actor.isAdmin,
@@ -1775,6 +2986,9 @@ async function validateAssignmentPayload(
 
   const eventData = eventDoc.data() ?? {};
   const memberData = memberDoc.data() ?? {};
+  if (eventData[EVENT_DELETION_PENDING_FIELD] === true) {
+    throw new HttpError(409, 'האירוע נמצא בתהליך מחיקה');
+  }
 
   const roleCapabilities =
     (memberData['roleCapabilities'] as Record<string, unknown> | undefined) ?? {};
@@ -1920,30 +3134,6 @@ async function executeMutation(
       // concurrent constraint mutations dispatched from the same admin save (see modal flow).
       delete next['constraints'];
       await docRef.update(next);
-      const previousEmail = normalizeOptionalText(existing['email']);
-      const nextEmail = normalizeOptionalText(next['email']);
-      // Real-time-only corrective sync (re-invite the member's new address on
-      // their future events). Gated by the master switch: when real-time is off,
-      // a manual re-sync picks up the address change and converges it (adds the
-      // new email, cancels the old).
-      if (REALTIME_CALENDAR_SYNC_ENABLED && previousEmail !== nextEmail) {
-        try {
-          await syncAssignedFutureEventsForMemberEmailChange(
-            {
-              firestore: db,
-              actor: {
-                memberId: actor.memberId,
-                isAdmin: actor.isAdmin,
-              },
-              environment,
-              collections,
-            },
-            memberId,
-          );
-        } catch (error) {
-          console.error(`Failed to sync future events for team member ${memberId}:`, error);
-        }
-      }
       await writeAuditLog(db, collections, actor, operation, 'teamMember', memberId, {
         name: typeof next['name'] === 'string'
           ? next['name']
@@ -2451,7 +3641,11 @@ async function executeMutation(
         throw new HttpError(400, 'כבר קיים אירוע בשם זה בתאריך זה');
       }
       const nextEvent = eventDocFromJson(event);
-      await db.collection(collections.events).doc(eventId).set(nextEvent);
+      const eventBatch = db.batch();
+      eventBatch.create(db.collection(collections.events).doc(eventId), nextEvent);
+      markEventCalendarJob(eventBatch, collections, eventId, actor);
+      await eventBatch.commit();
+      await enqueueEventCalendarJob(environment, eventId, actor);
       await writeAuditLog(db, collections, actor, operation, 'event', eventId, {name}, {
         after: nextEvent,
       });
@@ -2467,6 +3661,9 @@ async function executeMutation(
         throw new HttpError(404, 'Event not found');
       }
       const existing = existingDoc.data() ?? {};
+      if (existing[EVENT_DELETION_PENDING_FIELD] === true) {
+        throw new HttpError(409, 'האירוע נמצא בתהליך מחיקה');
+      }
       const existingParkingEditorIds = Array.isArray(existing['parkingEditorIds'])
         ? existing['parkingEditorIds'].map((value) => String(value))
         : [];
@@ -2522,7 +3719,11 @@ async function executeMutation(
         throw new HttpError(400, 'כבר קיים אירוע בשם זה בתאריך זה');
       }
       const nextEvent = eventDocFromJson(event);
-      await eventRef.update(nextEvent);
+      const eventBatch = db.batch();
+      eventBatch.update(eventRef, nextEvent);
+      markEventCalendarJob(eventBatch, collections, eventId, actor);
+      await eventBatch.commit();
+      await enqueueEventCalendarJob(environment, eventId, actor);
       await writeAuditLog(db, collections, actor, operation, 'event', eventId, {name}, {
         before: existing,
         after: nextEvent,
@@ -2592,29 +3793,28 @@ async function executeMutation(
           responsibleName: responsibleName ?? undefined,
         });
       }));
-      await deleteAppEventCalendarArtifacts(
-        {
-          firestore: db,
-          actor: {
-            memberId: actor.memberId,
-            isAdmin: actor.isAdmin,
-          },
-          environment,
-          collections,
-        },
-        eventId,
-      );
-
       const batch = db.batch();
-      for (const doc of assignmentSnapshot.docs) {
-        batch.delete(doc.ref);
-      }
-      for (const doc of checklistSnapshot.docs) {
-        batch.delete(doc.ref);
-      }
-      batch.delete(eventRef);
-      batch.delete(db.collection(collections.eventCalendarSync).doc(eventId));
+      // Fence new assignment/checklist writes before the large relation
+      // cascade. The Calendar job and deletion marker commit atomically, so a
+      // crash at any later point is recoverable by the worker.
+      batch.update(eventRef, {
+        [EVENT_DELETION_PENDING_FIELD]: true,
+        deletionRequestedAt: FieldValue.serverTimestamp(),
+      });
+      markEventCalendarJob(batch, collections, eventId, actor);
       await batch.commit();
+      await enqueueEventCalendarJob(environment, eventId, actor);
+      try {
+        await finalizePendingEventDeletion(collections, eventId);
+      } catch (cleanupError) {
+        // The durable event job repeats this cascade before it touches Google.
+        // Returning success is correct because the deletion marker and its
+        // recovery intent have already committed atomically.
+        console.error(
+          `[event-delete-error] deferred relation cleanup eventId=${eventId}:`,
+          cleanupError,
+        );
+      }
       await writeAuditLog(db, collections, actor, operation, 'event', eventId, stripUndefined({
         name: existingEvent['name'],
         deletedAssignments:
@@ -2630,13 +3830,32 @@ async function executeMutation(
     case 'event.insertBatch': {
       requireAdmin(actor);
       const events = Array.isArray(payload['events']) ? payload['events'] : [];
-      const batch = db.batch();
-      for (const rawEvent of events) {
+      // Validate and serialize the complete import before committing its first
+      // chunk, so a malformed later row cannot leave a partial import behind.
+      const preparedEvents = events.map((rawEvent) => {
         const event = rawEvent as Record<string, unknown>;
-        const eventId = requireString(event['id'], 'event.id');
-        batch.set(db.collection(collections.events).doc(eventId), eventDocFromJson(event));
+        return {
+          eventId: requireString(event['id'], 'event.id'),
+          data: eventDocFromJson(event),
+        };
+      });
+      const eventIds = preparedEvents.map((event) => event.eventId);
+      // Two writes per event (domain + durable calendar job), kept comfortably
+      // below Firestore's 500-operation batch limit.
+      for (let start = 0; start < preparedEvents.length; start += 200) {
+        const batch = db.batch();
+        for (const event of preparedEvents.slice(start, start + 200)) {
+          batch.create(
+            db.collection(collections.events).doc(event.eventId),
+            event.data,
+          );
+          markEventCalendarJob(batch, collections, event.eventId, actor);
+        }
+        await batch.commit();
       }
-      await batch.commit();
+      await Promise.all(eventIds.map((eventId) =>
+        enqueueEventCalendarJob(environment, eventId, actor),
+      ));
       await writeAuditLog(db, collections, actor, operation, 'eventBatch', actor.memberId, {
         count: events.length,
       });
@@ -2651,28 +3870,17 @@ async function executeMutation(
         bypassAvailability: payload['bypassAvailability'] === true,
       });
       const nextAssignment = assignmentDocFromJson(assignment);
-      await db.collection(collections.assignments).doc(assignmentId).set(nextAssignment);
-      const insertNotify: AttendeeNotifyByEvent = {};
-      recordAttendeeNotify(
-        insertNotify,
-        nextAssignment['eventId'],
-        'added',
-        nextAssignment['teamMemberId'],
-      );
-      await enqueueCalendarSync(
-        {
-          firestore: db,
-          actor: {
-            memberId: actor.memberId,
-            isAdmin: actor.isAdmin,
-          },
-          environment,
+      await db.runTransaction(async (transaction) => {
+        await requireWritableEventInTransaction(
+          transaction,
           collections,
-        },
-        [String(nextAssignment['eventId'])],
-        operation,
-        insertNotify,
-      );
+          requireString(nextAssignment['eventId'], 'assignment.eventId'),
+        );
+        transaction.create(
+          db.collection(collections.assignments).doc(assignmentId),
+          nextAssignment,
+        );
+      });
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
         after: nextAssignment,
       });
@@ -2684,44 +3892,25 @@ async function executeMutation(
       const assignment = payload['assignment'] as Record<string, unknown>;
       const assignmentId = requireString(assignment['id'], 'assignment.id');
       const assignmentRef = db.collection(collections.assignments).doc(assignmentId);
-      const existingDoc = await assignmentRef.get();
-      if (!existingDoc.exists) {
-        throw new HttpError(404, 'Assignment not found');
-      }
-      const existing = existingDoc.data() ?? {};
       await validateAssignmentPayload(db, collections, assignment, assignmentId, {
         bypassAvailability: payload['bypassAvailability'] === true,
       });
       const nextAssignment = assignmentDocFromJson(assignment);
-      await assignmentRef.update(nextAssignment);
-      // Reassignment/role change: the old occupant leaves (cancellation) and the
-      // new one is invited. Same member kept (role-only) records both but yields
-      // no attendee op, so no email. Only the genuinely changed member is mailed.
-      const updateNotify: AttendeeNotifyByEvent = {};
-      recordAttendeeNotify(updateNotify, existing['eventId'], 'removed', existing['teamMemberId']);
-      recordAttendeeNotify(
-        updateNotify,
-        nextAssignment['eventId'],
-        'added',
-        nextAssignment['teamMemberId'],
-      );
-      await enqueueCalendarSync(
-        {
-          firestore: db,
-          actor: {
-            memberId: actor.memberId,
-            isAdmin: actor.isAdmin,
-          },
-          environment,
-          collections,
-        },
-        [
-          typeof existing['eventId'] === 'string' ? existing['eventId'] : '',
-          String(nextAssignment['eventId']),
-        ],
-        operation,
-        updateNotify,
-      );
+      let existing: Record<string, unknown> = {};
+      await db.runTransaction(async (transaction) => {
+        const current = await transaction.get(assignmentRef);
+        if (!current.exists) throw new HttpError(404, 'Assignment not found');
+        existing = current.data() ?? {};
+        const sourceEventId = requireString(existing['eventId'], 'assignment.eventId');
+        const destinationEventId = requireString(
+          nextAssignment['eventId'],
+          'assignment.eventId',
+        );
+        for (const eventId of new Set([sourceEventId, destinationEventId])) {
+          await requireWritableEventInTransaction(transaction, collections, eventId);
+        }
+        transaction.update(assignmentRef, nextAssignment);
+      });
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
         before: existing,
         after: nextAssignment,
@@ -2772,24 +3961,6 @@ async function executeMutation(
       }
       const existing = existingDoc.data() ?? {};
       await assignmentRef.delete();
-      if (typeof existing['eventId'] === 'string') {
-        const deleteNotify: AttendeeNotifyByEvent = {};
-        recordAttendeeNotify(deleteNotify, existing['eventId'], 'removed', existing['teamMemberId']);
-        await enqueueCalendarSync(
-          {
-            firestore: db,
-            actor: {
-              memberId: actor.memberId,
-              isAdmin: actor.isAdmin,
-            },
-            environment,
-            collections,
-          },
-          [existing['eventId'] as string],
-          operation,
-          deleteNotify,
-        );
-      }
       await writeAuditLog(db, collections, actor, operation, 'assignment', assignmentId, {}, {
         before: existing,
       });
@@ -2813,24 +3984,6 @@ async function executeMutation(
         batch.delete(doc.ref);
       }
       await batch.commit();
-      const deleteByEventNotify: AttendeeNotifyByEvent = {};
-      for (const assignment of existingAssignments) {
-        recordAttendeeNotify(deleteByEventNotify, eventId, 'removed', assignment.data['teamMemberId']);
-      }
-      await enqueueCalendarSync(
-        {
-          firestore: db,
-          actor: {
-            memberId: actor.memberId,
-            isAdmin: actor.isAdmin,
-          },
-          environment,
-          collections,
-        },
-        [eventId],
-        operation,
-        deleteByEventNotify,
-      );
       const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', eventId, {
         name: eventName ?? undefined,
@@ -2898,33 +4051,6 @@ async function executeMutation(
         batch.delete(doc.ref);
       }
       await batch.commit();
-      const deleteByPersonNotify: AttendeeNotifyByEvent = {};
-      for (const assignment of existingAssignments) {
-        recordAttendeeNotify(
-          deleteByPersonNotify,
-          assignment.data['eventId'],
-          'removed',
-          teamMemberId,
-        );
-      }
-      await enqueueCalendarSync(
-        {
-          firestore: db,
-          actor: {
-            memberId: actor.memberId,
-            isAdmin: actor.isAdmin,
-          },
-          environment,
-          collections,
-        },
-        existingAssignments.map((assignment) => (
-          typeof assignment.data['eventId'] === 'string'
-            ? assignment.data['eventId'] as string
-            : ''
-        )),
-        operation,
-        deleteByPersonNotify,
-      );
       const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', teamMemberId, {
         name: teamMemberName ?? undefined,
@@ -2990,33 +4116,6 @@ async function executeMutation(
         batch.delete(db.collection(collections.assignments).doc(String(rawId)));
       }
       await batch.commit();
-      const deleteBatchNotify: AttendeeNotifyByEvent = {};
-      for (const assignment of existingAssignments) {
-        recordAttendeeNotify(
-          deleteBatchNotify,
-          assignment.data['eventId'],
-          'removed',
-          assignment.data['teamMemberId'],
-        );
-      }
-      await enqueueCalendarSync(
-        {
-          firestore: db,
-          actor: {
-            memberId: actor.memberId,
-            isAdmin: actor.isAdmin,
-          },
-          environment,
-          collections,
-        },
-        existingAssignments.map((assignment) => (
-          typeof assignment.data['eventId'] === 'string'
-            ? assignment.data['eventId'] as string
-            : ''
-        )),
-        operation,
-        deleteBatchNotify,
-      );
       const batchOperationId = randomUUID();
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', actor.memberId, {
         deletedCount: existingAssignments.length,
@@ -3083,39 +4182,35 @@ async function executeMutation(
     case 'assignment.insertBatch': {
       requireAdmin(actor);
       const assignments = Array.isArray(payload['assignments']) ? payload['assignments'] : [];
-      const batch = db.batch();
+      const preparedAssignments: Array<{
+        assignmentId: string;
+        eventId: string;
+        data: Record<string, unknown>;
+      }> = [];
       for (const rawAssignment of assignments) {
         const assignment = rawAssignment as Record<string, unknown>;
         const assignmentId = requireString(assignment['id'], 'assignment.id');
         await validateAssignmentPayload(db, collections, assignment);
-        batch.set(
-          db.collection(collections.assignments).doc(assignmentId),
-          assignmentDocFromJson(assignment),
-        );
+        const data = assignmentDocFromJson(assignment);
+        preparedAssignments.push({
+          assignmentId,
+          eventId: requireString(data['eventId'], 'assignment.eventId'),
+          data,
+        });
       }
-      await batch.commit();
-      const insertBatchNotify: AttendeeNotifyByEvent = {};
-      for (const rawAssignment of assignments) {
-        const value = rawAssignment as Record<string, unknown>;
-        recordAttendeeNotify(insertBatchNotify, value['eventId'], 'added', value['teamMemberId']);
-      }
-      await enqueueCalendarSync(
-        {
-          firestore: db,
-          actor: {
-            memberId: actor.memberId,
-            isAdmin: actor.isAdmin,
-          },
-          environment,
-          collections,
-        },
-        assignments.map((assignment) => {
-          const value = assignment as Record<string, unknown>;
-          return typeof value['eventId'] === 'string' ? value['eventId'] as string : '';
-        }),
-        operation,
-        insertBatchNotify,
-      );
+      await db.runTransaction(async (transaction) => {
+        for (const eventId of new Set(
+          preparedAssignments.map((assignment) => assignment.eventId),
+        )) {
+          await requireWritableEventInTransaction(transaction, collections, eventId);
+        }
+        for (const assignment of preparedAssignments) {
+          transaction.create(
+            db.collection(collections.assignments).doc(assignment.assignmentId),
+            assignment.data,
+          );
+        }
+      });
       await writeAuditLog(db, collections, actor, operation, 'assignmentBatch', actor.memberId, {
         count: assignments.length,
       });
@@ -3136,17 +4231,27 @@ async function executeMutation(
         collections.presets,
         collections.calendarSync,
         collections.eventCalendarSync,
+        collections.eventCalendarJobs,
+        collections.calendarMaintenanceJobs,
         collections.privateCredentials,
         collections.privateSessions,
         collections.privateGoogleCalendarAuth,
       ];
       for (const collectionName of collectionNames) {
-        const snapshot = await db.collection(collectionName).get();
-        const batch = db.batch();
-        for (const doc of snapshot.docs) {
-          batch.delete(doc.ref);
+        while (true) {
+          const snapshot = await db.collection(collectionName).limit(400).get();
+          if (snapshot.empty) break;
+          if (collectionName === collections.calendarMaintenanceJobs) {
+            for (const document of snapshot.docs) {
+              await deleteGuestCleanupPartDocuments(document.ref);
+            }
+          }
+          const batch = db.batch();
+          for (const doc of snapshot.docs) {
+            batch.delete(doc.ref);
+          }
+          await batch.commit();
         }
-        await batch.commit();
       }
       await writeAuditLog(db, collections, actor, operation, 'utility', actor.memberId);
       return {ok: true};
@@ -3227,20 +4332,14 @@ async function executeMutation(
     case 'calendar.saveEventSyncState': {
       requireAdmin(actor);
       const eventId = requireString(payload['eventId'], 'eventId');
-      await db.collection(collections.eventCalendarSync).doc(eventId).set({
-        assemblyCalendarEventId: optionalString(payload['assemblyCalendarEventId']) ?? '',
-        mainCalendarEventId: optionalString(payload['mainCalendarEventId']) ?? '',
-        status: requireString(payload['status'], 'status'),
-        syncedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      await markAndEnqueueEventCalendarJobs(environment, [eventId], actor);
       return {ok: true};
     }
 
     case 'calendar.removeEventSyncState': {
       requireAdmin(actor);
       const eventId = requireString(payload['eventId'], 'eventId');
-      await db.collection(collections.eventCalendarSync).doc(eventId).delete();
+      await markAndEnqueueEventCalendarJobs(environment, [eventId], actor);
       return {ok: true};
     }
 
@@ -3249,7 +4348,17 @@ async function executeMutation(
       const item = payload['item'] as Record<string, unknown>;
       const itemId = requireString(item['id'], 'item.id');
       const nextItem = checklistItemDocFromJson(item);
-      await db.collection(collections.checklistItems).doc(itemId).set(nextItem);
+      await db.runTransaction(async (transaction) => {
+        await requireWritableEventInTransaction(
+          transaction,
+          collections,
+          requireString(nextItem['eventId'], 'checklistItem.eventId'),
+        );
+        transaction.create(
+          db.collection(collections.checklistItems).doc(itemId),
+          nextItem,
+        );
+      });
       await writeAuditLog(db, collections, actor, operation, 'checklistItem', itemId, {
         name: item['name'],
       }, {
@@ -3262,53 +4371,58 @@ async function executeMutation(
       const item = payload['item'] as Record<string, unknown>;
       const itemId = requireString(item['id'], 'item.id');
       const docRef = db.collection(collections.checklistItems).doc(itemId);
-      const existingDoc = await docRef.get();
-      if (!existingDoc.exists) throw new HttpError(404, 'Checklist item not found');
-      const existing = existingDoc.data() ?? {};
-      const isResponsible = existing['responsibleId'] === actor.memberId;
-      const ccIds = Array.isArray(existing['ccIds']) ? existing['ccIds'].map(String) : [];
-      if (!actor.isAdmin && !isResponsible && !ccIds.includes(actor.memberId)) {
-        throw new HttpError(403, 'אין לך הרשאה לערוך את הפריט');
-      }
+      const fallbackNow = new Date().toISOString();
+      let existing: Record<string, unknown> = {};
+      let nextItem: Record<string, unknown> = {};
+      await db.runTransaction(async (transaction) => {
+        const current = await transaction.get(docRef);
+        if (!current.exists) throw new HttpError(404, 'Checklist item not found');
+        existing = current.data() ?? {};
+        const isResponsible = existing['responsibleId'] === actor.memberId;
+        const ccIds = Array.isArray(existing['ccIds'])
+          ? existing['ccIds'].map(String)
+          : [];
+        if (!actor.isAdmin && !isResponsible && !ccIds.includes(actor.memberId)) {
+          throw new HttpError(403, 'אין לך הרשאה לערוך את הפריט');
+        }
 
-      if (actor.isAdmin || isResponsible) {
-        const nextItem = checklistItemDocFromJson(item);
-        const semanticAction = getChecklistUpdateSemanticAction(existing, nextItem);
-        await docRef.update(nextItem);
-        await writeAuditLog(db, collections, actor, operation, 'checklistItem', itemId, stripUndefined({
-          name: item['name'] ?? existing['name'],
-          semanticAction,
-        }), {
-          before: existing,
-          after: nextItem,
-        });
-      } else {
-        const nextItem = {
-          ...existing,
+        const sourceEventId = requireString(
+          existing['eventId'],
+          'checklistItem.eventId',
+        );
+        if (actor.isAdmin || isResponsible) {
+          nextItem = checklistItemDocFromJson(item);
+          const destinationEventId = requireString(
+            nextItem['eventId'],
+            'checklistItem.eventId',
+          );
+          for (const eventId of new Set([sourceEventId, destinationEventId])) {
+            await requireWritableEventInTransaction(transaction, collections, eventId);
+          }
+          transaction.update(docRef, nextItem);
+          return;
+        }
+
+        const statusUpdate = {
           status: item['status'] ?? existing['status'] ?? false,
           statusLastUpdatedAt: toTimestamp(
-            item['statusLastUpdatedAt'] ?? new Date().toISOString(),
+            item['statusLastUpdatedAt'] ?? fallbackNow,
             'item.statusLastUpdatedAt',
           ),
-          updatedAt: toTimestamp(item['updatedAt'] ?? new Date().toISOString(), 'item.updatedAt'),
+          updatedAt: toTimestamp(item['updatedAt'] ?? fallbackNow, 'item.updatedAt'),
         };
-        const semanticAction = getChecklistUpdateSemanticAction(existing, nextItem);
-        await docRef.update({
-          status: item['status'] ?? existing['status'] ?? false,
-          statusLastUpdatedAt: toTimestamp(
-            item['statusLastUpdatedAt'] ?? new Date().toISOString(),
-            'item.statusLastUpdatedAt',
-          ),
-          updatedAt: toTimestamp(item['updatedAt'] ?? new Date().toISOString(), 'item.updatedAt'),
-        });
-        await writeAuditLog(db, collections, actor, operation, 'checklistItem', itemId, stripUndefined({
-          name: existing['name'],
-          semanticAction,
-        }), {
-          before: existing,
-          after: nextItem,
-        });
-      }
+        nextItem = {...existing, ...statusUpdate};
+        await requireWritableEventInTransaction(transaction, collections, sourceEventId);
+        transaction.update(docRef, statusUpdate);
+      });
+      const semanticAction = getChecklistUpdateSemanticAction(existing, nextItem);
+      await writeAuditLog(db, collections, actor, operation, 'checklistItem', itemId, stripUndefined({
+        name: item['name'] ?? existing['name'],
+        semanticAction,
+      }), {
+        before: existing,
+        after: nextItem,
+      });
       return {ok: true};
     }
 
@@ -3442,37 +4556,39 @@ async function executeMutation(
       if (!presetDoc.exists) throw new HttpError(404, 'Preset not found');
       const preset = presetDoc.data() ?? {};
       const items = Array.isArray(preset['items']) ? preset['items'] : [];
-      const batch = db.batch();
       const now = new Date().toISOString();
-      for (const rawItem of items) {
-        const item = rawItem as Record<string, unknown>;
-        const checklistItemId = randomUUID();
-        const notes = typeof item['adminNote'] === 'string' && item['adminNote'].trim().length > 0
-          ? [
-              {
-                id: randomUUID(),
-                content: item['adminNote'],
-                createdAt: Timestamp.fromDate(new Date(now)),
-                createdByTeamMemberId: creatorAdminId,
-                createdByTeamMemberName: null,
-                authorRole: 'מנהל',
-              },
-            ]
-          : [];
-        batch.set(db.collection(collections.checklistItems).doc(checklistItemId), {
-          eventId,
-          name: item['name'],
-          responsibleId: item['responsibleId'],
-          ccIds: Array.isArray(item['ccIds']) ? item['ccIds'] : [],
-          notes,
-          status: false,
-          createdAt: Timestamp.fromDate(new Date(now)),
-          updatedAt: Timestamp.fromDate(new Date(now)),
-          statusLastUpdatedAt: Timestamp.fromDate(new Date(now)),
-          createdByAdminId: creatorAdminId,
-        });
-      }
-      await batch.commit();
+      await db.runTransaction(async (transaction) => {
+        await requireWritableEventInTransaction(transaction, collections, eventId);
+        for (const rawItem of items) {
+          const item = rawItem as Record<string, unknown>;
+          const checklistItemId = randomUUID();
+          const notes = typeof item['adminNote'] === 'string' &&
+              item['adminNote'].trim().length > 0
+            ? [
+                {
+                  id: randomUUID(),
+                  content: item['adminNote'],
+                  createdAt: Timestamp.fromDate(new Date(now)),
+                  createdByTeamMemberId: creatorAdminId,
+                  createdByTeamMemberName: null,
+                  authorRole: 'מנהל',
+                },
+              ]
+            : [];
+          transaction.create(db.collection(collections.checklistItems).doc(checklistItemId), {
+            eventId,
+            name: item['name'],
+            responsibleId: item['responsibleId'],
+            ccIds: Array.isArray(item['ccIds']) ? item['ccIds'] : [],
+            notes,
+            status: false,
+            createdAt: Timestamp.fromDate(new Date(now)),
+            updatedAt: Timestamp.fromDate(new Date(now)),
+            statusLastUpdatedAt: Timestamp.fromDate(new Date(now)),
+            createdByAdminId: creatorAdminId,
+          });
+        }
+      });
       await writeAuditLog(db, collections, actor, operation, 'preset', presetId, {
         eventId,
         count: items.length,
@@ -3973,6 +5089,19 @@ app.post('/calendar/oauth/exchange', async (request: Request, response: Response
         isAdmin: authContext.actor.isAdmin,
       },
     );
+    const authResumeGeneration = await recordAuthResumeWindow(
+      authContext.environment,
+      authContext.actor,
+    );
+    await resumeAuthBlockedCalendarJobs(
+      authContext.environment,
+      authContext.actor,
+    );
+    await enqueueDelayedAuthResumeTasks(
+      authContext.environment,
+      authContext.actor,
+      authResumeGeneration,
+    );
     response.json(result);
   } catch (error) {
     handleError(response, error);
@@ -3996,8 +5125,97 @@ app.post('/calendar/action', async (request: Request, response: Response) => {
     const action = requireString(request.body?.action, 'action');
     const payload =
       (request.body?.payload as Record<string, unknown> | undefined) ?? {};
-    const result = await executeCalendarAction(
-      db,
+
+    // Cached web builds used to be a second writer for app events. Keep their
+    // response shapes, but route their intent through the durable reconciler so
+    // only one backend path can mutate managed Google events or sync state.
+    if (
+      action === 'createAppEventCalendarEvents' ||
+      action === 'createAppEventCalendarEventPart' ||
+      action === 'updateAppEventCalendarEvents'
+    ) {
+      requireAdmin(authContext.actor);
+      const rawEvent = payload['event'];
+      if (rawEvent == null || typeof rawEvent !== 'object' || Array.isArray(rawEvent)) {
+        throw new HttpError(400, 'Missing or invalid event');
+      }
+      const event = rawEvent as Record<string, unknown>;
+      const eventId = requireString(event['eventId'], 'event.eventId');
+      await markAndEnqueueEventCalendarJobs(
+        authContext.environment,
+        [eventId],
+        authContext.actor,
+      );
+
+      if (action === 'createAppEventCalendarEventPart') {
+        const eventType = requireString(payload['eventType'], 'eventType');
+        if (eventType !== 'assembly' && eventType !== 'main' && eventType !== 'allDay') {
+          throw new HttpError(400, 'Invalid eventType');
+        }
+        response.json({
+          calendarEventId: buildDeterministicAppEventCalendarId(
+            authContext.environment,
+            eventId,
+            eventType,
+          ),
+        });
+        return;
+      }
+
+      if (action === 'createAppEventCalendarEvents') {
+        const assemblyTime = typeof event['assemblyTime'] === 'string'
+          ? event['assemblyTime']
+          : '';
+        const separatorTime = typeof event['separatorTime'] === 'string'
+          ? event['separatorTime']
+          : '';
+        const endTime = typeof event['endTime'] === 'string' ? event['endTime'] : '';
+        const useAllDay = assemblyTime.length === 0 || endTime.length === 0;
+        const ids: Record<string, string> = {};
+        if (useAllDay) {
+          ids['main'] = buildDeterministicAppEventCalendarId(
+            authContext.environment,
+            eventId,
+            'allDay',
+          );
+        } else {
+          if (assemblyTime.length > 0 && separatorTime.length > 0) {
+            ids['assembly'] = buildDeterministicAppEventCalendarId(
+              authContext.environment,
+              eventId,
+              'assembly',
+            );
+          }
+          ids['main'] = buildDeterministicAppEventCalendarId(
+            authContext.environment,
+            eventId,
+            'main',
+          );
+        }
+        response.json({result: ids});
+        return;
+      }
+
+      response.json({result: null});
+      return;
+    }
+
+    if (action === 'deleteAppEventCalendarEvents') {
+      requireAdmin(authContext.actor);
+      // The preceding event deactivate/delete mutation already wrote a
+      // tombstone job. Never trust cached Google IDs as an independent delete.
+      response.json({ok: true});
+      return;
+    }
+
+    if (action === 'cleanupAppEventGuests') {
+      throw new HttpError(
+        400,
+        'App-event guest cleanup must use the scoped maintenance job endpoint',
+      );
+    }
+
+    const result = await executeCalendarActionWithQuotaCircuit(
       {
         memberId: authContext.actor.memberId,
         isAdmin: authContext.actor.isAdmin,
@@ -4016,64 +5234,21 @@ app.post('/calendar/sync-app-event-attendees', async (request: Request, response
   try {
     const authContext = await authenticateRequest(request);
     requireAdmin(authContext.actor);
-
-    const summary = await syncAppEventCalendars(
-      {
-        firestore: db,
-        actor: {
-          memberId: authContext.actor.memberId,
-          isAdmin: authContext.actor.isAdmin,
-        },
-        environment: authContext.environment,
-        collections: authContext.collections,
-      },
-      {
-        eventId: optionalString(request.body?.eventId),
-      },
-    );
-
-    if (summary.quotaExhausted) {
-      throw new HttpError(503, CALENDAR_QUOTA_EXHAUSTED_MESSAGE);
-    }
-
+    // Compatibility no-op for cached web clients. Assignment membership no
+    // longer has any Google Calendar attendee behavior.
     response.json({
       ok: true,
-      scannedCount: summary.scannedCount,
-      syncedCount: summary.changedCount,
-      skippedCount: summary.upToDateCount,
-      failedCount: summary.failedEventIds.length,
-      failedEventIds: summary.failedEventIds,
-      createdEventPartCount: summary.createdEventPartCount,
-      updatedEventPartCount: summary.updatedEventPartCount,
-      deletedEventPartCount: summary.deletedEventPartCount,
-      updatedAttendeeEventCount: summary.updatedAttendeeEventCount,
-      repairedEventSyncStateCount: summary.repairedEventSyncStateCount,
-      removedOrphanedCount: summary.removedOrphanedCount,
-      cleanedSyncStateCount: summary.cleanedSyncStateCount,
+      scannedCount: 0,
+      syncedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      failedEventIds: [],
+      attendeeSyncDisabled: true,
     });
   } catch (error) {
     handleError(response, error);
   }
 });
-
-function serializeAppEventSyncReport(
-  eventSummary: AppEventSyncReport,
-): Record<string, unknown> {
-  return {
-    scannedEventCount: eventSummary.scannedCount,
-    syncedEventCount: eventSummary.changedCount,
-    skippedEventCount: eventSummary.upToDateCount,
-    failedEventCount: eventSummary.failedEventIds.length,
-    failedEventIds: eventSummary.failedEventIds,
-    createdEventPartCount: eventSummary.createdEventPartCount,
-    updatedEventPartCount: eventSummary.updatedEventPartCount,
-    deletedEventPartCount: eventSummary.deletedEventPartCount,
-    updatedAttendeeEventCount: eventSummary.updatedAttendeeEventCount,
-    repairedEventSyncStateCount: eventSummary.repairedEventSyncStateCount,
-    removedOrphanedEventCount: eventSummary.removedOrphanedCount,
-    cleanedEventSyncStateCount: eventSummary.cleanedSyncStateCount,
-  };
-}
 
 function serializeConstraintSyncReport(
   constraintSummary: ConstraintSyncReport,
@@ -4110,6 +5285,15 @@ app.post('/calendar/sync-events-and-constraints', async (request: Request, respo
       },
       environment: authContext.environment,
       collections: authContext.collections,
+      calendarAction: async (
+        action: string,
+        payload: Record<string, unknown>,
+      ) => await executeCalendarActionWithQuotaCircuit(
+        authContext.actor,
+        authContext.environment,
+        action,
+        payload,
+      ),
       rejectConstraint: async (teamMemberId: string, constraintId: string) =>
         await updateConstraintStatusForTeamMember(
           authContext.collections,
@@ -4138,17 +5322,20 @@ app.post('/calendar/sync-events-and-constraints', async (request: Request, respo
 
     if (mode === 'events') {
       const eventIds = optionalStringArray(request.body?.eventIds);
-      // Manual admin re-sync. When notifying is enabled, this emails exactly the
-      // members whose assignment changed since the last sync (unchanged members
-      // are never touched → they get nothing).
-      const eventSummary = await syncAppEventCalendars(dependencies, {
+      const queuedCount = await markAndEnqueueEventCalendarJobs(
+        authContext.environment,
         eventIds,
-        notifyAllChanges: MANUAL_SYNC_NOTIFIES_CHANGED_MEMBERS,
+        authContext.actor,
+      );
+      response.json({
+        ok: true,
+        queuedEventCount: queuedCount,
+        scannedEventCount: queuedCount,
+        syncedEventCount: 0,
+        skippedEventCount: 0,
+        failedEventCount: 0,
+        failedEventIds: [],
       });
-      if (eventSummary.quotaExhausted) {
-        throw new HttpError(503, CALENDAR_QUOTA_EXHAUSTED_MESSAGE);
-      }
-      response.json({ok: true, ...serializeAppEventSyncReport(eventSummary)});
       return;
     }
 
@@ -4158,21 +5345,206 @@ app.post('/calendar/sync-events-and-constraints', async (request: Request, respo
       return;
     }
 
-    // Legacy one-shot full sync (older clients that omit `mode`). Same manual
-    // re-sync semantics: notify only the members whose assignment changed.
-    const combined = await syncEventsAndConstraints(
-      dependencies,
-      MANUAL_SYNC_NOTIFIES_CHANGED_MEMBERS,
+    // Legacy one-shot request: event work is queued through the single writer;
+    // constraint behavior remains synchronous and unchanged.
+    const eventIds = await listInScopeAppEventIds(dependencies);
+    const queuedCount = await markAndEnqueueEventCalendarJobs(
+      authContext.environment,
+      eventIds,
+      authContext.actor,
     );
-    if (combined.appEvents.quotaExhausted) {
-      throw new HttpError(503, CALENDAR_QUOTA_EXHAUSTED_MESSAGE);
-    }
+    const constraintSummary = await syncConstraintCalendars(dependencies);
 
     response.json({
       ok: true,
-      ...serializeAppEventSyncReport(combined.appEvents),
-      ...serializeConstraintSyncReport(combined.constraints),
-      message: combined.message,
+      queuedEventCount: queuedCount,
+      scannedEventCount: queuedCount,
+      syncedEventCount: 0,
+      skippedEventCount: 0,
+      failedEventCount: 0,
+      failedEventIds: [],
+      ...serializeConstraintSyncReport(constraintSummary),
+      message: `סנכרון ${queuedCount} אירועים הועבר לתור. סנכרון המגבלות הושלם.`,
+    });
+  } catch (error) {
+    handleError(response, error);
+  }
+});
+
+function serializeGuestCleanupJob(
+  jobId: string,
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    jobId,
+    mode: data['mode'] === 'all' ? 'all' : 'omer',
+    status: typeof data['status'] === 'string' ? data['status'] : 'queued',
+    totalEventCount: Number(data['totalEventCount']) || 0,
+    totalPartCount: Number(data['totalPartCount']) || 0,
+    processedPartCount: Number(data['processedPartCount']) || 0,
+    changedPartCount: Number(data['changedPartCount']) || 0,
+    skippedPartCount: Number(data['skippedPartCount']) || 0,
+    failedPartCount: Number(data['failedPartCount']) || 0,
+    lastError: typeof data['lastError'] === 'string' ? data['lastError'] : null,
+  };
+}
+
+app.post('/calendar/app-event-guest-cleanup/start', async (request: Request, response: Response) => {
+  try {
+    const authContext = await authenticateRequest(request);
+    requireAdmin(authContext.actor);
+    const mode = requireString(request.body?.mode, 'mode');
+    if (mode !== 'omer' && mode !== 'all') {
+      throw new HttpError(400, 'Invalid cleanup mode');
+    }
+
+    const jobId = randomUUID();
+    const jobRef = db
+      .collection(authContext.collections.calendarMaintenanceJobs)
+      .doc(jobId);
+    const lockRef = guestCleanupLockRef(authContext.collections);
+    let existingActiveJob: {
+      jobId: string;
+      data: Record<string, unknown>;
+    } | null = null;
+
+    // The fixed lock document closes the race where two admins both observed
+    // an empty active-job query and started overlapping cleanup passes.
+    await db.runTransaction(async (transaction) => {
+      existingActiveJob = null;
+      const lock = await transaction.get(lockRef);
+      const activeJobId = typeof lock.data()?.['activeJobId'] === 'string'
+        ? lock.data()?.['activeJobId'] as string
+        : null;
+      if (activeJobId != null && activeJobId.length > 0) {
+        const activeRef = db
+          .collection(authContext.collections.calendarMaintenanceJobs)
+          .doc(activeJobId);
+        const active = await transaction.get(activeRef);
+        const activeData = active.data() ?? {};
+        const activeStatus = typeof activeData['status'] === 'string'
+          ? activeData['status']
+          : '';
+        if (
+          active.exists &&
+          activeStatus !== 'completed' &&
+          activeStatus !== 'failed'
+        ) {
+          if (activeData['mode'] !== mode) {
+            throw new HttpError(
+              409,
+              'ניקוי משתתפים מסוג אחר כבר מתבצע. יש להמתין לסיומו.',
+            );
+          }
+          existingActiveJob = {jobId: activeJobId, data: activeData};
+          return;
+        }
+      }
+
+      transaction.set(jobRef, {
+        type: 'appEventGuestCleanup',
+        mode,
+        targetEmail: mode === 'omer' ? OMER_CLEANUP_EMAIL : null,
+        stage: 'discovery',
+        status: 'queued',
+        totalEventCount: 0,
+        totalPartCount: 0,
+        processedPartCount: 0,
+        changedPartCount: 0,
+        skippedPartCount: 0,
+        failedPartCount: 0,
+        requestedByMemberId: authContext.actor.memberId,
+        requestedByIsAdmin: authContext.actor.isAdmin,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      transaction.set(lockRef, {
+        type: 'appEventGuestCleanupLock',
+        activeJobId: jobId,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    const activeJob = existingActiveJob as {
+      jobId: string;
+      data: Record<string, unknown>;
+    } | null;
+    if (activeJob != null) {
+      response.json({
+        ok: true,
+        resumedExistingJob: true,
+        ...serializeGuestCleanupJob(activeJob.jobId, activeJob.data),
+      });
+      return;
+    }
+
+    await enqueueGuestCleanupJob(
+      authContext.environment,
+      jobId,
+      authContext.actor,
+    );
+
+    const initialJobData: Record<string, unknown> = {
+      mode,
+      status: 'queued',
+      totalEventCount: 0,
+      totalPartCount: 0,
+      processedPartCount: 0,
+      changedPartCount: 0,
+      skippedPartCount: 0,
+      failedPartCount: 0,
+    };
+
+    try {
+      await writeAuditLog(
+        db,
+        authContext.collections,
+        authContext.actor,
+        'calendar.appEventGuestCleanup.start',
+        'calendarMaintenance',
+        jobId,
+        {
+          mode,
+          status: 'queued',
+        },
+      );
+    } catch (auditError) {
+      console.error('[calendar-cleanup-error] failed to write start audit:', auditError);
+    }
+
+    response.json({ok: true, ...serializeGuestCleanupJob(jobId, initialJobData)});
+  } catch (error) {
+    handleError(response, error);
+  }
+});
+
+app.post('/calendar/app-event-guest-cleanup/status', async (request: Request, response: Response) => {
+  try {
+    const authContext = await authenticateRequest(request);
+    requireAdmin(authContext.actor);
+    const requestedJobId = optionalString(request.body?.jobId);
+    let snapshot;
+    if (requestedJobId != null && requestedJobId.length > 0) {
+      snapshot = await db
+        .collection(authContext.collections.calendarMaintenanceJobs)
+        .doc(requestedJobId)
+        .get();
+      if (!snapshot.exists) throw new HttpError(404, 'Cleanup job not found');
+    } else {
+      const latest = await db
+        .collection(authContext.collections.calendarMaintenanceJobs)
+        .orderBy('createdAt', 'desc')
+        .limit(1)
+        .get();
+      if (latest.empty) {
+        response.json({ok: true, job: null});
+        return;
+      }
+      snapshot = latest.docs[0];
+    }
+    response.json({
+      ok: true,
+      ...serializeGuestCleanupJob(snapshot.id, snapshot.data() ?? {}),
     });
   } catch (error) {
     handleError(response, error);
@@ -4265,6 +5637,14 @@ function handleError(response: Response, error: unknown): void {
 
   if (error instanceof HttpError) {
     response.status(error.status).json({
+      ok: false,
+      error: error.message,
+    });
+    return;
+  }
+
+  if (error instanceof GoogleApiError && error.status === 429) {
+    response.status(429).json({
       ok: false,
       error: error.message,
     });

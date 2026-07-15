@@ -185,9 +185,8 @@ Future<void> _initialize() async {
       DriveService.instance.initialize();
     });
 
-    final calendarConfig =
-        await _timedAsync<Map<String, String?>?>('Backend.calendarConfigFetch',
-            () async {
+    final calendarConfig = await _timedAsync<Map<String, String?>?>(
+        'Backend.calendarConfigFetch', () async {
       return await _fetchCalendarConfigFromBackend();
     });
 
@@ -398,7 +397,6 @@ class MyApp extends StatelessWidget {
               BlocProvider(
                 create: (context) {
                   return serviceLocator.createUserSelectionBloc(
-                    calendarSyncBloc: context.read<CalendarSyncBloc>(),
                     preAuthenticatedUser: preAuthenticatedUser,
                   );
                 },

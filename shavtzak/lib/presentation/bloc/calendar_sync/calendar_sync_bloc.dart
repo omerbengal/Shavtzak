@@ -16,6 +16,11 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
   CalendarSyncService? _syncService;
   final GoogleCalendarService _calendarService;
   bool _pendingAdminStartupAuthCheck = false;
+  bool _isGuestCleanupRunning = false;
+  AppEventGuestCleanupStatus? _activeGuestCleanup;
+
+  bool get isGuestCleanupRunning => _isGuestCleanupRunning;
+  AppEventGuestCleanupStatus? get activeGuestCleanup => _activeGuestCleanup;
 
   CalendarSyncBloc({
     required DatabaseInterface database,
@@ -34,6 +39,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     on<ValidateSyncedEvents>(_onValidateSyncedEvents);
     on<PerformBidirectionalSync>(_onPerformBidirectionalSync);
     on<SyncEventsAndConstraints>(_onSyncEventsAndConstraints);
+    on<StartAppEventGuestCleanup>(_onStartAppEventGuestCleanup);
     on<SyncAppEventToCalendar>(_onSyncAppEvent);
     on<RemoveAppEventFromCalendar>(_onRemoveAppEvent);
     on<AddAttendeeToAppEvent>(_onAddAttendeeToAppEvent);
@@ -513,7 +519,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
 
     emit(const CalendarSyncInProgress(
       constraintId: 'events_and_constraints',
-      message: 'מסנכרן אירועים ומגבלות עם יומן גוגל...',
+      message: 'מעביר אירועים לתור ומסנכרן מגבלות עם יומן גוגל...',
     ));
 
     try {
@@ -524,7 +530,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
           if (total > 0 && !emit.isDone) {
             emit(CalendarSyncInProgress(
               constraintId: 'events_and_constraints',
-              message: 'מסנכרן אירועים עם יומן גוגל... $done/$total',
+              message: 'מעביר בקשות סנכרון אירועים לתור... $done/$total',
             ));
           }
         },
@@ -532,6 +538,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
 
       emit(CalendarEventsAndConstraintsSyncComplete(
         scannedEventCount: result.scannedEventCount,
+        queuedEventCount: result.queuedEventCount,
         syncedEventCount: result.syncedEventCount,
         skippedEventCount: result.skippedEventCount,
         failedEventCount: result.failedEventCount,
@@ -555,7 +562,7 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
     }
   }
 
-  /// Sync an app event to the calendar
+  /// Queue a backend-owned repair for one app event.
   Future<void> _onSyncAppEvent(
     SyncAppEventToCalendar event,
     Emitter<CalendarSyncState> emit,
@@ -570,35 +577,17 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
 
     emit(CalendarSyncInProgress(
       constraintId: event.eventId,
-      message: 'מסנכרן אירוע ליומן גוגל...',
+      message: 'מעביר בקשת סנכרון לתור...',
     ));
 
     try {
-      final result = await _syncService!.syncAppEventToCalendar(
-        eventId: event.eventId,
-        eventName: event.eventName,
-        startDate: event.startDate,
-        endDate: event.endDate,
-        assemblyTime: event.assemblyTime,
-        startTime: event.startTime,
-        actualShowStartTime: event.actualShowStartTime,
-        endTime: event.endTime,
-        location: event.location,
-      );
-
-      if (result.success) {
-        emit(CalendarSyncSuccess(
-          constraintId: event.eventId,
-          calendarEventId: result.calendarEventId,
-          message: 'האירוע סונכרן ליומן גוגל בהצלחה',
-        ));
-      } else {
-        emit(CalendarSyncFailure(
-          constraintId: event.eventId,
-          errorMessage: result.errorMessage ?? 'שגיאה לא ידועה',
-          isRetryable: result.isRetryable,
-        ));
-      }
+      // Event details are intentionally ignored here. Firestore is the source
+      // of truth and the backend worker reads the latest version when it runs.
+      await _calendarService.queueAppEventSync(event.eventId);
+      emit(CalendarSyncSuccess(
+        constraintId: event.eventId,
+        message: 'האירוע נשלח לסנכרון עם יומן גוגל',
+      ));
     } catch (e) {
       developer.log(
         'CalendarSyncBloc: App event sync failed - $e',
@@ -609,6 +598,109 @@ class CalendarSyncBloc extends Bloc<CalendarSyncEvent, CalendarSyncState> {
         constraintId: event.eventId,
         errorMessage: e.toString(),
       ));
+    }
+  }
+
+  Future<void> _onStartAppEventGuestCleanup(
+    StartAppEventGuestCleanup event,
+    Emitter<CalendarSyncState> emit,
+  ) async {
+    if (_syncService == null) {
+      emit(CalendarGuestCleanupFailure(
+        mode: event.mode,
+        errorMessage: 'שירות סנכרון היומן עדיין לא מוכן',
+      ));
+      return;
+    }
+    if (_isGuestCleanupRunning) {
+      final activeCleanup = _activeGuestCleanup;
+      if (activeCleanup != null) {
+        emit(CalendarGuestCleanupInProgress(activeCleanup));
+      }
+      return;
+    }
+
+    _isGuestCleanupRunning = true;
+    _activeGuestCleanup = AppEventGuestCleanupStatus(
+      jobId: '',
+      mode: event.mode,
+      status: 'starting',
+    );
+    try {
+      emit(CalendarGuestCleanupInProgress(_activeGuestCleanup!));
+      var result = await _calendarService.startAppEventGuestCleanup(event.mode);
+      if (emit.isDone || isClosed) return;
+      _activeGuestCleanup = result;
+
+      var consecutivePollFailures = 0;
+      var authBlockedWasEmitted = false;
+      while (!result.isTerminal || result.status == 'auth-blocked') {
+        _activeGuestCleanup = result;
+        if (result.status == 'auth-blocked') {
+          if (!authBlockedWasEmitted) {
+            authBlockedWasEmitted = true;
+            emit(CalendarGuestCleanupFailure(
+              mode: event.mode,
+              result: result,
+              errorMessage:
+                  'החיבור ליומן גוגל פג. יש להתחבר מחדש; הניקוי ימשיך אוטומטית לאחר החיבור.',
+            ));
+          }
+        } else {
+          authBlockedWasEmitted = false;
+          emit(CalendarGuestCleanupInProgress(result));
+        }
+
+        final pollDelay =
+            result.status == 'backoff' || result.status == 'auth-blocked'
+                ? const Duration(seconds: 30)
+                : const Duration(seconds: 2);
+        await Future<void>.delayed(pollDelay);
+        if (emit.isDone || isClosed) return;
+
+        try {
+          result = await _calendarService.getAppEventGuestCleanupStatus(
+            jobId: result.jobId,
+            mode: event.mode,
+          );
+          consecutivePollFailures = 0;
+        } catch (e) {
+          consecutivePollFailures++;
+          final retrySeconds =
+              (5 * consecutivePollFailures).clamp(5, 30).toInt();
+          developer.log(
+            'CalendarSyncBloc: Guest cleanup status poll failed; retrying in ${retrySeconds}s - $e',
+            name: 'CalendarSyncBloc',
+            error: e,
+          );
+          await Future<void>.delayed(Duration(seconds: retrySeconds));
+          if (emit.isDone || isClosed) return;
+        }
+      }
+
+      _activeGuestCleanup = result;
+      if (result.isFailed) {
+        emit(CalendarGuestCleanupFailure(
+          mode: event.mode,
+          result: result,
+          errorMessage: result.lastError ?? 'ניקוי המשתתפים נכשל',
+        ));
+      } else {
+        emit(CalendarGuestCleanupComplete(result));
+      }
+    } catch (e) {
+      developer.log(
+        'CalendarSyncBloc: Guest cleanup failed - $e',
+        name: 'CalendarSyncBloc',
+        error: e,
+      );
+      emit(CalendarGuestCleanupFailure(
+        mode: event.mode,
+        errorMessage: 'ניקוי המשתתפים נכשל: $e',
+      ));
+    } finally {
+      _isGuestCleanupRunning = false;
+      _activeGuestCleanup = null;
     }
   }
 

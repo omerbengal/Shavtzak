@@ -1,10 +1,97 @@
 import 'dart:developer' as developer;
 import 'dart:math' as math;
 
+import 'package:equatable/equatable.dart';
+
 import '../../domain/entities/team_member.dart';
 import 'backend_api_service.dart';
 import 'environment_service.dart';
 import 'google_oauth_service.dart';
+
+enum AppEventGuestCleanupMode {
+  omer,
+  all;
+
+  String get wireValue => name;
+
+  static AppEventGuestCleanupMode fromWire(
+    dynamic value, {
+    required AppEventGuestCleanupMode fallback,
+  }) {
+    return AppEventGuestCleanupMode.values.firstWhere(
+      (mode) => mode.wireValue == value?.toString(),
+      orElse: () => fallback,
+    );
+  }
+}
+
+class AppEventGuestCleanupStatus extends Equatable {
+  final String jobId;
+  final AppEventGuestCleanupMode mode;
+  final String status;
+  final int totalPartCount;
+  final int processedPartCount;
+  final int changedPartCount;
+  final int skippedPartCount;
+  final int failedPartCount;
+  final String? lastError;
+
+  const AppEventGuestCleanupStatus({
+    required this.jobId,
+    required this.mode,
+    required this.status,
+    this.totalPartCount = 0,
+    this.processedPartCount = 0,
+    this.changedPartCount = 0,
+    this.skippedPartCount = 0,
+    this.failedPartCount = 0,
+    this.lastError,
+  });
+
+  bool get isTerminal =>
+      status == 'completed' || status == 'failed' || status == 'auth-blocked';
+  bool get isFailed => status == 'failed' || status == 'auth-blocked';
+
+  factory AppEventGuestCleanupStatus.fromJson(
+    Map<String, dynamic> json, {
+    required AppEventGuestCleanupMode fallbackMode,
+    String? fallbackJobId,
+  }) {
+    int readInt(dynamic value) {
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    return AppEventGuestCleanupStatus(
+      jobId: json['jobId']?.toString() ?? fallbackJobId ?? '',
+      mode: AppEventGuestCleanupMode.fromWire(
+        json['mode'],
+        fallback: fallbackMode,
+      ),
+      status: json['status']?.toString() ?? 'queued',
+      totalPartCount: readInt(json['totalPartCount']),
+      processedPartCount: readInt(json['processedPartCount']),
+      changedPartCount: readInt(json['changedPartCount']),
+      skippedPartCount: readInt(json['skippedPartCount']),
+      failedPartCount: readInt(json['failedPartCount']),
+      lastError: json['lastError']?.toString(),
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        jobId,
+        mode,
+        status,
+        totalPartCount,
+        processedPartCount,
+        changedPartCount,
+        skippedPartCount,
+        failedPartCount,
+        lastError,
+      ];
+}
 
 class AppEventAttendeeSyncResult {
   final int scannedCount;
@@ -24,6 +111,7 @@ class AppEventAttendeeSyncResult {
 
 class EventsAndConstraintsSyncResult {
   final int scannedEventCount;
+  final int queuedEventCount;
   final int syncedEventCount;
   final int skippedEventCount;
   final int failedEventCount;
@@ -39,6 +127,7 @@ class EventsAndConstraintsSyncResult {
 
   const EventsAndConstraintsSyncResult({
     required this.scannedEventCount,
+    required this.queuedEventCount,
     required this.syncedEventCount,
     required this.skippedEventCount,
     required this.failedEventCount,
@@ -350,19 +439,65 @@ class GoogleCalendarService {
     );
   }
 
-  /// Number of events reconciled per backend request during a chunked sync.
-  /// Small enough that a single request stays well under the client's 30s
-  /// request timeout even when every event needs Google Calendar API calls.
+  /// Ask the backend-owned Calendar pipeline to repair one app event.
+  Future<void> queueAppEventSync(String eventId) async {
+    await _ensureAuthenticated();
+    await _backendApiService.post(
+      'calendar/sync-events-and-constraints',
+      requireAuth: true,
+      body: {
+        'mode': 'events',
+        'eventIds': [eventId],
+      },
+    );
+  }
+
+  Future<AppEventGuestCleanupStatus> startAppEventGuestCleanup(
+    AppEventGuestCleanupMode mode,
+  ) async {
+    await _ensureAuthenticated();
+    final response = await _backendApiService.post(
+      'calendar/app-event-guest-cleanup/start',
+      requireAuth: true,
+      body: {'mode': mode.wireValue},
+    );
+    final result = AppEventGuestCleanupStatus.fromJson(
+      response,
+      fallbackMode: mode,
+    );
+    if (result.jobId.isEmpty) {
+      throw GoogleCalendarException(
+        'Missing guest cleanup job ID from backend',
+      );
+    }
+    return result;
+  }
+
+  Future<AppEventGuestCleanupStatus> getAppEventGuestCleanupStatus({
+    required String jobId,
+    required AppEventGuestCleanupMode mode,
+  }) async {
+    final response = await _backendApiService.post(
+      'calendar/app-event-guest-cleanup/status',
+      requireAuth: true,
+      body: {'jobId': jobId},
+    );
+    return AppEventGuestCleanupStatus.fromJson(
+      response,
+      fallbackMode: mode,
+      fallbackJobId: jobId,
+    );
+  }
+
+  /// Number of durable event jobs queued per backend request.
   static const int _eventSyncChunkSize = 10;
 
   /// Sync all in-scope events and constraints to Google Calendar.
   ///
   /// Runs as a *chunked* sequence of short backend requests instead of one long
-  /// request: first it fetches the work list ('plan'), then reconciles events a
-  /// handful at a time, then constraints. This keeps every request short enough
-  /// to avoid the client/function timeout that made the one-shot sync fail once
-  /// many events existed. [onEventProgress] reports `(done, total)` events as
-  /// each chunk completes so callers can show live progress.
+  /// request: first it fetches the work list ('plan'), then queues event jobs a
+  /// handful at a time, then reconciles constraints. [onEventProgress] reports
+  /// `(done, total)` as each queueing request completes.
   Future<EventsAndConstraintsSyncResult> syncEventsAndConstraints({
     void Function(int done, int total)? onEventProgress,
   }) async {
@@ -378,6 +513,7 @@ class GoogleCalendarService {
     final totalEvents = eventIds.length;
 
     var scannedEventCount = 0;
+    var queuedEventCount = 0;
     var syncedEventCount = 0;
     var skippedEventCount = 0;
     var failedEventCount = 0;
@@ -385,7 +521,7 @@ class GoogleCalendarService {
 
     onEventProgress?.call(0, totalEvents);
 
-    // 2. Reconcile events in small chunks, one short request each.
+    // 2. Queue events in small chunks, one short request each.
     for (var start = 0; start < eventIds.length; start += _eventSyncChunkSize) {
       final end = math.min(start + _eventSyncChunkSize, eventIds.length);
       final chunk = eventIds.sublist(start, end);
@@ -397,6 +533,7 @@ class GoogleCalendarService {
       );
 
       scannedEventCount += _readInt(response['scannedEventCount']);
+      queuedEventCount += _readInt(response['queuedEventCount']);
       syncedEventCount += _readInt(response['syncedEventCount']);
       skippedEventCount += _readInt(response['skippedEventCount']);
       failedEventCount += _readInt(response['failedEventCount']);
@@ -429,6 +566,7 @@ class GoogleCalendarService {
 
     return EventsAndConstraintsSyncResult(
       scannedEventCount: scannedEventCount,
+      queuedEventCount: queuedEventCount,
       syncedEventCount: syncedEventCount,
       skippedEventCount: skippedEventCount,
       failedEventCount: failedEventCount,
@@ -442,7 +580,7 @@ class GoogleCalendarService {
       failedConstraintIds: failedConstraintIds,
       message: _buildCombinedSyncMessage(
         scannedEventCount: scannedEventCount,
-        syncedEventCount: syncedEventCount,
+        queuedEventCount: queuedEventCount,
         skippedEventCount: skippedEventCount,
         failedEventCount: failedEventCount,
         scannedConstraintCount: scannedConstraintCount,
@@ -459,7 +597,7 @@ class GoogleCalendarService {
   /// legacy one-shot path.
   String _buildCombinedSyncMessage({
     required int scannedEventCount,
-    required int syncedEventCount,
+    required int queuedEventCount,
     required int skippedEventCount,
     required int failedEventCount,
     required int scannedConstraintCount,
@@ -469,15 +607,18 @@ class GoogleCalendarService {
     required int rejectedConstraintCount,
   }) {
     final parts = <String>[
-      'אירועים: בוצעו שינויים ב-$syncedEventCount מתוך $scannedEventCount, '
-          'כבר היו תקינים $skippedEventCount, נכשלו $failedEventCount.',
+      'אירועים: $queuedEventCount בקשות סנכרון הועברו לתור '
+          'מתוך $scannedEventCount, דולגו $skippedEventCount, נכשלו $failedEventCount. '
+          'העדכונים ביומן יתבצעו ברקע.',
       'מגבלות: בוצעו שינויים ב-$syncedConstraintCount מתוך $scannedConstraintCount, '
           'כבר היו תקינות $skippedConstraintCount, נכשלו $failedConstraintCount.',
     ];
     if (rejectedConstraintCount > 0) {
-      parts.add('מגבלות: $rejectedConstraintCount מגבלות נדחו בעקבות מחיקה ביומן.');
+      parts.add(
+          'מגבלות: $rejectedConstraintCount מגבלות נדחו בעקבות מחיקה ביומן.');
     }
-    return 'סנכרון אירועים ומגבלות הושלם. ${parts.join(' ')}';
+    return 'בקשות האירועים הועברו לתור ועיבוד המגבלות הושלם. '
+        '${parts.join(' ')}';
   }
 
   List<String> _readStringList(dynamic value) {

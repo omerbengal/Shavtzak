@@ -585,7 +585,7 @@ class _EventListScreenState extends State<EventListScreen> {
       const SnackBar(
         content: Directionality(
           textDirection: TextDirection.rtl,
-          child: Text('מסנכרן את האירוע ליומן גוגל...'),
+          child: Text('מעביר בקשת סנכרון לתור...'),
         ),
         duration: Duration(seconds: 3),
       ),

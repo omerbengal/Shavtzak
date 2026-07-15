@@ -72,7 +72,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   // trigger a rebuild that merges the extra-past cache on top.
   final Map<String, Event> _windowEventsMap = {};
   final Map<String, TeamMember> _windowMembersMap = {};
-  DateTime? _slotsWindowStart; // now - 90d; boundary between window and "extra-past"
+  DateTime?
+      _slotsWindowStart; // now - 90d; boundary between window and "extra-past"
 
   // First-paint gate for the slots view. Each flag flips true when its stream
   // delivers its first emit during a (re)load; _onRebuildAssignmentSlotsFromData
@@ -89,7 +90,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   int _extraPastRowsRevealed = 0; // reveal cap for extra-past rows
   DateTime? _oldestLoadedEventStart; // pagination cursor
   bool _pastPagingExhausted = false; // reached the start of history
-  bool _loadingMorePast = false; // authoritative in-flight guard (state field can be stomped by concurrent rebuilds)
+  bool _loadingMorePast =
+      false; // authoritative in-flight guard (state field can be stomped by concurrent rebuilds)
 
   // Keep pending operations independent of state (survives error states)
   Map<String, PendingOperation> _pendingOperations = {};
@@ -260,12 +262,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       );
 
       if (assignments.isEmpty) {
-        _emitOrLog(emit, const AssignmentsEmpty('אין שיבוצים בטווח תאריכים זה'));
+        _emitOrLog(
+            emit, const AssignmentsEmpty('אין שיבוצים בטווח תאריכים זה'));
       } else {
-        _emitOrLog(emit, AssignmentsLoaded.withCounts(
-          assignments,
-          filterType: 'dateRange',
-        ));
+        _emitOrLog(
+            emit,
+            AssignmentsLoaded.withCounts(
+              assignments,
+              filterType: 'dateRange',
+            ));
       }
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -312,7 +317,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       if (conflicts.isNotEmpty) {
         // Emit conflict warning but don't fail
-        _emitOrLog(emit, AssignmentConflictWarning(conflicts, event.assignment));
+        _emitOrLog(
+            emit, AssignmentConflictWarning(conflicts, event.assignment));
         _completeActionFailure(event.completion, conflicts.join(', '));
         // Note: Real-time stream will automatically update UI, no manual reload needed
         return;
@@ -350,7 +356,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // If previousState is AssignmentSlotsLoaded, do nothing - real-time stream will handle it
     } catch (e) {
       if (e is AssignmentConflictException) {
-        _emitOrLog(emit, AssignmentConflictWarning(e.conflicts, event.assignment));
+        _emitOrLog(
+            emit, AssignmentConflictWarning(e.conflicts, event.assignment));
         _completeActionFailure(event.completion, e.conflicts.join(', '));
       } else {
         final message = 'שגיאה בהוספת שיבוץ: $e';
@@ -378,7 +385,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final conflicts = await _repository.checkConflicts(event.assignment);
 
         if (conflicts.isNotEmpty) {
-          _emitOrLog(emit, AssignmentConflictWarning(conflicts, event.assignment));
+          _emitOrLog(
+              emit, AssignmentConflictWarning(conflicts, event.assignment));
           _completeActionFailure(event.completion, conflicts.join(', '));
           // Note: Real-time stream will automatically update UI, no manual reload needed
           return;
@@ -428,7 +436,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // If previousState is AssignmentSlotsLoaded, do nothing - real-time stream will handle it
     } catch (e) {
       if (e is AssignmentConflictException) {
-        _emitOrLog(emit, AssignmentConflictWarning(e.conflicts, event.assignment));
+        _emitOrLog(
+            emit, AssignmentConflictWarning(e.conflicts, event.assignment));
         _completeActionFailure(event.completion, e.conflicts.join(', '));
       } else {
         final message = 'שגיאה בעדכון שיבוץ: $e';
@@ -449,12 +458,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     _emitOrLog(emit, const AssignmentOperating('deleting'));
 
     try {
-      // IMPORTANT: Get assignment BEFORE deleting to sync calendar attendees
+      // Read before deletion so the extra-past event cache can be refreshed.
       final assignmentToDelete = await _repository.getAssignmentById(event.id);
 
       await _repository.deleteAssignment(event.id);
 
-      // Sync attendees for calendar event (will remove the deleted attendee)
       _syncAttendeesForAffectedEvents(previousAssignment: assignmentToDelete);
       if (assignmentToDelete != null) {
         await _refreshExtraPastEvent(assignmentToDelete.eventId);
@@ -503,7 +511,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     try {
       await _repository.updateAssignmentStatus(event.id, event.status);
-      _emitOrLog(emit, const AssignmentOperationSuccess('סטטוס השיבוץ עודכן בהצלחה'));
+      _emitOrLog(
+          emit, const AssignmentOperationSuccess('סטטוס השיבוץ עודכן בהצלחה'));
 
       // Restart real-time listener based on current filter
       if (state is AssignmentsLoaded) {
@@ -661,7 +670,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _extraPastEventsMap.clear();
       _extraPastAssignments.clear();
       _extraPastRowsRevealed = 0;
-      _oldestLoadedEventStart = windowStart; // fetch events strictly older than the window
+      _oldestLoadedEventStart =
+          windowStart; // fetch events strictly older than the window
       _pastPagingExhausted = false;
 
       // First paint comes from the assignments STREAM's first emit — NOT an
@@ -683,7 +693,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         (assignments) {
           // Cache current assignments for rebuild purposes
           _repository.cacheCurrentAssignments(assignments);
-          _slotsAssignmentsReady = true; // first-paint gate: assignments arrived
+          _slotsAssignmentsReady =
+              true; // first-paint gate: assignments arrived
           // Rebuild slots using cached data - use _currentEventFilter to preserve user's filter
           add(RebuildAssignmentSlotsFromData(assignments, _windowEventsMap,
               _windowMembersMap, _currentEventFilter));
@@ -1256,11 +1267,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       isDelete: false,
     );
 
-    _emitOrLog(emit, AssignmentSlotsLoaded(
-      updatedSlots,
-      selectedEventIds: currentState.selectedEventIds,
-      pendingOperations: _pendingOperations,
-    ));
+    _emitOrLog(
+        emit,
+        AssignmentSlotsLoaded(
+          updatedSlots,
+          selectedEventIds: currentState.selectedEventIds,
+          pendingOperations: _pendingOperations,
+        ));
 
     // Execute database operation
     try {
@@ -1275,22 +1288,26 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
-      _emitOrLog(emit, AssignmentSlotsLoaded(
-        updatedSlots,
-        selectedEventIds: currentState.selectedEventIds,
-        pendingOperations: _pendingOperations,
-      ));
+      _emitOrLog(
+          emit,
+          AssignmentSlotsLoaded(
+            updatedSlots,
+            selectedEventIds: currentState.selectedEventIds,
+            pendingOperations: _pendingOperations,
+          ));
       _completeActionSuccess(event.completion, 'השיבוץ נוסף בהצלחה');
       add(RebuildAssignmentSlots(
           preservedFilter: currentState.selectedEventIds));
     } catch (e) {
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
-      _emitOrLog(emit, AssignmentSlotsLoaded(
-        currentState.slots,
-        selectedEventIds: currentState.selectedEventIds,
-        pendingOperations: _pendingOperations,
-      ));
+      _emitOrLog(
+          emit,
+          AssignmentSlotsLoaded(
+            currentState.slots,
+            selectedEventIds: currentState.selectedEventIds,
+            pendingOperations: _pendingOperations,
+          ));
       final message = e is AssignmentConflictException
           ? e.conflicts.join(', ')
           : 'שגיאה בהוספת שיבוץ: $e';
@@ -1334,11 +1351,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       isDelete: false,
     );
 
-    _emitOrLog(emit, AssignmentSlotsLoaded(
-      updatedSlots,
-      selectedEventIds: currentState.selectedEventIds,
-      pendingOperations: _pendingOperations,
-    ));
+    _emitOrLog(
+        emit,
+        AssignmentSlotsLoaded(
+          updatedSlots,
+          selectedEventIds: currentState.selectedEventIds,
+          pendingOperations: _pendingOperations,
+        ));
 
     // Execute database operation
     try {
@@ -1357,22 +1376,26 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
       // CRITICAL FIX: Remove pending operation after successful write
       _pendingOperations.remove(event.slotKey);
-      _emitOrLog(emit, AssignmentSlotsLoaded(
-        updatedSlots,
-        selectedEventIds: currentState.selectedEventIds,
-        pendingOperations: _pendingOperations,
-      ));
+      _emitOrLog(
+          emit,
+          AssignmentSlotsLoaded(
+            updatedSlots,
+            selectedEventIds: currentState.selectedEventIds,
+            pendingOperations: _pendingOperations,
+          ));
       _completeActionSuccess(event.completion, 'השיבוץ עודכן בהצלחה');
       add(RebuildAssignmentSlots(
           preservedFilter: currentState.selectedEventIds));
     } catch (e) {
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
-      _emitOrLog(emit, AssignmentSlotsLoaded(
-        currentState.slots,
-        selectedEventIds: currentState.selectedEventIds,
-        pendingOperations: _pendingOperations,
-      ));
+      _emitOrLog(
+          emit,
+          AssignmentSlotsLoaded(
+            currentState.slots,
+            selectedEventIds: currentState.selectedEventIds,
+            pendingOperations: _pendingOperations,
+          ));
       final message = e is AssignmentConflictException
           ? e.conflicts.join(', ')
           : 'שגיאה בעדכון שיבוץ: $e';
@@ -1416,11 +1439,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       isDelete: true,
     );
 
-    _emitOrLog(emit, AssignmentSlotsLoaded(
-      updatedSlots,
-      selectedEventIds: currentState.selectedEventIds,
-      pendingOperations: _pendingOperations,
-    ));
+    _emitOrLog(
+        emit,
+        AssignmentSlotsLoaded(
+          updatedSlots,
+          selectedEventIds: currentState.selectedEventIds,
+          pendingOperations: _pendingOperations,
+        ));
 
     // Execute database operation
     try {
@@ -1433,7 +1458,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // CRITICAL: Clear the cache to prevent stale data (same as swipe-to-delete)
       _repository.clearCache();
 
-      // Sync calendar attendees (will remove the deleted attendee)
       _syncAttendeesForAffectedEvents(previousAssignment: assignmentToDelete);
       if (assignmentToDelete != null) {
         await _refreshExtraPastEvent(assignmentToDelete.eventId);
@@ -1441,45 +1465,38 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       // CRITICAL FIX: Remove pending operation after successful delete
       _pendingOperations.remove(event.slotKey);
-      _emitOrLog(emit, AssignmentSlotsLoaded(
-        updatedSlots,
-        selectedEventIds: currentState.selectedEventIds,
-        pendingOperations: _pendingOperations,
-      ));
+      _emitOrLog(
+          emit,
+          AssignmentSlotsLoaded(
+            updatedSlots,
+            selectedEventIds: currentState.selectedEventIds,
+            pendingOperations: _pendingOperations,
+          ));
       _completeActionSuccess(event.completion, 'השיבוץ נמחק בהצלחה');
       add(RebuildAssignmentSlots(
           preservedFilter: currentState.selectedEventIds));
     } catch (e) {
       // On error: remove operation, revert to database state
       _pendingOperations.remove(event.slotKey);
-      _emitOrLog(emit, AssignmentSlotsLoaded(
-        currentState.slots,
-        selectedEventIds: currentState.selectedEventIds,
-        pendingOperations: _pendingOperations,
-      ));
+      _emitOrLog(
+          emit,
+          AssignmentSlotsLoaded(
+            currentState.slots,
+            selectedEventIds: currentState.selectedEventIds,
+            pendingOperations: _pendingOperations,
+          ));
       _completeActionFailure(event.completion, 'שגיאה במחיקת שיבוץ: $e');
     }
   }
 
-  /// Retired hook — the backend is now the single authority for calendar
-  /// attendee notifications.
-  ///
-  /// Every assignment write already routes through the backend `api`
-  /// (assignment.insert/update/delete/batch), which fires
-  /// `fireAndForgetCalendarSync` → `syncAppEventCalendars` →
-  /// `syncEventPartAttendees`. That path emails ONLY the member whose
-  /// assignment genuinely changed (invite on add, cancellation on remove) and
-  /// converges every other attendee silently. Dispatching a second sync from
-  /// the client here produced duplicate invites and a notify/converge race
-  /// (the silent converge could add a member before the client's invite,
-  /// suppressing it), so the client no longer touches attendees on assignment
-  /// changes. `_calendarSyncBloc` stays injected for other calendar flows.
+  /// Retired hook. Assignments no longer change Google Calendar guests; app
+  /// event Calendar synchronization is owned entirely by the backend.
   void _syncAttendeesForAffectedEvents({
     Assignment? previousAssignment,
     Assignment? nextAssignment,
   }) {
     // Intentionally a no-op; see the doc comment above. The field read keeps
-    // the dependency wired without re-introducing a client-side attendee sync.
+    // the dependency wired without re-introducing client-side Calendar writes.
     if (_calendarSyncBloc == null) {
       return;
     }
@@ -1769,13 +1786,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       final capped = _applyPastRevealCap(mergedSlots);
 
-      _emitOrLog(emit, AssignmentSlotsLoaded(
-        capped.slots,
-        selectedEventIds: filterToUse,
-        pendingOperations: _pendingOperations,
-        hasMorePast: capped.hasMore,
-        isLoadingMorePast: _loadingMorePast,
-      ));
+      _emitOrLog(
+          emit,
+          AssignmentSlotsLoaded(
+            capped.slots,
+            selectedEventIds: filterToUse,
+            pendingOperations: _pendingOperations,
+            hasMorePast: capped.hasMore,
+            isLoadingMorePast: _loadingMorePast,
+          ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
     }
@@ -1830,8 +1849,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
 
       // Deactivated events have no presence in the assignments grid
-      var filteredEvents =
-          eventsList.where((e) => !e.isDeactivated).toList();
+      var filteredEvents = eventsList.where((e) => !e.isDeactivated).toList();
 
       // Filter events based on showPastEvents flag
       if (!FilterPersistence.showPastEvents) {
@@ -1977,7 +1995,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 ))
             .toList();
         slots.addAll(
-          _buildOffQuotaSlots(eventData, eventAssignmentsAll, placedAssignmentIds),
+          _buildOffQuotaSlots(
+              eventData, eventAssignmentsAll, placedAssignmentIds),
         );
       }
 
@@ -2013,13 +2032,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       final capped = _applyPastRevealCap(mergedSlots);
 
-      _emitOrLog(emit, AssignmentSlotsLoaded(
-        capped.slots,
-        selectedEventIds: rebuildEvent.selectedEventIds,
-        pendingOperations: _pendingOperations,
-        hasMorePast: capped.hasMore,
-        isLoadingMorePast: _loadingMorePast,
-      ));
+      _emitOrLog(
+          emit,
+          AssignmentSlotsLoaded(
+            capped.slots,
+            selectedEventIds: rebuildEvent.selectedEventIds,
+            pendingOperations: _pendingOperations,
+            hasMorePast: capped.hasMore,
+            isLoadingMorePast: _loadingMorePast,
+          ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בבניית שיבוצים: $e'));
     }
@@ -2050,7 +2071,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // AssignmentLoading flash plus a redundant _populateAssignmentRelations.
     } catch (e) {
       if (e is AssignmentConflictException) {
-        _emitOrLog(emit, AssignmentConflictWarning(e.conflicts, event.assignment));
+        _emitOrLog(
+            emit, AssignmentConflictWarning(e.conflicts, event.assignment));
         _completeActionFailure(event.completion, e.conflicts.join(', '));
         // Note: Real-time stream will automatically update UI, no manual reload needed
       } else {
@@ -2148,11 +2170,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       if (assignments.isEmpty) {
         _emitOrLog(emit, const AssignmentsEmpty('אין שיבוצים לחבר צוות זה'));
       } else {
-        _emitOrLog(emit, AssignmentsLoaded.withCounts(
-          assignments,
-          filterType: 'person',
-          filterId: event.teamMemberId,
-        ));
+        _emitOrLog(
+            emit,
+            AssignmentsLoaded.withCounts(
+              assignments,
+              filterType: 'person',
+              filterId: event.teamMemberId,
+            ));
       }
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -2184,7 +2208,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           // best-effort; next reload reconciles
         }
       }
-      _emitOrLog(emit, const AssignmentOperationSuccess('פרטי השיבוץ עודכנו בהצלחה'));
+      _emitOrLog(
+          emit, const AssignmentOperationSuccess('פרטי השיבוץ עודכנו בהצלחה'));
       _completeActionSuccess(event.completion, 'פרטי השיבוץ עודכנו בהצלחה');
 
       // Keep Firestore streams as the single source of truth for note/label/phone
