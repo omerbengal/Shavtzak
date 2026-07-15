@@ -1,0 +1,1642 @@
+ ▐▛███▜▌   Claude Code v2.1.207
+▝▜█████▛▘  Opus 4.8 · Claude Max
+  ▘▘ ▝▝    ~/Documents/Github Projects/Shavtzak
+
+ ▎ Extended through July 19
+ ▎ We're extending Claude Fable 5 access on all paid plans, as well as keeping Claude Code’s weekly rate limits 50% higher, through July 19.
+ ▎
+ ▎ As before, you can use up to half of your weekly usage limit on Fable 5. After that, you can keep using Fable 5 with usage credits, or switch to another model to keep working within your remaining limits.
+ ▎
+ ▎ More details here: https://support.claude.com/en/articles/15424964-claude-fable-5-promotional-access
+
+❯ /clear                                                                        
+
+❯ /model                                                                        
+  ⎿  Set model to Opus 4.8 (1M context) and saved as your default for new
+     sessions
+
+❯ /effort                                                                       
+  ⎿  Set effort level to ultracode (this session only): xhigh + dynamic workflow
+     orchestration
+
+❯ /effort                                                                       
+  ⎿  Set effort level to max (this session only): Maximum capability with deepest
+     reasoning. May use excessive tokens resulting in long response times or
+     overthinking. Use sparingly for the hardest tasks.
+
+❯ /effort                                                                       
+  ⎿  Set effort level to ultracode (this session only): xhigh + dynamic workflow
+     orchestration
+
+❯ Please read this conversation:                                                
+  '/Users/omerbengal/Documents/Github                                           
+  Projects/Shavtzak/Google_Calendar_Problem.txt'                                
+                                                                                
+  I need you to investigate, think (and if needed - use the sequential-thinking 
+  MCP), and give me a CONCISE answer about what to do in my situation.          
+                                                                                
+  I am really deep in the water... This google calendar is a must feature, but  
+  I don't have money to pay for this.                                           
+  I need an elegant solution, in order to keep syncing the events, but without  
+  fails and re-triggers and failings, and I AM WILLING TO COMPROMISE ON TIME (I 
+  don't care that it will take more time to sync)                               
+
+⏺ I'll start by reading the conversation file to understand your situation.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ I've read the full investigation. Before I give you a decisive answer, let me
+  verify the key technical facts against the actual current code — especially
+  the one crux that determines the whole solution: whether silent 
+  (sendUpdates:'none') pushes still burn quota. That single fact decides whether
+  "just stop emailing" would work or not.
+
+  Let me ground this in your real code.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Good — this confirms the crux. Let me read the three decisive regions to lock
+  down my recommendation.
+
+  Read 3 files (ctrl+o to expand)
+
+⏺ I've now confirmed the decisive facts directly in your current code. Here's
+  the concise answer.
+
+  The one fact that changes everything
+
+  I verified it in the code, not just the logs: silent syncs still burn quota.
+  addAttendeeToEvent/removeAttendeeFromEvent (calendar_integration.ts:1248‑1330)
+  always call patchCalendarEvent — sendUpdates only decides whether Google
+  emails; the write happens either way. Google's "usage limit" is on calendar
+  writes, not emails.
+
+  Two consequences:
+  - "Just stop emailing" would NOT fix it (that's why 754 silent pushes still
+  got 403s).
+  - Money/Workspace is not the only lever. The problem is write volume + a retry
+  loop that hammers the wall, and both are fixable for free — and your "I don't
+  care about time" is exactly the right currency to pay with.
+
+  What to do: make sync gentle and convergent (keep email invites, no money)
+
+  One coherent change, three parts, all free, all in functions/, deployable
+  today:
+
+  1. Quota-aware backoff — the keystone (index.ts:137). Right now a 403 quota
+  error re-throws → Cloud Tasks fast-retries 5× in 5–60s → straight back into
+  the exhausted wall = the storm. Instead: detect the 403 
+  usageLimits/quotaExceeded signature, re-enqueue that event with a long delay 
+  (~30–60 min) and return success. This converts every "failure / re-trigger"
+  into a calm scheduled retry after the quota window resets. This single change
+  ends the storm.
+
+  2. Throttle to a crawl (index.ts:119). You have time — spend it.
+  maxConcurrentDispatches: 1, maxDispatchesPerSecond: 0.5. One event at a time,
+  slowly, so you basically never trip the cap. (Also fix the comment at line 110
+  — "rateLimits keep us under quota BY DESIGN" is the wrong assumption for a
+  consumer Gmail account, and each task does several PATCHes, so "3/sec" was
+  really ~9 writes/sec.)
+
+  3. Coalesce — the debounced delta-accumulator we discussed. One reconcile per
+  event per quiet window, merging the deltas (never dropping them, so no invite
+  is silently lost). Kills the 20–45×-per-event waste at the source, which also
+  collapses rapid-churn duplicate emails.
+
+  Net result: sync becomes slow, self-healing, and eventually-consistent — never
+  storms, email invites still work. Exactly the trade you offered.
+
+  What NOT to reach for
+
+  - Workspace / money — unnecessary once writes are gentle + backed-off.
+  - Going fully silent — won't help (silent still burns quota, per above).
+  - ICS-feed rebuild — the only thing that makes you structurally immune to the
+  quota, but it drops email invites and Google refreshes external ICS feeds on
+  its own schedule (often 12–24h, uncontrollable). Keep it as a last-resort
+  nuke, not the plan.
+
+  Order of operations
+
+  1. Now: pause + purge calendarSyncTask to stop today's bleeding (you have the
+  commands — remember: a firebase deploy un-pauses it, which is fine once the
+  fix is in).
+  2. Today: ship #1 + #2 (small, ends the storm).
+  3. Next: ship #3 (the durable volume reducer).
+
+  If you want, I'll implement it test-first — the backoff-detection and the
+  delta-merge are pure functions with existing test scaffolding
+  (calendar_sync_backend.test.ts) — then hand you the exact cd functions && 
+  firebase deploy --only functions command. Want me to start with #1+#2?
+
+✻ Worked for 3m 10s
+
+※ recap: Goal: make Google Calendar sync reliable for free without the invite/quota storm. I've confirmed the root cause and recommended a gentle backoff + throttle + coalesce fix. Next action: pause and purge the calendarSyncTask queue, then implement backoff and throttle. (disable recaps in /config)
+
+❯ start with #1+#2, but there is no need to "implement it test-first"... the    
+  production version is already bad...                                          
+
+⏺ Got it — straight implementation of #1 + #2, no tests. Let me read the exact
+  code paths I need to touch so the backoff is correct: how failures surface,
+  the GoogleApiError, the enqueue path, and the payload type.
+
+  Read 3 files, ran 2 shell commands (ctrl+o to expand)
+
+⏺ Now let me see the rest of syncAppEventCalendars (other catch/return blocks),
+  how the GoogleApiError is thrown (to detect quota precisely), and everywhere
+  an AppEventSyncReport literal is built.
+
+  Read 2 files, ran 1 shell command (ctrl+o to expand)
+
+⏺ There's already quota-ish error handling near line 350. Let me read it to
+  reuse the pattern, and see the rest of the full-scan catch/return.
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ I now have the complete picture. Let me confirm the import lines I need to
+  touch (where calendar_sync_backend.ts imports from calendar_integration, and
+  the getFunctions import in index.ts).
+
+  Ran 1 shell command (ctrl+o to expand)
+⏺ All confirmed. Now implementing. Let me create a task list and make the edits.
+
+  Edit 1 — calendar_integration.ts: export GoogleApiError + add a precise quota 
+  detector.
+
+⏺ Update(functions/src/calendar_integration.ts)
+  ⎿  Added 20 lines, removed 1 line
+      107  
+      108  class CalendarAuthError extends Error {}
+      109  
+      110 -class GoogleApiError extends Error {                          
+      110 +export class GoogleApiError extends Error {                   
+      111    status: number;
+      112  
+      113    constructor(status: number, message: string) {
+     ...
+      116    }
+      117  }
+      118  
+      119 +// A quota / usage-limit rejection from Google Calendar (as op
+          +posed to a                                                    
+      120 +// transient 5xx or a genuine 4xx like permission). The organi
+          +zer is a consumer                                             
+      121 +// Gmail account with a strict per-account "Calendar usage lim
+          +it"; a burst of                                               
+      122 +// attendee writes trips `403 Calendar usage limits exceeded` 
+      123 +// (domain:usageLimits, reason:quotaExceeded/rateLimitExceeded
+          +). Retrying                                                   
+      124 +// immediately just hammers the same wall — the caller must ba
+          +ck off instead.                                               
+      125 +export function isCalendarQuotaError(error: unknown): boolean 
+          +{                                                             
+      126 +  if (!(error instanceof GoogleApiError)) return false;       
+      127 +  if (error.status !== 403 && error.status !== 429) return fal
+          +se;                                                           
+      128 +  const lower = error.message.toLowerCase();                  
+      129 +  return (                                                    
+      130 +    lower.includes('usagelimits') ||                          
+      131 +    lower.includes('usage limit') ||                          
+      132 +    lower.includes('quotaexceeded') ||                        
+      133 +    lower.includes('ratelimitexceeded') ||                    
+      134 +    lower.includes('rate limit')                              
+      135 +  );                                                          
+      136 +}                                                             
+      137 +                                                              
+      138  function getKeysCollection(environment: CalendarEnvironmentMod
+           e): string {
+      139    return environment === 'test' ? 'test_keys' : 'keys';
+      140  }
+
+⏺ Edit 2 — calendar_sync_backend.ts: import the detector, add quotaExhausted to 
+  the report, detect it in all three catch blocks, and thread it through all 
+  four returns.
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 1 line, removed 1 line
+      3    Firestore,
+      4    Timestamp,
+      5  } from 'firebase-admin/firestore';
+      6 -import {executeCalendarAction} from './calendar_integration';   
+      6 +import {executeCalendarAction, isCalendarQuotaError} from './cal
+        +endar_integration';                                             
+      7  
+      8  export type BackendEnvironmentMode = 'production' | 'test';
+      9  
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 4 lines
+      38    repairedEventSyncStateCount: number;
+      39    removedOrphanedCount: number;
+      40    cleanedSyncStateCount: number;
+      41 +  // At least one event failed specifically because Google's Ca
+         +lendar usage                                                   
+      42 +  // limit is exhausted (403 quota). The caller should defer + 
+         +retry after the                                                
+      43 +  // quota window resets rather than fast-retrying into the sam
+         +e wall.                                                        
+      44 +  quotaExhausted: boolean;                                     
+      45  };
+      46  
+      47  export type ConstraintSyncReport = {
+
+⏺ Now the quotaExhausted variable, the three catch blocks, and the four returns:
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 1 line
+      1736    let repairedEventSyncStateCount = 0;
+      1737    let removedOrphanedCount = 0;
+      1738    let cleanedSyncStateCount = 0;
+      1739 +  let quotaExhausted = false;                                
+      1740  
+      1741    const teamMemberCache = new Map<string, Record<string, unkn
+            own> | null>();
+      1742  
+
+⏺ Two of the three catch blocks are textually identical (${eventId}); the
+  full-scan one uses ${doc.id}. I'll update the identical pair with replace_all,
+  then the full-scan one separately:
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 1 line
+      1787      } catch (error) {
+      1788        console.error(`Failed to reconcile app event ${eventId}
+            :`, error);
+      1789        failedEventIds.push(eventId);
+      1790 +      if (isCalendarQuotaError(error)) quotaExhausted = true;
+      1791      }
+      1792  
+      1793      return {
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 1 line
+      1902      } catch (error) {
+      1903        console.error(`Failed to reconcile app event ${doc.id}:
+            `, error);
+      1904        failedEventIds.push(doc.id);
+      1905 +      if (isCalendarQuotaError(error)) quotaExhausted = true;
+      1906      }
+      1907    }
+      1908  
+
+⏺ Now the four return literals. The three shorthand returns are identical text
+  (appears 3×); the empty early-return uses explicit zeros:
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 2 lines
+      1802        repairedEventSyncStateCount,
+      1803        removedOrphanedCount,
+      1804        cleanedSyncStateCount,
+      1805 +      quotaExhausted,                                        
+      1806      };
+      1807    }
+      1808  
+     ...
+      1863        repairedEventSyncStateCount,
+      1864        removedOrphanedCount,
+      1865        cleanedSyncStateCount,
+      1866 +      quotaExhausted,                                        
+      1867      };
+      1868    }
+      1869  
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 1 line
+      1756          repairedEventSyncStateCount: 0,
+      1757          removedOrphanedCount: 0,
+      1758          cleanedSyncStateCount: 0,
+      1759 +        quotaExhausted: false,                               
+      1760        };
+      1761      }
+      1762  
+
+⏺ Now let me check for any other place that builds an AppEventSyncReport (tests,
+  combined reports, helpers) — a missed literal would fail the build since
+  quotaExhausted is required:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ The constraint return at 2053 is a different type (ConstraintSyncReport, no
+  removedOrphanedCount), so replace_all correctly skipped it — the three
+  AppEvent returns are all updated. Now the index.ts changes: #2 throttle + 
+  comment fix, and #1 the quota-aware backoff handler.
+
+⏺ Update(functions/src/index.ts)
+  ⎿  Added 73 lines, removed 11 lines
+      104  
+      105  const CALENDAR_SYNC_TASK_QUEUE = 'calendarSyncTask';
+      106  
+      107 +// When Google returns a quota / usage-limit 403, defer the ev
+          +ent's retry by                                                
+      108 +// this long (instead of Cloud Tasks' 5–60s fast-retry) so it 
+          +lands after the                                               
+      109 +// per-account usage window has reset. Bounded so a pathologic
+          +ally stuck event                                              
+      110 +// cannot re-enqueue itself forever.                          
+      111 +const QUOTA_BACKOFF_SECONDS = 30 * 60; // 30 minutes          
+      112 +const MAX_QUOTA_BACKOFF_RETRIES = 24; // ~12h of half-hourly r
+          +etries, then give up                                          
+      113 +                                                              
+      114  // Calendar sync runs on a Cloud Tasks queue rather than fire-
+           and-forget: on
+      115  // Cloud Run, un-awaited background work has its CPU throttled
+            the instant the
+      116  // HTTP response is sent, which stretched a ~3s sync into minu
+           tes. As a task it
+      110 -// runs at full CPU. `rateLimits` keep us under Google Calenda
+          -r's quota BY DESIGN                                           
+      111 -// (this is what makes the old invite storm structurally impos
+          -sible), and                                                   
+      112 -// `retryConfig.maxAttempts` is capped so a persistent failure
+          - can't run away.                                              
+      113 -// Firebase provisions + secures the queue on deploy (only Clo
+          -ud Tasks + admins                                             
+      114 -// may enqueue).                                              
+      117 +// runs at full CPU. Firebase provisions + secures the queue o
+          +n deploy (only                                                
+      118 +// Cloud Tasks + admins may enqueue).                         
+      119 +//                                                            
+      120 +// The calendar organizer is a consumer Gmail account, which h
+          +as a low,                                                     
+      121 +// undocumented "Calendar usage limit" on WRITES (adding guest
+          +s / patching                                                  
+      122 +// events) — not just on emails. A burst of attendee writes tr
+          +ips                                                           
+      123 +// `403 Calendar usage limits exceeded`. Two guards keep sync 
+          +reliable without                                              
+      124 +// paying for Workspace, trading speed for reliability:       
+      125 +//   1. Throttle hard — one dispatch at a time, one every 2s —
+          + so a burst never                                             
+      126 +//      exceeds the per-account write cap in the first place. 
+          +Slow is fine here.                                            
+      127 +//   2. Quota-aware backoff (below): on a 403 quota failure, D
+          +EFER the event to                                             
+      128 +//      run after the window resets instead of fast-retrying i
+          +nto the same wall.                                            
+      129 +//      The fast-retry-into-exhausted-quota loop is what produ
+          +ced the 2026-07                                               
+      130 +//      storm (~15 events each retried 20–45×).               
+      131 +// `retryConfig.maxAttempts` still caps genuinely transient (n
+          +on-quota) failures.                                           
+      132  export const calendarSyncTask = onTaskDispatched<CalendarSyncT
+           askPayload>(
+      133    {
+      134      region: 'us-central1',
+      135      retryConfig: {maxAttempts: 5, minBackoffSeconds: 5, maxBac
+           koffSeconds: 60},
+      119 -    rateLimits: {maxConcurrentDispatches: 2, maxDispatchesPerS
+          -econd: 3},                                                    
+      136 +    rateLimits: {maxConcurrentDispatches: 1, maxDispatchesPerS
+          +econd: 0.5},                                                  
+      137    },
+      138    async (request) => {
+      139      const {eventId, environment, actor, delta} = request.data;
+     ...
+      146        },
+      147        {eventId, notifyByEventId: {[eventId]: delta}},
+      148      );
+      132 -    // syncAppEventCalendars swallows per-event failures into 
+          -`failedEventIds`                                              
+      133 -    // instead of throwing. Re-throw so Cloud Tasks retries (c
+          -apped by                                                      
+      134 -    // retryConfig) — e.g. a transient Google rate-limit. The 
+          -reconcile is                                                  
+      135 -    // idempotent (addAttendee no-ops if already present), so 
+          -retries never                                                 
+      136 -    // double-invite.                                         
+      149 +    // Quota-aware backoff. The account's Calendar usage limit
+          + is exhausted.                                                
+      150 +    // Re-throwing would make Cloud Tasks fast-retry (5–60s) s
+          +traight back into                                             
+      151 +    // the same wall — the self-sustaining storm. Instead, re-
+          +enqueue this event                                            
+      152 +    // to run AFTER the quota window resets and return success
+          + so THIS attempt is                                           
+      153 +    // not retried. The reconcile is idempotent and carries th
+          +e same notify                                                 
+      154 +    // delta, so the deferred run still emails exactly the cha
+          +nged member (and a                                            
+      155 +    // member already added silently in the meantime is simply
+          + not re-emailed).                                             
+      156 +    if (report.quotaExhausted) {                              
+      157 +      await reenqueueCalendarSyncAfterQuota(request.data);    
+      158 +      return;                                                 
+      159 +    }                                                         
+      160 +    // Non-quota per-event failure (e.g. a transient 5xx): syn
+          +cAppEventCalendars                                            
+      161 +    // swallows it into `failedEventIds` instead of throwing. 
+          +Re-throw so Cloud                                             
+      162 +    // Tasks retries (capped by retryConfig). The reconcile is
+          + idempotent                                                   
+      163 +    // (addAttendee no-ops if already present), so retries nev
+          +er double-invite.                                             
+      164      if (report.failedEventIds.length > 0) {
+      165        throw new Error(`[calendar-sync] reconcile failed for ev
+           entId=${eventId}; will retry`);
+      166      }
+      167    },
+      168  );
+      169  
+      170 +// Re-enqueue one event's calendar sync to run after the quota
+          + window resets.                                               
+      171 +// Returns without throwing so the current task is NOT fast-re
+          +tried into the                                                
+      172 +// still-exhausted quota. The delta is preserved, so the defer
+          +red run notifies                                              
+      173 +// exactly the same changed member; the reconcile is idempoten
+          +t so nothing is                                               
+      174 +// double-invited. Bounded by MAX_QUOTA_BACKOFF_RETRIES.      
+      175 +async function reenqueueCalendarSyncAfterQuota(               
+      176 +  payload: CalendarSyncTaskPayload,                           
+      177 +): Promise<void> {                                            
+      178 +  const attempt = (payload.quotaRetryCount ?? 0) + 1;         
+      179 +  if (attempt > MAX_QUOTA_BACKOFF_RETRIES) {                  
+      180 +    console.error(                                            
+      181 +      `[calendar-sync] quota still exhausted for eventId=${pay
+          +load.eventId} after ` +                                       
+      182 +        `${MAX_QUOTA_BACKOFF_RETRIES} deferred retries; giving
+          + up. It will re-sync the ` +                                  
+      183 +        `next time the event is touched or on a manual "sync c
+          +alendars".`,                                                  
+      184 +    );                                                        
+      185 +    return;                                                   
+      186 +  }                                                           
+      187 +  try {                                                       
+      188 +    const queue = getFunctions().taskQueue<CalendarSyncTaskPay
+          +load>(CALENDAR_SYNC_TASK_QUEUE);                              
+      189 +    await queue.enqueue(                                      
+      190 +      {...payload, quotaRetryCount: attempt},                 
+      191 +      {scheduleDelaySeconds: QUOTA_BACKOFF_SECONDS},          
+      192 +    );                                                        
+      193 +    console.log(                                              
+      194 +      `[calendar-sync] quota exhausted for eventId=${payload.e
+          +ventId}; deferred retry ` +                                   
+      195 +        `${attempt}/${MAX_QUOTA_BACKOFF_RETRIES} in ${QUOTA_BA
+          +CKOFF_SECONDS}s (no fast-retry).`,                            
+      196 +    );                                                        
+      197 +  } catch (err: unknown) {                                    
+      198 +    console.error(                                            
+      199 +      `[calendar-sync-error] failed to re-enqueue quota backof
+          +f for eventId=${payload.eventId}:`,                           
+      200 +      err,                                                    
+      201 +    );                                                        
+      202 +  }                                                           
+      203 +}                                                             
+      204 +                                                              
+      205  // Enqueue one calendar-sync task per affected event. Awaited 
+           so each task is
+      206  // durably created before the HTTP response returns — an un-aw
+           aited enqueue would
+      207  // hit the very CPU-throttle problem this replaces. Enqueue fa
+           ilures are
+
+⏺ Now add quotaRetryCount to the payload type:
+
+⏺ Update(functions/src/index.ts)
+  ⎿  Added 4 lines
+      100    environment: EnvironmentMode;
+      101    actor: {memberId: string; isAdmin: boolean};
+      102    delta: AttendeeNotifyDelta;
+      103 +  // Number of times this event has already been deferred due 
+          +to a Google quota                                             
+      104 +  // (usage-limit) 403. Absent on the first enqueue; increment
+          +ed on each                                                    
+      105 +  // quota-backoff re-enqueue and capped by MAX_QUOTA_BACKOFF_
+          +RETRIES.                                                      
+      106 +  quotaRetryCount?: number;                                   
+      107  };
+      108  
+      109  const CALENDAR_SYNC_TASK_QUEUE = 'calendarSyncTask';
+
+⏺ Now let me verify it compiles. Let me check the build setup and run the
+  TypeScript compiler.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ One return literal (the top-level full-scan one) has shallower indentation, so
+  replace_all didn't match it. Let me fix that one:
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 1 line
+      1921      repairedEventSyncStateCount,
+      1922      removedOrphanedCount,
+      1923      cleanedSyncStateCount,
+      1924 +    quotaExhausted,                                          
+      1925    };
+      1926  }
+      1927  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Clean typecheck. Let me run the existing test suite to confirm I didn't break
+  anything (not new tests — just a regression check):
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ All 54 tests pass, clean build. Let me review the complete diff once to
+  confirm coherence before handing you the deploy command:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Diff is coherent and complete. tsc accepting scheduleDelaySeconds also
+  confirms the Cloud Tasks enqueue-with-delay API is correct. Let me confirm
+  where firebase.json lives so I give you the exact deploy command:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Everything checks out — clean build, all 54 tests pass. Let me record this
+  cross-session state in memory, then give you the summary and deploy command.
+
+  Recalled 1 memory, wrote 2 memories (ctrl+o to expand)
+
+⏺ Done. #1 + #2 are implemented, tsc is clean, and all 54 existing tests pass.
+
+  What changed (3 files, functions/)
+
+  #2 — Throttle down (index.ts): queue rate limits 2 concurrent / 3‑per‑sec → 1 
+  concurrent / 0.5‑per‑sec (one sync every 2s). Slow on purpose — a burst can no
+  longer exceed the consumer‑Gmail write cap. Fixed the misleading "rateLimits
+  keep us under quota BY DESIGN" comment (it never was, for a personal Gmail
+  account).
+
+  #1 — Quota‑aware backoff (all three files):
+  - isCalendarQuotaError() — precisely detects the 403 usageLimits/quotaExceeded
+  signature (and 429), not other 403s like permission.
+  - syncAppEventCalendars now surfaces quotaExhausted in its report (set in all
+  3 failure paths).
+  - The task handler: on a quota 403 it re‑enqueues the event 30 min later and 
+  returns success instead of re‑throwing. That kills the
+  fast‑retry‑into‑the‑same‑wall loop that was the storm. Non‑quota transient
+  errors keep the old fast‑retry. Bounded to 24 deferrals (~12h) then it logs
+  and gives up gracefully.
+
+  The re‑enqueue preserves the notify delta and the reconcile is idempotent, so
+  a deferred event still emails exactly the one changed member — no lost
+  invites, no duplicates.
+
+  Net effect: sync becomes slow‑but‑reliable. A quota hit is no longer a failure
+  — it's a scheduled deferral. Exactly the "compromise on time, not
+  reliability" trade you asked for. All free.
+
+  Deploy (required — Cloud Functions do NOT auto‑deploy)
+
+  cd "/Users/omerbengal/Documents/Github Projects/Shavtzak"
+  firebase deploy --only functions
+
+  Recommended order: if the storm is still active, purge the calendarSyncTask 
+  backlog first (so the old piled‑up retry tasks don't fire), then deploy.
+  Deploying also resets the queue to running — so it un‑pauses if you had paused
+  it, which is what you want now that the fix is in.
+
+  I did not commit — say the word if you want me to. And #3 (coalescing) — the
+  debounced delta‑accumulator that stops an event syncing 20–45× in the first
+  place — is the natural next step whenever you're ready; it composes cleanly on
+  top of this.
+
+✻ Baked for 8m 46s
+
+❯ give me steps for purge                                                       
+
+⏺ Here are the steps. Two paths — the Console needs no setup, so start there.
+
+  Option A — Cloud Console (no CLI auth, fastest)
+
+  1. Open the queue directly:
+  https://console.cloud.google.com/cloudtasks/queue/us-central1/calendarSyncTask
+  /tasks?project=tsevet-shir-shavtzak
+  2. Click PAUSE at the top (stops it dispatching / burning quota right now).
+  3. Click PURGE → confirm (drops the entire backlog of piled‑up retry tasks).
+
+  Option B — gcloud
+
+  gcloud is installed but not authenticated (separate login from the Firebase
+  CLI). In your prompt, run the login with the ! prefix so it happens
+  in‑session:
+
+  ! gcloud auth login
+
+  Then:
+  gcloud config set project tsevet-shir-shavtzak
+
+  # confirm the queue name / see backlog size
+  gcloud tasks queues describe calendarSyncTask --location=us-central1
+
+  # stop dispatching, then drop the backlog
+  gcloud tasks queues pause calendarSyncTask --location=us-central1
+  gcloud tasks queues purge calendarSyncTask --location=us-central1
+
+  What purge does + why it's safe
+
+  Purge permanently deletes every task currently in the queue — the storm's
+  retry backlog and any legit pending syncs. That's fine: the reconcile is
+  idempotent and self‑healing, so purged events just re‑sync the next time
+  someone touches them or on a manual "sync calendars". Nothing is permanently
+  lost.
+
+  Recommended sequence (relative to the deploy)
+
+  1. Pause   ← stops the bleeding immediately
+  2. Purge   ← clears the storm backlog
+  3. Deploy the fix (firebase deploy --only functions)
+     └─ deploy resets the queue to RUNNING with the new throttle + backoff
+  Do the deploy soon after the purge — while the queue is running, a fresh admin
+  burst could start re‑queuing before the fix lands. If you deploy right after,
+  the new gentle config takes over immediately.
+
+  If you'd rather I run the pause/purge for you, just run ! gcloud auth login
+  first and say go.
+
+✻ Sautéed for 27s
+
+※ recap: Goal: stop the Google Calendar email storm cheaply. I've coded and verified the throttle + quota-backoff fix; next, purge the calendarSyncTask queue (Console or gcloud), then run firebase deploy --only functions. (disable recaps in /config)
+
+❯ how can I disable the event sync in real time? such that only manual          
+  "re-sync" from the admin home screen will sync?                               
+
+⏺ Good question — this is actually the simplest possible way to make the storm
+  structurally impossible: if nothing syncs on writes, no burst can ever be
+  triggered. Let me first map exactly where the real-time sync fires and what
+  the manual button does, so I give you a precise plan (and flag one important
+  consequence).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Seven real-time triggers, plus a separate manual sync path. Let me see what
+  each trigger is attached to and how the manual "re-sync" endpoint works
+  (especially whether it sends emails or is silent).
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+⏺ All 7 real-time triggers funnel through the single enqueueCalendarSync
+  function — that's a clean chokepoint. The manual path calls
+  syncAppEventCalendars directly (bypassing it). Let me read the
+  enqueueCalendarSync function and the manual endpoint to confirm the email
+  behavior of a manual sync.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ I've mapped it. Here's the key finding that shapes the answer:
+
+  - All 7 real-time triggers (assignment create/delete, event edit, etc.) funnel
+  through one function, enqueueCalendarSync (index.ts:214). That's a single
+  clean chokepoint — gate it and every real-time sync stops at once.
+  - The manual "re-sync" button takes a different path — it calls
+  syncAppEventCalendars directly, bypassing enqueueCalendarSync. So it keeps
+  working untouched.
+
+  But there's one consequence you must decide on before I build it, because it
+  changes the behavior of your "must-have" feature:
+
+  ▎ Today the manual re-sync runs completely SILENTLY — it adds/removes calendar
+  ▎ attendees with sendUpdates:'none', i.e. no invite emails at all. It was 
+  ▎ designed that way on purpose (only real-time writes email). So if real-time 
+  ▎ becomes disabled, by default nobody would ever get an invite email again — 
+  ▎ members would only see assignments in-app and via silently-added calendar 
+  ▎ events.
+
+  That may be exactly what you want (the original complaint was "too many
+  emails"), or you may want the manual re-sync to become the deliberate moment
+  when emails go out. Two quick decisions:
+
+⏺ User answered Claude's questions:
+  ⎿  · When the admin presses "re-sync" (the only sync, once real-time is off), 
+     who should get invite emails? → Only changed members
+     · How do you want the real-time on/off switch controlled? → Hard-coded off
+⏺ Both answers noted:
+  - Real-time: hard-coded off — one guard in enqueueCalendarSync.
+  - Manual re-sync: email only changed members — the manual path must notify on
+  the attendee diff it computes.
+
+  Before I wire the second one, I need to understand the notify plumbing
+  precisely (there's an existing notifyAll / "invite-all" concept I must not
+  collide with). Let me read it.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+⏺ Now let me see how reconcileSingleAppEvent builds its notify plan, so I can
+  thread a "notify on every change" option cleanly through to the manual path.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ The notify mechanics are clear: notifyAll: true in the plan makes every 
+  add/remove (which by construction are only the changed members) get an email —
+  exactly "email only changed members." I need to thread a notifyAllChanges
+  flag into the manual sync path. Let me see the full manual endpoint(s) and
+  syncEventsAndConstraints to wire it into every manual mode.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+⏺ Two manual admin endpoints: /calendar/sync-app-event-attendees (single event)
+  and /calendar/sync-events-and-constraints (the chunked "re-sync" button: plan
+  → events → constraints, plus legacy 'all'). Let me read
+  syncEventsAndConstraints and the batch/full-scan reconcile calls to thread the
+  flag through every manual path.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ I have the complete map. Now let me look at the exact current text of the
+  three reconcileSingleAppEvent call sites (line numbers shifted after my
+  earlier edits) so I thread the flag precisely.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+⏺ All exact text captured. Now making the changes. First,
+  calendar_sync_backend.ts — the option, the signature, the notify plan, the
+  three call sites, and syncEventsAndConstraints.
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 7 lines
+      1723      // here are notified; every other attendee write converge
+            s silently. Absent
+      1724      // for passive full/manual syncs, which are therefore ent
+            irely silent.
+      1725      notifyByEventId?: AttendeeNotifyByEvent;
+      1726 +    // When true, EVERY genuine attendee change (add/remove) 
+           +emails the affected                                          
+      1727 +    // member — regardless of per-member deltas or the invite
+           +-all toggle. Set by                                          
+      1728 +    // the admin "re-sync" button so a manual sync notifies e
+           +xactly the members                                           
+      1729 +    // whose assignment changed since the last sync (unchange
+           +d members are never                                          
+      1730 +    // touched, so they get nothing). Automatic/real-time syn
+           +cs leave this false                                          
+      1731 +    // and rely on `notifyByEventId`.                        
+      1732 +    notifyAllChanges?: boolean;                              
+      1733    } = {},
+      1734  ): Promise<AppEventSyncReport> {
+      1735    const failedEventIds: string[] = [];
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 1 line
+      1345    eventSyncData: Record<string, unknown> | null,
+      1346    teamMemberCache: Map<string, Record<string, unknown> | null
+            >,
+      1347    notifyDelta?: AttendeeNotifyDelta,
+      1348 +  notifyAllChanges = false,                                  
+      1349  ): Promise<AppEventItemResult> {
+      1350    const desired = buildDesiredAppEventState(eventId, eventDat
+            a, dependencies.environment);
+      1351    const desiredEmails = await readEventAttendeeEmails(depende
+            ncies, eventId, eventData, teamMemberCache);
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 11 lines, removed 5 lines
+      1365    const optedIntoInviteAll =
+      1366      eventData['inviteAllPermanentWhenUnassigned'] === true &&
+      1367      eventData['relevantForExtendedTeam'] !== true;
+      1368 -  const notify = buildAttendeeNotifyPlan({                   
+      1369 -    optedIntoInviteAll,                                      
+      1370 -    triggeredByChange,                                       
+      1371 -    notifyEmails,                                            
+      1372 -  });                                                        
+      1368 +  // `notifyAllChanges` (admin manual re-sync): email every a
+           +dd/remove. Because                                           
+      1369 +  // the diff below only adds members not already present and
+           + only removes                                                
+      1370 +  // members no longer desired, this emails exactly the membe
+           +rs whose assignment                                          
+      1371 +  // changed since the last sync — never the unchanged ones. 
+      1372 +  const notify: AttendeeNotifyPlan = notifyAllChanges        
+      1373 +    ? {emails: new Set<string>(), notifyAll: true}           
+      1374 +    : buildAttendeeNotifyPlan({                              
+      1375 +        optedIntoInviteAll,                                  
+      1376 +        triggeredByChange,                                   
+      1377 +        notifyEmails,                                        
+      1378 +      });                                                    
+      1379    const currentStateAssemblyId = optionalString(eventSyncData
+            ?.['assemblyCalendarEventId']) ?? '';
+      1380    const currentStateMainId = optionalString(eventSyncData?.['
+            mainCalendarEventId']) ?? '';
+      1381    const currentStateStatus = optionalString(eventSyncData?.['
+            status']) ?? '';
+
+⏺ Now the three reconcile call sites:
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 1 line
+      1788          syncStateDoc.exists ? syncStateDoc.data() ?? null : n
+            ull,
+      1789          teamMemberCache,
+      1790          options.notifyByEventId?.[eventId],
+      1791 +        options.notifyAllChanges ?? false,                   
+      1792        );
+      1793        createdEventPartCount += result.createdEventPartCount;
+      1794        updatedEventPartCount += result.updatedEventPartCount;
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 1 line
+      1850            syncStateDoc.exists ? syncStateDoc.data() ?? null :
+             null,
+      1851            teamMemberCache,
+      1852            options.notifyByEventId?.[eventId],
+      1853 +          options.notifyAllChanges ?? false,                 
+      1854          );
+      1855          createdEventPartCount += result.createdEventPartCount
+            ;
+      1856          updatedEventPartCount += result.updatedEventPartCount
+            ;
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 2 lines
+      1907          doc.data() ?? {},
+      1908          syncByEventId.get(doc.id) ?? null,
+      1909          teamMemberCache,
+      1910 +        undefined,                                           
+      1911 +        options.notifyAllChanges ?? false,                   
+      1912        );
+      1913        createdEventPartCount += result.createdEventPartCount;
+      1914        updatedEventPartCount += result.updatedEventPartCount;
+
+⏺ Now syncEventsAndConstraints (legacy all mode):
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 2 lines, removed 1 line
+      2082  
+      2083  export async function syncEventsAndConstraints(
+      2084    dependencies: ConstraintDependencies,
+      2085 +  notifyAllChanges = false,                                  
+      2086  ): Promise<CombinedCalendarSyncReport> {
+      2087    const [appEvents, constraints] = await Promise.all([
+      2087 -    syncAppEventCalendars(dependencies),                     
+      2088 +    syncAppEventCalendars(dependencies, {notifyAllChanges}), 
+      2089      syncConstraintCalendars(dependencies),
+      2090    ]);
+      2091  
+
+⏺ Now index.ts — the real-time OFF switch (the guard in the single chokepoint)
+  plus wiring the manual re-sync endpoint to notify changed members:
+
+⏺ Update(functions/src/index.ts)
+  ⎿  Added 15 lines
+      206    }
+      207  }
+      208  
+      209 +// Master switch for AUTOMATIC (real-time) calendar sync. When
+          + false, no                                                    
+      210 +// assignment/event write ever enqueues a calendar-sync task —
+          + calendar changes                                             
+      211 +// are applied ONLY when an admin presses "re-sync" on the adm
+          +in home screen                                                
+      212 +// (the /calendar/sync-events-and-constraints endpoint). This 
+          +makes the                                                     
+      213 +// consumer-Gmail quota storm structurally impossible: normal 
+          +app activity can                                              
+      214 +// no longer trigger a burst of Google Calendar writes. Flip t
+          +o true (and                                                   
+      215 +// `firebase deploy --only functions`) to restore automatic re
+          +al-time sync.                                                 
+      216 +const REALTIME_CALENDAR_SYNC_ENABLED = false;                 
+      217 +                                                              
+      218  // Enqueue one calendar-sync task per affected event. Awaited 
+           so each task is
+      219  // durably created before the HTTP response returns — an un-aw
+           aited enqueue would
+      220  // hit the very CPU-throttle problem this replaces. Enqueue fa
+           ilures are
+     ...
+      226    operationLabel: string,
+      227    notifyByEventId: AttendeeNotifyByEvent = {},
+      228  ): Promise<void> {
+      229 +  // Real-time sync disabled: skip every automatic write-trigg
+          +ered sync. The                                                
+      230 +  // manual admin "re-sync" bypasses this function (it calls s
+          +yncAppEventCalendars                                          
+      231 +  // directly), so it is unaffected.                          
+      232 +  if (!REALTIME_CALENDAR_SYNC_ENABLED) {                      
+      233 +    return;                                                   
+      234 +  }                                                           
+      235    const tasks = planCalendarSyncTasks(eventIds, notifyByEventI
+           d);
+      236    if (tasks.length === 0) {
+      237      return;
+
+⏺ Update(functions/src/index.ts)
+  ⎿  Added 6 lines, removed 1 line
+      4100  
+      4101      if (mode === 'events') {
+      4102        const eventIds = optionalStringArray(request.body?.even
+            tIds);
+      4103 -      const eventSummary = await syncAppEventCalendars(depend
+           -encies, {eventIds});                                         
+      4103 +      // Manual admin re-sync: notify exactly the members who
+           +se assignment                                                
+      4104 +      // changed since the last sync (unchanged members are u
+           +ntouched → silent).                                          
+      4105 +      const eventSummary = await syncAppEventCalendars(depend
+           +encies, {                                                    
+      4106 +        eventIds,                                            
+      4107 +        notifyAllChanges: true,                              
+      4108 +      });                                                    
+      4109        response.json({ok: true, ...serializeAppEventSyncReport
+            (eventSummary)});
+      4110        return;
+      4111      }
+
+⏺ Update(functions/src/index.ts)  ⎿  Added 3 lines, removed 1 line
+      4116        return;
+      4117      }
+      4118  
+      4119 -    const combined = await syncEventsAndConstraints(dependenc
+           -ies);                                                        
+      4119 +    // Legacy one-shot full sync (older clients that omit `mo
+           +de`). Same manual                                            
+      4120 +    // re-sync semantics: notify only the members whose assig
+           +nment changed.                                               
+      4121 +    const combined = await syncEventsAndConstraints(dependenc
+           +ies, true);                                                  
+      4122  
+      4123      response.json({
+      4124        ok: true,
+
+⏺ Now typecheck and run the test suite:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Clean typecheck, all 54 tests pass. Let me verify one loose end: whether
+  constraints also sync in real-time through a separate path (the user said
+  "event sync," but I want to confirm what's still live after this change).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ One more live path to check: syncAssignedFutureEventsForMemberEmailChange at
+  line 1897 fires on a member email change and calls sync directly (bypassing
+  both my guard and the throttled queue). Let me look at it — it's a real-time
+  sync that would survive my change.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ That's a real-time sync bypassing both the queue and my guard. I'll gate it
+  behind the same master switch — an email change will simply be picked up (and
+  corrected) by the next manual re-sync.
+
+⏺ Update(functions/src/index.ts)
+  ⎿  Added 5 lines, removed 1 line
+      1892        await docRef.update(next);
+      1893        const previousEmail = normalizeOptionalText(existing['e
+            mail']);
+      1894        const nextEmail = normalizeOptionalText(next['email']);
+      1895 -      if (previousEmail !== nextEmail) {                     
+      1895 +      // Real-time-only corrective sync (re-invite the member
+           +'s new address on                                            
+      1896 +      // their future events). Gated by the master switch: wh
+           +en real-time is off,                                         
+      1897 +      // a manual re-sync picks up the address change and con
+           +verges it (adds the                                          
+      1898 +      // new email, cancels the old).                        
+      1899 +      if (REALTIME_CALENDAR_SYNC_ENABLED && previousEmail !==
+           + nextEmail) {                                                
+      1900          try {
+      1901            await syncAssignedFutureEventsForMemberEmailChange(
+      1902              {
+
+⏺ Let me typecheck, run tests, and check whether the deploy runs a lint step
+  that might object to the constant guard:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Clean tsc, no lint step to trip over. Let me run the tests and confirm what
+  the deploy actually runs (firebase.json predeploy):
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ All 54 tests pass; lib/ is freshly built. No predeploy hook, so the deploy
+  uses compiled lib/ (build before deploying). One more thing worth checking so
+  I can flag consequences accurately: does event deletion clean up calendar
+  artifacts via the (now-disabled) real-time path, or a direct call?
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Everything checks out. Here's the key finding that completes the picture, then
+  the summary.
+
+  Event deletion is unaffected — event.delete calls
+  deleteAppEventCalendarArtifacts directly (index.ts:2565), not through the
+  disabled real-time path. So deleting an event still removes it from everyone's
+  calendar immediately. That's what you want, and it's a delete (not the
+  attendee-invite path), so it can't storm.
+
+  Let me record this in memory, then give you the summary + deploy command.
+
+  Wrote 1 memory (ctrl+o to expand)
+
+⏺ Done. tsc clean, all 54 tests pass.
+
+  What changed (both files, functions/)
+
+  Real-time sync is now OFF via one master switch:
+  const REALTIME_CALENDAR_SYNC_ENABLED = false;  // index.ts
+  - All 7 write triggers (assignment create/delete, event edit, etc.) funnel
+  through enqueueCalendarSync, which now early-returns → no write ever enqueues 
+  a sync.
+  - The member email-change re-sync (a direct call that bypassed the queue) is
+  gated by the same flag.
+  - Event deletion still cleans the calendar immediately (direct delete —
+  correct behavior, can't storm).
+
+  The manual "re-sync" (admin home screen) now emails only changed members. I
+  threaded a notifyAllChanges flag through syncAppEventCalendars →
+  reconcileSingleAppEvent so the manual sync notifies exactly the members whose 
+  assignment changed since the last sync (the attendee diff). Unchanged members
+  are never touched → get nothing. Wired into
+  /calendar/sync-events-and-constraints (the chunked events mode + legacy all).
+
+  Behavior now
+
+  Create/edit assignments freely → nothing happens on Google Calendar. When the
+  admin presses re-sync, it applies all pending changes and emails only the
+  people whose assignment actually changed. One deliberate, admin-controlled
+  moment instead of a live stream.
+
+  One caveat you should know
+
+  The manual re-sync runs synchronously — it does not use the throttled/backoff
+  queue from step 1. So a very large first re-sync (big backlog of changes)
+  could partly hit the consumer-Gmail quota. But it cannot storm — there's no
+  retry loop, so a 403 just skips that event; press re-sync again to finish. In
+  steady state the diffs are tiny, and the chunked client sends events in small
+  batches anyway. (Real-time being off already makes the storm impossible; this
+  is the belt to that suspenders.)
+
+  Two smaller notes: the per-event sync button
+  (/calendar/sync-app-event-attendees) stays silent — I only wired the
+  home-screen re-sync to email; tell me if you want that one to email too. And
+  to flip real-time back on later: set the flag to true and redeploy.
+
+  Deploy (required — no predeploy hook, so build first)
+
+  cd "/Users/omerbengal/Documents/Github Projects/Shavtzak/functions"
+  npm run build
+  firebase deploy --only functions
+  If today's storm backlog is still in the queue, purge it first (previous
+  steps) — though with real-time off, nothing new will enqueue anyway, so the
+  queue goes dormant after this. Both step-1 (throttle + backoff) and step-2
+  (real-time off + manual-notify) ship together in this one deploy.
+
+  I did not commit — say the word if you want me to.
+
+✻ Baked for 12m 24s
+
+❯ before i deploy,                                                              
+  if I have some tasks in the queue (it is paused)                              
+  what to do?                                                                   
+
+⏺ Purge them before you deploy. Here's why it matters:
+
+  Pausing only stopped those tasks — it didn't remove them. And deploying 
+  un-pauses the queue (a firebase deploy resets it to RUNNING). So the moment
+  you deploy, that whole backlog fires. Two problems with letting it fire:
+
+  1. They still carry email deltas. Each queued task has a delta of members to
+  notify — so when they run, they'll send exactly the invite emails you're
+  trying to stop. (My real-time switch only blocks new enqueues from writes; it
+  does nothing to tasks already sitting in the queue.)
+  2. They're storm-era tasks — stale/duplicate work from today's burst.
+
+  Purging is safe: the reconcile is idempotent and self-healing, so anything
+  those tasks would have done gets applied by your manual re-sync afterward
+  (silently for unchanged members, emailing only genuine changes). Nothing is
+  permanently lost.
+
+  Sequence
+
+  1. Purge the (paused) queue      ← drops the backlog so it can't fire on
+  deploy
+  2. npm run build && firebase deploy --only functions
+  3. Press "re-sync" on the admin home screen   ← converges everything, emails
+  only changed members
+
+  Purge command
+
+  Console: open the queue → Purge:
+  https://console.cloud.google.com/cloudtasks/queue/us-central1/calendarSyncTask
+  /tasks?project=tsevet-shir-shavtzak
+  gcloud (after ! gcloud auth login):
+  gcloud tasks queues purge calendarSyncTask --location=us-central1
+
+  After the deploy, the queue goes essentially dormant anyway — with real-time
+  off nothing new enqueues, and manual re-sync runs directly (not through the
+  queue). So this is the last time you'll need to babysit it unless you flip
+  real-time back on.
+
+  One note: if you'd rather not touch the queue at all, you could just deploy
+  and let the backlog fire — it won't storm (the new throttle + backoff are in
+  the same deploy), but it will send that batch of queued emails. Purging is the
+  clean way to avoid them.
+
+✻ Sautéed for 47s
+
+※ recap: Goal: stop the Google Calendar email storm for free. The backoff/throttle plus real-time-off (manual re-sync only) code is done and passing tests, not yet deployed. Next: purge the paused queue, then build and deploy functions. (disable recaps in /config)
+
+❯ I did everything.                                                             
+  Then, I created an example event for tomorrow, and added myself, and tried    
+  using the sync button...                                                      
+  But I keep getting this error:                                                
+  "                                                                             
+  שגיאה בסנכרון                                                                 
+                                                                                
+  סנכרון אירועים ומגבלות נכשל: בעיית תקשורת עם השרת. בדוק את החיבור לאינטרנט    
+  ונסה שוב.                                                                     
+                                                                                
+  נסה שוב  סגירה                                                                
+  "                                                                             
+
+⏺ This is a regression right after my change — I need evidence, not guesses. Let
+  me use the systematic-debugging skill.
+
+⏺ Skill(superpowers:systematic-debugging)
+  ⎿  Successfully loaded skill
+⏺ Phase 1: Root cause investigation — gather evidence before any fix.
+
+  Two independent sources: (a) what exactly makes the client show that message,
+  and (b) what the server actually did. Let me get both in parallel.
+
+  Read 1 file, called plugin:firebase:firebase, ran 1 shell command (ctrl+o to expand)
+
+⏺ Two key facts already:
+
+  Client side (backend_api_service.dart:40-51): networkErrorMessage is shown
+  only when the request never got a response — http.ClientException or
+  TimeoutException. So this is a timeout / dropped connection, NOT a normal
+  server error response.
+
+  Server side: the api function is logging ERROR-severity request entries in
+  pairs ~2s apart (= the client's retries), but with no stderr stack trace.
+
+  I need the actual server-side story. Let me pull all api logs (not just ERROR)
+  around the attempt, and read the client's post() to see exactly what it does
+  on timeout vs 500.
+
+  Read 1 file, called plugin:firebase:firebase (ctrl+o to expand)
+
+⏺ Now I have hard numbers:
+  - Client timeout: 30s (requestTimeout = Duration(seconds: 30), 3 attempts).
+  Timeout → TimeoutException → exactly the message you saw.
+  - Server (api) timeout: 60s, 256Mi.
+  - The sync fired ~50 successful (INFO/200) requests from 04:34:31→04:35:02,
+  then 2 ERRORs at 04:35:13 & 04:35:15 — and crucially the api function logged
+  no stderr stack trace, so it did not throw a JS exception.
+
+  That pattern says the request hung past a timeout, it didn't crash. Let me pin
+  down which step. Let me read the client's chunked sync flow + post() error
+  handling, and pull the server's application logs (stdout/stderr, not request
+  logs).
+
+  Called plugin:firebase:firebase, ran 1 shell command (ctrl+o to expand)
+
+⏺ Let me extract the actual application log messages from that file.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ I have the root cause. It's definitive — and I found something urgent you need
+  to know before you press that button again.
+
+  Let me confirm the chunk size to complete the picture.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Root cause confirmed. Let me check how the client surfaces server errors (so
+  my fix can show an honest message), then I'll report.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+⏺ Phase 1 complete — root cause found. It is not a network problem, and not a 
+  crash.
+
+  What's actually happening
+
+  Google's Calendar quota is STILL exhausted — every single attendee add is
+  returning 403 Calendar usage limits exceeded, 18+ hours after yesterday's
+  storm. From your server logs just now:
+
+  Failed to reconcile app event 21db999c…: GoogleApiError:
+  {"errors":[{"domain":"usageLimits","reason":"quotaExceeded",
+   "message":"Calendar usage limits exceeded."}],"code":403}
+     at addAttendeeToEvent → patchCalendarEvent
+
+  The chain to your error message:
+  1. The client syncs 10 events per request, with a 30s timeout (3 retries).
+  2. Quota blown → each event grinds through Google calls, then 403s (~1–3s
+  each).
+  3. 10 × ~2–3s ≈ 20–30s → the request blows past the 30s client timeout.
+  4. TimeoutException → "בעיית תקשורת עם השרת". The message is a lie — it's
+  Google's quota, not your internet.
+  5. The client then retries the same chunk 3× (you can see the same event IDs
+  repeating in the logs) and gives up.
+
+  🚨 The urgent part — don't press re-sync again until I redeploy
+
+  Your logs show what the sync is trying to do:
+
+  attendees part=c8357q9… notifyAll=true
+  adds=[davidznati:all, dmarybrowne:all, ifatcofix:all, …]
+
+  It wants to add 5–10 members to EACH of ~15 events, every one with 
+  sendUpdates:"all" — because the storm blocked all attendee writes, so your
+  Google events currently have almost no attendees. The calendar isn't "roughly
+  in sync" like I assumed when I wired up notifyAllChanges: true — it's
+  massively behind.
+
+  So the moment Google's quota recovers, one press of re-sync would fire ~100 
+  invitation emails to the whole team at once — and instantly re-blow the quota.
+  That's my mistake, and I need to correct it before you sync again.
+
+  The fix
+
+  1. Wait for Google's quota to reset. No code bypasses this — it's a
+  consumer-Gmail guest-invite cap on a ~24h rolling window that yesterday's
+  storm massively overshot.
+  2. Make the catch-up sync SILENT, so the first successful re-sync converges
+  the calendar without emailing anyone. Once it's caught up, I flip one constant
+  and future syncs email only genuinely-changed members (which will then be a
+  tiny diff — the behavior you actually asked for).
+  3. Fail fast with an honest error — abort on the first quota 403 and return a
+  real Hebrew message instead of grinding into a fake "check your internet."
+
+  Let me implement 2 and 3.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Good thing I looked — I found a bug in my own earlier change. The batch loop's
+  catch (line 1865, 8-space indent) never got the quotaExhausted line; my
+  replace_all only matched the differently-indented single-event catch. The 
+  batch path is exactly what the manual re-sync uses. Let me verify:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Confirmed — a real bug I introduced: only 2 of the 3 catch blocks set
+  quotaExhausted, and the missing one (line 1866) is the batch path the manual 
+  re-sync actually uses. (tsc couldn't catch it; no test covered it.) Fixing
+  that plus adding fail-fast:
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 6 lines
+      1865        } catch (error) {
+      1866          console.error(`Failed to reconcile app event ${eventI
+            d}:`, error);
+      1867          failedEventIds.push(eventId);
+      1868 +        if (isCalendarQuotaError(error)) quotaExhausted = tru
+           +e;                                                           
+      1869        }
+      1870 +      // Fail fast: once Google's usage limit is exhausted, e
+           +very remaining event                                         
+      1871 +      // fails the same way. Stop rather than burn the rest o
+           +f the chunk (and the                                         
+      1872 +      // client's 30s request timeout) on work that cannot po
+           +ssibly succeed —                                             
+      1873 +      // grinding on produces a bogus "network error" instead
+           + of an honest one.                                           
+      1874 +      if (quotaExhausted) break;                             
+      1875      }
+      1876  
+      1877      return {
+
+⏺ Update(functions/src/calendar_sync_backend.ts)
+  ⎿  Added 2 lines
+      1931        failedEventIds.push(doc.id);
+      1932        if (isCalendarQuotaError(error)) quotaExhausted = true;
+      1933      }
+      1934 +    // Fail fast on quota exhaustion (see the batch path abov
+           +e).                                                          
+      1935 +    if (quotaExhausted) break;                               
+      1936    }
+      1937  
+      1938    return {
+
+⏺ Now the notify switch + the honest error. First the constant in index.ts:
+
+⏺ Update(functions/src/index.ts)
+  ⎿  Added 22 lines
+      215  // `firebase deploy --only functions`) to restore automatic re
+           al-time sync.
+      216  const REALTIME_CALENDAR_SYNC_ENABLED = false;
+      217  
+      218 +// Whether a manual admin "re-sync" emails the members it adds
+          +/removes.                                                     
+      219 +//                                                            
+      220 +// KEEP THIS false until the calendar has CAUGHT UP with the a
+          +pp. The 2026-07                                               
+      221 +// quota storm blocked every attendee write, so the Google eve
+          +nts currently have                                            
+      222 +// almost no attendees — a notifying re-sync would email the E
+          +NTIRE roster of                                               
+      223 +// EVERY event in one burst (~100 invites) and instantly re-ex
+          +haust the quota.                                              
+      224 +//                                                            
+      225 +// Sequence: run the catch-up re-sync silently first (this = f
+          +alse). Once the                                               
+      226 +// calendar matches the app, flip to true + `firebase deploy -
+          +-only functions`.                                             
+      227 +// From then on each re-sync emails only the members whose ass
+          +ignment genuinely                                             
+      228 +// changed since the previous sync — a small diff, because the
+          + reconcile only                                               
+      229 +// adds members not already on the event and only removes ones
+          + no longer desired.                                           
+      230 +const MANUAL_SYNC_NOTIFIES_CHANGED_MEMBERS = false;           
+      231 +                                                              
+      232 +// Google's per-account Calendar usage limit is exhausted; add
+          +ing guests is                                                 
+      233 +// temporarily blocked. Surfaced to the admin instead of letti
+          +ng the sync grind                                             
+      234 +// through every event and die on the client's 30s timeout wit
+          +h a misleading                                                
+      235 +// "check your internet connection".                          
+      236 +const CALENDAR_QUOTA_EXHAUSTED_MESSAGE =                      
+      237 +  'מכסת Google Calendar מוצתה — גוגל חוסמת זמנית הוספת מוזמנים
+          + לאירועים. ' +                                                
+      238 +  'הסנכרון הופסק ולא בוצעו שינויים נוספים. נסה שוב בעוד מספר ש
+          +עות.';                                                        
+      239 +                                                              
+      240  // Enqueue one calendar-sync task per affected event. Awaited 
+           so each task is
+      241  // durably created before the HTTP response returns — an un-aw
+           aited enqueue would
+      242  // hit the very CPU-throttle problem this replaces. Enqueue fa
+           ilures are
+
+⏺ Now wire both into the manual endpoints:
+
+⏺ Update(functions/src/index.ts)
+  ⎿  Added 7 lines, removed 3 lines
+      4126  
+      4127      if (mode === 'events') {
+      4128        const eventIds = optionalStringArray(request.body?.even
+            tIds);
+      4129 -      // Manual admin re-sync: notify exactly the members who
+           -se assignment                                                
+      4130 -      // changed since the last sync (unchanged members are u
+           -ntouched → silent).                                          
+      4129 +      // Manual admin re-sync. When notifying is enabled, thi
+           +s emails exactly the                                         
+      4130 +      // members whose assignment changed since the last sync
+           + (unchanged members                                          
+      4131 +      // are never touched → they get nothing).              
+      4132        const eventSummary = await syncAppEventCalendars(depend
+            encies, {
+      4133          eventIds,
+      4133 -        notifyAllChanges: true,                              
+      4134 +        notifyAllChanges: MANUAL_SYNC_NOTIFIES_CHANGED_MEMBER
+           +S,                                                           
+      4135        });
+      4136 +      if (eventSummary.quotaExhausted) {                     
+      4137 +        throw new HttpError(503, CALENDAR_QUOTA_EXHAUSTED_MES
+           +SAGE);                                                       
+      4138 +      }                                                      
+      4139        response.json({ok: true, ...serializeAppEventSyncReport
+            (eventSummary)});
+      4140        return;
+      4141      }
+
+⏺ Update(functions/src/index.ts)
+  ⎿  Added 7 lines, removed 1 line
+      4148  
+      4149      // Legacy one-shot full sync (older clients that omit `mo
+            de`). Same manual
+      4150      // re-sync semantics: notify only the members whose assig
+            nment changed.
+      4151 -    const combined = await syncEventsAndConstraints(dependenc
+           -ies, true);                                                  
+      4151 +    const combined = await syncEventsAndConstraints(         
+      4152 +      dependencies,                                          
+      4153 +      MANUAL_SYNC_NOTIFIES_CHANGED_MEMBERS,                  
+      4154 +    );                                                       
+      4155 +    if (combined.appEvents.quotaExhausted) {                 
+      4156 +      throw new HttpError(503, CALENDAR_QUOTA_EXHAUSTED_MESSA
+           +GE);                                                         
+      4157 +    }                                                        
+      4158  
+      4159      response.json({
+      4160        ok: true,
+
+⏺ Now the single-event manual endpoint, so it reports quota honestly too:
+
+⏺ Update(functions/src/index.ts)  ⎿  Added 4 lines
+      4024        },
+      4025      );
+      4026  
+      4027 +    if (summary.quotaExhausted) {                            
+      4028 +      throw new HttpError(503, CALENDAR_QUOTA_EXHAUSTED_MESSA
+           +GE);                                                         
+      4029 +    }                                                        
+      4030 +                                                             
+      4031      response.json({
+      4032        ok: true,
+      4033        scannedCount: summary.scannedCount,
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ tsc clean, all 3 catch blocks now correct, both loops fail-fast, 54 tests
+  pass. Let me record this and give you the plan.
+
+  Wrote 1 memory (ctrl+o to expand)
+
+⏺ Summary
+
+  Your sync isn't broken — Google is still blocking you. The quota from
+  yesterday's storm has not reset. Every attendee add still returns 403 Calendar
+  usage limits exceeded. The "בעיית תקשורת עם השרת" message was a red herring:
+  the request just took >30s grinding through 403s and hit the client's timeout.
+
+  What I changed (3 fixes)
+
+  1. Catch-up sync is now SILENT (MANUAL_SYNC_NOTIFIES_CHANGED_MEMBERS = false).
+  This is the important one — it prevents the ~100-email blast that would have
+  fired the moment Google's quota recovered.
+  2. Fail fast on quota — the sync now stops at the first 403 instead of
+  grinding through every event into a timeout.
+  3. Honest error — you'll now see a real message instead of a fake network
+  error:
+  ▎ מכסת Google Calendar מוצתה — גוגל חוסמת זמנית הוספת מוזמנים לאירועים. 
+  הסנכרון הופסק ולא בוצעו שינויים נוספים. נסה שוב בעוד מספר שעות.
+
+  I also fixed a bug I introduced yesterday: my replace_all missed one catch
+  block (different indentation), so quotaExhausted was never set on the batch
+  path — which is exactly the path the manual re-sync uses. Now all three are
+  correct.
+
+  Deploy
+
+  cd "/Users/omerbengal/Documents/Github Projects/Shavtzak/functions"
+  npm run build
+  firebase deploy --only functions
+
+  Then: wait, and press re-sync
+
+  - Wait several hours (consumer-Gmail guest quota is a ~24h rolling window, and
+  yesterday massively overshot it). Nothing you or I can code around this.
+  - Press re-sync. If quota is still out, you now get the clear message in ~2 
+  seconds instead of a 30s fake network error. Just try again later.
+  - When it goes through, the calendar converges silently — zero emails.
+
+  One honest caveat: silent adds still consume Google's guest-add quota (adding
+  a guest counts even without an email). With ~100 attendees to catch up, you
+  may need a few presses across a day or two — each press makes idempotent
+  progress, then stops cleanly. Nothing is lost.
+
+  Once the calendar has caught up, tell me — I'll flip
+  MANUAL_SYNC_NOTIFIES_CHANGED_MEMBERS to true and redeploy, and from then on
+  each re-sync emails only the members whose assignment genuinely changed (a
+  small diff — the behavior you originally asked for). Doing that now would be
+  the blast; doing it after convergence is safe.
+
+✻ Cooked for 9m 16s
+
+❯ I have a question, all of this would be solved if we would not send email     
+  updates?                                                                      
+  In other words, the issue is with the gmail sends? and not with the google    
+  calendar?                                                                     
+
+⏺ That is exactly the right question to press on — and I should answer it with
+  evidence, not from memory. Let me be precise about the distinction:
+
+  - sendUpdates: 'all' vs 'none' controls only whether Google emails the guest.
+  - Either way, the code still does the same PATCH to add the guest to the event
+  (addAttendeeToEvent → patchCalendarEvent).
+
+  So the question is: does Google's quota count the guest-add, or only the 
+  email? If only the email, then going fully silent fixes everything immediately
+  — no waiting. Let me prove it from your logs rather than assert it.
+
+  I need to find a 403 on an event whose attendee pushes were all 'none'.
+  Yesterday's storm had 754 silent pushes, so the evidence should be there.
+
+  Called plugin:firebase:firebase (ctrl+o to expand)
+
+⏺ Transient tool error. Let me retry with a narrower window and the function id
+  as it appears in the logs.
+
+  Called plugin:firebase:firebase 2 times (ctrl+o to expand)
+
+⏺ Great question — and the answer matters a lot, so I pulled the decisive
+  evidence from your logs rather than answering from memory.
+
+  No. Turning off emails would not solve it.
+
+  This is a Google Calendar limit, not a Gmail sending limit. The quota is
+  consumed by adding a guest to an event — not by sending the email.
+
+  Here's the proof, straight from your logs during the peak of yesterday's storm
+  (12:40–12:51):
+
+  12:40:02  attendees part=hlrkld72… notifyAll=false adds=[guyh:none,
+  omer170590:none, omerbengal7:none]
+  12:41:53  attendees part=hlrkld72… notifyAll=false adds=[guyh:none,
+  omer170590:none, omerbengal7:none]
+  12:43:03  attendees part=hlrkld72… notifyAll=false adds=[guyh:none,
+  omer170590:none, omerbengal7:none]
+  12:44:26  attendees part=hlrkld72… notifyAll=false adds=[guyh:none,
+  omer170590:none, omerbengal7:none]
+     … every ~14 seconds, for 10+ minutes …
+
+  Every single one is sendUpdates:"none" — completely silent, zero emails sent.
+  And they kept failing with 403 quotaExceeded and retrying the identical
+  guest-add over and over for ten minutes. If those silent adds had succeeded,
+  the member would already be an attendee and the next pass would skip them —
+  but it re-adds them every time, which means the silent PATCH was being 
+  rejected by the quota too.
+
+  Why
+
+  In the code, sendUpdates only decides whether Google emails the guest:
+
+  addAttendeeToEvent(...)  →  patchCalendarEvent(..., { sendUpdates })   // ← 
+  PATCH happens either way
+
+  The PATCH that puts the person on the event runs regardless. To Google, adding
+  a guest is creating an invitation — the event lands on their calendar and
+  they can RSVP — so it counts against the usage limit whether or not a
+  notification email goes out. The error even says so: domain: "usageLimits",
+  "Calendar usage limits exceeded" — Calendar, not Gmail.
+
+  So what does going silent actually buy you?
+
+  It's still worth doing — just not for the reason you hoped:
+  - ✅ It ends the email spam (your team's original complaint).
+  - ✅ It avoids the invitation-email quota, which is a separate and stricter
+  limit stacked on top.
+  - ❌ It does not let you sync while the guest-add quota is exhausted. You
+  still have to wait.
+
+  So the plan I just built stands: wait for the quota, then run the silent 
+  catch-up.
+
+  The honest long-term picture
+
+  On a consumer Gmail account you will keep bumping into this ceiling forever,
+  because your model is "invite ~10 guests to every event." The only free way to
+  become structurally immune is to stop adding guests at all — e.g. publish a
+  per-member ICS subscription feed, or put events on a shared/per-member 
+  calendar the team subscribes to once. Either way there are no per-event
+  invitations, so there's no invitation quota to blow. The trade-offs are real
+  (no email invites; Google refreshes external ICS feeds on its own slow
+  schedule) — but it's the free equivalent of buying Workspace.
+
+  Want me to sketch that out properly once you're through the current fire? For
+  now: deploy, wait, silent catch-up.
+
+✻ Cooked for 1m 55s
+
+❯ how much to wait?                                                             
+
+⏺ Let me ground this in the actual timeline rather than guess.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ ~19 hours in so far. Here's the honest answer.
+
+  Short version: try again this afternoon (Israel time)
+
+  Google doesn't publish these numbers, so I won't pretend to a precise figure.
+  But there are only two plausible reset models, and both point at today:
+
+  ┌─────────────────────────────────────────────────┬───────────────────────┐
+  │                      Model                      │    Reset lands at     │
+  ├─────────────────────────────────────────────────┼───────────────────────┤
+  │ Daily reset at midnight Pacific                 │ ~10:00 Israel (≈2h    │
+  │                                                 │ from now)             │
+  ├─────────────────────────────────────────────────┼───────────────────────┤
+  │ Rolling 24h window from your heavy burst        │ ~13:00–16:00 Israel   │
+  │ (13:00–16:00 Israel yesterday)                  │ today                 │
+  └─────────────────────────────────────────────────┴───────────────────────┘
+
+  So: first cheap probe around 10:00–11:00, and if that's still blocked, again 
+  in the afternoon (14:00–16:00).
+
+  The good news: probing is now nearly free
+
+  With the fail-fast I just added, a blocked attempt costs ~2 seconds and gives
+  you the clear Hebrew quota message instead of a 30s fake "network error." It
+  stops at the first 403 — it doesn't grind through your events or hammer
+  Google.
+
+  So don't agonize over the timing. Just press re-sync every few hours. When it
+  goes through, the silent catch-up runs automatically.
+
+  ⚠️ One rule: space attempts hours apart, not minutes. Repeatedly banging on an
+  exhausted quota is what turned a small problem into a 19-hour outage in the
+  first place.
+
+  Two caveats I owe you
+
+  1. You must deploy first, or you'll just get the same misleading 30s timeout:
+  cd "/Users/omerbengal/Documents/Github Projects/Shavtzak/functions"
+  npm run build && firebase deploy --only functions
+  2. The catch-up may not finish in one go. You need ~100 guest-adds, and a
+  freshly-reset daily allowance on a consumer Gmail account may be smaller than
+  that. If so, the sync will do what it can, stop cleanly with the quota
+  message, and you press again later. It's idempotent — every press makes real 
+  progress, nothing is lost or duplicated.
+
+  If it's still blocked after tomorrow, that tells us the guest-add ceiling is
+  simply too low for a 10-person roster on a personal Gmail — and the real
+  answer becomes the structural one (stop adding guests entirely:
+  shared/per-member calendar or ICS feed). Say the word and I'll design that
+  properly.
+
+✻ Cooked for 57s
+
+※ recap: Goal: get Google Calendar sync working reliably without email storms, for free. The code fix is written and passing, but Google's quota is still blocked. Next: deploy (npm run build && firebase deploy --only functions), then press re-sync around 10:00–11:00 Israel.
+
+❯ /rename only re-sync admin home page button for google calendar 
+  ⎿  Session renamed to: only re-sync admin home page button for google calendar

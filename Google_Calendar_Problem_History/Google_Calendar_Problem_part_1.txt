@@ -1,0 +1,779 @@
+ ▐▛███▜▌   Claude Code v2.1.205
+▝▜█████▛▘  Opus 4.8 · Claude Max
+  ▘▘ ▝▝    ~/Documents/Github Projects/Shavtzak/functions
+
+ ▎ Extended through July 19
+ ▎ We're extending Claude Fable 5 access on all paid plans, as well as keeping Claude Code’s weekly rate limits 50% higher, through July 19.
+ ▎
+ ▎ As before, you can use up to half of your weekly usage limit on Fable 5. After that, you can keep using Fable 5 with usage credits, or switch to another model to keep working within your remaining limits.
+ ▎
+ ▎ More details here: https://support.claude.com/en/articles/15424964-claude-fable-5-promotional-access
+
+❯ /clear                                                                        
+
+❯ /login                                                                        
+  ⎿  Login interrupted
+
+❯ /login                                                                        
+  ⎿  Login successful
+
+❯ Can you remember the google calendar notification bug we had?                 
+
+  Recalled 3 memories (ctrl+o to expand)
+
+⏺ Yes — that's the calendar invite/notification storm: team members getting
+  flooded with Google Calendar update emails. Here's what I have on it:
+
+  The bug
+
+  Every assignment write triggered a second, redundant sync on the backend. All
+  7 assignment.* handlers in functions/src/index.ts fired
+  fireAndForgetCalendarSync → syncAppEventCalendars → syncEventPartAttendees,
+  which re-pushed attendees with sendUpdates:'all'.
+
+  That hit Google's invitation quota (chronic quotaExceeded/rateLimitExceeded,
+  same events retried ~19×), so it never converged — it kept re-adding
+  already-present members and re-emailing the whole roster. Worse, the client 
+  was also syncing the same change, so you had a double + race.
+
+  ▎ Note: this was not the earlier client full-vs-delta issue (commit 01b1cbc). 
+  ▎ The real cause was found in prod Cloud Functions logs.
+
+  The fix (two parts, both deployed + verified on 2026-07-08)
+
+  1. Notify — backend is now the single, notify-aware notifier (merged as PR
+  #57, commit f46d404):
+  - Attendee primitives take a sendUpdates param.
+  - syncEventPartAttendees emails only the members in the per-event notify
+  delta; every other write (drift catch-up, manual "sync calendars" button, full
+  sync) is silent ('none').
+  - Invite-all events still mass-email on the empty↔assigned boundary, but only
+  when a real change triggers it.
+  - The client AssignmentBloc._syncAttendeesForAffectedEvents was retired to a
+  no-op — backend owns it now.
+
+  Honors your rule: assign X → only X invited; unassign Y → only Y cancelled;
+  role-only change → no email.
+
+  2. Speed — moved onto a Cloud Tasks queue (branch
+  feat/calendar-sync-cloud-tasks):
+  - The reconcile ran fire-and-forget after the HTTP response, and Cloud Run
+  throttles un-awaited CPU → a ~3s sync took ~178s. Now enqueued as
+  calendarSyncTask (one task per affected event, carrying the notify delta),
+  runs at full CPU → ~2s. Rate limits keep it under Google's quota.
+
+  Two things to flag
+
+  - Observability: [calendar-sync] logs are kept — filter
+  textPayload:"[calendar-sync]".
+  - Deploy: any change to this needs cd functions && firebase deploy --only 
+  functions. Cloud Functions do not auto-deploy (only the web app does, to
+  GitHub Pages).
+
+  There were two other related-but-distinct calendar bugs around the same time —
+  the duplicate gcal events (one event → 4×, fixed in reconcileSingleAppEvent)
+  and the sync-button timeout (30s serial request, fixed with chunked sync).
+  Want me to pull up either of those, or are you picking this notification one
+  back up?
+
+✻ Churned for 36s
+
+❯ My team members are saying that they get more email notifications...          
+  Can you pull logs from firebase + the google calendar logs and cross to see   
+  if they are right?                                                            
+
+⏺ Let me start by invoking the systematic-debugging skill, since this is
+  diagnosing a reported behavior regression.
+
+⏺ Skill(superpowers:systematic-debugging)
+  ⎿  Successfully loaded skill
+
+⏺ This is a regression claim I need to verify with evidence before touching
+  anything. Per my memory, the notification storm was supposedly fixed and
+  deployed on 2026-07-08 (PR #57 + Cloud Tasks), and today is 2026-07-12 — so
+  the claim is that emails are heavy again/still after the fix.
+
+  My evidence-gathering plan:
+  1. Firebase Cloud Functions logs — filter [calendar-sync], look at
+  syncEventPartAttendees lines showing adds/removes=[{email,sendUpdates}]. Count
+  how many fired with sendUpdates:'all' (= real email) vs 'none' (silent), and
+  check for the old bug's signature (quotaExceeded/rateLimitExceeded, same
+  events retried).
+  2. Google Calendar — cross-check actual events/attendee invites against what
+  the logs claim was emailed.
+
+  Let me load the tools I need.
+
+⏺ Let me confirm the Firebase project context and pull the recent
+  [calendar-sync] logs in parallel.
+
+  Called plugin:firebase:firebase 2 times (ctrl+o to expand)
+
+⏺ Project confirmed: tsevet-shir-shavtzak (production), and importantly —
+  calendarSyncTask (taskQueue) is deployed, so the Cloud Tasks fix is live. Now
+  let me pull the [calendar-sync] logs and, in parallel, hunt for the old bug's
+  signature (quota errors).
+
+  Called plugin:firebase:firebase 2 times (ctrl+o to expand)
+
+⏺ Both errored (possibly the bracket in the filter, or a transient). Let me
+  retry more conservatively — pull raw recent logs from calendarSyncTask first
+  to confirm the tool works, then narrow.
+
+  Called plugin:firebase:firebase (ctrl+o to expand)
+
+⏺ The tool works — output is large so it was saved to a file. Let me analyze it
+  with jq rather than reading raw. First, the time range and a sample of the log
+  lines.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Key finding already: the entries have no textPayload — the logs are structured
+  (jsonPayload), which is why my textPayload: filter errored. Also notable: 50 
+  entries in a ~3-minute window (13:03–13:06Z) with has_more:true — that's high
+  volume right now. Let me inspect the actual entry structure.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Found the log text — it's in message, not textPayload. And the very first
+  thing I see is an ERROR: [calendar-sync] reconcile failed for eventId=...; 
+  will retry. That's a red flag — a failing-and-retrying task is exactly the old
+  non-convergence signature. Let me analyze all 50 messages by severity and
+  pattern.
+
+  Ran 1 shell command (ctrl+o to expand)
+⏺ Now the picture is sharpening. In this 3-minute window: 13× reconcile failed 
+  ... will retry, 13× GoogleApiError with domain:"usageLimits" / status: 403,
+  and the stack trace runs through addAttendeeToEvent → patchCalendarEvent.
+  usageLimits 403 is exactly the old bug's quota signature. But note
+  notifyAll=false on the attendee lines — so the notify-delta fix is present. I
+  need the full error text and the sendUpdates values on those attendee adds.
+  Let me pull them in full.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ This is now clearly showing an active quota-exhaustion retry storm right now
+  (13:03–13:06Z, 2026-07-12): Calendar usage limits exceeded (403
+  quotaExceeded), each failing event retried ~4–5× by the task queue. Notice
+  part er8jvnn... logs the identical attendee push 4 times (retries), and part
+  nknnogi... shows baranes as 'all' on attempt 1 then 'none' on every retry.
+
+  Two things stand out that I must not conflate:
+  - Almost all pushes are sendUpdates:'none' (silent) — so the notify-delta fix
+  is in place.
+  - Yet the quota is still being blown — by write volume (retries × many
+  events), not necessarily by emails.
+
+  I need to map the storm's timeline/magnitude and count actual emails ('all').
+  Let me set up task tracking and widen the window.
+
+  Called plugin:firebase:firebase (ctrl+o to expand)
+
+⏺ 1000 ERROR entries pulled (406KB). Let me analyze the timeline and rate with
+  jq.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Now the timeline is clear and striking. The page_size:1000 returned 514 ERRORs
+  (token-capped), and the hourly histogram is the smoking gun:
+
+  2026-07-09T06 :  20   ← small earlier blip, then 3 days quiet
+  2026-07-12T09 :   4
+  2026-07-12T10 : 110   ← storm starts TODAY
+  2026-07-12T11 :   0
+  2026-07-12T12 : 326   ← massive spike
+  2026-07-12T13 :  54   ← ongoing right now (partial hour)
+
+  So ~490 quota-403 reconcile failures today, almost all in the last few hours —
+  an active storm, not historical. Now I need the email count
+  (sendUpdates:'all'), which lives in DEFAULT-severity attendee lines. Let me
+  try a content filter scoped to today to pull just those.
+
+  Called plugin:firebase:firebase (ctrl+o to expand)
+
+⏺ textPayload: matches nothing — the logs are structured. Let me try
+  jsonPayload.message: (Cloud Run structured logging field).
+
+  Called plugin:firebase:firebase (ctrl+o to expand)
+
+⏺ Neither content filter matches (Cloud Logging substring indexing quirk).
+  Falling back to a broad pull + local jq filtering. Let me pull all
+  calendarSyncTask logs for today and extract the attendee lines.
+
+  Called plugin:firebase:firebase (ctrl+o to expand)
+
+⏺ 1.2MB pulled. Let me analyze it thoroughly — count of emails ('all'),
+  per-member and per-event breakdown.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Real numbers now. This 3.4-hour batch (09:43–13:06 today, 1000 entries)
+  contains 500 attendee-sync lines: 60 sendUpdates:'all' (email-intents) vs 754 
+  'none' (silent). And the email-intents cluster on specific people — matan6361 
+  got 15, ifatcofix 7, dmarybrowne 7 in a few hours.
+
+  But I established a critical caveat: a 'all' patch that then hits 403 sends no
+  email. So 60 intents ≠ 60 delivered. Let me determine the success-vs-403
+  ratio and the churn pattern.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Now I understand the mechanism. Correcting for multi-line messages, this 3.4h
+  batch has ~245 reconcile failures (each = 2 ERROR lines), and the per-event
+  breakdown is the key: ~15 event-parts each re-synced 20–45 times (part
+  jtv2u9bjncj… synced 45×). That's textbook non-convergence — the same events
+  reconciling over and over, blocked by 403.
+
+  The open question that decides the user's answer: of the 60 'all' intents,
+  which actually delivered (succeeded) vs got blocked by the 403? The sync logs
+  can't tell me — I need the delivery side. Let me update tasks and cross-check
+  Google Calendar + the user's own inbox (omerbengal7 == omer.bengal7, so he's
+  an attendee).
+⏺ Now the decisive delivery cross-check. The user's own inbox (omerbengal7 ==
+  omer.bengal7) is the ground truth for whether emails actually land. Let me
+  search Gmail for Google Calendar system emails today and list the accessible
+  calendars in parallel.
+
+  Called Gmail, Google Calendar 2 times (ctrl+o to expand)
+
+⏺ {} — zero calendar emails from calendar-server.bounces.google.com in omer's
+  inbox over 2 days. But that's a weak signal here: in this storm the 'all'
+  emails went to matan, ifat, dmary… (freshly-added members) — omer's own adds
+  were all 'none' (he's a stable attendee). So his inbox wouldn't show this
+  storm.
+
+  The calendar list shows no obvious app-owned calendar (service-account-owned),
+  but omer is an attendee on some affected events (e.g. er8jvnn…), so I can
+  fetch those by ID to inspect actual attendee state + sequence (update count).
+  Let me broaden Gmail and probe two events directly.
+
+  Called Gmail, Google Calendar 3 times (ctrl+o to expand)
+
+⏺ Decisive cross-check landed. omer's own inbox (via .ics attachments) shows 5 
+  app calendar emails today, all from the app's organizer account
+  atkamiluaim@gmail.com, all UNREAD, timestamped 08:17–10:00 today:
+
+  ┌────────────┬────────────┬─────────────────────────────────────┐
+  │ Time (UTC) │    Type    │                Event                │
+  ├────────────┼────────────┼─────────────────────────────────────┤
+  │ 08:17      │ Invitation │ מיומנה (Jul 28) + התייצבות pair     │
+  ├────────────┼────────────┼─────────────────────────────────────┤
+  │ 09:07      │ Canceled   │ חוצות היוצר (Aug 9) + התייצבות pair │
+  ├────────────┼────────────┼─────────────────────────────────────┤
+  │ 10:00      │ Invitation │ קאס פלש פארק מים (Aug 16)           │
+  └────────────┴────────────┴─────────────────────────────────────┘
+
+  So: emails ARE being delivered today — the team is right that mail is flowing.
+  Two important nuances: (1) they come from atkamiluaim@gmail.com (a real Gmail
+  organizer), which is why my calendar-server.bounces filter missed them; (2)
+  omer's 5 are 5 distinct real changes, not duplicate spam of one event. And
+  er8jvnn… came back status:cancelled, updated 12:41Z today.
+
+  The decisive question now: are members getting duplicate emails of the same 
+  event (bug) or many emails for different events (bulk activity + quota storm)?
+  Let me compare today's volume to a baseline week and scan for duplicate
+  subjects.
+
+  Called Gmail 2 times (ctrl+o to expand)
+
+⏺ The baseline comparison is the clincher:
+
+  - Today (Jul 12): 5 app-calendar emails to omer (2 invites, 2 cancellations, 1
+  invite — all distinct events, all UNREAD).
+  - Prior 8 days (Jul 4–11): {} — ZERO.
+
+  So omer went from 0 emails/week → 5 in one morning. The team is objectively
+  right: there's a real email spike today. And the heavy-hit members got far
+  more (matan 15 'all' intents, ifat/dmary 7 each). Critically, omer's 5 are
+  distinct events, not duplicates — so this isn't the old "same event re-sent"
+  duplication; it's a burst of real activity colliding with the quota storm.
+  Also notable: the organizer is a consumer Gmail account
+  (atkamiluaim@gmail.com), which has low Calendar invite quotas — likely why the
+  403s.
+
+  Let me nail down what triggered the burst by checking the api (client-facing)
+  logs for the 07:00–10:30 window.
+
+  Called plugin:firebase:firebase, ran 1 shell command (ctrl+o to expand)
+
+⏺ The api logs (07:36–08:47) show event-detail pushes ([calendar-sync] 
+  eventDetails push) — admin actively editing/creating events this morning — but
+  the HTTP access lines carry no body. The trigger picture is clear enough:
+  morning admin activity → burst of syncs → quota storm.
+
+  Two final checks before I synthesize: (1) is the storm still active right now
+  (urgency), and (2) confirm it's PATCH/attendee failures (not a
+  duplicate-event-creation regression). Let me pull the very latest task logs.
+
+  Called plugin:firebase:firebase, ran 1 shell command (ctrl+o to expand)
+
+⏺ Confirmed the last two facts:
+
+  - The storm is ONGOING — steady ~4 reconcile failures/min right through the
+  latest log (13:06Z). It's still burning quota as we speak.
+  - createCalendarEvent refs: 0 — every failure is on attendee PATCH
+  (addAttendeeToEvent), not event creation. So the old duplicate-event bug is
+  not recurring; this is purely an attendee-sync/quota problem.
+
+⏺ Verdict: your team is right — there's a real email spike today, and a 
+  calendar-sync storm is active right now
+
+  I cross-referenced Firebase Cloud Functions logs against Google Calendar + the
+  app's actual sent mail (your own inbox, since omerbengal7 = omer.bengal7, so
+  you're a live sample). They corroborate each other.
+
+  What the two sources show
+
+  Firebase logs (calendarSyncTask) — an active failure storm, all today
+  (2026-07-12):
+
+  errors/hour:  09:00→4   10:00→110   11:00→0   12:00→326   13:00→54 (ongoing)
+  - ~490+ reconcile failures today; still failing ~4×/min as of 13:06Z (latest
+  log).
+  - Every failure is 403 "Calendar usage limits exceeded"
+  (usageLimits/quotaExceeded) on attendee PATCH.
+  - ~15 events stuck, each re-syncing 20–45× (fail → retry → fail =
+  non-convergence).
+  - Of attendee pushes in a 3.4h window: 60 sendUpdates:'all' (real email) vs 
+  754 'none' (silent). Heavy recipients: matan6361 ×15, ifat ×7, dmarybrowne ×7,
+  noam ×6.
+
+  Google Calendar / your inbox (cross-check) — emails are genuinely being
+  delivered:
+  - Today: 5 app emails from the organizer atkamiluaim@gmail.com (2 invites
+  מיומנה, 2 cancellations חוצות היוצר, 1 invite קאס פלש), all UNREAD,
+  08:17–10:00Z.
+  - Prior 8 days (Jul 4–11): ZERO. → unambiguous spike, timed exactly with the
+  storm.
+  - Your 5 are 5 distinct events, not duplicates of one — and event er8jvnn… is
+  confirmed cancelled, updated 12:41Z today.
+
+  What's actually going on (root cause)
+
+  1. A burst of real activity this morning (creating מיומנה/קאס פלש, cancelling
+  חוצות, ~9 event-detail pushes in the api logs 07:36–08:47) → legitimately
+  fired invitation/cancellation emails.
+  2. The organizer is a consumer Gmail account (atkamiluaim@gmail.com), which
+  has strict Calendar invite quotas. The burst blew past them → 403 Calendar 
+  usage limits exceeded.
+  3. Once quota is exhausted, the Cloud Tasks retry logic (5× + re-enqueue on
+  failedEventIds) keeps retrying the same events against the still-exhausted
+  quota → a self-sustaining storm (15 events × 20–45 attempts). Retry
+  amplification under quota pressure.
+
+  Good news: both prior fixes still hold — the notify-delta fix is working
+  (retries go out 'none'/silent), and there's no duplicate-event regression
+  (createCalendarEvent = 0). This is not the old invite-storm or dup-event bug
+  resurfacing.
+
+  The real problem is (a) quota exhaustion making syncs unreliable, and (b) the
+  retry loop prolonging it — layered on a genuine burst of changes.
+
+  Honest limits of this analysis
+
+  - I can't count emails actually delivered to the heavy members (matan etc.) —
+  their inboxes aren't accessible. The 60 'all' intents are an upper bound; some
+  were blocked by the 403 (no email). Your clean, dup-free 5 suggest limited
+  duplication, but matan being on many affected events likely means he did get a
+  lot of distinct invites.
+  - I couldn't see the exact UI action that kicked off the burst (the api access
+  logs carry no request body) — only that events were being edited this
+  morning.
+
+  Where I'd go next — your call
+
+  - Stop the bleeding now: purge/pause the calendarSyncTask Cloud Tasks queue so
+  it stops retrying into the dead quota (the stuck events will just re-sync
+  later once things are calm).
+  - Real fix (needs firebase deploy --only functions): on 403 quotaExceeded,
+  back off instead of hammering (don't re-throw → immediate retry); and/or
+  throttle enqueueCalendarSync. The deeper fix is moving the organizer off a
+  consumer Gmail account to a Workspace account with real Calendar quota.
+
+  Want me to (a) dig into what triggered the burst (trace the specific
+  events/assignments), or (b) go straight to drafting the back-off-on-quota fix
+  in functions/?
+
+✻ Cogitated for 16m 31s
+
+❯ Ok, so how do I pause the calendarSyncTask Cloude Tasks queue?                
+                                                                                
+  And in addition, please elaborate on "The deeper fix is moving the organizer  
+  off a consumer Gmail account to a Workspace account with real Calendar quota" 
+
+⏺ Good call — pausing the queue is the fastest way to stop the storm and the
+  emails at once. Let me find the exact queue ID for you (read-only) so I give
+  you the precise command.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ gcloud is installed but not authenticated (it's a separate login from Firebase
+  CLI). So you have two paths — the Console is the zero-setup one.
+
+  Pausing calendarSyncTask
+
+  Your function is a Firebase v2 onTaskDispatched, so Firebase auto-created a
+  Cloud Tasks queue named after the function (calendarSyncTask) in us-central1.
+
+  Option A — Cloud Console (no CLI auth needed)
+
+  1. Open: https://console.cloud.google.com/cloudtasks/queue/us-central1/calenda
+  rSyncTask?project=tsevet-shir-shavtzak
+  2. Click Pause at the top.
+  3. Then click Purge to drop the backlog (see the caveat below on why).
+
+  Option B — gcloud
+
+  You'll need to log in first (interactive, opens a browser). Run this in your
+  prompt with the ! prefix so it happens in-session:
+
+  ! gcloud auth login
+
+  Then:
+  gcloud config set project tsevet-shir-shavtzak
+
+  # confirm the queue name (should show 'calendarSyncTask')
+  gcloud tasks queues list --location=us-central1
+
+  # stop dispatching immediately
+  gcloud tasks queues pause calendarSyncTask --location=us-central1
+
+  # drop the piled-up backlog so it doesn't all fire on resume
+  gcloud tasks queues purge calendarSyncTask --location=us-central1
+
+  # ...later, once the fix is deployed:
+  gcloud tasks queues resume calendarSyncTask --location=us-central1
+
+  Once you've run ! gcloud auth login, I can run the pause/purge for you if
+  you'd rather — just say so.
+
+  Three caveats that matter
+
+  - Pause alone isn't enough. Pausing stops dispatching, but new tasks keep
+  piling into the queue, and the retries you saw are already queued. When you
+  resume, that whole backlog fires at once and re-triggers the storm. That's why
+  you pause and purge. The reconcile is idempotent and self-healing, so purged
+  events just re-sync the next time someone touches them (or on a manual full
+  sync) — you lose nothing permanent.
+  - A firebase deploy --only functions will un-pause it. Deploying
+  re-creates/updates the queue and resets it to running. That's actually what
+  you want after the fix is live — but don't treat pause as durable across a
+  deploy.
+  - While paused, attendee syncs don't happen. New assignments won't show up on
+  anyone's Google Calendar until you resume. Fine for a few hours; not something
+  to leave paused for days.
+
+  ---
+  The deeper fix: consumer Gmail → Workspace organizer
+
+  Why the account type is the actual ceiling
+
+  The organizer that creates your events and sends the invites is
+  atkamiluaim@gmail.com — a personal/consumer Gmail account. Google applies
+  "Calendar usage limits" to every account (anti-abuse throttling on events
+  created, guests added, and invitations sent per rolling window), and those
+  limits are dramatically stricter on consumer Gmail than on Google Workspace.
+  The exact numbers aren't officially published for consumer accounts and Google
+  tunes them silently, but the practical effect is what you're seeing: a modest
+  morning burst of event/attendee changes trips 403 Calendar usage limits 
+  exceeded, and then everything downstream fails.
+
+  So today's storm is really two problems stacked:
+  1. A low ceiling (consumer Gmail quota), and
+  2. A retry loop that hammers the ceiling instead of backing off.
+
+  Workspace fixes #1. The code fix (back-off on quota) fixes #2. You need both —
+  even a Workspace account has limits, and a runaway retry loop can blow
+  through those too. Workspace raises the ceiling; it doesn't make it infinite.
+
+  What "moving to Workspace" concretely involves
+
+  You'd need a Google Workspace subscription on a domain you control (Business
+  Starter is ~$6–7/user/month), then re-point the app's calendar integration at
+  a Workspace identity instead of the gmail.com account. Two patterns:
+
+  (A) Service account + domain-wide delegation (the robust, server-native 
+  choice)
+  - In the Workspace admin console, grant your existing Firebase service account
+  domain-wide delegation for the Calendar scope.
+  - The backend then impersonates a Workspace user (e.g.
+  calendar@yourdomain.com) to create events and send invites — no interactive
+  OAuth, no fragile personal-account refresh token to babysit.
+  - Highest quotas, cleanest auth, proper audit logging.
+  - Requires a Workspace admin to approve the delegation.
+
+  (B) A Workspace user account via OAuth (smaller change)
+  - Same OAuth flow you have now, but the organizer is something@yourdomain.com
+  (Workspace) instead of atkamiluaim@gmail.com (consumer).
+  - Much less setup than DWD, and you still get the higher Workspace quota — but
+  you keep the OAuth-token-refresh machinery you already have.
+
+  Benefits beyond quota
+
+  - Deliverability: invites from a real domain are far less likely to be
+  spam-filtered than from a random @gmail.com.
+  - Trust/branding: attendees see yourdomain.com as the organizer, not a
+  personal Gmail.
+  - Admin & audit: central control, logs, and the ability to raise limits via
+  support if ever needed.
+
+  Costs / friction to weigh
+
+  - It's paid and needs a domain + (for pattern A) a Workspace admin.
+  - Existing events stay owned by atkamiluaim@gmail.com — you can't
+  retroactively re-own them. New events go under the new organizer; you either
+  leave the old ones as-is or recreate the still-relevant future ones.
+  - Attendees will get the organizer-identity change on anything migrated.
+
+  Cheaper alternatives if Workspace is too big a lift right now
+
+  - Rate-limit the enqueue / spread sends so you never burst past even the
+  consumer limit (pairs naturally with the back-off fix).
+  - Add attendees silently (sendUpdates:'none') and drop email invites, relying
+  on the in-app assignment view + the event still landing on their Google
+  Calendar. This eliminates the invite-quota pressure entirely — the tradeoff is
+  no email notifications. Given the complaint is literally "too many emails,"
+  this is worth seriously considering.
+
+  ---
+  My honest recommendation: pause+purge now to stop the bleeding, then the
+  durable fix is back-off-on-quotaExceeded in functions/ (small, deployable
+  today) as step 1, and treat the Workspace move as step 2 only if you want
+  email invites to keep working at higher volume. Want me to trace exactly what
+  triggered this morning's burst, or start on the back-off fix?
+
+✻ Cogitated for 2m 27s
+
+❯ I don't want to spend money on this...                                        
+  what can you suggest?                                                         
+⏺ Totally reasonable — you shouldn't need to pay for this. The good news: the 
+  burst was the problem, not steady-state, and everything that actually fixes it
+  is free code/config. Let me ground my suggestions in your real code rather
+  than hand-wave. Let me peek at the task definition and the error handling.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Let me read the exact task handler and how the 403 propagates, so my
+  suggestions are precise.
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ I read the actual task code — and it confirms the root cause precisely. Here's
+  the current config (functions/src/index.ts:115-141):
+
+  retryConfig: {maxAttempts: 5, minBackoffSeconds: 5, maxBackoffSeconds: 60},
+  rateLimits:  {maxConcurrentDispatches: 2, maxDispatchesPerSecond: 3},
+  ...
+  if (report.failedEventIds.length > 0) {
+    throw new Error(`...reconcile failed...; will retry`);   // ← re-throws on 
+  ANY failure
+  }
+
+  The comment at line 110 literally says "rateLimits keep us under Google 
+  Calendar's quota BY DESIGN." That assumption is wrong for a personal Gmail 
+  account. Those numbers are tuned for Google's per-second API rate limit, but
+  atkamiluaim@gmail.com is throttled by a much lower usage/invitation cap. So
+  when a burst hits 403 quotaExceeded, the code treats it as "transient,"
+  re-throws, and Cloud Tasks retries it 5× within minutes — straight back into
+  the same wall. 15 events × 5 retries × re-enqueues = the storm. None of this 
+  needs money to fix.
+
+  First, separate the two goals — they have different fixes:
+  - (A) Stop the storm / the 403s = a reliability fix (throttle + quota-aware
+  backoff).
+  - (B) Cut the number of emails = the actual complaint (coalesce + notification
+  policy).
+
+  Free options, prioritized
+
+  1. Quota-aware backoff — the core fix (deploy today)
+
+  Right now every failure is treated as retry-in-60s. Instead, detect the 403 
+  quotaExceeded / "Calendar usage limits exceeded" signature and, instead of
+  fast-retrying, re-enqueue the event with a long delay (scheduleDelaySeconds: 
+  ~3600) and return success. The retry then lands after the quota window resets,
+  not into the same exhausted wall. This alone breaks the self-sustaining loop.
+  (retryConfig backoff maxes at 60s, so the long delay has to be a re-enqueue,
+  not maxBackoffSeconds.)
+
+  2. Turn the throughput down, not up (one-line config)
+
+  Change rateLimits to {maxConcurrentDispatches: 1, maxDispatchesPerSecond: 1}
+  (or 0.5/sec). Counterintuitive, but on a personal account slower = it never 
+  trips the cap in the first place. Each task already fires several attendee
+  PATCHes, so "3/sec" is really ~9 writes/sec in a burst — far too hot for
+  consumer Gmail.
+
+  3. Coalesce duplicate syncs (cuts waste and churn-emails)
+
+  One event syncing 20–45× today is pure waste. Dedupe so an event that changed
+  several times in a minute syncs once (a short debounce, or name the Cloud
+  Tasks task by eventId so duplicate enqueues collapse). Fewer writes → less
+  quota pressure → and it kills any duplicate emails from rapid re-assignment
+  churn.
+
+  4. Send fewer emails — the direct lever on the complaint (product decision)
+
+  This is the one that actually reduces the email count. Options, cheapest
+  tradeoff first:
+  - Only email for "soon" events (e.g., within 2–3 weeks). Today's storm was
+  inviting people to events on Jul 28 / Aug 9 / Aug 16 — weeks out. Those could
+  sync silently (sendUpdates:'none') and only start emailing as the date nears.
+  - Go fully silent + rely on the in-app view. Add attendees with
+  sendUpdates:'none'; members see assignments in the app (and the event still
+  lands on their Google Calendar if their "add invitations automatically"
+  setting allows it). Eliminates invite-quota pressure entirely. Tradeoff: no
+  email nudge, and the auto-add isn't guaranteed for everyone.
+
+  5. Zero-code stopgap (behavioral)
+
+  The quota resets on its own. If you avoid bulk operations in a tight burst
+  (mass event creation / a "sync all" press mid-editing), you simply don't hit
+  the cap. Fragile, but free and immediate while the code fix ships.
+
+  6. If you ever want to eliminate it structurally for free
+
+  Publish a per-member ICS subscription feed instead of inviting guests. Members
+  subscribe once; assignments appear on their calendar automatically with no 
+  invitations and no per-change emails — sidestepping the consumer-Gmail invite
+  quota completely. Bigger build, and members lose per-event email reminders
+  unless they set their own, but it's the free equivalent of the Workspace move.
+
+  ---
+  My recommendation: ship #1 + #2 + #3 together (small, all in functions/,
+  deployable today) to end the storm and make sync reliable, and separately
+  decide on #4 since that's what your team is actually feeling. All of these
+  require a redeploy — cd functions && firebase deploy --only functions — since
+  Cloud Functions don't auto-deploy.
+
+  Want me to implement #1–#3 now? I'd do it test-first (the reconcile + backoff
+  logic is unit-testable without hitting Google), then give you the exact deploy
+  command.
+
+✻ Cogitated for 3m 9s
+
+※ recap: Investigating why your team gets too many Google Calendar emails: I confirmed it's real (active quota-403 sync storm today, 5 emails to you vs 0 the prior week). Next: pause the calendarSyncTask queue, then I implement the free backoff/throttle fix.
+
+❯ how would you implement #3?                                                   
+
+⏺ Good question to press on — because the one-liner I gave earlier ("just name
+  the task by eventId") has a correctness trap I want to be honest about. Let me
+  ground the design in your actual code first.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Let me read the delta type, the planner, and how deltas are built/merged.
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ Reading the code changes my answer — and I owe you a correction on that "just
+  name the task by eventId" one-liner from earlier. Now that I've looked, it's
+  the wrong mechanism. Here's why, and what I'd actually do.
+
+  What your code already does (and what it doesn't)
+
+  planCalendarSyncTasks (calendar_sync_backend.ts:1161) already coalesces 
+  duplicates within a single request — it Set-dedupes the event ids and pairs
+  each with its delta, with a test at calendar_sync_backend.test.ts:393. So a
+  bulk operation that touches event X five times in one handler invocation
+  already produces one task.
+
+  That means the 20–45× you saw is not intra-request. It's two other sources:
+  1. Retries — retryConfig.maxAttempts: 5, so each task re-runs up to 5×. That's
+  Fix #1's job (quota-aware backoff), not coalescing.
+  2. Separate invocations over time — an assignment change at 10:00:01, another
+  at 10:00:04, another at 10:00:07 are three distinct handler runs → three
+  separate enqueueCalendarSync calls → three tasks. planCalendarSyncTasks never
+  sees them together, so it can't dedupe them.
+
+  #3 is specifically about collapsing #2 — the cross-invocation stream — into
+  one reconcile after a short quiet period.
+
+  The subtlety that kills the naive approach
+
+  Each task carries a delta: AttendeeNotifyDelta = {addedMemberIds?, 
+  removedMemberIds?} — the members to email for that change. So three rapid
+  changes carry {added:[A]}, {added:[B]}, {removed:[C]}.
+
+  If you collapse them with Cloud Tasks named-task dedup (name =
+  sync-${eventId}), the 2nd and 3rd enqueues are rejected — only the first task
+  runs, with delta {added:[A]}. The full-state reconcile still adds B to the
+  calendar, but silently (B isn't in the surviving delta) → B never gets their 
+  invite email. You'd be dropping notifications you meant to send. Plus Cloud
+  Tasks won't let you reuse a task name for several minutes after one executes,
+  so a change arriving right after a sync could be dropped entirely until the
+  name frees. Two correctness bugs. That's why I'm walking it back.
+
+  Coalescing has to merge deltas, not discard them.
+
+  What I'd actually build: a debounced delta-accumulator
+
+  A tiny per-event "pending" doc that accumulates the merged delta, drained by a
+  single delayed task.
+
+  Path A — on each change (replaces the direct enqueueCalendarSync):
+  pendingRef = calendar_sync_pending/{env}_{eventId}
+  transaction:
+    p = read(pendingRef)
+    merged.added   = union(p.added,   newDelta.addedMemberIds)
+    merged.removed = union(p.removed, newDelta.removedMemberIds)
+    write { delta: merged, dirty: true, updatedAt: now }
+    if (!p.taskScheduled || lease expired):
+       write { taskScheduled: true }
+       enqueue ONE drain task, scheduleDelaySeconds = DEBOUNCE (~30s)
+  Ten changes in 30s → the delta unions up, but only one drain task is enqueued.
+
+  Path B — the drain task (replaces today's handler):
+  transaction (claim):
+    p = read(pendingRef)
+    delta = p.delta
+    write { dirty: false, delta: {}, taskScheduled: false }   // claim the work
+  report = reconcile(eventId, delta)
+  if report.failed (e.g. quota):        // ← this is where Fix #1 plugs in
+    transaction: re-merge `delta` back in, set dirty:true
+    re-enqueue drain with a LONG delay (post-quota-window)
+  else if (pending became dirty during reconcile):
+    enqueue another short drain            // changes that arrived mid-sync
+  aren't lost
+
+  The claim-then-reconcile-then-requeue-on-failure is the standard lease pattern
+  — it guarantees no email intent is lost even if the reconcile throws, and
+  changes landing mid-reconcile trigger exactly one more drain.
+
+  Merge rule + the one edge case: merge = set-union of addedMemberIds and of
+  removedMemberIds. The only wrinkle is a member added then removed inside the
+  window (ends up in both lists). Resolve it last-writer-wins per member (the
+  newer change wins its direction), or — cleaner — let the reconcile's own
+  desired-vs-current diff decide invite-vs-cancel and treat the delta purely as
+  "this member changed, notify them." Either is a few lines and unit-testable in
+  isolation, like planCalendarSyncTasks already is.
+
+  Tradeoffs to decide
+
+  - Debounce window. ~30s is my default: near-total coalescing of a burst, and a
+  30s delay before an assignment shows on someone's calendar is a non-issue for
+  event scheduling. Longer = fewer syncs but more lag; shorter = snappier but
+  less collapse.
+  - Composes with #1. Coalescing cuts the number of reconciles (so quota is hit
+  far less often), and #1 handles the reconciles that still fail. They share the
+  pending doc as the single source of truth — clean fit, not competing
+  mechanisms.
+  - Cost: one small Firestore transaction per change + one per drain.
+  Negligible, stays in free tier.
+
+  Simpler fallback, if you want minimal change
+
+  Keep named-task dedup only if you accept "calendar gets updated, emails are
+  best-effort" — i.e., you're fine with the occasional dropped invite email and
+  the name-reuse gap. Given your team's complaint is about emails, I wouldn't:
+  silently dropping the email you meant to send is the wrong failure mode here.
+
+  ---
+  Net: the honest version of #3 is a ~debounced accumulator, moderate size, and
+  very testable (the merge + planner are pure functions with existing test
+  scaffolding). If you want, I'll build it test-first — start with the
+  delta-merge and lease logic as pure/unit-tested pieces, wire the pending doc +
+  drain, and hand you the firebase deploy --only functions command. Should I go
+  ahead, and do you want the ~30s window or something tighter?
+
+✻ Churned for 2m 59s
