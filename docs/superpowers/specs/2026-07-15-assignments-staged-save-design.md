@@ -185,15 +185,16 @@ screen can render indicators without re-deriving).
 A staged slot **conflicts** whenever its stored **baseline ≠ the current DB** for that slot
 — i.e. something (a co-admin, an immediate quota change, a member edit) changed the slot
 since the admin first touched it. If `baseline == currentDB`, the staged change applies
-cleanly, no conflict.
+cleanly, no conflict. **Conflicts are detected and surfaced ONLY at Save** (in the resolution
+dialog) — there is **no** live conflict marker on the grid.
 
-### Live marker
+### Dirty marker (the yellow border)
 
-The overlay merge already compares baseline vs live DB on every Firestore stream tick, so a
-**bright, thick yellow border** on an assignment row means exactly *"this staged slot
-currently conflicts."* Borders appear/disappear **live** as the DB moves. A merely-staged
-(non-conflict) row shows the **subtle "pending" indicator** instead (distinct from the
-yellow border).
+The **bright, thick yellow border** marks a **dirty row** — any row that has a staged change —
+**not** a conflict. It is the "you edited this, it isn't saved yet" indicator: it appears the
+moment a slot is staged and clears when the slot is saved, discarded, or reverted to baseline.
+The grid does **not** compare baseline vs live DB for rendering. The stored baseline snapshot
+exists **solely** to classify conflicts **at Save time**.
 
 ### Taxonomy
 
@@ -204,15 +205,18 @@ For each conflicting slot, classify by (staged action) × (how the DB diverged):
 | **A** | המשרה נתפסה | filled/swapped to *M*; DB now shows a different member *X* | write *M* over *X* | keep *X* |
 | **B** | השיבוץ נמחק | swap/notes points at an assignment DB no longer has (now empty) | re-create as *M* | accept the deletion |
 | **C** | התנגשות בניקוי | cleared *B*; DB now holds a different member *X* | delete *X* (apply clear) | keep *X* |
-| **D** | המשרה בוטלה | quota shrank; your slotIndex no longer exists | *(none — single-button discard)* | drop your change |
+| **D** | המשרה בוטלה | quota shrank; your slotIndex no longer exists | **צור מחוץ למכסה** (create an off-quota row) | drop your change |
 | **E** | החבר לא זמין | member you assigned was deactivated/deleted | assign anyway *(deactivated only)* | drop your change |
 | **F** | הערות/שיבוץ שונו | your notes edit collides with a DB notes change, or the member changed under your notes edit | apply your notes | keep DB |
 
-**Single-button special cases** (no valid write target — one button *"הבנתי — בטל את
-השינוי"*, which discards):
-- **D** (slot vanished) — always.
-- **E** where the member **record was fully deleted** (a merely-*deactivated* member keeps
-  both buttons, since the app can still render/assign a deactivated member).
+**D (slot vanished)** keeps **two** buttons: **צור מחוץ למכסה** — create the assignment as an
+**off-quota row** (the app already supports these via `_buildOffQuotaRow`; the Save batch just
+creates the assignment doc and it renders off-quota) — vs discard.
+
+**Single-button special case** (no valid write target — one button *"הבנתי — בטל את
+השינוי"*, which discards): **E** where the member **record was fully deleted**. A merely-
+*deactivated* member keeps both buttons, since the app can still render/assign a deactivated
+member.
 
 **Silent non-conflict:** a staged **clear** whose slot is *already* empty in the DB is
 satisfied — dropped silently, no dialog entry.
@@ -223,7 +227,7 @@ If any conflicts exist when Save is pressed, show **one consolidated dialog** (R
 
 - A scrollable list, **one entry per conflict**, each with its Hebrew description and its
   two buttons (or single button for D / E-deleted).
-- **Bulk shortcuts** at the top: **דרוס הכול** / **קח הכול מה-DB**.
+- **Bulk shortcuts** at the top: **דרוס הכל** / **קח הכל מה-DB**.
 - **Default** per two-button row = **דרוס DB** (the admin's edits are intentional).
 - Choosing **קח מה-DB** on a row is identical to discarding that slot.
 - A confirm button applies the resolutions and proceeds to the batch write.
@@ -239,11 +243,19 @@ If any conflicts exist when Save is pressed, show **one consolidated dialog** (R
    - staged clear → **delete** assignment
    - "קח מה-DB" / discarded / D / E-deleted → **omitted** from the batch
    - all writes target **only** the assignments collection (no event/quota writes — scope).
-5. Commit, with a **"שומר שינויים…"** progress overlay (reusing the existing overlay style):
+5. Commit, with a **progress overlay showing a progress bar** (the existing overlay style,
+   upgraded from a bare spinner). Because the write is a single atomic `WriteBatch`, Firestore
+   emits no per-record commit callbacks, so progress is **phased**, not per-DB-write:
+   - **בודק שינויים** — the client-side validate + conflict-scan iterates the N staged slots →
+     a **real, determinate** percentage here (this is the part that scales with size).
+   - **שומר…** — the atomic commit itself is one opaque await → **indeterminate** (bar
+     animates); it is fast.
    - **Success →** clear the staging map **and** the cache; success snackbar
      (*"נשמרו N שינויים"*); the live stream already reflects the writes.
    - **Failure →** keep staging **and** cache **fully intact**; error snackbar; Save stays
      enabled → press again. (Directly satisfies "be able to save again.")
+   - *(A true per-record percentage would require chunking into sequential sub-batches, which
+     breaks the all-or-nothing guarantee — explicitly not done.)*
 6. New DB layer: add `saveAssignmentsBatch({creates, updates, deletes})` to
    `DatabaseInterface` / `FirestoreDatabase` (mixed `WriteBatch`, ≤500 ops — a meeting is far
    under). `AssignmentRepository` exposes it.
@@ -258,10 +270,10 @@ keeps calendar-relevant writes (assignments) inside Save.
 
 ## Discard
 
-- **Per-slot (inline):** every staged row shows the subtle pending indicator plus a small
-  **↩ undo** icon → `DiscardStagedSlot(slotKey)` drops that entry and the row snaps back to
-  DB. (Same operation as the row's "קח מה-DB".)
-- **All-at-once:** a **בטל הכול** control with the Save cluster → confirm
+- **Per-slot (inline):** every dirty (yellow-bordered) row carries a small **↩ undo** icon →
+  `DiscardStagedSlot(slotKey)` drops that entry and the row snaps back to DB. (Same operation
+  as the row's "קח מה-DB" at Save.)
+- **All-at-once:** a **בטל הכל** control with the Save cluster → confirm
   (*"לבטל את כל N השינויים שלא נשמרו?"*) → `DiscardAllStaged` + clear cache.
 
 ## Leave-guard
@@ -279,10 +291,12 @@ staged changes on reload. Guard **in-app exits only**:
 - **Wiring:** the nav wrapper reads dirtiness via `AssignmentBloc`'s `hasStagedChanges`
   (the BLoC is app-scoped, above the shell). Note `SwipeablePageView` is shared by all admin
   tabs — the guard must be gated on `currentIndex == 3`.
-- **Dialog** (RTL): title **שינויים לא נשמרו**, body *"יש לך N שינויים שלא נשמרו."*
+- **Dialog** (RTL): title **שינויי שיבוצים לא נשמרו**, body *"יש לך N שינויים שלא נשמרו."*
   - **שמור והמשך** → run the full Save flow (may raise the conflict dialog first); navigate
     **only** on save-success, stay on failure.
-  - **צא בלי לשמור** → navigate; staging stays in cache (still dirty on return).
+  - **צא בלי לשמור** — with a second line of clarifying subtext:
+    *"השינויים לא נמחקים, ניתן לשמור אחר כך"* → navigate; staging stays in cache (still dirty
+    on return).
   - **ביטול** → stay.
 - **Not hooked:** browser back / forward / refresh / tab-close. No `PopScope`/`beforeunload`
   — cache recovers on reload. (There is no `PopScope` anywhere in the app today.)
@@ -294,12 +308,13 @@ staged changes on reload. Guard **in-app exits only**:
   - **Clean:** Save is **visible but disabled** (greyed); no count, no discard shown. The
     screen otherwise looks exactly as today.
   - **Dirty:** Save is **enabled** and shows the count — **"שמור · N"** — and a small
-    **בטל הכול** appears beside it.
+    **בטל הכל** appears beside it.
   - (Whether Save renders as an extended FAB or a bar button is an implementation nicety;
     "visible-but-disabled when clean, enabled+count when dirty" is the requirement.)
-- **Per row:** staged rows → subtle pending indicator + inline **↩ undo**. Conflicting rows →
-  add the **bright thick yellow border**. `N` counts **all** staged changes, including any on
-  events hidden by the current filter or the past-events window, so nothing dirty is invisible.
+- **Per row:** every dirty (staged) row → **bright thick yellow border** + inline **↩ undo**.
+  Conflicts are **not** marked on the grid — they surface only in the Save-time resolution
+  dialog. `N` counts **all** staged changes, including any on events hidden by the current
+  filter or the past-events window, so nothing dirty is invisible.
 
 ## Edge cases
 
@@ -323,10 +338,10 @@ staged changes on reload. Guard **in-app exits only**:
 - `lib/presentation/bloc/assignment/assignment_state.dart` — staged map / count / per-slot
   pending+conflict annotation in `AssignmentSlotsLoaded`.
 - `lib/presentation/screens/assignment/assignment_list_screen.dart` — route edits through
-  staging; Save/Discard cluster next to FAB; per-row ↩ + pending indicator + yellow border;
-  resolution dialog; notes dialog stages; guard home/logout.
-- `lib/presentation/screens/assignment/models/assignment_slot.dart` — (likely) `isPending` /
-  `isConflict` flags for rendering.
+  staging; Save/Discard cluster next to FAB; per-row ↩ + yellow dirty-border; resolution
+  dialog (built at Save from baseline-vs-DB); notes dialog stages; guard home/logout.
+- `lib/presentation/screens/assignment/models/assignment_slot.dart` — (likely) an `isDirty`
+  flag for the yellow border. No live-conflict flag — conflicts are computed only at Save.
 - `lib/presentation/widgets/swipeable_page_view.dart` — async tab-switch leave-guard.
 - `lib/core/services/user_cache_service.dart` — pending-changes JSON cache methods.
 - `lib/data/data_sources/database_interface.dart` + `firestore_database.dart` +
@@ -335,15 +350,17 @@ staged changes on reload. Guard **in-app exits only**:
 
 ## Testing considerations
 
-- **Unit:** overlay merge (baseline vs DB → pending/conflict), conflict classification A–F +
-  D/E single-button + silent-clear, revert-to-baseline auto-clean, cache JSON round-trip,
-  batch builder (creates/updates/deletes from resolved decisions).
-- **Widget:** dirty indicator + count (incl. filtered rows), inline ↩, resolution dialog
-  (bulk + per-row), leave-guard on all three in-app exits, Save success/failure (cache
-  cleared vs preserved).
-- **Manual smoke (test env):** run a mock batch meeting; force a conflict by editing the DB
-  in the Firebase console mid-session; confirm yellow border + resolution dialog; kill the
-  tab mid-session and confirm cache recovery on reload.
+- **Unit:** overlay merge (staged desired on top of DB + dirty flag), conflict classification
+  A–F computed **at Save** (incl. D two-button off-quota-create, E-deleted single-button,
+  silent-clear), revert-to-baseline auto-clean, cache JSON round-trip, batch builder
+  (creates/updates/deletes + off-quota creates from resolved decisions).
+- **Widget:** dirty indicator (yellow border) + count (incl. filtered rows), inline ↩,
+  resolution dialog (bulk + per-row), leave-guard on all three in-app exits, Save
+  success/failure (cache cleared vs preserved).
+- **Manual smoke (test env):** run a mock batch meeting; force a conflict by editing the DB in
+  the Firebase console mid-session; confirm the **Save-time** resolution dialog surfaces it
+  (there is **no** live conflict marker — only the yellow dirty-border); kill the tab
+  mid-session and confirm cache recovery on reload.
 
 ## Open questions
 
