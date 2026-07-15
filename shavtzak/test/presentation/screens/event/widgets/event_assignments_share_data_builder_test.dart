@@ -119,7 +119,7 @@ void main() {
           'אורי ברק');
     });
 
-    test('participants line lists every נגלה', () {
+    test('participants line lists every סבב', () {
       final event = _event(DateTime(2026, 5, 4, 10)).copyWith(
         participantGroups: const [
           ParticipantGroup(label: 'בוקר', count: 500),
@@ -135,7 +135,7 @@ void main() {
         groupingMode: EventAssignmentsGroupingMode.role,
       );
 
-      expect(data.participantsLine, 'כמות משתתפים: בוקר: 500, נגלה 2: 700');
+      expect(data.participantsLine, 'כמות משתתפים: בוקר: 500, סבב 2: 700');
     });
 
     test('participants line is empty when no groups are set', () {

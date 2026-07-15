@@ -12,14 +12,14 @@ void main() {
 
       expect(find.byType(ParticipantGroupRows), findsOneWidget);
       expect(find.text('כמות'), findsOneWidget);
-      expect(find.text('הוסף נגלה'), findsOneWidget);
+      expect(find.text('הוסף סבב'), findsOneWidget);
     });
 
     testWidgets('the add button appends a row', (tester) async {
       await tester.pumpWidget(_host());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('הוסף נגלה'));
+      await tester.tap(find.text('הוסף סבב'));
       await tester.pumpAndSettle();
 
       expect(find.text('כמות'), findsNWidgets(2));
@@ -29,9 +29,9 @@ void main() {
       await tester.pumpWidget(_host());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('הוסף נגלה'));
+      await tester.tap(find.text('הוסף סבב'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('הסר נגלה').first);
+      await tester.tap(find.byTooltip('הסר סבב').first);
       await tester.pumpAndSettle();
 
       expect(find.text('כמות'), findsOneWidget);
@@ -62,12 +62,12 @@ void main() {
       await tester.pumpAndSettle();
 
       for (var i = 0; i < 9; i++) {
-        await tester.tap(find.text('הוסף נגלה'));
+        await tester.tap(find.text('הוסף סבב'));
         await tester.pumpAndSettle();
       }
 
       expect(find.text('כמות'), findsNWidgets(10));
-      expect(find.text('הוסף נגלה'), findsNothing);
+      expect(find.text('הוסף סבב'), findsNothing);
     });
 
     testWidgets('a label with no count blocks submission', (tester) async {
@@ -102,9 +102,9 @@ void main() {
       await tester.pumpWidget(_host(rowsKey: rowsKey));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('הוסף נגלה'));
+      await tester.tap(find.text('הוסף סבב'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('הוסף נגלה'));
+      await tester.tap(find.text('הוסף סבב'));
       await tester.pumpAndSettle();
 
       final labels = find.byType(TextFormField);

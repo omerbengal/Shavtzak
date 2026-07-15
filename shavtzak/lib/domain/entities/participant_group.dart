@@ -1,8 +1,8 @@
 import 'package:equatable/equatable.dart';
 
-/// One audience group ("נגלה") of an event: an optional label plus a headcount.
+/// One audience group ("סבב") of an event: an optional label plus a headcount.
 ///
-/// A null or blank [label] means the UI falls back to "נגלה N", where N is the
+/// A null or blank [label] means the UI falls back to "סבב N", where N is the
 /// group's 1-based position in Event.participantGroups.
 class ParticipantGroup extends Equatable {
   final String? label;

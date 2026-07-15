@@ -7,7 +7,7 @@ import '../../../../domain/entities/participant_group.dart';
 const int _maxParticipantRows = 10;
 const int _maxLabelLength = 20;
 
-/// The "כמות משתתפים" section of the event form: one row per נגלה, each an
+/// The "כמות משתתפים" section of the event form: one row per סבב, each an
 /// optional label plus a count, with a "+" to append and a "✕" to remove.
 ///
 /// Call [ParticipantGroupRowsState.toGroups] on save to collect the rows.
@@ -122,7 +122,7 @@ class ParticipantGroupRowsState extends State<ParticipantGroupRows> {
                     },
                     decoration: InputDecoration(
                       labelText: 'תווית (אופציונלי)',
-                      hintText: 'נגלה ${i + 1}',
+                      hintText: 'סבב ${i + 1}',
                       border: const OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -165,7 +165,7 @@ class ParticipantGroupRowsState extends State<ParticipantGroupRows> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.clear, color: Colors.grey),
-                  tooltip: 'הסר נגלה',
+                  tooltip: 'הסר סבב',
                   onPressed: () => _removeRow(i),
                 ),
               ],
@@ -177,7 +177,7 @@ class ParticipantGroupRowsState extends State<ParticipantGroupRows> {
             child: TextButton.icon(
               onPressed: _addRow,
               icon: const Icon(Icons.add),
-              label: const Text('הוסף נגלה'),
+              label: const Text('הוסף סבב'),
             ),
           ),
       ],

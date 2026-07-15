@@ -23,13 +23,13 @@ void main() {
       );
     });
 
-    test('two unlabeled groups fall back to נגלה numbering', () {
+    test('two unlabeled groups fall back to סבב numbering', () {
       expect(
         _eventWith(const [
           ParticipantGroup(count: 500),
           ParticipantGroup(count: 700),
         ]).participantsSummary,
-        'נגלה 1: 500, נגלה 2: 700',
+        'סבב 1: 500, סבב 2: 700',
       );
     });
 
@@ -39,7 +39,7 @@ void main() {
           ParticipantGroup(label: 'בוקר', count: 500),
           ParticipantGroup(count: 700),
         ]).participantsSummary,
-        'בוקר: 500, נגלה 2: 700',
+        'בוקר: 500, סבב 2: 700',
       );
     });
 
