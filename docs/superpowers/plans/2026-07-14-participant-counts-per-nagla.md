@@ -488,7 +488,8 @@ class ParticipantGroupModel {
   static ParticipantGroupModel? tryFromJson(Object? raw) {
     if (raw is! Map) return null;
 
-    final count = (raw['count'] as num?)?.toInt();
+    final rawCount = raw['count'];
+    final count = rawCount is num ? rawCount.toInt() : null;
     if (count == null || count < 0) return null;
 
     final label = raw['label'];
@@ -535,13 +536,20 @@ Add this helper next to the other `static` parse helpers (below `_formatDateOnly
           .toList();
     }
 
-    final legacy = (legacyCount as num?)?.toInt();
+    final legacy = legacyCount is num ? legacyCount.toInt() : null;
     if (legacy != null && legacy >= 0) {
       return [ParticipantGroupModel(count: legacy)];
     }
     return const [];
   }
 ```
+
+> **Count reads must never use `x as num?`.** That cast throws `TypeError` on a non-null
+> non-num value (e.g. a String from a console edit); inside `fromFirestore` that throw
+> rides `watchEvents()`'s stream `.map()` and fails the WHOLE event batch. Always
+> `x is num ? x.toInt() : null`. This applies to the two `participantCount` direct reads
+> below as well — the plan's fromFirestore/fromJson touchpoints already carry the
+> hardened form.
 
 - [ ] **Step 4: Wire the field through all six touchpoints**
 
@@ -560,7 +568,9 @@ In `toEntity`, after `participantCount: participantCount,`:
           participantGroups.map((group) => group.toEntity()).toList(),
 ```
 
-In `fromFirestore`, after `participantCount: (data['participantCount'] as num?)?.toInt(),`:
+In `fromFirestore`, after the `participantCount:` line — and change that line to the null-safe
+form `participantCount: data['participantCount'] is num ? (data['participantCount'] as num).toInt() : null,`
+(a bare `data[...] as num?` throws on a String; see the box above):
 
 ```dart
       participantGroups: _parseParticipantGroups(
@@ -576,7 +586,8 @@ In `toFirestore`, after `'participantCount': participantCount,`:
           participantGroups.map((group) => group.toJson()).toList(),
 ```
 
-In `fromJson`, after `participantCount: (json['participantCount'] as num?)?.toInt(),`:
+In `fromJson`, after the `participantCount:` line — and change that line to the null-safe
+form `participantCount: json['participantCount'] is num ? (json['participantCount'] as num).toInt() : null,`:
 
 ```dart
       participantGroups: _parseParticipantGroups(
@@ -1515,8 +1526,10 @@ In `shavtzak/lib/data/models/event_model.dart` remove:
 - the constructor parameter `this.participantCount,`
 - `participantCount: entity.participantCount,` in `fromEntity`
 - `participantCount: participantCount,` in `toEntity`
-- `participantCount: (data['participantCount'] as num?)?.toInt(),` in `fromFirestore`
-- `participantCount: (json['participantCount'] as num?)?.toInt(),` in `fromJson`
+- the `participantCount:` line in `fromFirestore` (now the null-safe
+  `participantCount: data['participantCount'] is num ? (data['participantCount'] as num).toInt() : null,`)
+- the `participantCount:` line in `fromJson` (now the null-safe
+  `participantCount: json['participantCount'] is num ? (json['participantCount'] as num).toInt() : null,`)
 - `'participantCount': participantCount,` in `toFirestore`
 - `'participantCount': participantCount,` in `toJson`
 
