@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/domain/entities/participant_group.dart';
-import 'package:shavtzak/presentation/screens/event/widgets/event_form_modal.dart';
+import 'package:shavtzak/presentation/screens/event/widgets/participant_group_rows.dart';
 
 void main() {
   group('participant group rows', () {
@@ -81,6 +81,19 @@ void main() {
       expect(key.currentState!.validate(), isFalse);
       await tester.pumpAndSettle();
       expect(find.text('יש להזין כמות'), findsOneWidget);
+    });
+
+    testWidgets('a count with no label passes validation', (tester) async {
+      final key = GlobalKey<FormState>();
+      await tester.pumpWidget(_host(formKey: key));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextFormField).at(1), '500');
+      await tester.pumpAndSettle();
+
+      expect(key.currentState!.validate(), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.text('יש להזין כמות'), findsNothing);
     });
 
     testWidgets('rows collect into groups, dropping the empty ones',
