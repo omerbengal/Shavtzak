@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'participant_group.dart';
 
 /// Event domain entity
 class Event extends Equatable {
@@ -11,7 +12,7 @@ class Event extends Equatable {
   final String teamEndTime; // Format: "HH:mm" - Team estimated end time (שעת סיום משוערת של הצוות)
   final String assemblyTime; // Format: "HH:mm"
   final String actualShowStartTime; // Format: "HH:mm" - Actual show start time (שעת תחילת המופע בפועל)
-  final int? participantCount; // Number of participants/audience (כמות משתתפים); null = unset
+  final List<ParticipantGroup> participantGroups; // Audience per נגלה; empty = unset
   final String location;
   final String? parkingLocation; // Parking location in "Name||lat,lng" format
   final List<String> parkingEditorIds; // IDs of team members who can edit parking
@@ -44,7 +45,7 @@ class Event extends Equatable {
     this.teamEndTime = '',
     required this.assemblyTime,
     this.actualShowStartTime = '',
-    this.participantCount,
+    this.participantGroups = const [],
     this.location = '',
     this.parkingLocation,
     this.parkingEditorIds = const [],
@@ -124,6 +125,28 @@ class Event extends Equatable {
         date1.day == date2.day;
   }
 
+  /// Formatted audience size, or null when no groups are set.
+  ///
+  /// A lone unlabeled group renders as a bare number ("500"), so events created
+  /// before נגלות existed look exactly as they did. Otherwise each group is
+  /// prefixed by its label, falling back to its 1-based position ("נגלה 2").
+  String? get participantsSummary {
+    if (participantGroups.isEmpty) return null;
+
+    if (participantGroups.length == 1 &&
+        participantGroups.first.normalizedLabel == null) {
+      return '${participantGroups.first.count}';
+    }
+
+    final segments = <String>[];
+    for (var i = 0; i < participantGroups.length; i++) {
+      final group = participantGroups[i];
+      final label = group.normalizedLabel ?? 'נגלה ${i + 1}';
+      segments.add('$label: ${group.count}');
+    }
+    return segments.join(', ');
+  }
+
   /// Check if event has a Drive folder attached
   bool get hasDriveFolder => driveFolderId != null && driveFolderId!.isNotEmpty;
 
@@ -138,8 +161,7 @@ class Event extends Equatable {
     String? teamEndTime,
     String? assemblyTime,
     String? actualShowStartTime,
-    int? participantCount,
-    bool clearParticipantCount = false,
+    List<ParticipantGroup>? participantGroups,
     String? location,
     String? parkingLocation,
     List<String>? parkingEditorIds,
@@ -167,8 +189,7 @@ class Event extends Equatable {
       teamEndTime: teamEndTime ?? this.teamEndTime,
       assemblyTime: assemblyTime ?? this.assemblyTime,
       actualShowStartTime: actualShowStartTime ?? this.actualShowStartTime,
-      participantCount:
-          clearParticipantCount ? null : (participantCount ?? this.participantCount),
+      participantGroups: participantGroups ?? this.participantGroups,
       location: location ?? this.location,
       parkingLocation: clearParkingLocation ? null : (parkingLocation ?? this.parkingLocation),
       parkingEditorIds: parkingEditorIds ?? this.parkingEditorIds,
@@ -198,7 +219,7 @@ class Event extends Equatable {
         teamEndTime,
         assemblyTime,
         actualShowStartTime,
-        participantCount,
+        participantGroups,
         location,
         parkingLocation,
         parkingEditorIds,

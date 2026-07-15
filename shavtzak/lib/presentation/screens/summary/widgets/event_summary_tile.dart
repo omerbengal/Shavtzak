@@ -165,9 +165,9 @@ class EventSummaryTile extends StatelessWidget {
                   ),
                 ),
               // Participant count (hidden when unset)
-              if (data.event.participantCount != null)
+              if (data.event.participantsSummary != null)
                 Text(
-                  'כמות משתתפים: ${data.event.participantCount}',
+                  'כמות משתתפים: ${data.event.participantsSummary}',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.grey.shade600,

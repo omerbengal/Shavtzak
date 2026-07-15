@@ -42,6 +42,7 @@ import type {
   AttendeeNotifyDelta,
   ConstraintSyncReport,
 } from './calendar_sync_backend';
+import {normalizeParticipantGroups} from './participant_groups';
 
 initializeApp();
 
@@ -1520,7 +1521,14 @@ function eventDocFromJson(event: Record<string, unknown>): Record<string, unknow
     teamEndTime: event['teamEndTime'] ?? '',
     assemblyTime: event['assemblyTime'] ?? '',
     actualShowStartTime: event['actualShowStartTime'] ?? '',
-    participantCount: event['participantCount'] ?? null,
+    participantGroups: normalizeParticipantGroups(
+      event['participantGroups'],
+      event['participantCount'],
+    ),
+    // Retired, superseded by participantGroups. Written as null rather than
+    // omitted: event.update is a partial merge, so an omitted key would leave
+    // the stale value on the doc for old clients to render as a WRONG number.
+    participantCount: null,
     location: event['location'] ?? '',
     parkingLocation: event['parkingLocation'] ?? null,
     parkingEditorIds: event['parkingEditorIds'] ?? [],

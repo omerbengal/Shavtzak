@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/utils/israel_calendar.dart';
 import '../../domain/entities/event.dart';
+import '../../domain/entities/participant_group.dart';
 
 /// Data model for Event with JSON serialization
 class EventModel {
@@ -13,7 +14,7 @@ class EventModel {
   final String teamEndTime;
   final String assemblyTime;
   final String actualShowStartTime;
-  final int? participantCount;
+  final List<ParticipantGroupModel> participantGroups;
   final String location;
   final String? parkingLocation;
   final List<String> parkingEditorIds;
@@ -45,7 +46,7 @@ class EventModel {
     this.teamEndTime = '',
     required this.assemblyTime,
     this.actualShowStartTime = '',
-    this.participantCount,
+    this.participantGroups = const [],
     required this.location,
     this.parkingLocation,
     this.parkingEditorIds = const [],
@@ -96,6 +97,29 @@ class EventModel {
     return '$year-$month-$day';
   }
 
+  /// Hydrate participant groups, falling back to the retired `participantCount`
+  /// scalar for docs written before נגלות existed. An explicitly empty array
+  /// means "no groups" and must NOT fall back — otherwise clearing every group
+  /// would resurrect the old scalar.
+  static List<ParticipantGroupModel> _parseParticipantGroups(
+    Object? groupsRaw,
+    Object? legacyCount,
+  ) {
+    if (groupsRaw is List) {
+      return groupsRaw
+          .map(ParticipantGroupModel.tryFromJson)
+          .whereType<ParticipantGroupModel>()
+          .toList();
+    }
+
+    final legacy =
+        legacyCount is num && legacyCount.isFinite ? legacyCount.toInt() : null;
+    if (legacy != null && legacy >= 0) {
+      return [ParticipantGroupModel(count: legacy)];
+    }
+    return const [];
+  }
+
   /// Convert from domain entity
   factory EventModel.fromEntity(Event entity) {
     return EventModel(
@@ -108,7 +132,9 @@ class EventModel {
       teamEndTime: entity.teamEndTime,
       assemblyTime: entity.assemblyTime,
       actualShowStartTime: entity.actualShowStartTime,
-      participantCount: entity.participantCount,
+      participantGroups: entity.participantGroups
+          .map(ParticipantGroupModel.fromEntity)
+          .toList(),
       location: entity.location,
       parkingLocation: entity.parkingLocation,
       parkingEditorIds: entity.parkingEditorIds,
@@ -138,7 +164,8 @@ class EventModel {
       teamEndTime: teamEndTime,
       assemblyTime: assemblyTime,
       actualShowStartTime: actualShowStartTime,
-      participantCount: participantCount,
+      participantGroups:
+          participantGroups.map((group) => group.toEntity()).toList(),
       location: location,
       parkingLocation: parkingLocation,
       parkingEditorIds: parkingEditorIds,
@@ -170,7 +197,10 @@ class EventModel {
       teamEndTime: data['teamEndTime'] as String? ?? '',
       assemblyTime: data['assemblyTime'] as String,
       actualShowStartTime: data['actualShowStartTime'] as String? ?? '',
-      participantCount: (data['participantCount'] as num?)?.toInt(),
+      participantGroups: _parseParticipantGroups(
+        data['participantGroups'],
+        data['participantCount'],
+      ),
       location: data['location'] as String? ?? '',
       parkingLocation: data['parkingLocation'] as String?,
       parkingEditorIds:
@@ -204,7 +234,8 @@ class EventModel {
       'teamEndTime': teamEndTime,
       'assemblyTime': assemblyTime,
       'actualShowStartTime': actualShowStartTime,
-      'participantCount': participantCount,
+      'participantGroups':
+          participantGroups.map((group) => group.toJson()).toList(),
       'location': location,
       'parkingLocation': parkingLocation,
       'parkingEditorIds': parkingEditorIds,
@@ -234,7 +265,10 @@ class EventModel {
       teamEndTime: json['teamEndTime'] as String? ?? '',
       assemblyTime: json['assemblyTime'] as String,
       actualShowStartTime: json['actualShowStartTime'] as String? ?? '',
-      participantCount: (json['participantCount'] as num?)?.toInt(),
+      participantGroups: _parseParticipantGroups(
+        json['participantGroups'],
+        json['participantCount'],
+      ),
       location: json['location'] as String? ?? '',
       parkingLocation: json['parkingLocation'] as String?,
       parkingEditorIds:
@@ -268,7 +302,8 @@ class EventModel {
       'teamEndTime': teamEndTime,
       'assemblyTime': assemblyTime,
       'actualShowStartTime': actualShowStartTime,
-      'participantCount': participantCount,
+      'participantGroups':
+          participantGroups.map((group) => group.toJson()).toList(),
       'location': location,
       'parkingLocation': parkingLocation,
       'parkingEditorIds': parkingEditorIds,
@@ -285,4 +320,42 @@ class EventModel {
       'inviteAllPermanentWhenUnassigned': inviteAllPermanentWhenUnassigned,
     };
   }
+}
+
+/// Data model for ParticipantGroup
+class ParticipantGroupModel {
+  final String? label;
+  final int count;
+
+  const ParticipantGroupModel({this.label, required this.count});
+
+  factory ParticipantGroupModel.fromEntity(ParticipantGroup entity) {
+    return ParticipantGroupModel(
+      label: entity.normalizedLabel,
+      count: entity.count,
+    );
+  }
+
+  ParticipantGroup toEntity() => ParticipantGroup(label: label, count: count);
+
+  /// Parse one stored group, returning null for anything malformed so a single
+  /// bad entry is dropped instead of breaking the whole event. Not a `fromJson`
+  /// factory, because a factory cannot report "this entry is garbage".
+  static ParticipantGroupModel? tryFromJson(Object? raw) {
+    if (raw is! Map) return null;
+
+    final rawCount = raw['count'];
+    final count =
+        rawCount is num && rawCount.isFinite ? rawCount.toInt() : null;
+    if (count == null || count < 0) return null;
+
+    final label = raw['label'];
+    final trimmed = label is String ? label.trim() : null;
+    return ParticipantGroupModel(
+      label: (trimmed == null || trimmed.isEmpty) ? null : trimmed,
+      count: count,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'label': label, 'count': count};
 }

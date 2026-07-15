@@ -1431,6 +1431,7 @@ class _LogDocumentCardViewState extends State<LogDocumentCardView> {
       'endTime': 'שעת סיום',
       'teamEndTime': 'שעת סיום משוערת של הצוות',
       'participantCount': 'כמות משתתפים',
+      'participantGroups': 'כמות משתתפים',
       'wasAutoRejectedFromCalendar': 'נדחה אוטומטית ביומן',
       'semanticAction': 'פעולה סמנטית',
       'length': 'אורך',

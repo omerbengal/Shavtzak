@@ -289,10 +289,11 @@ class EventAssignmentsShareDataBuilder {
   }
 
   static String _formatParticipantsLine(Event event) {
-    if (event.participantCount == null) {
+    final summary = event.participantsSummary;
+    if (summary == null) {
       return '';
     }
-    return 'כמות משתתפים: ${event.participantCount}';
+    return 'כמות משתתפים: $summary';
   }
 
   static String _getFullHebrewDayName(int weekday) {
