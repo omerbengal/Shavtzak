@@ -12,7 +12,7 @@ class Event extends Equatable {
   final String teamEndTime; // Format: "HH:mm" - Team estimated end time (שעת סיום משוערת של הצוות)
   final String assemblyTime; // Format: "HH:mm"
   final String actualShowStartTime; // Format: "HH:mm" - Actual show start time (שעת תחילת המופע בפועל)
-  final List<ParticipantGroup> participantGroups; // Audience per נגלה; empty = unset
+  final List<ParticipantGroup> participantGroups; // Audience per סבב; empty = unset
   final String location;
   final String? parkingLocation; // Parking location in "Name||lat,lng" format
   final List<String> parkingEditorIds; // IDs of team members who can edit parking
@@ -128,8 +128,8 @@ class Event extends Equatable {
   /// Formatted audience size, or null when no groups are set.
   ///
   /// A lone unlabeled group renders as a bare number ("500"), so events created
-  /// before נגלות existed look exactly as they did. Otherwise each group is
-  /// prefixed by its label, falling back to its 1-based position ("נגלה 2").
+  /// before סבבים existed look exactly as they did. Otherwise each group is
+  /// prefixed by its label, falling back to its 1-based position ("סבב 2").
   String? get participantsSummary {
     if (participantGroups.isEmpty) return null;
 
@@ -141,7 +141,7 @@ class Event extends Equatable {
     final segments = <String>[];
     for (var i = 0; i < participantGroups.length; i++) {
       final group = participantGroups[i];
-      final label = group.normalizedLabel ?? 'נגלה ${i + 1}';
+      final label = group.normalizedLabel ?? 'סבב ${i + 1}';
       segments.add('$label: ${group.count}');
     }
     return segments.join(', ');
