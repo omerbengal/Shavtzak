@@ -52,8 +52,9 @@ Re-enabling calendar sync is explicitly out of scope and called out where it wil
   immediate-write** behavior. See "Scope" for the deliberate mixed model.
 - Re-enabling Google Calendar sync (future; hook point noted).
 - Multi-device sync of staged changes (cache is per-browser, per-environment).
-- Making Save a read-transaction (`runTransaction`). A `WriteBatch` is used; the tiny
-  TOCTOU window is acceptable for a single-editor meeting. Noted as future hardening only.
+- Making Save a server read-transaction (`runTransaction`). A server-side atomic `db.batch()`
+  is used; the tiny window between conflict-resolution and commit is acceptable for a
+  single-editor meeting. Noted as future hardening only.
 
 ## Scope — staged vs. immediate
 
@@ -256,13 +257,25 @@ If any conflicts exist when Save is pressed, show **one consolidated dialog** (R
      enabled → press again. (Directly satisfies "be able to save again.")
    - *(A true per-record percentage would require chunking into sequential sub-batches, which
      breaks the all-or-nothing guarantee — explicitly not done.)*
-6. New DB layer: add `saveAssignmentsBatch({creates, updates, deletes})` to
-   `DatabaseInterface` / `FirestoreDatabase` (mixed `WriteBatch`, ≤500 ops — a meeting is far
-   under). `AssignmentRepository` exposes it.
+6. **The write path is backend-mediated** — all assignment writes go through
+   `BackendApiService.mutate(operation, payload)` → the `api` Cloud Function's `switch(operation)`
+   in `functions/src/index.ts` (client Firestore is never written directly). Existing handlers
+   (`assignment.insert/update/delete/insertBatch/deleteBatch`) do no mixed atomic write, so
+   atomicity is achieved **server-side**:
+   - **Backend (new):** `case 'assignment.saveBatch'` — `requireAdmin`, validate every create/update
+     via `validateAssignmentPayload`, then commit ONE server-side `db.batch()` (creates + updates +
+     deletes), mirroring the existing `assignment.deleteByEvent` batch pattern; write audit logs;
+     return `{ok, counts}`. Atomic all-or-nothing (Firestore batch ≤500 ops — a meeting is far under).
+   - **Client (new):** `AssignmentRepository.saveAssignmentsBatch(creates, updates, deletes)` →
+     `FirestoreDatabase.saveAssignmentsBatch` → `_invokeMutation('assignment.saveBatch', payload)`.
+   - **Deploy:** functions do **not** auto-deploy — after the backend change run
+     `cd functions && firebase deploy --only functions`. (The Flutter web app auto-deploys on merge
+     to main; the Cloud Function does not — see [[web-auto-deploys-on-merge]] / [[feedback-flag-redeploy-needs]].)
 
-**TOCTOU caveat:** a `WriteBatch` is not a read-transaction, so there is a millisecond window
-between resolving conflicts and committing where the DB could change again. Acceptable for a
-single-editor meeting; `runTransaction` hardening is noted as future-only.
+**Atomicity caveat:** a server-side `db.batch()` is atomic on commit but is not a read-transaction,
+so there is a small window between the client resolving conflicts and the server committing where the
+DB could change again. Acceptable for a single-editor meeting; a server `runTransaction` is noted as
+future hardening only.
 
 **Calendar hook (future, not built here):** the Save-success step is the single place where
 a future calendar sync would enqueue one batch — the whole reason the mixed-immediate scope
@@ -344,8 +357,11 @@ staged changes on reload. Guard **in-app exits only**:
   flag for the yellow border. No live-conflict flag — conflicts are computed only at Save.
 - `lib/presentation/widgets/swipeable_page_view.dart` — async tab-switch leave-guard.
 - `lib/core/services/user_cache_service.dart` — pending-changes JSON cache methods.
+- `functions/src/index.ts` — new `assignment.saveBatch` backend handler (atomic mixed `db.batch()`
+  + audit logs), plus a `functions/src/*.test.ts` test. **Requires `firebase deploy --only functions`.**
 - `lib/data/data_sources/database_interface.dart` + `firestore_database.dart` +
-  `lib/data/repositories/assignment_repository.dart` — atomic mixed `saveAssignmentsBatch`.
+  `lib/data/repositories/assignment_repository.dart` — client `saveAssignmentsBatch` that calls
+  `_invokeMutation('assignment.saveBatch', {creates, updates, deletes})`.
 - Likely new: a resolution-dialog widget and a shared leave-guard dialog helper.
 
 ## Testing considerations
