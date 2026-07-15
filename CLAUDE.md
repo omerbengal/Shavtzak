@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Workflow Conventions (Claude Code — READ FIRST)
+
+**Worktree-per-task.** These rules govern how Claude Code operates in this repo and override any default "work in place" behavior.
+
+1. **Start clean on a worktree.** At the start of every new feature or investigation, create a fresh, isolated git worktree *before* making any changes — use the `EnterWorktree` tool (or `git worktree add` as a fallback). The base should be clean (branch from `origin/main`), and there must be **one worktree per feature/investigation** — never reuse a previous task's worktree.
+2. **Announce the worktree.** As soon as it's created, tell the user that a worktree was created and state its **name and full path** (e.g. `.claude/worktrees/<name>`).
+3. **Re-state the worktree whenever the user needs to act on it.** Any time the user needs to test something, run the app, or look at files, proactively re-mention which worktree we're on — **name and full path** — because the user works from other terminals and needs to `cd` into it. Don't assume they remember; repeat it each time.
+
 ## Project Overview
 
 **Shavtzak** (שבצק) is a team management and event scheduling web application built with Flutter Web and Firebase. The app manages team members, events, and role-based assignments for events, primarily in Hebrew (RTL). It replaces a V1 system that used Google Sheets with Apps Script.
