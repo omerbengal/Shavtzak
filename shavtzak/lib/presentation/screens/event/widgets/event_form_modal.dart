@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/role_types.dart';
@@ -12,6 +11,8 @@ import '../../../../core/utils/date_utils.dart' as app_date_utils;
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/event.dart';
+import '../../../../domain/entities/participant_group.dart';
+import 'participant_group_rows.dart';
 // Re-exported (not just imported) so callers that only import this file —
 // e.g. the widget test — can reference ParticipantGroupRows /
 // ParticipantGroupRowsState. A plain `import` is not transitive in Dart.
@@ -68,7 +69,7 @@ class _EventFormModalState extends State<EventFormModal> {
   final _teamEndTimeController = TextEditingController();
   final _assemblyTimeController = TextEditingController();
   final _actualShowStartTimeController = TextEditingController();
-  final _participantCountController = TextEditingController();
+  final _participantRowsKey = GlobalKey<ParticipantGroupRowsState>();
 
   DateTime? _startDate;
   DateTime? _endDate;
@@ -145,8 +146,6 @@ class _EventFormModalState extends State<EventFormModal> {
       _teamEndTimeController.text = widget.event!.teamEndTime;
       _assemblyTimeController.text = widget.event!.assemblyTime;
       _actualShowStartTimeController.text = widget.event!.actualShowStartTime;
-      _participantCountController.text =
-          widget.event!.participantCount?.toString() ?? '';
 
       if (widget.isDuplication) {
         // For duplication mode, reset dates to allow user to select new ones
@@ -219,7 +218,6 @@ class _EventFormModalState extends State<EventFormModal> {
     _teamEndTimeController.dispose();
     _assemblyTimeController.dispose();
     _actualShowStartTimeController.dispose();
-    _participantCountController.dispose();
     _nameFocusNode.dispose();
     _locationFocusNode.dispose();
     _parkingLocationFocusNode.dispose();
@@ -356,11 +354,10 @@ class _EventFormModalState extends State<EventFormModal> {
     }
   }
 
-  /// Parse the participant-count field into an int, or null when empty/invalid.
-  int? _parseParticipantCount() {
-    final raw = _participantCountController.text.trim();
-    if (raw.isEmpty) return null;
-    return int.tryParse(raw);
+  /// Collect the participant rows. Empty rows are dropped; a labeled row with
+  /// no count is already blocked by the form validator.
+  List<ParticipantGroup> _parseParticipantGroups() {
+    return _participantRowsKey.currentState?.toGroups() ?? const [];
   }
 
   /// Overwrite [target] with [source] shifted by [offsetMinutes]. Used by the
@@ -531,7 +528,7 @@ class _EventFormModalState extends State<EventFormModal> {
             newTeamEndTime: _teamEndTimeController.text,
             newAssemblyTime: _assemblyTimeController.text,
             newActualShowStartTime: _actualShowStartTimeController.text,
-            newParticipantCount: _parseParticipantCount(),
+            newParticipantGroups: _parseParticipantGroups(),
             newRequiresArmed: _requiresArmed,
             newRoleRequirements: Map.from(_roleRequirements),
             duplicateAssignments: _duplicateAssignments,
@@ -702,7 +699,7 @@ class _EventFormModalState extends State<EventFormModal> {
       teamEndTime: _teamEndTimeController.text.trim(),
       assemblyTime: _assemblyTimeController.text.trim(),
       actualShowStartTime: _actualShowStartTimeController.text.trim(),
-      participantCount: _parseParticipantCount(),
+      participantGroups: _parseParticipantGroups(),
       location: locationValue,
       parkingLocation: _rawParkingLocationValue,
       parkingEditorIds: _parkingEditorIds,
@@ -1844,43 +1841,13 @@ class _EventFormModalState extends State<EventFormModal> {
 
                                         const SizedBox(height: 16),
 
-                                        // Participant count (כמות משתתפים)
-                                        TextFormField(
-                                          controller: _participantCountController,
-                                          keyboardType: TextInputType.number,
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter
-                                                .digitsOnly,
-                                            LengthLimitingTextInputFormatter(7),
-                                          ],
-                                          onChanged: (_) {
-                                            _isDirty = true;
-                                          },
-                                          decoration: InputDecoration(
-                                            labelText:
-                                                'כמות משתתפים (אופציונלי)',
-                                            hintText: 'לדוגמה: 250',
-                                            prefixIcon:
-                                                const Icon(Icons.groups),
-                                            border: const OutlineInputBorder(),
-                                            suffixIcon: _participantCountController
-                                                    .text.isNotEmpty
-                                                ? IconButton(
-                                                    icon: const Icon(
-                                                        Icons.clear,
-                                                        color: Colors.grey),
-                                                    onPressed: () {
-                                                      Logger.action(
-                                                          'tap:clearParticipantCount');
-                                                      setState(() {
-                                                        _participantCountController
-                                                            .clear();
-                                                        _isDirty = true;
-                                                      });
-                                                    },
-                                                  )
-                                                : null,
-                                          ),
+                                        // Participant counts, one row per נגלה
+                                        ParticipantGroupRows(
+                                          key: _participantRowsKey,
+                                          initialGroups: widget.event
+                                                  ?.participantGroups ??
+                                              const [],
+                                          onChanged: () => _isDirty = true,
                                         ),
 
                                         const SizedBox(height: 16),

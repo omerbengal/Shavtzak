@@ -423,7 +423,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
         teamEndTime: event.newTeamEndTime,
         assemblyTime: event.newAssemblyTime,
         actualShowStartTime: event.newActualShowStartTime,
-        participantCount: event.newParticipantCount,
+        participantGroups: event.newParticipantGroups,
         requiresArmed: event.newRequiresArmed,
         roleRequirements: Map.from(event.newRoleRequirements),
         categoryId: event.categoryId,
@@ -604,7 +604,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     }
 
     // Adjust only the quotas + timestamp; copyWith preserves every other field
-    // (times incl. teamEndTime/actualShowStartTime, participantCount, parking,
+    // (times incl. teamEndTime/actualShowStartTime, participantGroups, parking,
     // isDeactivated, inviteAllPermanentWhenUnassigned, Drive fields, ...).
     return proposedEvent.copyWith(
       roleRequirements: updatedRoleRequirements,

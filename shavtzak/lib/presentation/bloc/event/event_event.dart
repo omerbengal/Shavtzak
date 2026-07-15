@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/participant_group.dart';
 import '../../../core/utils/crud_action_result.dart';
 
 /// Base event class for EventBloc
@@ -121,7 +122,7 @@ class DuplicateEvent extends EventEvent {
   final String newTeamEndTime;
   final String newAssemblyTime;
   final String newActualShowStartTime;
-  final int? newParticipantCount;
+  final List<ParticipantGroup> newParticipantGroups;
   final bool newRequiresArmed;
   final Map<String, int> newRoleRequirements;
   final bool duplicateAssignments;
@@ -140,7 +141,7 @@ class DuplicateEvent extends EventEvent {
     this.newTeamEndTime = '',
     required this.newAssemblyTime,
     this.newActualShowStartTime = '',
-    this.newParticipantCount,
+    this.newParticipantGroups = const [],
     required this.newRequiresArmed,
     required this.newRoleRequirements,
     this.duplicateAssignments = false,
@@ -161,7 +162,7 @@ class DuplicateEvent extends EventEvent {
         newTeamEndTime,
         newAssemblyTime,
         newActualShowStartTime,
-        newParticipantCount,
+        newParticipantGroups,
         newRequiresArmed,
         newRoleRequirements,
         duplicateAssignments,
