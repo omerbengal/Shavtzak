@@ -12,7 +12,6 @@ class Event extends Equatable {
   final String teamEndTime; // Format: "HH:mm" - Team estimated end time (שעת סיום משוערת של הצוות)
   final String assemblyTime; // Format: "HH:mm"
   final String actualShowStartTime; // Format: "HH:mm" - Actual show start time (שעת תחילת המופע בפועל)
-  final int? participantCount; // Number of participants/audience (כמות משתתפים); null = unset
   final List<ParticipantGroup> participantGroups; // Audience per נגלה; empty = unset
   final String location;
   final String? parkingLocation; // Parking location in "Name||lat,lng" format
@@ -46,7 +45,6 @@ class Event extends Equatable {
     this.teamEndTime = '',
     required this.assemblyTime,
     this.actualShowStartTime = '',
-    this.participantCount,
     this.participantGroups = const [],
     this.location = '',
     this.parkingLocation,
@@ -163,8 +161,6 @@ class Event extends Equatable {
     String? teamEndTime,
     String? assemblyTime,
     String? actualShowStartTime,
-    int? participantCount,
-    bool clearParticipantCount = false,
     List<ParticipantGroup>? participantGroups,
     String? location,
     String? parkingLocation,
@@ -193,8 +189,6 @@ class Event extends Equatable {
       teamEndTime: teamEndTime ?? this.teamEndTime,
       assemblyTime: assemblyTime ?? this.assemblyTime,
       actualShowStartTime: actualShowStartTime ?? this.actualShowStartTime,
-      participantCount:
-          clearParticipantCount ? null : (participantCount ?? this.participantCount),
       participantGroups: participantGroups ?? this.participantGroups,
       location: location ?? this.location,
       parkingLocation: clearParkingLocation ? null : (parkingLocation ?? this.parkingLocation),
@@ -225,7 +219,6 @@ class Event extends Equatable {
         teamEndTime,
         assemblyTime,
         actualShowStartTime,
-        participantCount,
         participantGroups,
         location,
         parkingLocation,

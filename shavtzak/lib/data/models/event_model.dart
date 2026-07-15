@@ -14,7 +14,6 @@ class EventModel {
   final String teamEndTime;
   final String assemblyTime;
   final String actualShowStartTime;
-  final int? participantCount;
   final List<ParticipantGroupModel> participantGroups;
   final String location;
   final String? parkingLocation;
@@ -47,7 +46,6 @@ class EventModel {
     this.teamEndTime = '',
     required this.assemblyTime,
     this.actualShowStartTime = '',
-    this.participantCount,
     this.participantGroups = const [],
     required this.location,
     this.parkingLocation,
@@ -133,7 +131,6 @@ class EventModel {
       teamEndTime: entity.teamEndTime,
       assemblyTime: entity.assemblyTime,
       actualShowStartTime: entity.actualShowStartTime,
-      participantCount: entity.participantCount,
       participantGroups: entity.participantGroups
           .map(ParticipantGroupModel.fromEntity)
           .toList(),
@@ -166,7 +163,6 @@ class EventModel {
       teamEndTime: teamEndTime,
       assemblyTime: assemblyTime,
       actualShowStartTime: actualShowStartTime,
-      participantCount: participantCount,
       participantGroups:
           participantGroups.map((group) => group.toEntity()).toList(),
       location: location,
@@ -200,9 +196,6 @@ class EventModel {
       teamEndTime: data['teamEndTime'] as String? ?? '',
       assemblyTime: data['assemblyTime'] as String,
       actualShowStartTime: data['actualShowStartTime'] as String? ?? '',
-      participantCount: data['participantCount'] is num
-          ? (data['participantCount'] as num).toInt()
-          : null,
       participantGroups: _parseParticipantGroups(
         data['participantGroups'],
         data['participantCount'],
@@ -240,7 +233,6 @@ class EventModel {
       'teamEndTime': teamEndTime,
       'assemblyTime': assemblyTime,
       'actualShowStartTime': actualShowStartTime,
-      'participantCount': participantCount,
       'participantGroups':
           participantGroups.map((group) => group.toJson()).toList(),
       'location': location,
@@ -272,9 +264,6 @@ class EventModel {
       teamEndTime: json['teamEndTime'] as String? ?? '',
       assemblyTime: json['assemblyTime'] as String,
       actualShowStartTime: json['actualShowStartTime'] as String? ?? '',
-      participantCount: json['participantCount'] is num
-          ? (json['participantCount'] as num).toInt()
-          : null,
       participantGroups: _parseParticipantGroups(
         json['participantGroups'],
         json['participantCount'],
@@ -312,7 +301,6 @@ class EventModel {
       'teamEndTime': teamEndTime,
       'assemblyTime': assemblyTime,
       'actualShowStartTime': actualShowStartTime,
-      'participantCount': participantCount,
       'participantGroups':
           participantGroups.map((group) => group.toJson()).toList(),
       'location': location,
