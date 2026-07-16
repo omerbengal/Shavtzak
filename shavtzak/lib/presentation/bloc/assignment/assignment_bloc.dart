@@ -2208,10 +2208,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             // Check if events share dates
             if (eventsShareDay(event, otherEvent)) {
               final memberId = otherAssignment.teamMemberId;
-              final member = activeMembers.firstWhere(
-                (m) => m.id == memberId,
-                orElse: () => activeMembers.first, // Fallback
-              );
+              // Null-safe: skip if the owner isn't in the active-member set
+              // (deactivated, or members not yet streamed in) rather than
+              // mis-attributing the same-day conflict to an arbitrary member,
+              // or throwing `.first` on an empty list. Mirrors the live-stream
+              // path's null-skip (divergence #4).
+              final memberMatches =
+                  activeMembers.where((m) => m.id == memberId);
+              if (memberMatches.isEmpty) continue;
+              final member = memberMatches.first;
 
               // Only add if member has the capability for current role and doesn't allow multiple assignments
               if (member.canPerformRole(role.key) &&
@@ -2360,10 +2365,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // extras) data window as the stream path, so a staged clear can never
       // target an assignment the windowed Save path can't see (the
       // "נשמרו 0 שינויים" / member-reappears bug).
-      final windowedAssignments = <Assignment>[
-        ..._repository.getCurrentAssignments(),
-        ..._extraPastAssignments,
-      ];
+      // Id-keyed dedup (matches windowedEvents below and the stream path's
+      // mergedAssignmentsById) so a pagination-boundary duplicate can't render
+      // as two identical off-quota ghost rows.
+      final windowedAssignments = <String, Assignment>{
+        for (final a in _repository.getCurrentAssignments()) a.id: a,
+        for (final a in _extraPastAssignments) a.id: a,
+      }.values.toList();
       var windowedEvents = <String, Event>{
         ..._windowEventsMap,
         ..._extraPastEventsMap,

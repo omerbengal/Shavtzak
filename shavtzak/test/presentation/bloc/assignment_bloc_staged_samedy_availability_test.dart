@@ -327,4 +327,29 @@ void main() {
     expect(xSlotAfter.sameDayAssignedMembers.map((m) => m.id),
         isNot(contains('T')));
   });
+
+  test(
+      'Path A same-day loop does not throw when active members are empty '
+      '(#4: windowing exposed activeMembers.first on an empty list)', () async {
+    // The first-paint gate only checks roles/events/assignments readiness, NOT
+    // members — so Path A (_onRebuildAssignmentSlots) can build with an empty
+    // _windowMembersMap. Two same-day events with an assignment make the
+    // cross-event same-day loop run; before the null-safe fix it called
+    // activeMembers.first on the empty list → StateError → AssignmentError.
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    // Open the gate WITHOUT emitting team members (members stay empty).
+    eventStream.add([eventOnDay('x1', sharedDay), eventOnDay('y1', sharedDay)]);
+    roleStream.add([medicRole()]);
+    assignmentStream.add([assignment('aY', 'y1', 'T')]);
+    await pumpEventQueue();
+    // Trigger Path A while members are still empty.
+    bloc.add(const RebuildAssignmentSlots());
+    await pumpEventQueue();
+    // Post-fix: the same-day loop skips the unknown member and the grid renders
+    // (no throw, no AssignmentError).
+    expect(bloc.state, isA<AssignmentSlotsLoaded>());
+  });
 }
