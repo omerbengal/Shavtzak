@@ -205,6 +205,13 @@ abstract class DatabaseInterface {
   /// Insert multiple assignments at once (for data import)
   Future<void> insertAssignmentsBatch(List<Assignment> assignments);
 
+  /// Atomically create + update + delete assignments in one server-side batch.
+  Future<void> saveAssignmentsBatch({
+    required List<Assignment> creates,
+    required List<Assignment> updates,
+    required List<String> deletes,
+  });
+
   // ========== Utility ==========
 
   /// Initialize the database connection

@@ -145,6 +145,21 @@ class AssignmentRepository {
     await _database.deleteAssignmentsBatch(assignmentIds);
   }
 
+  /// Atomically persist a staged batch of assignment changes, then invalidate
+  /// the relation cache so the next read repopulates.
+  Future<void> saveAssignmentsBatch({
+    required List<Assignment> creates,
+    required List<Assignment> updates,
+    required List<String> deletes,
+  }) async {
+    await _database.saveAssignmentsBatch(
+      creates: creates,
+      updates: updates,
+      deletes: deletes,
+    );
+    clearCache();
+  }
+
   /// Check for conflicts in an assignment
   /// Returns list of conflict messages
   Future<List<String>> checkConflicts(Assignment assignment) async {

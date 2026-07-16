@@ -223,6 +223,20 @@ class MockDatabaseInterface extends _i1.Mock implements _i2.DatabaseInterface {
       ) as _i3.Future<List<_i5.Event>>);
 
   @override
+  _i3.Future<List<_i5.Event>> getEventsBeforeDate(
+    DateTime? cursor, {
+    required int? limit,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getEventsBeforeDate,
+          [cursor],
+          {#limit: limit},
+        ),
+        returnValue: _i3.Future<List<_i5.Event>>.value(<_i5.Event>[]),
+      ) as _i3.Future<List<_i5.Event>>);
+
+  @override
   _i3.Stream<List<_i5.Event>> watchEventsByDateRange(
     DateTime? start,
     DateTime? end,
@@ -354,6 +368,17 @@ class MockDatabaseInterface extends _i1.Mock implements _i2.DatabaseInterface {
             windowStart,
             windowEnd,
           ],
+        ),
+        returnValue: _i3.Future<List<_i6.Assignment>>.value(<_i6.Assignment>[]),
+      ) as _i3.Future<List<_i6.Assignment>>);
+
+  @override
+  _i3.Future<List<_i6.Assignment>> getAssignmentsByEventIds(
+          List<String>? eventIds) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getAssignmentsByEventIds,
+          [eventIds],
         ),
         returnValue: _i3.Future<List<_i6.Assignment>>.value(<_i6.Assignment>[]),
       ) as _i3.Future<List<_i6.Assignment>>);
@@ -581,6 +606,26 @@ class MockDatabaseInterface extends _i1.Mock implements _i2.DatabaseInterface {
         Invocation.method(
           #insertAssignmentsBatch,
           [assignments],
+        ),
+        returnValue: _i3.Future<void>.value(),
+        returnValueForMissingStub: _i3.Future<void>.value(),
+      ) as _i3.Future<void>);
+
+  @override
+  _i3.Future<void> saveAssignmentsBatch({
+    required List<_i6.Assignment>? creates,
+    required List<_i6.Assignment>? updates,
+    required List<String>? deletes,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #saveAssignmentsBatch,
+          [],
+          {
+            #creates: creates,
+            #updates: updates,
+            #deletes: deletes,
+          },
         ),
         returnValue: _i3.Future<void>.value(),
         returnValueForMissingStub: _i3.Future<void>.value(),

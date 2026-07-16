@@ -326,6 +326,17 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i4.Future<List<_i7.Assignment>>);
 
   @override
+  _i4.Future<List<_i7.Assignment>> getAssignmentsByEventIds(
+          List<String>? eventIds) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getAssignmentsByEventIds,
+          [eventIds],
+        ),
+        returnValue: _i4.Future<List<_i7.Assignment>>.value(<_i7.Assignment>[]),
+      ) as _i4.Future<List<_i7.Assignment>>);
+
+  @override
   _i4.Stream<List<_i7.Assignment>> watchAssignmentsInTimeWindow({
     required DateTime? windowStart,
     required DateTime? windowEnd,
@@ -424,6 +435,26 @@ class MockAssignmentRepository extends _i1.Mock
         Invocation.method(
           #deleteAssignmentsBatch,
           [assignmentIds],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> saveAssignmentsBatch({
+    required List<_i7.Assignment>? creates,
+    required List<_i7.Assignment>? updates,
+    required List<String>? deletes,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #saveAssignmentsBatch,
+          [],
+          {
+            #creates: creates,
+            #updates: updates,
+            #deletes: deletes,
+          },
         ),
         returnValue: _i4.Future<void>.value(),
         returnValueForMissingStub: _i4.Future<void>.value(),

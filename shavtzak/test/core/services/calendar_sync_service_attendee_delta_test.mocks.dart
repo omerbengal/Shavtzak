@@ -46,9 +46,20 @@ class _FakeAppEventAttendeeSyncResult_0 extends _i1.SmartFake
         );
 }
 
-class _FakeEventsAndConstraintsSyncResult_1 extends _i1.SmartFake
+class _FakeAppEventGuestCleanupStatus_1 extends _i1.SmartFake
+    implements _i2.AppEventGuestCleanupStatus {
+  _FakeAppEventGuestCleanupStatus_1(
+    Object parent,
+    Invocation parentInvocation,
+  ) : super(
+          parent,
+          parentInvocation,
+        );
+}
+
+class _FakeEventsAndConstraintsSyncResult_2 extends _i1.SmartFake
     implements _i2.EventsAndConstraintsSyncResult {
-  _FakeEventsAndConstraintsSyncResult_1(
+  _FakeEventsAndConstraintsSyncResult_2(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -630,6 +641,26 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
         Invocation.method(
           #insertAssignmentsBatch,
           [assignments],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> saveAssignmentsBatch({
+    required List<_i7.Assignment>? creates,
+    required List<_i7.Assignment>? updates,
+    required List<String>? deletes,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #saveAssignmentsBatch,
+          [],
+          {
+            #creates: creates,
+            #updates: updates,
+            #deletes: deletes,
+          },
         ),
         returnValue: _i4.Future<void>.value(),
         returnValueForMissingStub: _i4.Future<void>.value(),
@@ -1648,6 +1679,62 @@ class MockGoogleCalendarService extends _i1.Mock
       ) as _i4.Future<_i2.AppEventAttendeeSyncResult>);
 
   @override
+  _i4.Future<void> queueAppEventSync(String? eventId) => (super.noSuchMethod(
+        Invocation.method(
+          #queueAppEventSync,
+          [eventId],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<_i2.AppEventGuestCleanupStatus> startAppEventGuestCleanup(
+          _i2.AppEventGuestCleanupMode? mode) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #startAppEventGuestCleanup,
+          [mode],
+        ),
+        returnValue: _i4.Future<_i2.AppEventGuestCleanupStatus>.value(
+            _FakeAppEventGuestCleanupStatus_1(
+          this,
+          Invocation.method(
+            #startAppEventGuestCleanup,
+            [mode],
+          ),
+        )),
+      ) as _i4.Future<_i2.AppEventGuestCleanupStatus>);
+
+  @override
+  _i4.Future<_i2.AppEventGuestCleanupStatus> getAppEventGuestCleanupStatus({
+    required String? jobId,
+    required _i2.AppEventGuestCleanupMode? mode,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getAppEventGuestCleanupStatus,
+          [],
+          {
+            #jobId: jobId,
+            #mode: mode,
+          },
+        ),
+        returnValue: _i4.Future<_i2.AppEventGuestCleanupStatus>.value(
+            _FakeAppEventGuestCleanupStatus_1(
+          this,
+          Invocation.method(
+            #getAppEventGuestCleanupStatus,
+            [],
+            {
+              #jobId: jobId,
+              #mode: mode,
+            },
+          ),
+        )),
+      ) as _i4.Future<_i2.AppEventGuestCleanupStatus>);
+
+  @override
   _i4.Future<_i2.EventsAndConstraintsSyncResult> syncEventsAndConstraints(
           {void Function(
             int,
@@ -1660,7 +1747,7 @@ class MockGoogleCalendarService extends _i1.Mock
           {#onEventProgress: onEventProgress},
         ),
         returnValue: _i4.Future<_i2.EventsAndConstraintsSyncResult>.value(
-            _FakeEventsAndConstraintsSyncResult_1(
+            _FakeEventsAndConstraintsSyncResult_2(
           this,
           Invocation.method(
             #syncEventsAndConstraints,

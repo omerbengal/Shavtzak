@@ -570,6 +570,26 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i4.Future<void>);
 
   @override
+  _i4.Future<void> saveAssignmentsBatch({
+    required List<_i8.Assignment>? creates,
+    required List<_i8.Assignment>? updates,
+    required List<String>? deletes,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #saveAssignmentsBatch,
+          [],
+          {
+            #creates: creates,
+            #updates: updates,
+            #deletes: deletes,
+          },
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
   _i4.Future<List<String>> checkConflicts(_i8.Assignment? assignment) =>
       (super.noSuchMethod(
         Invocation.method(
