@@ -5,6 +5,7 @@ import '../../../core/utils/crud_action_result.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
+import '../../screens/assignment/models/assignment_slot.dart';
 
 /// Base event class for AssignmentBloc
 abstract class AssignmentEvent extends Equatable {
@@ -351,4 +352,55 @@ class OptimisticDeleteAssignment extends AssignmentEvent {
 
   @override
   List<Object?> get props => [assignmentId, slotKey, operationId];
+}
+
+// --- Staged Save events -----------------------------------------------------
+//
+// Staging is separate from the Optimistic* events above: it persists edits
+// in `_stagedChanges` (mirrored to UserCacheService for crash recovery)
+// until an explicit Save/discard, rather than immediately writing through to
+// the database. See AssignmentBloc's staging helpers.
+
+/// Stage a member fill/swap/clear on [slot] (member == null => clear).
+class StageMemberChange extends AssignmentEvent {
+  final AssignmentSlot slot;
+  final TeamMember? member;
+  const StageMemberChange({required this.slot, required this.member});
+  @override
+  List<Object?> get props => [slot, member];
+}
+
+/// Stage a notes/label/alt-phone edit on [slot].
+class StageNotesChange extends AssignmentEvent {
+  final AssignmentSlot slot;
+  final String notes;
+  final String? semanticLabelId;
+  final String? alternativePhoneNumber;
+  const StageNotesChange({
+    required this.slot,
+    required this.notes,
+    this.semanticLabelId,
+    this.alternativePhoneNumber,
+  });
+  @override
+  List<Object?> get props =>
+      [slot, notes, semanticLabelId, alternativePhoneNumber];
+}
+
+/// Discard a single staged slot, reverting it to its DB baseline.
+class DiscardStagedSlot extends AssignmentEvent {
+  final String slotKey;
+  const DiscardStagedSlot(this.slotKey);
+  @override
+  List<Object?> get props => [slotKey];
+}
+
+/// Discard every staged change, reverting the whole grid to its DB baseline.
+class DiscardAllStagedChanges extends AssignmentEvent {
+  const DiscardAllStagedChanges();
+}
+
+/// Reload staged changes from UserCacheService (crash recovery / app resume).
+class RehydrateStagedChanges extends AssignmentEvent {
+  const RehydrateStagedChanges();
 }

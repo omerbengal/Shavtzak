@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:uuid/uuid.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/debug/logger.dart';
+import '../../../core/services/user_cache_service.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/event_sorting.dart';
 import '../../../core/utils/filter_persistence.dart';
@@ -17,6 +19,7 @@ import '../../../domain/entities/role.dart';
 import '../../../domain/entities/team_member.dart';
 import 'assignment_event.dart';
 import 'assignment_state.dart';
+import 'models/staged_assignment_change.dart';
 import '../../screens/assignment/models/assignment_slot.dart';
 import '../../screens/assignment/models/assignment_slot_annotations.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
@@ -96,13 +99,28 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   // Keep pending operations independent of state (survives error states)
   Map<String, PendingOperation> _pendingOperations = {};
 
+  // --- Staged Save --------------------------------------------------------
+  // Source of truth for unsaved slot edits, keyed by slotKey
+  // ("${eventId}_${roleType}_${slotIndex}"). Mirrored to _userCache on every
+  // change for crash recovery. Derived PendingOperations (tagged
+  // `persistent: true`) are layered into _pendingOperations at the two
+  // slots-view merge sites so the existing optimistic-merge machinery
+  // renders them with no changes to the merge function itself.
+  final Map<String, StagedAssignmentChange> _stagedChanges = {};
+  final UserCacheService _userCache;
+
+  /// True when there is at least one unsaved staged change.
+  bool get hasStagedChanges => _stagedChanges.isNotEmpty;
+
   AssignmentBloc(
     this._repository,
     this._eventRepository,
     this._teamRepository,
     this._roleRepository,
-    this._calendarSyncBloc,
-  ) : super(const AssignmentInitial()) {
+    this._calendarSyncBloc, {
+    UserCacheService? userCacheService,
+  })  : _userCache = userCacheService ?? UserCacheService(),
+        super(const AssignmentInitial()) {
     // Register event handlers
     on<LoadAssignments>(_onLoadAssignments);
     on<LoadAssignmentsByEvent>(_onLoadAssignmentsByEvent);
@@ -132,6 +150,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<OptimisticDeleteAssignment>(_onOptimisticDeleteAssignment);
     on<LoadMorePastAssignmentSlots>(_onLoadMorePastAssignmentSlots);
     on<ExternalExtraPastMutation>(_onExternalExtraPastMutation);
+    on<StageMemberChange>(_onStageMemberChange);
+    on<StageNotesChange>(_onStageNotesChange);
+    on<DiscardStagedSlot>(_onDiscardStagedSlot);
+    on<DiscardAllStagedChanges>(_onDiscardAllStagedChanges);
+    on<RehydrateStagedChanges>(_onRehydrateStagedChanges);
   }
 
   /// Load all assignments with real-time updates
@@ -1231,6 +1254,184 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         sameDayOtherEvents: const [],
       );
 
+  // ===========================================================================
+  // Staged Save
+  //
+  // Edits are staged in _stagedChanges (not written through to the database)
+  // until an explicit Save. Each staged change is keyed by slotKey and mirrored
+  // to UserCacheService so an unsaved edit survives a crash/reload.
+  // _stagedAsPendingOperations() converts the map to persistent PendingOperations
+  // that are layered into _pendingOperations at the two slots-view merge sites
+  // (see _syncPendingOperationsWithStaged), so the existing
+  // _mergeSlotsWithOptimisticUpdates renders staged edits with no changes to
+  // the merge function itself.
+  // ===========================================================================
+
+  String _slotKey(AssignmentSlot slot) => StagedAssignmentChange.slotKeyFor(
+      slot.event.id, slot.role.key, slot.slotIndex);
+
+  /// Seed a fresh staged change from the slot's current DB occupant, which
+  /// becomes the baseline (null occupant => the slot started empty).
+  StagedAssignmentChange _seedStaged(AssignmentSlot slot) {
+    final db = slot.currentAssignment;
+    return StagedAssignmentChange(
+      slotKey: _slotKey(slot),
+      eventId: slot.event.id,
+      roleType: slot.role.key,
+      slotIndex: slot.slotIndex,
+      desiredMemberId: db?.teamMemberId,
+      desiredNotes: db?.notes ?? '',
+      desiredSemanticLabelId: db?.semanticLabelId,
+      desiredAltPhone: db?.alternativePhoneNumber,
+      baselineAssignmentId: db?.id,
+      baselineMemberId: db?.teamMemberId,
+      baselineNotes: db?.notes ?? '',
+      baselineSemanticLabelId: db?.semanticLabelId,
+      baselineAltPhone: db?.alternativePhoneNumber,
+      desiredAssignmentId: db?.id ?? const Uuid().v4(),
+      stagedAtMillis: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  /// Store [change] under [key], or drop it if it reverts to baseline; then
+  /// mirror to cache. Awaited by callers (never left fire-and-forget) so the
+  /// cache reliably reflects the latest state for crash-recovery.
+  Future<void> _commitStaged(String key, StagedAssignmentChange change) async {
+    if (change.matchesBaseline) {
+      _stagedChanges.remove(key);
+    } else {
+      _stagedChanges[key] = change;
+    }
+    await _persistStaged();
+  }
+
+  /// Stage a member fill/swap/clear (memberId == null => clear).
+  Future<void> _upsertStagedMember(
+      AssignmentSlot slot, String? memberId) async {
+    final key = _slotKey(slot);
+    final base = _stagedChanges[key] ?? _seedStaged(slot);
+    await _commitStaged(key, base.copyWith(desiredMemberId: () => memberId));
+  }
+
+  /// Stage a notes/label/alt-phone edit (member left unchanged).
+  Future<void> _upsertStagedNotes(AssignmentSlot slot, String notes,
+      String? labelId, String? altPhone) async {
+    final key = _slotKey(slot);
+    final base = _stagedChanges[key] ?? _seedStaged(slot);
+    await _commitStaged(
+      key,
+      base.copyWith(
+        desiredNotes: notes,
+        desiredSemanticLabelId: () => labelId,
+        desiredAltPhone: () => altPhone,
+      ),
+    );
+  }
+
+  Future<void> _persistStaged() async {
+    await _userCache.savePendingAssignmentChanges(
+        _stagedChanges.values.map((c) => c.toJson()).toList());
+  }
+
+  /// Convert staged changes to persistent PendingOperations for the merge.
+  /// Pure function of _stagedChanges — no side effects on _pendingOperations
+  /// (see _syncPendingOperationsWithStaged for how the two are reconciled).
+  Map<String, PendingOperation> _stagedAsPendingOperations() {
+    final ops = <String, PendingOperation>{};
+    _stagedChanges.forEach((key, c) {
+      final PendingOperationType type;
+      Assignment? optimistic;
+      if (c.isClear) {
+        type = PendingOperationType.deleteAssignment;
+      } else {
+        type = c.baselineMemberId == null
+            ? PendingOperationType.createAssignment
+            : PendingOperationType.updateAssignment;
+        optimistic = Assignment(
+          id: c.desiredAssignmentId,
+          eventId: c.eventId,
+          teamMemberId: c.desiredMemberId!,
+          roleType: c.roleType,
+          slotIndex: c.slotIndex,
+          status: AssignmentStatus.confirmed,
+          notes: c.desiredNotes,
+          semanticLabelId: c.desiredSemanticLabelId,
+          alternativePhoneNumber: c.desiredAltPhone,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
+          teamMember: _windowMembersMap[c.desiredMemberId],
+        );
+      }
+      ops[key] = PendingOperation(
+        id: key,
+        type: type,
+        slotKey: key,
+        optimisticAssignment: optimistic,
+        timestamp: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
+        persistent: true,
+      );
+    });
+    return ops;
+  }
+
+  /// Reconcile `_pendingOperations` with the current staged-changes snapshot,
+  /// called immediately before each slots-view merge call.
+  ///
+  /// This is NOT a blind `_pendingOperations = _stagedAsPendingOperations()`
+  /// replace: the (dormant in production, but still exercised by
+  /// assignment_bloc_slots_refetch_test.dart) Optimistic* handlers also live
+  /// in `_pendingOperations`, tagged `persistent: false`. A blind replace
+  /// would wipe their in-flight entries the moment any stream event triggers
+  /// a rebuild while a write is in flight. Staged entries are tagged
+  /// `persistent: true` (see _stagedAsPendingOperations), so reconciliation
+  /// strips only previously-staged entries (preventing a discarded/changed
+  /// staged slot from lingering) before overlaying the fresh snapshot —
+  /// non-persistent (Optimistic*-owned) entries are left untouched. The two
+  /// mechanisms coexist in the same map.
+  void _syncPendingOperationsWithStaged() {
+    _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations)
+      ..removeWhere((_, op) => op.persistent)
+      ..addAll(_stagedAsPendingOperations());
+  }
+
+  Future<void> _onStageMemberChange(
+      StageMemberChange event, Emitter<AssignmentState> emit) async {
+    await _upsertStagedMember(event.slot, event.member?.id);
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onStageNotesChange(
+      StageNotesChange event, Emitter<AssignmentState> emit) async {
+    await _upsertStagedNotes(event.slot, event.notes, event.semanticLabelId,
+        event.alternativePhoneNumber);
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onDiscardStagedSlot(
+      DiscardStagedSlot event, Emitter<AssignmentState> emit) async {
+    _stagedChanges.remove(event.slotKey);
+    await _persistStaged();
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onDiscardAllStagedChanges(
+      DiscardAllStagedChanges event, Emitter<AssignmentState> emit) async {
+    _stagedChanges.clear();
+    await _userCache.clearPendingAssignmentChanges();
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onRehydrateStagedChanges(
+      RehydrateStagedChanges event, Emitter<AssignmentState> emit) async {
+    final maps = await _userCache.getPendingAssignmentChanges();
+    _stagedChanges
+      ..clear()
+      ..addEntries(maps
+          .map(StagedAssignmentChange.fromJson)
+          .map((c) => MapEntry(c.slotKey, c)));
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
   /// Optimistic create assignment handler
   Future<void> _onOptimisticCreateAssignment(
     OptimisticCreateAssignment event,
@@ -1731,6 +1932,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return AssignmentSlotsLoaded(
       annotatedSlots,
       selectedEventIds: selectedEventIds ?? {},
+      stagedSlotKeys: _stagedChanges.keys.toSet(),
     );
   }
 
@@ -1779,6 +1981,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       );
 
       // Merge optimistic updates on top of database state using BLoC-level pending operations
+      _syncPendingOperationsWithStaged();
       final mergedSlots = _mergeSlotsWithOptimisticUpdates(
         databaseSlots.slots,
         _pendingOperations,
@@ -1794,6 +1997,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             pendingOperations: _pendingOperations,
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
+            stagedSlotKeys: _stagedChanges.keys.toSet(),
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -2025,6 +2229,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _currentEventFilter = rebuildEvent.selectedEventIds;
 
       // Merge optimistic updates on top of database state using BLoC-level pending operations
+      _syncPendingOperationsWithStaged();
       final mergedSlots = _mergeSlotsWithOptimisticUpdates(
         filteredSlots,
         _pendingOperations,
@@ -2040,6 +2245,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             pendingOperations: _pendingOperations,
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
+            stagedSlotKeys: _stagedChanges.keys.toSet(),
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בבניית שיבוצים: $e'));
