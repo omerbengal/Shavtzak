@@ -1413,6 +1413,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   Future<void> _onStageMemberChange(
       StageMemberChange event, Emitter<AssignmentState> emit) async {
     await _upsertStagedMember(event.slot, event.member?.id);
+    Logger.action('stage:member', {
+      'slot': _slotKey(event.slot),
+      'from': event.slot.currentAssignment?.teamMemberId ?? 'empty',
+      'to': event.member?.id ?? 'CLEARED',
+      'stagedCount': _stagedChanges.length,
+    });
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
@@ -1420,6 +1426,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       StageNotesChange event, Emitter<AssignmentState> emit) async {
     await _upsertStagedNotes(event.slot, event.notes, event.semanticLabelId,
         event.alternativePhoneNumber);
+    Logger.action('stage:notes', {
+      'slot': _slotKey(event.slot),
+      'stagedCount': _stagedChanges.length,
+    });
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
@@ -1433,6 +1443,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     if (_saveInFlight) return;
     _stagedChanges.remove(event.slotKey);
     await _persistStaged();
+    Logger.action('stage:discardSlot', {
+      'slot': event.slotKey,
+      'stagedCount': _stagedChanges.length,
+    });
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
@@ -1441,6 +1455,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // See _onDiscardStagedSlot: guard against discarding while a Save is
     // already converging its own captured snapshot to the DB.
     if (_saveInFlight) return;
+    Logger.action('stage:discardAll', {'had': _stagedChanges.length});
     _stagedChanges.clear();
     await _userCache.clearPendingAssignmentChanges();
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
@@ -1454,6 +1469,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       ..addEntries(maps
           .map(StagedAssignmentChange.fromJson)
           .map((c) => MapEntry(c.slotKey, c)));
+    Logger.action('stage:rehydrate', {'loaded': _stagedChanges.length});
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
@@ -1615,6 +1631,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             a,
     };
 
+    Logger.action('save:start', {
+      'staged': _stagedChanges.length,
+      'dbTruth': dbByKey.length,
+      'resolutions': resolutions.map((k, v) => MapEntry(k, v.name)),
+    });
+
     final creates = <Assignment>[];
     final updates = <Assignment>[];
     final deletes = <String>[];
@@ -1628,16 +1650,29 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // change entirely (no write), but still remove it from staging.
       if (resolutions[key] == ConflictResolution.takeDb) {
         appliedKeys.add(key);
+        Logger.action('save:slot', {
+          'slot': key,
+          'isClear': c.isClear,
+          'dbFound': dbByKey[key] != null,
+          'decision': 'takeDb-skip',
+        });
         continue;
       }
 
       final dbAssignment = dbByKey[key];
+      String decision;
       if (c.isClear) {
-        if (dbAssignment != null) deletes.add(dbAssignment.id);
-        // else: staged clear over an already-empty DB slot -> no-op write.
+        if (dbAssignment != null) {
+          deletes.add(dbAssignment.id);
+          decision = 'clear-delete';
+        } else {
+          // else: staged clear over an already-empty DB slot -> no-op write.
+          decision = 'clear-noop';
+        }
       } else if (dbAssignment == null) {
         // Fresh fill (or an overridden off-quota create for a vanished slot).
         creates.add(_assignmentFromStaged(c, id: c.desiredAssignmentId));
+        decision = 'create';
       } else {
         // Converge the EXISTING DB doc to the desired state, preserving its
         // id and createdAt (the backend `batch.update` writes the full doc,
@@ -1647,17 +1682,33 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           id: dbAssignment.id,
           createdAt: dbAssignment.createdAt,
         ));
+        decision = 'update';
       }
       appliedKeys.add(key);
+      Logger.action('save:slot', {
+        'slot': key,
+        'isClear': c.isClear,
+        'dbFound': dbByKey[key] != null,
+        'decision': decision,
+      });
     }
 
     _emitOrLog(emit, const AssignmentOperating('saving'));
     try {
+      Logger.action('save:batch', {
+        'creates': creates
+            .map((a) => '${a.roleType}#${a.slotIndex}=${a.teamMemberId}')
+            .toList(),
+        'updates': updates.map((a) => '${a.id}=>${a.teamMemberId}').toList(),
+        'deletes': deletes,
+      });
       await _repository.saveAssignmentsBatch(
         creates: creates,
         updates: updates,
         deletes: deletes,
       );
+      Logger.action('save:done',
+          {'written': creates.length + updates.length + deletes.length});
       for (final k in appliedKeys) {
         _stagedChanges.remove(k);
       }
@@ -1677,6 +1728,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           'נשמרו ${creates.length + updates.length + deletes.length} שינויים');
       add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
     } catch (e) {
+      Logger.action('save:fail', {'error': e.toString()});
       _completeActionFailure(event.completion, 'שמירה נכשלה: $e');
       add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
     } finally {
@@ -2287,6 +2339,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     RebuildAssignmentSlotsFromData rebuildEvent,
     Emitter<AssignmentState> emit,
   ) async {
+    Logger.action('stream:rebuild', {
+      'assignments': rebuildEvent.assignments.length,
+      'stagedCount': _stagedChanges.length,
+    });
     try {
       // First-paint gate: until the roles, events, and assignments streams have
       // each streamed once (see _onLoadAssignmentSlots), suppress the emit and
