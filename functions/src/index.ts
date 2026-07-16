@@ -2800,6 +2800,69 @@ export function planAssignmentSaveBatch(payload: {
   };
 }
 
+// Pure helper for assignment.saveBatch's batch-aware duplicate-role check.
+//
+// validateAssignmentPayload's own duplicate-role check (see
+// skipDuplicateRoleCheck above) only ever sees LIVE Firestore docs, one item
+// at a time — it has no notion of the OTHER items in the same batch. That
+// means a same-role swap (Medic#0: Dan->Ron, Medic#1: Ron->Dan) looks like a
+// duplicate to each item when validated in isolation, even though the net
+// result has no duplicate at all. This computes the batch's RESULTING
+// per-event occupancy directly and flags any (eventId, roleType,
+// teamMemberId) held by more than one assignment afterwards.
+//
+// Logic: start from `existing` (the live assignments for the affected
+// events) MINUS every doc the batch rewrites or removes (deletes, update
+// ids, create ids) -- its post-batch state is represented by the matching
+// create/update entry instead (or, for deletes, by nothing). Add the
+// batch's creates + updates (their NEW state) to what survives. Group the
+// result by (eventId, roleType, teamMemberId) and return any group with
+// more than one member.
+//
+// Kept side-effect-free (no Firestore reads) so it can be unit-tested
+// directly -- see assignment_save_batch.test.ts. The 'assignment.saveBatch'
+// case in executeMutation() reads the live docs and calls this.
+export function findBatchDuplicateRoleAssignments(args: {
+  existing: Array<{id: string; eventId: string; roleType: string; teamMemberId: string}>;
+  creates: Array<{id: string; eventId: string; roleType: string; teamMemberId: string}>;
+  updates: Array<{id: string; eventId: string; roleType: string; teamMemberId: string}>;
+  deletes: string[];
+}): Array<{eventId: string; roleType: string; teamMemberId: string}> {
+  const {existing, creates, updates, deletes} = args;
+
+  const removedIds = new Set<string>([
+    ...deletes,
+    ...updates.map((item) => item.id),
+    ...creates.map((item) => item.id),
+  ]);
+  const survivingExisting = existing.filter((item) => !removedIds.has(item.id));
+
+  const resulting = [...survivingExisting, ...creates, ...updates];
+
+  const groups = new Map<
+    string,
+    {eventId: string; roleType: string; teamMemberId: string; count: number}
+  >();
+  for (const item of resulting) {
+    const key = `${item.eventId} ${item.roleType} ${item.teamMemberId}`;
+    const group = groups.get(key);
+    if (group) {
+      group.count += 1;
+    } else {
+      groups.set(key, {
+        eventId: item.eventId,
+        roleType: item.roleType,
+        teamMemberId: item.teamMemberId,
+        count: 1,
+      });
+    }
+  }
+
+  return Array.from(groups.values())
+    .filter((group) => group.count > 1)
+    .map(({eventId, roleType, teamMemberId}) => ({eventId, roleType, teamMemberId}));
+}
+
 function assignmentLabelDocFromJson(
   label: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -2981,6 +3044,15 @@ async function validateAssignmentPayload(
   ignoreAssignmentId?: string,
   options?: {
     bypassAvailability?: boolean;
+    // Skip ONLY the duplicate-role query below (FK existence, role-capability,
+    // and the availability checks all still run). Used by
+    // 'assignment.saveBatch', which re-checks duplicates itself across the
+    // WHOLE batch (via findBatchDuplicateRoleAssignments) after all items are
+    // known. A live, per-item Firestore query here can't see sibling items in
+    // the same batch, so e.g. a same-role swap (A<->B across two slots) looks
+    // like a duplicate to each item when checked in isolation. Defaults to
+    // false, so assignment.insert / assignment.update are unaffected.
+    skipDuplicateRoleCheck?: boolean;
   },
 ): Promise<void> {
   const eventId = requireString(assignment['eventId'], 'assignment.eventId');
@@ -3026,7 +3098,10 @@ async function validateAssignmentPayload(
     throw new HttpError(400, 'לא ניתן לשבץ חבר/ת צוות לא פעיל/ה');
   }
 
-  if (memberData['allowMultipleAssignments'] !== true) {
+  if (
+    memberData['allowMultipleAssignments'] !== true &&
+    options?.skipDuplicateRoleCheck !== true
+  ) {
     const duplicates = await firestore
       .collection(collections.assignments)
       .where('eventId', '==', eventId)
@@ -4250,22 +4325,30 @@ async function executeMutation(
       const deletes = (payload['deletes'] as string[]) ?? [];
 
       // Validate every create/update up-front (reads happen before the batch).
+      // skipDuplicateRoleCheck: true -- a live, per-item duplicate query can't
+      // see sibling items in this same batch (e.g. a same-role swap looks
+      // like a duplicate to each item checked in isolation). The batch-aware
+      // equivalent (findBatchDuplicateRoleAssignments) runs below, once all
+      // items are known.
       for (const a of creates) {
         requireString(a['id'], 'assignment.id');
         await validateAssignmentPayload(db, collections, a, undefined, {
           bypassAvailability: true,
+          skipDuplicateRoleCheck: true,
         });
       }
       for (const a of updates) {
         const id = requireString(a['id'], 'assignment.id');
         await validateAssignmentPayload(db, collections, a, id, {
           bypassAvailability: true,
+          skipDuplicateRoleCheck: true,
         });
       }
 
       const plan = planAssignmentSaveBatch({creates, updates, deletes});
 
-      // Capture "before" state of updated/deleted docs for audit.
+      // Capture "before" state of updated/deleted docs for audit (also used
+      // below to find which events updated/deleted docs currently belong to).
       const before = new Map<string, Record<string, unknown>>();
       for (const {id} of plan.updates) {
         const snap = await db.collection(collections.assignments).doc(id).get();
@@ -4274,6 +4357,88 @@ async function executeMutation(
       for (const id of plan.deletes) {
         const snap = await db.collection(collections.assignments).doc(id).get();
         if (snap.exists) before.set(id, snap.data() ?? {});
+      }
+
+      // Batch-aware duplicate-role check (see skipDuplicateRoleCheck above):
+      // gather every event touched by this batch (creates/updates' target
+      // event, plus whatever event the updated/deleted docs currently live
+      // in), pull the LIVE assignments for exactly those events, and ask
+      // findBatchDuplicateRoleAssignments whether the RESULTING per-event
+      // occupancy -- after this batch applies -- has any (eventId, roleType,
+      // teamMemberId) held more than once.
+      const affectedEventIds = new Set<string>();
+      for (const {doc} of plan.creates) {
+        affectedEventIds.add(requireString(doc['eventId'], 'assignment.eventId'));
+      }
+      for (const {doc} of plan.updates) {
+        affectedEventIds.add(requireString(doc['eventId'], 'assignment.eventId'));
+      }
+      for (const data of before.values()) {
+        // Defensive typeof check (not optionalString/requireString, which
+        // throw): this is an incidental read of the pre-existing doc, not
+        // the payload being validated, so a malformed legacy doc should
+        // never abort the save.
+        const eventId = data['eventId'];
+        if (typeof eventId === 'string') affectedEventIds.add(eventId);
+      }
+
+      const existingForAffectedEvents: Array<{
+        id: string;
+        eventId: string;
+        roleType: string;
+        teamMemberId: string;
+      }> = [];
+      const affectedEventIdList = Array.from(affectedEventIds);
+      const FIRESTORE_IN_QUERY_LIMIT = 30;
+      for (let i = 0; i < affectedEventIdList.length; i += FIRESTORE_IN_QUERY_LIMIT) {
+        const chunk = affectedEventIdList.slice(i, i + FIRESTORE_IN_QUERY_LIMIT);
+        if (chunk.length === 0) continue;
+        const snapshot = await db
+          .collection(collections.assignments)
+          .where('eventId', 'in', chunk)
+          .get();
+        for (const doc of snapshot.docs) {
+          const data = doc.data();
+          const docEventId = data['eventId'];
+          const docRoleType = data['roleType'];
+          const docTeamMemberId = data['teamMemberId'];
+          // Defensive: skip rather than throw on a malformed/legacy doc --
+          // this is an incidental read of OTHER live assignments, not the
+          // payload being validated, so it should never abort the save.
+          if (
+            typeof docEventId !== 'string' ||
+            typeof docRoleType !== 'string' ||
+            typeof docTeamMemberId !== 'string'
+          ) {
+            continue;
+          }
+          existingForAffectedEvents.push({
+            id: doc.id,
+            eventId: docEventId,
+            roleType: docRoleType,
+            teamMemberId: docTeamMemberId,
+          });
+        }
+      }
+
+      const batchDuplicates = findBatchDuplicateRoleAssignments({
+        existing: existingForAffectedEvents,
+        creates: plan.creates.map(({id, doc}) => ({
+          id,
+          eventId: requireString(doc['eventId'], 'assignment.eventId'),
+          roleType: requireString(doc['roleType'], 'assignment.roleType'),
+          teamMemberId: requireString(doc['teamMemberId'], 'assignment.teamMemberId'),
+        })),
+        updates: plan.updates.map(({id, doc}) => ({
+          id,
+          eventId: requireString(doc['eventId'], 'assignment.eventId'),
+          roleType: requireString(doc['roleType'], 'assignment.roleType'),
+          teamMemberId: requireString(doc['teamMemberId'], 'assignment.teamMemberId'),
+        })),
+        deletes: plan.deletes,
+      });
+      if (batchDuplicates.length > 0) {
+        throw new HttpError(400, 'חבר/ת הצוות כבר משובץ/ת לתפקיד זה באירוע');
       }
 
       // One atomic batch (≤500 ops — a meeting is far under).

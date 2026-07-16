@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Timestamp} from 'firebase-admin/firestore';
-import {planAssignmentSaveBatch} from './index';
+import {planAssignmentSaveBatch, findBatchDuplicateRoleAssignments} from './index';
 
 // assignmentDocFromJson (called internally by the planner) runs every
 // createdAt/updatedAt through toTimestamp(), which THROWS on a missing or
@@ -115,4 +115,64 @@ test('planAssignmentSaveBatch throws when an update is missing an id', () => {
       ],
     }),
   );
+});
+
+// findBatchDuplicateRoleAssignments backs assignment.saveBatch's batch-aware
+// duplicate-role check. validateAssignmentPayload's own duplicate check only
+// ever sees LIVE Firestore docs one item at a time, so it can't tell a
+// same-role swap (or a move into a slot freed earlier in the same batch)
+// apart from a genuine duplicate -- that's exactly what this pure helper
+// disambiguates, by computing the batch's RESULTING per-event occupancy.
+
+test('findBatchDuplicateRoleAssignments allows a same-role swap between two slots', () => {
+  // Event e1 has Medic#0=Dan (a1), Medic#1=Ron (a2). Staged edit swaps them.
+  const result = findBatchDuplicateRoleAssignments({
+    existing: [
+      {id: 'a1', eventId: 'e1', roleType: 'medic', teamMemberId: 'Dan'},
+      {id: 'a2', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'},
+    ],
+    creates: [],
+    updates: [
+      {id: 'a1', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'},
+      {id: 'a2', eventId: 'e1', roleType: 'medic', teamMemberId: 'Dan'},
+    ],
+    deletes: [],
+  });
+  assert.deepEqual(result, []);
+});
+
+test('findBatchDuplicateRoleAssignments allows moving a member into an empty same-role slot', () => {
+  // a1 (medic=Ron) is reassigned to Dan, while a NEW slot a2 (medic) is
+  // created for Ron in the same batch -- net effect: Ron moved a1 -> a2.
+  const result = findBatchDuplicateRoleAssignments({
+    existing: [{id: 'a1', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'}],
+    creates: [{id: 'a2', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'}],
+    updates: [{id: 'a1', eventId: 'e1', roleType: 'medic', teamMemberId: 'Dan'}],
+    deletes: [],
+  });
+  assert.deepEqual(result, []);
+});
+
+test('findBatchDuplicateRoleAssignments rejects a genuine duplicate the batch does not resolve', () => {
+  // a1 (medic=Ron) already exists and is untouched by this batch; creating
+  // a2 for the same (event, role, member) is a real duplicate.
+  const result = findBatchDuplicateRoleAssignments({
+    existing: [{id: 'a1', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'}],
+    creates: [{id: 'a2', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'}],
+    updates: [],
+    deletes: [],
+  });
+  assert.deepEqual(result, [{eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'}]);
+});
+
+test('findBatchDuplicateRoleAssignments allows re-filling a slot freed by a delete in the same batch', () => {
+  // a1 (medic=Ron) is deleted, and a NEW slot a2 (medic=Ron) is created in
+  // the same batch -- a1 no longer occupies the slot, so no duplicate.
+  const result = findBatchDuplicateRoleAssignments({
+    existing: [{id: 'a1', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'}],
+    creates: [{id: 'a2', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'}],
+    updates: [],
+    deletes: ['a1'],
+  });
+  assert.deepEqual(result, []);
 });
