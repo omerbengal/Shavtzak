@@ -272,6 +272,15 @@ If any conflicts exist when Save is pressed, show **one consolidated dialog** (R
      `cd functions && firebase deploy --only functions`. (The Flutter web app auto-deploys on merge
      to main; the Cloud Function does not — see [[web-auto-deploys-on-merge]] / [[feedback-flag-redeploy-needs]].)
 
+**Availability enforcement (deliberate, approved):** `assignment.saveBatch` validates foreign keys,
+role-capability, and same-role uniqueness (batch-aware), but passes `bypassAvailability: true` — matching
+the existing "שבץ בכל זאת" (assign-anyway) path. Staged fills/swaps therefore skip the server-side
+date-availability check that `assignment.insert`/`update` apply as defense-in-depth. This is an accepted
+call for the single-editor batch-meeting workflow (the admin is deliberately assigning; the client already
+warns at assign time). Consequence: if a member's availability changes *between* staging and Save, the
+assignment is written without a warning; availability-drift is not surfaced as a conflict type
+(`memberGone` (E) covers deactivation/deletion only, and is itself deferred).
+
 **Atomicity caveat:** a server-side `db.batch()` is atomic on commit but is not a read-transaction,
 so there is a small window between the client resolving conflicts and the server committing where the
 DB could change again. Acceptable for a single-editor meeting; a server `runTransaction` is noted as
