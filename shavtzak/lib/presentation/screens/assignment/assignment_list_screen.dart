@@ -1455,6 +1455,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// Handle dismissing a slot - removes role slot from event (reduces capacity)
   /// If the slot is filled, also deletes the assignment
   Future<void> _handleSlotDismiss(AssignmentSlot slot) async {
+    if (_isMutationInFlight) {
+      return;
+    }
+
     // Drop any staged edit for this slot first so a pending stage can't
     // resurrect it after the immediate delete below removes the underlying
     // assignment/quota.
@@ -1463,10 +1467,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             '${slot.event.id}_${slot.role.key}_${slot.slotIndex}',
           ),
         );
-
-    if (_isMutationInFlight) {
-      return;
-    }
 
     _startMutation('מוחק משרה...');
     try {
