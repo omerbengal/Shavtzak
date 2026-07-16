@@ -26,6 +26,7 @@ import 'package:mockito/mockito.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/core/services/user_cache_service.dart';
+import 'package:shavtzak/core/utils/crud_action_result.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/role.dart';
@@ -522,5 +523,127 @@ void main() {
     expect(cached, hasLength(1));
     expect(cached.single['slotKey'], 'e2_medic_0');
     expect(cached.single['desiredMemberId'], 'm2');
+  });
+
+  // --- Task 3: fail-loud Save for a baseline-anchored change whose DB row --
+  // --- is gone at save time -------------------------------------------------
+  //
+  // Windowing (assignments-slot-build-unification, task 2a) already closed
+  // the main way a staged change could outlive its DB row (an out-of-window
+  // assignment reachable via stage but invisible to Save's windowed
+  // dbByKey). This covers the residual edge case: the DB row genuinely
+  // existed when the slot was staged (baselineMemberId != null, seeded from
+  // the slot's real DB occupant at first touch — see _seedStaged) but is
+  // gone by the time Save runs, e.g. a co-admin deleted it concurrently.
+  // Before this fix, _onSaveStagedChanges treated ANY staged-clear-with-no-
+  // db-row as a "clear-noop": zero writes queued, the staged entry silently
+  // dropped, and the batch reported a bare 'נשמרו 0 שינויים' — indistinguishable
+  // from the LEGITIMATE no-op (clearing a slot that was already empty in the
+  // DB, baselineMemberId == null). The member would then reappear via the
+  // next live-stream tick with no indication the clear was ever lost.
+
+  test(
+      'a staged clear anchored to a real DB member (baselineMemberId != '
+      'null) whose DB row is gone at save time is reported as a skip, not '
+      'a silent 0-change success', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    final a1 = assignment('a1', 'e1', 'm1');
+    assignmentStream.add([a1]); // DB starts with m1 in medic-0
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final filledMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    expect(filledMedicSlot.currentAssignment!.teamMemberId, 'm1');
+
+    // Stage a clear on the filled slot. _seedStaged captures baselineMemberId
+    // from the slot's CURRENT db occupant (m1) — this staged change is
+    // baseline-anchored, unlike a clear staged on a slot that started empty.
+    bloc.add(StageMemberChange(slot: filledMedicSlot, member: null));
+    await pumpEventQueue();
+    expect(bloc.hasStagedChanges, isTrue);
+
+    // Simulate a concurrent delete: a1's DB row is gone by the time Save
+    // runs. This re-emits cacheCurrentAssignments([]) on the repository
+    // mock, so getCurrentAssignments() — the raw dbByKey source
+    // _onSaveStagedChanges reads — reports nothing for this slot, exactly
+    // as if another admin deleted a1 out from under this staged edit.
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    final completer = Completer<CrudActionResult>();
+    bloc.add(SaveStagedChanges(completion: completer));
+    await pumpEventQueue();
+
+    // Nothing to write for this slot: the expected DB row is gone, so there
+    // is nothing to delete (and, per the rule, nothing should be silently
+    // fabricated as a create either).
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: captureAnyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: captureAnyNamed('deletes'),
+    )).captured;
+    expect(captured[0] as List<Assignment>, isEmpty); // creates
+    expect(captured[1] as List<Assignment>, isEmpty); // updates
+    expect(captured[2] as List<String>, isEmpty); // deletes
+
+    // The completion message MUST surface the skip. A bare 'נשמרו 0 שינויים'
+    // here IS the silent-loss bug this test guards against — this assertion
+    // fails against the pre-fix behavior (which reported exactly that
+    // string unconditionally whenever a staged clear hit a missing DB row,
+    // with no way to tell a real loss from a legitimate no-op).
+    final result = await completer.future;
+    expect(result.isSuccess, isTrue);
+    expect(result.message, isNot('נשמרו 0 שינויים'));
+    expect(result.message, contains('דולגו'));
+    expect(result.message, contains('1'));
+
+    // The now-meaningless staged entry (its anchor DB row is gone) is
+    // cleaned up rather than left dirty forever.
+    expect(bloc.hasStagedChanges, isFalse);
+  });
+
+  test(
+      'a normal clear whose DB row IS present still deletes it and reports '
+      'a plain success with no skip wording', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    final a1 = assignment('a1', 'e1', 'm1');
+    assignmentStream.add([a1]); // DB starts with m1 in medic-0
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final filledMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+    // Stage a clear (baseline: m1/a1) — the DB row stays intact this time.
+    bloc.add(StageMemberChange(slot: filledMedicSlot, member: null));
+    await pumpEventQueue();
+
+    final completer = Completer<CrudActionResult>();
+    bloc.add(SaveStagedChanges(completion: completer));
+    await pumpEventQueue();
+
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: captureAnyNamed('deletes'),
+    )).captured;
+    final deletes = captured.single as List<String>;
+    expect(deletes, [a1.id]); // the existing DB doc is actually deleted
+
+    final result = await completer.future;
+    expect(result.isSuccess, isTrue);
+    expect(result.message, 'נשמרו 1 שינויים'); // unchanged, no skip suffix
+    expect(bloc.hasStagedChanges, isFalse);
   });
 }

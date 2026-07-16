@@ -1637,6 +1637,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// there would mis-route a staged fill into `updates` (updating a document
   /// id that was never written -> batch fails) and would silently drop a
   /// staged clear (the merged slot already reads as empty).
+  ///
+  /// Fail-loud guarantee: a missing DB row is only ever a legitimate no-op
+  /// when the staged change's `baselineMemberId == null` (the slot started
+  /// empty — nothing to lose). When `baselineMemberId != null` — the change
+  /// is anchored to a member that WAS on the slot — a missing DB row means
+  /// the row was deleted from under the edit (e.g. a concurrent co-admin
+  /// delete); that case is counted as a skip and surfaced in the completion
+  /// message instead of silently vanishing behind `'נשמרו 0 שינויים'`.
   Future<void> _onSaveStagedChanges(
       SaveStagedChanges event, Emitter<AssignmentState> emit) async {
     if (_stagedChanges.isEmpty) {
@@ -1676,6 +1684,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final updates = <Assignment>[];
     final deletes = <String>[];
     final appliedKeys = <String>[];
+    // Counts staged changes anchored to a real DB member (baselineMemberId
+    // != null) whose expected DB row is gone at save time — see the
+    // baseline-vs-db branch below. Surfaced in the success message so a real
+    // staged edit never disappears behind a silent 'נשמרו 0 שינויים'.
+    var skippedNotFound = 0;
 
     for (final entry in _stagedChanges.entries) {
       final key = entry.key;
@@ -1696,16 +1709,34 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
       final dbAssignment = dbByKey[key];
       String decision;
-      if (c.isClear) {
+      if (dbAssignment == null && c.baselineMemberId != null) {
+        // LOSSY case: this change is anchored to a member that WAS on the
+        // slot (baselineMemberId != null — a clear, a swap, or a
+        // notes/label/alt-phone edit), but the expected DB row is gone —
+        // most likely a concurrent delete by another admin (windowing
+        // already prevents the main way a staged change could outlive its
+        // DB row; this is the residual safety net). There is nothing to
+        // delete or update, and silently creating a fresh row would
+        // fabricate an assignment the admin never asked to create. Queue no
+        // write, drop the now-meaningless staged entry (see appliedKeys
+        // below), and count it so the caller reports the skip instead of a
+        // false 'נשמרו 0 שינויים' success.
+        skippedNotFound++;
+        decision = 'skip-not-found';
+      } else if (c.isClear) {
         if (dbAssignment != null) {
           deletes.add(dbAssignment.id);
           decision = 'clear-delete';
         } else {
-          // else: staged clear over an already-empty DB slot -> no-op write.
+          // baselineMemberId == null here (the branch above already caught
+          // the != null case) -> the slot started empty, so a staged clear
+          // over an already-empty DB slot is a legitimate no-op, not a loss.
           decision = 'clear-noop';
         }
       } else if (dbAssignment == null) {
-        // Fresh fill (or an overridden off-quota create for a vanished slot).
+        // baselineMemberId == null here too -> fresh fill (or an overridden
+        // off-quota create for a vanished slot), not a converge-onto-a-
+        // baseline-member case.
         creates.add(_assignmentFromStaged(c, id: c.desiredAssignmentId));
         decision = 'create';
       } else {
@@ -1742,8 +1773,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         updates: updates,
         deletes: deletes,
       );
-      Logger.action('save:done',
-          {'written': creates.length + updates.length + deletes.length});
+      Logger.action('save:done', {
+        'written': creates.length + updates.length + deletes.length,
+        'skippedNotFound': skippedNotFound,
+      });
       for (final k in appliedKeys) {
         _stagedChanges.remove(k);
       }
@@ -1759,8 +1792,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // when none remain (equivalent to a clear), or the survivor's entry
       // when one was staged mid-save.
       await _persistStaged();
-      _completeActionSuccess(event.completion,
-          'נשמרו ${creates.length + updates.length + deletes.length} שינויים');
+      final written = creates.length + updates.length + deletes.length;
+      // Never a bare 'נשמרו 0 שינויים' while a baseline-anchored change was
+      // dropped for lack of a DB row: report the skip alongside the write
+      // count instead of pretending nothing happened.
+      final successMessage = skippedNotFound == 0
+          ? 'נשמרו $written שינויים'
+          : 'נשמרו $written שינויים · $skippedNotFound דולגו (השיבוץ כבר לא קיים)';
+      _completeActionSuccess(event.completion, successMessage);
       add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
     } catch (e) {
       Logger.action('save:fail', {'error': e.toString()});
