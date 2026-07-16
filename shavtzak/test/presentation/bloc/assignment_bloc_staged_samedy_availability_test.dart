@@ -275,4 +275,48 @@ void main() {
     expect(
         xSlotAfter.sameDayAssignedMembers.map((m) => m.id), isNot(contains('T')));
   });
+
+  test(
+      'a live Firestore stream emit while T is stage-cleared from Y keeps T '
+      'available in X (the STREAM rebuild path is also staged-aware)', () async {
+    // Guards the SECOND same-day loop — the one inside
+    // _onRebuildAssignmentSlotsFromData (the live-stream rebuild path), distinct
+    // from _buildSlotsFromAssignments (the stage/filter path exercised above).
+    // Because Firestore emits fire constantly, a staged clear that only the
+    // stage path respected would be re-hidden the instant any stream tick
+    // arrived. Before the fix this test fails (T re-excluded from X after the
+    // emit); after it, the staged clear survives the rebuild.
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadTwoSameDayEvents(bloc);
+
+    final ySlotBefore =
+        medicSlotOf(bloc.state as AssignmentSlotsLoaded, 'y1');
+
+    // Stage-clear T from Y (goes through the stage path first).
+    bloc.add(StageMemberChange(slot: ySlotBefore, member: null));
+    await pumpEventQueue();
+    expect(
+        medicSlotOf(bloc.state as AssignmentSlotsLoaded, 'x1')
+            .availableMembers
+            .map((m) => m.id),
+        contains('T'),
+        reason: 'stage path should already free T in X');
+
+    // Now a live Firestore emit lands — T is STILL on Y in the DB (the stage is
+    // unsaved). This drives _onRebuildAssignmentSlotsFromData, whose OWN
+    // same-day loop must also read the staged-effective assignments.
+    assignmentStream.add([assignment('aY', 'y1', 'T')]);
+    await pumpEventQueue();
+
+    final afterStream = bloc.state as AssignmentSlotsLoaded;
+    final xSlotAfter = medicSlotOf(afterStream, 'x1');
+
+    // The staged clear must survive the stream rebuild...
+    expect(afterStream.stagedSlotKeys, contains('y1_medic_0'));
+    // ...and X must still offer T (this is what the second fix guarantees).
+    expect(xSlotAfter.availableMembers.map((m) => m.id), contains('T'));
+    expect(xSlotAfter.sameDayAssignedMembers.map((m) => m.id),
+        isNot(contains('T')));
+  });
 }

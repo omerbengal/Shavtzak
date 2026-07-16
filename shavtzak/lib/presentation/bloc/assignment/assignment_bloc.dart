@@ -2415,6 +2415,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         for (final a in _extraPastAssignments) a.id: a,
       };
       final mergedAssignments = mergedAssignmentsById.values.toList();
+      // Staged-effective view (DB + in-memory staged changes) used ONLY for the
+      // cross-event same-day availability loop below, so a live Firestore emit
+      // arriving mid-stage cannot transiently re-hide a member the admin just
+      // freed up by a staged clear on another same-day event. Every other use of
+      // mergedAssignments stays raw-DB; the overlay merge applies staging to the
+      // within-event state. Mirrors _buildSlotsFromAssignments. See
+      // _stagedEffectiveAssignments.
+      final effectiveMergedAssignments =
+          _stagedEffectiveAssignments(mergedAssignments);
 
       // Convert maps to lists for the build method
       final eventsList = mergedEvents.values.toList();
@@ -2482,7 +2491,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             final sameDayAssignedMembersMap = <String, TeamMember>{};
             final sameDayEventInfoMap = <String, List<String>>{};
 
-            for (final otherAssignment in mergedAssignments) {
+            for (final otherAssignment in effectiveMergedAssignments) {
               // Skip assignments to THIS event
               if (otherAssignment.eventId == eventData.id) continue;
 
