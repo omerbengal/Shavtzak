@@ -32,6 +32,7 @@ import '../../widgets/same_day_assignment_mark.dart';
 import '../../../core/debug/logger.dart';
 import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
+import 'widgets/assignment_save_bar.dart';
 import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
 import '../../widgets/map_location_picker.dart';
@@ -209,6 +210,73 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         ),
       ),
     );
+  }
+
+  /// Save every staged assignment change. This is the Task 10 BASIC path —
+  /// it always saves, with no conflict handling; Task 11 adds a pre-Save
+  /// conflict-resolution dialog (baseline-vs-current-DB) on top of this
+  /// method. See docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md
+  /// ("Save flow").
+  Future<void> _onSavePressed() async {
+    if (_isMutationInFlight) return;
+    final bloc = context.read<AssignmentBloc>();
+    if (!bloc.hasStagedChanges) return;
+    Logger.action('tap:saveStagedChanges');
+    _startMutation('שומר שינויים...');
+    final result = await _dispatchMutation(
+      (completion) => bloc.add(SaveStagedChanges(completion: completion)),
+    );
+    _finishMutation();
+    if (!mounted) return;
+    _showAssignmentSnackBar(
+      result.isSuccess
+          ? (result.message ?? 'נשמר')
+          : (result.message ?? 'שמירה נכשלה'),
+      backgroundColor: result.isSuccess ? Colors.green : Colors.red,
+    );
+  }
+
+  /// Confirm, then discard every staged (unsaved) change. See
+  /// docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md
+  /// ("Discard" — "All-at-once").
+  Future<void> _onDiscardAll() async {
+    final bloc = context.read<AssignmentBloc>();
+    final blocState = bloc.state;
+    final count = blocState is AssignmentSlotsLoaded
+        ? blocState.stagedSlotKeys.length
+        : 0;
+    Logger.action('open:discardAllStagedDialog', {'count': count});
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('ביטול שינויים'),
+          content: Text('לבטל את כל $count השינויים שלא נשמרו?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Logger.action('tap:cancel:discardAllStaged');
+                Navigator.of(dialogContext).pop(false);
+              },
+              child: const Text('חזרה'),
+            ),
+            TextButton(
+              onPressed: () {
+                Logger.action('tap:confirm:discardAllStaged');
+                Navigator.of(dialogContext).pop(true);
+              },
+              child:
+                  const Text('בטל הכל', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      bloc.add(const DiscardAllStagedChanges());
+    }
   }
 
   /// Format location for display based on how it was entered
@@ -464,12 +532,32 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             ],
           ),
         ),
-        floatingActionButton: FloatingActionButton(
-          heroTag: 'assignment-list-fab',
-          backgroundColor: Colors.blue,
-          tooltip: 'שיבוץ ידני',
-          onPressed: _isMutationInFlight ? null : () => _showManualAssignmentFlow(),
-          child: const Icon(Icons.add, color: Colors.white),
+        floatingActionButton: BlocBuilder<AssignmentBloc, AssignmentState>(
+          builder: (context, state) {
+            final stagedCount = state is AssignmentSlotsLoaded
+                ? state.stagedSlotKeys.length
+                : 0;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AssignmentSaveBar(
+                  stagedCount: stagedCount,
+                  onSave: _onSavePressed,
+                  onDiscardAll: _onDiscardAll,
+                ),
+                const SizedBox(width: 12),
+                FloatingActionButton(
+                  heroTag: 'assignment-list-fab',
+                  backgroundColor: Colors.blue,
+                  tooltip: 'שיבוץ ידני',
+                  onPressed: _isMutationInFlight
+                      ? null
+                      : () => _showManualAssignmentFlow(),
+                  child: const Icon(Icons.add, color: Colors.white),
+                ),
+              ],
+            );
+          },
         ),
         body: BlocListener<EventBloc, EventState>(
           listener: (context, state) {
@@ -750,7 +838,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               if (showLoadMore && index == slots.length) {
                                 return _buildLoadMorePastButton(state);
                               }
-                              return _buildSlotRow(slots[index]);
+                              return _buildSlotRow(
+                                  slots[index], state.stagedSlotKeys);
                             },
                           );
                         },
@@ -845,10 +934,16 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     }).toList();
   }
 
-  Widget _buildSlotRow(AssignmentSlot slot) {
+  Widget _buildSlotRow(AssignmentSlot slot, Set<String> stagedSlotKeys) {
     if (slot.isOffQuota) {
-      return _buildOffQuotaRow(slot);
+      return _buildOffQuotaRow(slot, stagedSlotKeys);
     }
+
+    // Dirty marker: a slot with an unsaved staged change gets a bright,
+    // thick yellow border (not a conflict marker — conflicts are only
+    // surfaced at Save time). See "Dirty marker (the yellow border)" in
+    // docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md.
+    final isDirty = stagedSlotKeys.contains(_getSlotKey(slot));
 
     final hasNotes = slot.isFilled &&
         slot.currentAssignment != null &&
@@ -863,8 +958,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
     final rowContent = Container(
       decoration: BoxDecoration(
-        border:
-            Border(bottom: BorderSide(color: Colors.grey.shade400, width: 1.5)),
+        border: isDirty
+            ? Border.all(color: Colors.amber, width: 3)
+            : Border(
+                bottom: BorderSide(color: Colors.grey.shade400, width: 1.5)),
         color: slot.isFilled ? null : Colors.orange.shade50,
       ),
       child: Column(
@@ -1084,7 +1181,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     flex: 3,
                     child: Padding(
                       padding: const EdgeInsetsDirectional.only(start: 8.0),
-                      child: _buildAssignmentCell(slot),
+                      child: _buildAssignmentCell(slot, isDirty: isDirty),
                     ),
                   ),
                 ],
@@ -1310,9 +1407,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// A row for an assignment that has no matching quota slot. Display + delete
   /// only: no dropdown, no notes-edit swipe. Swipe-left deletes just the
   /// assignment document (no quota change — it is already outside the quota).
-  Widget _buildOffQuotaRow(AssignmentSlot slot) {
+  Widget _buildOffQuotaRow(AssignmentSlot slot, Set<String> stagedSlotKeys) {
     final assignment = slot.currentAssignment!;
     final memberName = assignment.teamMember?.name ?? 'לא ידוע';
+    // Off-quota rows are display + immediate-delete only today (no dropdown,
+    // so nothing here can actually be staged) — this is threaded only for
+    // consistency with _buildSlotRow, in case that ever changes.
+    final isDirty = stagedSlotKeys.contains(_getSlotKey(slot));
 
     return Dismissible(
       key: Key('offquota_${assignment.id}'),
@@ -1375,9 +1476,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.amber.shade50,
-          border: Border(
-            bottom: BorderSide(color: Colors.grey.shade400, width: 1.5),
-          ),
+          border: isDirty
+              ? Border.all(color: Colors.amber, width: 3)
+              : Border(
+                  bottom:
+                      BorderSide(color: Colors.grey.shade400, width: 1.5)),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
@@ -2337,7 +2440,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     return Color(int.parse(buffer.toString(), radix: 16));
   }
 
-  Widget _buildAssignmentCell(AssignmentSlot slot) {
+  Widget _buildAssignmentCell(AssignmentSlot slot, {required bool isDirty}) {
     // Get current assigned member:
     // - First try from assignment object itself (handles deactivated members)
     // - Then try from available/alreadyAssigned lists (handles active members)
@@ -2699,6 +2802,29 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             tooltip: 'ניקוי',
+            splashRadius: 16,
+          ),
+
+        // Inline "↩" undo for a staged (unsaved) change on this slot —
+        // reverts just this slot to its DB baseline. Same operation as the
+        // per-row "קח מה-DB" resolution at Save. See "Discard" (per-slot) in
+        // docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md.
+        if (isDirty)
+          IconButton(
+            onPressed: () {
+              final slotKey = _getSlotKey(slot);
+              Logger.action('tap:discardStagedSlot', {
+                'eventId': slot.event.id,
+                'role': slot.role.key,
+                'slotIndex': slot.slotIndex,
+              });
+              context.read<AssignmentBloc>().add(DiscardStagedSlot(slotKey));
+            },
+            icon: const Icon(Icons.undo, size: 20),
+            color: Colors.amber.shade800,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            tooltip: 'בטל שינוי',
             splashRadius: 16,
           ),
 
