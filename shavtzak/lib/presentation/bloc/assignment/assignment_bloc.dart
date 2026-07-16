@@ -1467,7 +1467,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           slotKey: key,
           type: AssignmentConflictType.slotVanished,
           description:
-              'המכסה של "${c.roleType}" באירוע קטנה, והמשרה ששיבצת אליה כבר לא קיימת.',
+              'המכסה של "${_resolveRoleForKey(c.roleType).hebrewName}" באירוע קטנה, והמשרה ששיבצת אליה כבר לא קיימת.',
           discardOnly: false,
         ));
         return;
