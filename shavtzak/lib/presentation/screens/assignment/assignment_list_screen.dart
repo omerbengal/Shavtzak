@@ -20,6 +20,7 @@ import '../../../core/services/environment_service.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
+import '../../bloc/assignment/models/assignment_conflict.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
@@ -33,6 +34,7 @@ import '../../../core/debug/logger.dart';
 import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
 import 'widgets/assignment_save_bar.dart';
+import 'widgets/conflict_resolution_dialog.dart';
 import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
 import '../../widgets/map_location_picker.dart';
@@ -212,27 +214,55 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
   }
 
-  /// Save every staged assignment change. This is the Task 10 BASIC path —
-  /// it always saves, with no conflict handling; Task 11 adds a pre-Save
-  /// conflict-resolution dialog (baseline-vs-current-DB) on top of this
-  /// method. See docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md
-  /// ("Save flow").
+  /// Save every staged assignment change. Classifies staged-vs-DB conflicts
+  /// FIRST (baseline captured at staging time vs. the current DB); if any
+  /// exist, shows [ConflictResolutionDialog] and waits for the admin's
+  /// resolutions before dispatching the save. Cancelling the dialog leaves
+  /// staging fully intact — nothing is saved. See
+  /// docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md
+  /// ("Conflict handling" / "Save flow").
   Future<void> _onSavePressed() async {
     if (_isMutationInFlight) return;
     final bloc = context.read<AssignmentBloc>();
     if (!bloc.hasStagedChanges) return;
     Logger.action('tap:saveStagedChanges');
+
+    final blocState = bloc.state;
+    final slots = blocState is AssignmentSlotsLoaded
+        ? blocState.slots
+        : (_lastSlotsState?.slots ?? const <AssignmentSlot>[]);
+    final conflicts = bloc.classifyStagedConflicts(slots);
+
+    Map<String, ConflictResolution> resolutions = const {};
+    if (conflicts.isNotEmpty) {
+      Logger.action(
+          'open:conflictResolutionDialog', {'count': conflicts.length});
+      final result = await showDialog<Map<String, ConflictResolution>>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ConflictResolutionDialog(conflicts: conflicts),
+      );
+      if (result == null) {
+        Logger.action('tap:cancel:conflictResolutionDialog');
+        return; // cancelled — nothing saved, staging intact
+      }
+      resolutions = result;
+    }
+
+    if (!mounted) return;
     _startMutation('שומר שינויים...');
-    final result = await _dispatchMutation(
-      (completion) => bloc.add(SaveStagedChanges(completion: completion)),
+    final saveResult = await _dispatchMutation(
+      (completion) => bloc.add(
+        SaveStagedChanges(resolutions: resolutions, completion: completion),
+      ),
     );
     _finishMutation();
     if (!mounted) return;
     _showAssignmentSnackBar(
-      result.isSuccess
-          ? (result.message ?? 'נשמר')
-          : (result.message ?? 'שמירה נכשלה'),
-      backgroundColor: result.isSuccess ? Colors.green : Colors.red,
+      saveResult.isSuccess
+          ? (saveResult.message ?? 'נשמר')
+          : (saveResult.message ?? 'שמירה נכשלה'),
+      backgroundColor: saveResult.isSuccess ? Colors.green : Colors.red,
     );
   }
 
