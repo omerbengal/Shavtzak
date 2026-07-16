@@ -1425,6 +1425,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
   Future<void> _onDiscardStagedSlot(
       DiscardStagedSlot event, Emitter<AssignmentState> emit) async {
+    // A discard must not race an in-flight Save: SaveStagedChanges already
+    // captured its own snapshot of creates/updates/deletes before this event
+    // is handled, so clearing _stagedChanges here would be silently
+    // overridden the moment that write lands — the discard would appear to
+    // succeed in the UI but the save writes anyway.
+    if (_saveInFlight) return;
     _stagedChanges.remove(event.slotKey);
     await _persistStaged();
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
@@ -1432,6 +1438,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
   Future<void> _onDiscardAllStagedChanges(
       DiscardAllStagedChanges event, Emitter<AssignmentState> emit) async {
+    // See _onDiscardStagedSlot: guard against discarding while a Save is
+    // already converging its own captured snapshot to the DB.
+    if (_saveInFlight) return;
     _stagedChanges.clear();
     await _userCache.clearPendingAssignmentChanges();
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
@@ -1466,8 +1475,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   List<AssignmentConflict> classifyStagedConflicts(
       List<AssignmentSlot> currentSlots) {
     final slotKeysPresent = currentSlots.map(_getSlotKey).toSet();
+    // Union of the live 90-day window cache AND the extra-past cache (rows
+    // loaded via "load more history"). The window cache alone misses any
+    // paginated-in past row, which would otherwise misclassify a staged edit
+    // on that row as targetRemoved (B) and, on override, route it to
+    // `creates` with the row's REAL existing id -> backend batch.create on an
+    // existing doc -> ALREADY_EXISTS. _extraPastAssignments is strictly older
+    // than the window, so no id collisions with getCurrentAssignments.
     final dbByKey = <String, Assignment>{
-      for (final a in _repository.getCurrentAssignments())
+      for (final a in [
+        ..._repository.getCurrentAssignments(),
+        ..._extraPastAssignments,
+      ])
         StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex):
             a,
     };
@@ -1491,12 +1510,25 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final dbAssignment = dbByKey[key];
       final dbMemberId = dbAssignment?.teamMemberId;
       final dbNotes = dbAssignment?.notes ?? '';
+      final dbLabel = dbAssignment?.semanticLabelId;
+      final dbAltPhone = dbAssignment?.alternativePhoneNumber;
       final baselineMember = c.baselineMemberId;
 
-      // No divergence from baseline (member + notes) => no conflict.
+      // No divergence from baseline (member + notes + label + altPhone) =>
+      // no conflict. Label/altPhone must be included: a concurrent DB change
+      // to only one of those (notes/member unchanged) is a real divergence
+      // that would otherwise be classified no-conflict and silently
+      // overwritten at Save.
       final memberDiverged = dbMemberId != baselineMember;
       final notesDiverged = dbNotes != c.baselineNotes;
-      if (!memberDiverged && !notesDiverged) return;
+      final labelDiverged = dbLabel != c.baselineSemanticLabelId;
+      final altPhoneDiverged = dbAltPhone != c.baselineAltPhone;
+      if (!memberDiverged &&
+          !notesDiverged &&
+          !labelDiverged &&
+          !altPhoneDiverged) {
+        return;
+      }
 
       if (c.isClear) {
         // C: you cleared baseline B, DB now holds a different member.
@@ -1530,7 +1562,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         return;
       }
 
-      // F: notes changed underneath a notes-only edit.
+      // F: notes, label, or alt-phone changed underneath a non-member edit
+      // (member unchanged from baseline, so A/B/C above did not fire).
       conflicts.add(AssignmentConflict(
         slotKey: key,
         type: AssignmentConflictType.notesChanged,
@@ -1566,8 +1599,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     _saveInFlight = true;
 
     final resolutions = event.resolutions ?? const {};
+    // Union of the live 90-day window cache AND the extra-past cache (rows
+    // loaded via "load more history"). The window cache alone misses any
+    // paginated-in past row, which would otherwise misclassify a staged edit
+    // on that row as targetRemoved (B) and, on override, route it to
+    // `creates` with the row's REAL existing id -> backend batch.create on an
+    // existing doc -> ALREADY_EXISTS. _extraPastAssignments is strictly older
+    // than the window, so no id collisions with getCurrentAssignments.
     final dbByKey = <String, Assignment>{
-      for (final a in _repository.getCurrentAssignments())
+      for (final a in [
+        ..._repository.getCurrentAssignments(),
+        ..._extraPastAssignments,
+      ])
         StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex):
             a,
     };
@@ -1618,9 +1661,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       for (final k in appliedKeys) {
         _stagedChanges.remove(k);
       }
-      // Cache is cleared ONLY on success — a failed write must leave staging
-      // (in-memory AND cached) intact so the admin can retry.
-      await _userCache.clearPendingAssignmentChanges();
+      // Re-persist the SURVIVING staged changes rather than blanket-clearing
+      // the cache. The screen's leave-guard Save runs without a blocking
+      // overlay, so the grid stays interactive during this await — a new
+      // edit may have been staged (added to _stagedChanges) after
+      // appliedKeys was captured above, in which case it correctly survives
+      // the removal loop but is NOT in appliedKeys. A blanket
+      // clearPendingAssignmentChanges() here would still wipe that survivor
+      // from crash-recovery even though it correctly remains in memory.
+      // _persistStaged() writes whatever is left in _stagedChanges — `[]`
+      // when none remain (equivalent to a clear), or the survivor's entry
+      // when one was staged mid-save.
+      await _persistStaged();
       _completeActionSuccess(event.completion,
           'נשמרו ${creates.length + updates.length + deletes.length} שינויים');
       add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));

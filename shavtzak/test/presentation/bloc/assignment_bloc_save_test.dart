@@ -357,4 +357,159 @@ void main() {
     )).called(1);
     expect(bloc.hasStagedChanges, isFalse); // cleared by the one save that ran
   });
+
+  // --- FIX A: discard-during-save race --------------------------------------
+  //
+  // The leave-guard's tab-switch Save runs without the screen's blocking
+  // overlay, so the grid stays interactive during an in-flight save. A
+  // discard dispatched in that window must not clear _stagedChanges: the
+  // save already captured its own creates/updates/deletes snapshot before
+  // the discard runs, so it writes anyway and the discard would otherwise be
+  // silently overridden.
+
+  test(
+      'DiscardAllStagedChanges dispatched while a save is in flight does not '
+      'clear staged changes', () async {
+    final batchCompleter = Completer<void>();
+    when(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+    )).thenAnswer((_) => batchCompleter.future);
+
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final emptyMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    bloc.add(StageMemberChange(slot: emptyMedicSlot, member: member('m1')));
+    await pumpEventQueue();
+    expect(bloc.hasStagedChanges, isTrue);
+
+    // Save reaches the awaited batch write and pends there.
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    // A discard dispatched WHILE the save is in flight must be rejected by
+    // the _saveInFlight guard.
+    bloc.add(const DiscardAllStagedChanges());
+    await pumpEventQueue();
+    expect(bloc.hasStagedChanges, isTrue);
+    final cachedMidSave = await UserCacheService().getPendingAssignmentChanges();
+    expect(cachedMidSave, hasLength(1)); // NOT wiped by the rejected discard
+
+    // Let the save resolve — its own success path clears the applied change.
+    batchCompleter.complete();
+    await pumpEventQueue();
+    expect(bloc.hasStagedChanges, isFalse);
+  });
+
+  test(
+      'DiscardStagedSlot dispatched while a save is in flight does not clear '
+      'the staged change', () async {
+    final batchCompleter = Completer<void>();
+    when(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+    )).thenAnswer((_) => batchCompleter.future);
+
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final emptyMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    bloc.add(StageMemberChange(slot: emptyMedicSlot, member: member('m1')));
+    await pumpEventQueue();
+
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    bloc.add(const DiscardStagedSlot('e1_medic_0'));
+    await pumpEventQueue();
+    expect(bloc.hasStagedChanges, isTrue);
+
+    batchCompleter.complete();
+    await pumpEventQueue();
+    expect(bloc.hasStagedChanges, isFalse);
+  });
+
+  test(
+      'a new edit staged during an in-flight save survives the success-path '
+      'cache write instead of being wiped by a blanket clear', () async {
+    // Two future events so there are two independent empty slots to stage.
+    when(eventRepo.getAllEvents())
+        .thenAnswer((_) async => [futureEvent('e1'), futureEvent('e2')]);
+
+    final batchCompleter = Completer<void>();
+    when(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+    )).thenAnswer((_) => batchCompleter.future);
+
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1'), futureEvent('e2')]);
+    roleStream.add([medicRole()]);
+    assignmentStream.add(const <Assignment>[]); // both slots start empty
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final slotE1 = loaded.slots.firstWhere(
+        (s) => s.event.id == 'e1' && s.role.key == 'medic' && s.slotIndex == 0);
+    final slotE2 = loaded.slots.firstWhere(
+        (s) => s.event.id == 'e2' && s.role.key == 'medic' && s.slotIndex == 0);
+
+    // Stage a fill on e1 and start the save (pends on the Completer).
+    bloc.add(StageMemberChange(slot: slotE1, member: member('m1')));
+    await pumpEventQueue();
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    // While that save is in flight, stage a NEW edit on a different slot
+    // (e2). The screen has no blocking overlay during this leave-guard Save,
+    // so the grid stays interactive and this is a legitimate user action —
+    // it lands in _stagedChanges AFTER appliedKeys was captured by the save.
+    bloc.add(StageMemberChange(slot: slotE2, member: member('m2')));
+    await pumpEventQueue();
+    expect(bloc.stagedCount, 2); // e1 (mid-save) and e2 (new) both staged
+
+    // Let the one in-flight save resolve successfully.
+    batchCompleter.complete();
+    await pumpEventQueue();
+
+    // e1's staged change was applied by the save and removed; e2's survives
+    // (it was staged after appliedKeys was captured, so it's not part of
+    // this save's applied set).
+    expect(bloc.hasStagedChanges, isTrue);
+    expect(bloc.stagedCount, 1);
+    final after = bloc.state as AssignmentSlotsLoaded;
+    expect(after.stagedSlotKeys, contains('e2_medic_0'));
+    expect(after.stagedSlotKeys, isNot(contains('e1_medic_0')));
+
+    // The cache must reflect the survivor, NOT be blanket-cleared (the bug:
+    // clearPendingAssignmentChanges() here would wipe e2's entry too, losing
+    // it from crash-recovery even though it correctly stayed in memory).
+    final cached = await UserCacheService().getPendingAssignmentChanges();
+    expect(cached, hasLength(1));
+    expect(cached.single['slotKey'], 'e2_medic_0');
+    expect(cached.single['desiredMemberId'], 'm2');
+  });
 }

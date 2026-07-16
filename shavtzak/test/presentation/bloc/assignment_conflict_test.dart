@@ -14,6 +14,7 @@ import 'package:mockito/mockito.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/core/services/user_cache_service.dart';
+import 'package:shavtzak/core/utils/filter_persistence.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/role.dart';
@@ -80,6 +81,9 @@ void main() {
     String memberId, {
     String roleType = 'medic',
     int slotIndex = 0,
+    String notes = '',
+    String? semanticLabelId,
+    String? alternativePhoneNumber,
   }) =>
       Assignment(
         id: id,
@@ -88,10 +92,35 @@ void main() {
         roleType: roleType,
         slotIndex: slotIndex,
         status: AssignmentStatus.confirmed,
-        notes: '',
+        notes: notes,
+        semanticLabelId: semanticLabelId,
+        alternativePhoneNumber: alternativePhoneNumber,
         createdAt: now,
         updatedAt: now,
       );
+
+  // Past event (older than the 90-day window) with a 1-slot medic quota by
+  // default. Used to test the extra-past cache (_extraPastAssignments),
+  // populated on demand via LoadMorePastAssignmentSlots ("load more
+  // history"), separately from the live window stream.
+  Event pastEvent(String id, {Map<String, int>? roleRequirements}) {
+    final base = DateTime.now().subtract(const Duration(days: 200));
+    final start = DateTime(base.year, base.month, base.day, 9, 0);
+    final end = DateTime(base.year, base.month, base.day, 17, 0);
+    return Event(
+      id: id,
+      name: 'event-$id',
+      startDate: start,
+      endDate: end,
+      startTime: '09:00',
+      endTime: '17:00',
+      assemblyTime: '08:30',
+      requiresArmed: false,
+      roleRequirements: roleRequirements ?? const {'medic': 1},
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
 
   Role medicRole({String hebrewName = 'חובש'}) => Role(
         id: 'role-medic',
@@ -291,5 +320,144 @@ void main() {
     final after = bloc.state as AssignmentSlotsLoaded;
     final conflicts = bloc.classifyStagedConflicts(after.slots);
     expect(conflicts, isEmpty);
+  });
+
+  // --- FIX B: DB-truth must include the extra-past cache -------------------
+
+  test(
+      'a staged edit on a row present only in the extra-past cache (loaded '
+      'via "load more history") is not misclassified as targetRemoved',
+      () async {
+    // The live 90-day window cache (_repository.getCurrentAssignments()) does
+    // not cover rows paginated in via "load more history"
+    // (_extraPastAssignments). classifyStagedConflicts must read the UNION
+    // of both, or a staged edit on such a row is misclassified as B
+    // (targetRemoved) purely because the window cache never saw it.
+    FilterPersistence.showPastEvents = true;
+    addTearDown(() => FilterPersistence.showPastEvents = false);
+
+    // The past event/assignment are fetched via getEventsBeforeDate +
+    // getAssignmentsByEventIds (the "load more" round-trip) — NOT via the
+    // live window stream, and NOT via getAllEvents/getAllAssignments (the
+    // filter/staging rebuild path), which only know about 'e1' by default.
+    when(eventRepo.getEventsBeforeDate(any, limit: anyNamed('limit')))
+        .thenAnswer((_) async => [pastEvent('e0')]);
+    when(assignmentRepo.getAssignmentsByEventIds(['e0']))
+        .thenAnswer((_) async => [assignment('a0', 'e0', 'm1', slotIndex: 0)]);
+    when(eventRepo.getAllEvents())
+        .thenAnswer((_) async => [futureEvent('e1'), pastEvent('e0')]);
+
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    assignmentStream.add(const <Assignment>[]); // live window: empty
+    await pumpEventQueue();
+
+    // hasMorePast is already true right after the first rebuild (paging
+    // isn't exhausted yet) — this is what lets "load more" be dispatched.
+    expect((bloc.state as AssignmentSlotsLoaded).hasMorePast, isTrue);
+
+    bloc.add(const LoadMorePastAssignmentSlots());
+    await pumpEventQueue();
+
+    final withHistory = bloc.state as AssignmentSlotsLoaded;
+    final pastSlot = withHistory.slots.firstWhere((s) =>
+        s.event.id == 'e0' && s.role.key == 'medic' && s.slotIndex == 0);
+    expect(pastSlot.currentAssignment?.teamMemberId, 'm1');
+
+    // Stage a swap on the past row (baseline: m1, from a0 — a row that lives
+    // ONLY in _extraPastAssignments, never in getCurrentAssignments()).
+    bloc.add(StageMemberChange(slot: pastSlot, member: member('m2')));
+    await pumpEventQueue();
+
+    final after = bloc.state as AssignmentSlotsLoaded;
+    final conflicts = bloc.classifyStagedConflicts(after.slots);
+
+    // Pre-fix: dbByKey was built only from getCurrentAssignments() (the live
+    // window, which never saw 'e0'/'a0'), so dbAssignment was null even
+    // though the DB row genuinely exists — misclassified as targetRemoved
+    // (B), and on override at Save would route to `creates` with a0's real
+    // id -> backend ALREADY_EXISTS.
+    expect(conflicts, isEmpty);
+  });
+
+  // --- FIX C: label/altPhone divergence must not be classified no-conflict -
+
+  test(
+      'a staged member swap where only the DB label diverged from baseline '
+      '(member+notes unchanged) classifies as notesChanged, not no-conflict',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    // DB starts with m1 in medic-0, labeled 'labelA'.
+    assignmentStream
+        .add([assignment('a1', 'e1', 'm1', semanticLabelId: 'labelA')]);
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final filledMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    expect(filledMedicSlot.currentAssignment!.teamMemberId, 'm1');
+
+    // Stage a member swap (baseline: m1/labelA/notes ''). The staged edit
+    // itself only changes desiredMemberId; label/notes/altPhone carry over
+    // unchanged from the baseline.
+    bloc.add(StageMemberChange(slot: filledMedicSlot, member: member('m2')));
+    await pumpEventQueue();
+
+    // DB now shows the label changed underneath — member and notes untouched.
+    assignmentStream
+        .add([assignment('a1', 'e1', 'm1', semanticLabelId: 'labelB')]);
+    await pumpEventQueue();
+
+    final after = bloc.state as AssignmentSlotsLoaded;
+    final conflicts = bloc.classifyStagedConflicts(after.slots);
+
+    // Pre-fix: memberDiverged/notesDiverged were both false (member still
+    // m1, notes still ''), so the early-return fired and this was silently
+    // classified as no-conflict — the label change would be lost at Save.
+    expect(conflicts, hasLength(1));
+    expect(conflicts.single.type, AssignmentConflictType.notesChanged);
+    expect(conflicts.single.slotKey, 'e1_medic_0');
+  });
+
+  test(
+      'a staged member swap where only the DB alt-phone diverged from '
+      'baseline (member+notes unchanged) classifies as notesChanged, not '
+      'no-conflict', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    assignmentStream.add(
+        [assignment('a1', 'e1', 'm1', alternativePhoneNumber: '050-1111111')]);
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final filledMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+    bloc.add(StageMemberChange(slot: filledMedicSlot, member: member('m2')));
+    await pumpEventQueue();
+
+    // DB now shows the alt-phone changed underneath — member/notes untouched.
+    assignmentStream.add(
+        [assignment('a1', 'e1', 'm1', alternativePhoneNumber: '050-2222222')]);
+    await pumpEventQueue();
+
+    final after = bloc.state as AssignmentSlotsLoaded;
+    final conflicts = bloc.classifyStagedConflicts(after.slots);
+    expect(conflicts, hasLength(1));
+    expect(conflicts.single.type, AssignmentConflictType.notesChanged);
+    expect(conflicts.single.slotKey, 'e1_medic_0');
   });
 }
