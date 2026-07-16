@@ -19,6 +19,7 @@ import '../../../domain/entities/role.dart';
 import '../../../domain/entities/team_member.dart';
 import 'assignment_event.dart';
 import 'assignment_state.dart';
+import 'models/assignment_conflict.dart';
 import 'models/staged_assignment_change.dart';
 import '../../screens/assignment/models/assignment_slot.dart';
 import '../../screens/assignment/models/assignment_slot_annotations.dart';
@@ -1430,6 +1431,99 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           .map(StagedAssignmentChange.fromJson)
           .map((c) => MapEntry(c.slotKey, c)));
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  /// Compare each staged change's baseline to the current DB slots and
+  /// return the conflicts to resolve at Save. A slot conflicts when its
+  /// current DB occupant/notes differ from the baseline captured at first
+  /// touch.
+  ///
+  /// [currentSlots] (typically `AssignmentSlotsLoaded.slots`) is used ONLY to
+  /// check whether the slot still exists in the grid (quota shrink -> D). It
+  /// is deliberately NOT used to read the current DB member/notes: every
+  /// staged slot renders its OPTIMISTIC (desired) value in `currentSlots`
+  /// (see `_mergeSlotsWithOptimisticUpdates`/`_emptied`), which would mask
+  /// genuine concurrent DB changes — a staged clear always shows an empty
+  /// `currentAssignment` there regardless of what the DB actually holds. The
+  /// real current-DB occupant is read from `_repository.getCurrentAssignments()`,
+  /// the raw, un-staged snapshot the bloc already keeps live from the
+  /// assignments stream.
+  List<AssignmentConflict> classifyStagedConflicts(
+      List<AssignmentSlot> currentSlots) {
+    final slotKeysPresent = currentSlots.map(_getSlotKey).toSet();
+    final dbByKey = <String, Assignment>{
+      for (final a in _repository.getCurrentAssignments())
+        StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex):
+            a,
+    };
+
+    final conflicts = <AssignmentConflict>[];
+
+    _stagedChanges.forEach((key, c) {
+      // D: slot no longer exists (quota shrank / role removed). Two-button:
+      // override = create off-quota (handled at Save), takeDb = discard.
+      if (!slotKeysPresent.contains(key)) {
+        conflicts.add(AssignmentConflict(
+          slotKey: key,
+          type: AssignmentConflictType.slotVanished,
+          description:
+              'המכסה של "${c.roleType}" באירוע קטנה, והמשרה ששיבצת אליה כבר לא קיימת.',
+          discardOnly: false,
+        ));
+        return;
+      }
+
+      final dbAssignment = dbByKey[key];
+      final dbMemberId = dbAssignment?.teamMemberId;
+      final dbNotes = dbAssignment?.notes ?? '';
+      final baselineMember = c.baselineMemberId;
+
+      // No divergence from baseline (member + notes) => no conflict.
+      final memberDiverged = dbMemberId != baselineMember;
+      final notesDiverged = dbNotes != c.baselineNotes;
+      if (!memberDiverged && !notesDiverged) return;
+
+      if (c.isClear) {
+        // C: you cleared baseline B, DB now holds a different member.
+        if (dbMemberId != null && dbMemberId != baselineMember) {
+          conflicts.add(AssignmentConflict(
+            slotKey: key,
+            type: AssignmentConflictType.clearCollision,
+            description: 'ניקית שיבוץ שקיים, אך בינתיים שובץ שם אדם אחר ב-DB.',
+          ));
+        }
+        return; // clear + already-empty is satisfied, not a conflict
+      }
+
+      if (dbMemberId == null && baselineMember != null) {
+        // B: your swap/notes target was deleted.
+        conflicts.add(AssignmentConflict(
+          slotKey: key,
+          type: AssignmentConflictType.targetRemoved,
+          description: 'השיבוץ ששינית נמחק בינתיים ב-DB.',
+        ));
+        return;
+      }
+
+      if (memberDiverged) {
+        // A: slot taken by a different member than your baseline.
+        conflicts.add(AssignmentConflict(
+          slotKey: key,
+          type: AssignmentConflictType.slotTaken,
+          description: 'המשרה נתפסה: בינתיים שובץ שם אדם אחר ב-DB.',
+        ));
+        return;
+      }
+
+      // F: notes changed underneath a notes-only edit.
+      conflicts.add(AssignmentConflict(
+        slotKey: key,
+        type: AssignmentConflictType.notesChanged,
+        description: 'ההערות/הלייבל של השיבוץ שונו בינתיים ב-DB.',
+      ));
+    });
+
+    return conflicts;
   }
 
   /// Optimistic create assignment handler
