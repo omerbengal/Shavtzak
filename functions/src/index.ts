@@ -2827,8 +2827,17 @@ export function findBatchDuplicateRoleAssignments(args: {
   creates: Array<{id: string; eventId: string; roleType: string; teamMemberId: string}>;
   updates: Array<{id: string; eventId: string; roleType: string; teamMemberId: string}>;
   deletes: string[];
+  // Members with allowMultipleAssignments === true are exempt from this
+  // check -- the identical exemption validateAssignmentPayload's own
+  // single-item duplicate-role check already grants them (see
+  // skipDuplicateRoleCheck above): they may legitimately hold the same role
+  // twice at the same event. Any entry whose teamMemberId is in this set is
+  // dropped before grouping, so it can never produce a flagged group.
+  // Optional / defaults to no exemptions so existing callers/tests are
+  // unaffected; 'assignment.saveBatch' always passes the real computed set.
+  exemptMemberIds?: ReadonlySet<string>;
 }): Array<{eventId: string; roleType: string; teamMemberId: string}> {
-  const {existing, creates, updates, deletes} = args;
+  const {existing, creates, updates, deletes, exemptMemberIds} = args;
 
   const removedIds = new Set<string>([
     ...deletes,
@@ -2837,7 +2846,12 @@ export function findBatchDuplicateRoleAssignments(args: {
   ]);
   const survivingExisting = existing.filter((item) => !removedIds.has(item.id));
 
-  const resulting = [...survivingExisting, ...creates, ...updates];
+  // Drop exempt members' entries entirely -- with none left for a given
+  // teamMemberId, no group (and therefore no false duplicate) can ever form
+  // for them, no matter how many same-role slots they occupy.
+  const resulting = [...survivingExisting, ...creates, ...updates].filter(
+    (item) => !exemptMemberIds?.has(item.teamMemberId),
+  );
 
   const groups = new Map<
     string,
@@ -4421,6 +4435,29 @@ async function executeMutation(
         }
       }
 
+      // Members with allowMultipleAssignments === true are exempt from the
+      // duplicate-role check (see the identical exemption in
+      // validateAssignmentPayload above) -- they may legitimately hold the
+      // same role twice at the same event. That per-item exemption doesn't
+      // reach the batch-aware check below on its own, so it's re-derived
+      // here from the authoritative team-member docs (not trusted from the
+      // payload) and threaded through explicitly.
+      const distinctTeamMemberIds = new Set<string>([
+        ...plan.creates.map(({doc}) =>
+          requireString(doc['teamMemberId'], 'assignment.teamMemberId'),
+        ),
+        ...plan.updates.map(({doc}) =>
+          requireString(doc['teamMemberId'], 'assignment.teamMemberId'),
+        ),
+      ]);
+      const exemptMemberIds = new Set<string>();
+      for (const memberId of distinctTeamMemberIds) {
+        const memberData = await readTeamMemberById(db, collections, memberId);
+        if (memberData?.['allowMultipleAssignments'] === true) {
+          exemptMemberIds.add(memberId);
+        }
+      }
+
       const batchDuplicates = findBatchDuplicateRoleAssignments({
         existing: existingForAffectedEvents,
         creates: plan.creates.map(({id, doc}) => ({
@@ -4436,6 +4473,7 @@ async function executeMutation(
           teamMemberId: requireString(doc['teamMemberId'], 'assignment.teamMemberId'),
         })),
         deletes: plan.deletes,
+        exemptMemberIds,
       });
       if (batchDuplicates.length > 0) {
         throw new HttpError(400, 'חבר/ת הצוות כבר משובץ/ת לתפקיד זה באירוע');

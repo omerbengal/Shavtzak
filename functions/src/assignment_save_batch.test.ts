@@ -176,3 +176,37 @@ test('findBatchDuplicateRoleAssignments allows re-filling a slot freed by a dele
   });
   assert.deepEqual(result, []);
 });
+
+test('findBatchDuplicateRoleAssignments allows a member with allowMultipleAssignments to double-book the same role', () => {
+  // Ziv is staged into TWO medic slots (a1, a2) of the same event in one
+  // batch. Ordinarily this is a duplicate, but Ziv is in exemptMemberIds
+  // (mirrors a team-member doc with allowMultipleAssignments === true), so
+  // it must be allowed -- same as the single-item path already allows it.
+  const result = findBatchDuplicateRoleAssignments({
+    existing: [],
+    creates: [
+      {id: 'a1', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ziv'},
+      {id: 'a2', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ziv'},
+    ],
+    updates: [],
+    deletes: [],
+    exemptMemberIds: new Set(['Ziv']),
+  });
+  assert.deepEqual(result, []);
+});
+
+test('findBatchDuplicateRoleAssignments rejects the same double-booking when the member is not exempt', () => {
+  // Identical scenario to the previous test, but WITHOUT Ziv in
+  // exemptMemberIds -- must be rejected like any other genuine duplicate.
+  const result = findBatchDuplicateRoleAssignments({
+    existing: [],
+    creates: [
+      {id: 'a1', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ziv'},
+      {id: 'a2', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ziv'},
+    ],
+    updates: [],
+    deletes: [],
+    exemptMemberIds: new Set(),
+  });
+  assert.deepEqual(result, [{eventId: 'e1', roleType: 'medic', teamMemberId: 'Ziv'}]);
+});
