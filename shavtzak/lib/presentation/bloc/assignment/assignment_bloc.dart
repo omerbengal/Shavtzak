@@ -1390,6 +1390,41 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return ops;
   }
 
+  /// The DB assignments with the in-memory staged changes applied, so cross-event
+  /// availability (same-day booking) reflects the admin's unsaved edits. Used ONLY
+  /// for the same-day availability computation in slot-building — NOT for save/
+  /// conflict logic, which compares staged desired vs the RAW DB.
+  List<Assignment> _stagedEffectiveAssignments(List<Assignment> dbAssignments) {
+    if (_stagedChanges.isEmpty) return dbAssignments;
+    final stagedKeys = _stagedChanges.keys.toSet();
+    final result = <Assignment>[
+      // keep every DB assignment whose slot the admin did NOT stage
+      for (final a in dbAssignments)
+        if (!stagedKeys.contains(
+            StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex)))
+          a,
+    ];
+    // add the desired assignment for every staged fill/swap (staged CLEARs add nothing)
+    for (final c in _stagedChanges.values) {
+      if (c.isClear) continue;
+      result.add(Assignment(
+        id: c.desiredAssignmentId,
+        eventId: c.eventId,
+        teamMemberId: c.desiredMemberId!,
+        roleType: c.roleType,
+        slotIndex: c.slotIndex,
+        status: AssignmentStatus.confirmed,
+        notes: c.desiredNotes,
+        semanticLabelId: c.desiredSemanticLabelId,
+        alternativePhoneNumber: c.desiredAltPhone,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
+        updatedAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
+        teamMember: _windowMembersMap[c.desiredMemberId],
+      ));
+    }
+    return result;
+  }
+
   /// Reconcile `_pendingOperations` with the current staged-changes snapshot,
   /// called immediately before each slots-view merge call.
   ///
@@ -2113,6 +2148,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // 5. Build slots
     final slots = <AssignmentSlot>[];
 
+    // Staged-aware view of the DB assignments, used ONLY below for the
+    // cross-event same-day exclusion so an unsaved stage-clear/fill/swap is
+    // reflected in other events' availability immediately (see
+    // _stagedEffectiveAssignments doc comment). Every other use of
+    // `assignments` in this method (currentAssignment, assignedMemberIds,
+    // off-quota rows, annotations) intentionally stays on the raw DB list —
+    // the optimistic overlay in _mergeSlotsWithOptimisticUpdates already
+    // handles those.
+    final effectiveAssignments = _stagedEffectiveAssignments(assignments);
+
     for (final event in events) {
       final placedAssignmentIds = <String>{};
       // Iterate through roles in sortOrder (not enum order)
@@ -2149,10 +2194,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               eventAssignments.map((a) => a.teamMemberId).toSet();
 
           // Detect same-day assignments (members assigned to OTHER events on same day(s))
+          // Iterates effectiveAssignments (DB + staged overlay), NOT the raw
+          // `assignments` param — see _stagedEffectiveAssignments.
           final sameDayAssignedMembersMap = <String, TeamMember>{};
           final sameDayEventInfoMap = <String, List<String>>{};
 
-          for (final otherAssignment in assignments) {
+          for (final otherAssignment in effectiveAssignments) {
             // Skip assignments to THIS event
             if (otherAssignment.eventId == event.id) continue;
 
