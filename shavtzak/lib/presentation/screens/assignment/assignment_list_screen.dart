@@ -35,6 +35,7 @@ import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
 import 'widgets/assignment_save_bar.dart';
 import 'widgets/conflict_resolution_dialog.dart';
+import 'widgets/unsaved_changes_dialog.dart';
 import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
 import '../../widgets/map_location_picker.dart';
@@ -264,6 +265,36 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           : (saveResult.message ?? 'שמירה נכשלה'),
       backgroundColor: saveResult.isSuccess ? Colors.green : Colors.red,
     );
+  }
+
+  /// Leave-guard for in-screen exits (home button, logout) — a courtesy
+  /// reminder, not data-protection (staged changes already survive in the
+  /// cache). See docs/superpowers/specs/
+  /// 2026-07-15-assignments-staged-save-design.md ("Leave-guard").
+  ///
+  /// Returns whether the caller should proceed with its navigation:
+  /// - clean (no staged changes) → `true` immediately, no dialog.
+  /// - `leave` → `true` (staged changes stay in cache; still dirty on
+  ///   return).
+  /// - `save` → runs the full save flow (including the per-conflict
+  ///   resolution dialog if needed) and proceeds only if it actually
+  ///   cleared staging.
+  /// - `cancel` / dismissed → `false` (stay).
+  Future<bool> _confirmLeaveIfDirty() async {
+    final bloc = context.read<AssignmentBloc>();
+    if (!bloc.hasStagedChanges) return true;
+    final count = bloc.state is AssignmentSlotsLoaded
+        ? (bloc.state as AssignmentSlotsLoaded).stagedSlotKeys.length
+        : (_lastSlotsState?.stagedSlotKeys.length ?? 0);
+    final decision = await showUnsavedChangesDialog(context, count: count);
+    if (!mounted) return false;
+    if (decision == LeaveDecision.leave) return true;
+    if (decision == LeaveDecision.save) {
+      await _onSavePressed(); // full flow incl. conflict dialog
+      if (!mounted) return false;
+      return !bloc.hasStagedChanges; // proceed only if save actually cleared staging
+    }
+    return false; // cancel / dismissed
   }
 
   /// Confirm, then discard every staged (unsaved) change. See
@@ -540,10 +571,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               IconButton(
                 icon: const Icon(Icons.home),
                 tooltip: 'בית',
-                onPressed: () {
+                onPressed: () async {
                   Logger.action('tap:home');
-                  final envPrefix = EnvironmentService.instance.routePrefix;
-                  context.go('$envPrefix/admin');
+                  if (await _confirmLeaveIfDirty()) {
+                    if (!context.mounted) return;
+                    final envPrefix = EnvironmentService.instance.routePrefix;
+                    context.go('$envPrefix/admin');
+                  }
                 },
                 iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -552,9 +586,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתק',
-                onPressed: () {
+                onPressed: () async {
                   Logger.action('tap:logout');
-                  _logout(context);
+                  if (await _confirmLeaveIfDirty()) {
+                    if (!context.mounted) return;
+                    _logout(context);
+                  }
                 },
                 iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
