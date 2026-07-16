@@ -205,6 +205,7 @@ class PendingOperation extends Equatable {
   final String slotKey; // "${eventId}_${roleType}_${slotIndex}"
   final Assignment? optimisticAssignment;
   final DateTime timestamp;
+  final bool persistent;
 
   const PendingOperation({
     required this.id,
@@ -212,17 +213,19 @@ class PendingOperation extends Equatable {
     required this.slotKey,
     this.optimisticAssignment,
     required this.timestamp,
+    this.persistent = false,
   });
 
   /// Expire operations after 5 minutes
   /// This is a safety net for truly failed operations (network error, DB error, etc.)
   /// Normally, Firestore stream will confirm the operation long before this expires.
   /// The optimistic state persists until the database confirms it, regardless of network speed.
+  /// Persistent operations never expire.
   bool get isExpired =>
-      DateTime.now().difference(timestamp).inMinutes > 5;
+      !persistent && DateTime.now().difference(timestamp).inMinutes > 5;
 
   @override
-  List<Object?> get props => [id, type, slotKey, optimisticAssignment, timestamp];
+  List<Object?> get props => [id, type, slotKey, optimisticAssignment, timestamp, persistent];
 }
 
 /// Error state
