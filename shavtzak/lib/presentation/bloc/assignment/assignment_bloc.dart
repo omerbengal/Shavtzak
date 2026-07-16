@@ -156,6 +156,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<DiscardStagedSlot>(_onDiscardStagedSlot);
     on<DiscardAllStagedChanges>(_onDiscardAllStagedChanges);
     on<RehydrateStagedChanges>(_onRehydrateStagedChanges);
+    on<SaveStagedChanges>(_onSaveStagedChanges);
   }
 
   /// Load all assignments with real-time updates
@@ -1524,6 +1525,116 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     });
 
     return conflicts;
+  }
+
+  /// Atomically persist every staged change (see [SaveStagedChanges]).
+  ///
+  /// Converges each applied staged slot to its desired state against the
+  /// CURRENT DB — read from `_repository.getCurrentAssignments()`, the raw
+  /// pre-merge cache, exactly as [classifyStagedConflicts] does. This is
+  /// deliberate and MUST NOT be read from `state.slots`/`AssignmentSlotsLoaded`:
+  /// those slots already have staging overlaid on top
+  /// (`_mergeSlotsWithOptimisticUpdates`), so `slot.currentAssignment` is the
+  /// MERGED/desired value, not the raw DB doc. Sourcing the DB occupant from
+  /// there would mis-route a staged fill into `updates` (updating a document
+  /// id that was never written -> batch fails) and would silently drop a
+  /// staged clear (the merged slot already reads as empty).
+  Future<void> _onSaveStagedChanges(
+      SaveStagedChanges event, Emitter<AssignmentState> emit) async {
+    if (_stagedChanges.isEmpty) {
+      _completeActionSuccess(event.completion, 'אין שינויים לשמירה');
+      return;
+    }
+
+    final resolutions = event.resolutions ?? const {};
+    final dbByKey = <String, Assignment>{
+      for (final a in _repository.getCurrentAssignments())
+        StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex):
+            a,
+    };
+
+    final creates = <Assignment>[];
+    final updates = <Assignment>[];
+    final deletes = <String>[];
+    final appliedKeys = <String>[];
+
+    for (final entry in _stagedChanges.entries) {
+      final key = entry.key;
+      final c = entry.value;
+
+      // takeDb => the admin chose to keep the DB state; drop this staged
+      // change entirely (no write), but still remove it from staging.
+      if (resolutions[key] == ConflictResolution.takeDb) {
+        appliedKeys.add(key);
+        continue;
+      }
+
+      final dbAssignment = dbByKey[key];
+      if (c.isClear) {
+        if (dbAssignment != null) deletes.add(dbAssignment.id);
+        // else: staged clear over an already-empty DB slot -> no-op write.
+      } else if (dbAssignment == null) {
+        // Fresh fill (or an overridden off-quota create for a vanished slot).
+        creates.add(_assignmentFromStaged(c, id: c.desiredAssignmentId));
+      } else {
+        // Converge the EXISTING DB doc to the desired state, preserving its
+        // id and createdAt (the backend `batch.update` writes the full doc,
+        // so a fresh createdAt here would silently overwrite the original).
+        updates.add(_assignmentFromStaged(
+          c,
+          id: dbAssignment.id,
+          createdAt: dbAssignment.createdAt,
+        ));
+      }
+      appliedKeys.add(key);
+    }
+
+    _emitOrLog(emit, const AssignmentOperating('saving'));
+    try {
+      await _repository.saveAssignmentsBatch(
+        creates: creates,
+        updates: updates,
+        deletes: deletes,
+      );
+      for (final k in appliedKeys) {
+        _stagedChanges.remove(k);
+      }
+      // Cache is cleared ONLY on success — a failed write must leave staging
+      // (in-memory AND cached) intact so the admin can retry.
+      await _userCache.clearPendingAssignmentChanges();
+      _completeActionSuccess(event.completion,
+          'נשמרו ${creates.length + updates.length + deletes.length} שינויים');
+      add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+    } catch (e) {
+      _completeActionFailure(event.completion, 'שמירה נכשלה: $e');
+      add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+    }
+  }
+
+  /// Build the Assignment doc to write for a staged change. [id] is the
+  /// target document id (the existing DB doc's id for an update, or the
+  /// staged change's stable [StagedAssignmentChange.desiredAssignmentId] for
+  /// a create). [createdAt] should be the existing DB doc's createdAt for an
+  /// update (preserved, not reset); omitted (defaults to now) for a create.
+  Assignment _assignmentFromStaged(
+    StagedAssignmentChange c, {
+    required String id,
+    DateTime? createdAt,
+  }) {
+    final now = DateTime.now();
+    return Assignment(
+      id: id,
+      eventId: c.eventId,
+      teamMemberId: c.desiredMemberId!,
+      roleType: c.roleType,
+      slotIndex: c.slotIndex,
+      status: AssignmentStatus.confirmed,
+      notes: c.desiredNotes,
+      semanticLabelId: c.desiredSemanticLabelId,
+      alternativePhoneNumber: c.desiredAltPhone,
+      createdAt: createdAt ?? now,
+      updatedAt: now,
+    );
   }
 
   /// Optimistic create assignment handler

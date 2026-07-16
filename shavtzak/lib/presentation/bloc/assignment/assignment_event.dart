@@ -6,6 +6,7 @@ import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../screens/assignment/models/assignment_slot.dart';
+import 'models/assignment_conflict.dart';
 
 /// Base event class for AssignmentBloc
 abstract class AssignmentEvent extends Equatable {
@@ -403,4 +404,21 @@ class DiscardAllStagedChanges extends AssignmentEvent {
 /// Reload staged changes from UserCacheService (crash recovery / app resume).
 class RehydrateStagedChanges extends AssignmentEvent {
   const RehydrateStagedChanges();
+}
+
+/// Atomically persist every staged change to the database, converging each
+/// applied slot to its desired state against the CURRENT (raw) DB, then
+/// clear staging + cache on success only (retry-safe on failure).
+///
+/// [resolutions] maps slotKey -> the admin's choice for a conflicted slot
+/// (see AssignmentConflict / classifyStagedConflicts): `takeDb` drops that
+/// staged change entirely (no write); any other value (including a slot
+/// absent from the map, i.e. no conflict) proceeds with the normal
+/// converge-to-desired write.
+class SaveStagedChanges extends AssignmentEvent {
+  final Map<String, ConflictResolution>? resolutions; // slotKey -> decision
+  final CrudActionCompleter? completion;
+  const SaveStagedChanges({this.resolutions, this.completion});
+  @override
+  List<Object?> get props => [resolutions];
 }
