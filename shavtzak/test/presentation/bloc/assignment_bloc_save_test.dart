@@ -303,4 +303,58 @@ void main() {
     expect(cached, hasLength(1));
     expect(cached.single['desiredMemberId'], 'm1');
   });
+
+  test(
+      'a second SaveStagedChanges dispatched while one is already in flight '
+      'is rejected by the re-entrancy guard (no double write)', () async {
+    // Backs the batch write with a Completer so the test controls exactly
+    // when it resolves, keeping the first save "in flight" on demand.
+    final batchCompleter = Completer<void>();
+    when(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+    )).thenAnswer((_) => batchCompleter.future);
+
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    assignmentStream.add(const <Assignment>[]); // DB starts empty
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final emptyMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+    // Stage m1 into the empty medic slot.
+    bloc.add(StageMemberChange(slot: emptyMedicSlot, member: member('m1')));
+    await pumpEventQueue();
+    expect(bloc.hasStagedChanges, isTrue);
+
+    // First save: reaches the awaited batch write and pends there
+    // (batchCompleter is not yet resolved).
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    // Second save dispatched WHILE the first is still in flight. flutter_bloc's
+    // default event transformer runs same-type events concurrently, so
+    // without the _saveInFlight guard this would call saveAssignmentsBatch a
+    // second time — a double write.
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    // Let the one legitimate write complete.
+    batchCompleter.complete();
+    await pumpEventQueue();
+
+    verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+    )).called(1);
+    expect(bloc.hasStagedChanges, isFalse); // cleared by the one save that ran
+  });
 }

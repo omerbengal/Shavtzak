@@ -113,6 +113,20 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// True when there is at least one unsaved staged change.
   bool get hasStagedChanges => _stagedChanges.isNotEmpty;
 
+  /// Number of unsaved staged changes. Unlike reading
+  /// `state.stagedSlotKeys.length`, this is correct regardless of the
+  /// bloc's currently emitted state (e.g. during `AssignmentOperating`
+  /// while a save is in flight, when state is no longer
+  /// `AssignmentSlotsLoaded`) — leave-guards must use this, not a
+  /// state-type branch, to get an accurate count.
+  int get stagedCount => _stagedChanges.length;
+
+  /// True while a SaveStagedChanges write is in flight. Guards against a
+  /// second concurrent SaveStagedChanges dispatch (flutter_bloc runs
+  /// same-type events concurrently by default) double-submitting the same
+  /// staged changes as two separate batch writes.
+  bool _saveInFlight = false;
+
   AssignmentBloc(
     this._repository,
     this._eventRepository,
@@ -1545,6 +1559,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _completeActionSuccess(event.completion, 'אין שינויים לשמירה');
       return;
     }
+    if (_saveInFlight) {
+      _completeActionFailure(event.completion, 'שמירה כבר מתבצעת');
+      return;
+    }
+    _saveInFlight = true;
 
     final resolutions = event.resolutions ?? const {};
     final dbByKey = <String, Assignment>{
@@ -1608,6 +1627,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     } catch (e) {
       _completeActionFailure(event.completion, 'שמירה נכשלה: $e');
       add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+    } finally {
+      _saveInFlight = false;
     }
   }
 

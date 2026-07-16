@@ -283,9 +283,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   Future<bool> _confirmLeaveIfDirty() async {
     final bloc = context.read<AssignmentBloc>();
     if (!bloc.hasStagedChanges) return true;
-    final count = bloc.state is AssignmentSlotsLoaded
-        ? (bloc.state as AssignmentSlotsLoaded).stagedSlotKeys.length
-        : (_lastSlotsState?.stagedSlotKeys.length ?? 0);
+    final count = bloc.stagedCount;
     final decision = await showUnsavedChangesDialog(context, count: count);
     if (!mounted) return false;
     if (decision == LeaveDecision.leave) return true;

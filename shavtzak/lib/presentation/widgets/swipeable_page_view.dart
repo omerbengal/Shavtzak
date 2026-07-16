@@ -10,7 +10,6 @@ import '../../core/services/environment_service.dart';
 import '../../core/utils/crud_action_result.dart';
 import '../bloc/assignment/assignment_bloc.dart';
 import '../bloc/assignment/assignment_event.dart';
-import '../bloc/assignment/assignment_state.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
 import '../screens/assignment/widgets/unsaved_changes_dialog.dart';
@@ -157,10 +156,7 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
     if (widget.navigationShell.currentIndex == 3) {
       final assignmentBloc = context.read<AssignmentBloc>();
       if (assignmentBloc.hasStagedChanges) {
-        final blocState = assignmentBloc.state;
-        final stagedCount = blocState is AssignmentSlotsLoaded
-            ? blocState.stagedSlotKeys.length
-            : 0;
+        final stagedCount = assignmentBloc.stagedCount;
         final decision =
             await showUnsavedChangesDialog(context, count: stagedCount);
         if (!mounted) return;
