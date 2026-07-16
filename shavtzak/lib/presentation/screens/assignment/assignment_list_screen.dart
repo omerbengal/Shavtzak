@@ -86,6 +86,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   void initState() {
     super.initState();
     context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+    context.read<AssignmentBloc>().add(const RehydrateStagedChanges());
   }
 
   @override
@@ -159,24 +160,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     final completion = Completer<CrudActionResult>();
     dispatch(completion);
     return await completion.future;
-  }
-
-  Future<CrudActionResult> _runBlockingMutation({
-    required String message,
-    required void Function(CrudActionCompleter completion) dispatch,
-    bool showErrorSnackBar = true,
-  }) async {
-    if (_isMutationInFlight) {
-      return const CrudActionResult.failure('פעולה אחרת עדיין מתבצעת');
-    }
-
-    _startMutation(message);
-    final result = await _dispatchMutation(
-      dispatch,
-      showErrorSnackBar: showErrorSnackBar,
-    );
-    _finishMutation();
-    return result;
   }
 
   Widget _buildMutationDialogOverlay() {
@@ -1472,6 +1455,15 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// Handle dismissing a slot - removes role slot from event (reduces capacity)
   /// If the slot is filled, also deletes the assignment
   Future<void> _handleSlotDismiss(AssignmentSlot slot) async {
+    // Drop any staged edit for this slot first so a pending stage can't
+    // resurrect it after the immediate delete below removes the underlying
+    // assignment/quota.
+    context.read<AssignmentBloc>().add(
+          DiscardStagedSlot(
+            '${slot.event.id}_${slot.role.key}_${slot.slotIndex}',
+          ),
+        );
+
     if (_isMutationInFlight) {
       return;
     }
@@ -1578,7 +1570,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     final formKey = GlobalKey<FormState>();
     String? selectedSemanticLabelId = assignment.semanticLabelId;
     final inlineCreatedLabels = <AssignmentLabel>[];
-    bool isSaving = false;
 
     await showDialog<void>(
       context: context,
@@ -1649,48 +1640,46 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   InkWell(
-                                    onTap: isSaving
-                                        ? null
-                                        : () async {
-                                            Logger.action(
-                                                'open:assignmentLabelPicker', {
-                                              'assignmentId': assignment.id,
-                                            });
-                                            await _settleDialogFocus(
-                                              dialogContext,
-                                            );
-                                            if (!dialogContext.mounted) {
-                                              return;
-                                            }
+                                    onTap: () async {
+                                      Logger.action(
+                                          'open:assignmentLabelPicker', {
+                                        'assignmentId': assignment.id,
+                                      });
+                                      await _settleDialogFocus(
+                                        dialogContext,
+                                      );
+                                      if (!dialogContext.mounted) {
+                                        return;
+                                      }
 
-                                            final result =
-                                                await _showAssignmentLabelPickerDialog(
-                                              dialogContext,
-                                              allLabels: allLabels,
-                                              availableLabels: availableLabels,
-                                              selectedLabelId:
-                                                  selectedSemanticLabelId,
-                                            );
-                                            if (result == null ||
-                                                !dialogContext.mounted) {
-                                              return;
-                                            }
+                                      final result =
+                                          await _showAssignmentLabelPickerDialog(
+                                        dialogContext,
+                                        allLabels: allLabels,
+                                        availableLabels: availableLabels,
+                                        selectedLabelId:
+                                            selectedSemanticLabelId,
+                                      );
+                                      if (result == null ||
+                                          !dialogContext.mounted) {
+                                        return;
+                                      }
 
-                                            setDialogState(() {
-                                              if (result.createdLabel != null) {
-                                                inlineCreatedLabels.removeWhere(
-                                                  (label) =>
-                                                      label.id ==
-                                                      result.createdLabel!.id,
-                                                );
-                                                inlineCreatedLabels.add(
-                                                  result.createdLabel!,
-                                                );
-                                              }
-                                              selectedSemanticLabelId =
-                                                  result.selectedLabelId;
-                                            });
-                                          },
+                                      setDialogState(() {
+                                        if (result.createdLabel != null) {
+                                          inlineCreatedLabels.removeWhere(
+                                            (label) =>
+                                                label.id ==
+                                                result.createdLabel!.id,
+                                          );
+                                          inlineCreatedLabels.add(
+                                            result.createdLabel!,
+                                          );
+                                        }
+                                        selectedSemanticLabelId =
+                                            result.selectedLabelId;
+                                      });
+                                    },
                                     borderRadius: BorderRadius.circular(8),
                                     child: InputDecorator(
                                       decoration: InputDecoration(
@@ -1749,7 +1738,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               fillColor: Colors.grey.shade50,
                             ),
                             autofocus: false,
-                            enabled: !isSaving,
                           ),
                           const SizedBox(height: 16),
                           TextFormField(
@@ -1759,7 +1747,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                             textAlign: TextAlign.center,
                             inputFormatters: [PhoneNumberTextInputFormatter()],
                             validator: Validators.validatePhoneNumber,
-                            enabled: !isSaving,
                             decoration: InputDecoration(
                               labelText: 'טלפון חד פעמי לשיבוץ',
                               hintText: '05X-XXXXXXX',
@@ -1779,82 +1766,48 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 ),
                 actions: [
                   TextButton(
-                    onPressed: isSaving
-                        ? null
-                        : () async {
-                            Logger.action('tap:cancel:notesDialog');
-                            await _settleDialogFocus(dialogContext);
-                            if (!dialogContext.mounted) {
-                              return;
-                            }
-                            Navigator.of(dialogContext).pop();
-                          },
+                    onPressed: () async {
+                      Logger.action('tap:cancel:notesDialog');
+                      await _settleDialogFocus(dialogContext);
+                      if (!dialogContext.mounted) {
+                        return;
+                      }
+                      Navigator.of(dialogContext).pop();
+                    },
                     child: const Text('ביטול'),
                   ),
                   ElevatedButton(
-                    onPressed: isSaving
-                        ? null
-                        : () async {
-                            Logger.action('tap:saveNotes', {
-                              'assignmentId': assignment.id,
-                            });
-                            final assignmentBloc =
-                                context.read<AssignmentBloc>();
-                            if (!formKey.currentState!.validate()) {
-                              return;
-                            }
+                    onPressed: () async {
+                      Logger.action('tap:saveNotes', {
+                        'assignmentId': assignment.id,
+                      });
+                      final assignmentBloc = context.read<AssignmentBloc>();
+                      if (!formKey.currentState!.validate()) {
+                        return;
+                      }
 
-                            setDialogState(() {
-                              isSaving = true;
-                            });
+                      final phone = phoneController.text.trim();
+                      assignmentBloc.add(
+                        StageNotesChange(
+                          slot: slot,
+                          notes: notesController.text.trim(),
+                          semanticLabelId: selectedSemanticLabelId,
+                          alternativePhoneNumber:
+                              phone.isEmpty ? null : phone,
+                        ),
+                      );
 
-                            await _settleDialogFocus(dialogContext);
-                            final phone = phoneController.text;
-                            final result = await _dispatchMutation(
-                              (completion) => assignmentBloc.add(
-                                UpdateAssignmentNotes(
-                                  assignment.id,
-                                  notesController.text,
-                                  semanticLabelId: selectedSemanticLabelId,
-                                  alternativePhoneNumber:
-                                      phone.isNotEmpty ? phone : null,
-                                  completion: completion,
-                                ),
-                              ),
-                              showErrorSnackBar: false,
-                            );
-
-                            if (!dialogContext.mounted) {
-                              return;
-                            }
-
-                            if (result.isFailure) {
-                              setDialogState(() {
-                                isSaving = false;
-                              });
-                              return;
-                            }
-
-                            await _settleDialogFocus(dialogContext);
-                            if (!dialogContext.mounted) {
-                              return;
-                            }
-                            Navigator.of(dialogContext).pop();
-                          },
+                      await _settleDialogFocus(dialogContext);
+                      if (!dialogContext.mounted) {
+                        return;
+                      }
+                      Navigator.of(dialogContext).pop();
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
                       foregroundColor: Colors.white,
                     ),
-                    child: isSaving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('שמור'),
+                    child: const Text('שמור'),
                   ),
                 ],
               ),
@@ -2756,15 +2709,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   Future<void> _handleClearAssignment(AssignmentSlot slot) async {
     if (slot.currentAssignment != null) {
-      await _runBlockingMutation(
-        message: 'מוחק שיבוץ...',
-        dispatch: (completion) => context.read<AssignmentBloc>().add(
-              DeleteAssignment(
-                slot.currentAssignment!.id,
-                completion: completion,
-              ),
-            ),
-      );
+      context.read<AssignmentBloc>().add(
+            StageMemberChange(slot: slot, member: null),
+          );
     }
   }
 
@@ -3117,49 +3064,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return;
     }
 
-    // Create assignment object
-    final assignment = slot.currentAssignment != null
-        ? slot.currentAssignment!.copyWith(
-            teamMemberId: selectedMember.id,
-            teamMember: selectedMember,
-            updatedAt: DateTime.now(),
-          )
-        : Assignment(
-            id: const Uuid().v4(),
-            eventId: slot.event.id,
-            teamMemberId: selectedMember.id,
-            roleType: slot.role.key,
-            slotIndex: slot.slotIndex,
-            status: AssignmentStatus.confirmed,
-            notes: '',
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-            event: slot.event,
-            teamMember: selectedMember,
-          );
-
-    // Use optimistic path with bypass flag to skip conflict checks
-    await _runBlockingMutation(
-      message: 'מעדכן שיבוץ...',
-      dispatch: (completion) {
-        if (slot.currentAssignment != null) {
-          context.read<AssignmentBloc>().add(
-                UpdateAssignment(
-                  assignment,
-                  completion: completion,
-                  bypassAvailability: true,
-                ),
-              );
-        } else {
-          context.read<AssignmentBloc>().add(
-                CreateAssignmentWithBypass(
-                  assignment,
-                  completion: completion,
-                ),
-              );
-        }
-      },
-    );
+    // Stage the change instantly (no write yet). Conflict handling (bypass
+    // or not) now happens at Save time, so the bypass distinction is moot
+    // here — both handlers stage the same way.
+    context.read<AssignmentBloc>().add(
+          StageMemberChange(slot: slot, member: selectedMember),
+        );
   }
 
   Future<void> _handleAssignmentChange(
@@ -3173,47 +3083,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return;
     }
 
-    // Create assignment object
-    final assignment = slot.currentAssignment != null
-        ? slot.currentAssignment!.copyWith(
-            teamMemberId: selectedMember.id,
-            teamMember: selectedMember,
-            updatedAt: DateTime.now(),
-          )
-        : Assignment(
-            id: const Uuid().v4(),
-            eventId: slot.event.id,
-            teamMemberId: selectedMember.id,
-            roleType: slot.role.key,
-            slotIndex: slot.slotIndex,
-            status: AssignmentStatus.confirmed,
-            notes: '',
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-            event: slot.event,
-            teamMember: selectedMember,
-          );
-
-    await _runBlockingMutation(
-      message: 'מעדכן שיבוץ...',
-      dispatch: (completion) {
-        if (slot.currentAssignment != null) {
-          context.read<AssignmentBloc>().add(
-                UpdateAssignment(
-                  assignment,
-                  completion: completion,
-                ),
-              );
-        } else {
-          context.read<AssignmentBloc>().add(
-                CreateAssignment(
-                  assignment,
-                  completion: completion,
-                ),
-              );
-        }
-      },
-    );
+    // Stage the change instantly (no write yet); the actual write happens
+    // later when the admin saves all staged changes.
+    context.read<AssignmentBloc>().add(
+          StageMemberChange(slot: slot, member: selectedMember),
+        );
   }
 
   String _formatDate(DateTime date) {
