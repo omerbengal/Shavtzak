@@ -2774,6 +2774,32 @@ function assignmentDocFromJson(assignment: Record<string, unknown>): Record<stri
   });
 }
 
+// Pure planning step for assignment.saveBatch: partitions the raw payload
+// into id+doc pairs (via assignmentDocFromJson) for creates/updates, and
+// passes deletes through untouched. Kept side-effect-free (no Firestore
+// reads/writes) so it can be unit-tested directly — see
+// assignment_save_batch.test.ts. The 'assignment.saveBatch' case in
+// executeMutation() consumes this to build one atomic db.batch().
+export function planAssignmentSaveBatch(payload: {
+  creates?: Record<string, unknown>[];
+  updates?: Record<string, unknown>[];
+  deletes?: string[];
+}): {
+  creates: Array<{id: string; doc: Record<string, unknown>}>;
+  updates: Array<{id: string; doc: Record<string, unknown>}>;
+  deletes: string[];
+} {
+  const shape = (a: Record<string, unknown>) => ({
+    id: requireString(a['id'], 'assignment.id'),
+    doc: assignmentDocFromJson(a),
+  });
+  return {
+    creates: (payload.creates ?? []).map(shape),
+    updates: (payload.updates ?? []).map(shape),
+    deletes: payload.deletes ?? [],
+  };
+}
+
 function assignmentLabelDocFromJson(
   label: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -4215,6 +4241,80 @@ async function executeMutation(
         count: assignments.length,
       });
       return {ok: true};
+    }
+
+    case 'assignment.saveBatch': {
+      requireAdmin(actor);
+      const creates = (payload['creates'] as Record<string, unknown>[]) ?? [];
+      const updates = (payload['updates'] as Record<string, unknown>[]) ?? [];
+      const deletes = (payload['deletes'] as string[]) ?? [];
+
+      // Validate every create/update up-front (reads happen before the batch).
+      for (const a of creates) {
+        requireString(a['id'], 'assignment.id');
+        await validateAssignmentPayload(db, collections, a, undefined, {
+          bypassAvailability: true,
+        });
+      }
+      for (const a of updates) {
+        const id = requireString(a['id'], 'assignment.id');
+        await validateAssignmentPayload(db, collections, a, id, {
+          bypassAvailability: true,
+        });
+      }
+
+      const plan = planAssignmentSaveBatch({creates, updates, deletes});
+
+      // Capture "before" state of updated/deleted docs for audit.
+      const before = new Map<string, Record<string, unknown>>();
+      for (const {id} of plan.updates) {
+        const snap = await db.collection(collections.assignments).doc(id).get();
+        if (snap.exists) before.set(id, snap.data() ?? {});
+      }
+      for (const id of plan.deletes) {
+        const snap = await db.collection(collections.assignments).doc(id).get();
+        if (snap.exists) before.set(id, snap.data() ?? {});
+      }
+
+      // One atomic batch (≤500 ops — a meeting is far under).
+      const batch = db.batch();
+      for (const {id, doc} of plan.creates) {
+        batch.create(db.collection(collections.assignments).doc(id), doc);
+      }
+      for (const {id, doc} of plan.updates) {
+        batch.update(db.collection(collections.assignments).doc(id), doc);
+      }
+      for (const id of plan.deletes) {
+        batch.delete(db.collection(collections.assignments).doc(id));
+      }
+      await batch.commit();
+
+      // Audit each op (best-effort, after the atomic commit succeeded).
+      for (const {id, doc} of plan.creates) {
+        await writeAuditLog(db, collections, actor, 'assignment.insert', 'assignment', id, {}, {
+          after: doc,
+        });
+      }
+      for (const {id, doc} of plan.updates) {
+        await writeAuditLog(db, collections, actor, 'assignment.update', 'assignment', id, {}, {
+          before: before.get(id) ?? {},
+          after: doc,
+        });
+      }
+      for (const id of plan.deletes) {
+        await writeAuditLog(db, collections, actor, 'assignment.delete', 'assignment', id, {}, {
+          before: before.get(id) ?? {},
+        });
+      }
+
+      return {
+        ok: true,
+        counts: {
+          created: plan.creates.length,
+          updated: plan.updates.length,
+          deleted: plan.deletes.length,
+        },
+      };
     }
 
     case 'utility.clearAllData': {
