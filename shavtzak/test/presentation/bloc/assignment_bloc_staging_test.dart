@@ -193,6 +193,7 @@ void main() {
     expect(medicSlot.currentAssignment!.teamMemberId, 'm1');
     expect(after.stagedSlotKeys, contains('e1_medic_0'));
     expect(bloc.hasStagedChanges, isTrue);
+    expect((bloc.state as AssignmentSlotsLoaded).pendingOperations['e1_medic_0']!.type, PendingOperationType.createAssignment);
 
     // Mirrored to cache (crash recovery) — awaited, not fire-and-forget.
     final cached = await UserCacheService().getPendingAssignmentChanges();
@@ -267,6 +268,7 @@ void main() {
         .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
     expect(after.stagedSlotKeys, contains('e1_medic_0'));
     expect(bloc.hasStagedChanges, isTrue);
+    expect((bloc.state as AssignmentSlotsLoaded).pendingOperations['e1_medic_0']!.type, PendingOperationType.updateAssignment);
     // The occupant is unchanged — only notes were staged.
     expect(medicSlot.currentAssignment!.teamMemberId, 'm1');
     expect(medicSlot.currentAssignment!.notes, 'הערה חשובה');
