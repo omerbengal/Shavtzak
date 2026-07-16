@@ -29,10 +29,16 @@ void main() {
       creates: [a('c1')], updates: [a('u1')], deletes: ['d1'],
     );
 
-    verify(db.saveAssignmentsBatch(
-      creates: argThat(hasLength(1), named: 'creates'),
-      updates: argThat(hasLength(1), named: 'updates'),
-      deletes: ['d1'],
-    )).called(1);
+    final captured = verify(db.saveAssignmentsBatch(
+      creates: captureAnyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: captureAnyNamed('deletes'),
+    )).captured;
+    final creates = captured[0] as List<Assignment>;
+    final updates = captured[1] as List<Assignment>;
+    final deletes = captured[2] as List<String>;
+    expect(creates.single.id, 'c1');   // a swap would make this 'u1'
+    expect(updates.single.id, 'u1');
+    expect(deletes, ['d1']);
   });
 }
