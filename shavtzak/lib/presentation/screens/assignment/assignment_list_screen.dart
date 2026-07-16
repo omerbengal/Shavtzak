@@ -240,6 +240,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md
   /// ("Discard" — "All-at-once").
   Future<void> _onDiscardAll() async {
+    if (_isMutationInFlight) return;
     final bloc = context.read<AssignmentBloc>();
     final blocState = bloc.state;
     final count = blocState is AssignmentSlotsLoaded
@@ -536,7 +537,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           builder: (context, state) {
             final stagedCount = state is AssignmentSlotsLoaded
                 ? state.stagedSlotKeys.length
-                : 0;
+                : (_lastSlotsState?.stagedSlotKeys.length ?? 0);
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: [
