@@ -158,10 +158,12 @@ void main() {
     )).thenAnswer((_) async => const <Assignment>[]);
     when(roleRepo.getAllRoles()).thenAnswer((_) async => [medicRole()]);
 
-    // Used by the RebuildAssignmentSlots (filter/rehydrate/save-rebuild) path.
-    when(eventRepo.getAllEvents()).thenAnswer((_) async => [futureEvent('e1')]);
-    when(assignmentRepo.getAllAssignments())
-        .thenAnswer((_) async => const <Assignment>[]);
+    // POST-WINDOWING (assignments-slot-build-unification, task 2a): the
+    // RebuildAssignmentSlots (stage/filter/rehydrate/save-rebuild) path no
+    // longer does a one-shot getAllEvents()/getAllAssignments() read — it now
+    // shares _windowEventsMap/getCurrentAssignments() with the live-stream
+    // path (seeded via each test's own event/assignment-stream emissions).
+    // No stubs needed here any more.
 
     // Default: the batch write succeeds. Overridden per-test for the failure case.
     when(assignmentRepo.saveAssignmentsBatch(
@@ -451,10 +453,6 @@ void main() {
   test(
       'a new edit staged during an in-flight save survives the success-path '
       'cache write instead of being wiped by a blanket clear', () async {
-    // Two future events so there are two independent empty slots to stage.
-    when(eventRepo.getAllEvents())
-        .thenAnswer((_) async => [futureEvent('e1'), futureEvent('e2')]);
-
     final batchCompleter = Completer<void>();
     when(assignmentRepo.saveAssignmentsBatch(
       creates: anyNamed('creates'),
@@ -466,9 +464,22 @@ void main() {
     addTearDown(() async => bloc.close());
     bloc.add(const LoadAssignmentSlots());
     await pumpEventQueue();
+    // Two future events so there are two independent empty slots to stage —
+    // POST-WINDOWING, Path A (RebuildAssignmentSlots, driven by staging/save
+    // below) reads events from _windowEventsMap, so both must be seeded via
+    // the event stream (the getAllEvents() override this test used to need
+    // is gone: Path A no longer calls it at all).
     eventStream.add([futureEvent('e1'), futureEvent('e2')]);
     roleStream.add([medicRole()]);
     assignmentStream.add(const <Assignment>[]); // both slots start empty
+    // e1 and e2 land on the SAME calendar day (futureEvent has no explicit
+    // day param), so staging both makes them same-day cross-event candidates
+    // for each other. That same-day loop needs a resolvable member map —
+    // POST-WINDOWING it reads _windowMembersMap (populated only via this
+    // stream), not the old getActiveTeamMembers() fetch — so, unlike before
+    // this task, this test must seed it explicitly or the rebuild after the
+    // second StageMemberChange below throws (empty-list .first fallback).
+    teamStream.add([member('m1'), member('m2')]);
     await pumpEventQueue();
 
     final loaded = bloc.state as AssignmentSlotsLoaded;

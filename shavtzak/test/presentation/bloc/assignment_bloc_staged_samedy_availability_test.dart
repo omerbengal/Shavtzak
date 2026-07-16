@@ -22,11 +22,18 @@
 //
 // Why StageMemberChange reaches the code under test: _onStageMemberChange
 // stages the edit then dispatches RebuildAssignmentSlots, whose handler
-// (_onRebuildAssignmentSlots) calls _buildSlotsFromAssignments with
-// `_repository.getAllAssignments()` (a ONE-SHOT fetch, not the live stream) —
-// so `assignmentRepo.getAllAssignments()` is stubbed with the DB assignment
-// (T -> Y) that stays fixed for the whole test, exactly mirroring an unsaved
-// stage sitting on top of an unchanged database.
+// (_onRebuildAssignmentSlots) rebuilds via _buildSlotsFromAssignments.
+//
+// POST-WINDOWING UPDATE (assignments-slot-build-unification, task 2a):
+// _onRebuildAssignmentSlots no longer does a one-shot getAllAssignments()
+// fetch — it now builds from the SAME windowed in-memory caches the
+// live-stream path uses (_repository.getCurrentAssignments() +
+// _windowEventsMap + _windowMembersMap filtered to active + _cachedRoles),
+// all seeded via loadTwoSameDayEvents()'s stream emissions below. Y's DB
+// assignment (T -> Y) stays fixed in that windowed cache for the whole
+// test — exactly mirroring an unsaved stage sitting on top of an unchanged
+// database, same intent as before, just reached via the live-stream cache
+// instead of a getAllAssignments() stub (which is no longer called at all).
 
 import 'dart:async';
 
@@ -174,13 +181,14 @@ void main() {
     )).thenAnswer((_) async => const <Assignment>[]);
     when(roleRepo.getAllRoles()).thenAnswer((_) async => [medicRole()]);
 
-    // Used by the RebuildAssignmentSlots (stage/filter/rehydrate) path — this
-    // is the ONE-SHOT read _buildSlotsFromAssignments uses, i.e. the DB truth
-    // that staged changes are laid on top of.
-    when(eventRepo.getAllEvents()).thenAnswer(
-        (_) async => [eventOnDay('x1', sharedDay), eventOnDay('y1', sharedDay)]);
-    when(assignmentRepo.getAllAssignments())
-        .thenAnswer((_) async => [assignment('aY', 'y1', 'T')]);
+    // POST-WINDOWING (task 2a): the RebuildAssignmentSlots (stage/filter/
+    // rehydrate) path no longer does a one-shot getAllEvents()/
+    // getAllAssignments() read — it shares _windowEventsMap/
+    // getCurrentAssignments() with the live-stream path (seeded via
+    // loadTwoSameDayEvents()'s stream emissions in each test below). No
+    // stubs needed here any more; kept out deliberately so a regression back
+    // to a one-shot fetch would show up as a MissingStubError instead of
+    // silently passing.
   });
 
   tearDown(() async {

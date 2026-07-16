@@ -2103,40 +2103,33 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   }
 
   /// Build complete slots state from assignments
-  /// Fetches latest events and team members, then builds slot grid
+  /// Takes already-scoped events/activeMembers/roles from the CALLER instead
+  /// of fetching them internally. _onRebuildAssignmentSlots (the only caller)
+  /// feeds this from the SAME windowed in-memory caches the live-stream path
+  /// (_onRebuildAssignmentSlotsFromData) uses —
+  /// _repository.getCurrentAssignments() + _extraPastAssignments,
+  /// _windowEventsMap + _extraPastEventsMap (then showPastEvents-filtered by
+  /// the caller), _windowMembersMap filtered to active, _cachedRoles —
+  /// instead of the unbounded getAllAssignments()/getAllEvents()/
+  /// getActiveTeamMembers()/getAllRoles() this method used to fetch itself.
+  /// This keeps the stage/filter/rehydrate/save rebuild path scoped to the
+  /// exact same 90-day-back/180-day-forward (+ paged extras) data window as
+  /// the live-stream path — see docs/superpowers/plans/
+  /// 2026-07-16-assignments-slot-build-unification.md ("Bug #3 root cause").
   Future<AssignmentSlotsLoaded> _buildSlotsFromAssignments(
-    List<Assignment> assignments, {
+    List<Assignment> assignments,
+    List<Event> events,
+    List<TeamMember> activeMembers,
+    List<Role> roles, {
     Set<String>? selectedEventIds,
   }) async {
-    // 1. Load all events
-    var events = await _eventRepository.getAllEvents();
-
-    // 2a. Deactivated events have no presence in the assignments grid
+    // Deactivated events have no presence in the assignments grid. Unlike
+    // showPastEvents (a caller-owned display toggle), this is unconditional,
+    // so it stays here rather than moving to the caller.
     events = events.where((event) => !event.isDeactivated).toList();
 
-    // 2b. Filter events based on showPastEvents flag
-    if (!FilterPersistence.showPastEvents) {
-      final now = DateTime.now();
-      // Only include events where end date >= today (start of day)
-      final todayStart = DateTime(now.year, now.month, now.day);
-      events = events
-          .where((event) => event.endDate
-              .isAfter(todayStart.subtract(const Duration(days: 1))))
-          .toList();
-    }
-
-    // 3. Load all active team members
-    final allMembers = await _teamRepository.getActiveTeamMembers();
-
-    // 4. Load roles and sort by sortOrder.
-    // Roles are global (window-independent) and kept live in _cachedRoles by
-    // the watchRoles() subscription; reuse the cache instead of re-fetching on
-    // every filter change. Fall back to a one-shot fetch if not yet seeded.
-    final allRoles = _cachedRoles.isNotEmpty
-        ? _cachedRoles
-        : await _roleRepository.getAllRoles();
     // Sort a COPY so the shared _cachedRoles list is never mutated in place.
-    final sortedRoles = [...allRoles]
+    final sortedRoles = [...roles]
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
     // Create a mapping from role key to Role for easy lookup
@@ -2215,9 +2208,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             // Check if events share dates
             if (eventsShareDay(event, otherEvent)) {
               final memberId = otherAssignment.teamMemberId;
-              final member = allMembers.firstWhere(
+              final member = activeMembers.firstWhere(
                 (m) => m.id == memberId,
-                orElse: () => allMembers.first, // Fallback
+                orElse: () => activeMembers.first, // Fallback
               );
 
               // Only add if member has the capability for current role and doesn't allow multiple assignments
@@ -2240,7 +2233,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           final availableMembersMap = <String, TeamMember>{};
           final alreadyAssignedMembersMap = <String, TeamMember>{};
 
-          for (final member in allMembers) {
+          for (final member in activeMembers) {
             // Check capability
             if (!member.canPerformRole(role.key)) continue;
 
@@ -2343,6 +2336,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     Emitter<AssignmentState> emit,
   ) async {
     try {
+      // First-paint gate: identical to the live-stream path
+      // (_onRebuildAssignmentSlotsFromData). Until the roles, events, AND
+      // assignments streams have each delivered at least once, the windowed
+      // in-memory caches below are not populated yet — suppress the rebuild
+      // rather than build against an empty/partial window.
+      if (!_slotsRolesReady || !_slotsEventsReady || !_slotsAssignmentsReady) {
+        return;
+      }
+
       // Determine which filter to use:
       // 1. If the event provides a filter (explicit change), use it
       // 2. Otherwise, use the last known filter stored in _currentEventFilter
@@ -2351,9 +2353,44 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Keep the internal field in sync
       _currentEventFilter = filterToUse;
 
-      // Build slots from database data (base state)
+      // Build from the SAME windowed in-memory caches the live-stream path
+      // (_onRebuildAssignmentSlotsFromData) uses — NOT an unbounded one-shot
+      // fetch. This is what keeps the stage/filter/rehydrate/save rebuild
+      // path scoped to the exact same 90-day-back/180-day-forward (+ paged
+      // extras) data window as the stream path, so a staged clear can never
+      // target an assignment the windowed Save path can't see (the
+      // "נשמרו 0 שינויים" / member-reappears bug).
+      final windowedAssignments = <Assignment>[
+        ..._repository.getCurrentAssignments(),
+        ..._extraPastAssignments,
+      ];
+      var windowedEvents = <String, Event>{
+        ..._windowEventsMap,
+        ..._extraPastEventsMap,
+      }.values.toList();
+      // Filter events based on showPastEvents flag — mirrors the
+      // filteredEvents step in _onRebuildAssignmentSlotsFromData. (Deactivated
+      // events are filtered inside _buildSlotsFromAssignments itself.)
+      if (!FilterPersistence.showPastEvents) {
+        final now = DateTime.now();
+        final todayStart = DateTime(now.year, now.month, now.day);
+        windowedEvents = windowedEvents
+            .where((e) => e.endDate
+                .isAfter(todayStart.subtract(const Duration(days: 1))))
+            .toList();
+      }
+      // Active-only — matches the previous getActiveTeamMembers() source, and
+      // fixes divergence #3 vs. the live-stream path's unfiltered member map
+      // (_windowMembersMap itself stays unfiltered for Path B in this task).
+      final windowedActiveMembers =
+          _windowMembersMap.values.where((m) => m.isActive).toList();
+
+      // Build slots from the windowed data (base state)
       final databaseSlots = await _buildSlotsFromAssignments(
-        await _repository.getAllAssignments(),
+        windowedAssignments,
+        windowedEvents,
+        windowedActiveMembers,
+        _cachedRoles,
         selectedEventIds: filterToUse,
       );
 

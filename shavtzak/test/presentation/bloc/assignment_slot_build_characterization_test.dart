@@ -6,15 +6,41 @@
 // Plan: docs/superpowers/plans/2026-07-16-assignments-slot-build-unification.md
 // Brief: .superpowers/sdd/task-1-brief.md
 //
+// POST-TASK-2A UPDATE (windowing Path A — see unify-task-2a-report.md):
+// Path A (_buildSlotsFromAssignments) no longer fetches anything itself. Its
+// signature is now `(assignments, events, activeMembers, roles, {selectedEventIds})`
+// — all four are supplied by the caller, _onRebuildAssignmentSlots, which now
+// builds them from the SAME windowed in-memory caches Path B uses
+// (_repository.getCurrentAssignments()+_extraPastAssignments,
+// _windowEventsMap+_extraPastEventsMap [then showPastEvents-filtered],
+// _windowMembersMap filtered to active, _cachedRoles) instead of the old
+// unbounded getAllAssignments()/getAllEvents()/getActiveTeamMembers()/
+// getAllRoles(). _onRebuildAssignmentSlots also now has the same first-paint
+// gate as Path B. Effects on the tests below:
+//   - Test #1/#2 (window scope) is FLIPPED: the far-future event is now
+//     absent from Path A too (see that test's updated body/comments).
+//   - Test #3 (inactive allowMultipleAssignments member) keeps its ORIGINAL
+//     assertions (Path A still excludes, Path B still includes) — the
+//     OBSERVABLE result didn't change, only the mechanism (active-filter over
+//     the windowed team-stream map, not a getActiveTeamMembers() fetch); its
+//     comments/stubs were updated to describe the new mechanism. Path B is
+//     untouched by Task 2a, so A and B still do NOT agree here — that's
+//     deferred to a later sub-task.
+//   - Test #4 (#11 selectedEventIds) and test #5 (#5 showPastEvents) are
+//     UNCHANGED — those divergences are out of scope for Task 2a and remain
+//     open for later sub-tasks.
+//
 // The two paths (both in lib/presentation/bloc/assignment/assignment_bloc.dart):
-//   Path A = _buildSlotsFromAssignments (~2107), reached via RebuildAssignmentSlots
-//            (_onRebuildAssignmentSlots, ~2341). Uses UNBOUNDED one-shot fetches:
-//            getAllAssignments() / getAllEvents() / getActiveTeamMembers().
+//   Path A = _buildSlotsFromAssignments (~2119), reached via RebuildAssignmentSlots
+//            (_onRebuildAssignmentSlots, ~2341). POST-2A: windowed, no fetches
+//            of its own (see update note above). PRE-2A it used UNBOUNDED
+//            one-shot fetches: getAllAssignments() / getAllEvents() /
+//            getActiveTeamMembers().
 //   Path B = the inline build inside _onRebuildAssignmentSlotsFromData
 //            (~2385-2643), reached by pushing data through the live Firestore
 //            streams. Uses the WINDOWED stream payload (+ _extraPastAssignments),
 //            re-stamps relations, has a first-paint gate, and filters .slots by
-//            selectedEventIds.
+//            selectedEventIds. Untouched by Task 2a.
 //
 // Every test below is named "PRE-REFACTOR SNAPSHOT" and states which
 // divergence (numbered per the plan's divergence table) it pins. Task 2 is
@@ -31,8 +57,11 @@
 //     assignment_bloc_save_test.dart's setUp).
 // Both the windowed streams (Path B) AND the one-shot fetches
 // getAllAssignments()/getAllEvents()/getActiveTeamMembers()/getAllRoles()
-// (Path A) are stubbed per-test (not in a single shared setUp default) so
-// each test can make them return DIFFERENT data and expose a divergence.
+// are stubbed per-test (not in a single shared setUp default) so each test
+// can make them return DIFFERENT data and expose a divergence. POST-2A: the
+// one-shot fetches are dead for Path A (it no longer calls them at all —
+// several tests below now assert that with verifyNever); they are kept
+// stubbed only where a test deliberately proves they're ignored.
 
 import 'dart:async';
 
@@ -41,7 +70,6 @@ import 'package:mockito/mockito.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/core/services/user_cache_service.dart';
-import 'package:shavtzak/core/utils/crud_action_result.dart';
 import 'package:shavtzak/core/utils/filter_persistence.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
@@ -269,12 +297,6 @@ void main() {
       final t2 = member('T2');
       final assignments = [assignment('aP', 'p1', 'T1')];
 
-      when(eventRepo.getAllEvents()).thenAnswer((_) async => [eventP, eventQ]);
-      when(assignmentRepo.getAllAssignments())
-          .thenAnswer((_) async => assignments);
-      when(teamRepo.getActiveTeamMembers()).thenAnswer((_) async => [t1, t2]);
-      when(roleRepo.getAllRoles()).thenAnswer((_) async => [medicRole()]);
-
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
 
@@ -289,8 +311,12 @@ void main() {
       // Path B: grid from the live-stream rebuild.
       final gridB = (bloc.state as AssignmentSlotsLoaded).slots;
 
-      // Path A: grid from the stage/filter/rehydrate rebuild, backed by the
-      // SAME underlying data via the one-shot fetches stubbed above.
+      // Path A: grid from the stage/filter/rehydrate rebuild. POST-WINDOWING,
+      // it is backed by the exact SAME windowed in-memory caches Path B just
+      // populated above (_windowEventsMap/getCurrentAssignments()/
+      // _windowMembersMap/_cachedRoles) — no one-shot fetches of its own —
+      // which is exactly why this baseline invariant (A==B on in-window
+      // data) now holds by construction rather than by coincidence.
       bloc.add(const RebuildAssignmentSlots());
       await pumpEventQueue();
       final gridA = (bloc.state as AssignmentSlotsLoaded).slots;
@@ -301,23 +327,28 @@ void main() {
     });
 
     test(
-        'PRE-REFACTOR SNAPSHOT (#1/#2 window scope + #3 root-cause chain — '
-        'THE BUG): an out-of-window (>180d) event/assignment is surfaced by '
-        'Path A but not Path B; staging a clear on it and Saving yields a '
-        'silent 0-write "success" AND drops the staged entry', () async {
-      // Outside the +180-day-forward window that Path B's live stream covers.
+        'PRE-REFACTOR SNAPSHOT (#1/#2 window scope — POST-WINDOWING FLIP: '
+        'Path A now agrees with B): an out-of-window (>180d) event/'
+        'assignment is absent from BOTH RebuildAssignmentSlots (A) and '
+        'RebuildAssignmentSlotsFromData (B), even though the now-dead '
+        'getAllEvents()/getAllAssignments() mocks still return it — Path A '
+        'no longer calls them at all, so the original "stage a clear on an '
+        'unreachable slot -> silent 0-write success + dropped staged entry" '
+        'chain can no longer even start via the normal window', () async {
+      // Outside the +180-day-forward window either path's live stream covers.
       final farDay = DateTime.now().add(const Duration(days: 400));
       final farEvent = eventOnDay('far1', farDay);
       final m1 = member('M1');
       final farAssignment = assignment('aFar', 'far1', 'M1');
 
-      // Path A (unbounded one-shot fetches) DOES include the far-future
-      // event + assignment.
+      // PRE-2A, Path A's unbounded one-shot fetches DID include the
+      // far-future event + assignment (that was the whole bug). Keep them
+      // stubbed to return it here so the assertions below prove the fix is
+      // structural (Path A never calls these anymore — see the verifyNever
+      // calls), not just "nothing happened to feed it".
       when(eventRepo.getAllEvents()).thenAnswer((_) async => [farEvent]);
       when(assignmentRepo.getAllAssignments())
           .thenAnswer((_) async => [farAssignment]);
-      when(teamRepo.getActiveTeamMembers()).thenAnswer((_) async => [m1]);
-      when(roleRepo.getAllRoles()).thenAnswer((_) async => [medicRole()]);
 
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
@@ -325,14 +356,17 @@ void main() {
       bloc.add(const LoadAssignmentSlots());
       await pumpEventQueue();
       // Path B (windowed streams) EXCLUDES the far-future event + assignment
-      // entirely — nothing in the -90d/+180d window mentions it.
+      // entirely — nothing in the -90d/+180d window mentions it. POST-2A,
+      // this is now ALSO the sole data source for Path A (_windowEventsMap /
+      // _repository.getCurrentAssignments()).
       eventStream.add(const []);
       roleStream.add([medicRole()]);
       teamStream.add([m1]);
       assignmentStream.add(const []);
       await pumpEventQueue();
 
-      // (b) A stream rebuild (Path B) does NOT contain the far-future slot.
+      // (b) A stream rebuild (Path B) does NOT contain the far-future slot —
+      // unchanged pre/post windowing.
       final afterStream = bloc.state as AssignmentSlotsLoaded;
       expect(
         afterStream.slots.where((s) => s.event.id == 'far1'),
@@ -341,60 +375,33 @@ void main() {
             'event must not appear',
       );
 
-      // (a) RebuildAssignmentSlots (Path A) DOES surface it, via the
-      // unbounded getAllAssignments()/getAllEvents() fetches.
+      // (a) POST-WINDOWING FLIP: RebuildAssignmentSlots (Path A) used to
+      // surface far1 here via the unbounded getAllEvents()/
+      // getAllAssignments() fetches stubbed above (PRE-2A). Now it builds
+      // from _windowEventsMap/_repository.getCurrentAssignments() — the
+      // SAME caches Path B just populated — so far1 is excluded from A too.
       bloc.add(const RebuildAssignmentSlots());
       await pumpEventQueue();
       final afterA = bloc.state as AssignmentSlotsLoaded;
-      final farSlot = afterA.slots.firstWhere((s) =>
-          s.event.id == 'far1' && s.role.key == 'medic' && s.slotIndex == 0);
-      expect(farSlot.currentAssignment?.teamMemberId, 'M1');
+      expect(
+        afterA.slots.where((s) => s.event.id == 'far1'),
+        isEmpty,
+        reason: 'POST-WINDOWING: Path A now builds from the same windowed '
+            'caches as Path B, so an out-of-window event can never reach the '
+            'grid via either rebuild path. There is no farSlot to stage a '
+            'clear on anymore — the "0 changes" chain the pre-refactor '
+            'version of this test pinned can no longer be triggered through '
+            'the normal window. (Fail-loud Save for any residual '
+            'out-of-band case is a separate, later hardening step.)',
+      );
 
-      // Stage a clear on the far-future slot. This is only reachable through
-      // Path A's grid (Path B never shows it), exactly like an admin editing
-      // via the assignments screen, which is fed by Path A's rebuilds while
-      // staging is active.
-      bloc.add(StageMemberChange(slot: farSlot, member: null));
-      await pumpEventQueue();
-      expect(bloc.hasStagedChanges, isTrue);
-
-      final completer = Completer<CrudActionResult>();
-      bloc.add(SaveStagedChanges(completion: completer));
-      await pumpEventQueue();
-
-      final captured = verify(assignmentRepo.saveAssignmentsBatch(
-        creates: captureAnyNamed('creates'),
-        updates: captureAnyNamed('updates'),
-        deletes: captureAnyNamed('deletes'),
-      )).captured;
-      final creates = captured[0] as List<Assignment>;
-      final updates = captured[1] as List<Assignment>;
-      final deletes = captured[2] as List<String>;
-
-      // (c) THE BUG, part 1: the batch write is a true no-op. dbByKey at Save
-      // time is built from the WINDOWED _repository.getCurrentAssignments()
-      // (+ _extraPastAssignments) — the far-future assignment was never
-      // cached there (Path A's rebuild never calls cacheCurrentAssignments),
-      // so the staged clear is classified 'clear-noop': nothing to delete.
-      expect(creates, isEmpty);
-      expect(updates, isEmpty);
-      expect(deletes, isEmpty);
-
-      // THE BUG, part 2: Save still reports this as an unqualified SUCCESS
-      // with "0 changes" — indistinguishable from "Save was clicked with
-      // nothing staged".
-      final result = await completer.future;
-      expect(result.isSuccess, isTrue);
-      expect(result.message, 'נשמרו 0 שינויים');
-
-      // THE BUG, part 3 (the user-visible symptom — "נשמרו 0 → member
-      // reappears"): despite writing NOTHING, the staged entry is
-      // unconditionally dropped from _stagedChanges (appliedKeys always
-      // includes a 'clear-noop' key, and every appliedKeys entry is removed
-      // from staging). The dirty marker disappears and the next rebuild
-      // reflects the untouched DB row — M1's assignment "reappears" as if
-      // the admin's clear had never happened.
-      expect(bloc.hasStagedChanges, isFalse);
+      // Structural guarantee behind the above: _buildSlotsFromAssignments no
+      // longer fetches anything itself (events/activeMembers/roles are now
+      // caller-supplied parameters), and _onRebuildAssignmentSlots no longer
+      // calls the old one-shot methods either. These mocks are proven dead,
+      // not just coincidentally unfed in this test.
+      verifyNever(eventRepo.getAllEvents());
+      verifyNever(assignmentRepo.getAllAssignments());
     });
 
     test(
@@ -448,11 +455,14 @@ void main() {
     });
 
     test(
-        'PRE-REFACTOR SNAPSHOT (#3 inactive allowMultipleAssignments member): '
-        'an inactive member with allowMultipleAssignments=true leaks into '
-        "Path B's availableMembers via the unfiltered team stream, but Path "
-        "A's getActiveTeamMembers() correctly excludes them at the source",
-        () async {
+        'PRE-REFACTOR SNAPSHOT (#3 inactive allowMultipleAssignments member '
+        '— mechanism updated POST-WINDOWING, same observable outcome): an '
+        'inactive member with allowMultipleAssignments=true leaks into Path '
+        "B's availableMembers via the unfiltered team stream; Path A still "
+        'excludes them, now via an active-only filter over the SAME windowed '
+        'team-stream map instead of a getActiveTeamMembers() fetch. Path B '
+        'is untouched by this task, so A and B still do NOT agree here '
+        '(deferred to a later sub-task)', () async {
       final day = DateTime.now().add(const Duration(days: 15));
       final ev = eventOnDay('r1', day);
       // Inactive: TeamMember.isAvailableForEventWithTime would normally
@@ -464,12 +474,12 @@ void main() {
       final ghost =
           member('ghost', isActive: false, allowMultipleAssignments: true);
 
-      when(eventRepo.getAllEvents()).thenAnswer((_) async => [ev]);
-      when(assignmentRepo.getAllAssignments()).thenAnswer((_) async => const []);
-      // Path A: the one-shot fetch is DB-filtered to active members only —
-      // ghost is correctly excluded at the source.
-      when(teamRepo.getActiveTeamMembers()).thenAnswer((_) async => const []);
-      when(roleRepo.getAllRoles()).thenAnswer((_) async => [medicRole()]);
+      // Deliberately WRONG/stale: claims ghost IS active-fetchable. POST-2A,
+      // Path A no longer calls getActiveTeamMembers() at all, so this must
+      // have NO effect on the outcome (see the verifyNever assertion below)
+      // — confirming the exclusion is driven by the new active-filter over
+      // _windowMembersMap, not by whatever this dead mock says.
+      when(teamRepo.getActiveTeamMembers()).thenAnswer((_) async => [ghost]);
 
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
@@ -479,7 +489,9 @@ void main() {
       eventStream.add([ev]);
       roleStream.add([medicRole()]);
       // Path B: watchTeamMembers() is UNFILTERED (every member regardless of
-      // isActive) — ghost lands in _windowMembersMap.
+      // isActive) — ghost lands in _windowMembersMap. POST-2A this is ALSO
+      // Path A's sole member source (filtered to active there; unfiltered
+      // for B, which is untouched by this task).
       teamStream.add([ghost]);
       assignmentStream.add(const []);
       await pumpEventQueue();
@@ -503,9 +515,17 @@ void main() {
       expect(
         medicSlotA.availableMembers.map((m) => m.id),
         isNot(contains('ghost')),
-        reason: 'Path A (stage/filter rebuild): getActiveTeamMembers() '
-            'excludes ghost at the source',
+        reason: 'POST-WINDOWING: Path A (stage/filter rebuild) excludes '
+            'ghost via an active-only filter over _windowMembersMap (the '
+            'SAME map Path B reads unfiltered above) — not via '
+            'getActiveTeamMembers(), which is proven dead below.',
       );
+
+      // Structural guarantee: the dead getActiveTeamMembers() stub above
+      // claims ghost IS active — if Path A still called it, ghost would have
+      // leaked into medicSlotA too. It didn't, and the call itself never
+      // happened.
+      verifyNever(teamRepo.getActiveTeamMembers());
     });
 
     test(
