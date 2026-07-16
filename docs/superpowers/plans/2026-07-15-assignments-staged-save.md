@@ -18,7 +18,7 @@
 - **Write path is backend-mediated:** never write assignment docs from client Firestore; always go through `_invokeMutation(operation, payload)` → the `api` Cloud Function.
 - **Atomic Save:** the batch is all-or-nothing. On failure, write nothing and keep the staging map + cache intact (retry-safe). Clear the cache ONLY on full success.
 - **Cloud Functions do NOT auto-deploy.** Any `functions/` change requires `firebase deploy --only functions`.
-- **Analyze gate:** `cd shavtzak && flutter analyze` must pass (baseline is 108 pre-existing infos; "clean" = zero NEW issues). Do not run the app — the user tests it.
+- **Analyze gate:** `cd shavtzak && flutter analyze` must pass. Baseline (measured 2026-07-16 on branch tip) = **107 issues (36 warnings + 71 infos, 0 errors)**; "clean" = zero NEW issues and zero errors. Do not flag the 36 pre-existing warnings as introduced. Do not run the app — the user tests it. (Baselines: flutter test 242 passing; functions npm test 102 passing.)
 - **Constructor:** `AssignmentBloc(assignmentRepo, eventRepo, teamRepo, roleRepo, calendarSyncBloc)` is positional; the 5th arg is nullable (`null` in tests). A new nullable 6th arg `userCacheService` is added by this plan (default `UserCacheService()`).
 
 ---
