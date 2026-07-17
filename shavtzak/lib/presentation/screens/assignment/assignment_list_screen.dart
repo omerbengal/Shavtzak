@@ -1051,6 +1051,136 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
   }
 
+  /// The optional "extra info" block shown beneath an assignment row — the
+  /// semantic-label chip, the notes card, and the alternative-phone card.
+  /// Shared by in-quota rows ([_buildSlotRow]) and off-quota rows
+  /// ([_buildOffQuotaRow]) so a note / label / phone still shows when a row
+  /// falls OUTSIDE its quota (e.g. after the role's quota was reduced). Returns
+  /// null when the assignment has nothing extra to show.
+  Widget? _buildAssignmentExtraInfo(Assignment? assignment) {
+    if (assignment == null) return null;
+    final hasNotes = assignment.notes.isNotEmpty;
+    final hasSemanticLabel = assignment.semanticLabel != null;
+    final hasAltPhone = assignment.alternativePhoneNumber != null &&
+        assignment.alternativePhoneNumber!.isNotEmpty;
+    if (!hasNotes && !hasSemanticLabel && !hasAltPhone) return null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Column(
+          children: [
+            if (hasSemanticLabel) ...[
+              Align(
+                alignment: Alignment.center,
+                child: AssignmentLabelChip(
+                  label: assignment.semanticLabel!,
+                  fontSize: 10,
+                  maxLines: 3,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+              ),
+              if (hasNotes || hasAltPhone) const SizedBox(height: 4),
+            ],
+            // Notes card
+            if (hasNotes)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.purple.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.note_alt_outlined,
+                      size: 14,
+                      color: Colors.purple.shade700,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: 'הערות לשיבוץ: ',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.purple.shade800,
+                              ),
+                            ),
+                            TextSpan(
+                              text: assignment.notes,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.purple.shade900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            // Alternative phone card
+            if (hasAltPhone) ...[
+              if (hasNotes) const SizedBox(height: 4),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.teal.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.teal.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.phone_android,
+                      size: 14,
+                      color: Colors.teal.shade700,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: 'טלפון חד פעמי לשיבוץ: ',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.teal.shade800,
+                              ),
+                            ),
+                            TextSpan(
+                              text: assignment.alternativePhoneNumber!,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.teal.shade900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSlotRow(AssignmentSlot slot, Set<String> stagedSlotKeys,
       Set<String> stagedGoneSlotKeys) {
     if (slot.isOffQuota) {
@@ -1063,16 +1193,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     // docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md.
     final isDirty = stagedSlotKeys.contains(_getSlotKey(slot));
 
-    final hasNotes = slot.isFilled &&
-        slot.currentAssignment != null &&
-        slot.currentAssignment!.notes.isNotEmpty;
-    final hasSemanticLabel =
-        slot.isFilled && slot.currentAssignment?.semanticLabel != null;
-    final hasAltPhone = slot.isFilled &&
-        slot.currentAssignment != null &&
-        slot.currentAssignment!.alternativePhoneNumber != null &&
-        slot.currentAssignment!.alternativePhoneNumber!.isNotEmpty;
-    final hasExtraInfo = hasSemanticLabel || hasNotes || hasAltPhone;
+    final extraInfo = _buildAssignmentExtraInfo(slot.currentAssignment);
 
     final rowContent = Container(
       decoration: BoxDecoration(
@@ -1307,126 +1428,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             ),
           ),
 
-          // Notes and alternative phone section
-          if (hasExtraInfo)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-              child: Directionality(
-                textDirection: TextDirection.rtl,
-                child: Column(
-                  children: [
-                    if (hasSemanticLabel) ...[
-                      Align(
-                        alignment: Alignment.center,
-                        child: AssignmentLabelChip(
-                          label: slot.currentAssignment!.semanticLabel!,
-                          fontSize: 10,
-                          maxLines: 3,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                        ),
-                      ),
-                      if (hasNotes || hasAltPhone) const SizedBox(height: 4),
-                    ],
-                    // Notes card
-                    if (hasNotes)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.purple.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.purple.shade200),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.note_alt_outlined,
-                              size: 14,
-                              color: Colors.purple.shade700,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text.rich(
-                                TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: 'הערות לשיבוץ: ',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.purple.shade800,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: slot.currentAssignment!.notes,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.purple.shade900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    // Alternative phone card
-                    if (hasAltPhone) ...[
-                      if (hasNotes) const SizedBox(height: 4),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.teal.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.teal.shade200),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.phone_android,
-                              size: 14,
-                              color: Colors.teal.shade700,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text.rich(
-                                TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: 'טלפון חד פעמי לשיבוץ: ',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.teal.shade800,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: slot.currentAssignment!
-                                          .alternativePhoneNumber!,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.teal.shade900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
+          // Notes / label / alt-phone section (shared with off-quota rows).
+          if (extraInfo != null) extraInfo,
         ],
       ),
     );
@@ -1537,6 +1540,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     // from the DB (there is nothing left in the DB to delete).
     final isDirty = stagedSlotKeys.contains(_getSlotKey(slot));
     final isGone = stagedGoneSlotKeys.contains(_getSlotKey(slot));
+    // A note / label / phone must still show when the row is out of quota.
+    final extraInfo = _buildAssignmentExtraInfo(assignment);
 
     return Dismissible(
       key: Key(
@@ -1643,72 +1648,78 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                       BorderSide(color: Colors.grey.shade400, width: 1.5)),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              flex: 3,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(slot.event.name,
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(slot.event.name,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 13)),
+                      Text(_formatEventDatesHebrew(slot.event),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey.shade600)),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Text(slot.role.hebrewName,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 13)),
-                  Text(_formatEventDatesHebrew(slot.event),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          fontSize: 11, color: Colors.grey.shade600)),
-                ],
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: Text(slot.role.hebrewName,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.bold)),
-            ),
-            Expanded(
-              flex: 3,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
+                          fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Mark first, so in RTL it sits to the RIGHT of the name —
-                      // matching the quota row's placement.
-                      if (slot.sameDayOtherEvents.isNotEmpty) ...[
-                        SameDayAssignmentMark(
-                          otherEvents: slot.sameDayOtherEvents,
-                          memberName: memberName,
-                          size: 18,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Mark first, so in RTL it sits to the RIGHT of the
+                          // name — matching the quota row's placement.
+                          if (slot.sameDayOtherEvents.isNotEmpty) ...[
+                            SameDayAssignmentMark(
+                              otherEvents: slot.sameDayOtherEvents,
+                              memberName: memberName,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Flexible(
+                            child: Text(memberName,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 13)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade200,
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        const SizedBox(width: 4),
-                      ],
-                      Flexible(
-                        child: Text(memberName,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 13)),
+                        child: const Text('מחוץ למכסה',
+                            style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade200,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text('מחוץ למכסה',
-                        style: TextStyle(
-                            fontSize: 10, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
+            if (extraInfo != null) extraInfo,
           ],
         ),
       ),
