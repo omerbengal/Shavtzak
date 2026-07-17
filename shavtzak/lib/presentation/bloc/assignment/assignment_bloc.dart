@@ -1508,6 +1508,40 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
+  /// Slot keys of dirty rows whose underlying DB assignment was DELETED
+  /// remotely while the row stayed dirty. A staged row qualifies when it is a
+  /// FILLED desired state (`desiredMemberId != null` — there is a visible row
+  /// to keep) that WAS anchored to a real DB assignment at stage time
+  /// (`baselineMemberId != null`), but no assignment for that slot exists in
+  /// the current raw DB snapshot (`getCurrentAssignments()` + paged extra-past,
+  /// the same source `classifyStagedConflicts`/Save read). Such rows are kept
+  /// visible (their staged state) and marked with the red diagonal-stripe
+  /// "deleted upstream, kept because dirty" overlay instead of vanishing.
+  ///
+  /// A staged CLEAR (desired empty) is intentionally excluded: the admin's
+  /// intent there IS to remove the row, so an empty row is correct. A fresh
+  /// FILL over a slot that started empty (`baselineMemberId == null`) is also
+  /// excluded: it is an ordinary pending fill, not a remote deletion.
+  Set<String> _computeStagedGoneKeys() {
+    if (_stagedChanges.isEmpty) return const {};
+    final dbKeys = <String>{
+      for (final a in [
+        ..._repository.getCurrentAssignments(),
+        ..._extraPastAssignments,
+      ])
+        StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex),
+    };
+    final gone = <String>{};
+    _stagedChanges.forEach((key, c) {
+      if (c.desiredMemberId != null &&
+          c.baselineMemberId != null &&
+          !dbKeys.contains(key)) {
+        gone.add(key);
+      }
+    });
+    return gone;
+  }
+
   /// Compare each staged change's baseline to the current DB slots and
   /// return the conflicts to resolve at Save. A slot conflicts when its
   /// current DB occupant/notes differ from the baseline captured at first
@@ -2367,6 +2401,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       annotatedSlots,
       selectedEventIds: selectedEventIds ?? {},
       stagedSlotKeys: _stagedChanges.keys.toSet(),
+      stagedGoneSlotKeys: _computeStagedGoneKeys(),
     );
   }
 
@@ -2479,6 +2514,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
             stagedSlotKeys: _stagedChanges.keys.toSet(),
+            stagedGoneSlotKeys: _computeStagedGoneKeys(),
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -2740,6 +2776,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
             stagedSlotKeys: _stagedChanges.keys.toSet(),
+            stagedGoneSlotKeys: _computeStagedGoneKeys(),
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בבניית שיבוצים: $e'));

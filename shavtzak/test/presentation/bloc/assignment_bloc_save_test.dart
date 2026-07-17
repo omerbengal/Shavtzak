@@ -719,4 +719,74 @@ void main() {
     expect(result.message, isNot(contains('דולגו')));
     expect(bloc.hasStagedChanges, isFalse);
   });
+
+  // --- stagedGoneSlotKeys: a dirty FILLED row whose DB backing is deleted ----
+  // --- remotely is kept visible + flagged (drives the red-stripe overlay) ----
+
+  test(
+      'a dirty filled row whose DB assignment is deleted remotely stays in the '
+      'grid and is reported in stagedGoneSlotKeys (not vanished)', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    final a1 = assignment('a1', 'e1', 'm1');
+    assignmentStream.add([a1]); // DB starts with m1 in medic-0
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final filledMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+    // Stage a notes edit (baseline m1, desired member unchanged = m1) => dirty,
+    // DB row still present => NOT "gone" yet.
+    bloc.add(StageNotesChange(slot: filledMedicSlot, notes: 'edited'));
+    await pumpEventQueue();
+    var state = bloc.state as AssignmentSlotsLoaded;
+    expect(state.stagedSlotKeys, contains('e1_medic_0'));
+    expect(state.stagedGoneSlotKeys, isEmpty);
+
+    // Remote delete: a1's DB row disappears while the row is still dirty.
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    state = bloc.state as AssignmentSlotsLoaded;
+    // The row must NOT vanish — it is kept visible (its staged state) ...
+    expect(
+      state.slots.any((s) => s.role.key == 'medic' && s.slotIndex == 0),
+      isTrue,
+    );
+    // ... and flagged so the UI can paint the red diagonal-stripe overlay.
+    expect(state.stagedGoneSlotKeys, contains('e1_medic_0'));
+    expect(state.stagedSlotKeys, contains('e1_medic_0')); // still dirty
+  });
+
+  test(
+      'a fresh staged fill over an empty slot (no DB row, no baseline member) '
+      'is NOT flagged as deleted-remotely', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    assignmentStream.add(const <Assignment>[]); // DB empty
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final emptyMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+    // Fresh fill on an empty slot: baselineMemberId == null. Even though there
+    // is no DB row for this slot, it is an ordinary pending fill, not a remote
+    // deletion — so it must stay OUT of stagedGoneSlotKeys.
+    bloc.add(StageMemberChange(slot: emptyMedicSlot, member: member('m1')));
+    await pumpEventQueue();
+
+    final state = bloc.state as AssignmentSlotsLoaded;
+    expect(state.stagedSlotKeys, contains('e1_medic_0'));
+    expect(state.stagedGoneSlotKeys, isEmpty);
+  });
 }

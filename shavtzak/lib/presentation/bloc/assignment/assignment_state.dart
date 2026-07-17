@@ -84,6 +84,13 @@ class AssignmentSlotsLoaded extends AssignmentState {
   /// change. Drives dirty-border UI and the Save/discard affordances.
   final Set<String> stagedSlotKeys;
 
+  /// Subset of [stagedSlotKeys] whose underlying DB assignment was DELETED
+  /// remotely while the row stayed dirty (a filled staged row anchored to a
+  /// real DB assignment that no longer exists in the current DB snapshot).
+  /// The row is deliberately kept visible (its staged state) and drives the
+  /// red diagonal-stripe "deleted upstream, kept because dirty" overlay.
+  final Set<String> stagedGoneSlotKeys;
+
   AssignmentSlotsLoaded(
     this.slots, {
     this.selectedEventIds = const {},
@@ -91,6 +98,7 @@ class AssignmentSlotsLoaded extends AssignmentState {
     this.hasMorePast = false,
     this.isLoadingMorePast = false,
     this.stagedSlotKeys = const {},
+    this.stagedGoneSlotKeys = const {},
   })  : totalSlots = slots.length,
         filledSlots = slots.where((s) => s.isFilled).length,
         unfilledSlots = slots.where((s) => !s.isFilled).length;
@@ -109,6 +117,7 @@ class AssignmentSlotsLoaded extends AssignmentState {
         hasMorePast,
         isLoadingMorePast,
         stagedSlotKeys,
+        stagedGoneSlotKeys,
       ];
 
   /// Create a copy with new filter or pending operations
@@ -118,6 +127,7 @@ class AssignmentSlotsLoaded extends AssignmentState {
     bool? hasMorePast,
     bool? isLoadingMorePast,
     Set<String>? stagedSlotKeys,
+    Set<String>? stagedGoneSlotKeys,
   }) {
     return AssignmentSlotsLoaded(
       slots,
@@ -126,6 +136,7 @@ class AssignmentSlotsLoaded extends AssignmentState {
       hasMorePast: hasMorePast ?? this.hasMorePast,
       isLoadingMorePast: isLoadingMorePast ?? this.isLoadingMorePast,
       stagedSlotKeys: stagedSlotKeys ?? this.stagedSlotKeys,
+      stagedGoneSlotKeys: stagedGoneSlotKeys ?? this.stagedGoneSlotKeys,
     );
   }
 }

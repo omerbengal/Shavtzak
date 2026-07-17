@@ -904,8 +904,16 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               if (showLoadMore && index == slots.length) {
                                 return _buildLoadMorePastButton(state);
                               }
-                              return _buildSlotRow(
+                              final row = _buildSlotRow(
                                   slots[index], state.stagedSlotKeys);
+                              // A dirty row whose DB assignment was deleted
+                              // upstream is kept visible but marked with the
+                              // red diagonal-stripe overlay (see
+                              // stagedGoneSlotKeys / _withDeletedRemotelyOverlay).
+                              return state.stagedGoneSlotKeys
+                                      .contains(_getSlotKey(slots[index]))
+                                  ? _withDeletedRemotelyOverlay(row)
+                                  : row;
                             },
                           );
                         },
@@ -998,6 +1006,47 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
       return slot.copyWith(currentAssignment: updatedAssignment);
     }).toList();
+  }
+
+  /// Wraps a rendered slot [row] with the "deleted upstream, kept because
+  /// dirty" marker: a translucent bright-red diagonal-stripe wash plus a small
+  /// badge. Applied to rows in [AssignmentSlotsLoaded.stagedGoneSlotKeys] — a
+  /// dirty row whose backing DB assignment was deleted remotely. The overlay is
+  /// non-interactive (IgnorePointer), so the row underneath stays swipe- and
+  /// tap-able for discard / Save-resolution.
+  Widget _withDeletedRemotelyOverlay(Widget row) {
+    return Stack(
+      children: [
+        row,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: const _DiagonalStripesPainter(),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade700,
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(6)),
+                  ),
+                  child: const Text(
+                    'נמחק בשרת · נשמר מקומית',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildSlotRow(AssignmentSlot slot, Set<String> stagedSlotKeys) {
@@ -3657,4 +3706,35 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     return months[month];
   }
 
+}
+
+/// Bright-red diagonal hazard stripes over a light red wash, painted across a
+/// slot row to mark it "deleted upstream but kept locally because dirty" (see
+/// [_AssignmentListScreenState._withDeletedRemotelyOverlay]). Semi-transparent
+/// so the row content stays readable underneath.
+class _DiagonalStripesPainter extends CustomPainter {
+  const _DiagonalStripesPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Light red wash so the row content still reads through.
+    final wash = Paint()..color = Colors.red.withValues(alpha: 0.10);
+    canvas.drawRect(Offset.zero & size, wash);
+
+    // Bright-red 45° hazard stripes.
+    final stripe = Paint()
+      ..color = Colors.red.withValues(alpha: 0.30)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7;
+    const spacing = 20.0;
+    // Start x back by size.height so the slanted lines still cover the left
+    // edge over the full row height (each line drops by size.height in x).
+    for (double x = -size.height; x < size.width + size.height; x += spacing) {
+      canvas.drawLine(
+          Offset(x, 0), Offset(x + size.height, size.height), stripe);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DiagonalStripesPainter oldDelegate) => false;
 }
