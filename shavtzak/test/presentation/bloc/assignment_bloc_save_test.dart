@@ -831,4 +831,47 @@ void main() {
     expect(goneRow.isOffQuota, isTrue);
     expect(goneRow.currentAssignment?.teamMemberId, 'm1');
   });
+
+  test(
+      'a re-materialized gone row is Equatable-stable across rebuilds '
+      '(no DateTime.now() churn that would defeat no-op emit suppression)',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m2')]);
+    assignmentStream.add([assignment('a1', 'e1', 'm1')]);
+    await pumpEventQueue();
+
+    final slot = (bloc.state as AssignmentSlotsLoaded)
+        .slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    bloc.add(StageNotesChange(slot: slot, notes: 'edited'));
+    await pumpEventQueue();
+
+    // Vanish the slot (quota -> 0) + delete the DB row => re-materialized row.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 0})]);
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    Assignment? goneAssignment() => (bloc.state as AssignmentSlotsLoaded)
+        .slots
+        .firstWhere((s) =>
+            s.event.id == 'e1' && s.role.key == 'medic' && s.slotIndex == 0)
+        .currentAssignment;
+    final first = goneAssignment();
+
+    // Re-trigger the build with identical inputs (same event already cached,
+    // same staged edit). A DateTime.now()-stamped synthesized assignment would
+    // make this row — and the whole AssignmentSlotsLoaded — unequal each pass.
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+    final second = goneAssignment();
+
+    expect(second, equals(first)); // Assignment is Equatable
+    expect(second?.updatedAt, equals(first?.updatedAt)); // the fixed field
+  });
 }

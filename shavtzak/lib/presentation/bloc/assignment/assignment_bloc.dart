@@ -1569,7 +1569,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final member = c.desiredMemberId == null
           ? null
           : _windowMembersMap[c.desiredMemberId];
-      final assignment = _assignmentFromStaged(c, id: c.desiredAssignmentId)
+      // Deterministic timestamps (the stage-time millis) so two rebuilds of an
+      // unchanged staged edit produce an EQUAL synthesized slot — otherwise the
+      // Equatable state differs every rebuild and _emitOrLog re-emits endlessly.
+      final stagedTs = DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis);
+      final assignment = _assignmentFromStaged(c,
+              id: c.desiredAssignmentId,
+              createdAt: stagedTs,
+              updatedAt: stagedTs)
           .withRelations(event: event, teamMember: member);
       synthesized.add(AssignmentSlot(
         event: event,
@@ -1916,6 +1923,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     StagedAssignmentChange c, {
     required String id,
     DateTime? createdAt,
+    DateTime? updatedAt,
   }) {
     final now = DateTime.now();
     return Assignment(
@@ -1929,7 +1937,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       semanticLabelId: c.desiredSemanticLabelId,
       alternativePhoneNumber: c.desiredAltPhone,
       createdAt: createdAt ?? now,
-      updatedAt: now,
+      // updatedAt defaults to now for the Save path (a real write), but callers
+      // that render a synthesized row MUST pass a STABLE timestamp: an
+      // Equatable Assignment stamped with DateTime.now() on every rebuild would
+      // make the slot differ each time and defeat the no-op emit suppression.
+      updatedAt: updatedAt ?? now,
     );
   }
 
