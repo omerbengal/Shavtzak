@@ -172,6 +172,7 @@ void main() {
       creates: anyNamed('creates'),
       updates: anyNamed('updates'),
       deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
     )).thenAnswer((_) async {});
   });
 
@@ -873,5 +874,72 @@ void main() {
 
     expect(second, equals(first)); // Assignment is Equatable
     expect(second?.updatedAt, equals(first?.updatedAt)); // the fixed field
+  });
+
+  // --- restore-to-quota: override of a slot-vanished conflict bumps the quota
+  // --- so the re-created row comes back IN-quota (not off-quota) -------------
+
+  test(
+      'override of a conflict whose slot VANISHED restores the quota: Save '
+      'passes a matching eventQuotaBump and re-creates the row at its slot',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]); // medic:1 quota
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m2')]);
+    final a1 = assignment('a1', 'e1', 'm1'); // medic slot 0 (in-quota)
+    assignmentStream.add([a1]);
+    await pumpEventQueue();
+
+    final filledMedicSlot = (bloc.state as AssignmentSlotsLoaded)
+        .slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+    // Stage a notes edit on the in-quota row (baseline m1, desired m1 + notes).
+    bloc.add(StageNotesChange(slot: filledMedicSlot, notes: 'edited'));
+    await pumpEventQueue();
+
+    // Remotely: the medic quota shrinks to 0 (slot vanishes) AND a1 is deleted.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 0})]);
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    // Override the now-slot-vanished conflict + Save.
+    final completer = Completer<CrudActionResult>();
+    bloc.add(SaveStagedChanges(
+      resolutions: const {'e1_medic_0': ConflictResolution.overrideDb},
+      completion: completer,
+    ));
+    await pumpEventQueue();
+
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: captureAnyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: captureAnyNamed('eventQuotaBumps'),
+    )).captured;
+    // Disambiguate by element type (do not rely on capture order).
+    final creates =
+        captured.firstWhere((c) => c is List<Assignment>) as List<Assignment>;
+    final bumps =
+        captured.firstWhere((c) => c is List && c is! List<Assignment>) as List;
+
+    // Re-created at slot 0 with the edited notes ...
+    expect(creates, hasLength(1));
+    expect(creates.single.slotIndex, 0);
+    expect(creates.single.notes, 'edited');
+    // ... and the role's quota is restored just enough to fit it (medic -> 1),
+    // in the SAME batch, so the row comes back IN-quota.
+    expect(bumps, hasLength(1));
+    final bump = bumps.single as ({String eventId, String roleType, int count});
+    expect(bump.eventId, 'e1');
+    expect(bump.roleType, 'medic');
+    expect(bump.count, 1); // slotIndex 0 + 1
+
+    final result = await completer.future;
+    expect(result.isSuccess, isTrue);
   });
 }

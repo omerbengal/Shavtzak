@@ -22,6 +22,7 @@ void main() {
       creates: anyNamed('creates'),
       updates: anyNamed('updates'),
       deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
     )).thenAnswer((_) async {});
     final repo = AssignmentRepository(db);
 
@@ -33,6 +34,7 @@ void main() {
       creates: captureAnyNamed('creates'),
       updates: captureAnyNamed('updates'),
       deletes: captureAnyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
     )).captured;
     final creates = captured[0] as List<Assignment>;
     final updates = captured[1] as List<Assignment>;
@@ -50,6 +52,7 @@ void main() {
       creates: anyNamed('creates'),
       updates: anyNamed('updates'),
       deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
     )).thenAnswer((_) async {});
     final repo = AssignmentRepository(db);
 

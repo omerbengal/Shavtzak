@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Timestamp} from 'firebase-admin/firestore';
-import {planAssignmentSaveBatch, findBatchDuplicateRoleAssignments} from './index';
+import {
+  planAssignmentSaveBatch,
+  findBatchDuplicateRoleAssignments,
+  planEventQuotaBumps,
+} from './index';
 
 // assignmentDocFromJson (called internally by the planner) runs every
 // createdAt/updatedAt through toTimestamp(), which THROWS on a missing or
@@ -209,4 +213,54 @@ test('findBatchDuplicateRoleAssignments rejects the same double-booking when the
     exemptMemberIds: new Set(),
   });
   assert.deepEqual(result, [{eventId: 'e1', roleType: 'medic', teamMemberId: 'Ziv'}]);
+});
+
+// ---- planEventQuotaBumps: optional atomic quota restores for saveBatch ----
+
+test('planEventQuotaBumps returns [] for missing / null / empty input', () => {
+  assert.deepEqual(planEventQuotaBumps(undefined), []);
+  assert.deepEqual(planEventQuotaBumps(null), []);
+  assert.deepEqual(planEventQuotaBumps([]), []);
+});
+
+test('planEventQuotaBumps validates and shapes each entry', () => {
+  assert.deepEqual(
+    planEventQuotaBumps([
+      {eventId: 'e1', roleType: 'medic', count: 2},
+      {eventId: 'e2', roleType: 'investigation', count: 1},
+    ]),
+    [
+      {eventId: 'e1', roleType: 'medic', count: 2},
+      {eventId: 'e2', roleType: 'investigation', count: 1},
+    ],
+  );
+});
+
+test('planEventQuotaBumps throws on a non-array', () => {
+  assert.throws(() =>
+    planEventQuotaBumps({eventId: 'e1', roleType: 'medic', count: 1}),
+  );
+});
+
+test('planEventQuotaBumps throws on a missing eventId or roleType', () => {
+  assert.throws(() => planEventQuotaBumps([{roleType: 'medic', count: 1}]));
+  assert.throws(() => planEventQuotaBumps([{eventId: 'e1', count: 1}]));
+});
+
+test('planEventQuotaBumps throws on a non-integer / out-of-range count', () => {
+  assert.throws(() =>
+    planEventQuotaBumps([{eventId: 'e1', roleType: 'medic', count: 0}]),
+  );
+  assert.throws(() =>
+    planEventQuotaBumps([{eventId: 'e1', roleType: 'medic', count: 1.5}]),
+  );
+  assert.throws(() =>
+    planEventQuotaBumps([{eventId: 'e1', roleType: 'medic', count: -3}]),
+  );
+  assert.throws(() =>
+    planEventQuotaBumps([{eventId: 'e1', roleType: 'medic', count: 1000}]),
+  );
+  assert.throws(() =>
+    planEventQuotaBumps([{eventId: 'e1', roleType: 'medic', count: '2'}]),
+  );
 });

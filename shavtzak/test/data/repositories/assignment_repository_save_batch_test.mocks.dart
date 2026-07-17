@@ -616,6 +616,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i2.DatabaseInterface {
     required List<_i6.Assignment>? creates,
     required List<_i6.Assignment>? updates,
     required List<String>? deletes,
+    List<({int count, String eventId, String roleType})>? eventQuotaBumps,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -625,6 +626,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i2.DatabaseInterface {
             #creates: creates,
             #updates: updates,
             #deletes: deletes,
+            #eventQuotaBumps: eventQuotaBumps,
           },
         ),
         returnValue: _i3.Future<void>.value(),

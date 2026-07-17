@@ -9,6 +9,14 @@ import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
 
+/// A request to raise an event's role quota to AT LEAST [count], applied
+/// atomically inside [DatabaseInterface.saveAssignmentsBatch]. Used to
+/// "restore to quota" when an admin overrides a Save-time conflict whose slot
+/// had vanished (the role's quota shrank under a staged edit) — so the
+/// re-created assignment lands in-quota instead of off-quota. The backend
+/// applies `max(current, count)`, so a concurrent increase is never clobbered.
+typedef EventQuotaBump = ({String eventId, String roleType, int count});
+
 /// Abstract database interface
 /// This allows the app to be backend-agnostic
 /// Implementations: FirestoreDatabase, SupabaseDatabase, LocalDatabase, etc.
@@ -206,10 +214,13 @@ abstract class DatabaseInterface {
   Future<void> insertAssignmentsBatch(List<Assignment> assignments);
 
   /// Atomically create + update + delete assignments in one server-side batch.
+  /// [eventQuotaBumps] optionally raises event role quotas in the SAME batch
+  /// (restore-to-quota; see [EventQuotaBump]).
   Future<void> saveAssignmentsBatch({
     required List<Assignment> creates,
     required List<Assignment> updates,
     required List<String> deletes,
+    List<EventQuotaBump> eventQuotaBumps,
   });
 
   // ========== Utility ==========

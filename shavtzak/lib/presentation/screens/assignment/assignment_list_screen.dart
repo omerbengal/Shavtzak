@@ -1025,15 +1025,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               child: Align(
                 alignment: Alignment.topCenter,
                 child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 24),
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
                     color: Colors.red.shade700,
                     borderRadius: const BorderRadius.vertical(
                         bottom: Radius.circular(6)),
                   ),
                   child: const Text(
-                    'נמחק בשרת · נשמר מקומית',
+                    'שורה זו נמחקה מהשרת, אבל קיים שינוי שמור מקומית',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 10,

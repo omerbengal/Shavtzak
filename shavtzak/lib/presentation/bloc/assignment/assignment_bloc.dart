@@ -1863,6 +1863,31 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       });
     }
 
+    // Restore-to-quota: any create that would land OFF-quota — its slotIndex is
+    // at/above the event's CURRENT quota for that role, i.e. an override that
+    // re-creates a row whose slot had vanished — asks the backend to raise that
+    // role's quota just enough to fit it, ATOMICALLY with the write (one batch),
+    // so the row comes back IN-quota instead of off-quota. Keyed per
+    // (event, role) to the highest slotIndex+1 needed. The record type is
+    // structurally the repository's EventQuotaBump (no import needed).
+    final quotaBumpByKey =
+        <String, ({String eventId, String roleType, int count})>{};
+    for (final a in creates) {
+      final ev = _windowEventsMap[a.eventId] ?? _extraPastEventsMap[a.eventId];
+      if (ev == null) continue;
+      final currentQuota = ev.roleRequirements[a.roleType] ?? 0;
+      if (a.slotIndex >= currentQuota) {
+        final key = '${a.eventId}_${a.roleType}';
+        final needed = a.slotIndex + 1;
+        final existing = quotaBumpByKey[key];
+        if (existing == null || needed > existing.count) {
+          quotaBumpByKey[key] =
+              (eventId: a.eventId, roleType: a.roleType, count: needed);
+        }
+      }
+    }
+    final eventQuotaBumps = quotaBumpByKey.values.toList();
+
     _emitOrLog(emit, const AssignmentOperating('saving'));
     try {
       Logger.action('save:batch', {
@@ -1871,11 +1896,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             .toList(),
         'updates': updates.map((a) => '${a.id}=>${a.teamMemberId}').toList(),
         'deletes': deletes,
+        'quotaBumps': eventQuotaBumps
+            .map((b) => '${b.roleType}@${b.eventId}->${b.count}')
+            .toList(),
       });
       await _repository.saveAssignmentsBatch(
         creates: creates,
         updates: updates,
         deletes: deletes,
+        eventQuotaBumps: eventQuotaBumps,
       );
       Logger.action('save:done', {
         'written': creates.length + updates.length + deletes.length,

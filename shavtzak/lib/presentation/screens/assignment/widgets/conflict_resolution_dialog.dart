@@ -16,9 +16,9 @@ import '../../../bloc/assignment/models/assignment_conflict.dart';
 /// - Two-button conflicts offer **דרוס DB** ([ConflictResolution.overrideDb],
 ///   the default) vs **קח מה-DB** ([ConflictResolution.takeDb]). For
 ///   [AssignmentConflictType.slotVanished] (quota shrank under a staged
-///   fill), the override button is instead labeled **צור מחוץ למכסה** — it
-///   still records `overrideDb`; the Save handler creates the assignment
-///   and it renders as an off-quota row.
+///   fill), the override button is instead labeled **שחזר למכסה** — it
+///   still records `overrideDb`; the Save handler RESTORES the role's quota
+///   (atomically, via eventQuotaBumps) and re-creates the assignment in-quota.
 /// - `discardOnly` conflicts (member record fully deleted — not produced by
 ///   `classifyStagedConflicts` today, see that method's doc; this branch is
 ///   forward-ready) have no valid override target, so they render a single,
@@ -74,7 +74,7 @@ class _ConflictResolutionDialogState extends State<ConflictResolutionDialog> {
 
   String _overrideLabel(AssignmentConflict conflict) =>
       conflict.type == AssignmentConflictType.slotVanished
-          ? 'צור מחוץ למכסה'
+          ? 'שחזר למכסה'
           : 'דרוס DB';
 
   @override

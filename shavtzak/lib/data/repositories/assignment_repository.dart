@@ -159,11 +159,13 @@ class AssignmentRepository {
     required List<Assignment> creates,
     required List<Assignment> updates,
     required List<String> deletes,
+    List<EventQuotaBump> eventQuotaBumps = const [],
   }) async {
     await _database.saveAssignmentsBatch(
       creates: creates,
       updates: updates,
       deletes: deletes,
+      eventQuotaBumps: eventQuotaBumps,
     );
   }
 

@@ -2800,6 +2800,50 @@ export function planAssignmentSaveBatch(payload: {
   };
 }
 
+// Pure validator/shaper for assignment.saveBatch's OPTIONAL event-quota bumps.
+//
+// When an admin overrides a Save-time conflict whose slot had vanished (the
+// event's role quota shrank under a staged edit), the client asks to RESTORE
+// that role's quota just enough to fit the re-created assignment, so the row
+// comes back IN-quota rather than off-quota. Those bumps are applied in the
+// SAME db.batch() as the assignment writes (see the 'assignment.saveBatch'
+// case) so the quota and the assignment can never diverge.
+//
+// Optional + backward-compatible: a missing/empty field yields [] (no event
+// writes, identical to the pre-feature behaviour). Each entry names an event,
+// a role, and the MINIMUM count that role's quota must reach. The case handler
+// reads the live event and applies max(current, count), so a concurrent
+// increase is never clobbered and no-op bumps are skipped.
+//
+// Kept side-effect-free (no Firestore) so it can be unit-tested directly --
+// see assignment_save_batch.test.ts.
+export function planEventQuotaBumps(
+  raw: unknown,
+): Array<{eventId: string; roleType: string; count: number}> {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    throw new HttpError(400, 'eventQuotaBumps must be an array');
+  }
+  return raw.map((entry) => {
+    const e = (entry ?? {}) as Record<string, unknown>;
+    const eventId = requireString(e['eventId'], 'eventQuotaBump.eventId');
+    const roleType = requireString(e['roleType'], 'eventQuotaBump.roleType');
+    const count = e['count'];
+    if (
+      typeof count !== 'number' ||
+      !Number.isInteger(count) ||
+      count < 1 ||
+      count > 999
+    ) {
+      throw new HttpError(
+        400,
+        'eventQuotaBump.count must be an integer between 1 and 999',
+      );
+    }
+    return {eventId, roleType, count};
+  });
+}
+
 // Pure helper for assignment.saveBatch's batch-aware duplicate-role check.
 //
 // validateAssignmentPayload's own duplicate-role check (see
@@ -4479,6 +4523,42 @@ async function executeMutation(
         throw new HttpError(400, 'חבר/ת הצוות כבר משובץ/ת לתפקיד זה באירוע');
       }
 
+      // Optional atomic quota restores (see planEventQuotaBumps): read each
+      // target event up-front (reads must precede the batch) and compute the
+      // effective new count as max(current, requested) so a concurrent quota
+      // increase is never clobbered; no-op bumps are dropped.
+      const quotaBumps = planEventQuotaBumps(payload['eventQuotaBumps']);
+      const quotaBumpWrites: Array<{
+        eventId: string;
+        roleType: string;
+        from: number;
+        to: number;
+      }> = [];
+      for (const bump of quotaBumps) {
+        const snap = await db
+          .collection(collections.events)
+          .doc(bump.eventId)
+          .get();
+        if (!snap.exists) {
+          throw new HttpError(404, 'האירוע של השיבוץ כבר לא קיים');
+        }
+        const rr = (snap.data()?.['roleRequirements'] ?? {}) as Record<
+          string,
+          unknown
+        >;
+        const current =
+          typeof rr[bump.roleType] === 'number' ? (rr[bump.roleType] as number) : 0;
+        const to = Math.max(current, bump.count);
+        if (to !== current) {
+          quotaBumpWrites.push({
+            eventId: bump.eventId,
+            roleType: bump.roleType,
+            from: current,
+            to,
+          });
+        }
+      }
+
       // One atomic batch (≤500 ops — a meeting is far under).
       const batch = db.batch();
       for (const {id, doc} of plan.creates) {
@@ -4489,6 +4569,14 @@ async function executeMutation(
       }
       for (const id of plan.deletes) {
         batch.delete(db.collection(collections.assignments).doc(id));
+      }
+      // Restore-to-quota writes ride the SAME batch as the assignment ops, so
+      // the quota and the (re-created) assignment commit together or not at all.
+      for (const w of quotaBumpWrites) {
+        batch.update(db.collection(collections.events).doc(w.eventId), {
+          [`roleRequirements.${w.roleType}`]: w.to,
+          updatedAt: Timestamp.now(),
+        });
       }
       await batch.commit();
 
@@ -4509,6 +4597,15 @@ async function executeMutation(
           before: before.get(id) ?? {},
         });
       }
+      for (const w of quotaBumpWrites) {
+        await writeAuditLog(db, collections, actor, 'event.update', 'event', w.eventId, {
+          quotaRestored: true,
+          roleType: w.roleType,
+        }, {
+          before: {[`roleRequirements.${w.roleType}`]: w.from},
+          after: {[`roleRequirements.${w.roleType}`]: w.to},
+        });
+      }
 
       return {
         ok: true,
@@ -4516,6 +4613,7 @@ async function executeMutation(
           created: plan.creates.length,
           updated: plan.updates.length,
           deleted: plan.deletes.length,
+          quotaBumped: quotaBumpWrites.length,
         },
       };
     }

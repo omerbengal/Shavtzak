@@ -69,7 +69,7 @@ void main() {
   group('ConflictResolutionDialog', () {
     testWidgets(
         'renders both descriptions for a 2-conflict list, and labels the '
-        'slotVanished override "צור מחוץ למכסה" (not "דרוס DB")',
+        'slotVanished override "שחזר למכסה" (not "דרוס DB")',
         (tester) async {
       Map<String, ConflictResolution>? result;
       await pumpAndOpenDialog(
@@ -85,7 +85,7 @@ void main() {
       // slotTaken keeps the normal override label; slotVanished swaps it.
       // Exactly one of each confirms neither row leaked the other's label.
       expect(find.text('דרוס DB'), findsOneWidget);
-      expect(find.text('צור מחוץ למכסה'), findsOneWidget);
+      expect(find.text('שחזר למכסה'), findsOneWidget);
 
       // Untouched: dialog is still open, no result reported yet.
       expect(result, isNull);
