@@ -41,4 +41,28 @@ void main() {
     expect(updates.single.id, 'u1');
     expect(deletes, ['d1']);
   });
+
+  test(
+      'saveAssignmentsBatch does NOT clear the current-assignments cache '
+      '(post-save windowed grid must stay populated)', () async {
+    final db = MockDatabaseInterface();
+    when(db.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+    )).thenAnswer((_) async {});
+    final repo = AssignmentRepository(db);
+
+    // The live stream seeds this snapshot; the windowed slot-build reads it via
+    // getCurrentAssignments().
+    repo.cacheCurrentAssignments([a('x1'), a('x2')]);
+
+    await repo.saveAssignmentsBatch(
+        creates: [a('c1')], updates: const [], deletes: const []);
+
+    // It must SURVIVE the save. The old clearCache() here emptied it, so the
+    // immediately-following post-save RebuildAssignmentSlots built an all-empty
+    // grid ("0 משובצים") that never recovered once the DB had settled.
+    expect(repo.getCurrentAssignments(), hasLength(2));
+  });
 }
