@@ -80,15 +80,31 @@ class AssignmentSlotsLoaded extends AssignmentState {
   /// True while a "load more" fetch is in flight.
   final bool isLoadingMorePast;
 
+  /// Slot keys ("${eventId}_${roleType}_${slotIndex}") with an unsaved staged
+  /// change. Drives dirty-border UI and the Save/discard affordances.
+  final Set<String> stagedSlotKeys;
+
+  /// Subset of [stagedSlotKeys] whose underlying DB assignment was DELETED
+  /// remotely while the row stayed dirty (a filled staged row anchored to a
+  /// real DB assignment that no longer exists in the current DB snapshot).
+  /// The row is deliberately kept visible (its staged state) and drives the
+  /// red diagonal-stripe "deleted upstream, kept because dirty" overlay.
+  final Set<String> stagedGoneSlotKeys;
+
   AssignmentSlotsLoaded(
     this.slots, {
     this.selectedEventIds = const {},
     this.pendingOperations = const {},
     this.hasMorePast = false,
     this.isLoadingMorePast = false,
+    this.stagedSlotKeys = const {},
+    this.stagedGoneSlotKeys = const {},
   })  : totalSlots = slots.length,
         filledSlots = slots.where((s) => s.isFilled).length,
         unfilledSlots = slots.where((s) => !s.isFilled).length;
+
+  /// Number of slots with an unsaved staged change.
+  int get stagedCount => stagedSlotKeys.length;
 
   @override
   List<Object?> get props => [
@@ -100,6 +116,8 @@ class AssignmentSlotsLoaded extends AssignmentState {
         pendingOperations,
         hasMorePast,
         isLoadingMorePast,
+        stagedSlotKeys,
+        stagedGoneSlotKeys,
       ];
 
   /// Create a copy with new filter or pending operations
@@ -108,6 +126,8 @@ class AssignmentSlotsLoaded extends AssignmentState {
     Map<String, PendingOperation>? pendingOperations,
     bool? hasMorePast,
     bool? isLoadingMorePast,
+    Set<String>? stagedSlotKeys,
+    Set<String>? stagedGoneSlotKeys,
   }) {
     return AssignmentSlotsLoaded(
       slots,
@@ -115,6 +135,8 @@ class AssignmentSlotsLoaded extends AssignmentState {
       pendingOperations: pendingOperations ?? this.pendingOperations,
       hasMorePast: hasMorePast ?? this.hasMorePast,
       isLoadingMorePast: isLoadingMorePast ?? this.isLoadingMorePast,
+      stagedSlotKeys: stagedSlotKeys ?? this.stagedSlotKeys,
+      stagedGoneSlotKeys: stagedGoneSlotKeys ?? this.stagedGoneSlotKeys,
     );
   }
 }
@@ -205,6 +227,7 @@ class PendingOperation extends Equatable {
   final String slotKey; // "${eventId}_${roleType}_${slotIndex}"
   final Assignment? optimisticAssignment;
   final DateTime timestamp;
+  final bool persistent;
 
   const PendingOperation({
     required this.id,
@@ -212,17 +235,19 @@ class PendingOperation extends Equatable {
     required this.slotKey,
     this.optimisticAssignment,
     required this.timestamp,
+    this.persistent = false,
   });
 
   /// Expire operations after 5 minutes
   /// This is a safety net for truly failed operations (network error, DB error, etc.)
   /// Normally, Firestore stream will confirm the operation long before this expires.
   /// The optimistic state persists until the database confirms it, regardless of network speed.
+  /// Persistent operations never expire.
   bool get isExpired =>
-      DateTime.now().difference(timestamp).inMinutes > 5;
+      !persistent && DateTime.now().difference(timestamp).inMinutes > 5;
 
   @override
-  List<Object?> get props => [id, type, slotKey, optimisticAssignment, timestamp];
+  List<Object?> get props => [id, type, slotKey, optimisticAssignment, timestamp, persistent];
 }
 
 /// Error state

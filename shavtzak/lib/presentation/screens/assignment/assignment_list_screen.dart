@@ -20,6 +20,7 @@ import '../../../core/services/environment_service.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
+import '../../bloc/assignment/models/assignment_conflict.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
@@ -32,6 +33,9 @@ import '../../widgets/same_day_assignment_mark.dart';
 import '../../../core/debug/logger.dart';
 import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
+import 'widgets/assignment_save_bar.dart';
+import 'widgets/conflict_resolution_dialog.dart';
+import 'widgets/unsaved_changes_dialog.dart';
 import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
 import '../../widgets/map_location_picker.dart';
@@ -86,6 +90,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   void initState() {
     super.initState();
     context.read<AssignmentBloc>().add(const LoadAssignmentSlots());
+    context.read<AssignmentBloc>().add(const RehydrateStagedChanges());
   }
 
   @override
@@ -161,24 +166,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     return await completion.future;
   }
 
-  Future<CrudActionResult> _runBlockingMutation({
-    required String message,
-    required void Function(CrudActionCompleter completion) dispatch,
-    bool showErrorSnackBar = true,
-  }) async {
-    if (_isMutationInFlight) {
-      return const CrudActionResult.failure('פעולה אחרת עדיין מתבצעת');
-    }
-
-    _startMutation(message);
-    final result = await _dispatchMutation(
-      dispatch,
-      showErrorSnackBar: showErrorSnackBar,
-    );
-    _finishMutation();
-    return result;
-  }
-
   Widget _buildMutationDialogOverlay() {
     if (!_isMutationInFlight) {
       return const SizedBox.shrink();
@@ -226,6 +213,130 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         ),
       ),
     );
+  }
+
+  /// Save every staged assignment change. Classifies staged-vs-DB conflicts
+  /// FIRST (baseline captured at staging time vs. the current DB); if any
+  /// exist, shows [ConflictResolutionDialog] and waits for the admin's
+  /// resolutions before dispatching the save. Cancelling the dialog leaves
+  /// staging fully intact — nothing is saved. See
+  /// docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md
+  /// ("Conflict handling" / "Save flow").
+  Future<void> _onSavePressed() async {
+    if (_isMutationInFlight) return;
+    final bloc = context.read<AssignmentBloc>();
+    if (!bloc.hasStagedChanges) return;
+    Logger.action('tap:saveStagedChanges');
+
+    final blocState = bloc.state;
+    final slots = blocState is AssignmentSlotsLoaded
+        ? blocState.slots
+        : (_lastSlotsState?.slots ?? const <AssignmentSlot>[]);
+    final conflicts = bloc.classifyStagedConflicts(slots);
+
+    Map<String, ConflictResolution> resolutions = const {};
+    if (conflicts.isNotEmpty) {
+      Logger.action(
+          'open:conflictResolutionDialog', {'count': conflicts.length});
+      final result = await showDialog<Map<String, ConflictResolution>>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ConflictResolutionDialog(conflicts: conflicts),
+      );
+      if (result == null) {
+        Logger.action('tap:cancel:conflictResolutionDialog');
+        return; // cancelled — nothing saved, staging intact
+      }
+      resolutions = result;
+    }
+
+    if (!mounted) return;
+    _startMutation('שומר שינויים...');
+    final saveResult = await _dispatchMutation(
+      (completion) => bloc.add(
+        SaveStagedChanges(resolutions: resolutions, completion: completion),
+      ),
+    );
+    _finishMutation();
+    if (!mounted) return;
+    _showAssignmentSnackBar(
+      saveResult.isSuccess
+          ? (saveResult.message ?? 'נשמר')
+          : (saveResult.message ?? 'שמירה נכשלה'),
+      backgroundColor: saveResult.isSuccess ? Colors.green : Colors.red,
+    );
+  }
+
+  /// Leave-guard for in-screen exits (home button, logout) — a courtesy
+  /// reminder, not data-protection (staged changes already survive in the
+  /// cache). See docs/superpowers/specs/
+  /// 2026-07-15-assignments-staged-save-design.md ("Leave-guard").
+  ///
+  /// Returns whether the caller should proceed with its navigation:
+  /// - clean (no staged changes) → `true` immediately, no dialog.
+  /// - `leave` → `true` (staged changes stay in cache; still dirty on
+  ///   return).
+  /// - `save` → runs the full save flow (including the per-conflict
+  ///   resolution dialog if needed) and proceeds only if it actually
+  ///   cleared staging.
+  /// - `cancel` / dismissed → `false` (stay).
+  Future<bool> _confirmLeaveIfDirty() async {
+    final bloc = context.read<AssignmentBloc>();
+    if (!bloc.hasStagedChanges) return true;
+    final count = bloc.stagedCount;
+    final decision = await showUnsavedChangesDialog(context, count: count);
+    if (!mounted) return false;
+    if (decision == LeaveDecision.leave) return true;
+    if (decision == LeaveDecision.save) {
+      await _onSavePressed(); // full flow incl. conflict dialog
+      if (!mounted) return false;
+      return !bloc.hasStagedChanges; // proceed only if save actually cleared staging
+    }
+    return false; // cancel / dismissed
+  }
+
+  /// Confirm, then discard every staged (unsaved) change. See
+  /// docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md
+  /// ("Discard" — "All-at-once").
+  Future<void> _onDiscardAll() async {
+    if (_isMutationInFlight) return;
+    final bloc = context.read<AssignmentBloc>();
+    final blocState = bloc.state;
+    final count = blocState is AssignmentSlotsLoaded
+        ? blocState.stagedSlotKeys.length
+        : 0;
+    Logger.action('open:discardAllStagedDialog', {'count': count});
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('ביטול שינויים'),
+          content: Text('לבטל את כל $count השינויים שלא נשמרו?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Logger.action('tap:cancel:discardAllStaged');
+                Navigator.of(dialogContext).pop(false);
+              },
+              child: const Text('חזרה'),
+            ),
+            TextButton(
+              onPressed: () {
+                Logger.action('tap:confirm:discardAllStaged');
+                Navigator.of(dialogContext).pop(true);
+              },
+              child:
+                  const Text('בטל הכל', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      bloc.add(const DiscardAllStagedChanges());
+    }
   }
 
   /// Format location for display based on how it was entered
@@ -458,10 +569,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               IconButton(
                 icon: const Icon(Icons.home),
                 tooltip: 'בית',
-                onPressed: () {
+                onPressed: () async {
                   Logger.action('tap:home');
-                  final envPrefix = EnvironmentService.instance.routePrefix;
-                  context.go('$envPrefix/admin');
+                  if (await _confirmLeaveIfDirty()) {
+                    if (!context.mounted) return;
+                    final envPrefix = EnvironmentService.instance.routePrefix;
+                    context.go('$envPrefix/admin');
+                  }
                 },
                 iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -470,9 +584,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'התנתק',
-                onPressed: () {
+                onPressed: () async {
                   Logger.action('tap:logout');
-                  _logout(context);
+                  if (await _confirmLeaveIfDirty()) {
+                    if (!context.mounted) return;
+                    _logout(context);
+                  }
                 },
                 iconSize: 22,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -481,12 +598,32 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             ],
           ),
         ),
-        floatingActionButton: FloatingActionButton(
-          heroTag: 'assignment-list-fab',
-          backgroundColor: Colors.blue,
-          tooltip: 'שיבוץ ידני',
-          onPressed: _isMutationInFlight ? null : () => _showManualAssignmentFlow(),
-          child: const Icon(Icons.add, color: Colors.white),
+        floatingActionButton: BlocBuilder<AssignmentBloc, AssignmentState>(
+          builder: (context, state) {
+            final stagedCount = state is AssignmentSlotsLoaded
+                ? state.stagedSlotKeys.length
+                : (_lastSlotsState?.stagedSlotKeys.length ?? 0);
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AssignmentSaveBar(
+                  stagedCount: stagedCount,
+                  onSave: _onSavePressed,
+                  onDiscardAll: _onDiscardAll,
+                ),
+                const SizedBox(width: 12),
+                FloatingActionButton(
+                  heroTag: 'assignment-list-fab',
+                  backgroundColor: Colors.blue,
+                  tooltip: 'שיבוץ ידני',
+                  onPressed: _isMutationInFlight
+                      ? null
+                      : () => _showManualAssignmentFlow(),
+                  child: const Icon(Icons.add, color: Colors.white),
+                ),
+              ],
+            );
+          },
         ),
         body: BlocListener<EventBloc, EventState>(
           listener: (context, state) {
@@ -767,7 +904,16 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               if (showLoadMore && index == slots.length) {
                                 return _buildLoadMorePastButton(state);
                               }
-                              return _buildSlotRow(slots[index]);
+                              final row = _buildSlotRow(slots[index],
+                                  state.stagedSlotKeys, state.stagedGoneSlotKeys);
+                              // A dirty row whose DB assignment was deleted
+                              // upstream is kept visible but marked with the
+                              // red diagonal-stripe overlay (see
+                              // stagedGoneSlotKeys / _withDeletedRemotelyOverlay).
+                              return state.stagedGoneSlotKeys
+                                      .contains(_getSlotKey(slots[index]))
+                                  ? _withDeletedRemotelyOverlay(row)
+                                  : row;
                             },
                           );
                         },
@@ -862,26 +1008,199 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     }).toList();
   }
 
-  Widget _buildSlotRow(AssignmentSlot slot) {
+  /// Wraps a rendered slot [row] with the "deleted upstream, kept because
+  /// dirty" marker: a translucent bright-red diagonal-stripe wash plus a small
+  /// badge. Applied to rows in [AssignmentSlotsLoaded.stagedGoneSlotKeys] — a
+  /// dirty row whose backing DB assignment was deleted remotely. The overlay is
+  /// non-interactive (IgnorePointer), so the row underneath stays swipe- and
+  /// tap-able for discard / Save-resolution.
+  Widget _withDeletedRemotelyOverlay(Widget row) {
+    return Stack(
+      children: [
+        row,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: const _DiagonalStripesPainter(),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 24),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade700,
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(6)),
+                  ),
+                  child: const Text(
+                    'שורה זו נמחקה מהשרת, אבל קיים שינוי שמור מקומית',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The optional "extra info" block shown beneath an assignment row — the
+  /// semantic-label chip, the notes card, and the alternative-phone card.
+  /// Shared by in-quota rows ([_buildSlotRow]) and off-quota rows
+  /// ([_buildOffQuotaRow]) so a note / label / phone still shows when a row
+  /// falls OUTSIDE its quota (e.g. after the role's quota was reduced). Returns
+  /// null when the assignment has nothing extra to show.
+  Widget? _buildAssignmentExtraInfo(Assignment? assignment) {
+    if (assignment == null) return null;
+    final hasNotes = assignment.notes.isNotEmpty;
+    final hasSemanticLabel = assignment.semanticLabel != null;
+    final hasAltPhone = assignment.alternativePhoneNumber != null &&
+        assignment.alternativePhoneNumber!.isNotEmpty;
+    if (!hasNotes && !hasSemanticLabel && !hasAltPhone) return null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Column(
+          children: [
+            if (hasSemanticLabel) ...[
+              Align(
+                alignment: Alignment.center,
+                child: AssignmentLabelChip(
+                  label: assignment.semanticLabel!,
+                  fontSize: 10,
+                  maxLines: 3,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+              ),
+              if (hasNotes || hasAltPhone) const SizedBox(height: 4),
+            ],
+            // Notes card
+            if (hasNotes)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.purple.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.note_alt_outlined,
+                      size: 14,
+                      color: Colors.purple.shade700,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: 'הערות לשיבוץ: ',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.purple.shade800,
+                              ),
+                            ),
+                            TextSpan(
+                              text: assignment.notes,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.purple.shade900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            // Alternative phone card
+            if (hasAltPhone) ...[
+              if (hasNotes) const SizedBox(height: 4),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.teal.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.teal.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.phone_android,
+                      size: 14,
+                      color: Colors.teal.shade700,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: 'טלפון חד פעמי לשיבוץ: ',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.teal.shade800,
+                              ),
+                            ),
+                            TextSpan(
+                              text: assignment.alternativePhoneNumber!,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.teal.shade900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSlotRow(AssignmentSlot slot, Set<String> stagedSlotKeys,
+      Set<String> stagedGoneSlotKeys) {
     if (slot.isOffQuota) {
-      return _buildOffQuotaRow(slot);
+      return _buildOffQuotaRow(slot, stagedSlotKeys, stagedGoneSlotKeys);
     }
 
-    final hasNotes = slot.isFilled &&
-        slot.currentAssignment != null &&
-        slot.currentAssignment!.notes.isNotEmpty;
-    final hasSemanticLabel =
-        slot.isFilled && slot.currentAssignment?.semanticLabel != null;
-    final hasAltPhone = slot.isFilled &&
-        slot.currentAssignment != null &&
-        slot.currentAssignment!.alternativePhoneNumber != null &&
-        slot.currentAssignment!.alternativePhoneNumber!.isNotEmpty;
-    final hasExtraInfo = hasSemanticLabel || hasNotes || hasAltPhone;
+    // Dirty marker: a slot with an unsaved staged change gets a bright,
+    // thick yellow border (not a conflict marker — conflicts are only
+    // surfaced at Save time). See "Dirty marker (the yellow border)" in
+    // docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md.
+    final isDirty = stagedSlotKeys.contains(_getSlotKey(slot));
+
+    final extraInfo = _buildAssignmentExtraInfo(slot.currentAssignment);
 
     final rowContent = Container(
       decoration: BoxDecoration(
-        border:
-            Border(bottom: BorderSide(color: Colors.grey.shade400, width: 1.5)),
+        border: isDirty
+            ? Border.all(color: Colors.amber, width: 3)
+            : Border(
+                bottom: BorderSide(color: Colors.grey.shade400, width: 1.5)),
         color: slot.isFilled ? null : Colors.orange.shade50,
       ),
       child: Column(
@@ -1101,7 +1420,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     flex: 3,
                     child: Padding(
                       padding: const EdgeInsetsDirectional.only(start: 8.0),
-                      child: _buildAssignmentCell(slot),
+                      child: _buildAssignmentCell(slot, isDirty: isDirty),
                     ),
                   ),
                 ],
@@ -1109,126 +1428,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             ),
           ),
 
-          // Notes and alternative phone section
-          if (hasExtraInfo)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-              child: Directionality(
-                textDirection: TextDirection.rtl,
-                child: Column(
-                  children: [
-                    if (hasSemanticLabel) ...[
-                      Align(
-                        alignment: Alignment.center,
-                        child: AssignmentLabelChip(
-                          label: slot.currentAssignment!.semanticLabel!,
-                          fontSize: 10,
-                          maxLines: 3,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                        ),
-                      ),
-                      if (hasNotes || hasAltPhone) const SizedBox(height: 4),
-                    ],
-                    // Notes card
-                    if (hasNotes)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.purple.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.purple.shade200),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.note_alt_outlined,
-                              size: 14,
-                              color: Colors.purple.shade700,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text.rich(
-                                TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: 'הערות לשיבוץ: ',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.purple.shade800,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: slot.currentAssignment!.notes,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.purple.shade900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    // Alternative phone card
-                    if (hasAltPhone) ...[
-                      if (hasNotes) const SizedBox(height: 4),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.teal.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.teal.shade200),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.phone_android,
-                              size: 14,
-                              color: Colors.teal.shade700,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text.rich(
-                                TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: 'טלפון חד פעמי לשיבוץ: ',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.teal.shade800,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: slot.currentAssignment!
-                                          .alternativePhoneNumber!,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.teal.shade900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
+          // Notes / label / alt-phone section (shared with off-quota rows).
+          if (extraInfo != null) extraInfo,
         ],
       ),
     );
@@ -1327,12 +1528,24 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// A row for an assignment that has no matching quota slot. Display + delete
   /// only: no dropdown, no notes-edit swipe. Swipe-left deletes just the
   /// assignment document (no quota change — it is already outside the quota).
-  Widget _buildOffQuotaRow(AssignmentSlot slot) {
+  Widget _buildOffQuotaRow(AssignmentSlot slot, Set<String> stagedSlotKeys,
+      Set<String> stagedGoneSlotKeys) {
     final assignment = slot.currentAssignment!;
     final memberName = assignment.teamMember?.name ?? 'לא ידוע';
+    // Off-quota rows are display + immediate-delete only today (no dropdown, so
+    // a REAL off-quota row can't be staged). The exception is a re-materialized
+    // "deleted upstream" staged row (isGone): a staged edit whose slot vanished,
+    // injected here by _materializeGoneStagedRows so it stays visible under the
+    // red-stripe overlay; its swipe discards the local edit instead of deleting
+    // from the DB (there is nothing left in the DB to delete).
+    final isDirty = stagedSlotKeys.contains(_getSlotKey(slot));
+    final isGone = stagedGoneSlotKeys.contains(_getSlotKey(slot));
+    // A note / label / phone must still show when the row is out of quota.
+    final extraInfo = _buildAssignmentExtraInfo(assignment);
 
     return Dismissible(
-      key: Key('offquota_${assignment.id}'),
+      key: Key(
+          isGone ? 'gone_${_getSlotKey(slot)}' : 'offquota_${assignment.id}'),
       direction: DismissDirection.endToStart,
       secondaryBackground: Container(
         alignment: Alignment.centerLeft,
@@ -1343,6 +1556,42 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       background: const SizedBox.shrink(),
       dismissThresholds: const {DismissDirection.endToStart: 0.5},
       confirmDismiss: (direction) async {
+        if (isGone) {
+          // Re-materialized "deleted upstream" staged row: its DB assignment is
+          // gone, so swiping discards the LOCAL staged edit (nothing to delete
+          // in the DB; Save would otherwise re-create it).
+          final assignmentBloc = context.read<AssignmentBloc>();
+          final discard = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                title: const Text('ביטול שינוי מקומי'),
+                content: const Text(
+                  'השיבוץ הזה נמחק בשרת. לבטל את השינוי המקומי? '
+                  '(לחלופין, שמירה תיצור אותו מחדש.)',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('חזרה'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    child: const Text('בטל שינוי',
+                        style: TextStyle(color: Colors.red)),
+                  ),
+                ],
+              ),
+            ),
+          );
+          if (discard == true) {
+            Logger.action(
+                'tap:discardGoneStagedRow', {'slot': _getSlotKey(slot)});
+            assignmentBloc.add(DiscardStagedSlot(_getSlotKey(slot)));
+          }
+          return false;
+        }
         final assignmentRepo = context.read<AssignmentRepository>();
         final assignmentBloc = context.read<AssignmentBloc>();
         final confirmed = await showDialog<bool>(
@@ -1392,77 +1641,85 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.amber.shade50,
-          border: Border(
-            bottom: BorderSide(color: Colors.grey.shade400, width: 1.5),
-          ),
+          border: isDirty
+              ? Border.all(color: Colors.amber, width: 3)
+              : Border(
+                  bottom:
+                      BorderSide(color: Colors.grey.shade400, width: 1.5)),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              flex: 3,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(slot.event.name,
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(slot.event.name,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 13)),
+                      Text(_formatEventDatesHebrew(slot.event),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey.shade600)),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Text(slot.role.hebrewName,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 13)),
-                  Text(_formatEventDatesHebrew(slot.event),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          fontSize: 11, color: Colors.grey.shade600)),
-                ],
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: Text(slot.role.hebrewName,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.bold)),
-            ),
-            Expanded(
-              flex: 3,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
+                          fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Mark first, so in RTL it sits to the RIGHT of the name —
-                      // matching the quota row's placement.
-                      if (slot.sameDayOtherEvents.isNotEmpty) ...[
-                        SameDayAssignmentMark(
-                          otherEvents: slot.sameDayOtherEvents,
-                          memberName: memberName,
-                          size: 18,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Mark first, so in RTL it sits to the RIGHT of the
+                          // name — matching the quota row's placement.
+                          if (slot.sameDayOtherEvents.isNotEmpty) ...[
+                            SameDayAssignmentMark(
+                              otherEvents: slot.sameDayOtherEvents,
+                              memberName: memberName,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Flexible(
+                            child: Text(memberName,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 13)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade200,
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        const SizedBox(width: 4),
-                      ],
-                      Flexible(
-                        child: Text(memberName,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 13)),
+                        child: const Text('מחוץ למכסה',
+                            style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade200,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text('מחוץ למכסה',
-                        style: TextStyle(
-                            fontSize: 10, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
+            if (extraInfo != null) extraInfo,
           ],
         ),
       ),
@@ -1475,6 +1732,15 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     if (_isMutationInFlight) {
       return;
     }
+
+    // Drop any staged edit for this slot first so a pending stage can't
+    // resurrect it after the immediate delete below removes the underlying
+    // assignment/quota.
+    context.read<AssignmentBloc>().add(
+          DiscardStagedSlot(
+            '${slot.event.id}_${slot.role.key}_${slot.slotIndex}',
+          ),
+        );
 
     _startMutation('מוחק משרה...');
     try {
@@ -1578,7 +1844,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     final formKey = GlobalKey<FormState>();
     String? selectedSemanticLabelId = assignment.semanticLabelId;
     final inlineCreatedLabels = <AssignmentLabel>[];
-    bool isSaving = false;
 
     await showDialog<void>(
       context: context,
@@ -1649,48 +1914,46 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   InkWell(
-                                    onTap: isSaving
-                                        ? null
-                                        : () async {
-                                            Logger.action(
-                                                'open:assignmentLabelPicker', {
-                                              'assignmentId': assignment.id,
-                                            });
-                                            await _settleDialogFocus(
-                                              dialogContext,
-                                            );
-                                            if (!dialogContext.mounted) {
-                                              return;
-                                            }
+                                    onTap: () async {
+                                      Logger.action(
+                                          'open:assignmentLabelPicker', {
+                                        'assignmentId': assignment.id,
+                                      });
+                                      await _settleDialogFocus(
+                                        dialogContext,
+                                      );
+                                      if (!dialogContext.mounted) {
+                                        return;
+                                      }
 
-                                            final result =
-                                                await _showAssignmentLabelPickerDialog(
-                                              dialogContext,
-                                              allLabels: allLabels,
-                                              availableLabels: availableLabels,
-                                              selectedLabelId:
-                                                  selectedSemanticLabelId,
-                                            );
-                                            if (result == null ||
-                                                !dialogContext.mounted) {
-                                              return;
-                                            }
+                                      final result =
+                                          await _showAssignmentLabelPickerDialog(
+                                        dialogContext,
+                                        allLabels: allLabels,
+                                        availableLabels: availableLabels,
+                                        selectedLabelId:
+                                            selectedSemanticLabelId,
+                                      );
+                                      if (result == null ||
+                                          !dialogContext.mounted) {
+                                        return;
+                                      }
 
-                                            setDialogState(() {
-                                              if (result.createdLabel != null) {
-                                                inlineCreatedLabels.removeWhere(
-                                                  (label) =>
-                                                      label.id ==
-                                                      result.createdLabel!.id,
-                                                );
-                                                inlineCreatedLabels.add(
-                                                  result.createdLabel!,
-                                                );
-                                              }
-                                              selectedSemanticLabelId =
-                                                  result.selectedLabelId;
-                                            });
-                                          },
+                                      setDialogState(() {
+                                        if (result.createdLabel != null) {
+                                          inlineCreatedLabels.removeWhere(
+                                            (label) =>
+                                                label.id ==
+                                                result.createdLabel!.id,
+                                          );
+                                          inlineCreatedLabels.add(
+                                            result.createdLabel!,
+                                          );
+                                        }
+                                        selectedSemanticLabelId =
+                                            result.selectedLabelId;
+                                      });
+                                    },
                                     borderRadius: BorderRadius.circular(8),
                                     child: InputDecorator(
                                       decoration: InputDecoration(
@@ -1749,7 +2012,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               fillColor: Colors.grey.shade50,
                             ),
                             autofocus: false,
-                            enabled: !isSaving,
                           ),
                           const SizedBox(height: 16),
                           TextFormField(
@@ -1759,7 +2021,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                             textAlign: TextAlign.center,
                             inputFormatters: [PhoneNumberTextInputFormatter()],
                             validator: Validators.validatePhoneNumber,
-                            enabled: !isSaving,
                             decoration: InputDecoration(
                               labelText: 'טלפון חד פעמי לשיבוץ',
                               hintText: '05X-XXXXXXX',
@@ -1779,82 +2040,48 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 ),
                 actions: [
                   TextButton(
-                    onPressed: isSaving
-                        ? null
-                        : () async {
-                            Logger.action('tap:cancel:notesDialog');
-                            await _settleDialogFocus(dialogContext);
-                            if (!dialogContext.mounted) {
-                              return;
-                            }
-                            Navigator.of(dialogContext).pop();
-                          },
+                    onPressed: () async {
+                      Logger.action('tap:cancel:notesDialog');
+                      await _settleDialogFocus(dialogContext);
+                      if (!dialogContext.mounted) {
+                        return;
+                      }
+                      Navigator.of(dialogContext).pop();
+                    },
                     child: const Text('ביטול'),
                   ),
                   ElevatedButton(
-                    onPressed: isSaving
-                        ? null
-                        : () async {
-                            Logger.action('tap:saveNotes', {
-                              'assignmentId': assignment.id,
-                            });
-                            final assignmentBloc =
-                                context.read<AssignmentBloc>();
-                            if (!formKey.currentState!.validate()) {
-                              return;
-                            }
+                    onPressed: () async {
+                      Logger.action('tap:saveNotes', {
+                        'assignmentId': assignment.id,
+                      });
+                      final assignmentBloc = context.read<AssignmentBloc>();
+                      if (!formKey.currentState!.validate()) {
+                        return;
+                      }
 
-                            setDialogState(() {
-                              isSaving = true;
-                            });
+                      final phone = phoneController.text.trim();
+                      assignmentBloc.add(
+                        StageNotesChange(
+                          slot: slot,
+                          notes: notesController.text.trim(),
+                          semanticLabelId: selectedSemanticLabelId,
+                          alternativePhoneNumber:
+                              phone.isEmpty ? null : phone,
+                        ),
+                      );
 
-                            await _settleDialogFocus(dialogContext);
-                            final phone = phoneController.text;
-                            final result = await _dispatchMutation(
-                              (completion) => assignmentBloc.add(
-                                UpdateAssignmentNotes(
-                                  assignment.id,
-                                  notesController.text,
-                                  semanticLabelId: selectedSemanticLabelId,
-                                  alternativePhoneNumber:
-                                      phone.isNotEmpty ? phone : null,
-                                  completion: completion,
-                                ),
-                              ),
-                              showErrorSnackBar: false,
-                            );
-
-                            if (!dialogContext.mounted) {
-                              return;
-                            }
-
-                            if (result.isFailure) {
-                              setDialogState(() {
-                                isSaving = false;
-                              });
-                              return;
-                            }
-
-                            await _settleDialogFocus(dialogContext);
-                            if (!dialogContext.mounted) {
-                              return;
-                            }
-                            Navigator.of(dialogContext).pop();
-                          },
+                      await _settleDialogFocus(dialogContext);
+                      if (!dialogContext.mounted) {
+                        return;
+                      }
+                      Navigator.of(dialogContext).pop();
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
                       foregroundColor: Colors.white,
                     ),
-                    child: isSaving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('שמור'),
+                    child: const Text('שמור'),
                   ),
                 ],
               ),
@@ -2384,7 +2611,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     return Color(int.parse(buffer.toString(), radix: 16));
   }
 
-  Widget _buildAssignmentCell(AssignmentSlot slot) {
+  Widget _buildAssignmentCell(AssignmentSlot slot, {required bool isDirty}) {
     // Get current assigned member:
     // - First try from assignment object itself (handles deactivated members)
     // - Then try from available/alreadyAssigned lists (handles active members)
@@ -2749,6 +2976,29 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             splashRadius: 16,
           ),
 
+        // Inline "↩" undo for a staged (unsaved) change on this slot —
+        // reverts just this slot to its DB baseline. Same operation as the
+        // per-row "קח מה-DB" resolution at Save. See "Discard" (per-slot) in
+        // docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md.
+        if (isDirty)
+          IconButton(
+            onPressed: () {
+              final slotKey = _getSlotKey(slot);
+              Logger.action('tap:discardStagedSlot', {
+                'eventId': slot.event.id,
+                'role': slot.role.key,
+                'slotIndex': slot.slotIndex,
+              });
+              context.read<AssignmentBloc>().add(DiscardStagedSlot(slotKey));
+            },
+            icon: const Icon(Icons.undo, size: 20),
+            color: Colors.amber.shade800,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            tooltip: 'בטל שינוי',
+            splashRadius: 16,
+          ),
+
         // Removed: "שובצו כבר" button - now integrated in dropdown
       ],
     );
@@ -2756,15 +3006,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   Future<void> _handleClearAssignment(AssignmentSlot slot) async {
     if (slot.currentAssignment != null) {
-      await _runBlockingMutation(
-        message: 'מוחק שיבוץ...',
-        dispatch: (completion) => context.read<AssignmentBloc>().add(
-              DeleteAssignment(
-                slot.currentAssignment!.id,
-                completion: completion,
-              ),
-            ),
-      );
+      context.read<AssignmentBloc>().add(
+            StageMemberChange(slot: slot, member: null),
+          );
     }
   }
 
@@ -3117,49 +3361,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return;
     }
 
-    // Create assignment object
-    final assignment = slot.currentAssignment != null
-        ? slot.currentAssignment!.copyWith(
-            teamMemberId: selectedMember.id,
-            teamMember: selectedMember,
-            updatedAt: DateTime.now(),
-          )
-        : Assignment(
-            id: const Uuid().v4(),
-            eventId: slot.event.id,
-            teamMemberId: selectedMember.id,
-            roleType: slot.role.key,
-            slotIndex: slot.slotIndex,
-            status: AssignmentStatus.confirmed,
-            notes: '',
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-            event: slot.event,
-            teamMember: selectedMember,
-          );
-
-    // Use optimistic path with bypass flag to skip conflict checks
-    await _runBlockingMutation(
-      message: 'מעדכן שיבוץ...',
-      dispatch: (completion) {
-        if (slot.currentAssignment != null) {
-          context.read<AssignmentBloc>().add(
-                UpdateAssignment(
-                  assignment,
-                  completion: completion,
-                  bypassAvailability: true,
-                ),
-              );
-        } else {
-          context.read<AssignmentBloc>().add(
-                CreateAssignmentWithBypass(
-                  assignment,
-                  completion: completion,
-                ),
-              );
-        }
-      },
-    );
+    // Stage the change instantly (no write yet). Conflict handling (bypass
+    // or not) now happens at Save time, so the bypass distinction is moot
+    // here — both handlers stage the same way.
+    context.read<AssignmentBloc>().add(
+          StageMemberChange(slot: slot, member: selectedMember),
+        );
   }
 
   Future<void> _handleAssignmentChange(
@@ -3173,47 +3380,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       return;
     }
 
-    // Create assignment object
-    final assignment = slot.currentAssignment != null
-        ? slot.currentAssignment!.copyWith(
-            teamMemberId: selectedMember.id,
-            teamMember: selectedMember,
-            updatedAt: DateTime.now(),
-          )
-        : Assignment(
-            id: const Uuid().v4(),
-            eventId: slot.event.id,
-            teamMemberId: selectedMember.id,
-            roleType: slot.role.key,
-            slotIndex: slot.slotIndex,
-            status: AssignmentStatus.confirmed,
-            notes: '',
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-            event: slot.event,
-            teamMember: selectedMember,
-          );
-
-    await _runBlockingMutation(
-      message: 'מעדכן שיבוץ...',
-      dispatch: (completion) {
-        if (slot.currentAssignment != null) {
-          context.read<AssignmentBloc>().add(
-                UpdateAssignment(
-                  assignment,
-                  completion: completion,
-                ),
-              );
-        } else {
-          context.read<AssignmentBloc>().add(
-                CreateAssignment(
-                  assignment,
-                  completion: completion,
-                ),
-              );
-        }
-      },
-    );
+    // Stage the change instantly (no write yet); the actual write happens
+    // later when the admin saves all staged changes.
+    context.read<AssignmentBloc>().add(
+          StageMemberChange(slot: slot, member: selectedMember),
+        );
   }
 
   String _formatDate(DateTime date) {
@@ -3591,4 +3762,35 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     return months[month];
   }
 
+}
+
+/// Bright-red diagonal hazard stripes over a light red wash, painted across a
+/// slot row to mark it "deleted upstream but kept locally because dirty" (see
+/// [_AssignmentListScreenState._withDeletedRemotelyOverlay]). Semi-transparent
+/// so the row content stays readable underneath.
+class _DiagonalStripesPainter extends CustomPainter {
+  const _DiagonalStripesPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Light red wash so the row content still reads through.
+    final wash = Paint()..color = Colors.red.withValues(alpha: 0.10);
+    canvas.drawRect(Offset.zero & size, wash);
+
+    // Bright-red 45° hazard stripes.
+    final stripe = Paint()
+      ..color = Colors.red.withValues(alpha: 0.30)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7;
+    const spacing = 20.0;
+    // Start x back by size.height so the slanted lines still cover the left
+    // edge over the full row height (each line drops by size.height in x).
+    for (double x = -size.height; x < size.width + size.height; x += spacing) {
+      canvas.drawLine(
+          Offset(x, 0), Offset(x + size.height, size.height), stripe);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DiagonalStripesPainter oldDelegate) => false;
 }

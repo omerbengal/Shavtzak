@@ -145,6 +145,30 @@ class AssignmentRepository {
     await _database.deleteAssignmentsBatch(assignmentIds);
   }
 
+  /// Atomically persist a staged batch of staged assignment changes.
+  ///
+  /// Deliberately does NOT clear `_cachedAssignments` (the live windowed
+  /// slot-build snapshot that `getCurrentAssignments()` returns). The
+  /// `watchAssignmentsInTimeWindow` stream keeps it fresh and re-emits this
+  /// batch's own writes. Clearing it here emptied the cache in the window
+  /// between the write and the next stream emit — so the post-save
+  /// `RebuildAssignmentSlots` (windowed Path A reads `getCurrentAssignments()`)
+  /// rendered an all-empty grid ("0 משובצים") that never recovered once the DB
+  /// had settled.
+  Future<void> saveAssignmentsBatch({
+    required List<Assignment> creates,
+    required List<Assignment> updates,
+    required List<String> deletes,
+    List<EventQuotaBump> eventQuotaBumps = const [],
+  }) async {
+    await _database.saveAssignmentsBatch(
+      creates: creates,
+      updates: updates,
+      deletes: deletes,
+      eventQuotaBumps: eventQuotaBumps,
+    );
+  }
+
   /// Check for conflicts in an assignment
   /// Returns list of conflict messages
   Future<List<String>> checkConflicts(Assignment assignment) async {

@@ -443,31 +443,37 @@ void main() {
   // seeded at load and kept fresh by the watchRoles() listener.
   //
   // Fix: reuse _cachedRoles in _buildSlotsFromAssignments (roles are global /
-  // window-independent and getAllRoles() returns the same set already cached),
-  // falling back to a one-shot getAllRoles() only if the cache is empty. The
-  // full-dataset getAllEvents()/getActiveTeamMembers()/getAllAssignments()
-  // fetches on this path are intentionally left untouched.
+  // window-independent and getAllRoles() returns the same set already cached).
+  //
+  // POST-WINDOWING UPDATE (assignments-slot-build-unification, task 2a):
+  // _buildSlotsFromAssignments no longer has a getAllRoles() fallback at
+  // all — roles are now a REQUIRED caller-supplied parameter — and
+  // _onRebuildAssignmentSlots no longer calls getAllEvents()/
+  // getAllAssignments()/getActiveTeamMembers() either. The filter-change path
+  // now builds from the SAME windowed in-memory caches
+  // (_windowEventsMap/_repository.getCurrentAssignments()/_windowMembersMap/
+  // _cachedRoles) as the live-stream path, behind the same first-paint
+  // readiness gate. The two tests below were updated to seed those caches via
+  // the streams instead of stubbing the old one-shot fetches.
   // ---------------------------------------------------------------------------
 
   test(
     'filter change (RebuildAssignmentSlots) does NOT re-fetch roles',
     () async {
-      // The filter path uses the FULL datasets (getAllEvents/getAllAssignments),
-      // distinct from the windowed hot-path mocks; stub them here.
-      when(eventRepo.getAllEvents())
-          .thenAnswer((_) async => [futureEvent('e1')]);
-      when(assignmentRepo.getAllAssignments())
-          .thenAnswer((_) async => const <Assignment>[]);
-
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
 
       bloc.add(const LoadAssignmentSlots());
       await pumpEventQueue();
 
-      // Seed _cachedRoles via the watchRoles stream (the new seed source, in
-      // place of the removed one-shot getAllRoles() at load).
+      // Open the first-paint gate (events + roles + assignments each once).
+      // POST-WINDOWING, this ALSO seeds the windowed caches
+      // (_windowEventsMap / _cachedRoles / getCurrentAssignments()) that Path
+      // A (RebuildAssignmentSlots) now reads directly, in place of the
+      // removed getAllEvents()/getAllAssignments() one-shot fetches.
+      eventStream.add([futureEvent('e1')]);
       roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
       await pumpEventQueue();
 
       // Dispatch a filter change. This drives _onRebuildAssignmentSlots ->
@@ -475,13 +481,14 @@ void main() {
       bloc.add(const RebuildAssignmentSlots(preservedFilter: {'e1'}));
       await pumpEventQueue();
 
-      // CORE ASSERTION: getAllRoles is never called — the load no longer seeds
-      // via a one-shot fetch, and the filter rebuild reuses the stream-seeded
-      // _cachedRoles instead of re-fetching.
+      // CORE ASSERTION: getAllRoles is never called. POST-WINDOWING this is
+      // now structurally guaranteed (no fallback fetch exists any more), not
+      // just a consequence of the cache being warm.
       verifyNever(roleRepo.getAllRoles());
 
-      // The filter path still uses the full event/assignment datasets (expected,
-      // unchanged) and produced a valid slots state.
+      // The filter path now uses the SAME windowed event/assignment caches as
+      // the live-stream path (POST-WINDOWING; previously getAllEvents()/
+      // getAllAssignments()) and still produced a valid slots state.
       expect(bloc.state, isA<AssignmentSlotsLoaded>());
       expect((bloc.state as AssignmentSlotsLoaded).totalSlots, 1);
     },
@@ -490,18 +497,19 @@ void main() {
   test(
     'real-time role change flows into the filter-change build path',
     () async {
-      when(eventRepo.getAllEvents())
-          .thenAnswer((_) async => [futureEvent('e1')]);
-      when(assignmentRepo.getAllAssignments())
-          .thenAnswer((_) async => const <Assignment>[]);
-
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
 
       bloc.add(const LoadAssignmentSlots());
       await pumpEventQueue();
 
-      // A role rename arrives via watchRoles(), updating _cachedRoles.
+      // Open the first-paint gate. POST-WINDOWING this also seeds the
+      // windowed event/assignment caches Path A now builds from directly
+      // (previously fed to Path A via getAllEvents()/getAllAssignments()
+      // stubs). The role rename below is what opens the gate's roles leg AND
+      // seeds _cachedRoles with the renamed value in one step.
+      eventStream.add([futureEvent('e1')]);
+      assignmentStream.add(const <Assignment>[]);
       final renamed = [medicRole(hebrewName: 'פרמדיק')];
       roleStream.add(renamed);
       await pumpEventQueue();

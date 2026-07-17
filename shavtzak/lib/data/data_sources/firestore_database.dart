@@ -1183,6 +1183,40 @@ class FirestoreDatabase implements DatabaseInterface {
     }
   }
 
+  @override
+  Future<void> saveAssignmentsBatch({
+    required List<Assignment> creates,
+    required List<Assignment> updates,
+    required List<String> deletes,
+    List<EventQuotaBump> eventQuotaBumps = const [],
+  }) async {
+    if (creates.isEmpty &&
+        updates.isEmpty &&
+        deletes.isEmpty &&
+        eventQuotaBumps.isEmpty) {
+      return;
+    }
+    try {
+      await _invokeMutation(
+        'assignment.saveBatch',
+        payload: {
+          'creates': creates.map(_assignmentEntityToMap).toList(),
+          'updates': updates.map(_assignmentEntityToMap).toList(),
+          'deletes': deletes,
+          'eventQuotaBumps': eventQuotaBumps
+              .map((b) => {
+                    'eventId': b.eventId,
+                    'roleType': b.roleType,
+                    'count': b.count,
+                  })
+              .toList(),
+        },
+      );
+    } catch (e) {
+      throw DatabaseException('Failed to save assignments batch: $e');
+    }
+  }
+
   // ========== Assignment Labels ==========
 
   @override

@@ -638,6 +638,31 @@ class LoggingDatabase implements DatabaseInterface {
         action: () => _inner.insertAssignmentsBatch(assignments),
       );
 
+  @override
+  Future<void> saveAssignmentsBatch({
+    required List<Assignment> creates,
+    required List<Assignment> updates,
+    required List<String> deletes,
+    List<EventQuotaBump> eventQuotaBumps = const [],
+  }) =>
+      _runFuture(
+        op: 'saveAssignmentsBatch',
+        ctx: {
+          'collection': 'assignments',
+          'creates': creates.length,
+          'updates': updates.length,
+          'deletes': deletes.length,
+          'quotaBumps': eventQuotaBumps.length,
+        },
+        countOf: (_) => null,
+        action: () => _inner.saveAssignmentsBatch(
+          creates: creates,
+          updates: updates,
+          deletes: deletes,
+          eventQuotaBumps: eventQuotaBumps,
+        ),
+      );
+
   // ===== Utility =====
 
   @override

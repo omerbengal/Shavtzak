@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'environment_service.dart';
 
@@ -10,6 +11,9 @@ class UserCacheService {
   // Legacy opaque backend session cache key. Kept only for cleanup during migration.
   String get _sessionTokenKey =>
       '${EnvironmentService.instance.cachePrefix}selected_user_session_token';
+
+  String get _pendingAssignmentChangesKey =>
+      '${EnvironmentService.instance.cachePrefix}assignments_staged_changes';
 
   /// Save the selected user's unique key to persistent storage
   Future<void> saveSelectedUser(String uniqueKey) async {
@@ -40,6 +44,46 @@ class UserCacheService {
       await prefs.remove(_sessionTokenKey);
     } catch (e) {
       throw UserCacheException('Failed to clear user selection: $e');
+    }
+  }
+
+  /// Persist the staged assignment-change list (as decoded JSON maps) for
+  /// crash recovery. Per-browser, env-prefixed.
+  Future<void> savePendingAssignmentChanges(
+      List<Map<String, dynamic>> changes) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_pendingAssignmentChangesKey, jsonEncode(changes));
+    } catch (e) {
+      throw UserCacheException('Failed to save pending assignment changes: $e');
+    }
+  }
+
+  /// Read the staged assignment-change list. Returns an empty list when none
+  /// is cached or the payload is unreadable (never throws on decode).
+  Future<List<Map<String, dynamic>>> getPendingAssignmentChanges() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_pendingAssignmentChangesKey);
+      if (cached == null || cached.isEmpty) return const [];
+      final decoded = jsonDecode(cached);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Remove all cached staged changes (called on Save-success / discard-all).
+  Future<void> clearPendingAssignmentChanges() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_pendingAssignmentChangesKey);
+    } catch (e) {
+      throw UserCacheException('Failed to clear pending assignment changes: $e');
     }
   }
 

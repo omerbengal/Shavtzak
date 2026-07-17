@@ -7,8 +7,12 @@ import '../../core/debug/debug_clipboard_share.dart';
 import '../../core/debug/debug_logger.dart';
 import '../../core/debug/logger.dart';
 import '../../core/services/environment_service.dart';
+import '../../core/utils/crud_action_result.dart';
+import '../bloc/assignment/assignment_bloc.dart';
+import '../bloc/assignment/assignment_event.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
+import '../screens/assignment/widgets/unsaved_changes_dialog.dart';
 import 'test_environment_indicator.dart';
 
 /// PageView-based swipeable navigation wrapper
@@ -131,16 +135,58 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
 
   /// Handle bottom navigation bar taps
   /// Maps bottom nav index to page index: 0=Checklist(4), 1=Assignments(3), 2=Events(2), 3=Team(1)
-  void _onBottomNavTapped(int index) {
+  ///
+  /// Leave-guard: a courtesy reminder (not data-protection — staged changes
+  /// already survive in the cache) when leaving the ASSIGNMENTS branch
+  /// (page index 3) with unsaved staged changes. See
+  /// docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md
+  /// ("Leave-guard"). [SwipeablePageView] is shared by every admin tab, so
+  /// this stays strictly gated on `currentIndex == 3` — it must never fire
+  /// when leaving any other tab.
+  Future<void> _onBottomNavTapped(int index) async {
     const routeNames = [
       '/admin/checklist',
       '/admin/assignments',
       '/admin/events',
       '/admin/team-members',
     ];
-    DebugLogger.instance.reset(newRoute: routeNames[index]);
     final pageIndices = [4, 3, 2, 1]; // Map bottom nav to page indices
     final pageIndex = pageIndices[index];
+
+    if (widget.navigationShell.currentIndex == 3) {
+      final assignmentBloc = context.read<AssignmentBloc>();
+      if (assignmentBloc.hasStagedChanges) {
+        final stagedCount = assignmentBloc.stagedCount;
+        final decision =
+            await showUnsavedChangesDialog(context, count: stagedCount);
+        if (!mounted) return;
+
+        if (decision == null || decision == LeaveDecision.cancel) {
+          return; // stay on the assignments tab
+        }
+
+        if (decision == LeaveDecision.save) {
+          // Deliberate simplification: this tab-switch "save" resolves any
+          // conflicts with the DEFAULT resolution (override — "my edits
+          // win") and does NOT pop the per-conflict resolution dialog,
+          // because that dialog lives in the assignments screen, not this
+          // nav wrapper. The full conflict-resolution flow stays available
+          // via the on-screen Save button.
+          final completer = Completer<CrudActionResult>();
+          assignmentBloc.add(SaveStagedChanges(completion: completer));
+          final result = await completer.future;
+          if (!mounted) return;
+          if (!result.isSuccess) {
+            return; // save failed — stay; staging + cache remain intact
+          }
+        }
+        // LeaveDecision.leave (or a just-succeeded save) falls through to
+        // navigate below. On `leave`, staged changes deliberately stay in
+        // the cache — this is a courtesy reminder, not data-protection.
+      }
+    }
+
+    DebugLogger.instance.reset(newRoute: routeNames[index]);
     widget.navigationShell.goBranch(pageIndex);
   }
 }

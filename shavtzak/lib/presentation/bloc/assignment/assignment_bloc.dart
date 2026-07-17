@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:uuid/uuid.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/debug/logger.dart';
+import '../../../core/services/user_cache_service.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/event_sorting.dart';
 import '../../../core/utils/filter_persistence.dart';
@@ -17,6 +19,8 @@ import '../../../domain/entities/role.dart';
 import '../../../domain/entities/team_member.dart';
 import 'assignment_event.dart';
 import 'assignment_state.dart';
+import 'models/assignment_conflict.dart';
+import 'models/staged_assignment_change.dart';
 import '../../screens/assignment/models/assignment_slot.dart';
 import '../../screens/assignment/models/assignment_slot_annotations.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
@@ -96,13 +100,42 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   // Keep pending operations independent of state (survives error states)
   Map<String, PendingOperation> _pendingOperations = {};
 
+  // --- Staged Save --------------------------------------------------------
+  // Source of truth for unsaved slot edits, keyed by slotKey
+  // ("${eventId}_${roleType}_${slotIndex}"). Mirrored to _userCache on every
+  // change for crash recovery. Derived PendingOperations (tagged
+  // `persistent: true`) are layered into _pendingOperations at the two
+  // slots-view merge sites so the existing optimistic-merge machinery
+  // renders them with no changes to the merge function itself.
+  final Map<String, StagedAssignmentChange> _stagedChanges = {};
+  final UserCacheService _userCache;
+
+  /// True when there is at least one unsaved staged change.
+  bool get hasStagedChanges => _stagedChanges.isNotEmpty;
+
+  /// Number of unsaved staged changes. Unlike reading
+  /// `state.stagedSlotKeys.length`, this is correct regardless of the
+  /// bloc's currently emitted state (e.g. during `AssignmentOperating`
+  /// while a save is in flight, when state is no longer
+  /// `AssignmentSlotsLoaded`) — leave-guards must use this, not a
+  /// state-type branch, to get an accurate count.
+  int get stagedCount => _stagedChanges.length;
+
+  /// True while a SaveStagedChanges write is in flight. Guards against a
+  /// second concurrent SaveStagedChanges dispatch (flutter_bloc runs
+  /// same-type events concurrently by default) double-submitting the same
+  /// staged changes as two separate batch writes.
+  bool _saveInFlight = false;
+
   AssignmentBloc(
     this._repository,
     this._eventRepository,
     this._teamRepository,
     this._roleRepository,
-    this._calendarSyncBloc,
-  ) : super(const AssignmentInitial()) {
+    this._calendarSyncBloc, {
+    UserCacheService? userCacheService,
+  })  : _userCache = userCacheService ?? UserCacheService(),
+        super(const AssignmentInitial()) {
     // Register event handlers
     on<LoadAssignments>(_onLoadAssignments);
     on<LoadAssignmentsByEvent>(_onLoadAssignmentsByEvent);
@@ -132,6 +165,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<OptimisticDeleteAssignment>(_onOptimisticDeleteAssignment);
     on<LoadMorePastAssignmentSlots>(_onLoadMorePastAssignmentSlots);
     on<ExternalExtraPastMutation>(_onExternalExtraPastMutation);
+    on<StageMemberChange>(_onStageMemberChange);
+    on<StageNotesChange>(_onStageNotesChange);
+    on<DiscardStagedSlot>(_onDiscardStagedSlot);
+    on<DiscardAllStagedChanges>(_onDiscardAllStagedChanges);
+    on<RehydrateStagedChanges>(_onRehydrateStagedChanges);
+    on<SaveStagedChanges>(_onSaveStagedChanges);
   }
 
   /// Load all assignments with real-time updates
@@ -1231,6 +1270,710 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         sameDayOtherEvents: const [],
       );
 
+  // ===========================================================================
+  // Staged Save
+  //
+  // Edits are staged in _stagedChanges (not written through to the database)
+  // until an explicit Save. Each staged change is keyed by slotKey and mirrored
+  // to UserCacheService so an unsaved edit survives a crash/reload.
+  // _stagedAsPendingOperations() converts the map to persistent PendingOperations
+  // that are layered into _pendingOperations at the two slots-view merge sites
+  // (see _syncPendingOperationsWithStaged), so the existing
+  // _mergeSlotsWithOptimisticUpdates renders staged edits with no changes to
+  // the merge function itself.
+  // ===========================================================================
+
+  String _slotKey(AssignmentSlot slot) => StagedAssignmentChange.slotKeyFor(
+      slot.event.id, slot.role.key, slot.slotIndex);
+
+  /// Seed a fresh staged change from the slot's current DB occupant, which
+  /// becomes the baseline (null occupant => the slot started empty).
+  StagedAssignmentChange _seedStaged(AssignmentSlot slot) {
+    final db = slot.currentAssignment;
+    return StagedAssignmentChange(
+      slotKey: _slotKey(slot),
+      eventId: slot.event.id,
+      roleType: slot.role.key,
+      slotIndex: slot.slotIndex,
+      desiredMemberId: db?.teamMemberId,
+      desiredNotes: db?.notes ?? '',
+      desiredSemanticLabelId: db?.semanticLabelId,
+      desiredAltPhone: db?.alternativePhoneNumber,
+      baselineAssignmentId: db?.id,
+      baselineMemberId: db?.teamMemberId,
+      baselineNotes: db?.notes ?? '',
+      baselineSemanticLabelId: db?.semanticLabelId,
+      baselineAltPhone: db?.alternativePhoneNumber,
+      desiredAssignmentId: db?.id ?? const Uuid().v4(),
+      stagedAtMillis: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  /// Store [change] under [key], or drop it if it reverts to baseline; then
+  /// mirror to cache. Awaited by callers (never left fire-and-forget) so the
+  /// cache reliably reflects the latest state for crash-recovery.
+  Future<void> _commitStaged(String key, StagedAssignmentChange change) async {
+    if (change.matchesBaseline) {
+      _stagedChanges.remove(key);
+    } else {
+      _stagedChanges[key] = change;
+    }
+    await _persistStaged();
+  }
+
+  /// Stage a member fill/swap/clear (memberId == null => clear).
+  Future<void> _upsertStagedMember(
+      AssignmentSlot slot, String? memberId) async {
+    final key = _slotKey(slot);
+    final base = _stagedChanges[key] ?? _seedStaged(slot);
+    await _commitStaged(key, base.copyWith(desiredMemberId: () => memberId));
+  }
+
+  /// Stage a notes/label/alt-phone edit (member left unchanged).
+  Future<void> _upsertStagedNotes(AssignmentSlot slot, String notes,
+      String? labelId, String? altPhone) async {
+    final key = _slotKey(slot);
+    final base = _stagedChanges[key] ?? _seedStaged(slot);
+    await _commitStaged(
+      key,
+      base.copyWith(
+        desiredNotes: notes,
+        desiredSemanticLabelId: () => labelId,
+        desiredAltPhone: () => altPhone,
+      ),
+    );
+  }
+
+  Future<void> _persistStaged() async {
+    await _userCache.savePendingAssignmentChanges(
+        _stagedChanges.values.map((c) => c.toJson()).toList());
+  }
+
+  /// Convert staged changes to persistent PendingOperations for the merge.
+  /// Pure function of _stagedChanges — no side effects on _pendingOperations
+  /// (see _syncPendingOperationsWithStaged for how the two are reconciled).
+  Map<String, PendingOperation> _stagedAsPendingOperations() {
+    final ops = <String, PendingOperation>{};
+    _stagedChanges.forEach((key, c) {
+      final PendingOperationType type;
+      Assignment? optimistic;
+      if (c.isClear) {
+        type = PendingOperationType.deleteAssignment;
+      } else {
+        type = c.baselineMemberId == null
+            ? PendingOperationType.createAssignment
+            : PendingOperationType.updateAssignment;
+        optimistic = Assignment(
+          id: c.desiredAssignmentId,
+          eventId: c.eventId,
+          teamMemberId: c.desiredMemberId!,
+          roleType: c.roleType,
+          slotIndex: c.slotIndex,
+          status: AssignmentStatus.confirmed,
+          notes: c.desiredNotes,
+          semanticLabelId: c.desiredSemanticLabelId,
+          alternativePhoneNumber: c.desiredAltPhone,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
+          teamMember: _windowMembersMap[c.desiredMemberId],
+        );
+      }
+      ops[key] = PendingOperation(
+        id: key,
+        type: type,
+        slotKey: key,
+        optimisticAssignment: optimistic,
+        timestamp: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
+        persistent: true,
+      );
+    });
+    return ops;
+  }
+
+  /// The DB assignments with the in-memory staged changes applied, so cross-event
+  /// availability (same-day booking) reflects the admin's unsaved edits. Used ONLY
+  /// for the same-day availability computation in slot-building — NOT for save/
+  /// conflict logic, which compares staged desired vs the RAW DB.
+  List<Assignment> _stagedEffectiveAssignments(List<Assignment> dbAssignments) {
+    if (_stagedChanges.isEmpty) return dbAssignments;
+    final stagedKeys = _stagedChanges.keys.toSet();
+    final result = <Assignment>[
+      // keep every DB assignment whose slot the admin did NOT stage
+      for (final a in dbAssignments)
+        if (!stagedKeys.contains(
+            StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex)))
+          a,
+    ];
+    // add the desired assignment for every staged fill/swap (staged CLEARs add nothing)
+    for (final c in _stagedChanges.values) {
+      if (c.isClear) continue;
+      result.add(Assignment(
+        id: c.desiredAssignmentId,
+        eventId: c.eventId,
+        teamMemberId: c.desiredMemberId!,
+        roleType: c.roleType,
+        slotIndex: c.slotIndex,
+        status: AssignmentStatus.confirmed,
+        notes: c.desiredNotes,
+        semanticLabelId: c.desiredSemanticLabelId,
+        alternativePhoneNumber: c.desiredAltPhone,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
+        updatedAt: DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis),
+        teamMember: _windowMembersMap[c.desiredMemberId],
+      ));
+    }
+    return result;
+  }
+
+  /// Reconcile `_pendingOperations` with the current staged-changes snapshot,
+  /// called immediately before each slots-view merge call.
+  ///
+  /// This is NOT a blind `_pendingOperations = _stagedAsPendingOperations()`
+  /// replace: the (dormant in production, but still exercised by
+  /// assignment_bloc_slots_refetch_test.dart) Optimistic* handlers also live
+  /// in `_pendingOperations`, tagged `persistent: false`. A blind replace
+  /// would wipe their in-flight entries the moment any stream event triggers
+  /// a rebuild while a write is in flight. Staged entries are tagged
+  /// `persistent: true` (see _stagedAsPendingOperations), so reconciliation
+  /// strips only previously-staged entries (preventing a discarded/changed
+  /// staged slot from lingering) before overlaying the fresh snapshot —
+  /// non-persistent (Optimistic*-owned) entries are left untouched. The two
+  /// mechanisms coexist in the same map.
+  void _syncPendingOperationsWithStaged() {
+    _pendingOperations = Map<String, PendingOperation>.from(_pendingOperations)
+      ..removeWhere((_, op) => op.persistent)
+      ..addAll(_stagedAsPendingOperations());
+  }
+
+  Future<void> _onStageMemberChange(
+      StageMemberChange event, Emitter<AssignmentState> emit) async {
+    await _upsertStagedMember(event.slot, event.member?.id);
+    Logger.action('stage:member', {
+      'slot': _slotKey(event.slot),
+      'from': event.slot.currentAssignment?.teamMemberId ?? 'empty',
+      'to': event.member?.id ?? 'CLEARED',
+      'stagedCount': _stagedChanges.length,
+    });
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onStageNotesChange(
+      StageNotesChange event, Emitter<AssignmentState> emit) async {
+    await _upsertStagedNotes(event.slot, event.notes, event.semanticLabelId,
+        event.alternativePhoneNumber);
+    Logger.action('stage:notes', {
+      'slot': _slotKey(event.slot),
+      'stagedCount': _stagedChanges.length,
+    });
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onDiscardStagedSlot(
+      DiscardStagedSlot event, Emitter<AssignmentState> emit) async {
+    // A discard must not race an in-flight Save: SaveStagedChanges already
+    // captured its own snapshot of creates/updates/deletes before this event
+    // is handled, so clearing _stagedChanges here would be silently
+    // overridden the moment that write lands — the discard would appear to
+    // succeed in the UI but the save writes anyway.
+    if (_saveInFlight) return;
+    _stagedChanges.remove(event.slotKey);
+    await _persistStaged();
+    Logger.action('stage:discardSlot', {
+      'slot': event.slotKey,
+      'stagedCount': _stagedChanges.length,
+    });
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onDiscardAllStagedChanges(
+      DiscardAllStagedChanges event, Emitter<AssignmentState> emit) async {
+    // See _onDiscardStagedSlot: guard against discarding while a Save is
+    // already converging its own captured snapshot to the DB.
+    if (_saveInFlight) return;
+    Logger.action('stage:discardAll', {'had': _stagedChanges.length});
+    _stagedChanges.clear();
+    await _userCache.clearPendingAssignmentChanges();
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onRehydrateStagedChanges(
+      RehydrateStagedChanges event, Emitter<AssignmentState> emit) async {
+    final maps = await _userCache.getPendingAssignmentChanges();
+    _stagedChanges
+      ..clear()
+      ..addEntries(maps
+          .map(StagedAssignmentChange.fromJson)
+          .map((c) => MapEntry(c.slotKey, c)));
+    Logger.action('stage:rehydrate', {'loaded': _stagedChanges.length});
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  /// Slot keys of dirty rows whose underlying DB assignment was DELETED
+  /// remotely while the row stayed dirty. A staged row qualifies when it is a
+  /// FILLED desired state (`desiredMemberId != null` — there is a visible row
+  /// to keep) that WAS anchored to a real DB assignment at stage time
+  /// (`baselineMemberId != null`), but no assignment for that slot exists in
+  /// the current raw DB snapshot (`getCurrentAssignments()` + paged extra-past,
+  /// the same source `classifyStagedConflicts`/Save read). Such rows are kept
+  /// visible (their staged state) and marked with the red diagonal-stripe
+  /// "deleted upstream, kept because dirty" overlay instead of vanishing.
+  ///
+  /// A staged CLEAR (desired empty) is intentionally excluded: the admin's
+  /// intent there IS to remove the row, so an empty row is correct. A fresh
+  /// FILL over a slot that started empty (`baselineMemberId == null`) is also
+  /// excluded: it is an ordinary pending fill, not a remote deletion.
+  Set<String> _computeStagedGoneKeys() {
+    if (_stagedChanges.isEmpty) return const {};
+    final dbKeys = <String>{
+      for (final a in [
+        ..._repository.getCurrentAssignments(),
+        ..._extraPastAssignments,
+      ])
+        StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex),
+    };
+    final gone = <String>{};
+    _stagedChanges.forEach((key, c) {
+      if (c.desiredMemberId != null &&
+          c.baselineMemberId != null &&
+          !dbKeys.contains(key)) {
+        gone.add(key);
+      }
+    });
+    return gone;
+  }
+
+  /// Re-materialize dirty rows whose slot vanished (quota shrank / role removed
+  /// under the staged edit) so a remotely-deleted staged change stays VISIBLE —
+  /// with the red diagonal-stripe overlay — instead of silently dropping out of
+  /// the grid. For each key in [goneKeys] not already represented in [slots],
+  /// synthesize an off-quota row from the staged desired state, then re-sort.
+  ///
+  /// Off-quota (isOffQuota: true) keeps the phantom row OUT of the quota /
+  /// double-assignment / availability math, exactly like real off-quota rows.
+  /// It is added regardless of the event filter: an unresolved staged edit must
+  /// stay reachable to discard or Save. Keys already present in [slots] (the
+  /// in-quota case, where the empty quota slot survived + the overlay refilled
+  /// it) are skipped — they already render.
+  List<AssignmentSlot> _materializeGoneStagedRows(
+      List<AssignmentSlot> slots, Set<String> goneKeys) {
+    if (goneKeys.isEmpty) return slots;
+    final presentKeys = slots.map(_getSlotKey).toSet();
+    final synthesized = <AssignmentSlot>[];
+    for (final key in goneKeys) {
+      if (presentKeys.contains(key)) continue; // already rendered (in-quota)
+      final c = _stagedChanges[key];
+      if (c == null) continue;
+      final event =
+          _windowEventsMap[c.eventId] ?? _extraPastEventsMap[c.eventId];
+      if (event == null) continue; // cannot render without the event
+      final member = c.desiredMemberId == null
+          ? null
+          : _windowMembersMap[c.desiredMemberId];
+      // Deterministic timestamps (the stage-time millis) so two rebuilds of an
+      // unchanged staged edit produce an EQUAL synthesized slot — otherwise the
+      // Equatable state differs every rebuild and _emitOrLog re-emits endlessly.
+      final stagedTs = DateTime.fromMillisecondsSinceEpoch(c.stagedAtMillis);
+      final assignment = _assignmentFromStaged(c,
+              id: c.desiredAssignmentId,
+              createdAt: stagedTs,
+              updatedAt: stagedTs)
+          .withRelations(event: event, teamMember: member);
+      synthesized.add(AssignmentSlot(
+        event: event,
+        role: _resolveRoleForKey(c.roleType),
+        slotIndex: c.slotIndex,
+        currentAssignment: assignment,
+        availableMembers: const [],
+        alreadyAssignedMembers: const [],
+        isOffQuota: true,
+      ));
+    }
+    if (synthesized.isEmpty) return slots;
+    return [...slots, ...synthesized]..sort(_compareAssignmentSlots);
+  }
+
+  /// Compare each staged change's baseline to the current DB slots and
+  /// return the conflicts to resolve at Save. A slot conflicts when its
+  /// current DB occupant/notes differ from the baseline captured at first
+  /// touch.
+  ///
+  /// [currentSlots] (typically `AssignmentSlotsLoaded.slots`) is used ONLY to
+  /// check whether the slot still exists in the grid (quota shrink -> D). It
+  /// is deliberately NOT used to read the current DB member/notes: every
+  /// staged slot renders its OPTIMISTIC (desired) value in `currentSlots`
+  /// (see `_mergeSlotsWithOptimisticUpdates`/`_emptied`), which would mask
+  /// genuine concurrent DB changes — a staged clear always shows an empty
+  /// `currentAssignment` there regardless of what the DB actually holds. The
+  /// real current-DB occupant is read from `_repository.getCurrentAssignments()`,
+  /// the raw, un-staged snapshot the bloc already keeps live from the
+  /// assignments stream.
+  List<AssignmentConflict> classifyStagedConflicts(
+      List<AssignmentSlot> currentSlots) {
+    final slotKeysPresent = currentSlots.map(_getSlotKey).toSet();
+    // Union of the live 90-day window cache AND the extra-past cache (rows
+    // loaded via "load more history"). The window cache alone misses any
+    // paginated-in past row, which would otherwise misclassify a staged edit
+    // on that row as targetRemoved (B) and, on override, route it to
+    // `creates` with the row's REAL existing id -> backend batch.create on an
+    // existing doc -> ALREADY_EXISTS. _extraPastAssignments is strictly older
+    // than the window, so no id collisions with getCurrentAssignments.
+    final dbByKey = <String, Assignment>{
+      for (final a in [
+        ..._repository.getCurrentAssignments(),
+        ..._extraPastAssignments,
+      ])
+        StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex):
+            a,
+    };
+
+    final conflicts = <AssignmentConflict>[];
+
+    _stagedChanges.forEach((key, c) {
+      // Context header for the conflict row: "<event name> · <role>" so the
+      // admin can tell WHICH assignment each conflict is about (several
+      // conflicts can otherwise read identically). The event may be out of the
+      // live window if it was paged in, so fall back to the extra-past map.
+      final conflictEvent =
+          _windowEventsMap[c.eventId] ?? _extraPastEventsMap[c.eventId];
+      final conflictRoleName = _resolveRoleForKey(c.roleType).hebrewName;
+      final conflictTitle = conflictEvent != null
+          ? '${conflictEvent.name} · $conflictRoleName'
+          : conflictRoleName;
+
+      // D: slot no longer exists (quota shrank / role removed). Two-button:
+      // override = create off-quota (handled at Save), takeDb = discard.
+      if (!slotKeysPresent.contains(key)) {
+        conflicts.add(AssignmentConflict(
+          slotKey: key,
+          type: AssignmentConflictType.slotVanished,
+          title: conflictTitle,
+          description:
+              'המכסה של "$conflictRoleName" באירוע קטנה, והמשרה ששיבצת אליה כבר לא קיימת.',
+          discardOnly: false,
+        ));
+        return;
+      }
+
+      final dbAssignment = dbByKey[key];
+      final dbMemberId = dbAssignment?.teamMemberId;
+      final dbNotes = dbAssignment?.notes ?? '';
+      final dbLabel = dbAssignment?.semanticLabelId;
+      final dbAltPhone = dbAssignment?.alternativePhoneNumber;
+      final baselineMember = c.baselineMemberId;
+
+      // No divergence from baseline (member + notes + label + altPhone) =>
+      // no conflict. Label/altPhone must be included: a concurrent DB change
+      // to only one of those (notes/member unchanged) is a real divergence
+      // that would otherwise be classified no-conflict and silently
+      // overwritten at Save.
+      final memberDiverged = dbMemberId != baselineMember;
+      final notesDiverged = dbNotes != c.baselineNotes;
+      final labelDiverged = dbLabel != c.baselineSemanticLabelId;
+      final altPhoneDiverged = dbAltPhone != c.baselineAltPhone;
+      if (!memberDiverged &&
+          !notesDiverged &&
+          !labelDiverged &&
+          !altPhoneDiverged) {
+        return;
+      }
+
+      if (c.isClear) {
+        // C: you cleared baseline B, DB now holds a different member.
+        if (dbMemberId != null && dbMemberId != baselineMember) {
+          conflicts.add(AssignmentConflict(
+            slotKey: key,
+            type: AssignmentConflictType.clearCollision,
+            title: conflictTitle,
+            description: 'ניקית שיבוץ שקיים, אך בינתיים שובץ שם אדם אחר ב-DB.',
+          ));
+        }
+        return; // clear + already-empty is satisfied, not a conflict
+      }
+
+      if (dbMemberId == null && baselineMember != null) {
+        // B: your swap/notes target was deleted.
+        conflicts.add(AssignmentConflict(
+          slotKey: key,
+          type: AssignmentConflictType.targetRemoved,
+          title: conflictTitle,
+          description: 'השיבוץ ששינית נמחק בינתיים ב-DB.',
+        ));
+        return;
+      }
+
+      if (memberDiverged) {
+        // A: slot taken by a different member than your baseline.
+        conflicts.add(AssignmentConflict(
+          slotKey: key,
+          type: AssignmentConflictType.slotTaken,
+          title: conflictTitle,
+          description: 'המשרה נתפסה: בינתיים שובץ שם אדם אחר ב-DB.',
+        ));
+        return;
+      }
+
+      // F: notes, label, or alt-phone changed underneath a non-member edit
+      // (member unchanged from baseline, so A/B/C above did not fire).
+      conflicts.add(AssignmentConflict(
+        slotKey: key,
+        type: AssignmentConflictType.notesChanged,
+        title: conflictTitle,
+        description: 'ההערות/הלייבל של השיבוץ שונו בינתיים ב-DB.',
+      ));
+    });
+
+    return conflicts;
+  }
+
+  /// Atomically persist every staged change (see [SaveStagedChanges]).
+  ///
+  /// Converges each applied staged slot to its desired state against the
+  /// CURRENT DB — read from `_repository.getCurrentAssignments()`, the raw
+  /// pre-merge cache, exactly as [classifyStagedConflicts] does. This is
+  /// deliberate and MUST NOT be read from `state.slots`/`AssignmentSlotsLoaded`:
+  /// those slots already have staging overlaid on top
+  /// (`_mergeSlotsWithOptimisticUpdates`), so `slot.currentAssignment` is the
+  /// MERGED/desired value, not the raw DB doc. Sourcing the DB occupant from
+  /// there would mis-route a staged fill into `updates` (updating a document
+  /// id that was never written -> batch fails) and would silently drop a
+  /// staged clear (the merged slot already reads as empty).
+  ///
+  /// Fail-loud guarantee: a missing DB row is only ever a legitimate no-op
+  /// when the staged change's `baselineMemberId == null` (the slot started
+  /// empty — nothing to lose). When `baselineMemberId != null` — the change
+  /// is anchored to a member that WAS on the slot — a missing DB row means
+  /// the row was deleted from under the edit (e.g. a concurrent co-admin
+  /// delete); that case is counted as a skip and surfaced in the completion
+  /// message instead of silently vanishing behind `'נשמרו 0 שינויים'`.
+  Future<void> _onSaveStagedChanges(
+      SaveStagedChanges event, Emitter<AssignmentState> emit) async {
+    if (_stagedChanges.isEmpty) {
+      _completeActionSuccess(event.completion, 'אין שינויים לשמירה');
+      return;
+    }
+    if (_saveInFlight) {
+      _completeActionFailure(event.completion, 'שמירה כבר מתבצעת');
+      return;
+    }
+    _saveInFlight = true;
+
+    final resolutions = event.resolutions ?? const {};
+    // Union of the live 90-day window cache AND the extra-past cache (rows
+    // loaded via "load more history"). The window cache alone misses any
+    // paginated-in past row, which would otherwise misclassify a staged edit
+    // on that row as targetRemoved (B) and, on override, route it to
+    // `creates` with the row's REAL existing id -> backend batch.create on an
+    // existing doc -> ALREADY_EXISTS. _extraPastAssignments is strictly older
+    // than the window, so no id collisions with getCurrentAssignments.
+    final dbByKey = <String, Assignment>{
+      for (final a in [
+        ..._repository.getCurrentAssignments(),
+        ..._extraPastAssignments,
+      ])
+        StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex):
+            a,
+    };
+
+    Logger.action('save:start', {
+      'staged': _stagedChanges.length,
+      'dbTruth': dbByKey.length,
+      'resolutions': resolutions.map((k, v) => MapEntry(k, v.name)),
+    });
+
+    final creates = <Assignment>[];
+    final updates = <Assignment>[];
+    final deletes = <String>[];
+    final appliedKeys = <String>[];
+    // Counts staged changes anchored to a real DB member (baselineMemberId
+    // != null) whose expected DB row is gone at save time — see the
+    // baseline-vs-db branch below. Surfaced in the success message so a real
+    // staged edit never disappears behind a silent 'נשמרו 0 שינויים'.
+    var skippedNotFound = 0;
+
+    for (final entry in _stagedChanges.entries) {
+      final key = entry.key;
+      final c = entry.value;
+
+      // takeDb => the admin chose to keep the DB state; drop this staged
+      // change entirely (no write), but still remove it from staging.
+      if (resolutions[key] == ConflictResolution.takeDb) {
+        appliedKeys.add(key);
+        Logger.action('save:slot', {
+          'slot': key,
+          'isClear': c.isClear,
+          'dbFound': dbByKey[key] != null,
+          'decision': 'takeDb-skip',
+        });
+        continue;
+      }
+
+      final dbAssignment = dbByKey[key];
+      // The admin explicitly chose "my change wins" (דרוס DB / צור מחוץ למכסה)
+      // for this conflict — a deliberate instruction to re-create/keep the
+      // change, so it must NOT be intercepted by the skip-not-found safety net.
+      final isOverride = resolutions[key] == ConflictResolution.overrideDb;
+      String decision;
+      if (dbAssignment == null && c.baselineMemberId != null && !isOverride) {
+        // LOSSY case (UNRESOLVED): this change is anchored to a member that WAS
+        // on the slot (baselineMemberId != null — a clear, a swap, or a
+        // notes/label/alt-phone edit), the expected DB row is gone (a concurrent
+        // delete by another admin), AND the admin did NOT explicitly override
+        // it. Silently creating a fresh row would fabricate an assignment the
+        // admin never asked to (re)create. Queue no write, drop the now-
+        // meaningless staged entry, and count it so the caller reports the skip
+        // instead of a false 'נשמרו 0 שינויים' success. (An explicit override
+        // falls through to the create branch below and RE-creates the row —
+        // exactly what the admin asked for.)
+        skippedNotFound++;
+        decision = 'skip-not-found';
+      } else if (c.isClear) {
+        if (dbAssignment != null) {
+          deletes.add(dbAssignment.id);
+          decision = 'clear-delete';
+        } else {
+          // baselineMemberId == null here (the branch above already caught
+          // the != null case) -> the slot started empty, so a staged clear
+          // over an already-empty DB slot is a legitimate no-op, not a loss.
+          decision = 'clear-noop';
+        }
+      } else if (dbAssignment == null) {
+        // No DB row: a fresh fill (baseline empty), OR an explicit override of a
+        // since-deleted / vanished-slot conflict — RE-create the assignment
+        // (in-quota, or off-quota if the slot's quota is gone) from the staged
+        // desired member/notes, keeping its original id.
+        creates.add(_assignmentFromStaged(c, id: c.desiredAssignmentId));
+        decision = 'create';
+      } else {
+        // Converge the EXISTING DB doc to the desired state, preserving its
+        // id and createdAt (the backend `batch.update` writes the full doc,
+        // so a fresh createdAt here would silently overwrite the original).
+        updates.add(_assignmentFromStaged(
+          c,
+          id: dbAssignment.id,
+          createdAt: dbAssignment.createdAt,
+        ));
+        decision = 'update';
+      }
+      appliedKeys.add(key);
+      Logger.action('save:slot', {
+        'slot': key,
+        'isClear': c.isClear,
+        'dbFound': dbByKey[key] != null,
+        'decision': decision,
+      });
+    }
+
+    // Restore-to-quota: any create that would land OFF-quota — its slotIndex is
+    // at/above the event's CURRENT quota for that role, i.e. an override that
+    // re-creates a row whose slot had vanished — asks the backend to raise that
+    // role's quota just enough to fit it, ATOMICALLY with the write (one batch),
+    // so the row comes back IN-quota instead of off-quota. Keyed per
+    // (event, role) to the highest slotIndex+1 needed. The record type is
+    // structurally the repository's EventQuotaBump (no import needed).
+    final quotaBumpByKey =
+        <String, ({String eventId, String roleType, int count})>{};
+    for (final a in creates) {
+      final ev = _windowEventsMap[a.eventId] ?? _extraPastEventsMap[a.eventId];
+      if (ev == null) continue;
+      final currentQuota = ev.roleRequirements[a.roleType] ?? 0;
+      if (a.slotIndex >= currentQuota) {
+        final key = '${a.eventId}_${a.roleType}';
+        final needed = a.slotIndex + 1;
+        final existing = quotaBumpByKey[key];
+        if (existing == null || needed > existing.count) {
+          quotaBumpByKey[key] =
+              (eventId: a.eventId, roleType: a.roleType, count: needed);
+        }
+      }
+    }
+    final eventQuotaBumps = quotaBumpByKey.values.toList();
+
+    _emitOrLog(emit, const AssignmentOperating('saving'));
+    try {
+      Logger.action('save:batch', {
+        'creates': creates
+            .map((a) => '${a.roleType}#${a.slotIndex}=${a.teamMemberId}')
+            .toList(),
+        'updates': updates.map((a) => '${a.id}=>${a.teamMemberId}').toList(),
+        'deletes': deletes,
+        'quotaBumps': eventQuotaBumps
+            .map((b) => '${b.roleType}@${b.eventId}->${b.count}')
+            .toList(),
+      });
+      await _repository.saveAssignmentsBatch(
+        creates: creates,
+        updates: updates,
+        deletes: deletes,
+        eventQuotaBumps: eventQuotaBumps,
+      );
+      Logger.action('save:done', {
+        'written': creates.length + updates.length + deletes.length,
+        'skippedNotFound': skippedNotFound,
+      });
+      for (final k in appliedKeys) {
+        _stagedChanges.remove(k);
+      }
+      // Re-persist the SURVIVING staged changes rather than blanket-clearing
+      // the cache. The screen's leave-guard Save runs without a blocking
+      // overlay, so the grid stays interactive during this await — a new
+      // edit may have been staged (added to _stagedChanges) after
+      // appliedKeys was captured above, in which case it correctly survives
+      // the removal loop but is NOT in appliedKeys. A blanket
+      // clearPendingAssignmentChanges() here would still wipe that survivor
+      // from crash-recovery even though it correctly remains in memory.
+      // _persistStaged() writes whatever is left in _stagedChanges — `[]`
+      // when none remain (equivalent to a clear), or the survivor's entry
+      // when one was staged mid-save.
+      await _persistStaged();
+      final written = creates.length + updates.length + deletes.length;
+      // Never a bare 'נשמרו 0 שינויים' while a baseline-anchored change was
+      // dropped for lack of a DB row: report the skip alongside the write
+      // count instead of pretending nothing happened.
+      final successMessage = skippedNotFound == 0
+          ? 'נשמרו $written שינויים'
+          : 'נשמרו $written שינויים · $skippedNotFound דולגו (השיבוץ כבר לא קיים)';
+      _completeActionSuccess(event.completion, successMessage);
+      add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+    } catch (e) {
+      Logger.action('save:fail', {'error': e.toString()});
+      _completeActionFailure(event.completion, 'שמירה נכשלה: $e');
+      add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+    } finally {
+      _saveInFlight = false;
+    }
+  }
+
+  /// Build the Assignment doc to write for a staged change. [id] is the
+  /// target document id (the existing DB doc's id for an update, or the
+  /// staged change's stable [StagedAssignmentChange.desiredAssignmentId] for
+  /// a create). [createdAt] should be the existing DB doc's createdAt for an
+  /// update (preserved, not reset); omitted (defaults to now) for a create.
+  Assignment _assignmentFromStaged(
+    StagedAssignmentChange c, {
+    required String id,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    final now = DateTime.now();
+    return Assignment(
+      id: id,
+      eventId: c.eventId,
+      teamMemberId: c.desiredMemberId!,
+      roleType: c.roleType,
+      slotIndex: c.slotIndex,
+      status: AssignmentStatus.confirmed,
+      notes: c.desiredNotes,
+      semanticLabelId: c.desiredSemanticLabelId,
+      alternativePhoneNumber: c.desiredAltPhone,
+      createdAt: createdAt ?? now,
+      // updatedAt defaults to now for the Save path (a real write), but callers
+      // that render a synthesized row MUST pass a STABLE timestamp: an
+      // Equatable Assignment stamped with DateTime.now() on every rebuild would
+      // make the slot differ each time and defeat the no-op emit suppression.
+      updatedAt: updatedAt ?? now,
+    );
+  }
+
   /// Optimistic create assignment handler
   Future<void> _onOptimisticCreateAssignment(
     OptimisticCreateAssignment event,
@@ -1537,40 +2280,33 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   }
 
   /// Build complete slots state from assignments
-  /// Fetches latest events and team members, then builds slot grid
+  /// Takes already-scoped events/activeMembers/roles from the CALLER instead
+  /// of fetching them internally. _onRebuildAssignmentSlots (the only caller)
+  /// feeds this from the SAME windowed in-memory caches the live-stream path
+  /// (_onRebuildAssignmentSlotsFromData) uses —
+  /// _repository.getCurrentAssignments() + _extraPastAssignments,
+  /// _windowEventsMap + _extraPastEventsMap (then showPastEvents-filtered by
+  /// the caller), _windowMembersMap filtered to active, _cachedRoles —
+  /// instead of the unbounded getAllAssignments()/getAllEvents()/
+  /// getActiveTeamMembers()/getAllRoles() this method used to fetch itself.
+  /// This keeps the stage/filter/rehydrate/save rebuild path scoped to the
+  /// exact same 90-day-back/180-day-forward (+ paged extras) data window as
+  /// the live-stream path — see docs/superpowers/plans/
+  /// 2026-07-16-assignments-slot-build-unification.md ("Bug #3 root cause").
   Future<AssignmentSlotsLoaded> _buildSlotsFromAssignments(
-    List<Assignment> assignments, {
+    List<Assignment> assignments,
+    List<Event> events,
+    List<TeamMember> activeMembers,
+    List<Role> roles, {
     Set<String>? selectedEventIds,
   }) async {
-    // 1. Load all events
-    var events = await _eventRepository.getAllEvents();
-
-    // 2a. Deactivated events have no presence in the assignments grid
+    // Deactivated events have no presence in the assignments grid. Unlike
+    // showPastEvents (a caller-owned display toggle), this is unconditional,
+    // so it stays here rather than moving to the caller.
     events = events.where((event) => !event.isDeactivated).toList();
 
-    // 2b. Filter events based on showPastEvents flag
-    if (!FilterPersistence.showPastEvents) {
-      final now = DateTime.now();
-      // Only include events where end date >= today (start of day)
-      final todayStart = DateTime(now.year, now.month, now.day);
-      events = events
-          .where((event) => event.endDate
-              .isAfter(todayStart.subtract(const Duration(days: 1))))
-          .toList();
-    }
-
-    // 3. Load all active team members
-    final allMembers = await _teamRepository.getActiveTeamMembers();
-
-    // 4. Load roles and sort by sortOrder.
-    // Roles are global (window-independent) and kept live in _cachedRoles by
-    // the watchRoles() subscription; reuse the cache instead of re-fetching on
-    // every filter change. Fall back to a one-shot fetch if not yet seeded.
-    final allRoles = _cachedRoles.isNotEmpty
-        ? _cachedRoles
-        : await _roleRepository.getAllRoles();
     // Sort a COPY so the shared _cachedRoles list is never mutated in place.
-    final sortedRoles = [...allRoles]
+    final sortedRoles = [...roles]
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
     // Create a mapping from role key to Role for easy lookup
@@ -1581,6 +2317,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
     // 5. Build slots
     final slots = <AssignmentSlot>[];
+
+    // Staged-aware view of the DB assignments, used ONLY below for the
+    // cross-event same-day exclusion so an unsaved stage-clear/fill/swap is
+    // reflected in other events' availability immediately (see
+    // _stagedEffectiveAssignments doc comment). Every other use of
+    // `assignments` in this method (currentAssignment, assignedMemberIds,
+    // off-quota rows, annotations) intentionally stays on the raw DB list —
+    // the optimistic overlay in _mergeSlotsWithOptimisticUpdates already
+    // handles those.
+    final effectiveAssignments = _stagedEffectiveAssignments(assignments);
 
     for (final event in events) {
       final placedAssignmentIds = <String>{};
@@ -1618,10 +2364,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               eventAssignments.map((a) => a.teamMemberId).toSet();
 
           // Detect same-day assignments (members assigned to OTHER events on same day(s))
+          // Iterates effectiveAssignments (DB + staged overlay), NOT the raw
+          // `assignments` param — see _stagedEffectiveAssignments.
           final sameDayAssignedMembersMap = <String, TeamMember>{};
           final sameDayEventInfoMap = <String, List<String>>{};
 
-          for (final otherAssignment in assignments) {
+          for (final otherAssignment in effectiveAssignments) {
             // Skip assignments to THIS event
             if (otherAssignment.eventId == event.id) continue;
 
@@ -1637,10 +2385,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             // Check if events share dates
             if (eventsShareDay(event, otherEvent)) {
               final memberId = otherAssignment.teamMemberId;
-              final member = allMembers.firstWhere(
-                (m) => m.id == memberId,
-                orElse: () => allMembers.first, // Fallback
-              );
+              // Null-safe: skip if the owner isn't in the active-member set
+              // (deactivated, or members not yet streamed in) rather than
+              // mis-attributing the same-day conflict to an arbitrary member,
+              // or throwing `.first` on an empty list. Mirrors the live-stream
+              // path's null-skip (divergence #4).
+              final memberMatches =
+                  activeMembers.where((m) => m.id == memberId);
+              if (memberMatches.isEmpty) continue;
+              final member = memberMatches.first;
 
               // Only add if member has the capability for current role and doesn't allow multiple assignments
               if (member.canPerformRole(role.key) &&
@@ -1662,7 +2415,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           final availableMembersMap = <String, TeamMember>{};
           final alreadyAssignedMembersMap = <String, TeamMember>{};
 
-          for (final member in allMembers) {
+          for (final member in activeMembers) {
             // Check capability
             if (!member.canPerformRole(role.key)) continue;
 
@@ -1728,9 +2481,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // 7. Sort slots deterministically so same-role rows do not flip order.
     annotatedSlots.sort(_compareAssignmentSlots);
 
+    final goneKeys = _computeStagedGoneKeys();
     return AssignmentSlotsLoaded(
-      annotatedSlots,
+      _materializeGoneStagedRows(annotatedSlots, goneKeys),
       selectedEventIds: selectedEventIds ?? {},
+      stagedSlotKeys: _stagedChanges.keys.toSet(),
+      stagedGoneSlotKeys: goneKeys,
     );
   }
 
@@ -1764,6 +2520,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     Emitter<AssignmentState> emit,
   ) async {
     try {
+      // First-paint gate: identical to the live-stream path
+      // (_onRebuildAssignmentSlotsFromData). Until the roles, events, AND
+      // assignments streams have each delivered at least once, the windowed
+      // in-memory caches below are not populated yet — suppress the rebuild
+      // rather than build against an empty/partial window.
+      if (!_slotsRolesReady || !_slotsEventsReady || !_slotsAssignmentsReady) {
+        return;
+      }
+
       // Determine which filter to use:
       // 1. If the event provides a filter (explicit change), use it
       // 2. Otherwise, use the last known filter stored in _currentEventFilter
@@ -1772,28 +2537,70 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Keep the internal field in sync
       _currentEventFilter = filterToUse;
 
-      // Build slots from database data (base state)
+      // Build from the SAME windowed in-memory caches the live-stream path
+      // (_onRebuildAssignmentSlotsFromData) uses — NOT an unbounded one-shot
+      // fetch. This is what keeps the stage/filter/rehydrate/save rebuild
+      // path scoped to the exact same 90-day-back/180-day-forward (+ paged
+      // extras) data window as the stream path, so a staged clear can never
+      // target an assignment the windowed Save path can't see (the
+      // "נשמרו 0 שינויים" / member-reappears bug).
+      // Id-keyed dedup (matches windowedEvents below and the stream path's
+      // mergedAssignmentsById) so a pagination-boundary duplicate can't render
+      // as two identical off-quota ghost rows.
+      final windowedAssignments = <String, Assignment>{
+        for (final a in _repository.getCurrentAssignments()) a.id: a,
+        for (final a in _extraPastAssignments) a.id: a,
+      }.values.toList();
+      var windowedEvents = <String, Event>{
+        ..._windowEventsMap,
+        ..._extraPastEventsMap,
+      }.values.toList();
+      // Filter events based on showPastEvents flag — mirrors the
+      // filteredEvents step in _onRebuildAssignmentSlotsFromData. (Deactivated
+      // events are filtered inside _buildSlotsFromAssignments itself.)
+      if (!FilterPersistence.showPastEvents) {
+        final now = DateTime.now();
+        final todayStart = DateTime(now.year, now.month, now.day);
+        windowedEvents = windowedEvents
+            .where((e) => e.endDate
+                .isAfter(todayStart.subtract(const Duration(days: 1))))
+            .toList();
+      }
+      // Active-only — matches the previous getActiveTeamMembers() source, and
+      // fixes divergence #3 vs. the live-stream path's unfiltered member map
+      // (_windowMembersMap itself stays unfiltered for Path B in this task).
+      final windowedActiveMembers =
+          _windowMembersMap.values.where((m) => m.isActive).toList();
+
+      // Build slots from the windowed data (base state)
       final databaseSlots = await _buildSlotsFromAssignments(
-        await _repository.getAllAssignments(),
+        windowedAssignments,
+        windowedEvents,
+        windowedActiveMembers,
+        _cachedRoles,
         selectedEventIds: filterToUse,
       );
 
       // Merge optimistic updates on top of database state using BLoC-level pending operations
+      _syncPendingOperationsWithStaged();
       final mergedSlots = _mergeSlotsWithOptimisticUpdates(
         databaseSlots.slots,
         _pendingOperations,
       );
 
       final capped = _applyPastRevealCap(mergedSlots);
+      final goneKeys = _computeStagedGoneKeys();
 
       _emitOrLog(
           emit,
           AssignmentSlotsLoaded(
-            capped.slots,
+            _materializeGoneStagedRows(capped.slots, goneKeys),
             selectedEventIds: filterToUse,
             pendingOperations: _pendingOperations,
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
+            stagedSlotKeys: _stagedChanges.keys.toSet(),
+            stagedGoneSlotKeys: goneKeys,
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -1805,6 +2612,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     RebuildAssignmentSlotsFromData rebuildEvent,
     Emitter<AssignmentState> emit,
   ) async {
+    Logger.action('stream:rebuild', {
+      'assignments': rebuildEvent.assignments.length,
+      'stagedCount': _stagedChanges.length,
+    });
     try {
       // First-paint gate: until the roles, events, and assignments streams have
       // each streamed once (see _onLoadAssignmentSlots), suppress the emit and
@@ -1830,6 +2641,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         for (final a in _extraPastAssignments) a.id: a,
       };
       final mergedAssignments = mergedAssignmentsById.values.toList();
+      // Staged-effective view (DB + in-memory staged changes) used ONLY for the
+      // cross-event same-day availability loop below, so a live Firestore emit
+      // arriving mid-stage cannot transiently re-hide a member the admin just
+      // freed up by a staged clear on another same-day event. Every other use of
+      // mergedAssignments stays raw-DB; the overlay merge applies staging to the
+      // within-event state. Mirrors _buildSlotsFromAssignments. See
+      // _stagedEffectiveAssignments.
+      final effectiveMergedAssignments =
+          _stagedEffectiveAssignments(mergedAssignments);
 
       // Convert maps to lists for the build method
       final eventsList = mergedEvents.values.toList();
@@ -1897,7 +2717,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             final sameDayAssignedMembersMap = <String, TeamMember>{};
             final sameDayEventInfoMap = <String, List<String>>{};
 
-            for (final otherAssignment in mergedAssignments) {
+            for (final otherAssignment in effectiveMergedAssignments) {
               // Skip assignments to THIS event
               if (otherAssignment.eventId == eventData.id) continue;
 
@@ -2025,21 +2845,25 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _currentEventFilter = rebuildEvent.selectedEventIds;
 
       // Merge optimistic updates on top of database state using BLoC-level pending operations
+      _syncPendingOperationsWithStaged();
       final mergedSlots = _mergeSlotsWithOptimisticUpdates(
         filteredSlots,
         _pendingOperations,
       );
 
       final capped = _applyPastRevealCap(mergedSlots);
+      final goneKeys = _computeStagedGoneKeys();
 
       _emitOrLog(
           emit,
           AssignmentSlotsLoaded(
-            capped.slots,
+            _materializeGoneStagedRows(capped.slots, goneKeys),
             selectedEventIds: rebuildEvent.selectedEventIds,
             pendingOperations: _pendingOperations,
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
+            stagedSlotKeys: _stagedChanges.keys.toSet(),
+            stagedGoneSlotKeys: goneKeys,
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בבניית שיבוצים: $e'));
