@@ -18,12 +18,14 @@ class AssignmentConflict {
   final String slotKey;
   final AssignmentConflictType type;
   final String description; // Hebrew, human-readable
+  final String? title; // Hebrew "<event name> · <role>" context header (which slot)
   final bool discardOnly; // true => single-button (E fully-deleted only). D is two-button.
 
   const AssignmentConflict({
     required this.slotKey,
     required this.type,
     required this.description,
+    this.title,
     this.discardOnly = false,
   });
 }

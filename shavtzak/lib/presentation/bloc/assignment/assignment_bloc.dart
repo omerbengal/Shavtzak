@@ -1545,14 +1545,26 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final conflicts = <AssignmentConflict>[];
 
     _stagedChanges.forEach((key, c) {
+      // Context header for the conflict row: "<event name> · <role>" so the
+      // admin can tell WHICH assignment each conflict is about (several
+      // conflicts can otherwise read identically). The event may be out of the
+      // live window if it was paged in, so fall back to the extra-past map.
+      final conflictEvent =
+          _windowEventsMap[c.eventId] ?? _extraPastEventsMap[c.eventId];
+      final conflictRoleName = _resolveRoleForKey(c.roleType).hebrewName;
+      final conflictTitle = conflictEvent != null
+          ? '${conflictEvent.name} · $conflictRoleName'
+          : conflictRoleName;
+
       // D: slot no longer exists (quota shrank / role removed). Two-button:
       // override = create off-quota (handled at Save), takeDb = discard.
       if (!slotKeysPresent.contains(key)) {
         conflicts.add(AssignmentConflict(
           slotKey: key,
           type: AssignmentConflictType.slotVanished,
+          title: conflictTitle,
           description:
-              'המכסה של "${_resolveRoleForKey(c.roleType).hebrewName}" באירוע קטנה, והמשרה ששיבצת אליה כבר לא קיימת.',
+              'המכסה של "$conflictRoleName" באירוע קטנה, והמשרה ששיבצת אליה כבר לא קיימת.',
           discardOnly: false,
         ));
         return;
@@ -1587,6 +1599,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           conflicts.add(AssignmentConflict(
             slotKey: key,
             type: AssignmentConflictType.clearCollision,
+            title: conflictTitle,
             description: 'ניקית שיבוץ שקיים, אך בינתיים שובץ שם אדם אחר ב-DB.',
           ));
         }
@@ -1598,6 +1611,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         conflicts.add(AssignmentConflict(
           slotKey: key,
           type: AssignmentConflictType.targetRemoved,
+          title: conflictTitle,
           description: 'השיבוץ ששינית נמחק בינתיים ב-DB.',
         ));
         return;
@@ -1608,6 +1622,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         conflicts.add(AssignmentConflict(
           slotKey: key,
           type: AssignmentConflictType.slotTaken,
+          title: conflictTitle,
           description: 'המשרה נתפסה: בינתיים שובץ שם אדם אחר ב-DB.',
         ));
         return;
@@ -1618,6 +1633,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       conflicts.add(AssignmentConflict(
         slotKey: key,
         type: AssignmentConflictType.notesChanged,
+        title: conflictTitle,
         description: 'ההערות/הלייבל של השיבוץ שונו בינתיים ב-DB.',
       ));
     });
@@ -1708,19 +1724,22 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
 
       final dbAssignment = dbByKey[key];
+      // The admin explicitly chose "my change wins" (דרוס DB / צור מחוץ למכסה)
+      // for this conflict — a deliberate instruction to re-create/keep the
+      // change, so it must NOT be intercepted by the skip-not-found safety net.
+      final isOverride = resolutions[key] == ConflictResolution.overrideDb;
       String decision;
-      if (dbAssignment == null && c.baselineMemberId != null) {
-        // LOSSY case: this change is anchored to a member that WAS on the
-        // slot (baselineMemberId != null — a clear, a swap, or a
-        // notes/label/alt-phone edit), but the expected DB row is gone —
-        // most likely a concurrent delete by another admin (windowing
-        // already prevents the main way a staged change could outlive its
-        // DB row; this is the residual safety net). There is nothing to
-        // delete or update, and silently creating a fresh row would
-        // fabricate an assignment the admin never asked to create. Queue no
-        // write, drop the now-meaningless staged entry (see appliedKeys
-        // below), and count it so the caller reports the skip instead of a
-        // false 'נשמרו 0 שינויים' success.
+      if (dbAssignment == null && c.baselineMemberId != null && !isOverride) {
+        // LOSSY case (UNRESOLVED): this change is anchored to a member that WAS
+        // on the slot (baselineMemberId != null — a clear, a swap, or a
+        // notes/label/alt-phone edit), the expected DB row is gone (a concurrent
+        // delete by another admin), AND the admin did NOT explicitly override
+        // it. Silently creating a fresh row would fabricate an assignment the
+        // admin never asked to (re)create. Queue no write, drop the now-
+        // meaningless staged entry, and count it so the caller reports the skip
+        // instead of a false 'נשמרו 0 שינויים' success. (An explicit override
+        // falls through to the create branch below and RE-creates the row —
+        // exactly what the admin asked for.)
         skippedNotFound++;
         decision = 'skip-not-found';
       } else if (c.isClear) {
@@ -1734,9 +1753,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           decision = 'clear-noop';
         }
       } else if (dbAssignment == null) {
-        // baselineMemberId == null here too -> fresh fill (or an overridden
-        // off-quota create for a vanished slot), not a converge-onto-a-
-        // baseline-member case.
+        // No DB row: a fresh fill (baseline empty), OR an explicit override of a
+        // since-deleted / vanished-slot conflict — RE-create the assignment
+        // (in-quota, or off-quota if the slot's quota is gone) from the staged
+        // desired member/notes, keeping its original id.
         creates.add(_assignmentFromStaged(c, id: c.desiredAssignmentId));
         decision = 'create';
       } else {

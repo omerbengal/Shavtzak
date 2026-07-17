@@ -34,6 +34,7 @@ import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_event.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_state.dart';
+import 'package:shavtzak/presentation/bloc/assignment/models/assignment_conflict.dart';
 
 import 'assignment_bloc_slots_refetch_test.mocks.dart';
 
@@ -644,6 +645,78 @@ void main() {
     final result = await completer.future;
     expect(result.isSuccess, isTrue);
     expect(result.message, 'נשמרו 1 שינויים'); // unchanged, no skip suffix
+    expect(bloc.hasStagedChanges, isFalse);
+  });
+
+  // --- Counterpart to the fail-loud skip: an EXPLICIT override of a baseline-
+  // --- anchored change whose DB row is gone must RE-CREATE, not skip ---------
+  //
+  // The skip-not-found branch above is for the UNRESOLVED lossy case. When the
+  // admin is shown the Save-time conflict dialog and explicitly chooses override
+  // ("my change wins" — דרוס DB / צור מחוץ למכסה), that is a deliberate
+  // instruction to bring the row back. Before this fix the skip-not-found branch
+  // fired FIRST and intercepted the override, so the row the admin asked to
+  // restore was silently dropped ('1 דולגו · השיבוץ כבר לא קיים') instead of
+  // re-created.
+
+  test(
+      'an explicit overrideDb resolution of a baseline-anchored change whose '
+      'DB row is gone RE-creates the row (a create) instead of skipping it',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    final a1 = assignment('a1', 'e1', 'm1');
+    assignmentStream.add([a1]); // DB starts with m1 in medic-0
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final filledMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+    // Stage a NOTES edit on the filled slot (baseline: m1/a1, desired member
+    // unchanged = m1). _seedStaged anchors baselineMemberId to m1 and
+    // desiredAssignmentId to a1's id.
+    bloc.add(StageNotesChange(slot: filledMedicSlot, notes: 'note-edited'));
+    await pumpEventQueue();
+    expect(bloc.hasStagedChanges, isTrue);
+
+    // Concurrent delete: a1's DB row is gone by Save time (getCurrentAssignments
+    // no longer reports it) — exactly the case that produces a Save-time
+    // targetRemoved conflict.
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    // The admin resolved that conflict as override in the dialog.
+    final completer = Completer<CrudActionResult>();
+    bloc.add(SaveStagedChanges(
+      resolutions: const {'e1_medic_0': ConflictResolution.overrideDb},
+      completion: completer,
+    ));
+    await pumpEventQueue();
+
+    // Override => RE-create the deleted row (a create keyed to a1's original
+    // id, carrying m1 + the edited notes), NOT a skip-not-found.
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: captureAnyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: captureAnyNamed('deletes'),
+    )).captured;
+    final creates = captured[0] as List<Assignment>;
+    expect(creates, hasLength(1));
+    expect(creates.single.id, a1.id); // re-created with the ORIGINAL id
+    expect(creates.single.teamMemberId, 'm1');
+    expect(creates.single.notes, 'note-edited');
+    expect(captured[1] as List<Assignment>, isEmpty); // no updates
+    expect(captured[2] as List<String>, isEmpty); // no deletes
+
+    // A plain success — NOT the '... דולגו' skip wording.
+    final result = await completer.future;
+    expect(result.isSuccess, isTrue);
+    expect(result.message, isNot(contains('דולגו')));
     expect(bloc.hasStagedChanges, isFalse);
   });
 }

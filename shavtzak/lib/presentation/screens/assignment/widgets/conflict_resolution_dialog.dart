@@ -10,8 +10,9 @@ import '../../../bloc/assignment/models/assignment_conflict.dart';
 /// docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md
 /// ("Conflict handling" / "Resolution dialog (on Save)").
 ///
-/// One row per [AssignmentConflict], each showing its Hebrew description and
-/// a resolution control:
+/// One row per [AssignmentConflict], each showing its Hebrew "event · role"
+/// title (which slot the conflict is about), its description, and a resolution
+/// control:
 /// - Two-button conflicts offer **דרוס DB** ([ConflictResolution.overrideDb],
 ///   the default) vs **קח מה-DB** ([ConflictResolution.takeDb]). For
 ///   [AssignmentConflictType.slotVanished] (quota shrank under a staged
@@ -177,6 +178,15 @@ class _ConflictResolutionDialogState extends State<ConflictResolutionDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // "<event name> · <role>" context header so the admin knows WHICH
+          // assignment this conflict is about (omitted only if unresolved).
+          if (conflict.title != null && conflict.title!.isNotEmpty) ...[
+            Text(
+              conflict.title!,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+          ],
           Text(conflict.description, style: const TextStyle(fontSize: 14)),
           const SizedBox(height: 8),
           Align(
