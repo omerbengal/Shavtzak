@@ -1542,6 +1542,49 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return gone;
   }
 
+  /// Re-materialize dirty rows whose slot vanished (quota shrank / role removed
+  /// under the staged edit) so a remotely-deleted staged change stays VISIBLE —
+  /// with the red diagonal-stripe overlay — instead of silently dropping out of
+  /// the grid. For each key in [goneKeys] not already represented in [slots],
+  /// synthesize an off-quota row from the staged desired state, then re-sort.
+  ///
+  /// Off-quota (isOffQuota: true) keeps the phantom row OUT of the quota /
+  /// double-assignment / availability math, exactly like real off-quota rows.
+  /// It is added regardless of the event filter: an unresolved staged edit must
+  /// stay reachable to discard or Save. Keys already present in [slots] (the
+  /// in-quota case, where the empty quota slot survived + the overlay refilled
+  /// it) are skipped — they already render.
+  List<AssignmentSlot> _materializeGoneStagedRows(
+      List<AssignmentSlot> slots, Set<String> goneKeys) {
+    if (goneKeys.isEmpty) return slots;
+    final presentKeys = slots.map(_getSlotKey).toSet();
+    final synthesized = <AssignmentSlot>[];
+    for (final key in goneKeys) {
+      if (presentKeys.contains(key)) continue; // already rendered (in-quota)
+      final c = _stagedChanges[key];
+      if (c == null) continue;
+      final event =
+          _windowEventsMap[c.eventId] ?? _extraPastEventsMap[c.eventId];
+      if (event == null) continue; // cannot render without the event
+      final member = c.desiredMemberId == null
+          ? null
+          : _windowMembersMap[c.desiredMemberId];
+      final assignment = _assignmentFromStaged(c, id: c.desiredAssignmentId)
+          .withRelations(event: event, teamMember: member);
+      synthesized.add(AssignmentSlot(
+        event: event,
+        role: _resolveRoleForKey(c.roleType),
+        slotIndex: c.slotIndex,
+        currentAssignment: assignment,
+        availableMembers: const [],
+        alreadyAssignedMembers: const [],
+        isOffQuota: true,
+      ));
+    }
+    if (synthesized.isEmpty) return slots;
+    return [...slots, ...synthesized]..sort(_compareAssignmentSlots);
+  }
+
   /// Compare each staged change's baseline to the current DB slots and
   /// return the conflicts to resolve at Save. A slot conflicts when its
   /// current DB occupant/notes differ from the baseline captured at first
@@ -2397,11 +2440,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // 7. Sort slots deterministically so same-role rows do not flip order.
     annotatedSlots.sort(_compareAssignmentSlots);
 
+    final goneKeys = _computeStagedGoneKeys();
     return AssignmentSlotsLoaded(
-      annotatedSlots,
+      _materializeGoneStagedRows(annotatedSlots, goneKeys),
       selectedEventIds: selectedEventIds ?? {},
       stagedSlotKeys: _stagedChanges.keys.toSet(),
-      stagedGoneSlotKeys: _computeStagedGoneKeys(),
+      stagedGoneSlotKeys: goneKeys,
     );
   }
 
@@ -2504,17 +2548,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       );
 
       final capped = _applyPastRevealCap(mergedSlots);
+      final goneKeys = _computeStagedGoneKeys();
 
       _emitOrLog(
           emit,
           AssignmentSlotsLoaded(
-            capped.slots,
+            _materializeGoneStagedRows(capped.slots, goneKeys),
             selectedEventIds: filterToUse,
             pendingOperations: _pendingOperations,
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
             stagedSlotKeys: _stagedChanges.keys.toSet(),
-            stagedGoneSlotKeys: _computeStagedGoneKeys(),
+            stagedGoneSlotKeys: goneKeys,
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -2766,17 +2811,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       );
 
       final capped = _applyPastRevealCap(mergedSlots);
+      final goneKeys = _computeStagedGoneKeys();
 
       _emitOrLog(
           emit,
           AssignmentSlotsLoaded(
-            capped.slots,
+            _materializeGoneStagedRows(capped.slots, goneKeys),
             selectedEventIds: rebuildEvent.selectedEventIds,
             pendingOperations: _pendingOperations,
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
             stagedSlotKeys: _stagedChanges.keys.toSet(),
-            stagedGoneSlotKeys: _computeStagedGoneKeys(),
+            stagedGoneSlotKeys: goneKeys,
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בבניית שיבוצים: $e'));

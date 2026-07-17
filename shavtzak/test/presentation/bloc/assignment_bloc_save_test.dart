@@ -789,4 +789,46 @@ void main() {
     expect(state.stagedSlotKeys, contains('e1_medic_0'));
     expect(state.stagedGoneSlotKeys, isEmpty);
   });
+
+  test(
+      'a dirty row whose slot VANISHES (quota shrank) + DB deleted is '
+      're-materialized as an off-quota row so it stays visible', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]); // medic:1 quota
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m2')]); // seed _windowMembersMap
+    final a1 = assignment('a1', 'e1', 'm1');
+    assignmentStream.add([a1]);
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final filledMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+    // Stage a notes edit (in-quota row => the notes-edit swipe is available).
+    bloc.add(StageNotesChange(slot: filledMedicSlot, notes: 'edited'));
+    await pumpEventQueue();
+
+    // Remotely: the medic quota shrinks to 0 (the slot vanishes) AND the
+    // assignment is deleted. Without re-materialization the dirty row would
+    // drop out of the grid entirely (verified: slot count 0).
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 0})]);
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    final st = bloc.state as AssignmentSlotsLoaded;
+    // Flagged as deleted-remotely ...
+    expect(st.stagedGoneSlotKeys, contains('e1_medic_0'));
+    // ... and re-materialized (kept visible) as an off-quota row carrying the
+    // staged member, so the UI can paint the red diagonal-stripe overlay.
+    final goneRow = st.slots.firstWhere(
+      (s) => s.event.id == 'e1' && s.role.key == 'medic' && s.slotIndex == 0,
+      orElse: () => throw StateError('gone row was dropped from the grid'),
+    );
+    expect(goneRow.isOffQuota, isTrue);
+    expect(goneRow.currentAssignment?.teamMemberId, 'm1');
+  });
 }

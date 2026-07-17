@@ -904,8 +904,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               if (showLoadMore && index == slots.length) {
                                 return _buildLoadMorePastButton(state);
                               }
-                              final row = _buildSlotRow(
-                                  slots[index], state.stagedSlotKeys);
+                              final row = _buildSlotRow(slots[index],
+                                  state.stagedSlotKeys, state.stagedGoneSlotKeys);
                               // A dirty row whose DB assignment was deleted
                               // upstream is kept visible but marked with the
                               // red diagonal-stripe overlay (see
@@ -1049,9 +1049,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
   }
 
-  Widget _buildSlotRow(AssignmentSlot slot, Set<String> stagedSlotKeys) {
+  Widget _buildSlotRow(AssignmentSlot slot, Set<String> stagedSlotKeys,
+      Set<String> stagedGoneSlotKeys) {
     if (slot.isOffQuota) {
-      return _buildOffQuotaRow(slot, stagedSlotKeys);
+      return _buildOffQuotaRow(slot, stagedSlotKeys, stagedGoneSlotKeys);
     }
 
     // Dirty marker: a slot with an unsaved staged change gets a bright,
@@ -1522,16 +1523,22 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   /// A row for an assignment that has no matching quota slot. Display + delete
   /// only: no dropdown, no notes-edit swipe. Swipe-left deletes just the
   /// assignment document (no quota change — it is already outside the quota).
-  Widget _buildOffQuotaRow(AssignmentSlot slot, Set<String> stagedSlotKeys) {
+  Widget _buildOffQuotaRow(AssignmentSlot slot, Set<String> stagedSlotKeys,
+      Set<String> stagedGoneSlotKeys) {
     final assignment = slot.currentAssignment!;
     final memberName = assignment.teamMember?.name ?? 'לא ידוע';
-    // Off-quota rows are display + immediate-delete only today (no dropdown,
-    // so nothing here can actually be staged) — this is threaded only for
-    // consistency with _buildSlotRow, in case that ever changes.
+    // Off-quota rows are display + immediate-delete only today (no dropdown, so
+    // a REAL off-quota row can't be staged). The exception is a re-materialized
+    // "deleted upstream" staged row (isGone): a staged edit whose slot vanished,
+    // injected here by _materializeGoneStagedRows so it stays visible under the
+    // red-stripe overlay; its swipe discards the local edit instead of deleting
+    // from the DB (there is nothing left in the DB to delete).
     final isDirty = stagedSlotKeys.contains(_getSlotKey(slot));
+    final isGone = stagedGoneSlotKeys.contains(_getSlotKey(slot));
 
     return Dismissible(
-      key: Key('offquota_${assignment.id}'),
+      key: Key(
+          isGone ? 'gone_${_getSlotKey(slot)}' : 'offquota_${assignment.id}'),
       direction: DismissDirection.endToStart,
       secondaryBackground: Container(
         alignment: Alignment.centerLeft,
@@ -1542,6 +1549,42 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       background: const SizedBox.shrink(),
       dismissThresholds: const {DismissDirection.endToStart: 0.5},
       confirmDismiss: (direction) async {
+        if (isGone) {
+          // Re-materialized "deleted upstream" staged row: its DB assignment is
+          // gone, so swiping discards the LOCAL staged edit (nothing to delete
+          // in the DB; Save would otherwise re-create it).
+          final assignmentBloc = context.read<AssignmentBloc>();
+          final discard = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                title: const Text('ביטול שינוי מקומי'),
+                content: const Text(
+                  'השיבוץ הזה נמחק בשרת. לבטל את השינוי המקומי? '
+                  '(לחלופין, שמירה תיצור אותו מחדש.)',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('חזרה'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    child: const Text('בטל שינוי',
+                        style: TextStyle(color: Colors.red)),
+                  ),
+                ],
+              ),
+            ),
+          );
+          if (discard == true) {
+            Logger.action(
+                'tap:discardGoneStagedRow', {'slot': _getSlotKey(slot)});
+            assignmentBloc.add(DiscardStagedSlot(_getSlotKey(slot)));
+          }
+          return false;
+        }
         final assignmentRepo = context.read<AssignmentRepository>();
         final assignmentBloc = context.read<AssignmentBloc>();
         final confirmed = await showDialog<bool>(
