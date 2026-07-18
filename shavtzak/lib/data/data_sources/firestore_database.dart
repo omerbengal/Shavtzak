@@ -1189,11 +1189,13 @@ class FirestoreDatabase implements DatabaseInterface {
     required List<Assignment> updates,
     required List<String> deletes,
     List<EventQuotaBump> eventQuotaBumps = const [],
+    List<EventQuotaSet> eventQuotaSets = const [],
   }) async {
     if (creates.isEmpty &&
         updates.isEmpty &&
         deletes.isEmpty &&
-        eventQuotaBumps.isEmpty) {
+        eventQuotaBumps.isEmpty &&
+        eventQuotaSets.isEmpty) {
       return;
     }
     try {
@@ -1208,6 +1210,14 @@ class FirestoreDatabase implements DatabaseInterface {
                     'eventId': b.eventId,
                     'roleType': b.roleType,
                     'count': b.count,
+                  })
+              .toList(),
+          'eventQuotaSets': eventQuotaSets
+              .map((s) => {
+                    'eventId': s.eventId,
+                    'roleType': s.roleType,
+                    'target': s.target,
+                    'expected': s.expected,
                   })
               .toList(),
         },

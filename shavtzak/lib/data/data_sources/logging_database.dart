@@ -644,6 +644,7 @@ class LoggingDatabase implements DatabaseInterface {
     required List<Assignment> updates,
     required List<String> deletes,
     List<EventQuotaBump> eventQuotaBumps = const [],
+    List<EventQuotaSet> eventQuotaSets = const [],
   }) =>
       _runFuture(
         op: 'saveAssignmentsBatch',
@@ -653,6 +654,7 @@ class LoggingDatabase implements DatabaseInterface {
           'updates': updates.length,
           'deletes': deletes.length,
           'quotaBumps': eventQuotaBumps.length,
+          'quotaSets': eventQuotaSets.length,
         },
         countOf: (_) => null,
         action: () => _inner.saveAssignmentsBatch(
@@ -660,6 +662,7 @@ class LoggingDatabase implements DatabaseInterface {
           updates: updates,
           deletes: deletes,
           eventQuotaBumps: eventQuotaBumps,
+          eventQuotaSets: eventQuotaSets,
         ),
       );
 

@@ -576,6 +576,8 @@ class MockAssignmentRepository extends _i1.Mock
     required List<String>? deletes,
     List<({int count, String eventId, String roleType})>? eventQuotaBumps =
         const [],
+    List<({String eventId, int expected, String roleType, int target})>?
+        eventQuotaSets = const [],
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -586,6 +588,7 @@ class MockAssignmentRepository extends _i1.Mock
             #updates: updates,
             #deletes: deletes,
             #eventQuotaBumps: eventQuotaBumps,
+            #eventQuotaSets: eventQuotaSets,
           },
         ),
         returnValue: _i4.Future<void>.value(),
