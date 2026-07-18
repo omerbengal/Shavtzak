@@ -2873,6 +2873,34 @@ export function planEventQuotaSets(
   });
 }
 
+// Pure concurrency + diff step for assignment.saveBatch's exact quota targets.
+// For each set: read the live quota (0 if absent). If it differs from BOTH the
+// client's `expected` baseline AND the desired `target`, a co-admin moved it
+// under the client and it was not resolved -> conflict (the case handler
+// rejects the save). Otherwise emit an event write only when the target
+// actually changes the live value. Side-effect-free for unit tests.
+export function planEventQuotaSetWrites(args: {
+  sets: Array<{eventId: string; roleType: string; target: number; expected: number}>;
+  liveQuotas: Map<string, number>;
+}): {
+  writes: Array<{eventId: string; roleType: string; from: number; to: number}>;
+  conflicts: Array<{eventId: string; roleType: string; expected: number; live: number}>;
+} {
+  const writes: Array<{eventId: string; roleType: string; from: number; to: number}> = [];
+  const conflicts: Array<{eventId: string; roleType: string; expected: number; live: number}> = [];
+  for (const s of args.sets) {
+    const live = args.liveQuotas.get(`${s.eventId}_${s.roleType}`) ?? 0;
+    if (live !== s.expected && live !== s.target) {
+      conflicts.push({eventId: s.eventId, roleType: s.roleType, expected: s.expected, live});
+      continue;
+    }
+    if (s.target !== live) {
+      writes.push({eventId: s.eventId, roleType: s.roleType, from: live, to: s.target});
+    }
+  }
+  return {writes, conflicts};
+}
+
 // Pure helper for assignment.saveBatch's batch-aware duplicate-role check.
 //
 // validateAssignmentPayload's own duplicate-role check (see
