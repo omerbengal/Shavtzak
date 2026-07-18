@@ -2844,6 +2844,35 @@ export function planEventQuotaBumps(
   });
 }
 
+// Pure validator/shaper for assignment.saveBatch's OPTIONAL exact quota
+// targets (the staged quota LOWER/SET path — distinct from eventQuotaBumps,
+// which only raises via max-merge). Each entry carries the desired `target`
+// count AND the client's `expected` baseline for optimistic concurrency
+// (see planEventQuotaSetWrites). target may be 0 (role emptied). Absent field
+// => [] (identical to pre-feature behaviour). Side-effect-free for unit tests.
+export function planEventQuotaSets(
+  raw: unknown,
+): Array<{eventId: string; roleType: string; target: number; expected: number}> {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    throw new HttpError(400, 'eventQuotaSets must be an array');
+  }
+  const intInRange = (v: unknown): v is number =>
+    typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 999;
+  return raw.map((entry) => {
+    const e = (entry ?? {}) as Record<string, unknown>;
+    const eventId = requireString(e['eventId'], 'eventQuotaSet.eventId');
+    const roleType = requireString(e['roleType'], 'eventQuotaSet.roleType');
+    if (!intInRange(e['target'])) {
+      throw new HttpError(400, 'eventQuotaSet.target must be an integer between 0 and 999');
+    }
+    if (!intInRange(e['expected'])) {
+      throw new HttpError(400, 'eventQuotaSet.expected must be an integer between 0 and 999');
+    }
+    return {eventId, roleType, target: e['target'], expected: e['expected']};
+  });
+}
+
 // Pure helper for assignment.saveBatch's batch-aware duplicate-role check.
 //
 // validateAssignmentPayload's own duplicate-role check (see

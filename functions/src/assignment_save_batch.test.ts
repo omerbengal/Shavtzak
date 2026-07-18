@@ -5,6 +5,7 @@ import {
   planAssignmentSaveBatch,
   findBatchDuplicateRoleAssignments,
   planEventQuotaBumps,
+  planEventQuotaSets,
 } from './index';
 
 // assignmentDocFromJson (called internally by the planner) runs every
@@ -263,4 +264,44 @@ test('planEventQuotaBumps throws on a non-integer / out-of-range count', () => {
   assert.throws(() =>
     planEventQuotaBumps([{eventId: 'e1', roleType: 'medic', count: '2'}]),
   );
+});
+
+// ---- planEventQuotaSets: optional exact quota targets for saveBatch ----
+
+test('planEventQuotaSets returns [] for missing / null / empty input', () => {
+  assert.deepEqual(planEventQuotaSets(undefined), []);
+  assert.deepEqual(planEventQuotaSets(null), []);
+  assert.deepEqual(planEventQuotaSets([]), []);
+});
+
+test('planEventQuotaSets validates and shapes each entry (target may be 0)', () => {
+  assert.deepEqual(
+    planEventQuotaSets([
+      {eventId: 'e1', roleType: 'medic', target: 2, expected: 3},
+      {eventId: 'e2', roleType: 'investigation', target: 0, expected: 1},
+    ]),
+    [
+      {eventId: 'e1', roleType: 'medic', target: 2, expected: 3},
+      {eventId: 'e2', roleType: 'investigation', target: 0, expected: 1},
+    ],
+  );
+});
+
+test('planEventQuotaSets throws on a non-array', () => {
+  assert.throws(() =>
+    planEventQuotaSets({eventId: 'e1', roleType: 'medic', target: 1, expected: 2}),
+  );
+});
+
+test('planEventQuotaSets throws on a missing eventId or roleType', () => {
+  assert.throws(() => planEventQuotaSets([{roleType: 'medic', target: 1, expected: 2}]));
+  assert.throws(() => planEventQuotaSets([{eventId: 'e1', target: 1, expected: 2}]));
+});
+
+test('planEventQuotaSets throws on non-integer / out-of-range target or expected', () => {
+  assert.throws(() => planEventQuotaSets([{eventId: 'e1', roleType: 'medic', target: -1, expected: 2}]));
+  assert.throws(() => planEventQuotaSets([{eventId: 'e1', roleType: 'medic', target: 1.5, expected: 2}]));
+  assert.throws(() => planEventQuotaSets([{eventId: 'e1', roleType: 'medic', target: 1000, expected: 2}]));
+  assert.throws(() => planEventQuotaSets([{eventId: 'e1', roleType: 'medic', target: 1, expected: -1}]));
+  assert.throws(() => planEventQuotaSets([{eventId: 'e1', roleType: 'medic', target: '1', expected: 2}]));
 });
