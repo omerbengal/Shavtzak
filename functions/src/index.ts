@@ -4616,6 +4616,28 @@ async function executeMutation(
         }
       }
 
+      // Optional EXACT quota targets (staged set/lower; see planEventQuotaSets):
+      // read each target event's live quota, guard concurrency, and diff to
+      // writes. A conflict here means a co-admin moved the quota under the
+      // client's baseline AND the client did not resolve it -> reject the whole
+      // save (nothing is written) so the client re-syncs. Reads precede the batch.
+      const quotaSets = planEventQuotaSets(payload['eventQuotaSets']);
+      const liveQuotas = new Map<string, number>();
+      for (const s of quotaSets) {
+        const snap = await db.collection(collections.events).doc(s.eventId).get();
+        if (!snap.exists) {
+          throw new HttpError(404, 'האירוע של השיבוץ כבר לא קיים');
+        }
+        const rr = (snap.data()?.['roleRequirements'] ?? {}) as Record<string, unknown>;
+        const cur = typeof rr[s.roleType] === 'number' ? (rr[s.roleType] as number) : 0;
+        liveQuotas.set(`${s.eventId}_${s.roleType}`, cur);
+      }
+      const {writes: quotaSetWrites, conflicts: quotaSetConflicts} =
+        planEventQuotaSetWrites({sets: quotaSets, liveQuotas});
+      if (quotaSetConflicts.length > 0) {
+        throw new HttpError(409, 'המכסה של התפקיד שונתה בינתיים — יש לטעון מחדש');
+      }
+
       // One atomic batch (≤500 ops — a meeting is far under).
       const batch = db.batch();
       for (const {id, doc} of plan.creates) {
@@ -4630,6 +4652,14 @@ async function executeMutation(
       // Restore-to-quota writes ride the SAME batch as the assignment ops, so
       // the quota and the (re-created) assignment commit together or not at all.
       for (const w of quotaBumpWrites) {
+        batch.update(db.collection(collections.events).doc(w.eventId), {
+          [`roleRequirements.${w.roleType}`]: w.to,
+          updatedAt: Timestamp.now(),
+        });
+      }
+      // Exact quota targets ride the SAME batch as the assignment ops (staged
+      // lower/set), so the quota and the (reindexed) assignments commit together.
+      for (const w of quotaSetWrites) {
         batch.update(db.collection(collections.events).doc(w.eventId), {
           [`roleRequirements.${w.roleType}`]: w.to,
           updatedAt: Timestamp.now(),
@@ -4663,6 +4693,15 @@ async function executeMutation(
           after: {[`roleRequirements.${w.roleType}`]: w.to},
         });
       }
+      for (const w of quotaSetWrites) {
+        await writeAuditLog(db, collections, actor, 'event.update', 'event', w.eventId, {
+          quotaSet: true,
+          roleType: w.roleType,
+        }, {
+          before: {[`roleRequirements.${w.roleType}`]: w.from},
+          after: {[`roleRequirements.${w.roleType}`]: w.to},
+        });
+      }
 
       return {
         ok: true,
@@ -4671,6 +4710,7 @@ async function executeMutation(
           updated: plan.updates.length,
           deleted: plan.deletes.length,
           quotaBumped: quotaBumpWrites.length,
+          quotaSet: quotaSetWrites.length,
         },
       };
     }
