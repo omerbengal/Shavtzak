@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:uuid/uuid.dart';
 import 'package:collection/collection.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:async';
-import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/assignment_label.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/event.dart';
-import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/assignment_label_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/team_repository.dart';
@@ -22,7 +19,6 @@ import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/assignment/models/assignment_conflict.dart';
 import '../../bloc/event/event_bloc.dart';
-import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
@@ -128,13 +124,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   void _startMutation(String message) {
     setState(() {
       _isMutationInFlight = true;
-      _mutationMessage = message;
-    });
-  }
-
-  void _updateMutationMessage(String message) {
-    if (!mounted) return;
-    setState(() {
       _mutationMessage = message;
     });
   }
@@ -1495,52 +1484,23 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             });
           }
           return false; // Never actually dismiss
-        } else {
-          // Delete swipe - show delete confirmation dialog
-          final isSlotFilled = slot.isFilled;
-          final confirmed = await showDialog<bool>(
-            context: context,
-            builder: (dialogContext) => Directionality(
-              textDirection: TextDirection.rtl,
-              child: AlertDialog(
-                title: const Text('מחיקת משרה'),
-                content: Text(
-                  isSlotFilled
-                      ? 'האם אתה בטוח שברצונך למחוק משרה זו?\nפעולה זו תמחק את השיבוץ ותקטין את מספר המשרות הנדרשות לתפקיד זה.'
-                      : 'האם אתה בטוח שברצונך למחוק משרה פנויה זו?\nפעולה זו תקטין את מספר המשרות הנדרשות לתפקיד זה.',
-                ),
-                actions: [
-                  TextButton(
-                    child: const Text('ביטול'),
-                    onPressed: () {
-                      Logger.action('tap:cancel:deleteSlot');
-                      Navigator.of(dialogContext).pop(false);
-                    },
-                  ),
-                  TextButton(
-                    child:
-                        const Text('מחק', style: TextStyle(color: Colors.red)),
-                    onPressed: () {
-                      Logger.action('tap:confirm:deleteSlot', {
-                        'eventId': slot.event.id,
-                        'role': slot.role.key,
-                      });
-                      Navigator.of(dialogContext).pop(true);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          );
-
-          if (confirmed == true) {
-            Logger.action('swipeDelete:assignment', {
-              'assignmentId': slot.currentAssignment?.id,
-            });
-            await _handleSlotDismiss(slot);
-          }
-          return false;
         }
+        // Delete swipe: stage the deletion instead of writing immediately.
+        // Staging is reversible (red "יימחק בשמירה" stripe + inline ↩ until
+        // Save), so there is no confirmation dialog anymore. Always return
+        // false so the Dismissible snaps back rather than actually
+        // dismissing: the row stays in the widget tree (now rendered with
+        // the stripe overlay) because the bloc's rebuilt state still
+        // contains it. If confirmDismiss returned true here (or the row were
+        // removed via onDismissed), the very next rebuild — with the row
+        // still present in AssignmentSlotsLoaded.slots — would throw
+        // Flutter's "A dismissed Dismissible widget is still part of the
+        // tree".
+        Logger.action('swipe:stageDelete', {
+          'slot': '${slot.event.id}_${slot.role.key}_${slot.slotIndex}',
+        });
+        await _handleSlotDismiss(slot);
+        return false;
       },
       child: rowContent,
     );
@@ -1613,51 +1573,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           }
           return false;
         }
-        final assignmentRepo = context.read<AssignmentRepository>();
-        final assignmentBloc = context.read<AssignmentBloc>();
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => Directionality(
-            textDirection: TextDirection.rtl,
-            child: AlertDialog(
-              title: const Text('מחיקת שיבוץ מחוץ למכסה'),
-              content: const Text(
-                'שיבוץ זה נמצא מחוץ למכסת האירוע. האם למחוק אותו?',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('ביטול'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('מחק', style: TextStyle(color: Colors.red)),
-                ),
-              ],
-            ),
-          ),
-        );
-        if (confirmed == true) {
-          Logger.action('delete:offQuotaAssignment', {
-            'assignmentId': assignment.id,
-          });
-          try {
-            await assignmentRepo.deleteAssignment(assignment.id);
-            // Refresh extra-past cache if this row is from an event older than
-            // the live window (no-op for in-window events).
-            assignmentBloc.add(ExternalExtraPastMutation(assignment.eventId));
-            if (mounted) {
-              _showAssignmentSnackBar('השיבוץ נמחק בהצלחה',
-                  backgroundColor: Colors.green);
-            }
-          } catch (e) {
-            if (mounted) {
-              _showAssignmentSnackBar('שגיאה במחיקת השיבוץ: $e',
-                  backgroundColor: Colors.red);
-            }
-          }
-        }
-        return false; // real-time stream removes the row after delete
+        // Off-quota row backed by a real DB assignment: stage its deletion
+        // (reversible — red "יימחק בשמירה" stripe + inline ↩ until Save)
+        // instead of writing immediately. No quota change on Save either —
+        // the derived-quota helper ignores slotIndex >= baseline. Always
+        // return false so the Dismissible snaps back instead of actually
+        // dismissing; see the in-quota row's confirmDismiss for why an
+        // actual dismissal would throw once the row re-renders from staged
+        // state.
+        Logger.action('swipe:stageDelete', {'slot': _getSlotKey(slot)});
+        context.read<AssignmentBloc>().add(StageSlotDeletion(slot));
+        return false;
       },
       child: Container(
         decoration: BoxDecoration(
@@ -1747,109 +1673,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
   }
 
-  /// Handle dismissing a slot - removes role slot from event (reduces capacity)
-  /// If the slot is filled, also deletes the assignment
+  /// Handle dismissing a slot: stage it for deletion (swipe-to-delete on an
+  /// in-quota row, filled or empty).
   Future<void> _handleSlotDismiss(AssignmentSlot slot) async {
-    if (_isMutationInFlight) {
-      return;
-    }
-
-    // Drop any staged edit for this slot first so a pending stage can't
-    // resurrect it after the immediate delete below removes the underlying
-    // assignment/quota.
-    context.read<AssignmentBloc>().add(
-          DiscardStagedSlot(
-            '${slot.event.id}_${slot.role.key}_${slot.slotIndex}',
-          ),
-        );
-
-    _startMutation('מוחק משרה...');
-    try {
-      final assignmentRepo = context.read<AssignmentRepository>();
-      final eventBloc = context.read<EventBloc>();
-      final assignmentBloc = context.read<AssignmentBloc>();
-
-      // Step 1: Delete the assignment if it exists (filled slot)
-      if (slot.currentAssignment != null) {
-        _updateMutationMessage('מוחק שיבוץ...');
-        await assignmentRepo.deleteAssignment(slot.currentAssignment!.id);
-
-        // CRITICAL: Clear the cache to prevent stale data
-        assignmentRepo.clearCache();
-      }
-
-      // Step 2: Get all remaining assignments for this event and role
-      final allAssignments =
-          await assignmentRepo.getAssignmentsByEvent(slot.event.id);
-      final roleAssignments = allAssignments
-          .where((a) => a.roleType == slot.role.key)
-          .toList()
-        ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
-
-      // Step 3: Reorder remaining assignments to fill gaps
-      _updateMutationMessage('מעדכן סדר משרות...');
-      for (int i = 0; i < roleAssignments.length; i++) {
-        if (roleAssignments[i].slotIndex != i) {
-          final updated = roleAssignments[i].copyWith(
-            slotIndex: i,
-            updatedAt: DateTime.now(),
-          );
-          await assignmentRepo.updateAssignmentUnchecked(updated);
-        }
-      }
-
-      // Step 4: Reduce the event's quota for this role by 1
-      final updatedRoleRequirements =
-          Map<String, int>.from(slot.event.roleRequirements);
-      final currentQuota = updatedRoleRequirements[slot.role.key] ?? 0;
-      if (currentQuota > 0) {
-        updatedRoleRequirements[slot.role.key] = currentQuota - 1;
-      }
-
-      final updatedEvent = slot.event.copyWith(
-        roleRequirements: updatedRoleRequirements,
-        updatedAt: DateTime.now(),
-      );
-
-      // Step 5: Update the event
-      _updateMutationMessage('מעדכן מכסת אירוע...');
-      final updateResult = await _dispatchMutation(
-        (completion) => eventBloc.add(
-          UpdateEvent(updatedEvent, completion: completion),
-        ),
-        showErrorSnackBar: false,
-      );
-
-      if (updateResult.isFailure) {
-        _finishMutation();
-        return;
-      }
-
-      _finishMutation();
-
-      // Refresh extra-past cache if this event is older than the live window
-      // (no-op for in-window events; dispatch via captured bloc, not context).
-      assignmentBloc.add(ExternalExtraPastMutation(slot.event.id));
-
-      // Show success message
-      if (mounted) {
-        _showAssignmentSnackBar(
-          'המשרה נמחקה בהצלחה',
-          backgroundColor: Colors.green,
-        );
-      }
-
-      // Real-time streams will automatically reload assignment slots to reflect changes
-    } catch (e) {
-      _finishMutation();
-      // Show error message
-      if (mounted) {
-        _showAssignmentSnackBar(
-          'שגיאה במחיקת המשרה: $e',
-          backgroundColor: Colors.red,
-        );
-      }
-    }
+    // Staged: mark the row for deletion (keeps it visible, struck through);
+    // the assignment delete + quota lower + reindex happen atomically on Save.
+    context.read<AssignmentBloc>().add(StageSlotDeletion(slot));
   }
 
   /// Show notes dialog for editing assignment notes
@@ -3570,138 +3399,14 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     }
   }
 
-  /// Create assignment and increase event quota for the selected role
+  /// Stage a manual assignment (from the 3-step manual-assignment-flow
+  /// dialog): appends a dirty slot for this member. The quota +1 and the
+  /// assignment create happen atomically on Save.
   Future<void> _createAssignmentAndQuota(
       Event event, TeamMember teamMember, String roleType) async {
-    if (_isMutationInFlight) {
-      return;
-    }
-
-    try {
-      final eventBloc = context.read<EventBloc>();
-      final assignmentBloc = context.read<AssignmentBloc>();
-
-      // Step 1: Find slot indices already used for this event+role from the
-      // bloc's in-memory state (avoids a Firestore round-trip + relation
-      // population, since the bloc's real-time stream already has this data).
-      // Falls back to a Firestore read if the bloc hasn't loaded yet.
-      final assignmentState = assignmentBloc.state;
-      List<int> usedSlotIndices;
-      if (assignmentState is AssignmentsLoaded) {
-        usedSlotIndices = assignmentState.assignments
-            .where((a) => a.eventId == event.id && a.roleType == roleType)
-            .map((a) => a.slotIndex)
-            .toList();
-      } else if (assignmentState is AssignmentSlotsLoaded) {
-        usedSlotIndices = assignmentState.slots
-            .where((s) =>
-                s.event.id == event.id &&
-                s.role.key == roleType &&
-                s.currentAssignment != null)
-            .map((s) => s.currentAssignment!.slotIndex)
-            .toList();
-      } else {
-        final existingAssignments = await context
-            .read<AssignmentRepository>()
-            .getAssignmentsByEvent(event.id);
-        usedSlotIndices = existingAssignments
-            .where((a) => a.roleType == roleType)
-            .map((a) => a.slotIndex)
-            .toList();
-      }
-      usedSlotIndices.sort();
-
-      // Step 2: Find the next available slot index (first gap, or end of list)
-      int nextSlotIndex = 0;
-      for (final slotIndex in usedSlotIndices) {
-        if (slotIndex == nextSlotIndex) {
-          nextSlotIndex++;
-        } else {
-          break; // Found a gap
-        }
-      }
-
-      // Step 3: Create the new assignment
-      final newAssignment = Assignment(
-        id: const Uuid().v4(),
-        eventId: event.id,
-        teamMemberId: teamMember.id,
-        roleType: roleType,
-        slotIndex: nextSlotIndex,
-        status: AssignmentStatus.confirmed,
-        notes: '',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        event: event,
-        teamMember: teamMember,
-      );
-
-      // Step 4: Update event's role requirements (increase quota by 1)
-      final updatedRoleRequirements =
-          Map<String, int>.from(event.roleRequirements);
-      final currentQuota = updatedRoleRequirements[roleType] ?? 0;
-      updatedRoleRequirements[roleType] = currentQuota + 1;
-
-      final updatedEvent = event.copyWith(
-        roleRequirements: updatedRoleRequirements,
-        updatedAt: DateTime.now(),
-      );
-
-      _startMutation('מעדכן מכסת אירוע...');
-
-      final quotaUpdateResult = await _dispatchMutation(
-        (completion) => eventBloc.add(
-          UpdateEvent(updatedEvent, completion: completion),
-        ),
-        showErrorSnackBar: false,
-      );
-
-      if (quotaUpdateResult.isFailure) {
-        _finishMutation();
-        return;
-      }
-
-      _updateMutationMessage('יוצר שיבוץ...');
-
-      final assignmentResult = await _dispatchMutation(
-        (completion) => context.read<AssignmentBloc>().add(
-              CreateAssignmentWithBypass(
-                newAssignment,
-                completion: completion,
-              ),
-            ),
-        showErrorSnackBar: false,
-      );
-
-      if (assignmentResult.isFailure) {
-        _updateMutationMessage('משחזר מכסת אירוע...');
-        final rollbackResult = await _dispatchMutation(
-          (completion) => eventBloc.add(
-            UpdateEvent(event, completion: completion),
-          ),
-          showErrorSnackBar: false,
+    context.read<AssignmentBloc>().add(
+          StageManualAdd(event: event, member: teamMember, roleType: roleType),
         );
-        _finishMutation();
-        if (rollbackResult.isFailure && mounted) {
-          _showAssignmentSnackBar(
-            'השיבוץ נכשל וגם שחזור המכסה לא הושלם. יש לבדוק את האירוע ידנית.',
-            backgroundColor: Colors.red,
-          );
-        }
-        return;
-      }
-
-      _finishMutation();
-    } catch (e) {
-      // Show error message
-      _finishMutation();
-      if (mounted) {
-        _showAssignmentSnackBar(
-          'שגיאה ביצירת שיבוץ: $e',
-          backgroundColor: Colors.red,
-        );
-      }
-    }
   }
 
   Future<void> _logout(BuildContext context) async {
