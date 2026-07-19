@@ -147,9 +147,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   }
 
   Future<CrudActionResult> _dispatchMutation(
-    void Function(CrudActionCompleter completion) dispatch, {
-    bool showErrorSnackBar = true,
-  }) async {
+    void Function(CrudActionCompleter completion) dispatch,
+  ) async {
     final completion = Completer<CrudActionResult>();
     dispatch(completion);
     return await completion.future;
