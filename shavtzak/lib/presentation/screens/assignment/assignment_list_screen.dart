@@ -1507,18 +1507,21 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   }
 
   /// A row for an assignment that has no matching quota slot. Display + delete
-  /// only: no dropdown, no notes-edit swipe. Swipe-left deletes just the
-  /// assignment document (no quota change — it is already outside the quota).
+  /// only: no dropdown, no notes-edit swipe. Swipe-left STAGES deletion of
+  /// the assignment document (no quota change — it is already outside the
+  /// quota); the actual delete happens on Save, same as an in-quota row.
   Widget _buildOffQuotaRow(AssignmentSlot slot, Set<String> stagedSlotKeys,
       Set<String> stagedGoneSlotKeys) {
     final assignment = slot.currentAssignment!;
     final memberName = assignment.teamMember?.name ?? 'לא ידוע';
-    // Off-quota rows are display + immediate-delete only today (no dropdown, so
-    // a REAL off-quota row can't be staged). The exception is a re-materialized
-    // "deleted upstream" staged row (isGone): a staged edit whose slot vanished,
-    // injected here by _materializeGoneStagedRows so it stays visible under the
-    // red-stripe overlay; its swipe discards the local edit instead of deleting
-    // from the DB (there is nothing left in the DB to delete).
+    // Off-quota rows are display + delete only (no dropdown, no notes-edit
+    // swipe): a real off-quota row's swipe STAGES its deletion (see
+    // confirmDismiss below), same as an in-quota row. The exception is a
+    // re-materialized "deleted upstream" staged row (isGone): a staged edit
+    // whose slot vanished, injected here by _materializeGoneStagedRows so it
+    // stays visible under the red-stripe overlay; its swipe discards the
+    // local edit instead of staging a delete (there is nothing left in the
+    // DB to delete).
     final isDirty = stagedSlotKeys.contains(_getSlotKey(slot));
     final isGone = stagedGoneSlotKeys.contains(_getSlotKey(slot));
     // A note / label / phone must still show when the row is out of quota.
