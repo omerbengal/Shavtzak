@@ -906,12 +906,21 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               }
                               final row = _buildSlotRow(slots[index],
                                   state.stagedSlotKeys, state.stagedGoneSlotKeys);
-                              // A dirty row whose DB assignment was deleted
-                              // upstream is kept visible but marked with the
-                              // red diagonal-stripe overlay (see
-                              // stagedGoneSlotKeys / _withDeletedRemotelyOverlay).
-                              return state.stagedGoneSlotKeys
-                                      .contains(_getSlotKey(slots[index]))
+                              // A row queued for delete (swipe-delete, not yet
+                              // saved) takes precedence over "gone" — it's an
+                              // explicit local action — and gets the
+                              // "יימחק בשמירה" overlay. Otherwise, a dirty row
+                              // whose DB assignment was deleted upstream is
+                              // kept visible but marked with the red
+                              // diagonal-stripe overlay (see stagedGoneSlotKeys
+                              // / _withDeletedRemotelyOverlay).
+                              final slotKey = _getSlotKey(slots[index]);
+                              if (state.stagedDeletionSlotKeys
+                                  .contains(slotKey)) {
+                                return _withStripeOverlay(row,
+                                    badgeText: 'יימחק בשמירה');
+                              }
+                              return state.stagedGoneSlotKeys.contains(slotKey)
                                   ? _withDeletedRemotelyOverlay(row)
                                   : row;
                             },
@@ -1008,13 +1017,14 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     }).toList();
   }
 
-  /// Wraps a rendered slot [row] with the "deleted upstream, kept because
-  /// dirty" marker: a translucent bright-red diagonal-stripe wash plus a small
-  /// badge. Applied to rows in [AssignmentSlotsLoaded.stagedGoneSlotKeys] — a
-  /// dirty row whose backing DB assignment was deleted remotely. The overlay is
-  /// non-interactive (IgnorePointer), so the row underneath stays swipe- and
-  /// tap-able for discard / Save-resolution.
-  Widget _withDeletedRemotelyOverlay(Widget row) {
+  /// Wraps a rendered slot [row] with a translucent bright-red diagonal-stripe
+  /// wash plus a small top-center [badgeText] badge. Non-interactive
+  /// (IgnorePointer), so the row underneath stays swipe- and tap-able for
+  /// discard / Save-resolution / re-staging. Shared by
+  /// [_withDeletedRemotelyOverlay] (stagedGoneSlotKeys) and the
+  /// stagedDeletionSlotKeys overlay applied in the row builder — same visual
+  /// treatment, different badge text.
+  Widget _withStripeOverlay(Widget row, {required String badgeText}) {
     return Stack(
       children: [
         row,
@@ -1033,10 +1043,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     borderRadius: const BorderRadius.vertical(
                         bottom: Radius.circular(6)),
                   ),
-                  child: const Text(
-                    'שורה זו נמחקה מהשרת, אבל קיים שינוי שמור מקומית',
+                  child: Text(
+                    badgeText,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
@@ -1048,6 +1058,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Wraps a rendered slot [row] with the "deleted upstream, kept because
+  /// dirty" marker. Applied to rows in
+  /// [AssignmentSlotsLoaded.stagedGoneSlotKeys] — a dirty row whose backing DB
+  /// assignment was deleted remotely.
+  Widget _withDeletedRemotelyOverlay(Widget row) {
+    return _withStripeOverlay(
+      row,
+      badgeText: 'שורה זו נמחקה מהשרת, אבל קיים שינוי שמור מקומית',
     );
   }
 
