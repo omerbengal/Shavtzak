@@ -257,4 +257,51 @@ void main() {
 
     expect(bloc.derivedQuota('e1', 'medic'), 2); // unchanged (5 >= baseline 2)
   });
+
+  test(
+      'StageManualAdd does NOT clobber an off-quota staged deletion sharing '
+      'the same slotIndex (regression)', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    final loaded = await loadWithAssignments(bloc, [
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+      // Off-quota DB row at slotIndex 2 (quota is 2 -> indices 0,1 in-quota),
+      // i.e. exactly the slotIndex a manual-add would append at (liveQuota == 2).
+      assignment('aX', 'e1', 'm3', slotIndex: 2),
+    ]);
+
+    final offQuotaSlot = loaded.slots.firstWhere(
+        (s) => s.role.key == 'medic' && s.isOffQuota && s.slotIndex == 2);
+
+    // Stage the off-quota deletion FIRST, then a manual-add for the same role.
+    bloc.add(StageSlotDeletion(offQuotaSlot));
+    await pumpEventQueue();
+    bloc.add(StageManualAdd(
+      event: futureEvent('e1'),
+      member: member('m9'),
+      roleType: 'medic',
+    ));
+    await pumpEventQueue();
+
+    // _stagedChanges is private; read the crash-recovery cache mirror instead
+    // (both handlers await _persistStaged), keyed by slotKey.
+    final cached = await UserCacheService().getPendingAssignmentChanges();
+    final bySlotKey = {for (final c in cached) c['slotKey'] as String: c};
+
+    // The off-quota deletion at slot 2 SURVIVED — still marked for deletion and
+    // still anchored to aX's id, NOT overwritten by the manual-add.
+    expect(bySlotKey.containsKey('e1_medic_2'), isTrue);
+    expect(bySlotKey['e1_medic_2']!['markedForDeletion'], isTrue);
+    expect(bySlotKey['e1_medic_2']!['baselineAssignmentId'], 'aX');
+
+    // The manual-add landed on a DISTINCT key (slot 3) as a fresh fill.
+    expect(bySlotKey.containsKey('e1_medic_3'), isTrue);
+    expect(bySlotKey['e1_medic_3']!['desiredMemberId'], 'm9');
+    expect(bySlotKey['e1_medic_3']!['markedForDeletion'], isFalse);
+
+    // Quota: baseline 2 + 1 add − 0 in-quota deletions (the slot-2 deletion is
+    // off-quota, so it does not lower the quota).
+    expect(bloc.derivedQuota('e1', 'medic'), 3);
+  });
 }

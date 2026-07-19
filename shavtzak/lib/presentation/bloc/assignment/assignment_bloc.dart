@@ -1369,11 +1369,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return _baselineQuota.putIfAbsent(key, () => _liveQuota(eventId, roleType));
   }
 
+  /// The captured baseline quota if one was seeded, else the live DB quota.
+  /// Read-only: unlike [_baselineQuotaFor] this does NOT seed the map, so the
+  /// per-role derived-quota reads (called on every grid rebuild by Task 7)
+  /// stay side-effect-free.
+  int _resolvedBaseline(String eventId, String roleType) =>
+      _baselineQuota[_eventRoleKey(eventId, roleType)] ??
+      _liveQuota(eventId, roleType);
+
   /// Staged fills beyond the baseline quota (manual adds) — used by Task 7
   /// rendering to know how many extra rows to draw for a role.
   int _stagedAddCount(String eventId, String roleType) {
-    final baseline = _baselineQuota[_eventRoleKey(eventId, roleType)] ??
-        _liveQuota(eventId, roleType);
+    final baseline = _resolvedBaseline(eventId, roleType);
     return _stagedChanges.values
         .where((c) =>
             c.eventId == eventId &&
@@ -1385,8 +1392,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   }
 
   int _inQuotaDeletionCount(String eventId, String roleType) {
-    final baseline = _baselineQuota[_eventRoleKey(eventId, roleType)] ??
-        _liveQuota(eventId, roleType);
+    final baseline = _resolvedBaseline(eventId, roleType);
     return _stagedChanges.values
         .where((c) =>
             c.eventId == eventId &&
@@ -1401,8 +1407,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// because `num.clamp()` (inherited by `int`) returns `num`, not `int` —
   /// see the same pattern in CalendarSyncBloc's poll-backoff clamp.
   int derivedQuota(String eventId, String roleType) {
-    final baseline = _baselineQuota[_eventRoleKey(eventId, roleType)] ??
-        _liveQuota(eventId, roleType);
+    final baseline = _resolvedBaseline(eventId, roleType);
     return (baseline +
             _stagedAddCount(eventId, roleType) -
             _inQuotaDeletionCount(eventId, roleType))
@@ -1546,11 +1551,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final eventId = event.event.id;
     final role = event.roleType;
     _baselineQuotaFor(eventId, role); // seed baseline
-    // Append at the first free index >= liveQuota (accounts for prior adds).
+    // Append at the first free index >= liveQuota. Every staged slotIndex for
+    // this (event, role) is "used" — INCLUDING markedForDeletion rows: reusing
+    // a marked row's index would overwrite its staged entry (losing the delete
+    // and leaving two docs at the same event+role+slotIndex on Save), so the
+    // deletion flag must NOT be filtered out here.
     final base = _liveQuota(eventId, role);
     final used = _stagedChanges.values
-        .where((c) =>
-            c.eventId == eventId && c.roleType == role && !c.markedForDeletion)
+        .where((c) => c.eventId == eventId && c.roleType == role)
         .map((c) => c.slotIndex)
         .toSet();
     var slotIndex = base;
