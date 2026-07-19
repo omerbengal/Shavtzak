@@ -214,8 +214,14 @@ The op currently accepts an optional `eventQuotaBumps` and applies `to = max(cur
   `EventQuotaSet` typedef through `DatabaseInterface` / `FirestoreDatabase` / `LoggingDatabase` /
   `AssignmentRepository.saveAssignmentsBatch`.
 - **Requires `cd functions && firebase deploy --only functions:api`** — functions do not auto-deploy.
-  Until deployed, the new client sends `eventQuotaSets` that the old backend ignores → a staged quota
-  **lower would silently not apply** (rows delete, quota stays). Ship the deploy with the client.
+  Until deployed, the new client sends `eventQuotaSets` that the old backend ignores. Two pre-deploy
+  degradations, so **the functions deploy MUST ship with (or before) the client** — it is a hard release
+  gate, not a footnote:
+  - a staged quota **lower** silently does not apply (rows delete, quota stays);
+  - a staged **manual-add** lands the created row **off-quota** (the client drops the covering
+    `eventQuotaBump` for any role that also emits a set, and the old backend ignores the set that was
+    supposed to raise the quota) — the person is assigned but shows outside the quota until the quota is
+    corrected. Add both to the release checklist.
 
 ## Conflict handling — type G
 
