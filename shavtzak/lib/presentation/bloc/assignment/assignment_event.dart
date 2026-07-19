@@ -396,6 +396,27 @@ class DiscardStagedSlot extends AssignmentEvent {
   List<Object?> get props => [slotKey];
 }
 
+/// Stage a swipe-deletion of [slot]: the row stays visible (struck through)
+/// until Save; on Save the assignment (if any) is deleted and — for an IN-quota
+/// slot — the role's quota lowers by 1.
+class StageSlotDeletion extends AssignmentEvent {
+  final AssignmentSlot slot;
+  const StageSlotDeletion(this.slot);
+  @override
+  List<Object?> get props => [slot];
+}
+
+/// Stage a manual-add: append a new dirty slot for [member] in [roleType] at
+/// [event], raising the role's derived quota by 1 (applied on Save).
+class StageManualAdd extends AssignmentEvent {
+  final Event event;
+  final TeamMember member;
+  final String roleType;
+  const StageManualAdd({required this.event, required this.member, required this.roleType});
+  @override
+  List<Object?> get props => [event, member, roleType];
+}
+
 /// Discard every staged change, reverting the whole grid to its DB baseline.
 class DiscardAllStagedChanges extends AssignmentEvent {
   const DiscardAllStagedChanges();

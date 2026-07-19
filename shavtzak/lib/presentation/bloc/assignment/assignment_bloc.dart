@@ -108,6 +108,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   // slots-view merge sites so the existing optimistic-merge machinery
   // renders them with no changes to the merge function itself.
   final Map<String, StagedAssignmentChange> _stagedChanges = {};
+
+  // Baseline DB quota per "eventId_roleType", captured the first time a role
+  // gets a staged quota-changing action. Conflict detection ONLY (type-G).
+  final Map<String, int> _baselineQuota = {};
+
   final UserCacheService _userCache;
 
   /// True when there is at least one unsaved staged change.
@@ -167,6 +172,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<ExternalExtraPastMutation>(_onExternalExtraPastMutation);
     on<StageMemberChange>(_onStageMemberChange);
     on<StageNotesChange>(_onStageNotesChange);
+    on<StageSlotDeletion>(_onStageSlotDeletion);
+    on<StageManualAdd>(_onStageManualAdd);
     on<DiscardStagedSlot>(_onDiscardStagedSlot);
     on<DiscardAllStagedChanges>(_onDiscardAllStagedChanges);
     on<RehydrateStagedChanges>(_onRehydrateStagedChanges);
@@ -1349,6 +1356,60 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         _stagedChanges.values.map((c) => c.toJson()).toList());
   }
 
+  String _eventRoleKey(String eventId, String roleType) =>
+      '${eventId}_$roleType';
+
+  int _liveQuota(String eventId, String roleType) {
+    final ev = _windowEventsMap[eventId] ?? _extraPastEventsMap[eventId];
+    return ev?.roleRequirements[roleType] ?? 0;
+  }
+
+  int _baselineQuotaFor(String eventId, String roleType) {
+    final key = _eventRoleKey(eventId, roleType);
+    return _baselineQuota.putIfAbsent(key, () => _liveQuota(eventId, roleType));
+  }
+
+  /// Staged fills beyond the baseline quota (manual adds) — used by Task 7
+  /// rendering to know how many extra rows to draw for a role.
+  int _stagedAddCount(String eventId, String roleType) {
+    final baseline = _baselineQuota[_eventRoleKey(eventId, roleType)] ??
+        _liveQuota(eventId, roleType);
+    return _stagedChanges.values
+        .where((c) =>
+            c.eventId == eventId &&
+            c.roleType == roleType &&
+            !c.markedForDeletion &&
+            c.baselineMemberId == null &&
+            c.slotIndex >= baseline)
+        .length;
+  }
+
+  int _inQuotaDeletionCount(String eventId, String roleType) {
+    final baseline = _baselineQuota[_eventRoleKey(eventId, roleType)] ??
+        _liveQuota(eventId, roleType);
+    return _stagedChanges.values
+        .where((c) =>
+            c.eventId == eventId &&
+            c.roleType == roleType &&
+            c.markedForDeletion &&
+            c.slotIndex < baseline)
+        .length;
+  }
+
+  /// The admin's intended quota for a role = baseline + adds − in-quota
+  /// deletions, clamped to a sane [0, 999] range. `.toInt()` is required
+  /// because `num.clamp()` (inherited by `int`) returns `num`, not `int` —
+  /// see the same pattern in CalendarSyncBloc's poll-backoff clamp.
+  int derivedQuota(String eventId, String roleType) {
+    final baseline = _baselineQuota[_eventRoleKey(eventId, roleType)] ??
+        _liveQuota(eventId, roleType);
+    return (baseline +
+            _stagedAddCount(eventId, roleType) -
+            _inQuotaDeletionCount(eventId, roleType))
+        .clamp(0, 999)
+        .toInt();
+  }
+
   /// Convert staged changes to persistent PendingOperations for the merge.
   /// Pure function of _stagedChanges — no side effects on _pendingOperations
   /// (see _syncPendingOperationsWithStaged for how the two are reconciled).
@@ -1465,6 +1526,49 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       'slot': _slotKey(event.slot),
       'stagedCount': _stagedChanges.length,
     });
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onStageSlotDeletion(
+      StageSlotDeletion event, Emitter<AssignmentState> emit) async {
+    final slot = event.slot;
+    _baselineQuotaFor(slot.event.id, slot.role.key); // seed baseline
+    final key = _slotKey(slot);
+    final base = _stagedChanges[key] ?? _seedStaged(slot);
+    _stagedChanges[key] = base.copyWith(markedForDeletion: true);
+    await _persistStaged();
+    Logger.action('stage:delete', {'slot': key, 'stagedCount': _stagedChanges.length});
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onStageManualAdd(
+      StageManualAdd event, Emitter<AssignmentState> emit) async {
+    final eventId = event.event.id;
+    final role = event.roleType;
+    _baselineQuotaFor(eventId, role); // seed baseline
+    // Append at the first free index >= liveQuota (accounts for prior adds).
+    final base = _liveQuota(eventId, role);
+    final used = _stagedChanges.values
+        .where((c) =>
+            c.eventId == eventId && c.roleType == role && !c.markedForDeletion)
+        .map((c) => c.slotIndex)
+        .toSet();
+    var slotIndex = base;
+    while (used.contains(slotIndex)) {
+      slotIndex++;
+    }
+    final key = StagedAssignmentChange.slotKeyFor(eventId, role, slotIndex);
+    _stagedChanges[key] = StagedAssignmentChange(
+      slotKey: key, eventId: eventId, roleType: role, slotIndex: slotIndex,
+      desiredMemberId: event.member.id, desiredNotes: '',
+      desiredSemanticLabelId: null, desiredAltPhone: null,
+      baselineAssignmentId: null, baselineMemberId: null, baselineNotes: '',
+      baselineSemanticLabelId: null, baselineAltPhone: null,
+      desiredAssignmentId: const Uuid().v4(),
+      stagedAtMillis: DateTime.now().millisecondsSinceEpoch,
+    );
+    await _persistStaged();
+    Logger.action('stage:manualAdd', {'slot': key, 'stagedCount': _stagedChanges.length});
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
