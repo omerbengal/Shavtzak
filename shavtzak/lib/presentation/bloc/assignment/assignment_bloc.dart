@@ -1573,7 +1573,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   Future<void> _onStageSlotDeletion(
       StageSlotDeletion event, Emitter<AssignmentState> emit) async {
     final slot = event.slot;
-    _baselineQuotaFor(slot.event.id, slot.role.key); // seed baseline
+    // MINOR #4: only an IN-quota deletion changes the derived quota. Seeding the
+    // baseline for an OFF-quota-only deletion would make the role type-G-eligible
+    // and surface a phantom quota conflict on any concurrent DB quota change
+    // (which, per the override default, would then 409). The off-quota delete
+    // still applies at Save — the main loop deletes markedForDeletion entries
+    // regardless of whether a baseline was seeded — and correctly makes no quota
+    // change (derivedQuota falls back to the live quota).
+    if (slot.slotIndex < _liveQuota(slot.event.id, slot.role.key)) {
+      _baselineQuotaFor(slot.event.id, slot.role.key); // seed baseline (in-quota)
+    }
     final key = _slotKey(slot);
     final base = _stagedChanges[key] ?? _seedStaged(slot);
     _stagedChanges[key] = base.copyWith(markedForDeletion: true);
@@ -1984,35 +1993,53 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return conflicts;
   }
 
-  /// Renumber a role's surviving DB rows contiguous from 0 (Save-time only),
-  /// after [deletes] removed some of them. A survivor already queued in
-  /// [updates] (it also has a staged member/notes edit) keeps that edit and
-  /// just takes the new slotIndex; a survivor not otherwise touched is appended
-  /// as a slotIndex-only update. Mirrors the immediate swipe-delete reorder so
-  /// the lowered quota's in-quota rows stay packed at 0..n-1. Reads the raw DB
-  /// snapshot (getCurrentAssignments + paged extra-past), the same source the
-  /// rest of Save converges against.
-  void _reindexRoleSurvivors(String eventId, String roleType,
-      List<String> deletes, List<Assignment> updates) {
+  /// Repack a role's post-save rows contiguous from 0 (Save-time only), after a
+  /// staged deletion freed a slot. The rows that will exist for the role =
+  /// DB survivors (not in [deletes]) + this role's [creates] (manual-adds,
+  /// override-restores, fresh fills). Renumbering the UNION keeps in-quota rows
+  /// packed AND lets a same-role manual-add fill the freed in-quota slot instead
+  /// of being stranded off-quota (IMPORTANT #2). DB survivors write back to
+  /// [updates] (merging into any staged member/notes edit already queued for
+  /// them); creates are mutated in place in [creates]. Reads the raw DB snapshot
+  /// (getCurrentAssignments + paged extra-past), the same source the rest of
+  /// Save converges against.
+  void _reindexRoleAfterDeletion(String eventId, String roleType,
+      List<String> deletes, List<Assignment> updates, List<Assignment> creates) {
     final deletedIds = deletes.toSet(); // O(1) survivor filtering
-    final live = [
+    // Sortable union tagged by source: a DB survivor (write back to `updates`)
+    // or an index into `creates` (mutate in place).
+    final items = <({int slotIndex, Assignment? survivor, int? createIdx})>[];
+    for (final a in [
       ..._repository.getCurrentAssignments(),
       ..._extraPastAssignments,
-    ]
-        .where((a) =>
-            a.eventId == eventId &&
-            a.roleType == roleType &&
-            !deletedIds.contains(a.id))
-        .toList()
-      ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
-    for (var i = 0; i < live.length; i++) {
-      final a = live[i];
-      if (a.slotIndex == i) continue;
-      final existing = updates.indexWhere((u) => u.id == a.id);
-      if (existing >= 0) {
-        updates[existing] = updates[existing].copyWith(slotIndex: i);
+    ]) {
+      if (a.eventId == eventId &&
+          a.roleType == roleType &&
+          !deletedIds.contains(a.id)) {
+        items.add((slotIndex: a.slotIndex, survivor: a, createIdx: null));
+      }
+    }
+    for (var i = 0; i < creates.length; i++) {
+      if (creates[i].eventId == eventId && creates[i].roleType == roleType) {
+        items.add(
+            (slotIndex: creates[i].slotIndex, survivor: null, createIdx: i));
+      }
+    }
+    items.sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+    for (var i = 0; i < items.length; i++) {
+      final it = items[i];
+      if (it.slotIndex == i) continue; // already contiguous at this index
+      if (it.survivor != null) {
+        final a = it.survivor!;
+        final existing = updates.indexWhere((u) => u.id == a.id);
+        if (existing >= 0) {
+          updates[existing] = updates[existing].copyWith(slotIndex: i);
+        } else {
+          updates.add(a.copyWith(slotIndex: i, updatedAt: DateTime.now()));
+        }
       } else {
-        updates.add(a.copyWith(slotIndex: i, updatedAt: DateTime.now()));
+        final ci = it.createIdx!;
+        creates[ci] = creates[ci].copyWith(slotIndex: i);
       }
     }
   }
@@ -2200,8 +2227,33 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final rolesWithSet = <String>{}; // erk keys that produced a set (carry c)
     final quotaChangedRoles = _quotaTouchedRoles();
     quotaChangedRoles.forEach((erk, role) {
-      // A type-G / takeDb resolution for this role keeps the DB quota (skip the
-      // set), but its staged deletions were already applied in the loop above.
+      // MINOR #3: a role with an APPLIED staged deletion ALWAYS repacks its
+      // survivors + creates, regardless of the quota-set / type-G decision below
+      // ("your deletions still apply and survivors still reindex"). A per-SLOT
+      // takeDb (resolutions[slotKey]) cancels that specific deletion so it's
+      // excluded; a role-level (erk) takeDb does NOT stop the reindex.
+      final hadDeletion = _stagedChanges.entries.any((e) =>
+          e.value.eventId == role.eventId &&
+          e.value.roleType == role.roleType &&
+          e.value.markedForDeletion &&
+          resolutions[e.key] != ConflictResolution.takeDb);
+      if (hadDeletion) {
+        // Fix #3: the reindex mutates `updates`/`creates` directly and can be
+        // the ONLY write for this event (every markedForDeletion row was
+        // already gone, so no delete was queued, yet a survivor still
+        // reindexed). Mark the event touched so carry (b) reconciles its stale
+        // extra-past cache (no-op for in-window events).
+        touchedEventIds.add(role.eventId);
+        // IMPORTANT #2: repack survivors AND this role's creates contiguous, so
+        // a same-role manual-add fills the freed IN-quota slot instead of being
+        // stranded off-quota. Runs BEFORE maxCreateBound below so a pure
+        // delete+add lands on derivedTarget, not baseline+adds.
+        _reindexRoleAfterDeletion(
+            role.eventId, role.roleType, deletes, updates, creates);
+      }
+
+      // A role-level (type-G) takeDb keeps the DB quota: skip the SET. The
+      // deletions + survivor reindex above already applied.
       if (resolutions[erk] == ConflictResolution.takeDb) return;
       final baseline = _baselineQuota[erk]!;
 
@@ -2226,11 +2278,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           (baseline + adds - inQuotaDeletions).clamp(0, 999).toInt();
 
       // The target must ALSO fit every create the admin wants in-quota for this
-      // role — including an override-restore create (baselineMemberId != null),
-      // which the derived add/deletion counts are blind to (Fix #1). Without
-      // this, carry (c) would then drop the covering bump and strand that row
-      // off-quota. Taking the max keeps the SET the single source of truth for
-      // the role's quota, so dropping the bump below stays safe.
+      // role — an override-restore create (baselineMemberId != null) that the
+      // derived counts are blind to (Fix #1), and any manual-add create (which
+      // the reindex above already repacked into a freed slot, so this reads its
+      // NEW low index — IMPORTANT #2). Taking the max keeps the SET the single
+      // source of truth for the role's quota, so dropping the bump below (carry
+      // c) stays safe (target >= max(slotIndex+1) over the role's creates).
       var maxCreateBound = 0;
       for (final a in creates) {
         if (a.eventId == role.eventId && a.roleType == role.roleType) {
@@ -2241,33 +2294,22 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       final target =
           derivedTarget > maxCreateBound ? derivedTarget : maxCreateBound;
 
+      // CRITICAL #1: on an override (the dialog DEFAULT for a type-G conflict),
+      // `expected` MUST be the LIVE DB quota — the backend's
+      // planEventQuotaSetWrites rejects (409) a set whose expected != live &&
+      // target != live, so a baseline `expected` makes override fail every time.
+      // With no override, baseline is the correct optimistic-concurrency guard.
+      final expected = resolutions[erk] == ConflictResolution.overrideDb
+          ? _liveQuota(role.eventId, role.roleType)
+          : baseline;
+
       quotaSets.add((
         eventId: role.eventId,
         roleType: role.roleType,
         target: target,
-        expected: baseline,
+        expected: expected,
       ));
       rolesWithSet.add(erk);
-      // Reindex survivors ONLY when this role actually had an APPLIED staged
-      // deletion (a takeDb-cancelled one leaves nothing removed — Fix #2/#3) —
-      // that is the sole action that leaves a gap to pack. A pure manual-add
-      // must NOT compact this role's pre-existing DB rows: a compaction could
-      // pull an off-quota row into the manual-add's freshly-created slot and
-      // collide with it (two docs at the same event+role+slotIndex).
-      final hadDeletion = _stagedChanges.entries.any((e) =>
-          e.value.eventId == role.eventId &&
-          e.value.roleType == role.roleType &&
-          e.value.markedForDeletion &&
-          resolutions[e.key] != ConflictResolution.takeDb);
-      if (hadDeletion) {
-        // Fix #3: _reindexRoleSurvivors mutates `updates` directly and can be
-        // the ONLY write for this event (every markedForDeletion row was
-        // already gone, so no delete was queued, yet a survivor still reindexed).
-        // Mark the event touched so carry (b) reconciles its stale extra-past
-        // cache (no-op for in-window events).
-        touchedEventIds.add(role.eventId);
-        _reindexRoleSurvivors(role.eventId, role.roleType, deletes, updates);
-      }
     });
 
     // Restore-to-quota: any create that would land OFF-quota — its slotIndex is
@@ -2333,13 +2375,29 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       for (final id in touchedEventIds) {
         await _refreshExtraPastEvent(id);
       }
+      // MINOR #5: capture the (eventId, roleType) of every applied entry BEFORE
+      // removing them, so the per-role baseline clear below can see their fields.
+      final appliedRoleErks = <String>{
+        for (final k in appliedKeys)
+          if (_stagedChanges[k] != null)
+            _eventRoleKey(
+                _stagedChanges[k]!.eventId, _stagedChanges[k]!.roleType),
+      };
       for (final k in appliedKeys) {
         _stagedChanges.remove(k);
       }
-      // carry (a): once every staged change is applied, drop the captured
-      // derived-quota baselines too — a stale baseline surviving into the next
-      // staging session would mis-derive that role's quota / type-G conflict.
-      if (_stagedChanges.isEmpty) _baselineQuota.clear();
+      // carry (a) + MINOR #5: drop the captured derived-quota baseline for each
+      // FULLY-applied role (all its staged entries applied, none remaining) —
+      // NOT only when _stagedChanges emptied entirely. The overlay-less
+      // leave-guard Save keeps the grid interactive during the await, so an
+      // edit staged mid-Save leaves a survivor that would otherwise strand the
+      // applied roles' stale baselines (reused via putIfAbsent on the next
+      // stage, mis-deriving quota / a phantom type-G conflict).
+      for (final erk in appliedRoleErks) {
+        final stillStaged = _stagedChanges.values
+            .any((c) => _eventRoleKey(c.eventId, c.roleType) == erk);
+        if (!stillStaged) _baselineQuota.remove(erk);
+      }
       // Re-persist the SURVIVING staged changes rather than blanket-clearing
       // the cache. The screen's leave-guard Save runs without a blocking
       // overlay, so the grid stays interactive during this await — a new
