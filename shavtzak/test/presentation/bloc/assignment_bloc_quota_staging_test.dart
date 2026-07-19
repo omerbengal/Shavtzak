@@ -32,6 +32,7 @@ import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_event.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_state.dart';
+import 'package:shavtzak/presentation/bloc/assignment/models/assignment_conflict.dart';
 import 'package:shavtzak/presentation/screens/assignment/models/assignment_slot.dart';
 
 import 'assignment_bloc_slots_refetch_test.mocks.dart';
@@ -437,5 +438,92 @@ void main() {
         .where((s) => s.event.id == 'e1' && s.role.key == 'medic')
         .toList();
     expect(medicSlots.length, 3);
+  });
+
+  // ---------------------------------------------------------------------
+  // Task 11: type-G ("quota changed underneath you") conflict classification.
+  // A staged quota-changing action (StageSlotDeletion/StageManualAdd) freezes
+  // a baseline DB quota at first touch (_baselineQuota). If a co-admin then
+  // changes the LIVE DB quota for that same role to something that still
+  // diverges from the admin's derived (intended) quota, classifyStagedConflicts
+  // must surface exactly one quotaChanged conflict keyed by the eventRoleKey
+  // ("e1_medic") — Task 10's Save reads resolutions[erk] at that exact key.
+  // ---------------------------------------------------------------------
+
+  test('type-G fires when a co-admin raised the quota under a staged lower',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadWithAssignments(bloc, [
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+
+    AssignmentSlot slotForRoleIndex({
+      required String eventId,
+      required String role,
+      required int index,
+    }) {
+      final s = bloc.state as AssignmentSlotsLoaded;
+      return s.slots.firstWhere((slot) =>
+          slot.event.id == eventId &&
+          slot.role.key == role &&
+          slot.slotIndex == index);
+    }
+
+    bloc.add(StageSlotDeletion(
+        slotForRoleIndex(eventId: 'e1', role: 'medic', index: 0)));
+    await pumpEventQueue(); // baseline captured = 2, derived = 1
+
+    // Co-admin raises the DB quota to 5 in the live event stream. Pushing a
+    // fresh event through eventStream drives the same _windowEventsMap
+    // update path a real Firestore watchEventsByDateRange emit would.
+    void simulateDbQuotaChange(String eventId, String roleType, int quota) {
+      eventStream
+          .add([futureEvent(eventId, roleRequirements: {roleType: quota})]);
+    }
+
+    simulateDbQuotaChange('e1', 'medic', 5);
+    await pumpEventQueue();
+
+    final conflicts = bloc
+        .classifyStagedConflicts((bloc.state as AssignmentSlotsLoaded).slots);
+    final g = conflicts
+        .where((c) => c.type == AssignmentConflictType.quotaChanged)
+        .toList();
+    expect(g.length, 1);
+    expect(g.single.slotKey, 'e1_medic');
+  });
+
+  test('no type-G when the DB quota still equals the baseline', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadWithAssignments(bloc, [
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+
+    AssignmentSlot slotForRoleIndex({
+      required String eventId,
+      required String role,
+      required int index,
+    }) {
+      final s = bloc.state as AssignmentSlotsLoaded;
+      return s.slots.firstWhere((slot) =>
+          slot.event.id == eventId &&
+          slot.role.key == role &&
+          slot.slotIndex == index);
+    }
+
+    bloc.add(StageSlotDeletion(
+        slotForRoleIndex(eventId: 'e1', role: 'medic', index: 0)));
+    await pumpEventQueue();
+
+    // No concurrent DB quota change: live quota stays at the seeded 2.
+    final conflicts = bloc
+        .classifyStagedConflicts((bloc.state as AssignmentSlotsLoaded).slots);
+    expect(
+        conflicts.any((c) => c.type == AssignmentConflictType.quotaChanged),
+        false);
   });
 }

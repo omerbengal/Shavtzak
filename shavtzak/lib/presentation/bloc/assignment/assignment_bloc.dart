@@ -1888,6 +1888,52 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       ));
     });
 
+    // G: per-role quota divergence — a DIFFERENT axis from the per-slot A-F
+    // checks above (those compare a slot's assignee/notes; this compares a
+    // role's QUOTA). For every (event, role) that has a captured
+    // `_baselineQuota` entry (i.e. StageSlotDeletion/StageManualAdd touched
+    // it this session), fire one conflict when the live DB quota moved off
+    // that baseline AND still differs from the admin's derived intent — if
+    // `derivedQuota == live`, the admin's staged edits already reconcile with
+    // the new DB quota on their own, so there is nothing to ask about.
+    //
+    // The real (eventId, roleType) pair for each candidate erk is read from
+    // `_stagedChanges.values`' own fields rather than by splitting the
+    // composite erk string — a role key CAN contain '_', which would make
+    // `erk.split('_')` ambiguous about where eventId ends and roleType
+    // begins. This mirrors Task 10's identical `quotaChangedRoles`
+    // derivation in `_onSaveStagedChanges` (same underlying data, same
+    // hazard), so classify-time and save-time agree on exactly which erks
+    // are "in play" for type-G.
+    final quotaConflictRoles = <String, ({String eventId, String roleType})>{};
+    for (final c in _stagedChanges.values) {
+      final erk = _eventRoleKey(c.eventId, c.roleType);
+      if (_baselineQuota.containsKey(erk)) {
+        quotaConflictRoles[erk] = (eventId: c.eventId, roleType: c.roleType);
+      }
+    }
+    quotaConflictRoles.forEach((erk, role) {
+      final baseline = _baselineQuota[erk]!;
+      final live = _liveQuota(role.eventId, role.roleType);
+      final desired = derivedQuota(role.eventId, role.roleType);
+      if (live != baseline && desired != live) {
+        final ev = _windowEventsMap[role.eventId] ??
+            _extraPastEventsMap[role.eventId];
+        final roleName = _resolveRoleForKey(role.roleType).hebrewName;
+        conflicts.add(AssignmentConflict(
+          // MUST be the eventRoleKey (erk), NOT a per-slot key: Task 10's
+          // Save reads `resolutions[erk]` at exactly this key to decide
+          // whether to skip (takeDb) or emit (overrideDb) this role's
+          // eventQuotaSet.
+          slotKey: erk,
+          type: AssignmentConflictType.quotaChanged,
+          title: ev != null ? '${ev.name} · $roleName' : roleName,
+          description:
+              'המכסה של "$roleName" השתנתה: התחלת מ-$baseline, וכעת ב-DB יש $live.',
+        ));
+      }
+    });
+
     return conflicts;
   }
 
