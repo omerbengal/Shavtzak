@@ -20,6 +20,7 @@
 // repository types.
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
@@ -214,6 +215,18 @@ void main() {
         userCacheService: UserCacheService(),
       );
 
+  /// Task 12: the cache now stores a JSON OBJECT
+  /// (`{'changes': [...], 'baselineQuota': {...}}`), not a bare list — decode
+  /// down to just the changes list for tests that only care about that shape.
+  Future<List<dynamic>> cachedChanges() async {
+    final raw = await UserCacheService().getPendingAssignmentChanges();
+    if (raw == null) return const [];
+    final decoded = jsonDecode(raw);
+    return decoded is List
+        ? decoded
+        : (decoded['changes'] as List? ?? const []);
+  }
+
   test(
       'save of a staged fill against an empty DB slot batches it as a create, '
       'not an update, and clears staging on success', () async {
@@ -326,7 +339,7 @@ void main() {
     // Retry-safe: the staged change (in-memory AND cached) must survive a
     // failed write so the admin can retry without losing the edit.
     expect(bloc.hasStagedChanges, isTrue);
-    final cached = await UserCacheService().getPendingAssignmentChanges();
+    final cached = await cachedChanges();
     expect(cached, hasLength(1));
     expect(cached.single['desiredMemberId'], 'm1');
   });
@@ -429,7 +442,7 @@ void main() {
     bloc.add(const DiscardAllStagedChanges());
     await pumpEventQueue();
     expect(bloc.hasStagedChanges, isTrue);
-    final cachedMidSave = await UserCacheService().getPendingAssignmentChanges();
+    final cachedMidSave = await cachedChanges();
     expect(cachedMidSave, hasLength(1)); // NOT wiped by the rejected discard
 
     // Let the save resolve — its own success path clears the applied change.
@@ -543,7 +556,7 @@ void main() {
     // The cache must reflect the survivor, NOT be blanket-cleared (the bug:
     // clearPendingAssignmentChanges() here would wipe e2's entry too, losing
     // it from crash-recovery even though it correctly stayed in memory).
-    final cached = await UserCacheService().getPendingAssignmentChanges();
+    final cached = await cachedChanges();
     expect(cached, hasLength(1));
     expect(cached.single['slotKey'], 'e2_medic_0');
     expect(cached.single['desiredMemberId'], 'm2');

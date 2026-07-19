@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
@@ -1319,9 +1320,21 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// Store [change] under [key], or drop it if it reverts to baseline; then
   /// mirror to cache. Awaited by callers (never left fire-and-forget) so the
   /// cache reliably reflects the latest state for crash-recovery.
+  ///
+  /// Task 12 (carry): when a revert-to-baseline empties out the LAST staged
+  /// change for [change]'s (event, role), also drop that role's captured
+  /// `_baselineQuota` entry — mirroring the per-role clear
+  /// [_onDiscardStagedSlot] already does. Without this, a stale baseline
+  /// from this reverted session would leak into the next staging session on
+  /// the same role (mis-deriving its quota / a phantom type-G conflict).
   Future<void> _commitStaged(String key, StagedAssignmentChange change) async {
     if (change.matchesBaseline) {
       _stagedChanges.remove(key);
+      final roleStillStaged = _stagedChanges.values.any((c) =>
+          c.eventId == change.eventId && c.roleType == change.roleType);
+      if (!roleStillStaged) {
+        _baselineQuota.remove(_eventRoleKey(change.eventId, change.roleType));
+      }
     } else {
       _stagedChanges[key] = change;
     }
@@ -1351,9 +1364,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     );
   }
 
+  /// Task 12: persists BOTH the staged-change list and the derived-quota
+  /// `_baselineQuota` snapshot, wrapped in one JSON object, so a reload can
+  /// restore the REAL baseline captured at first quota-touch instead of
+  /// re-deriving one from whatever the live DB quota happens to be later.
   Future<void> _persistStaged() async {
-    await _userCache.savePendingAssignmentChanges(
-        _stagedChanges.values.map((c) => c.toJson()).toList());
+    final payload = jsonEncode({
+      'changes': _stagedChanges.values.map((c) => c.toJson()).toList(),
+      'baselineQuota': _baselineQuota,
+    });
+    await _userCache.savePendingAssignmentChanges(payload);
   }
 
   String _eventRoleKey(String eventId, String roleType) =>
@@ -1638,27 +1658,42 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
+  /// Task 12: decodes the persisted payload and restores BOTH the staged
+  /// list and the real `_baselineQuota` snapshot captured at stage time — so
+  /// a persisted manual-add/deletion survives a reload with the correct
+  /// derived quota, without re-deriving a baseline from whatever the LIVE
+  /// quota happens to be at reload time (that used to be Task 7's stopgap
+  /// reseed loop; it is gone now that the real baseline round-trips).
+  ///
+  /// Tolerates the OLD format (a bare JSON list, no baseline ever
+  /// persisted) for a smooth upgrade: `_baselineQuota` is simply left empty
+  /// in that case — any quota-touching staged change in an old cache
+  /// re-seeds its baseline from the current live quota the next time it's
+  /// touched (StageSlotDeletion/StageManualAdd), same as a brand-new
+  /// staging session would. There is nothing better to restore: the old
+  /// format never captured a baseline to begin with.
   Future<void> _onRehydrateStagedChanges(
       RehydrateStagedChanges event, Emitter<AssignmentState> emit) async {
-    final maps = await _userCache.getPendingAssignmentChanges();
+    final raw = await _userCache.getPendingAssignmentChanges();
+    if (raw == null || raw.isEmpty) return;
+    final decoded = jsonDecode(raw);
+    final List list;
+    if (decoded is List) {
+      list = decoded; // legacy format (bare list)
+    } else {
+      list = (decoded['changes'] as List?) ?? const [];
+      _baselineQuota
+        ..clear()
+        ..addAll(Map<String, int>.from(
+            (decoded['baselineQuota'] as Map?)?.cast<String, int>() ??
+                const {}));
+    }
     _stagedChanges
       ..clear()
-      ..addEntries(maps
-          .map(StagedAssignmentChange.fromJson)
+      ..addEntries(list
+          .map((e) =>
+              StagedAssignmentChange.fromJson(e as Map<String, dynamic>))
           .map((c) => MapEntry(c.slotKey, c)));
-    // Re-seed the derived-quota baseline for every (event, role) present in the
-    // rehydrated changes. On a fresh bloc (browser refresh / remount)
-    // _baselineQuota is empty, and StageManualAdd/StageSlotDeletion — the only
-    // other seeders — did not run this session. Without this, _stagedAddCount's
-    // "no baseline => 0" guard would report 0 staged adds, so NEITHER build loop
-    // grows and a persisted manual-add row (a non-DB staged fill beyond the live
-    // quota) would render nowhere — silently lost until another quota action is
-    // staged on the same role, defeating the crash-recovery cache. putIfAbsent
-    // (via _baselineQuotaFor) only fills gaps, so this composes with any future
-    // baseline persistence (Task 12).
-    for (final c in _stagedChanges.values) {
-      _baselineQuotaFor(c.eventId, c.roleType);
-    }
     Logger.action('stage:rehydrate', {'loaded': _stagedChanges.length});
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
@@ -1756,6 +1791,27 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     }
     if (synthesized.isEmpty) return slots;
     return [...slots, ...synthesized]..sort(_compareAssignmentSlots);
+  }
+
+  /// (eventId, roleType) pairs whose `_baselineQuota` was seeded THIS session
+  /// (i.e. touched by StageSlotDeletion/StageManualAdd) — the set of roles a
+  /// per-role quota divergence (type-G, in [classifyStagedConflicts]) or a
+  /// Save `eventQuotaSet` (in [_onSaveStagedChanges]) applies to. The real
+  /// (eventId, roleType) pair for each candidate erk is read from
+  /// `_stagedChanges.values`' own fields rather than by splitting the
+  /// composite erk string — a role key CAN contain '_', which would make
+  /// `erk.split('_')` ambiguous about where eventId ends and roleType
+  /// begins. Shared by both call sites so they can never desync on which
+  /// erks are "in play" for quota purposes.
+  Map<String, ({String eventId, String roleType})> _quotaTouchedRoles() {
+    final roles = <String, ({String eventId, String roleType})>{};
+    for (final c in _stagedChanges.values) {
+      final erk = _eventRoleKey(c.eventId, c.roleType);
+      if (_baselineQuota.containsKey(erk)) {
+        roles[erk] = (eventId: c.eventId, roleType: c.roleType);
+      }
+    }
+    return roles;
   }
 
   /// Compare each staged change's baseline to the current DB slots and
@@ -1897,21 +1953,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // `derivedQuota == live`, the admin's staged edits already reconcile with
     // the new DB quota on their own, so there is nothing to ask about.
     //
-    // The real (eventId, roleType) pair for each candidate erk is read from
-    // `_stagedChanges.values`' own fields rather than by splitting the
-    // composite erk string — a role key CAN contain '_', which would make
-    // `erk.split('_')` ambiguous about where eventId ends and roleType
-    // begins. This mirrors Task 10's identical `quotaChangedRoles`
-    // derivation in `_onSaveStagedChanges` (same underlying data, same
-    // hazard), so classify-time and save-time agree on exactly which erks
-    // are "in play" for type-G.
-    final quotaConflictRoles = <String, ({String eventId, String roleType})>{};
-    for (final c in _stagedChanges.values) {
-      final erk = _eventRoleKey(c.eventId, c.roleType);
-      if (_baselineQuota.containsKey(erk)) {
-        quotaConflictRoles[erk] = (eventId: c.eventId, roleType: c.roleType);
-      }
-    }
+    // The real (eventId, roleType) pair for each candidate erk is read via
+    // [_quotaTouchedRoles] — shared with `_onSaveStagedChanges` (same
+    // underlying data, same hazard splitting the composite erk string would
+    // hit), so classify-time and save-time agree on exactly which erks are
+    // "in play" for type-G.
+    final quotaConflictRoles = _quotaTouchedRoles();
     quotaConflictRoles.forEach((erk, role) {
       final baseline = _baselineQuota[erk]!;
       final live = _liveQuota(role.eventId, role.roleType);
@@ -2144,20 +2191,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // in-quota deletion, the two actions that SEED _baselineQuota. For each,
     // emit an EXACT derived quota target with the captured baseline as the
     // backend concurrency guard's `expected`, and renumber that role's DB
-    // survivors contiguous from 0. The (eventId, roleType) pair is derived from
-    // each staged entry's REAL fields (not by splitting the composite erk key,
-    // which is fragile for multi-word role keys). The set record is structurally
-    // the repository's EventQuotaSet (no import needed).
+    // survivors contiguous from 0. The (eventId, roleType) pair comes from
+    // [_quotaTouchedRoles] — shared with `classifyStagedConflicts` so the two
+    // never desync on which erks are "in play". The set record is
+    // structurally the repository's EventQuotaSet (no import needed).
     final quotaSets =
         <({String eventId, String roleType, int target, int expected})>[];
     final rolesWithSet = <String>{}; // erk keys that produced a set (carry c)
-    final quotaChangedRoles = <String, ({String eventId, String roleType})>{};
-    for (final c in _stagedChanges.values) {
-      final erk = _eventRoleKey(c.eventId, c.roleType);
-      if (_baselineQuota.containsKey(erk)) {
-        quotaChangedRoles[erk] = (eventId: c.eventId, roleType: c.roleType);
-      }
-    }
+    final quotaChangedRoles = _quotaTouchedRoles();
     quotaChangedRoles.forEach((erk, role) {
       // A type-G / takeDb resolution for this role keeps the DB quota (skip the
       // set), but its staged deletions were already applied in the loop above.

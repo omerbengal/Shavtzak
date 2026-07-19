@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'environment_service.dart';
 
@@ -47,33 +46,35 @@ class UserCacheService {
     }
   }
 
-  /// Persist the staged assignment-change list (as decoded JSON maps) for
-  /// crash recovery. Per-browser, env-prefixed.
-  Future<void> savePendingAssignmentChanges(
-      List<Map<String, dynamic>> changes) async {
+  /// Persist the staged-assignment-changes payload for crash recovery.
+  /// Per-browser, env-prefixed. [payloadJson] is an already-JSON-encoded
+  /// string built by the caller (AssignmentBloc._persistStaged) — a wrapper
+  /// object carrying both the staged-change list and the derived-quota
+  /// baseline map (`{'changes': [...], 'baselineQuota': {...}}`). Stored
+  /// verbatim: this service does not know or care about that shape, it just
+  /// round-trips a string.
+  Future<void> savePendingAssignmentChanges(String payloadJson) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_pendingAssignmentChangesKey, jsonEncode(changes));
+      await prefs.setString(_pendingAssignmentChangesKey, payloadJson);
     } catch (e) {
       throw UserCacheException('Failed to save pending assignment changes: $e');
     }
   }
 
-  /// Read the staged assignment-change list. Returns an empty list when none
-  /// is cached or the payload is unreadable (never throws on decode).
-  Future<List<Map<String, dynamic>>> getPendingAssignmentChanges() async {
+  /// Read the raw staged-assignment-changes JSON payload. Returns null when
+  /// none is cached or the payload is unreadable (never throws). Decoding
+  /// and interpreting the JSON shape — including tolerating the legacy
+  /// bare-list format written before this payload became a wrapper object —
+  /// is the caller's responsibility (AssignmentBloc._onRehydrateStagedChanges).
+  Future<String?> getPendingAssignmentChanges() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final cached = prefs.getString(_pendingAssignmentChangesKey);
-      if (cached == null || cached.isEmpty) return const [];
-      final decoded = jsonDecode(cached);
-      if (decoded is! List) return const [];
-      return decoded
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      if (cached == null || cached.isEmpty) return null;
+      return cached;
     } catch (_) {
-      return const [];
+      return null;
     }
   }
 

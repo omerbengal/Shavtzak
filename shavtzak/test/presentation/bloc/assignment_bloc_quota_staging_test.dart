@@ -19,6 +19,7 @@
 // exact same four repository types.
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
@@ -194,6 +195,18 @@ void main() {
     return bloc.state as AssignmentSlotsLoaded;
   }
 
+  /// Task 12: the cache now stores a JSON OBJECT
+  /// (`{'changes': [...], 'baselineQuota': {...}}`), not a bare list — decode
+  /// down to just the changes list for tests that only care about that shape.
+  Future<List<dynamic>> cachedChanges() async {
+    final raw = await UserCacheService().getPendingAssignmentChanges();
+    if (raw == null) return const [];
+    final decoded = jsonDecode(raw);
+    return decoded is List
+        ? decoded
+        : (decoded['changes'] as List? ?? const []);
+  }
+
   test('StageSlotDeletion lowers the derived quota by 1 and marks the slot',
       () async {
     final bloc = buildBloc();
@@ -288,7 +301,7 @@ void main() {
 
     // _stagedChanges is private; read the crash-recovery cache mirror instead
     // (both handlers await _persistStaged), keyed by slotKey.
-    final cached = await UserCacheService().getPendingAssignmentChanges();
+    final cached = await cachedChanges();
     final bySlotKey = {for (final c in cached) c['slotKey'] as String: c};
 
     // The off-quota deletion at slot 2 SURVIVED — still marked for deletion and
@@ -525,5 +538,109 @@ void main() {
     expect(
         conflicts.any((c) => c.type == AssignmentConflictType.quotaChanged),
         false);
+  });
+
+  // ---------------------------------------------------------------------
+  // Task 12: persist/rehydrate `_baselineQuota`. Task 7's stopgap reseed
+  // loop (`for (final c in _stagedChanges.values) _baselineQuotaFor(...)` at
+  // the end of `_onRehydrateStagedChanges`) is REMOVED by this task — it
+  // re-derived a "baseline" from whatever the LIVE quota happened to be at
+  // reload time, which only happens to be right when nothing changed
+  // underneath. The real baseline (captured at first quota-touch) is now
+  // persisted alongside the staged list and restored verbatim on rehydrate.
+  // ---------------------------------------------------------------------
+
+  test(
+      'a staged deletion + its baseline survive persist/rehydrate, sourced '
+      'from the persisted baseline and NOT re-derived from a since-changed '
+      'live quota', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    final loaded = await loadWithAssignments(bloc, [
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    final slot0 = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+    bloc.add(StageSlotDeletion(slot0));
+    await pumpEventQueue(); // baseline persisted = 2 (the live quota NOW)
+
+    // Fresh bloc reading the SAME SharedPreferences-backed cache (simulates
+    // a browser reload). Its very first live snapshot already shows a
+    // DIVERGED quota (5) — e.g. a co-admin raised it while this admin's tab
+    // was reloading. A correct restore reads the PERSISTED baseline (2); a
+    // reseed-from-current-live-quota would instead read 5 — the two
+    // mechanisms are made to disagree on purpose so this test can tell them
+    // apart.
+    final reloaded = buildBloc();
+    addTearDown(() async => reloaded.close());
+    reloaded.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: {'medic': 5})]);
+    roleStream.add([medicRole()]);
+    assignmentStream.add([
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    await pumpEventQueue();
+
+    reloaded.add(const RehydrateStagedChanges());
+    await pumpEventQueue();
+
+    // 2 (persisted baseline) − 1 (deletion) = 1. A reseed-from-live-quota
+    // would instead compute 5 − 1 = 4.
+    expect(reloaded.derivedQuota('e1', 'medic'), 1);
+    final state = reloaded.state as AssignmentSlotsLoaded;
+    expect(state.stagedDeletionSlotKeys, contains('e1_medic_0'));
+  });
+
+  test(
+      '_commitStaged clears the role baseline once the last staged change '
+      'for that role fully reverts, so a later re-stage re-seeds from the '
+      'CURRENT live quota instead of leaking the old one', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadWithAssignments(bloc, [
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    teamStream.add([member('m1'), member('m2'), member('m9')]);
+    await pumpEventQueue();
+
+    // Stage a manual add — seeds _baselineQuota['e1_medic'] from the live
+    // quota (2).
+    bloc.add(StageManualAdd(
+        event: futureEvent('e1'), member: member('m9'), roleType: 'medic'));
+    await pumpEventQueue();
+    expect(bloc.derivedQuota('e1', 'medic'), 3); // sanity: 2 baseline + 1 add
+
+    // Clear the appended slot back to empty. Its desired state (no member)
+    // now equals its own baseline (a manual add starts with
+    // baselineMemberId == null), so _commitStaged's auto-clean removes the
+    // staged entry entirely — a full revert, and the ONLY staged change for
+    // this role.
+    final addedSlot = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+        (s) =>
+            s.event.id == 'e1' && s.role.key == 'medic' && s.slotIndex == 2);
+    bloc.add(StageMemberChange(slot: addedSlot, member: null));
+    await pumpEventQueue();
+    expect(bloc.hasStagedChanges, isFalse);
+
+    // The live quota changes underneath (e.g. a co-admin edit) after the
+    // revert.
+    eventStream.add([futureEvent('e1', roleRequirements: {'medic': 5})]);
+    await pumpEventQueue();
+
+    // Re-staging a fresh manual-add for the SAME role must derive its
+    // baseline from the CURRENT live quota (5) — if the earlier revert had
+    // left a stale _baselineQuota['e1_medic'] == 2 behind, this would
+    // instead read 3 (2 + 1), masking the quota change.
+    bloc.add(StageManualAdd(
+        event: futureEvent('e1', roleRequirements: {'medic': 5}),
+        member: member('m9'),
+        roleType: 'medic'));
+    await pumpEventQueue();
+    expect(bloc.derivedQuota('e1', 'medic'), 6); // 5 (fresh baseline) + 1 add
   });
 }
