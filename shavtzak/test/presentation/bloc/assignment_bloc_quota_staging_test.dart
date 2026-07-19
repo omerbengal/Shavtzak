@@ -311,7 +311,7 @@ void main() {
   // bloc-level derivedQuota/stagedSlotKeys contract above).
   // ---------------------------------------------------------------------
 
-  test('a manual-add renders an extra in-quota slot (not off-quota)',
+  test('a manual-add renders an extra in-quota slot showing the added member',
       () async {
     final bloc = buildBloc();
     addTearDown(() async => bloc.close());
@@ -319,20 +319,22 @@ void main() {
       assignment('a1', 'e1', 'm1', slotIndex: 0),
       assignment('a2', 'e1', 'm2', slotIndex: 1),
     ]);
-    final eventE1 = futureEvent('e1');
+    // Make m9 a known active (medic-capable) member so the appended row can
+    // render him through the optimistic overlay.
+    teamStream.add([member('m1'), member('m2'), member('m9')]);
+    await pumpEventQueue();
 
     bloc.add(StageManualAdd(
-        event: eventE1, member: member('m9'), roleType: 'medic'));
+        event: futureEvent('e1'), member: member('m9'), roleType: 'medic'));
     await pumpEventQueue();
     final state = bloc.state as AssignmentSlotsLoaded;
     final medicSlots = state.slots
         .where((s) => s.event.id == 'e1' && s.role.key == 'medic')
         .toList();
     expect(medicSlots.length, 3); // grid grew from 2 to 3
-    expect(
-        medicSlots.any(
-            (s) => s.slotIndex == 2 && s.currentAssignment == null || true),
-        true);
+    // The appended slot renders the staged member via the optimistic overlay.
+    expect(medicSlots.any((s) => s.currentAssignment?.teamMemberId == 'm9'),
+        isTrue);
   });
 
   test('a staged deletion is reported in stagedDeletionSlotKeys', () async {
@@ -362,5 +364,78 @@ void main() {
     await pumpEventQueue();
     final state = bloc.state as AssignmentSlotsLoaded;
     expect(state.stagedDeletionSlotKeys, contains('e1_medic_0'));
+  });
+
+  test(
+      'a staged manual-add row survives a reload (rehydrate re-seeds the '
+      'baseline)', () async {
+    // First bloc: stage a manual-add and let it persist to the cache.
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadWithAssignments(bloc, [
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    bloc.add(StageManualAdd(
+        event: futureEvent('e1'), member: member('m9'), roleType: 'medic'));
+    await pumpEventQueue();
+    // Sanity: the live bloc grew to 3 medic slots.
+    expect(
+        (bloc.state as AssignmentSlotsLoaded)
+            .slots
+            .where((s) => s.event.id == 'e1' && s.role.key == 'medic')
+            .length,
+        3);
+
+    // Simulate a browser refresh: a FRESH bloc reading the SAME
+    // SharedPreferences-backed cache, then RehydrateStagedChanges (exactly what
+    // AssignmentListScreen.initState dispatches on mount). The fresh bloc's
+    // _baselineQuota starts empty, so without the rehydrate re-seed the
+    // manual-add row (a non-DB staged fill beyond the live quota) would be
+    // rendered by NEITHER build loop — invisible until another quota action is
+    // staged on the same (event, role).
+    final reloaded = buildBloc();
+    addTearDown(() async => reloaded.close());
+    await loadWithAssignments(reloaded, [
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    reloaded.add(const RehydrateStagedChanges());
+    await pumpEventQueue();
+
+    final state = reloaded.state as AssignmentSlotsLoaded;
+    final medicSlots = state.slots
+        .where((s) => s.event.id == 'e1' && s.role.key == 'medic')
+        .toList();
+    expect(medicSlots.length, 3); // manual-add row survived the reload
+  });
+
+  test('the live-stream rebuild path also grows for a staged manual-add',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadWithAssignments(bloc, [
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    bloc.add(StageManualAdd(
+        event: futureEvent('e1'), member: member('m9'), roleType: 'medic'));
+    await pumpEventQueue();
+
+    // Drive the live-stream path (_onRebuildAssignmentSlotsFromData) by emitting
+    // an assignments-stream tick, NOT by dispatching RebuildAssignmentSlots
+    // (which exercises the other loop, _buildSlotsFromAssignments). Proves the
+    // SECOND build loop grows for staged adds too — the dual-path bug class.
+    assignmentStream.add([
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    await pumpEventQueue();
+
+    final state = bloc.state as AssignmentSlotsLoaded;
+    final medicSlots = state.slots
+        .where((s) => s.event.id == 'e1' && s.role.key == 'medic')
+        .toList();
+    expect(medicSlots.length, 3);
   });
 }

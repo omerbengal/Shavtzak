@@ -1632,6 +1632,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       ..addEntries(maps
           .map(StagedAssignmentChange.fromJson)
           .map((c) => MapEntry(c.slotKey, c)));
+    // Re-seed the derived-quota baseline for every (event, role) present in the
+    // rehydrated changes. On a fresh bloc (browser refresh / remount)
+    // _baselineQuota is empty, and StageManualAdd/StageSlotDeletion — the only
+    // other seeders — did not run this session. Without this, _stagedAddCount's
+    // "no baseline => 0" guard would report 0 staged adds, so NEITHER build loop
+    // grows and a persisted manual-add row (a non-DB staged fill beyond the live
+    // quota) would render nowhere — silently lost until another quota action is
+    // staged on the same role, defeating the crash-recovery cache. putIfAbsent
+    // (via _baselineQuotaFor) only fills gaps, so this composes with any future
+    // baseline persistence (Task 12).
+    for (final c in _stagedChanges.values) {
+      _baselineQuotaFor(c.eventId, c.roleType);
+    }
     Logger.action('stage:rehydrate', {'loaded': _stagedChanges.length});
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
