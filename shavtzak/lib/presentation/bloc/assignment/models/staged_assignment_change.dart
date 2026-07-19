@@ -27,6 +27,7 @@ class StagedAssignmentChange extends Equatable {
   /// Stable id to use if this staged change creates a new assignment doc.
   final String desiredAssignmentId;
   final int stagedAtMillis;
+  final bool markedForDeletion;
 
   const StagedAssignmentChange({
     required this.slotKey,
@@ -44,6 +45,7 @@ class StagedAssignmentChange extends Equatable {
     required this.baselineAltPhone,
     required this.desiredAssignmentId,
     required this.stagedAtMillis,
+    this.markedForDeletion = false,
   });
 
   static String slotKeyFor(String eventId, String roleType, int slotIndex) =>
@@ -51,9 +53,12 @@ class StagedAssignmentChange extends Equatable {
 
   bool get isClear => desiredMemberId == null;
 
+  bool get isDeletion => markedForDeletion;
+
   /// True when the desired state equals the baseline (a full revert) — the
   /// change is then dropped so the slot is no longer dirty.
   bool get matchesBaseline =>
+      !markedForDeletion &&
       desiredMemberId == baselineMemberId &&
       desiredNotes == baselineNotes &&
       desiredSemanticLabelId == baselineSemanticLabelId &&
@@ -67,6 +72,7 @@ class StagedAssignmentChange extends Equatable {
     String? Function()? baselineAssignmentId,
     String? Function()? baselineMemberId,
     int? stagedAtMillis,
+    bool? markedForDeletion,
   }) {
     return StagedAssignmentChange(
       slotKey: slotKey,
@@ -91,6 +97,7 @@ class StagedAssignmentChange extends Equatable {
       baselineAltPhone: baselineAltPhone,
       desiredAssignmentId: desiredAssignmentId,
       stagedAtMillis: stagedAtMillis ?? this.stagedAtMillis,
+      markedForDeletion: markedForDeletion ?? this.markedForDeletion,
     );
   }
 
@@ -110,6 +117,7 @@ class StagedAssignmentChange extends Equatable {
         'baselineAltPhone': baselineAltPhone,
         'desiredAssignmentId': desiredAssignmentId,
         'stagedAtMillis': stagedAtMillis,
+        'markedForDeletion': markedForDeletion,
       };
 
   factory StagedAssignmentChange.fromJson(Map<String, dynamic> json) =>
@@ -129,6 +137,7 @@ class StagedAssignmentChange extends Equatable {
         baselineAltPhone: json['baselineAltPhone'] as String?,
         desiredAssignmentId: json['desiredAssignmentId'] as String,
         stagedAtMillis: json['stagedAtMillis'] as int,
+        markedForDeletion: (json['markedForDeletion'] as bool?) ?? false,
       );
 
   @override
@@ -148,5 +157,6 @@ class StagedAssignmentChange extends Equatable {
         baselineAltPhone,
         desiredAssignmentId,
         stagedAtMillis,
+        markedForDeletion,
       ];
 }
