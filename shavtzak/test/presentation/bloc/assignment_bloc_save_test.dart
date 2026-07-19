@@ -27,6 +27,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/core/services/user_cache_service.dart';
 import 'package:shavtzak/core/utils/crud_action_result.dart';
+import 'package:shavtzak/core/utils/filter_persistence.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/role.dart';
@@ -82,6 +83,27 @@ void main() {
       assemblyTime: '08:30',
       requiresArmed: false,
       roleRequirements: roleRequirements ?? const {'medic': 1},
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  // Past event (200 days ago) reachable only via the extra-past cache
+  // ("load more history"), used to exercise carry (b)'s post-save refresh.
+  Event pastEvent(String id, {Map<String, int>? roleRequirements}) {
+    final base = DateTime.now().subtract(const Duration(days: 200));
+    final start = DateTime(base.year, base.month, base.day, 9, 0);
+    final end = DateTime(base.year, base.month, base.day, 17, 0);
+    return Event(
+      id: id,
+      name: 'past-$id',
+      startDate: start,
+      endDate: end,
+      startTime: '09:00',
+      endTime: '17:00',
+      assemblyTime: '08:30',
+      requiresArmed: false,
+      roleRequirements: roleRequirements ?? const {'medic': 2},
       createdAt: now,
       updatedAt: now,
     );
@@ -1181,5 +1203,199 @@ void main() {
     eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 5})]);
     await pumpEventQueue();
     expect(bloc.derivedQuota('e1', 'medic'), 5); // tracks live, no stale baseline
+  });
+
+  // --- Fix wave (Task 10 review): quota-target / bump math edge cases --------
+  //
+  // Invariant enforced per role: after the batch applies, eventQuotaSet.target
+  // must fit every create the admin wants IN-quota (target >= max(slotIndex+1)
+  // over that role's creates) AND reflect only the deletions ACTUALLY applied
+  // (not takeDb-cancelled ones).
+
+  // Record aliases for capture disambiguation (bump has `count`, set has
+  // `target`/`expected`; both are List<record>, distinct runtime types).
+  List<({int count, String eventId, String roleType})> pickBumps(
+          List captured) =>
+      captured.firstWhere(
+              (c) => c is List<({int count, String eventId, String roleType})>)
+          as List<({int count, String eventId, String roleType})>;
+  List<({String eventId, int expected, String roleType, int target})> pickSets(
+          List captured) =>
+      captured.firstWhere((c) =>
+              c is List<
+                  ({String eventId, int expected, String roleType, int target})>)
+          as List<({String eventId, int expected, String roleType, int target})>;
+
+  test(
+      'Fix #1: an override-restore create + same-role manual-add makes the '
+      'eventQuotaSet target cover the highest create slotIndex (no row left '
+      'off-quota) and drops the now-redundant bump', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 1})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m9')]);
+    assignmentStream.add([assignment('a1', 'e1', 'm1', slotIndex: 0)]);
+    await pumpEventQueue();
+
+    final slot0 = (bloc.state as AssignmentSlotsLoaded)
+        .slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    // Notes-edit on slot0 (baseline m1) — will become a slotVanished conflict.
+    bloc.add(StageNotesChange(slot: slot0, notes: 'edited'));
+    await pumpEventQueue();
+
+    // Concurrent: medic quota shrinks 1 -> 0 and a1 is deleted (slot0 vanishes).
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 0})]);
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    // Admin also manual-adds m9 to medic (baseline is now 0 -> appends slot 1).
+    bloc.add(StageManualAdd(
+      event: futureEvent('e1', roleRequirements: const {'medic': 0}),
+      member: member('m9'),
+      roleType: 'medic',
+    ));
+    await pumpEventQueue();
+
+    // Save; the slotVanished conflict is resolved overrideDb (dialog default).
+    bloc.add(const SaveStagedChanges(
+      resolutions: {'e1_medic_0': ConflictResolution.overrideDb},
+    ));
+    await pumpEventQueue();
+
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: captureAnyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: captureAnyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured;
+    final creates =
+        captured.firstWhere((c) => c is List<Assignment>) as List<Assignment>;
+    final bumps = pickBumps(captured);
+    final sets = pickSets(captured);
+
+    // Both rows are (re)created: a1 restored @0, m9 @1.
+    expect(creates.map((a) => a.slotIndex).toSet(), {0, 1});
+    // The SET target must cover the highest create slotIndex+1 (m9 @1 -> 2), so
+    // neither row is left off-quota. Pre-fix target was derivedQuota (1).
+    expect(sets.single.target, greaterThanOrEqualTo(2));
+    // …and the per-role bump is redundant (the SET covers all creates).
+    expect(bumps.where((b) => b.roleType == 'medic'), isEmpty);
+  });
+
+  test(
+      'Fix #2: a staged deletion resolved takeDb is NOT counted in the '
+      'eventQuotaSet target (the cancelled deletion must not lower the quota)',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    final loaded = await loadMedic2(bloc);
+
+    final medic0 = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    bloc.add(StageSlotDeletion(medic0)); // baseline 2, key e1_medic_0
+    await pumpEventQueue();
+
+    // Concurrent: a1 is notes-edited in the DB (NOT deleted) so the staged
+    // deletion becomes a type-F conflict the admin resolves "take DB".
+    assignmentStream.add([
+      assignment('a1', 'e1', 'm1', slotIndex: 0).copyWith(notes: 'db-edited'),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    await pumpEventQueue();
+
+    bloc.add(const SaveStagedChanges(
+      resolutions: {'e1_medic_0': ConflictResolution.takeDb},
+    ));
+    await pumpEventQueue();
+
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: captureAnyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured;
+    final deletes =
+        captured.firstWhere((c) => c is List<String>) as List<String>;
+    final updates =
+        captured.firstWhere((c) => c is List<Assignment>) as List<Assignment>;
+    final sets = pickSets(captured);
+
+    expect(deletes, isEmpty); // takeDb -> a1 not deleted
+    expect(updates, isEmpty); // the only deletion was cancelled -> no reindex
+    // The cancelled deletion must NOT lower the quota: target stays baseline 2.
+    expect(sets.single,
+        (eventId: 'e1', roleType: 'medic', target: 2, expected: 2));
+  });
+
+  test(
+      'Fix #3: a reindex-only save on an extra-past event marks that event for '
+      'refresh (touchedEventIds), so its stale cache is reconciled', () async {
+    FilterPersistence.showPastEvents = true;
+    addTearDown(() => FilterPersistence.showPastEvents = false);
+    stubBatchAcceptingSets();
+    // Extra-past event e0 (out of window), fetched via the "load more" round-trip.
+    when(eventRepo.getEventsBeforeDate(any, limit: anyNamed('limit')))
+        .thenAnswer((_) async => [pastEvent('e0')]);
+    when(assignmentRepo.getAssignmentsByEventIds(['e0'])).thenAnswer((_) async =>
+        [
+          assignment('a0', 'e0', 'm1', slotIndex: 0),
+          assignment('a0b', 'e0', 'm2', slotIndex: 1),
+        ]);
+    when(eventRepo.getEventById('e0')).thenAnswer((_) async => pastEvent('e0'));
+
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m2')]);
+    assignmentStream.add(const <Assignment>[]); // live window empty
+    await pumpEventQueue();
+
+    // Load the extra-past event into the cache.
+    bloc.add(const LoadMorePastAssignmentSlots());
+    await pumpEventQueue();
+    final pastSlot0 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+        (s) => s.event.id == 'e0' && s.role.key == 'medic' && s.slotIndex == 0);
+
+    // Stage a deletion of e0's slot0 (a0).
+    bloc.add(StageSlotDeletion(pastSlot0));
+    await pumpEventQueue();
+
+    // Concurrent remote delete of a0: refresh the extra-past cache so a0 is
+    // gone but the sibling a0b survives. Now the staged deletion has NO DB row
+    // (dbAssignment == null) yet a0b still needs a reindex 1 -> 0. Only the
+    // reindex-site touchedEventIds.add covers e0 (the delete branch adds nothing).
+    when(assignmentRepo.getAssignmentsByEventIds(['e0'])).thenAnswer(
+        (_) async => [assignment('a0b', 'e0', 'm2', slotIndex: 1)]);
+    bloc.add(const ExternalExtraPastMutation('e0'));
+    await pumpEventQueue();
+
+    // Isolate the save-triggered refresh from the load-more / mutation calls.
+    clearInteractions(eventRepo);
+
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    // The batch ran (a0b reindexed to slot 0, no delete), and carry (b) fired a
+    // refresh for e0 — proving the reindex-only path marked the event touched.
+    final updates = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
+    )).captured.single as List<Assignment>;
+    expect(updates.any((u) => u.id == 'a0b' && u.slotIndex == 0), isTrue);
+    verify(eventRepo.getEventById('e0')).called(1); // _refreshExtraPastEvent(e0)
   });
 }

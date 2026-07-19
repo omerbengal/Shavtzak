@@ -1901,6 +1901,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// rest of Save converges against.
   void _reindexRoleSurvivors(String eventId, String roleType,
       List<String> deletes, List<Assignment> updates) {
+    final deletedIds = deletes.toSet(); // O(1) survivor filtering
     final live = [
       ..._repository.getCurrentAssignments(),
       ..._extraPastAssignments,
@@ -1908,7 +1909,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         .where((a) =>
             a.eventId == eventId &&
             a.roleType == roleType &&
-            !deletes.contains(a.id))
+            !deletedIds.contains(a.id))
         .toList()
       ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
     for (var i = 0; i < live.length; i++) {
@@ -2115,23 +2116,69 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // A type-G / takeDb resolution for this role keeps the DB quota (skip the
       // set), but its staged deletions were already applied in the loop above.
       if (resolutions[erk] == ConflictResolution.takeDb) return;
+      final baseline = _baselineQuota[erk]!;
+
+      // Resolution-aware add / in-quota-deletion counts (Fix #2): a per-slot
+      // takeDb cancels that staged entry, so a cancelled deletion must NOT
+      // lower the target and a cancelled add must NOT raise it. Mirrors
+      // _stagedAddCount / _inQuotaDeletionCount but skips takeDb'd entries —
+      // hence NOT the resolution-blind public derivedQuota.
+      var adds = 0;
+      var inQuotaDeletions = 0;
+      for (final e in _stagedChanges.entries) {
+        final c = e.value;
+        if (c.eventId != role.eventId || c.roleType != role.roleType) continue;
+        if (resolutions[e.key] == ConflictResolution.takeDb) continue;
+        if (c.markedForDeletion) {
+          if (c.slotIndex < baseline) inQuotaDeletions++;
+        } else if (c.baselineMemberId == null && c.slotIndex >= baseline) {
+          adds++;
+        }
+      }
+      final derivedTarget =
+          (baseline + adds - inQuotaDeletions).clamp(0, 999).toInt();
+
+      // The target must ALSO fit every create the admin wants in-quota for this
+      // role — including an override-restore create (baselineMemberId != null),
+      // which the derived add/deletion counts are blind to (Fix #1). Without
+      // this, carry (c) would then drop the covering bump and strand that row
+      // off-quota. Taking the max keeps the SET the single source of truth for
+      // the role's quota, so dropping the bump below stays safe.
+      var maxCreateBound = 0;
+      for (final a in creates) {
+        if (a.eventId == role.eventId && a.roleType == role.roleType) {
+          final bound = a.slotIndex + 1;
+          if (bound > maxCreateBound) maxCreateBound = bound;
+        }
+      }
+      final target =
+          derivedTarget > maxCreateBound ? derivedTarget : maxCreateBound;
+
       quotaSets.add((
         eventId: role.eventId,
         roleType: role.roleType,
-        target: derivedQuota(role.eventId, role.roleType),
-        expected: _baselineQuota[erk]!,
+        target: target,
+        expected: baseline,
       ));
       rolesWithSet.add(erk);
-      // Reindex survivors ONLY when this role actually had a staged deletion —
+      // Reindex survivors ONLY when this role actually had an APPLIED staged
+      // deletion (a takeDb-cancelled one leaves nothing removed — Fix #2/#3) —
       // that is the sole action that leaves a gap to pack. A pure manual-add
       // must NOT compact this role's pre-existing DB rows: a compaction could
       // pull an off-quota row into the manual-add's freshly-created slot and
       // collide with it (two docs at the same event+role+slotIndex).
-      final hadDeletion = _stagedChanges.values.any((c) =>
-          c.eventId == role.eventId &&
-          c.roleType == role.roleType &&
-          c.markedForDeletion);
+      final hadDeletion = _stagedChanges.entries.any((e) =>
+          e.value.eventId == role.eventId &&
+          e.value.roleType == role.roleType &&
+          e.value.markedForDeletion &&
+          resolutions[e.key] != ConflictResolution.takeDb);
       if (hadDeletion) {
+        // Fix #3: _reindexRoleSurvivors mutates `updates` directly and can be
+        // the ONLY write for this event (every markedForDeletion row was
+        // already gone, so no delete was queued, yet a survivor still reindexed).
+        // Mark the event touched so carry (b) reconciles its stale extra-past
+        // cache (no-op for in-window events).
+        touchedEventIds.add(role.eventId);
         _reindexRoleSurvivors(role.eventId, role.roleType, deletes, updates);
       }
     });
