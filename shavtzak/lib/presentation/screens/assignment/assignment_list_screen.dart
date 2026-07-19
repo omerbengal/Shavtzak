@@ -1496,9 +1496,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         // still present in AssignmentSlotsLoaded.slots — would throw
         // Flutter's "A dismissed Dismissible widget is still part of the
         // tree".
-        Logger.action('swipe:stageDelete', {
-          'slot': '${slot.event.id}_${slot.role.key}_${slot.slotIndex}',
-        });
+        Logger.action('swipe:stageDelete', {'slot': _getSlotKey(slot)});
         await _handleSlotDismiss(slot);
         return false;
       },
