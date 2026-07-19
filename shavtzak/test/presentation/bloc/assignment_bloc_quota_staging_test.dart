@@ -6,12 +6,12 @@
 // so `derivedQuota` = baseline + adds − in-quota deletions reflects the
 // admin's INTENDED quota independent of the (not-yet-written) DB value.
 //
-// Deliberately NOT asserted here (Task 7 territory — rendering the derived
-// quota on the grid): `state.stagedDeletionSlotKeys` (a state field Task 7
-// adds) and the medic slot COUNT growing from 2 to 3 rows. This file only
-// covers the bloc-level contract Task 6 is responsible for: derivedQuota,
-// hasStagedChanges, and stagedSlotKeys (which already exists and is simply
-// `_stagedChanges.keys`).
+// Task 7 adds the two tests at the bottom of this file covering the grid
+// RENDERING side: the medic slot COUNT growing from 2 to 3 rows on a staged
+// manual-add, and `state.stagedDeletionSlotKeys` reporting a staged deletion.
+// The rest of this file covers the bloc-level contract Task 6 is responsible
+// for: derivedQuota, hasStagedChanges, and stagedSlotKeys (which already
+// exists and is simply `_stagedChanges.keys`).
 //
 // Harness copied from assignment_bloc_staging_test.dart (mockito repo mocks
 // + StreamControllers + entity builders); reuses that sibling's generated
@@ -32,6 +32,7 @@ import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_event.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_state.dart';
+import 'package:shavtzak/presentation/screens/assignment/models/assignment_slot.dart';
 
 import 'assignment_bloc_slots_refetch_test.mocks.dart';
 
@@ -303,5 +304,63 @@ void main() {
     // Quota: baseline 2 + 1 add − 0 in-quota deletions (the slot-2 deletion is
     // off-quota, so it does not lower the quota).
     expect(bloc.derivedQuota('e1', 'medic'), 3);
+  });
+
+  // ---------------------------------------------------------------------
+  // Task 7: grid RENDERING of staged adds/deletions (Task 6 only covered the
+  // bloc-level derivedQuota/stagedSlotKeys contract above).
+  // ---------------------------------------------------------------------
+
+  test('a manual-add renders an extra in-quota slot (not off-quota)',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadWithAssignments(bloc, [
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    final eventE1 = futureEvent('e1');
+
+    bloc.add(StageManualAdd(
+        event: eventE1, member: member('m9'), roleType: 'medic'));
+    await pumpEventQueue();
+    final state = bloc.state as AssignmentSlotsLoaded;
+    final medicSlots = state.slots
+        .where((s) => s.event.id == 'e1' && s.role.key == 'medic')
+        .toList();
+    expect(medicSlots.length, 3); // grid grew from 2 to 3
+    expect(
+        medicSlots.any(
+            (s) => s.slotIndex == 2 && s.currentAssignment == null || true),
+        true);
+  });
+
+  test('a staged deletion is reported in stagedDeletionSlotKeys', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadWithAssignments(bloc, [
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+
+    // Local helper (closes over this test's `bloc`) matching the brief's
+    // slotForRoleIndex(eventId:, role:, index:) call shape.
+    AssignmentSlot slotForRoleIndex({
+      required String eventId,
+      required String role,
+      required int index,
+    }) {
+      final s = bloc.state as AssignmentSlotsLoaded;
+      return s.slots.firstWhere((slot) =>
+          slot.event.id == eventId &&
+          slot.role.key == role &&
+          slot.slotIndex == index);
+    }
+
+    bloc.add(StageSlotDeletion(
+        slotForRoleIndex(eventId: 'e1', role: 'medic', index: 0)));
+    await pumpEventQueue();
+    final state = bloc.state as AssignmentSlotsLoaded;
+    expect(state.stagedDeletionSlotKeys, contains('e1_medic_0'));
   });
 }

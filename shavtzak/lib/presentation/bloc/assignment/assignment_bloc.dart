@@ -1379,8 +1379,24 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
   /// Staged fills beyond the baseline quota (manual adds) — used by Task 7
   /// rendering to know how many extra rows to draw for a role.
+  ///
+  /// Returns 0 when `_baselineQuota` was never explicitly seeded for this
+  /// (event, role) — i.e. neither `StageManualAdd` nor `StageSlotDeletion`
+  /// has ever touched it. This guard matters because a plain
+  /// `StageMemberChange` fill of an ordinary (then in-quota) empty slot does
+  /// NOT seed `_baselineQuota`. Without the guard, `_resolvedBaseline` would
+  /// fall back to the LIVE quota, and a later CONCURRENT/unrelated DB quota
+  /// reduction could drop that live quota to/below the fill's slotIndex,
+  /// making the ordinary fill look like ">= baseline" and get misclassified
+  /// as a manual add — silently re-growing the grid to keep the row
+  /// in-quota instead of surfacing the real conflict via
+  /// classifyStagedConflicts's slotVanished path (see
+  /// assignment_conflict_test.dart, "classifies a staged fill whose slot no
+  /// longer exists as slotVanished").
   int _stagedAddCount(String eventId, String roleType) {
-    final baseline = _resolvedBaseline(eventId, roleType);
+    final key = _eventRoleKey(eventId, roleType);
+    final baseline = _baselineQuota[key];
+    if (baseline == null) return 0;
     return _stagedChanges.values
         .where((c) =>
             c.eventId == eventId &&
@@ -1652,6 +1668,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
     });
     return gone;
+  }
+
+  /// Slot keys of staged entries currently marked for deletion
+  /// (`StageSlotDeletion`) — drives `AssignmentSlotsLoaded.stagedDeletionSlotKeys`.
+  /// Pure function of `_stagedChanges`, mirroring `_computeStagedGoneKeys`.
+  Set<String> _computeStagedDeletionKeys() {
+    if (_stagedChanges.isEmpty) return const {};
+    return _stagedChanges.entries
+        .where((e) => e.value.markedForDeletion)
+        .map((e) => e.key)
+        .toSet();
   }
 
   /// Re-materialize dirty rows whose slot vanished (quota shrank / role removed
@@ -2445,15 +2472,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Iterate through roles in sortOrder (not enum order)
       for (final role in sortedRoles) {
         final requiredCount = event.roleRequirements[role.key] ?? 0;
-        if (requiredCount == 0) continue; // Skip roles with 0 requirement
+        if (requiredCount == 0 && _stagedAddCount(event.id, role.key) == 0) {
+          continue; // Skip roles with 0 requirement and no staged adds
+        }
 
         // Get assignments for this event+role
         final roleAssignments = assignments
             .where((a) => a.eventId == event.id && a.roleType == role.key)
             .toList();
 
-        // Create slots (one per required count)
-        for (int i = 0; i < requiredCount; i++) {
+        final renderCount =
+            requiredCount + _stagedAddCount(event.id, role.key);
+        // Create slots (one per required count, grown by staged manual-adds)
+        for (int i = 0; i < renderCount; i++) {
           // Find if this slot is filled (match by slotIndex, not array position)
           final assignment = roleAssignments
               .cast<Assignment?>()
@@ -2599,6 +2630,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       selectedEventIds: selectedEventIds ?? {},
       stagedSlotKeys: _stagedChanges.keys.toSet(),
       stagedGoneSlotKeys: goneKeys,
+      stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
     );
   }
 
@@ -2713,6 +2745,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             isLoadingMorePast: _loadingMorePast,
             stagedSlotKeys: _stagedChanges.keys.toSet(),
             stagedGoneSlotKeys: goneKeys,
+            stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -2800,7 +2833,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // Iterate through roles in sortOrder (not enum order)
         for (final role in sortedRoles) {
           final requiredCount = eventData.roleRequirements[role.key] ?? 0;
-          if (requiredCount == 0) continue; // Skip roles with 0 requirement
+          if (requiredCount == 0 &&
+              _stagedAddCount(eventData.id, role.key) == 0) {
+            continue; // Skip roles with 0 requirement and no staged adds
+          }
 
           // Get assignments for this event+role from the assignments list
           final roleAssignments = mergedAssignments
@@ -2811,8 +2847,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                   ))
               .toList();
 
-          // Create slots (one per required count)
-          for (int i = 0; i < requiredCount; i++) {
+          final renderCount =
+              requiredCount + _stagedAddCount(eventData.id, role.key);
+          // Create slots (one per required count, grown by staged manual-adds)
+          for (int i = 0; i < renderCount; i++) {
             // Find if this slot is filled (match by slotIndex, not array position)
             final assignment = roleAssignments
                 .cast<Assignment?>()
@@ -2976,6 +3014,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             isLoadingMorePast: _loadingMorePast,
             stagedSlotKeys: _stagedChanges.keys.toSet(),
             stagedGoneSlotKeys: goneKeys,
+            stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בבניית שיבוצים: $e'));
