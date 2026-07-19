@@ -1604,7 +1604,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // overridden the moment that write lands — the discard would appear to
     // succeed in the UI but the save writes anyway.
     if (_saveInFlight) return;
-    _stagedChanges.remove(event.slotKey);
+    final removed = _stagedChanges.remove(event.slotKey);
+    // carry (a): once a role has no staged changes left, drop its captured
+    // derived-quota baseline so a discarded session can't leak a stale baseline
+    // into the next one (mis-deriving that role's quota). Derive the role from
+    // the removed entry's real fields, not by splitting the slot key.
+    if (removed != null) {
+      final roleStillStaged = _stagedChanges.values.any((c) =>
+          c.eventId == removed.eventId && c.roleType == removed.roleType);
+      if (!roleStillStaged) {
+        _baselineQuota.remove(_eventRoleKey(removed.eventId, removed.roleType));
+      }
+    }
     await _persistStaged();
     Logger.action('stage:discardSlot', {
       'slot': event.slotKey,
@@ -1620,6 +1631,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     if (_saveInFlight) return;
     Logger.action('stage:discardAll', {'had': _stagedChanges.length});
     _stagedChanges.clear();
+    // carry (a): a full discard also clears every captured derived-quota
+    // baseline, so the next staging session re-seeds from the live DB quota.
+    _baselineQuota.clear();
     await _userCache.clearPendingAssignmentChanges();
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
@@ -1877,6 +1891,38 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return conflicts;
   }
 
+  /// Renumber a role's surviving DB rows contiguous from 0 (Save-time only),
+  /// after [deletes] removed some of them. A survivor already queued in
+  /// [updates] (it also has a staged member/notes edit) keeps that edit and
+  /// just takes the new slotIndex; a survivor not otherwise touched is appended
+  /// as a slotIndex-only update. Mirrors the immediate swipe-delete reorder so
+  /// the lowered quota's in-quota rows stay packed at 0..n-1. Reads the raw DB
+  /// snapshot (getCurrentAssignments + paged extra-past), the same source the
+  /// rest of Save converges against.
+  void _reindexRoleSurvivors(String eventId, String roleType,
+      List<String> deletes, List<Assignment> updates) {
+    final live = [
+      ..._repository.getCurrentAssignments(),
+      ..._extraPastAssignments,
+    ]
+        .where((a) =>
+            a.eventId == eventId &&
+            a.roleType == roleType &&
+            !deletes.contains(a.id))
+        .toList()
+      ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+    for (var i = 0; i < live.length; i++) {
+      final a = live[i];
+      if (a.slotIndex == i) continue;
+      final existing = updates.indexWhere((u) => u.id == a.id);
+      if (existing >= 0) {
+        updates[existing] = updates[existing].copyWith(slotIndex: i);
+      } else {
+        updates.add(a.copyWith(slotIndex: i, updatedAt: DateTime.now()));
+      }
+    }
+  }
+
   /// Atomically persist every staged change (see [SaveStagedChanges]).
   ///
   /// Converges each applied staged slot to its desired state against the
@@ -1936,6 +1982,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final updates = <Assignment>[];
     final deletes = <String>[];
     final appliedKeys = <String>[];
+    // Distinct eventIds this batch writes to (creates/updates/deletes). Used
+    // after a successful write to refresh the extra-past cache for any touched
+    // event that lives OUTSIDE the live window (paginated in via "load more
+    // history") — the live-window stream can't cover those, so without this
+    // the grid would revert the edit on the next rebuild (carry b).
+    final touchedEventIds = <String>{};
     // Counts staged changes anchored to a real DB member (baselineMemberId
     // != null) whose expected DB row is gone at save time — see the
     // baseline-vs-db branch below. Surfaced in the success message so a real
@@ -1964,6 +2016,29 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // for this conflict — a deliberate instruction to re-create/keep the
       // change, so it must NOT be intercepted by the skip-not-found safety net.
       final isOverride = resolutions[key] == ConflictResolution.overrideDb;
+
+      // Task 10: a staged swipe-deletion (StageSlotDeletion). Delete its DB row
+      // (if still present) and let the post-loop quota/reindex pass renumber the
+      // role's survivors + emit the exact quota. A gone DB row is a benign no-op
+      // here (the delete already happened, e.g. a concurrent co-admin delete),
+      // NOT a skip-not-found loss — so this MUST precede the skip-not-found net
+      // (a deletion always has baselineMemberId != null). Placed after the
+      // per-slot takeDb check above, so a per-slot takeDb still discards it.
+      if (c.markedForDeletion) {
+        if (dbAssignment != null) {
+          deletes.add(dbAssignment.id);
+          touchedEventIds.add(dbAssignment.eventId);
+        }
+        appliedKeys.add(key);
+        Logger.action('save:slot', {
+          'slot': key,
+          'isClear': c.isClear,
+          'dbFound': dbAssignment != null,
+          'decision': 'staged-delete',
+        });
+        continue; // quota + survivor reindex handled in the post-pass below
+      }
+
       String decision;
       if (dbAssignment == null && c.baselineMemberId != null && !isOverride) {
         // LOSSY case (UNRESOLVED): this change is anchored to a member that WAS
@@ -1981,6 +2056,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       } else if (c.isClear) {
         if (dbAssignment != null) {
           deletes.add(dbAssignment.id);
+          touchedEventIds.add(dbAssignment.eventId);
           decision = 'clear-delete';
         } else {
           // baselineMemberId == null here (the branch above already caught
@@ -1994,6 +2070,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // (in-quota, or off-quota if the slot's quota is gone) from the staged
         // desired member/notes, keeping its original id.
         creates.add(_assignmentFromStaged(c, id: c.desiredAssignmentId));
+        touchedEventIds.add(c.eventId);
         decision = 'create';
       } else {
         // Converge the EXISTING DB doc to the desired state, preserving its
@@ -2004,6 +2081,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           id: dbAssignment.id,
           createdAt: dbAssignment.createdAt,
         ));
+        touchedEventIds.add(c.eventId);
         decision = 'update';
       }
       appliedKeys.add(key);
@@ -2014,6 +2092,49 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         'decision': decision,
       });
     }
+
+    // Task 10: roles touched by a staged quota change — a manual-add or an
+    // in-quota deletion, the two actions that SEED _baselineQuota. For each,
+    // emit an EXACT derived quota target with the captured baseline as the
+    // backend concurrency guard's `expected`, and renumber that role's DB
+    // survivors contiguous from 0. The (eventId, roleType) pair is derived from
+    // each staged entry's REAL fields (not by splitting the composite erk key,
+    // which is fragile for multi-word role keys). The set record is structurally
+    // the repository's EventQuotaSet (no import needed).
+    final quotaSets =
+        <({String eventId, String roleType, int target, int expected})>[];
+    final rolesWithSet = <String>{}; // erk keys that produced a set (carry c)
+    final quotaChangedRoles = <String, ({String eventId, String roleType})>{};
+    for (final c in _stagedChanges.values) {
+      final erk = _eventRoleKey(c.eventId, c.roleType);
+      if (_baselineQuota.containsKey(erk)) {
+        quotaChangedRoles[erk] = (eventId: c.eventId, roleType: c.roleType);
+      }
+    }
+    quotaChangedRoles.forEach((erk, role) {
+      // A type-G / takeDb resolution for this role keeps the DB quota (skip the
+      // set), but its staged deletions were already applied in the loop above.
+      if (resolutions[erk] == ConflictResolution.takeDb) return;
+      quotaSets.add((
+        eventId: role.eventId,
+        roleType: role.roleType,
+        target: derivedQuota(role.eventId, role.roleType),
+        expected: _baselineQuota[erk]!,
+      ));
+      rolesWithSet.add(erk);
+      // Reindex survivors ONLY when this role actually had a staged deletion —
+      // that is the sole action that leaves a gap to pack. A pure manual-add
+      // must NOT compact this role's pre-existing DB rows: a compaction could
+      // pull an off-quota row into the manual-add's freshly-created slot and
+      // collide with it (two docs at the same event+role+slotIndex).
+      final hadDeletion = _stagedChanges.values.any((c) =>
+          c.eventId == role.eventId &&
+          c.roleType == role.roleType &&
+          c.markedForDeletion);
+      if (hadDeletion) {
+        _reindexRoleSurvivors(role.eventId, role.roleType, deletes, updates);
+      }
+    });
 
     // Restore-to-quota: any create that would land OFF-quota — its slotIndex is
     // at/above the event's CURRENT quota for that role, i.e. an override that
@@ -2038,6 +2159,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         }
       }
     }
+    // carry (c): a role with an exact eventQuotaSet must NOT also get a
+    // max-merge bump — the SET already sets that role's quota and wins the
+    // batch, and a redundant bump makes the backend read+write the same event
+    // twice. quotaBumpByKey is keyed identically to rolesWithSet (erk).
+    quotaBumpByKey.removeWhere((k, _) => rolesWithSet.contains(k));
     final eventQuotaBumps = quotaBumpByKey.values.toList();
 
     _emitOrLog(emit, const AssignmentOperating('saving'));
@@ -2051,20 +2177,35 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         'quotaBumps': eventQuotaBumps
             .map((b) => '${b.roleType}@${b.eventId}->${b.count}')
             .toList(),
+        'quotaSets': quotaSets
+            .map((s) => '${s.roleType}@${s.eventId}->${s.target}(exp ${s.expected})')
+            .toList(),
       });
       await _repository.saveAssignmentsBatch(
         creates: creates,
         updates: updates,
         deletes: deletes,
         eventQuotaBumps: eventQuotaBumps,
+        eventQuotaSets: quotaSets,
       );
       Logger.action('save:done', {
         'written': creates.length + updates.length + deletes.length,
         'skippedNotFound': skippedNotFound,
       });
+      // carry (b): out-of-window (paginated-in) past events aren't covered by
+      // the live-window stream, so their _extraPastEventsMap/_extraPastAssignments
+      // entries would stay stale after this write and the next rebuild would
+      // revert the edit. Refresh every touched event (no-op for in-window ones).
+      for (final id in touchedEventIds) {
+        await _refreshExtraPastEvent(id);
+      }
       for (final k in appliedKeys) {
         _stagedChanges.remove(k);
       }
+      // carry (a): once every staged change is applied, drop the captured
+      // derived-quota baselines too — a stale baseline surviving into the next
+      // staging session would mis-derive that role's quota / type-G conflict.
+      if (_stagedChanges.isEmpty) _baselineQuota.clear();
       // Re-persist the SURVIVING staged changes rather than blanket-clearing
       // the cache. The screen's leave-guard Save runs without a blocking
       // overlay, so the grid stays interactive during this await — a new
