@@ -50,9 +50,12 @@ import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_event.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_state.dart';
+import 'package:shavtzak/presentation/bloc/assignment/models/assignment_conflict.dart';
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_bloc.dart';
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_event.dart';
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_state.dart';
+import 'package:shavtzak/presentation/screens/assignment/models/assignment_slot.dart';
+import 'package:shavtzak/presentation/screens/assignment/widgets/conflict_resolution_dialog.dart';
 import 'package:shavtzak/presentation/widgets/swipeable_page_view.dart';
 
 class _MockAssignmentBloc extends MockBloc<AssignmentEvent, AssignmentState>
@@ -60,6 +63,7 @@ class _MockAssignmentBloc extends MockBloc<AssignmentEvent, AssignmentState>
   _MockAssignmentBloc({
     required this.hasStagedChanges,
     required this.stagedCount,
+    this.conflictsToReturn = const [],
   });
 
   @override
@@ -67,6 +71,17 @@ class _MockAssignmentBloc extends MockBloc<AssignmentEvent, AssignmentState>
 
   @override
   final int stagedCount;
+
+  /// Canned result for classifyStagedConflicts — a plain Dart override, not
+  /// a mocktail when() stub, same convention as hasStagedChanges/stagedCount
+  /// above (see assignment_staged_delete_overlay_test.dart's header notes,
+  /// referenced from this file's own header).
+  final List<AssignmentConflict> conflictsToReturn;
+
+  @override
+  List<AssignmentConflict> classifyStagedConflicts(
+          List<AssignmentSlot> currentSlots) =>
+      conflictsToReturn;
 
   /// Events the widget dispatched onto this mock bloc. In particular, lets
   /// the test grab the SaveStagedChanges event's own `completion` completer
@@ -104,10 +119,12 @@ void main() {
     WidgetTester tester, {
     required bool hasStagedChanges,
     int stagedCount = 1,
+    List<AssignmentConflict> conflictsToReturn = const [],
   }) async {
     final assignmentBloc = _MockAssignmentBloc(
       hasStagedChanges: hasStagedChanges,
       stagedCount: stagedCount,
+      conflictsToReturn: conflictsToReturn,
     );
     whenListen(
       assignmentBloc,
@@ -213,6 +230,10 @@ void main() {
 
       await triggerTabSwitchAndChooseSave(tester);
 
+      // No staged-vs-DB conflicts configured on this mock — the conflict
+      // dialog must not appear, and the save proceeds straight through.
+      expect(find.byType(ConflictResolutionDialog), findsNothing);
+
       final saveEvents =
           assignmentBloc.addedEvents.whereType<SaveStagedChanges>().toList();
       expect(saveEvents, hasLength(1));
@@ -268,4 +289,124 @@ void main() {
       expect(bottomNav.currentIndex, 1);
     },
   );
+
+  // BUG: tab-switch save must run the SAME conflict-resolution flow as the
+  // on-screen Save button (bloc.classifyStagedConflicts +
+  // ConflictResolutionDialog), not skip it. Pre-fix,
+  // SwipeablePageView._onBottomNavTapped's LeaveDecision.save branch
+  // dispatches SaveStagedChanges directly with no classification/dialog at
+  // all, so these two tests fail (RED) before the shared-helper fix.
+  group('tab-switch save conflict resolution (parity with on-screen Save)', () {
+    const conflict = AssignmentConflict(
+      slotKey: 'e1_medic_0',
+      type: AssignmentConflictType.slotTaken,
+      description: 'המשרה נתפסה: בינתיים שובץ שם אדם אחר ב-DB.',
+    );
+
+    testWidgets(
+      'shows the ConflictResolutionDialog when staged-vs-DB conflicts '
+      'exist, and cancelling it does NOT dispatch SaveStagedChanges and '
+      'stays on the assignments tab',
+      (tester) async {
+        final assignmentBloc = await pumpAdminShellOnAssignmentsTab(
+          tester,
+          hasStagedChanges: true,
+          stagedCount: 1,
+          conflictsToReturn: const [conflict],
+        );
+
+        await tester.tap(find.byIcon(Icons.people));
+        await tester.pumpAndSettle();
+        expect(find.text('שינויי שיבוצים לא נשמרו'), findsOneWidget);
+        await tester.tap(find.text('שמור והמשך'));
+        // No indeterminate spinner can be showing yet — the conflict
+        // dialog (a plain AlertDialog, finite entrance animation) gates
+        // the loading dialog, so settling here is safe.
+        await tester.pumpAndSettle();
+
+        // The SAME conflict-resolution dialog the on-screen Save button
+        // uses.
+        expect(find.byType(ConflictResolutionDialog), findsOneWidget);
+        expect(find.text('נמצאו התנגשויות'), findsOneWidget);
+
+        // Nothing dispatched yet, and no loading dialog either.
+        expect(
+          assignmentBloc.addedEvents.whereType<SaveStagedChanges>(),
+          isEmpty,
+        );
+        expect(find.text('שומר שינויים...'), findsNothing);
+
+        await tester.tap(find.text('ביטול'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ConflictResolutionDialog), findsNothing);
+        expect(
+          assignmentBloc.addedEvents.whereType<SaveStagedChanges>(),
+          isEmpty,
+          reason: 'cancelling the conflict dialog must not save',
+        );
+
+        // Stayed on the assignments tab (bottom-nav index 1).
+        final bottomNav = tester
+            .widget<BottomNavigationBar>(find.byType(BottomNavigationBar));
+        expect(bottomNav.currentIndex, 1);
+      },
+    );
+
+    testWidgets(
+      'resolving the ConflictResolutionDialog dispatches SaveStagedChanges '
+      'WITH the chosen resolutions, shows the loading dialog, and '
+      'navigates on success',
+      (tester) async {
+        final assignmentBloc = await pumpAdminShellOnAssignmentsTab(
+          tester,
+          hasStagedChanges: true,
+          stagedCount: 1,
+          conflictsToReturn: const [conflict],
+        );
+
+        await tester.tap(find.byIcon(Icons.people));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('שמור והמשך'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ConflictResolutionDialog), findsOneWidget);
+
+        // Confirm with the dialog's default resolution (overrideDb, i.e.
+        // "דרוס DB") via its own "שמור" action button.
+        await tester.tap(find.text('שמור'));
+        // From here on a loading dialog may be showing an indeterminate
+        // spinner — plain pump() only, never pumpAndSettle(). The explicit
+        // duration lets the conflict dialog's exit transition AND the
+        // loading dialog's entrance transition both finish (mirrors the
+        // 300ms exit pump used below for the loading dialog itself).
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.byType(ConflictResolutionDialog), findsNothing);
+        expect(find.text('שומר שינויים...'), findsOneWidget);
+
+        final saveEvents =
+            assignmentBloc.addedEvents.whereType<SaveStagedChanges>().toList();
+        expect(saveEvents, hasLength(1));
+        expect(
+          saveEvents.single.resolutions,
+          {'e1_medic_0': ConflictResolution.overrideDb},
+        );
+
+        final completion = saveEvents.single.completion!;
+        completion.complete(const CrudActionResult.success());
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.text('שומר שינויים...'), findsNothing);
+
+        // Navigation proceeded to the team-members branch (bottom-nav
+        // index 3).
+        final bottomNav = tester
+            .widget<BottomNavigationBar>(find.byType(BottomNavigationBar));
+        expect(bottomNav.currentIndex, 3);
+      },
+    );
+  });
 }

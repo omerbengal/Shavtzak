@@ -17,7 +17,6 @@ import '../../../core/services/environment_service.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
-import '../../bloc/assignment/models/assignment_conflict.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_state.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
@@ -30,7 +29,7 @@ import '../../../core/debug/logger.dart';
 import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
 import 'widgets/assignment_save_bar.dart';
-import 'widgets/conflict_resolution_dialog.dart';
+import 'widgets/staged_save_conflict_flow.dart';
 import 'widgets/unsaved_changes_dialog.dart';
 import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
@@ -205,9 +204,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   /// Save every staged assignment change. Classifies staged-vs-DB conflicts
   /// FIRST (baseline captured at staging time vs. the current DB); if any
-  /// exist, shows [ConflictResolutionDialog] and waits for the admin's
+  /// exist, shows the conflict-resolution dialog and waits for the admin's
   /// resolutions before dispatching the save. Cancelling the dialog leaves
-  /// staging fully intact — nothing is saved. See
+  /// staging fully intact — nothing is saved. Conflict resolution itself is
+  /// delegated to [resolveStagedConflictsForSave], the SAME helper the
+  /// tab-switch leave-guard uses (see
+  /// `swipeable_page_view.dart:_onBottomNavTapped`'s `LeaveDecision.save`
+  /// branch), so both Save paths behave identically. See
   /// docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md
   /// ("Conflict handling" / "Save flow").
   Future<void> _onSavePressed() async {
@@ -220,25 +223,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     final slots = blocState is AssignmentSlotsLoaded
         ? blocState.slots
         : (_lastSlotsState?.slots ?? const <AssignmentSlot>[]);
-    final conflicts = bloc.classifyStagedConflicts(slots);
-
-    Map<String, ConflictResolution> resolutions = const {};
-    if (conflicts.isNotEmpty) {
-      Logger.action(
-          'open:conflictResolutionDialog', {'count': conflicts.length});
-      final result = await showDialog<Map<String, ConflictResolution>>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => ConflictResolutionDialog(conflicts: conflicts),
-      );
-      if (result == null) {
-        Logger.action('tap:cancel:conflictResolutionDialog');
-        return; // cancelled — nothing saved, staging intact
-      }
-      resolutions = result;
+    final resolutions =
+        await resolveStagedConflictsForSave(context, bloc, slots);
+    if (!mounted) return;
+    if (resolutions == null) {
+      return; // cancelled — nothing saved, staging intact
     }
 
-    if (!mounted) return;
     _startMutation('שומר שינויים...');
     final saveResult = await _dispatchMutation(
       (completion) => bloc.add(

@@ -10,9 +10,12 @@ import '../../core/services/environment_service.dart';
 import '../../core/utils/crud_action_result.dart';
 import '../bloc/assignment/assignment_bloc.dart';
 import '../bloc/assignment/assignment_event.dart';
+import '../bloc/assignment/assignment_state.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
+import '../screens/assignment/models/assignment_slot.dart';
 import '../screens/assignment/widgets/saving_changes_dialog.dart';
+import '../screens/assignment/widgets/staged_save_conflict_flow.dart';
 import '../screens/assignment/widgets/unsaved_changes_dialog.dart';
 import 'test_environment_indicator.dart';
 
@@ -167,13 +170,27 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
         }
 
         if (decision == LeaveDecision.save) {
-          // Deliberate simplification: this tab-switch "save" resolves any
-          // conflicts with the DEFAULT resolution (override — "my edits
-          // win") and does NOT pop the per-conflict resolution dialog,
-          // because that dialog lives in the assignments screen, not this
-          // nav wrapper. The full conflict-resolution flow stays available
-          // via the on-screen Save button.
-          //
+          // Resolves staged-vs-DB conflicts via the SAME shared helper the
+          // on-screen Save button uses (resolveStagedConflictsForSave, in
+          // staged_save_conflict_flow.dart) — classifying conflicts and, if
+          // any exist, showing the exact same ConflictResolutionDialog and
+          // awaiting the admin's resolutions before saving. Cancelling that
+          // dialog leaves the admin on the assignments tab with staging
+          // fully intact, exactly like cancelling from the on-screen Save
+          // button.
+          final slots = assignmentBloc.state is AssignmentSlotsLoaded
+              ? (assignmentBloc.state as AssignmentSlotsLoaded).slots
+              : const <AssignmentSlot>[];
+          final resolutions = await resolveStagedConflictsForSave(
+            context,
+            assignmentBloc,
+            slots,
+          );
+          if (!mounted) return;
+          if (resolutions == null) {
+            return; // conflict dialog cancelled — stay on the tab
+          }
+
           // Show the same blocking "saving" feedback the on-screen Save
           // button gives (assignment_list_screen.dart's mutation overlay),
           // since this path bypasses that screen's _onSavePressed entirely.
@@ -191,7 +208,9 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
           ).then((_) => isSavingDialogOpen = false);
 
           final completer = Completer<CrudActionResult>();
-          assignmentBloc.add(SaveStagedChanges(completion: completer));
+          assignmentBloc.add(
+            SaveStagedChanges(resolutions: resolutions, completion: completer),
+          );
           final result = await completer.future;
 
           if (isSavingDialogOpen && navigator.mounted) {
