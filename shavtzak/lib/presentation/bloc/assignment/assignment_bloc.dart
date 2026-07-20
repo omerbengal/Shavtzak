@@ -2411,27 +2411,29 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
       // carry (a) + MINOR #5: drop the captured derived-quota baseline for each
       // FULLY-applied role (all its staged entries applied, none remaining) —
-      // NOT only when _stagedChanges emptied entirely. The overlay-less
-      // leave-guard Save keeps the grid interactive during the await, so an
-      // edit staged mid-Save leaves a survivor that would otherwise strand the
-      // applied roles' stale baselines (reused via putIfAbsent on the next
-      // stage, mis-deriving quota / a phantom type-G conflict).
+      // NOT only when _stagedChanges emptied entirely. Defense-in-depth: today
+      // BOTH Save entry points block the grid during the await (the on-screen
+      // Save's AbsorbPointer overlay, and the tab-switch leave-guard's blocking
+      // SavingChangesDialog), so nothing can be staged mid-Save and every role
+      // is fully applied here. This per-role clear still guards the invariant
+      // should a future non-blocking Save path ever leave a survivor in
+      // _stagedChanges: a stranded stale baseline would be reused via
+      // putIfAbsent on the next stage, mis-deriving quota / raising a phantom
+      // type-G conflict.
       for (final erk in appliedRoleErks) {
         final stillStaged = _stagedChanges.values
             .any((c) => _eventRoleKey(c.eventId, c.roleType) == erk);
         if (!stillStaged) _baselineQuota.remove(erk);
       }
-      // Re-persist the SURVIVING staged changes rather than blanket-clearing
-      // the cache. The screen's leave-guard Save runs without a blocking
-      // overlay, so the grid stays interactive during this await — a new
-      // edit may have been staged (added to _stagedChanges) after
-      // appliedKeys was captured above, in which case it correctly survives
-      // the removal loop but is NOT in appliedKeys. A blanket
-      // clearPendingAssignmentChanges() here would still wipe that survivor
-      // from crash-recovery even though it correctly remains in memory.
-      // _persistStaged() writes whatever is left in _stagedChanges — `[]`
-      // when none remain (equivalent to a clear), or the survivor's entry
-      // when one was staged mid-save.
+      // Re-persist whatever remains in _stagedChanges rather than blanket-
+      // clearing the cache. Today both Save entry points block the grid during
+      // the await (see the defense-in-depth note above), so nothing is staged
+      // mid-Save and _stagedChanges is empty here — _persistStaged() writes `[]`
+      // (equivalent to a clear). The re-persist (vs a blanket
+      // clearPendingAssignmentChanges()) is kept as defense-in-depth: if a
+      // future non-blocking Save path let a new edit be staged after
+      // appliedKeys was captured, that survivor stays in _stagedChanges (not in
+      // appliedKeys) and must NOT be wiped from crash-recovery.
       await _persistStaged();
       final written = creates.length + updates.length + deletes.length;
       // Never a bare 'נשמרו 0 שינויים' while a baseline-anchored change was
