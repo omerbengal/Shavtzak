@@ -1432,35 +1432,37 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _baselineQuota[_eventRoleKey(eventId, roleType)] ??
       _liveQuota(eventId, roleType);
 
-  /// Staged fills beyond the baseline quota (manual adds) — used by Task 7
-  /// rendering to know how many extra rows to draw for a role.
+  /// Staged manual-adds (used by Task 7 rendering to know how many extra
+  /// rows to draw for a role) — counted via the EXPLICIT
+  /// [StagedAssignmentChange.isManualAdd] flag, never inferred from a slot's
+  /// position relative to `_baselineQuota`.
   ///
   /// Returns 0 when `_baselineQuota` was never explicitly seeded for this
   /// (event, role) — i.e. neither `StageManualAdd` nor `StageSlotDeletion`
-  /// has ever touched it. This guard matters because a plain
-  /// `StageMemberChange` fill of an ordinary (then in-quota) empty slot does
-  /// NOT seed `_baselineQuota`. Without the guard, `_resolvedBaseline` would
-  /// fall back to the LIVE quota, and a later CONCURRENT/unrelated DB quota
-  /// reduction could drop that live quota to/below the fill's slotIndex,
-  /// making the ordinary fill look like ">= baseline" and get misclassified
-  /// as a manual add — silently re-growing the grid to keep the row
-  /// in-quota. Such a vanished fill should instead drop out of the in-quota
-  /// grid and re-appear as a materialized, red-striped off-quota row — see
-  /// _computeStagedGoneKeys and assignment_conflict_test.dart, "a staged fill
-  /// whose slot no longer exists is kept visible (materialized off-quota)
-  /// instead of vanishing, and no longer needs a Save-time conflict
-  /// resolution".
+  /// has ever touched it. Kept as defense-in-depth even though a manual-add
+  /// always seeds the baseline itself (`_onStageManualAdd` calls
+  /// `_baselineQuotaFor` before staging), so this guard should never actually
+  /// exclude a real manual-add in practice.
+  ///
+  /// A position-based heuristic (`baselineMemberId == null && slotIndex >=
+  /// resolvedBaseline`) used to stand in for this flag, but it broke the
+  /// moment a role's quota changed via the (immediate) event form while a
+  /// staged change already existed on that role: the baseline snapshot goes
+  /// stale, and a later ORDINARY `StageMemberChange` fill landing at/above
+  /// the stale baseline was misclassified as a manual add — inflating the
+  /// rendered slot count with a phantom row. See
+  /// assignment_bloc_quota_staging_test.dart, "a quota raise via the event
+  /// form during a staged deletion does not miscount the next ordinary fill
+  /// as a manual add (no phantom row)".
   int _stagedAddCount(String eventId, String roleType) {
     final key = _eventRoleKey(eventId, roleType);
-    final baseline = _baselineQuota[key];
-    if (baseline == null) return 0;
+    if (_baselineQuota[key] == null) return 0;
     return _stagedChanges.values
         .where((c) =>
             c.eventId == eventId &&
             c.roleType == roleType &&
             !c.markedForDeletion &&
-            c.baselineMemberId == null &&
-            c.slotIndex >= baseline)
+            c.isManualAdd)
         .length;
   }
 
@@ -1660,6 +1662,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       baselineSemanticLabelId: null, baselineAltPhone: null,
       desiredAssignmentId: const Uuid().v4(),
       stagedAtMillis: DateTime.now().millisecondsSinceEpoch,
+      isManualAdd: true,
     );
     await _persistStaged();
     Logger.action('stage:manualAdd', {'slot': key, 'stagedCount': _stagedChanges.length});
@@ -2284,6 +2287,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         <({String eventId, String roleType, int target, int expected})>[];
     final rolesWithSet = <String>{}; // erk keys that produced a set (carry c)
     final quotaChangedRoles = _quotaTouchedRoles();
+    // Map each create back to the staged change that produced it, via its
+    // stable desiredAssignmentId (every create is written with `id:
+    // c.desiredAssignmentId`, and _reindexRoleAfterDeletion only ever mutates
+    // slotIndex, never id) — so maxCreateBound below can tell a quota-raising
+    // create (manual-add / override-restore) apart from a normal-fill create
+    // (baseline empty, NOT a manual add) that must NOT force the role's quota
+    // up. Built once, BEFORE any staged entry is removed later in this method.
+    final stagedByDesiredId = <String, StagedAssignmentChange>{
+      for (final c in _stagedChanges.values) c.desiredAssignmentId: c,
+    };
     quotaChangedRoles.forEach((erk, role) {
       // MINOR #3: a role with an APPLIED staged deletion ALWAYS repacks its
       // survivors + creates, regardless of the quota-set / type-G decision below
@@ -2318,8 +2331,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Resolution-aware add / in-quota-deletion counts (Fix #2): a per-slot
       // takeDb cancels that staged entry, so a cancelled deletion must NOT
       // lower the target and a cancelled add must NOT raise it. Mirrors
-      // _stagedAddCount / _inQuotaDeletionCount but skips takeDb'd entries —
-      // hence NOT the resolution-blind public derivedQuota.
+      // _stagedAddCount / _inQuotaDeletionCount (EXPLICIT isManualAdd flag,
+      // not a slotIndex-vs-baseline heuristic — see StagedAssignmentChange's
+      // doc comment) but skips takeDb'd entries — hence NOT the
+      // resolution-blind public derivedQuota.
       var adds = 0;
       var inQuotaDeletions = 0;
       for (final e in _stagedChanges.entries) {
@@ -2328,23 +2343,33 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         if (resolutions[e.key] == ConflictResolution.takeDb) continue;
         if (c.markedForDeletion) {
           if (c.slotIndex < baseline) inQuotaDeletions++;
-        } else if (c.baselineMemberId == null && c.slotIndex >= baseline) {
+        } else if (c.isManualAdd) {
           adds++;
         }
       }
       final derivedTarget =
           (baseline + adds - inQuotaDeletions).clamp(0, 999).toInt();
 
-      // The target must ALSO fit every create the admin wants in-quota for this
+      // The target must ALSO fit every create the admin wants IN-quota for this
       // role — an override-restore create (baselineMemberId != null) that the
       // derived counts are blind to (Fix #1), and any manual-add create (which
       // the reindex above already repacked into a freed slot, so this reads its
-      // NEW low index — IMPORTANT #2). Taking the max keeps the SET the single
+      // NEW low index — IMPORTANT #2). A NORMAL fill create (isManualAdd ==
+      // false && baselineMemberId == null — an ordinary StageMemberChange fill
+      // of an empty slot, not a quota-raising intent) is deliberately EXCLUDED:
+      // counting it would force the quota up even when the admin's real intent
+      // (e.g. overrideDb on a type-G conflict) is a LOWER quota — see the
+      // manual-add-flag bugfix tests. Taking the max keeps the SET the single
       // source of truth for the role's quota, so dropping the bump below (carry
-      // c) stays safe (target >= max(slotIndex+1) over the role's creates).
+      // c) stays safe (target >= max(slotIndex+1) over the role's qualifying
+      // creates).
       var maxCreateBound = 0;
       for (final a in creates) {
         if (a.eventId == role.eventId && a.roleType == role.roleType) {
+          final staged = stagedByDesiredId[a.id];
+          final isManualAdd = staged?.isManualAdd ?? false;
+          final isOverrideRestore = staged?.baselineMemberId != null;
+          if (!isManualAdd && !isOverrideRestore) continue;
           final bound = a.slotIndex + 1;
           if (bound > maxCreateBound) maxCreateBound = bound;
         }

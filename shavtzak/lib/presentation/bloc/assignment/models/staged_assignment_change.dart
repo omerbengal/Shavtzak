@@ -29,6 +29,15 @@ class StagedAssignmentChange extends Equatable {
   final int stagedAtMillis;
   final bool markedForDeletion;
 
+  /// True ONLY for a staged change created by the manual-add wizard
+  /// (StageManualAdd) — a quota-RAISING intent. A normal fill of an existing
+  /// empty slot (StageMemberChange) is NOT a manual add; it stays false.
+  /// Tracked EXPLICITLY (rather than inferred from slotIndex vs the — often
+  /// stale — `_baselineQuota` snapshot) so a role's quota being changed via
+  /// the (immediate) event form while a staged change exists on that role
+  /// can never make an ordinary fill misclassify as a manual add.
+  final bool isManualAdd;
+
   const StagedAssignmentChange({
     required this.slotKey,
     required this.eventId,
@@ -46,6 +55,7 @@ class StagedAssignmentChange extends Equatable {
     required this.desiredAssignmentId,
     required this.stagedAtMillis,
     this.markedForDeletion = false,
+    this.isManualAdd = false,
   });
 
   static String slotKeyFor(String eventId, String roleType, int slotIndex) =>
@@ -73,6 +83,7 @@ class StagedAssignmentChange extends Equatable {
     String? Function()? baselineMemberId,
     int? stagedAtMillis,
     bool? markedForDeletion,
+    bool? isManualAdd,
   }) {
     return StagedAssignmentChange(
       slotKey: slotKey,
@@ -98,6 +109,7 @@ class StagedAssignmentChange extends Equatable {
       desiredAssignmentId: desiredAssignmentId,
       stagedAtMillis: stagedAtMillis ?? this.stagedAtMillis,
       markedForDeletion: markedForDeletion ?? this.markedForDeletion,
+      isManualAdd: isManualAdd ?? this.isManualAdd,
     );
   }
 
@@ -118,6 +130,7 @@ class StagedAssignmentChange extends Equatable {
         'desiredAssignmentId': desiredAssignmentId,
         'stagedAtMillis': stagedAtMillis,
         'markedForDeletion': markedForDeletion,
+        'isManualAdd': isManualAdd,
       };
 
   factory StagedAssignmentChange.fromJson(Map<String, dynamic> json) =>
@@ -138,6 +151,7 @@ class StagedAssignmentChange extends Equatable {
         desiredAssignmentId: json['desiredAssignmentId'] as String,
         stagedAtMillis: json['stagedAtMillis'] as int,
         markedForDeletion: (json['markedForDeletion'] as bool?) ?? false,
+        isManualAdd: (json['isManualAdd'] as bool?) ?? false,
       );
 
   @override
@@ -158,5 +172,6 @@ class StagedAssignmentChange extends Equatable {
         desiredAssignmentId,
         stagedAtMillis,
         markedForDeletion,
+        isManualAdd,
       ];
 }

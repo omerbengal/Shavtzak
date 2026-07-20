@@ -1753,4 +1753,101 @@ void main() {
     await pumpEventQueue();
     expect(bloc.derivedQuota('e1', 'medic'), 7);
   });
+
+  // ---------------------------------------------------------------------
+  // Manual-add flag bugfix: the Save-time quota math (both the maxCreateBound
+  // "Fix #1" logic and the resolution-aware adds/inQuotaDeletions "Fix #2"
+  // recount) must key off StagedAssignmentChange.isManualAdd, never off a
+  // slot's position relative to `_baselineQuota`. Repro: role R (medic) quota
+  // 1, slot #0 empty. Swipe-delete slot #0 (baseline captured = 1). The event
+  // form immediately bumps R's DB quota 1 -> 2 (a real write; baseline stays
+  // the stale 1 on purpose — the resulting type-G divergence is intentional).
+  // Filling the freed slot #1 via StageMemberChange (an ORDINARY fill, NOT a
+  // manual add) used to inflate the "adds" count because slotIndex(1) >=
+  // stale-baseline(1) — corrupting BOTH the rendered grid (see
+  // assignment_bloc_quota_staging_test.dart) AND this Save-time target math.
+  // ---------------------------------------------------------------------
+
+  Future<void> stageQuotaRaiseWithOrdinaryFill(AssignmentBloc bloc) async {
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 1})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m9')]);
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    slotForIndex(int index) => (bloc.state as AssignmentSlotsLoaded)
+        .slots
+        .firstWhere((slot) =>
+            slot.event.id == 'e1' &&
+            slot.role.key == 'medic' &&
+            slot.slotIndex == index);
+
+    // Swipe-delete the (empty) slot #0 -> seeds _baselineQuota['e1_medic']=1.
+    bloc.add(StageSlotDeletion(slotForIndex(0)));
+    await pumpEventQueue();
+
+    // Event form: an admin immediately bumps the DB quota 1 -> 2.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+    await pumpEventQueue();
+
+    // Fill the freed slot #1 via its dropdown — an ORDINARY fill, NOT a
+    // manual add.
+    bloc.add(StageMemberChange(slot: slotForIndex(1), member: member('m9')));
+    await pumpEventQueue();
+  }
+
+  test(
+      'manual-add flag: an overrideDb type-G resolution after an ordinary '
+      'fill targets the LOCAL staged intent (0 — the only slot was deleted), '
+      'not the stale-baseline miscount (1)', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    await stageQuotaRaiseWithOrdinaryFill(bloc);
+
+    bloc.add(const SaveStagedChanges(
+      resolutions: {'e1_medic': ConflictResolution.overrideDb},
+    ));
+    await pumpEventQueue();
+
+    final sets = pickSets(verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured);
+
+    // expected = LIVE quota (2, per CRITICAL #1); target = the admin's real
+    // local intent (0). Pre-fix this computed target 1 (the ordinary fill
+    // miscounted as a manual add against the stale baseline).
+    expect(sets.single,
+        (eventId: 'e1', roleType: 'medic', target: 0, expected: 2));
+  });
+
+  test(
+      'manual-add flag: a takeDb type-G resolution after an ordinary fill '
+      'keeps the DB quota (no eventQuotaSet emitted for the role)', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    await stageQuotaRaiseWithOrdinaryFill(bloc);
+
+    bloc.add(const SaveStagedChanges(
+      resolutions: {'e1_medic': ConflictResolution.takeDb},
+    ));
+    await pumpEventQueue();
+
+    final sets = pickSets(verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured);
+
+    expect(sets.where((s) => s.roleType == 'medic'), isEmpty);
+  });
 }

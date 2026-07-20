@@ -643,4 +643,76 @@ void main() {
     await pumpEventQueue();
     expect(bloc.derivedQuota('e1', 'medic'), 6); // 5 (fresh baseline) + 1 add
   });
+
+  // ---------------------------------------------------------------------
+  // Manual-add flag bugfix: _stagedAddCount must count an EXPLICIT
+  // isManualAdd flag (set only by StageManualAdd), never infer "this is a
+  // manual add" from a slot's position relative to `_baselineQuota`. The old
+  // position heuristic (`baselineMemberId == null && slotIndex >=
+  // resolvedBaseline`) breaks the moment a role's quota changes via the
+  // (immediate) event form while a staged change already exists on that
+  // role: the baseline snapshot goes stale, so an ORDINARY fill that lands
+  // at/above the stale baseline gets misclassified as a manual add and
+  // inflates the rendered slot count (a phantom row). See
+  // assignment_bloc_save_test.dart for the matching Save-time quota-math
+  // regression (the same miscount corrupts the "דרוס DB" target).
+  // ---------------------------------------------------------------------
+
+  test(
+      'a quota raise via the event form during a staged deletion does not '
+      'miscount the next ordinary fill as a manual add (no phantom row)',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+
+    // Custom load (medic quota 1, ZERO db assignments -> a single empty slot
+    // #0) — NOT loadWithAssignments, whose futureEvent('e1') default is
+    // quota 2.
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 1})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m9')]);
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    AssignmentSlot slotForIndex(int index) {
+      final s = bloc.state as AssignmentSlotsLoaded;
+      return s.slots.firstWhere((slot) =>
+          slot.event.id == 'e1' &&
+          slot.role.key == 'medic' &&
+          slot.slotIndex == index);
+    }
+
+    final slot0 = slotForIndex(0);
+    expect(slot0.currentAssignment, isNull); // sanity: slot #0 starts empty
+
+    // Swipe-delete the (empty) slot #0 -> seeds _baselineQuota['e1_medic']=1.
+    bloc.add(StageSlotDeletion(slot0));
+    await pumpEventQueue();
+
+    // Event form: an admin immediately bumps the DB quota 1 -> 2 (a real
+    // write, simulated via the event stream — NOT staged). _baselineQuota
+    // stays the stale 1 on purpose; the resulting type-G divergence (1 vs 2)
+    // is intentional and must still fire at Save (see assignment_bloc_save_test).
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+    await pumpEventQueue();
+
+    // Grid correctly shows 2 rows at this point: #0 striped for deletion,
+    // #1 freshly freed and still empty.
+    List<AssignmentSlot> medicSlots() => (bloc.state as AssignmentSlotsLoaded)
+        .slots
+        .where((s) => s.event.id == 'e1' && s.role.key == 'medic')
+        .toList();
+    expect(medicSlots().length, 2);
+
+    // Fill the freed slot #1 via its dropdown — an ORDINARY fill
+    // (StageMemberChange), NOT a manual add.
+    bloc.add(StageMemberChange(slot: slotForIndex(1), member: member('m9')));
+    await pumpEventQueue();
+
+    // No phantom 3rd row: the ordinary fill must not be miscounted as a
+    // manual add against the stale baseline.
+    expect(medicSlots().length, 2);
+  });
 }
