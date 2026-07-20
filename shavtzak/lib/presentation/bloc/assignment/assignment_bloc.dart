@@ -1122,12 +1122,28 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         slotAssignments[slotKey] = slot.currentAssignment?.teamMemberId;
       }
 
-      // Apply pending operations (this overrides DB state for specific slots)
+      // Apply pending operations (this overrides DB state for specific slots).
+      //
+      // A staged DELETION (StageSlotDeletion) is checked FIRST and frees the
+      // slot HERE regardless of the operation's type. _stagedAsPendingOperations
+      // deliberately keeps a staged deletion's PendingOperation as an
+      // update/createAssignment with the ORIGINAL member as its
+      // optimisticAssignment — that's what lets the row below (the
+      // "apply optimistic currentAssignment changes" pass) keep rendering the
+      // red-stripe/still-visible-until-Save state. But for THIS event's
+      // assignedMemberIds (who counts as already assigned, gating every OTHER
+      // slot's availableMembers/alreadyAssignedMembers split), a staged
+      // deletion means the member will be gone at Save — exactly like a staged
+      // clear — so they must be freed for reassignment within this event
+      // immediately. Mirrors _stagedEffectiveAssignments' clear-or-
+      // markedForDeletion exclusion (applied there to the raw assignment list
+      // instead of this per-slot map).
       for (final operation in operations) {
         final slotKey = operation.slotKey;
 
-        if (operation.type == PendingOperationType.deleteAssignment) {
-          slotAssignments[slotKey] = null; // Slot is now empty
+        if (operation.type == PendingOperationType.deleteAssignment ||
+            (_stagedChanges[slotKey]?.markedForDeletion ?? false)) {
+          slotAssignments[slotKey] = null; // Slot is now empty (or will be at Save)
         } else if (operation.type == PendingOperationType.createAssignment ||
             operation.type == PendingOperationType.updateAssignment) {
           if (operation.optimisticAssignment != null) {
@@ -2888,11 +2904,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // 5. Build slots
     final slots = <AssignmentSlot>[];
 
-    // Staged-aware view of the DB assignments, used ONLY below for the
-    // cross-event same-day exclusion so an unsaved stage-clear/fill/swap is
-    // reflected in other events' availability immediately (see
-    // _stagedEffectiveAssignments doc comment). Every other use of
-    // `assignments` in this method (currentAssignment, assignedMemberIds,
+    // Staged-aware view of the DB assignments, used for the cross-event
+    // same-day exclusion AND the same-event assignedMemberIds below, so an
+    // unsaved stage-clear/deletion/fill/swap is reflected in other slots'
+    // availability immediately (see _stagedEffectiveAssignments doc comment).
+    // Every OTHER use of `assignments` in this method (currentAssignment,
     // off-quota rows, annotations) intentionally stays on the raw DB list —
     // the optimistic overlay in _mergeSlotsWithOptimisticUpdates already
     // handles those.
@@ -2931,9 +2947,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             }
           }
 
-          // Get all assignments for this event to check who's already assigned
-          final eventAssignments =
-              assignments.where((a) => a.eventId == event.id).toList();
+          // Get all assignments for this event to check who's already assigned.
+          // Staged-aware (effectiveAssignments, NOT the raw `assignments` param):
+          // a staged clear or staged deletion (markedForDeletion) frees the
+          // member for reassignment to OTHER slots in this SAME event
+          // immediately, since the assignment will be gone at Save — while a
+          // staged fill/swap still counts its desired member as assigned (no
+          // same-event double-booking). See _stagedEffectiveAssignments.
+          final eventAssignments = effectiveAssignments
+              .where((a) => a.eventId == event.id)
+              .toList();
           final assignedMemberIds =
               eventAssignments.map((a) => a.teamMemberId).toSet();
 
@@ -3287,8 +3310,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 .cast<Assignment?>()
                 .firstWhere((a) => a?.slotIndex == i, orElse: () => null);
 
-            // Get all assignments for this event to check who's already assigned
-            final eventAssignments = mergedAssignments
+            // Get all assignments for this event to check who's already assigned.
+            // Staged-aware (effectiveMergedAssignments, NOT the raw
+            // mergedAssignments): mirrors _buildSlotsFromAssignments — a staged
+            // clear/deletion frees the member for reassignment within this
+            // event, a staged fill/swap still counts as assigned. See
+            // _stagedEffectiveAssignments.
+            final eventAssignments = effectiveMergedAssignments
                 .where((a) => a.eventId == eventData.id)
                 .toList();
             final assignedMemberIds =
