@@ -1409,10 +1409,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// reduction could drop that live quota to/below the fill's slotIndex,
   /// making the ordinary fill look like ">= baseline" and get misclassified
   /// as a manual add — silently re-growing the grid to keep the row
-  /// in-quota instead of surfacing the real conflict via
-  /// classifyStagedConflicts's slotVanished path (see
-  /// assignment_conflict_test.dart, "classifies a staged fill whose slot no
-  /// longer exists as slotVanished").
+  /// in-quota. Such a vanished fill should instead drop out of the in-quota
+  /// grid and re-appear as a materialized, red-striped off-quota row — see
+  /// _computeStagedGoneKeys and assignment_conflict_test.dart, "a staged fill
+  /// whose slot no longer exists is kept visible (materialized off-quota)
+  /// instead of vanishing, and no longer needs a Save-time conflict
+  /// resolution".
   int _stagedAddCount(String eventId, String roleType) {
     final key = _eventRoleKey(eventId, roleType);
     final baseline = _baselineQuota[key];
