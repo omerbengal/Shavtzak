@@ -1689,9 +1689,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// Re-sync `_baselineQuota` to the admin's OWN event-form quota edit so a
   /// staged deletion/add already touching that role applies as a DELTA on the
   /// NEW quota, instead of the stale baseline firing a SPURIOUS type-G "quota
-  /// changed" conflict at Save. Dispatched by the assignments screen right
-  /// after the event-form modal saves an edit (see
-  /// AssignmentListScreen._showEventFormModal).
+  /// changed" conflict at Save. Dispatched right after the shared event-form
+  /// modal saves an edit, from BOTH launch sites (via `EventFormModal.onEventSaved`):
+  /// AssignmentListScreen._showEventFormModal and EventListScreen._showEventFormModal.
   ///
   /// For each (role → quota) in [RebaselineQuotasForEvent.newRoleRequirements]:
   /// if `_baselineQuota` ALREADY has an entry for this (event, role) — i.e. the
