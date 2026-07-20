@@ -12,6 +12,7 @@ import '../bloc/assignment/assignment_bloc.dart';
 import '../bloc/assignment/assignment_event.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
+import '../screens/assignment/widgets/saving_changes_dialog.dart';
 import '../screens/assignment/widgets/unsaved_changes_dialog.dart';
 import 'test_environment_indicator.dart';
 
@@ -172,9 +173,31 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
           // because that dialog lives in the assignments screen, not this
           // nav wrapper. The full conflict-resolution flow stays available
           // via the on-screen Save button.
+          //
+          // Show the same blocking "saving" feedback the on-screen Save
+          // button gives (assignment_list_screen.dart's mutation overlay),
+          // since this path bypasses that screen's _onSavePressed entirely.
+          // The root navigator is captured up front (matching showDialog's
+          // own default useRootNavigator: true) so the dismissal below pops
+          // exactly this dialog and never some other route — mirrors the
+          // established pattern in admin_choice_screen.dart's
+          // _performAssignmentsExport.
+          final navigator = Navigator.of(context, rootNavigator: true);
+          var isSavingDialogOpen = true;
+          showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => const SavingChangesDialog(),
+          ).then((_) => isSavingDialogOpen = false);
+
           final completer = Completer<CrudActionResult>();
           assignmentBloc.add(SaveStagedChanges(completion: completer));
           final result = await completer.future;
+
+          if (isSavingDialogOpen && navigator.mounted) {
+            navigator.pop();
+          }
+
           if (!mounted) return;
           if (!result.isSuccess) {
             return; // save failed — stay; staging + cache remain intact
