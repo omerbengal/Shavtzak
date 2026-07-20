@@ -198,6 +198,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<StageNotesChange>(_onStageNotesChange);
     on<StageSlotDeletion>(_onStageSlotDeletion);
     on<StageManualAdd>(_onStageManualAdd);
+    on<RebaselineQuotasForEvent>(_onRebaselineQuotasForEvent);
     on<DiscardStagedSlot>(_onDiscardStagedSlot);
     on<DiscardAllStagedChanges>(_onDiscardAllStagedChanges);
     on<RehydrateStagedChanges>(_onRehydrateStagedChanges);
@@ -1682,6 +1683,54 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     );
     await _persistStaged();
     Logger.action('stage:manualAdd', {'slot': key, 'stagedCount': _stagedChanges.length});
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  /// Re-sync `_baselineQuota` to the admin's OWN event-form quota edit so a
+  /// staged deletion/add already touching that role applies as a DELTA on the
+  /// NEW quota, instead of the stale baseline firing a SPURIOUS type-G "quota
+  /// changed" conflict at Save. Dispatched by the assignments screen right
+  /// after the event-form modal saves an edit (see
+  /// AssignmentListScreen._showEventFormModal).
+  ///
+  /// For each (role → quota) in [RebaselineQuotasForEvent.newRoleRequirements]:
+  /// if `_baselineQuota` ALREADY has an entry for this (event, role) — i.e. the
+  /// admin has staged a quota-changing action on it — UPDATE that entry to the
+  /// new quota. Roles WITHOUT an existing entry are left alone: their baseline
+  /// seeds lazily (from the then-current quota) on first staging, so re-seeding
+  /// here would wrongly make an untouched role type-G-eligible.
+  ///
+  /// The new quotas are taken EXPLICITLY from the event (the modal's saved
+  /// `roleRequirements`), never read from `_liveQuota`/`_windowEventsMap`: the
+  /// event-stream update that refreshes the live map is async and may not have
+  /// landed when this fires, so reading the live map here would race. Using the
+  /// inline values is race-free.
+  ///
+  /// A genuine co-admin quota change arrives via the DB stream WITHOUT this
+  /// event, so its baseline stays put and type-G still fires — exactly the
+  /// intended contrast.
+  Future<void> _onRebaselineQuotasForEvent(
+      RebaselineQuotasForEvent event, Emitter<AssignmentState> emit) async {
+    var changed = false;
+    event.newRoleRequirements.forEach((roleType, quota) {
+      final key = _eventRoleKey(event.eventId, roleType);
+      // Only re-sync a role that already has a captured baseline (staged
+      // quota action). Do NOT seed a new entry for an untouched role.
+      if (_baselineQuota.containsKey(key) && _baselineQuota[key] != quota) {
+        _baselineQuota[key] = quota;
+        changed = true;
+      }
+    });
+    // Persist the re-synced baseline (Task 12 model) so a reload restores the
+    // DELTA rather than the stale pre-edit baseline. Only when something moved.
+    if (changed) {
+      await _persistStaged();
+    }
+    Logger.action('stage:rebaselineQuotas', {
+      'event': event.eventId,
+      'roles': event.newRoleRequirements.keys.toList(),
+      'changed': changed,
+    });
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 

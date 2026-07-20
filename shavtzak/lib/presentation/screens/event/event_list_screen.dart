@@ -14,6 +14,8 @@ import '../../../domain/entities/event.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
+import '../../bloc/assignment/assignment_bloc.dart';
+import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/category/category_bloc.dart';
 import '../../bloc/category/category_state.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
@@ -788,6 +790,9 @@ class _EventListScreenState extends State<EventListScreen> {
       'eventId': event?.id,
       'mode': event == null ? 'create' : (isDuplication ? 'duplicate' : 'edit'),
     });
+    // Capture the app-scoped AssignmentBloc up front so the onEventSaved
+    // callback never reaches across an async gap for `context`.
+    final assignmentBloc = context.read<AssignmentBloc>();
     final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -798,6 +803,17 @@ class _EventListScreenState extends State<EventListScreen> {
         event: event,
         filterIndex: FilterPersistence.eventFilterIndex,
         isDuplication: isDuplication,
+        // Re-sync the staged-Save baseline for the admin's OWN quota edit, so a
+        // quota bump made here (while a swipe-delete/manual-add is staged on the
+        // same role in the assignments grid) applies as a delta instead of
+        // firing a spurious type-G conflict on the next visit to that tab. The
+        // AssignmentBloc is the app-scoped singleton shared with the
+        // assignments screen. Race-free: the modal hands us the just-saved
+        // quotas EXPLICITLY. Harmless no-op when nothing on the role is staged.
+        onEventSaved: (eventId, roleRequirements) {
+          assignmentBloc
+              .add(RebaselineQuotasForEvent(eventId, roleRequirements));
+        },
         onSuccess: () {
           Navigator.of(modalContext).pop();
         },

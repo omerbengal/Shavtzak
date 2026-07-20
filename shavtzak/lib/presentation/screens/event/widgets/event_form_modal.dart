@@ -36,6 +36,14 @@ import 'duplication_conflict_resolution_dialog.dart';
 class EventFormModal extends StatefulWidget {
   final Event? event; // null for create, non-null for edit
   final VoidCallback onSuccess;
+
+  /// Optional: invoked on a successful (non-duplication) save with the saved
+  /// event's id and its just-saved role→quota map. Lets the assignments screen
+  /// re-sync the staged-Save baseline for the admin's OWN quota edit (see
+  /// AssignmentBloc.RebaselineQuotasForEvent) — the quotas are handed over
+  /// EXPLICITLY here rather than read from a live cache, which is race-free.
+  final void Function(String eventId, Map<String, int> roleRequirements)?
+      onEventSaved;
   final String? selectedRoleKey; // Optional role key to highlight/scroll to
   final int
       filterIndex; // Filter index to reload with after operations (0=all, 1=future, 2=past)
@@ -45,6 +53,7 @@ class EventFormModal extends StatefulWidget {
     super.key,
     this.event,
     required this.onSuccess,
+    this.onEventSaved,
     this.selectedRoleKey,
     this.filterIndex = 1, // Default to future
     this.isDuplication = false, // Default to false
@@ -734,6 +743,13 @@ class _EventFormModalState extends State<EventFormModal> {
       });
       return;
     }
+
+    // Hand the just-saved role→quota map to any listener (the assignments
+    // screen re-syncs its staged-Save baseline for the admin's OWN quota edit).
+    // Duplication never reaches here (it returns early above), so this only
+    // fires for a real create/edit of `event`.
+    widget.onEventSaved
+        ?.call(event.id, Map<String, int>.from(event.roleRequirements));
 
     widget.onSuccess();
   }

@@ -541,6 +541,109 @@ void main() {
   });
 
   // ---------------------------------------------------------------------
+  // Re-baseline on the admin's OWN event-form quota edit.
+  //
+  // The event form changes a role's quota IMMEDIATELY (outside the staging
+  // model). When the admin raises a role's quota via the event form AFTER
+  // swipe-deleting/adding on that same role, the `_baselineQuota` snapshot
+  // captured at first touch goes stale, and the type-G check (baseline vs live
+  // DB quota) would fire a SPURIOUS conflict for the admin's OWN edit. The
+  // desired model: the admin's own event-form quota edit RE-SYNCS the baseline
+  // (via RebaselineQuotasForEvent), so the staged deletion applies as a DELTA
+  // on the NEW quota — no conflict. A quota change arriving from the DB WITHOUT
+  // a local re-baseline (a genuine co-admin change) must STILL fire type-G.
+  // ---------------------------------------------------------------------
+
+  test(
+      'the admin\'s OWN event-form quota raise (RebaselineQuotasForEvent) '
+      're-syncs the baseline, so filling the freed slot fires NO type-G '
+      'conflict and the deletion applies as a delta', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+
+    // medic quota 1, one in-quota DB assignment at slot #0.
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 1})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m9')]);
+    assignmentStream.add([assignment('a1', 'e1', 'm1', slotIndex: 0)]);
+    await pumpEventQueue();
+
+    AssignmentSlot slotForIndex(int index) =>
+        (bloc.state as AssignmentSlotsLoaded).slots.firstWhere((slot) =>
+            slot.event.id == 'e1' &&
+            slot.role.key == 'medic' &&
+            slot.slotIndex == index);
+
+    // Swipe-delete slot #0 -> baseline captured = 1.
+    bloc.add(StageSlotDeletion(slotForIndex(0)));
+    await pumpEventQueue();
+
+    // The admin's OWN event-form edit: DB quota 1 -> 2 (a real write, arriving
+    // via the event stream) AND a re-baseline dispatch — exactly what the
+    // assignments screen now fires after the event-form modal saves. The
+    // stream emit and the dispatch race in real life, so the handler re-syncs
+    // from the EXPLICIT quotas in the event, never the (async) live map.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+    bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 2}));
+    await pumpEventQueue();
+
+    // Fill the freed slot #1 (an ORDINARY fill, not a manual add).
+    bloc.add(StageMemberChange(slot: slotForIndex(1), member: member('m9')));
+    await pumpEventQueue();
+
+    // No spurious type-G: the baseline was re-synced to 2, which now equals the
+    // live quota (2), so `live != baseline` is false.
+    final conflicts = bloc
+        .classifyStagedConflicts((bloc.state as AssignmentSlotsLoaded).slots);
+    expect(
+        conflicts.any((c) => c.type == AssignmentConflictType.quotaChanged),
+        isFalse);
+    // The staged deletion applies as a delta on the re-synced baseline:
+    // 2 (re-synced) - 1 (in-quota deletion) = 1.
+    expect(bloc.derivedQuota('e1', 'medic'), 1);
+  });
+
+  test(
+      'a GENUINE co-admin quota raise WITHOUT a RebaselineQuotasForEvent '
+      'dispatch STILL fires type-G (the baseline stays stale on purpose)',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 1})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m9')]);
+    assignmentStream.add([assignment('a1', 'e1', 'm1', slotIndex: 0)]);
+    await pumpEventQueue();
+
+    AssignmentSlot slotForIndex(int index) =>
+        (bloc.state as AssignmentSlotsLoaded).slots.firstWhere((slot) =>
+            slot.event.id == 'e1' &&
+            slot.role.key == 'medic' &&
+            slot.slotIndex == index);
+
+    bloc.add(StageSlotDeletion(slotForIndex(0))); // baseline captured = 1
+    await pumpEventQueue();
+
+    // A GENUINE co-admin change: the DB quota moves 1 -> 2 via the stream with
+    // NO RebaselineQuotasForEvent dispatch. The baseline stays 1.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+    await pumpEventQueue();
+
+    final conflicts = bloc
+        .classifyStagedConflicts((bloc.state as AssignmentSlotsLoaded).slots);
+    final g = conflicts
+        .where((c) => c.type == AssignmentConflictType.quotaChanged)
+        .toList();
+    expect(g.length, 1);
+    expect(g.single.slotKey, 'e1_medic');
+  });
+
+  // ---------------------------------------------------------------------
   // Task 12: persist/rehydrate `_baselineQuota`. Task 7's stopgap reseed
   // loop (`for (final c in _stagedChanges.values) _baselineQuotaFor(...)` at
   // the end of `_onRehydrateStagedChanges`) is REMOVED by this task — it

@@ -1850,4 +1850,83 @@ void main() {
 
     expect(sets.where((s) => s.roleType == 'medic'), isEmpty);
   });
+
+  // ---------------------------------------------------------------------
+  // Re-baseline on the admin's OWN event-form quota edit (delta model).
+  //
+  // Same repro as stageQuotaRaiseWithOrdinaryFill above, but this time the
+  // admin's own event-form edit ALSO dispatches RebaselineQuotasForEvent (what
+  // the assignments screen now fires after the modal saves). Re-syncing the
+  // baseline to the new quota (2) makes the staged in-quota deletion apply as a
+  // DELTA (2 - 1 = 1): NO type-G conflict to resolve, and the emitted
+  // eventQuotaSet.target reflects the re-synced delta (1), not the stale-
+  // baseline miscount (0).
+  // ---------------------------------------------------------------------
+
+  Future<void> stageQuotaRaiseWithOwnRebaseline(AssignmentBloc bloc) async {
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 1})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m9')]);
+    // One in-quota DB assignment at slot #0.
+    assignmentStream.add([assignment('a1', 'e1', 'm1', slotIndex: 0)]);
+    await pumpEventQueue();
+
+    slotForIndex(int index) => (bloc.state as AssignmentSlotsLoaded)
+        .slots
+        .firstWhere((slot) =>
+            slot.event.id == 'e1' &&
+            slot.role.key == 'medic' &&
+            slot.slotIndex == index);
+
+    // Swipe-delete the (filled) slot #0 -> seeds _baselineQuota['e1_medic']=1.
+    bloc.add(StageSlotDeletion(slotForIndex(0)));
+    await pumpEventQueue();
+
+    // The admin's OWN event-form edit: DB quota 1 -> 2 AND a re-baseline.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+    bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 2}));
+    await pumpEventQueue();
+
+    // Fill the freed slot #1 via its dropdown — an ORDINARY fill.
+    bloc.add(StageMemberChange(slot: slotForIndex(1), member: member('m9')));
+    await pumpEventQueue();
+  }
+
+  test(
+      'an own event-form quota raise (RebaselineQuotasForEvent) re-baselines: '
+      'Save needs no type-G resolution and emits an eventQuotaSet whose target '
+      'is the re-synced delta (2 - 1 = 1), expected = the re-synced baseline (2)',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    await stageQuotaRaiseWithOwnRebaseline(bloc);
+
+    // Sanity: no type-G conflict to resolve (the admin's own edit re-synced
+    // the baseline), so Save runs with NO resolutions.
+    final conflicts = bloc
+        .classifyStagedConflicts((bloc.state as AssignmentSlotsLoaded).slots);
+    expect(conflicts.any((c) => c.type == AssignmentConflictType.quotaChanged),
+        isFalse);
+
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    final sets = pickSets(verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured);
+
+    // Delta on the re-synced baseline: 2 - 1 in-quota deletion = target 1;
+    // expected = the re-synced baseline (2). Pre-fix (stale baseline 1) this
+    // computed target 0 with expected 1.
+    expect(sets.single,
+        (eventId: 'e1', roleType: 'medic', target: 1, expected: 2));
+    expect(bloc.hasStagedChanges, isFalse);
+  });
 }

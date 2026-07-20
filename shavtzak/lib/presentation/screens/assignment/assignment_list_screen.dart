@@ -3349,6 +3349,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   /// Show event form modal for editing an event
   void _showEventFormModal(Event event, {String? selectedRoleKey}) {
+    // Capture the app-scoped AssignmentBloc up front so the onEventSaved
+    // callback (invoked later, from inside the modal) never reaches across an
+    // async gap for `context`.
+    final assignmentBloc = context.read<AssignmentBloc>();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -3359,6 +3363,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         event: event,
         selectedRoleKey: selectedRoleKey,
         filterIndex: 1, // Default to future for assignments screen
+        // The event form changes a role's quota IMMEDIATELY (outside staging).
+        // When the admin raises a role's quota here AFTER swipe-deleting/adding
+        // on that same role, re-sync the staged-Save baseline so their OWN edit
+        // applies as a delta on the new quota instead of firing a spurious
+        // type-G "quota changed" conflict at Save. Race-free: the modal hands us
+        // the just-saved quotas EXPLICITLY, not a live-cache read. Re-baselining
+        // to the same value (quota unchanged) is a harmless no-op.
+        onEventSaved: (eventId, roleRequirements) {
+          assignmentBloc
+              .add(RebaselineQuotasForEvent(eventId, roleRequirements));
+        },
         onSuccess: () {
           Navigator.of(modalContext).pop();
           // Real-time streams will automatically reload assignment slots to reflect changes
