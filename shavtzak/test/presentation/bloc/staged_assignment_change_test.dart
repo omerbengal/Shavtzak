@@ -1,6 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/presentation/bloc/assignment/models/staged_assignment_change.dart';
 
+StagedAssignmentChange _base({bool del = false, bool add = false}) =>
+    StagedAssignmentChange(
+      slotKey: 'e1_medic_0', eventId: 'e1', roleType: 'medic', slotIndex: 0,
+      desiredMemberId: 'm1', desiredNotes: '', desiredSemanticLabelId: null,
+      desiredAltPhone: null, baselineAssignmentId: 'a1', baselineMemberId: 'm1',
+      baselineNotes: '', baselineSemanticLabelId: null, baselineAltPhone: null,
+      desiredAssignmentId: 'a1', stagedAtMillis: 1000, markedForDeletion: del,
+      isManualAdd: add,
+    );
+
 void main() {
   StagedAssignmentChange fill() => StagedAssignmentChange(
         slotKey: 'e1_medic_0',
@@ -113,5 +123,33 @@ void main() {
     );
     final restoredFull = StagedAssignmentChange.fromJson(fullFull.toJson());
     expect(restoredFull, fullFull);
+  });
+
+  test('markedForDeletion round-trips through json', () {
+    final json = _base(del: true).toJson();
+    expect(json['markedForDeletion'], true);
+    expect(StagedAssignmentChange.fromJson(json).markedForDeletion, true);
+  });
+
+  test('fromJson defaults markedForDeletion to false when absent', () {
+    final json = _base().toJson()..remove('markedForDeletion');
+    expect(StagedAssignmentChange.fromJson(json).markedForDeletion, false);
+  });
+
+  test('isManualAdd round-trips through json', () {
+    final json = _base(add: true).toJson();
+    expect(json['isManualAdd'], true);
+    expect(StagedAssignmentChange.fromJson(json).isManualAdd, true);
+  });
+
+  test('fromJson defaults isManualAdd to false when absent', () {
+    final json = _base().toJson()..remove('isManualAdd');
+    expect(StagedAssignmentChange.fromJson(json).isManualAdd, false);
+  });
+
+  test('matchesBaseline is false for a deletion even when desired == baseline', () {
+    // desired member == baseline member, but a deletion must NOT auto-clean.
+    expect(_base(del: true).matchesBaseline, false);
+    expect(_base(del: false).matchesBaseline, true);
   });
 }

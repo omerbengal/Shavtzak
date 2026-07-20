@@ -91,6 +91,12 @@ class AssignmentSlotsLoaded extends AssignmentState {
   /// red diagonal-stripe "deleted upstream, kept because dirty" overlay.
   final Set<String> stagedGoneSlotKeys;
 
+  /// Slot keys ("${eventId}_${roleType}_${slotIndex}") of staged entries
+  /// currently marked for deletion (`StageSlotDeletion`). Drives the
+  /// pending-deletion UI treatment on rows the admin has queued to remove but
+  /// not yet Saved.
+  final Set<String> stagedDeletionSlotKeys;
+
   AssignmentSlotsLoaded(
     this.slots, {
     this.selectedEventIds = const {},
@@ -99,6 +105,7 @@ class AssignmentSlotsLoaded extends AssignmentState {
     this.isLoadingMorePast = false,
     this.stagedSlotKeys = const {},
     this.stagedGoneSlotKeys = const {},
+    this.stagedDeletionSlotKeys = const {},
   })  : totalSlots = slots.length,
         filledSlots = slots.where((s) => s.isFilled).length,
         unfilledSlots = slots.where((s) => !s.isFilled).length;
@@ -118,6 +125,7 @@ class AssignmentSlotsLoaded extends AssignmentState {
         isLoadingMorePast,
         stagedSlotKeys,
         stagedGoneSlotKeys,
+        stagedDeletionSlotKeys,
       ];
 
   /// Create a copy with new filter or pending operations
@@ -128,6 +136,7 @@ class AssignmentSlotsLoaded extends AssignmentState {
     bool? isLoadingMorePast,
     Set<String>? stagedSlotKeys,
     Set<String>? stagedGoneSlotKeys,
+    Set<String>? stagedDeletionSlotKeys,
   }) {
     return AssignmentSlotsLoaded(
       slots,
@@ -137,6 +146,8 @@ class AssignmentSlotsLoaded extends AssignmentState {
       isLoadingMorePast: isLoadingMorePast ?? this.isLoadingMorePast,
       stagedSlotKeys: stagedSlotKeys ?? this.stagedSlotKeys,
       stagedGoneSlotKeys: stagedGoneSlotKeys ?? this.stagedGoneSlotKeys,
+      stagedDeletionSlotKeys:
+          stagedDeletionSlotKeys ?? this.stagedDeletionSlotKeys,
     );
   }
 }

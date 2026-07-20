@@ -352,4 +352,47 @@ void main() {
     // (no throw, no AssignmentError).
     expect(bloc.state, isA<AssignmentSlotsLoaded>());
   });
+
+  test(
+      'staging a SLOT DELETION (not a clear) on T\'s row in Y also reinstates '
+      'T as available in X immediately (unsaved)', () async {
+    // Root cause: _stagedEffectiveAssignments skipped staged CLEARs
+    // (c.isClear) but NOT staged DELETIONS. A staged deletion
+    // (markedForDeletion == true) has isClear == false — its desiredMemberId
+    // is still the member, kept for rendering the red-stripe row — so the
+    // "add the desired assignment for every staged fill/swap" loop wrongly
+    // re-added T to the effective assignments for Y, and X kept excluding T
+    // even though the staged deletion means T will be gone from Y at Save.
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadTwoSameDayEvents(bloc);
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final xSlotBefore = medicSlotOf(loaded, 'x1');
+    final ySlotBefore = medicSlotOf(loaded, 'y1');
+
+    // Precondition (same as the base-case test): T starts excluded from X.
+    expect(xSlotBefore.availableMembers.map((m) => m.id), isNot(contains('T')));
+    expect(
+        xSlotBefore.sameDayAssignedMembers.map((m) => m.id), contains('T'));
+
+    // Stage a DELETION (swipe-to-delete) on T's row in Y — NOT a clear.
+    bloc.add(StageSlotDeletion(ySlotBefore));
+    await pumpEventQueue();
+
+    final after = bloc.state as AssignmentSlotsLoaded;
+    final xSlotAfter = medicSlotOf(after, 'x1');
+
+    // Y's row is staged for deletion (still dirty / still rendered, per the
+    // existing red-stripe machinery) — confirms the deletion actually staged.
+    expect(after.stagedDeletionSlotKeys, contains('y1_medic_0'));
+
+    // THE FIX: X's dropdown must now offer T again, and T must no longer be
+    // reported as same-day-booked, because the staged deletion frees T for
+    // same-day availability exactly like a staged clear does — the assignment
+    // will be gone at Save.
+    expect(xSlotAfter.availableMembers.map((m) => m.id), contains('T'));
+    expect(
+        xSlotAfter.sameDayAssignedMembers.map((m) => m.id), isNot(contains('T')));
+  });
 }

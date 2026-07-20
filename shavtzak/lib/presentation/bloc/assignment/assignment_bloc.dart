@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
@@ -108,6 +109,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   // slots-view merge sites so the existing optimistic-merge machinery
   // renders them with no changes to the merge function itself.
   final Map<String, StagedAssignmentChange> _stagedChanges = {};
+
+  // Baseline DB quota per "eventId_roleType", captured the first time a role
+  // gets a staged quota-changing action. Conflict detection ONLY (type-G).
+  final Map<String, int> _baselineQuota = {};
+
+  // Slots of the last emitted AssignmentSlotsLoaded, kept live via onChange so
+  // conflict classification has a robust slot source even when the currently
+  // emitted state is NOT AssignmentSlotsLoaded (e.g. AssignmentOperating while
+  // a save is in flight). Read via [lastLoadedSlots]. Never cleared back to
+  // empty once slots have loaded — an empty grid genuinely emits an empty
+  // AssignmentSlotsLoaded, which correctly updates this to empty.
+  List<AssignmentSlot> _lastLoadedSlots = const [];
+
   final UserCacheService _userCache;
 
   /// True when there is at least one unsaved staged change.
@@ -120,6 +134,21 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// `AssignmentSlotsLoaded`) — leave-guards must use this, not a
   /// state-type branch, to get an accurate count.
   int get stagedCount => _stagedChanges.length;
+
+  /// The current grid slots for conflict classification: the live
+  /// `AssignmentSlotsLoaded.slots` when that is the emitted state, else the
+  /// last-known slots cached by [onChange]. Callers (both Save paths) must
+  /// use this rather than branching on `state` themselves — this bloc is the
+  /// app-scoped singleton, so during a leave-guard its state may be
+  /// `AssignmentOperating`/`AssignmentsLoaded`/etc. (not `AssignmentSlotsLoaded`),
+  /// and a raw `state is AssignmentSlotsLoaded ? state.slots : []` branch
+  /// would hand `classifyStagedConflicts` an EMPTY slot list — making every
+  /// still-present staged slot fail the type-D containment check and get
+  /// misclassified as `slotVanished` (a false conflict). See the identical
+  /// caveat on [stagedCount].
+  List<AssignmentSlot> get lastLoadedSlots => state is AssignmentSlotsLoaded
+      ? (state as AssignmentSlotsLoaded).slots
+      : _lastLoadedSlots;
 
   /// True while a SaveStagedChanges write is in flight. Guards against a
   /// second concurrent SaveStagedChanges dispatch (flutter_bloc runs
@@ -167,6 +196,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<ExternalExtraPastMutation>(_onExternalExtraPastMutation);
     on<StageMemberChange>(_onStageMemberChange);
     on<StageNotesChange>(_onStageNotesChange);
+    on<StageSlotDeletion>(_onStageSlotDeletion);
+    on<StageManualAdd>(_onStageManualAdd);
+    on<RebaselineQuotasForEvent>(_onRebaselineQuotasForEvent);
     on<DiscardStagedSlot>(_onDiscardStagedSlot);
     on<DiscardAllStagedChanges>(_onDiscardAllStagedChanges);
     on<RehydrateStagedChanges>(_onRehydrateStagedChanges);
@@ -810,6 +842,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     }
   }
 
+  /// Keep [_lastLoadedSlots] in sync with every emitted
+  /// `AssignmentSlotsLoaded` so [lastLoadedSlots] can serve the last-known
+  /// grid even when the current state is something else (see that getter).
+  @override
+  void onChange(Change<AssignmentState> change) {
+    super.onChange(change);
+    final next = change.nextState;
+    if (next is AssignmentSlotsLoaded) {
+      _lastLoadedSlots = next.slots;
+    }
+  }
+
   @override
   Future<void> close() async {
     await _cancelSlotsSubscriptions();
@@ -1079,12 +1123,28 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         slotAssignments[slotKey] = slot.currentAssignment?.teamMemberId;
       }
 
-      // Apply pending operations (this overrides DB state for specific slots)
+      // Apply pending operations (this overrides DB state for specific slots).
+      //
+      // A staged DELETION (StageSlotDeletion) is checked FIRST and frees the
+      // slot HERE regardless of the operation's type. _stagedAsPendingOperations
+      // deliberately keeps a staged deletion's PendingOperation as an
+      // update/createAssignment with the ORIGINAL member as its
+      // optimisticAssignment — that's what lets the row below (the
+      // "apply optimistic currentAssignment changes" pass) keep rendering the
+      // red-stripe/still-visible-until-Save state. But for THIS event's
+      // assignedMemberIds (who counts as already assigned, gating every OTHER
+      // slot's availableMembers/alreadyAssignedMembers split), a staged
+      // deletion means the member will be gone at Save — exactly like a staged
+      // clear — so they must be freed for reassignment within this event
+      // immediately. Mirrors _stagedEffectiveAssignments' clear-or-
+      // markedForDeletion exclusion (applied there to the raw assignment list
+      // instead of this per-slot map).
       for (final operation in operations) {
         final slotKey = operation.slotKey;
 
-        if (operation.type == PendingOperationType.deleteAssignment) {
-          slotAssignments[slotKey] = null; // Slot is now empty
+        if (operation.type == PendingOperationType.deleteAssignment ||
+            (_stagedChanges[slotKey]?.markedForDeletion ?? false)) {
+          slotAssignments[slotKey] = null; // Slot is now empty (or will be at Save)
         } else if (operation.type == PendingOperationType.createAssignment ||
             operation.type == PendingOperationType.updateAssignment) {
           if (operation.optimisticAssignment != null) {
@@ -1312,9 +1372,21 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// Store [change] under [key], or drop it if it reverts to baseline; then
   /// mirror to cache. Awaited by callers (never left fire-and-forget) so the
   /// cache reliably reflects the latest state for crash-recovery.
+  ///
+  /// Task 12 (carry): when a revert-to-baseline empties out the LAST staged
+  /// change for [change]'s (event, role), also drop that role's captured
+  /// `_baselineQuota` entry — mirroring the per-role clear
+  /// [_onDiscardStagedSlot] already does. Without this, a stale baseline
+  /// from this reverted session would leak into the next staging session on
+  /// the same role (mis-deriving its quota / a phantom type-G conflict).
   Future<void> _commitStaged(String key, StagedAssignmentChange change) async {
     if (change.matchesBaseline) {
       _stagedChanges.remove(key);
+      final roleStillStaged = _stagedChanges.values.any((c) =>
+          c.eventId == change.eventId && c.roleType == change.roleType);
+      if (!roleStillStaged) {
+        _baselineQuota.remove(_eventRoleKey(change.eventId, change.roleType));
+      }
     } else {
       _stagedChanges[key] = change;
     }
@@ -1344,9 +1416,95 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     );
   }
 
+  /// Task 12: persists BOTH the staged-change list and the derived-quota
+  /// `_baselineQuota` snapshot, wrapped in one JSON object, so a reload can
+  /// restore the REAL baseline captured at first quota-touch instead of
+  /// re-deriving one from whatever the live DB quota happens to be later.
   Future<void> _persistStaged() async {
-    await _userCache.savePendingAssignmentChanges(
-        _stagedChanges.values.map((c) => c.toJson()).toList());
+    final payload = jsonEncode({
+      'changes': _stagedChanges.values.map((c) => c.toJson()).toList(),
+      'baselineQuota': _baselineQuota,
+    });
+    await _userCache.savePendingAssignmentChanges(payload);
+  }
+
+  String _eventRoleKey(String eventId, String roleType) =>
+      '${eventId}_$roleType';
+
+  int _liveQuota(String eventId, String roleType) {
+    final ev = _windowEventsMap[eventId] ?? _extraPastEventsMap[eventId];
+    return ev?.roleRequirements[roleType] ?? 0;
+  }
+
+  int _baselineQuotaFor(String eventId, String roleType) {
+    final key = _eventRoleKey(eventId, roleType);
+    return _baselineQuota.putIfAbsent(key, () => _liveQuota(eventId, roleType));
+  }
+
+  /// The captured baseline quota if one was seeded, else the live DB quota.
+  /// Read-only: unlike [_baselineQuotaFor] this does NOT seed the map, so the
+  /// per-role derived-quota reads (called on every grid rebuild by Task 7)
+  /// stay side-effect-free.
+  int _resolvedBaseline(String eventId, String roleType) =>
+      _baselineQuota[_eventRoleKey(eventId, roleType)] ??
+      _liveQuota(eventId, roleType);
+
+  /// Staged manual-adds (used by Task 7 rendering to know how many extra
+  /// rows to draw for a role) — counted via the EXPLICIT
+  /// [StagedAssignmentChange.isManualAdd] flag, never inferred from a slot's
+  /// position relative to `_baselineQuota`.
+  ///
+  /// Returns 0 when `_baselineQuota` was never explicitly seeded for this
+  /// (event, role) — i.e. neither `StageManualAdd` nor `StageSlotDeletion`
+  /// has ever touched it. Kept as defense-in-depth even though a manual-add
+  /// always seeds the baseline itself (`_onStageManualAdd` calls
+  /// `_baselineQuotaFor` before staging), so this guard should never actually
+  /// exclude a real manual-add in practice.
+  ///
+  /// A position-based heuristic (`baselineMemberId == null && slotIndex >=
+  /// resolvedBaseline`) used to stand in for this flag, but it broke the
+  /// moment a role's quota changed via the (immediate) event form while a
+  /// staged change already existed on that role: the baseline snapshot goes
+  /// stale, and a later ORDINARY `StageMemberChange` fill landing at/above
+  /// the stale baseline was misclassified as a manual add — inflating the
+  /// rendered slot count with a phantom row. See
+  /// assignment_bloc_quota_staging_test.dart, "a quota raise via the event
+  /// form during a staged deletion does not miscount the next ordinary fill
+  /// as a manual add (no phantom row)".
+  int _stagedAddCount(String eventId, String roleType) {
+    final key = _eventRoleKey(eventId, roleType);
+    if (_baselineQuota[key] == null) return 0;
+    return _stagedChanges.values
+        .where((c) =>
+            c.eventId == eventId &&
+            c.roleType == roleType &&
+            !c.markedForDeletion &&
+            c.isManualAdd)
+        .length;
+  }
+
+  int _inQuotaDeletionCount(String eventId, String roleType) {
+    final baseline = _resolvedBaseline(eventId, roleType);
+    return _stagedChanges.values
+        .where((c) =>
+            c.eventId == eventId &&
+            c.roleType == roleType &&
+            c.markedForDeletion &&
+            c.slotIndex < baseline)
+        .length;
+  }
+
+  /// The admin's intended quota for a role = baseline + adds − in-quota
+  /// deletions, clamped to a sane [0, 999] range. `.toInt()` is required
+  /// because `num.clamp()` (inherited by `int`) returns `num`, not `int` —
+  /// see the same pattern in CalendarSyncBloc's poll-backoff clamp.
+  int derivedQuota(String eventId, String roleType) {
+    final baseline = _resolvedBaseline(eventId, roleType);
+    return (baseline +
+            _stagedAddCount(eventId, roleType) -
+            _inQuotaDeletionCount(eventId, roleType))
+        .clamp(0, 999)
+        .toInt();
   }
 
   /// Convert staged changes to persistent PendingOperations for the merge.
@@ -1404,9 +1562,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex)))
           a,
     ];
-    // add the desired assignment for every staged fill/swap (staged CLEARs add nothing)
+    // add the desired assignment for every staged fill/swap (staged CLEARs and
+    // staged DELETIONS add nothing — a staged deletion frees the member for
+    // same-day availability, since the assignment will be gone at Save, even
+    // though its desiredMemberId is still set (kept only for rendering the
+    // red-stripe row) so isClear alone does not catch it).
     for (final c in _stagedChanges.values) {
-      if (c.isClear) continue;
+      if (c.isClear || c.markedForDeletion) continue;
       result.add(Assignment(
         id: c.desiredAssignmentId,
         eventId: c.eventId,
@@ -1468,6 +1630,110 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
+  Future<void> _onStageSlotDeletion(
+      StageSlotDeletion event, Emitter<AssignmentState> emit) async {
+    final slot = event.slot;
+    // MINOR #4: only an IN-quota deletion changes the derived quota. Seeding the
+    // baseline for an OFF-quota-only deletion would make the role type-G-eligible
+    // and surface a phantom quota conflict on any concurrent DB quota change
+    // (which, per the override default, would then 409). The off-quota delete
+    // still applies at Save — the main loop deletes markedForDeletion entries
+    // regardless of whether a baseline was seeded — and correctly makes no quota
+    // change (derivedQuota falls back to the live quota).
+    if (slot.slotIndex < _liveQuota(slot.event.id, slot.role.key)) {
+      _baselineQuotaFor(slot.event.id, slot.role.key); // seed baseline (in-quota)
+    }
+    final key = _slotKey(slot);
+    final base = _stagedChanges[key] ?? _seedStaged(slot);
+    _stagedChanges[key] = base.copyWith(markedForDeletion: true);
+    await _persistStaged();
+    Logger.action('stage:delete', {'slot': key, 'stagedCount': _stagedChanges.length});
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onStageManualAdd(
+      StageManualAdd event, Emitter<AssignmentState> emit) async {
+    final eventId = event.event.id;
+    final role = event.roleType;
+    _baselineQuotaFor(eventId, role); // seed baseline
+    // Append at the first free index >= liveQuota. Every staged slotIndex for
+    // this (event, role) is "used" — INCLUDING markedForDeletion rows: reusing
+    // a marked row's index would overwrite its staged entry (losing the delete
+    // and leaving two docs at the same event+role+slotIndex on Save), so the
+    // deletion flag must NOT be filtered out here.
+    final base = _liveQuota(eventId, role);
+    final used = _stagedChanges.values
+        .where((c) => c.eventId == eventId && c.roleType == role)
+        .map((c) => c.slotIndex)
+        .toSet();
+    var slotIndex = base;
+    while (used.contains(slotIndex)) {
+      slotIndex++;
+    }
+    final key = StagedAssignmentChange.slotKeyFor(eventId, role, slotIndex);
+    _stagedChanges[key] = StagedAssignmentChange(
+      slotKey: key, eventId: eventId, roleType: role, slotIndex: slotIndex,
+      desiredMemberId: event.member.id, desiredNotes: '',
+      desiredSemanticLabelId: null, desiredAltPhone: null,
+      baselineAssignmentId: null, baselineMemberId: null, baselineNotes: '',
+      baselineSemanticLabelId: null, baselineAltPhone: null,
+      desiredAssignmentId: const Uuid().v4(),
+      stagedAtMillis: DateTime.now().millisecondsSinceEpoch,
+      isManualAdd: true,
+    );
+    await _persistStaged();
+    Logger.action('stage:manualAdd', {'slot': key, 'stagedCount': _stagedChanges.length});
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  /// Re-sync `_baselineQuota` to the admin's OWN event-form quota edit so a
+  /// staged deletion/add already touching that role applies as a DELTA on the
+  /// NEW quota, instead of the stale baseline firing a SPURIOUS type-G "quota
+  /// changed" conflict at Save. Dispatched right after the shared event-form
+  /// modal saves an edit, from BOTH launch sites (via `EventFormModal.onEventSaved`):
+  /// AssignmentListScreen._showEventFormModal and EventListScreen._showEventFormModal.
+  ///
+  /// For each (role → quota) in [RebaselineQuotasForEvent.newRoleRequirements]:
+  /// if `_baselineQuota` ALREADY has an entry for this (event, role) — i.e. the
+  /// admin has staged a quota-changing action on it — UPDATE that entry to the
+  /// new quota. Roles WITHOUT an existing entry are left alone: their baseline
+  /// seeds lazily (from the then-current quota) on first staging, so re-seeding
+  /// here would wrongly make an untouched role type-G-eligible.
+  ///
+  /// The new quotas are taken EXPLICITLY from the event (the modal's saved
+  /// `roleRequirements`), never read from `_liveQuota`/`_windowEventsMap`: the
+  /// event-stream update that refreshes the live map is async and may not have
+  /// landed when this fires, so reading the live map here would race. Using the
+  /// inline values is race-free.
+  ///
+  /// A genuine co-admin quota change arrives via the DB stream WITHOUT this
+  /// event, so its baseline stays put and type-G still fires — exactly the
+  /// intended contrast.
+  Future<void> _onRebaselineQuotasForEvent(
+      RebaselineQuotasForEvent event, Emitter<AssignmentState> emit) async {
+    var changed = false;
+    event.newRoleRequirements.forEach((roleType, quota) {
+      final key = _eventRoleKey(event.eventId, roleType);
+      // Only re-sync a role that already has a captured baseline (staged
+      // quota action). Do NOT seed a new entry for an untouched role.
+      if (_baselineQuota.containsKey(key) && _baselineQuota[key] != quota) {
+        _baselineQuota[key] = quota;
+        changed = true;
+      }
+    });
+    // Persist the re-synced baseline (Task 12 model) so a reload restores the
+    // DELTA rather than the stale pre-edit baseline. Only when something moved.
+    if (changed) {
+      await _persistStaged();
+    }
+    Logger.action('stage:rebaselineQuotas', {
+      'event': event.eventId,
+      'roles': event.newRoleRequirements.keys.toList(),
+      'changed': changed,
+    });
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
   Future<void> _onDiscardStagedSlot(
       DiscardStagedSlot event, Emitter<AssignmentState> emit) async {
     // A discard must not race an in-flight Save: SaveStagedChanges already
@@ -1476,7 +1742,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // overridden the moment that write lands — the discard would appear to
     // succeed in the UI but the save writes anyway.
     if (_saveInFlight) return;
-    _stagedChanges.remove(event.slotKey);
+    final removed = _stagedChanges.remove(event.slotKey);
+    // carry (a): once a role has no staged changes left, drop its captured
+    // derived-quota baseline so a discarded session can't leak a stale baseline
+    // into the next one (mis-deriving that role's quota). Derive the role from
+    // the removed entry's real fields, not by splitting the slot key.
+    if (removed != null) {
+      final roleStillStaged = _stagedChanges.values.any((c) =>
+          c.eventId == removed.eventId && c.roleType == removed.roleType);
+      if (!roleStillStaged) {
+        _baselineQuota.remove(_eventRoleKey(removed.eventId, removed.roleType));
+      }
+    }
     await _persistStaged();
     Logger.action('stage:discardSlot', {
       'slot': event.slotKey,
@@ -1492,37 +1769,81 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     if (_saveInFlight) return;
     Logger.action('stage:discardAll', {'had': _stagedChanges.length});
     _stagedChanges.clear();
+    // carry (a): a full discard also clears every captured derived-quota
+    // baseline, so the next staging session re-seeds from the live DB quota.
+    _baselineQuota.clear();
     await _userCache.clearPendingAssignmentChanges();
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
+  /// Task 12: decodes the persisted payload and restores BOTH the staged
+  /// list and the real `_baselineQuota` snapshot captured at stage time — so
+  /// a persisted manual-add/deletion survives a reload with the correct
+  /// derived quota, without re-deriving a baseline from whatever the LIVE
+  /// quota happens to be at reload time (that used to be Task 7's stopgap
+  /// reseed loop; it is gone now that the real baseline round-trips).
+  ///
+  /// Tolerates the OLD format (a bare JSON list, no baseline ever
+  /// persisted) for a smooth upgrade: `_baselineQuota` is simply left empty
+  /// in that case — any quota-touching staged change in an old cache
+  /// re-seeds its baseline from the current live quota the next time it's
+  /// touched (StageSlotDeletion/StageManualAdd), same as a brand-new
+  /// staging session would. There is nothing better to restore: the old
+  /// format never captured a baseline to begin with.
   Future<void> _onRehydrateStagedChanges(
       RehydrateStagedChanges event, Emitter<AssignmentState> emit) async {
-    final maps = await _userCache.getPendingAssignmentChanges();
+    final raw = await _userCache.getPendingAssignmentChanges();
+    if (raw == null || raw.isEmpty) return;
+    final decoded = jsonDecode(raw);
+    final List list;
+    if (decoded is List) {
+      list = decoded; // legacy format (bare list)
+    } else {
+      list = (decoded['changes'] as List?) ?? const [];
+      _baselineQuota
+        ..clear()
+        ..addAll(Map<String, int>.from(
+            (decoded['baselineQuota'] as Map?)?.cast<String, int>() ??
+                const {}));
+    }
     _stagedChanges
       ..clear()
-      ..addEntries(maps
-          .map(StagedAssignmentChange.fromJson)
+      ..addEntries(list
+          .map((e) =>
+              StagedAssignmentChange.fromJson(e as Map<String, dynamic>))
           .map((c) => MapEntry(c.slotKey, c)));
     Logger.action('stage:rehydrate', {'loaded': _stagedChanges.length});
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
-  /// Slot keys of dirty rows whose underlying DB assignment was DELETED
-  /// remotely while the row stayed dirty. A staged row qualifies when it is a
-  /// FILLED desired state (`desiredMemberId != null` — there is a visible row
-  /// to keep) that WAS anchored to a real DB assignment at stage time
-  /// (`baselineMemberId != null`), but no assignment for that slot exists in
-  /// the current raw DB snapshot (`getCurrentAssignments()` + paged extra-past,
-  /// the same source `classifyStagedConflicts`/Save read). Such rows are kept
-  /// visible (their staged state) and marked with the red diagonal-stripe
-  /// "deleted upstream, kept because dirty" overlay instead of vanishing.
+  /// Slot keys of dirty rows that would otherwise vanish from the grid
+  /// because their underlying slot is gone. Two cases qualify (both require
+  /// `desiredMemberId != null` — there is a visible row to keep; a staged
+  /// CLEAR's intent IS to remove the row, so that case is always excluded):
   ///
-  /// A staged CLEAR (desired empty) is intentionally excluded: the admin's
-  /// intent there IS to remove the row, so an empty row is correct. A fresh
-  /// FILL over a slot that started empty (`baselineMemberId == null`) is also
-  /// excluded: it is an ordinary pending fill, not a remote deletion.
-  Set<String> _computeStagedGoneKeys() {
+  ///  1. DB-backed: the row WAS anchored to a real DB assignment at stage
+  ///     time (`baselineMemberId != null`), but no assignment for that slot
+  ///     exists in the current raw DB snapshot (`getCurrentAssignments()` +
+  ///     paged extra-past, the same source `classifyStagedConflicts`/Save
+  ///     read) — i.e. it was deleted remotely while the row stayed dirty.
+  ///  2. Fresh-fill-vanished: the slot started empty (`baselineMemberId ==
+  ///     null` — there was never a DB row to lose), but its slot key is no
+  ///     longer present in [builtSlots] — e.g. a co-admin shrank the role's
+  ///     quota below this slotIndex. A fresh fill whose slot still renders is
+  ///     NOT gone — including a manual-add, which renders because the grid
+  ///     grows via `_stagedAddCount` for that role; only a fresh fill whose
+  ///     slot no longer renders at all qualifies.
+  ///
+  /// Either way, qualifying rows are kept visible (their staged state) and
+  /// marked with the red diagonal-stripe "deleted upstream, kept because
+  /// dirty" overlay instead of vanishing (see `_materializeGoneStagedRows`,
+  /// which [builtSlots] must also be passed to).
+  ///
+  /// [builtSlots] must be the SAME built-but-not-yet-materialized slot list
+  /// the caller is about to pass to `_materializeGoneStagedRows`, so case 2's
+  /// "does it still render" check reflects the actual grid just built, not a
+  /// stale or unrelated one.
+  Set<String> _computeStagedGoneKeys(List<AssignmentSlot> builtSlots) {
     if (_stagedChanges.isEmpty) return const {};
     final dbKeys = <String>{
       for (final a in [
@@ -1531,15 +1852,30 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       ])
         StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex),
     };
+    final presentKeys = builtSlots.map(_getSlotKey).toSet();
     final gone = <String>{};
     _stagedChanges.forEach((key, c) {
-      if (c.desiredMemberId != null &&
-          c.baselineMemberId != null &&
-          !dbKeys.contains(key)) {
+      if (c.desiredMemberId == null) return;
+      final dbBackedAndDeleted =
+          c.baselineMemberId != null && !dbKeys.contains(key);
+      final freshFillVanished =
+          c.baselineMemberId == null && !presentKeys.contains(key);
+      if (dbBackedAndDeleted || freshFillVanished) {
         gone.add(key);
       }
     });
     return gone;
+  }
+
+  /// Slot keys of staged entries currently marked for deletion
+  /// (`StageSlotDeletion`) — drives `AssignmentSlotsLoaded.stagedDeletionSlotKeys`.
+  /// Pure function of `_stagedChanges`, mirroring `_computeStagedGoneKeys`.
+  Set<String> _computeStagedDeletionKeys() {
+    if (_stagedChanges.isEmpty) return const {};
+    return _stagedChanges.entries
+        .where((e) => e.value.markedForDeletion)
+        .map((e) => e.key)
+        .toSet();
   }
 
   /// Re-materialize dirty rows whose slot vanished (quota shrank / role removed
@@ -1590,6 +1926,27 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     }
     if (synthesized.isEmpty) return slots;
     return [...slots, ...synthesized]..sort(_compareAssignmentSlots);
+  }
+
+  /// (eventId, roleType) pairs whose `_baselineQuota` was seeded THIS session
+  /// (i.e. touched by StageSlotDeletion/StageManualAdd) — the set of roles a
+  /// per-role quota divergence (type-G, in [classifyStagedConflicts]) or a
+  /// Save `eventQuotaSet` (in [_onSaveStagedChanges]) applies to. The real
+  /// (eventId, roleType) pair for each candidate erk is read from
+  /// `_stagedChanges.values`' own fields rather than by splitting the
+  /// composite erk string — a role key CAN contain '_', which would make
+  /// `erk.split('_')` ambiguous about where eventId ends and roleType
+  /// begins. Shared by both call sites so they can never desync on which
+  /// erks are "in play" for quota purposes.
+  Map<String, ({String eventId, String roleType})> _quotaTouchedRoles() {
+    final roles = <String, ({String eventId, String roleType})>{};
+    for (final c in _stagedChanges.values) {
+      final erk = _eventRoleKey(c.eventId, c.roleType);
+      if (_baselineQuota.containsKey(erk)) {
+        roles[erk] = (eventId: c.eventId, roleType: c.roleType);
+      }
+    }
+    return roles;
   }
 
   /// Compare each staged change's baseline to the current DB slots and
@@ -1722,7 +2079,95 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       ));
     });
 
+    // G: per-role quota divergence — a DIFFERENT axis from the per-slot A-F
+    // checks above (those compare a slot's assignee/notes; this compares a
+    // role's QUOTA). For every (event, role) that has a captured
+    // `_baselineQuota` entry (i.e. StageSlotDeletion/StageManualAdd touched
+    // it this session), fire one conflict when the live DB quota moved off
+    // that baseline AND still differs from the admin's derived intent — if
+    // `derivedQuota == live`, the admin's staged edits already reconcile with
+    // the new DB quota on their own, so there is nothing to ask about.
+    //
+    // The real (eventId, roleType) pair for each candidate erk is read via
+    // [_quotaTouchedRoles] — shared with `_onSaveStagedChanges` (same
+    // underlying data, same hazard splitting the composite erk string would
+    // hit), so classify-time and save-time agree on exactly which erks are
+    // "in play" for type-G.
+    final quotaConflictRoles = _quotaTouchedRoles();
+    quotaConflictRoles.forEach((erk, role) {
+      final baseline = _baselineQuota[erk]!;
+      final live = _liveQuota(role.eventId, role.roleType);
+      final desired = derivedQuota(role.eventId, role.roleType);
+      if (live != baseline && desired != live) {
+        final ev = _windowEventsMap[role.eventId] ??
+            _extraPastEventsMap[role.eventId];
+        final roleName = _resolveRoleForKey(role.roleType).hebrewName;
+        conflicts.add(AssignmentConflict(
+          // MUST be the eventRoleKey (erk), NOT a per-slot key: Task 10's
+          // Save reads `resolutions[erk]` at exactly this key to decide
+          // whether to skip (takeDb) or emit (overrideDb) this role's
+          // eventQuotaSet.
+          slotKey: erk,
+          type: AssignmentConflictType.quotaChanged,
+          title: ev != null ? '${ev.name} · $roleName' : roleName,
+          description:
+              'המכסה של "$roleName" השתנתה: התחלת מ-$baseline, וכעת ב-DB יש $live.',
+        ));
+      }
+    });
+
     return conflicts;
+  }
+
+  /// Repack a role's post-save rows contiguous from 0 (Save-time only), after a
+  /// staged deletion freed a slot. The rows that will exist for the role =
+  /// DB survivors (not in [deletes]) + this role's [creates] (manual-adds,
+  /// override-restores, fresh fills). Renumbering the UNION keeps in-quota rows
+  /// packed AND lets a same-role manual-add fill the freed in-quota slot instead
+  /// of being stranded off-quota (IMPORTANT #2). DB survivors write back to
+  /// [updates] (merging into any staged member/notes edit already queued for
+  /// them); creates are mutated in place in [creates]. Reads the raw DB snapshot
+  /// (getCurrentAssignments + paged extra-past), the same source the rest of
+  /// Save converges against.
+  void _reindexRoleAfterDeletion(String eventId, String roleType,
+      List<String> deletes, List<Assignment> updates, List<Assignment> creates) {
+    final deletedIds = deletes.toSet(); // O(1) survivor filtering
+    // Sortable union tagged by source: a DB survivor (write back to `updates`)
+    // or an index into `creates` (mutate in place).
+    final items = <({int slotIndex, Assignment? survivor, int? createIdx})>[];
+    for (final a in [
+      ..._repository.getCurrentAssignments(),
+      ..._extraPastAssignments,
+    ]) {
+      if (a.eventId == eventId &&
+          a.roleType == roleType &&
+          !deletedIds.contains(a.id)) {
+        items.add((slotIndex: a.slotIndex, survivor: a, createIdx: null));
+      }
+    }
+    for (var i = 0; i < creates.length; i++) {
+      if (creates[i].eventId == eventId && creates[i].roleType == roleType) {
+        items.add(
+            (slotIndex: creates[i].slotIndex, survivor: null, createIdx: i));
+      }
+    }
+    items.sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+    for (var i = 0; i < items.length; i++) {
+      final it = items[i];
+      if (it.slotIndex == i) continue; // already contiguous at this index
+      if (it.survivor != null) {
+        final a = it.survivor!;
+        final existing = updates.indexWhere((u) => u.id == a.id);
+        if (existing >= 0) {
+          updates[existing] = updates[existing].copyWith(slotIndex: i);
+        } else {
+          updates.add(a.copyWith(slotIndex: i, updatedAt: DateTime.now()));
+        }
+      } else {
+        final ci = it.createIdx!;
+        creates[ci] = creates[ci].copyWith(slotIndex: i);
+      }
+    }
   }
 
   /// Atomically persist every staged change (see [SaveStagedChanges]).
@@ -1784,6 +2229,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final updates = <Assignment>[];
     final deletes = <String>[];
     final appliedKeys = <String>[];
+    // Distinct eventIds this batch writes to (creates/updates/deletes). Used
+    // after a successful write to refresh the extra-past cache for any touched
+    // event that lives OUTSIDE the live window (paginated in via "load more
+    // history") — the live-window stream can't cover those, so without this
+    // the grid would revert the edit on the next rebuild (carry b).
+    final touchedEventIds = <String>{};
     // Counts staged changes anchored to a real DB member (baselineMemberId
     // != null) whose expected DB row is gone at save time — see the
     // baseline-vs-db branch below. Surfaced in the success message so a real
@@ -1812,6 +2263,29 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // for this conflict — a deliberate instruction to re-create/keep the
       // change, so it must NOT be intercepted by the skip-not-found safety net.
       final isOverride = resolutions[key] == ConflictResolution.overrideDb;
+
+      // Task 10: a staged swipe-deletion (StageSlotDeletion). Delete its DB row
+      // (if still present) and let the post-loop quota/reindex pass renumber the
+      // role's survivors + emit the exact quota. A gone DB row is a benign no-op
+      // here (the delete already happened, e.g. a concurrent co-admin delete),
+      // NOT a skip-not-found loss — so this MUST precede the skip-not-found net
+      // (a deletion always has baselineMemberId != null). Placed after the
+      // per-slot takeDb check above, so a per-slot takeDb still discards it.
+      if (c.markedForDeletion) {
+        if (dbAssignment != null) {
+          deletes.add(dbAssignment.id);
+          touchedEventIds.add(dbAssignment.eventId);
+        }
+        appliedKeys.add(key);
+        Logger.action('save:slot', {
+          'slot': key,
+          'isClear': c.isClear,
+          'dbFound': dbAssignment != null,
+          'decision': 'staged-delete',
+        });
+        continue; // quota + survivor reindex handled in the post-pass below
+      }
+
       String decision;
       if (dbAssignment == null && c.baselineMemberId != null && !isOverride) {
         // LOSSY case (UNRESOLVED): this change is anchored to a member that WAS
@@ -1829,6 +2303,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       } else if (c.isClear) {
         if (dbAssignment != null) {
           deletes.add(dbAssignment.id);
+          touchedEventIds.add(dbAssignment.eventId);
           decision = 'clear-delete';
         } else {
           // baselineMemberId == null here (the branch above already caught
@@ -1842,6 +2317,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // (in-quota, or off-quota if the slot's quota is gone) from the staged
         // desired member/notes, keeping its original id.
         creates.add(_assignmentFromStaged(c, id: c.desiredAssignmentId));
+        touchedEventIds.add(c.eventId);
         decision = 'create';
       } else {
         // Converge the EXISTING DB doc to the desired state, preserving its
@@ -1852,6 +2328,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           id: dbAssignment.id,
           createdAt: dbAssignment.createdAt,
         ));
+        touchedEventIds.add(c.eventId);
         decision = 'update';
       }
       appliedKeys.add(key);
@@ -1862,6 +2339,126 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         'decision': decision,
       });
     }
+
+    // Task 10: roles touched by a staged quota change — a manual-add or an
+    // in-quota deletion, the two actions that SEED _baselineQuota. For each,
+    // emit an EXACT derived quota target with the captured baseline as the
+    // backend concurrency guard's `expected`, and renumber that role's DB
+    // survivors contiguous from 0. The (eventId, roleType) pair comes from
+    // [_quotaTouchedRoles] — shared with `classifyStagedConflicts` so the two
+    // never desync on which erks are "in play". The set record is
+    // structurally the repository's EventQuotaSet (no import needed).
+    final quotaSets =
+        <({String eventId, String roleType, int target, int expected})>[];
+    final rolesWithSet = <String>{}; // erk keys that produced a set (carry c)
+    final quotaChangedRoles = _quotaTouchedRoles();
+    // Map each create back to the staged change that produced it, via its
+    // stable desiredAssignmentId (every create is written with `id:
+    // c.desiredAssignmentId`, and _reindexRoleAfterDeletion only ever mutates
+    // slotIndex, never id) — so maxCreateBound below can tell a quota-raising
+    // create (manual-add / override-restore) apart from a normal-fill create
+    // (baseline empty, NOT a manual add) that must NOT force the role's quota
+    // up. Built once, BEFORE any staged entry is removed later in this method.
+    final stagedByDesiredId = <String, StagedAssignmentChange>{
+      for (final c in _stagedChanges.values) c.desiredAssignmentId: c,
+    };
+    quotaChangedRoles.forEach((erk, role) {
+      // MINOR #3: a role with an APPLIED staged deletion ALWAYS repacks its
+      // survivors + creates, regardless of the quota-set / type-G decision below
+      // ("your deletions still apply and survivors still reindex"). A per-SLOT
+      // takeDb (resolutions[slotKey]) cancels that specific deletion so it's
+      // excluded; a role-level (erk) takeDb does NOT stop the reindex.
+      final hadDeletion = _stagedChanges.entries.any((e) =>
+          e.value.eventId == role.eventId &&
+          e.value.roleType == role.roleType &&
+          e.value.markedForDeletion &&
+          resolutions[e.key] != ConflictResolution.takeDb);
+      if (hadDeletion) {
+        // Fix #3: the reindex mutates `updates`/`creates` directly and can be
+        // the ONLY write for this event (every markedForDeletion row was
+        // already gone, so no delete was queued, yet a survivor still
+        // reindexed). Mark the event touched so carry (b) reconciles its stale
+        // extra-past cache (no-op for in-window events).
+        touchedEventIds.add(role.eventId);
+        // IMPORTANT #2: repack survivors AND this role's creates contiguous, so
+        // a same-role manual-add fills the freed IN-quota slot instead of being
+        // stranded off-quota. Runs BEFORE maxCreateBound below so a pure
+        // delete+add lands on derivedTarget, not baseline+adds.
+        _reindexRoleAfterDeletion(
+            role.eventId, role.roleType, deletes, updates, creates);
+      }
+
+      // A role-level (type-G) takeDb keeps the DB quota: skip the SET. The
+      // deletions + survivor reindex above already applied.
+      if (resolutions[erk] == ConflictResolution.takeDb) return;
+      final baseline = _baselineQuota[erk]!;
+
+      // Resolution-aware add / in-quota-deletion counts (Fix #2): a per-slot
+      // takeDb cancels that staged entry, so a cancelled deletion must NOT
+      // lower the target and a cancelled add must NOT raise it. Mirrors
+      // _stagedAddCount / _inQuotaDeletionCount (EXPLICIT isManualAdd flag,
+      // not a slotIndex-vs-baseline heuristic — see StagedAssignmentChange's
+      // doc comment) but skips takeDb'd entries — hence NOT the
+      // resolution-blind public derivedQuota.
+      var adds = 0;
+      var inQuotaDeletions = 0;
+      for (final e in _stagedChanges.entries) {
+        final c = e.value;
+        if (c.eventId != role.eventId || c.roleType != role.roleType) continue;
+        if (resolutions[e.key] == ConflictResolution.takeDb) continue;
+        if (c.markedForDeletion) {
+          if (c.slotIndex < baseline) inQuotaDeletions++;
+        } else if (c.isManualAdd) {
+          adds++;
+        }
+      }
+      final derivedTarget =
+          (baseline + adds - inQuotaDeletions).clamp(0, 999).toInt();
+
+      // The target must ALSO fit every create the admin wants IN-quota for this
+      // role — an override-restore create (baselineMemberId != null) that the
+      // derived counts are blind to (Fix #1), and any manual-add create (which
+      // the reindex above already repacked into a freed slot, so this reads its
+      // NEW low index — IMPORTANT #2). A NORMAL fill create (isManualAdd ==
+      // false && baselineMemberId == null — an ordinary StageMemberChange fill
+      // of an empty slot, not a quota-raising intent) is deliberately EXCLUDED:
+      // counting it would force the quota up even when the admin's real intent
+      // (e.g. overrideDb on a type-G conflict) is a LOWER quota — see the
+      // manual-add-flag bugfix tests. Taking the max keeps the SET the single
+      // source of truth for the role's quota, so dropping the bump below (carry
+      // c) stays safe (target >= max(slotIndex+1) over the role's qualifying
+      // creates).
+      var maxCreateBound = 0;
+      for (final a in creates) {
+        if (a.eventId == role.eventId && a.roleType == role.roleType) {
+          final staged = stagedByDesiredId[a.id];
+          final isManualAdd = staged?.isManualAdd ?? false;
+          final isOverrideRestore = staged?.baselineMemberId != null;
+          if (!isManualAdd && !isOverrideRestore) continue;
+          final bound = a.slotIndex + 1;
+          if (bound > maxCreateBound) maxCreateBound = bound;
+        }
+      }
+      final target =
+          derivedTarget > maxCreateBound ? derivedTarget : maxCreateBound;
+
+      // CRITICAL #1: on an override (the dialog DEFAULT for a type-G conflict),
+      // `expected` MUST be the LIVE DB quota — the backend's
+      // planEventQuotaSetWrites rejects (409) a set whose expected != live &&
+      // target != live, so a baseline `expected` makes override fail every time.
+      // With no override, baseline is the correct optimistic-concurrency guard.
+      final expected = resolutions[erk] == ConflictResolution.overrideDb
+          ? _liveQuota(role.eventId, role.roleType)
+          : baseline;
+
+      quotaSets.add((
+        eventId: role.eventId,
+        roleType: role.roleType,
+        target: target,
+        expected: expected,
+      ));
+      rolesWithSet.add(erk);
+    });
 
     // Restore-to-quota: any create that would land OFF-quota — its slotIndex is
     // at/above the event's CURRENT quota for that role, i.e. an override that
@@ -1886,6 +2483,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         }
       }
     }
+    // carry (c): a role with an exact eventQuotaSet must NOT also get a
+    // max-merge bump — the SET already sets that role's quota and wins the
+    // batch, and a redundant bump makes the backend read+write the same event
+    // twice. quotaBumpByKey is keyed identically to rolesWithSet (erk).
+    quotaBumpByKey.removeWhere((k, _) => rolesWithSet.contains(k));
     final eventQuotaBumps = quotaBumpByKey.values.toList();
 
     _emitOrLog(emit, const AssignmentOperating('saving'));
@@ -1899,31 +2501,64 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         'quotaBumps': eventQuotaBumps
             .map((b) => '${b.roleType}@${b.eventId}->${b.count}')
             .toList(),
+        'quotaSets': quotaSets
+            .map((s) => '${s.roleType}@${s.eventId}->${s.target}(exp ${s.expected})')
+            .toList(),
       });
       await _repository.saveAssignmentsBatch(
         creates: creates,
         updates: updates,
         deletes: deletes,
         eventQuotaBumps: eventQuotaBumps,
+        eventQuotaSets: quotaSets,
       );
       Logger.action('save:done', {
         'written': creates.length + updates.length + deletes.length,
         'skippedNotFound': skippedNotFound,
       });
+      // carry (b): out-of-window (paginated-in) past events aren't covered by
+      // the live-window stream, so their _extraPastEventsMap/_extraPastAssignments
+      // entries would stay stale after this write and the next rebuild would
+      // revert the edit. Refresh every touched event (no-op for in-window ones).
+      for (final id in touchedEventIds) {
+        await _refreshExtraPastEvent(id);
+      }
+      // MINOR #5: capture the (eventId, roleType) of every applied entry BEFORE
+      // removing them, so the per-role baseline clear below can see their fields.
+      final appliedRoleErks = <String>{
+        for (final k in appliedKeys)
+          if (_stagedChanges[k] != null)
+            _eventRoleKey(
+                _stagedChanges[k]!.eventId, _stagedChanges[k]!.roleType),
+      };
       for (final k in appliedKeys) {
         _stagedChanges.remove(k);
       }
-      // Re-persist the SURVIVING staged changes rather than blanket-clearing
-      // the cache. The screen's leave-guard Save runs without a blocking
-      // overlay, so the grid stays interactive during this await — a new
-      // edit may have been staged (added to _stagedChanges) after
-      // appliedKeys was captured above, in which case it correctly survives
-      // the removal loop but is NOT in appliedKeys. A blanket
-      // clearPendingAssignmentChanges() here would still wipe that survivor
-      // from crash-recovery even though it correctly remains in memory.
-      // _persistStaged() writes whatever is left in _stagedChanges — `[]`
-      // when none remain (equivalent to a clear), or the survivor's entry
-      // when one was staged mid-save.
+      // carry (a) + MINOR #5: drop the captured derived-quota baseline for each
+      // FULLY-applied role (all its staged entries applied, none remaining) —
+      // NOT only when _stagedChanges emptied entirely. Defense-in-depth: today
+      // BOTH Save entry points block the grid during the await (the on-screen
+      // Save's AbsorbPointer overlay, and the tab-switch leave-guard's blocking
+      // SavingChangesDialog), so nothing can be staged mid-Save and every role
+      // is fully applied here. This per-role clear still guards the invariant
+      // should a future non-blocking Save path ever leave a survivor in
+      // _stagedChanges: a stranded stale baseline would be reused via
+      // putIfAbsent on the next stage, mis-deriving quota / raising a phantom
+      // type-G conflict.
+      for (final erk in appliedRoleErks) {
+        final stillStaged = _stagedChanges.values
+            .any((c) => _eventRoleKey(c.eventId, c.roleType) == erk);
+        if (!stillStaged) _baselineQuota.remove(erk);
+      }
+      // Re-persist whatever remains in _stagedChanges rather than blanket-
+      // clearing the cache. Today both Save entry points block the grid during
+      // the await (see the defense-in-depth note above), so nothing is staged
+      // mid-Save and _stagedChanges is empty here — _persistStaged() writes `[]`
+      // (equivalent to a clear). The re-persist (vs a blanket
+      // clearPendingAssignmentChanges()) is kept as defense-in-depth: if a
+      // future non-blocking Save path let a new edit be staged after
+      // appliedKeys was captured, that survivor stays in _stagedChanges (not in
+      // appliedKeys) and must NOT be wiped from crash-recovery.
       await _persistStaged();
       final written = creates.length + updates.length + deletes.length;
       // Never a bare 'נשמרו 0 שינויים' while a baseline-anchored change was
@@ -2318,11 +2953,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // 5. Build slots
     final slots = <AssignmentSlot>[];
 
-    // Staged-aware view of the DB assignments, used ONLY below for the
-    // cross-event same-day exclusion so an unsaved stage-clear/fill/swap is
-    // reflected in other events' availability immediately (see
-    // _stagedEffectiveAssignments doc comment). Every other use of
-    // `assignments` in this method (currentAssignment, assignedMemberIds,
+    // Staged-aware view of the DB assignments, used for the cross-event
+    // same-day exclusion AND the same-event assignedMemberIds below, so an
+    // unsaved stage-clear/deletion/fill/swap is reflected in other slots'
+    // availability immediately (see _stagedEffectiveAssignments doc comment).
+    // Every OTHER use of `assignments` in this method (currentAssignment,
     // off-quota rows, annotations) intentionally stays on the raw DB list —
     // the optimistic overlay in _mergeSlotsWithOptimisticUpdates already
     // handles those.
@@ -2333,15 +2968,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Iterate through roles in sortOrder (not enum order)
       for (final role in sortedRoles) {
         final requiredCount = event.roleRequirements[role.key] ?? 0;
-        if (requiredCount == 0) continue; // Skip roles with 0 requirement
+        if (requiredCount == 0 && _stagedAddCount(event.id, role.key) == 0) {
+          continue; // Skip roles with 0 requirement and no staged adds
+        }
 
         // Get assignments for this event+role
         final roleAssignments = assignments
             .where((a) => a.eventId == event.id && a.roleType == role.key)
             .toList();
 
-        // Create slots (one per required count)
-        for (int i = 0; i < requiredCount; i++) {
+        final renderCount =
+            requiredCount + _stagedAddCount(event.id, role.key);
+        // Create slots (one per required count, grown by staged manual-adds)
+        for (int i = 0; i < renderCount; i++) {
           // Find if this slot is filled (match by slotIndex, not array position)
           final assignment = roleAssignments
               .cast<Assignment?>()
@@ -2357,9 +2996,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             }
           }
 
-          // Get all assignments for this event to check who's already assigned
-          final eventAssignments =
-              assignments.where((a) => a.eventId == event.id).toList();
+          // Get all assignments for this event to check who's already assigned.
+          // Staged-aware (effectiveAssignments, NOT the raw `assignments` param):
+          // a staged clear or staged deletion (markedForDeletion) frees the
+          // member for reassignment to OTHER slots in this SAME event
+          // immediately, since the assignment will be gone at Save — while a
+          // staged fill/swap still counts its desired member as assigned (no
+          // same-event double-booking). See _stagedEffectiveAssignments.
+          final eventAssignments = effectiveAssignments
+              .where((a) => a.eventId == event.id)
+              .toList();
           final assignedMemberIds =
               eventAssignments.map((a) => a.teamMemberId).toSet();
 
@@ -2481,12 +3127,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // 7. Sort slots deterministically so same-role rows do not flip order.
     annotatedSlots.sort(_compareAssignmentSlots);
 
-    final goneKeys = _computeStagedGoneKeys();
+    final goneKeys = _computeStagedGoneKeys(annotatedSlots);
     return AssignmentSlotsLoaded(
       _materializeGoneStagedRows(annotatedSlots, goneKeys),
       selectedEventIds: selectedEventIds ?? {},
       stagedSlotKeys: _stagedChanges.keys.toSet(),
       stagedGoneSlotKeys: goneKeys,
+      stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
     );
   }
 
@@ -2589,7 +3236,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       );
 
       final capped = _applyPastRevealCap(mergedSlots);
-      final goneKeys = _computeStagedGoneKeys();
+      final goneKeys = _computeStagedGoneKeys(capped.slots);
 
       _emitOrLog(
           emit,
@@ -2601,6 +3248,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             isLoadingMorePast: _loadingMorePast,
             stagedSlotKeys: _stagedChanges.keys.toSet(),
             stagedGoneSlotKeys: goneKeys,
+            stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
@@ -2688,7 +3336,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // Iterate through roles in sortOrder (not enum order)
         for (final role in sortedRoles) {
           final requiredCount = eventData.roleRequirements[role.key] ?? 0;
-          if (requiredCount == 0) continue; // Skip roles with 0 requirement
+          if (requiredCount == 0 &&
+              _stagedAddCount(eventData.id, role.key) == 0) {
+            continue; // Skip roles with 0 requirement and no staged adds
+          }
 
           // Get assignments for this event+role from the assignments list
           final roleAssignments = mergedAssignments
@@ -2699,15 +3350,22 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                   ))
               .toList();
 
-          // Create slots (one per required count)
-          for (int i = 0; i < requiredCount; i++) {
+          final renderCount =
+              requiredCount + _stagedAddCount(eventData.id, role.key);
+          // Create slots (one per required count, grown by staged manual-adds)
+          for (int i = 0; i < renderCount; i++) {
             // Find if this slot is filled (match by slotIndex, not array position)
             final assignment = roleAssignments
                 .cast<Assignment?>()
                 .firstWhere((a) => a?.slotIndex == i, orElse: () => null);
 
-            // Get all assignments for this event to check who's already assigned
-            final eventAssignments = mergedAssignments
+            // Get all assignments for this event to check who's already assigned.
+            // Staged-aware (effectiveMergedAssignments, NOT the raw
+            // mergedAssignments): mirrors _buildSlotsFromAssignments — a staged
+            // clear/deletion frees the member for reassignment within this
+            // event, a staged fill/swap still counts as assigned. See
+            // _stagedEffectiveAssignments.
+            final eventAssignments = effectiveMergedAssignments
                 .where((a) => a.eventId == eventData.id)
                 .toList();
             final assignedMemberIds =
@@ -2852,7 +3510,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       );
 
       final capped = _applyPastRevealCap(mergedSlots);
-      final goneKeys = _computeStagedGoneKeys();
+      final goneKeys = _computeStagedGoneKeys(capped.slots);
 
       _emitOrLog(
           emit,
@@ -2864,6 +3522,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             isLoadingMorePast: _loadingMorePast,
             stagedSlotKeys: _stagedChanges.keys.toSet(),
             stagedGoneSlotKeys: goneKeys,
+            stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בבניית שיבוצים: $e'));

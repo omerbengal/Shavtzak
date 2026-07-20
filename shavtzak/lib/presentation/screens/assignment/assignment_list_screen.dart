@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:uuid/uuid.dart';
 import 'package:collection/collection.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:async';
-import '../../../core/constants/role_types.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/assignment_label.dart';
 import '../../../domain/entities/team_member.dart';
 import '../../../domain/entities/event.dart';
-import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/assignment_label_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/team_repository.dart';
@@ -20,9 +17,7 @@ import '../../../core/services/environment_service.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
-import '../../bloc/assignment/models/assignment_conflict.dart';
 import '../../bloc/event/event_bloc.dart';
-import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
@@ -34,7 +29,7 @@ import '../../../core/debug/logger.dart';
 import 'assignment_filter_modal.dart';
 import 'widgets/assignment_label_management_dialog.dart';
 import 'widgets/assignment_save_bar.dart';
-import 'widgets/conflict_resolution_dialog.dart';
+import 'widgets/staged_save_conflict_flow.dart';
 import 'widgets/unsaved_changes_dialog.dart';
 import '../event/widgets/event_form_modal.dart';
 import 'manual_assignment_flow_dialog.dart';
@@ -132,13 +127,6 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     });
   }
 
-  void _updateMutationMessage(String message) {
-    if (!mounted) return;
-    setState(() {
-      _mutationMessage = message;
-    });
-  }
-
   void _finishMutation() {
     if (!mounted) return;
     setState(() {
@@ -158,9 +146,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   }
 
   Future<CrudActionResult> _dispatchMutation(
-    void Function(CrudActionCompleter completion) dispatch, {
-    bool showErrorSnackBar = true,
-  }) async {
+    void Function(CrudActionCompleter completion) dispatch,
+  ) async {
     final completion = Completer<CrudActionResult>();
     dispatch(completion);
     return await completion.future;
@@ -217,9 +204,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   /// Save every staged assignment change. Classifies staged-vs-DB conflicts
   /// FIRST (baseline captured at staging time vs. the current DB); if any
-  /// exist, shows [ConflictResolutionDialog] and waits for the admin's
+  /// exist, shows the conflict-resolution dialog and waits for the admin's
   /// resolutions before dispatching the save. Cancelling the dialog leaves
-  /// staging fully intact — nothing is saved. See
+  /// staging fully intact — nothing is saved. Conflict resolution itself is
+  /// delegated to [resolveStagedConflictsForSave], the SAME helper the
+  /// tab-switch leave-guard uses (see
+  /// `swipeable_page_view.dart:_onBottomNavTapped`'s `LeaveDecision.save`
+  /// branch), so both Save paths behave identically. See
   /// docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md
   /// ("Conflict handling" / "Save flow").
   Future<void> _onSavePressed() async {
@@ -228,29 +219,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     if (!bloc.hasStagedChanges) return;
     Logger.action('tap:saveStagedChanges');
 
-    final blocState = bloc.state;
-    final slots = blocState is AssignmentSlotsLoaded
-        ? blocState.slots
-        : (_lastSlotsState?.slots ?? const <AssignmentSlot>[]);
-    final conflicts = bloc.classifyStagedConflicts(slots);
-
-    Map<String, ConflictResolution> resolutions = const {};
-    if (conflicts.isNotEmpty) {
-      Logger.action(
-          'open:conflictResolutionDialog', {'count': conflicts.length});
-      final result = await showDialog<Map<String, ConflictResolution>>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => ConflictResolutionDialog(conflicts: conflicts),
-      );
-      if (result == null) {
-        Logger.action('tap:cancel:conflictResolutionDialog');
-        return; // cancelled — nothing saved, staging intact
-      }
-      resolutions = result;
+    // Slots come from the bloc's cached `lastLoadedSlots` (identical source
+    // to the tab-switch leave-guard, for parity): the live `state.slots`
+    // when loaded, else the bloc's last-known grid — never an empty list
+    // just because the bloc is transiently non-loaded.
+    final resolutions = await resolveStagedConflictsForSave(
+        context, bloc, bloc.lastLoadedSlots);
+    if (!mounted) return;
+    if (resolutions == null) {
+      return; // cancelled — nothing saved, staging intact
     }
 
-    if (!mounted) return;
     _startMutation('שומר שינויים...');
     final saveResult = await _dispatchMutation(
       (completion) => bloc.add(
@@ -906,12 +885,21 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               }
                               final row = _buildSlotRow(slots[index],
                                   state.stagedSlotKeys, state.stagedGoneSlotKeys);
-                              // A dirty row whose DB assignment was deleted
-                              // upstream is kept visible but marked with the
-                              // red diagonal-stripe overlay (see
-                              // stagedGoneSlotKeys / _withDeletedRemotelyOverlay).
-                              return state.stagedGoneSlotKeys
-                                      .contains(_getSlotKey(slots[index]))
+                              // A row queued for delete (swipe-delete, not yet
+                              // saved) takes precedence over "gone" — it's an
+                              // explicit local action — and gets the
+                              // "יימחק בשמירה" overlay. Otherwise, a dirty row
+                              // whose DB assignment was deleted upstream is
+                              // kept visible but marked with the red
+                              // diagonal-stripe overlay (see stagedGoneSlotKeys
+                              // / _withDeletedRemotelyOverlay).
+                              final slotKey = _getSlotKey(slots[index]);
+                              if (state.stagedDeletionSlotKeys
+                                  .contains(slotKey)) {
+                                return _withStripeOverlay(row,
+                                    badgeText: 'יימחק בשמירה');
+                              }
+                              return state.stagedGoneSlotKeys.contains(slotKey)
                                   ? _withDeletedRemotelyOverlay(row)
                                   : row;
                             },
@@ -1008,13 +996,14 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     }).toList();
   }
 
-  /// Wraps a rendered slot [row] with the "deleted upstream, kept because
-  /// dirty" marker: a translucent bright-red diagonal-stripe wash plus a small
-  /// badge. Applied to rows in [AssignmentSlotsLoaded.stagedGoneSlotKeys] — a
-  /// dirty row whose backing DB assignment was deleted remotely. The overlay is
-  /// non-interactive (IgnorePointer), so the row underneath stays swipe- and
-  /// tap-able for discard / Save-resolution.
-  Widget _withDeletedRemotelyOverlay(Widget row) {
+  /// Wraps a rendered slot [row] with a translucent bright-red diagonal-stripe
+  /// wash plus a small top-center [badgeText] badge. Non-interactive
+  /// (IgnorePointer), so the row underneath stays swipe- and tap-able for
+  /// discard / Save-resolution / re-staging. Shared by
+  /// [_withDeletedRemotelyOverlay] (stagedGoneSlotKeys) and the
+  /// stagedDeletionSlotKeys overlay applied in the row builder — same visual
+  /// treatment, different badge text.
+  Widget _withStripeOverlay(Widget row, {required String badgeText}) {
     return Stack(
       children: [
         row,
@@ -1033,10 +1022,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                     borderRadius: const BorderRadius.vertical(
                         bottom: Radius.circular(6)),
                   ),
-                  child: const Text(
-                    'שורה זו נמחקה מהשרת, אבל קיים שינוי שמור מקומית',
+                  child: Text(
+                    badgeText,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
@@ -1048,6 +1037,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Wraps a rendered slot [row] with the "deleted upstream, kept because
+  /// dirty" marker. Applied to rows in
+  /// [AssignmentSlotsLoaded.stagedGoneSlotKeys] — a dirty row whose backing DB
+  /// assignment was deleted remotely.
+  Widget _withDeletedRemotelyOverlay(Widget row) {
+    return _withStripeOverlay(
+      row,
+      badgeText: 'שורה זו נמחקה מהשרת, אבל קיים שינוי שמור מקומית',
     );
   }
 
@@ -1474,70 +1474,42 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             });
           }
           return false; // Never actually dismiss
-        } else {
-          // Delete swipe - show delete confirmation dialog
-          final isSlotFilled = slot.isFilled;
-          final confirmed = await showDialog<bool>(
-            context: context,
-            builder: (dialogContext) => Directionality(
-              textDirection: TextDirection.rtl,
-              child: AlertDialog(
-                title: const Text('מחיקת משרה'),
-                content: Text(
-                  isSlotFilled
-                      ? 'האם אתה בטוח שברצונך למחוק משרה זו?\nפעולה זו תמחק את השיבוץ ותקטין את מספר המשרות הנדרשות לתפקיד זה.'
-                      : 'האם אתה בטוח שברצונך למחוק משרה פנויה זו?\nפעולה זו תקטין את מספר המשרות הנדרשות לתפקיד זה.',
-                ),
-                actions: [
-                  TextButton(
-                    child: const Text('ביטול'),
-                    onPressed: () {
-                      Logger.action('tap:cancel:deleteSlot');
-                      Navigator.of(dialogContext).pop(false);
-                    },
-                  ),
-                  TextButton(
-                    child:
-                        const Text('מחק', style: TextStyle(color: Colors.red)),
-                    onPressed: () {
-                      Logger.action('tap:confirm:deleteSlot', {
-                        'eventId': slot.event.id,
-                        'role': slot.role.key,
-                      });
-                      Navigator.of(dialogContext).pop(true);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          );
-
-          if (confirmed == true) {
-            Logger.action('swipeDelete:assignment', {
-              'assignmentId': slot.currentAssignment?.id,
-            });
-            await _handleSlotDismiss(slot);
-          }
-          return false;
         }
+        // Delete swipe: stage the deletion instead of writing immediately.
+        // Staging is reversible (red "יימחק בשמירה" stripe + inline ↩ until
+        // Save), so there is no confirmation dialog anymore. Always return
+        // false so the Dismissible snaps back rather than actually
+        // dismissing: the row stays in the widget tree (now rendered with
+        // the stripe overlay) because the bloc's rebuilt state still
+        // contains it. If confirmDismiss returned true here (or the row were
+        // removed via onDismissed), the very next rebuild — with the row
+        // still present in AssignmentSlotsLoaded.slots — would throw
+        // Flutter's "A dismissed Dismissible widget is still part of the
+        // tree".
+        Logger.action('swipe:stageDelete', {'slot': _getSlotKey(slot)});
+        await _handleSlotDismiss(slot);
+        return false;
       },
       child: rowContent,
     );
   }
 
   /// A row for an assignment that has no matching quota slot. Display + delete
-  /// only: no dropdown, no notes-edit swipe. Swipe-left deletes just the
-  /// assignment document (no quota change — it is already outside the quota).
+  /// only: no dropdown, no notes-edit swipe. Swipe-left STAGES deletion of
+  /// the assignment document (no quota change — it is already outside the
+  /// quota); the actual delete happens on Save, same as an in-quota row.
   Widget _buildOffQuotaRow(AssignmentSlot slot, Set<String> stagedSlotKeys,
       Set<String> stagedGoneSlotKeys) {
     final assignment = slot.currentAssignment!;
     final memberName = assignment.teamMember?.name ?? 'לא ידוע';
-    // Off-quota rows are display + immediate-delete only today (no dropdown, so
-    // a REAL off-quota row can't be staged). The exception is a re-materialized
-    // "deleted upstream" staged row (isGone): a staged edit whose slot vanished,
-    // injected here by _materializeGoneStagedRows so it stays visible under the
-    // red-stripe overlay; its swipe discards the local edit instead of deleting
-    // from the DB (there is nothing left in the DB to delete).
+    // Off-quota rows are display + delete only (no dropdown, no notes-edit
+    // swipe): a real off-quota row's swipe STAGES its deletion (see
+    // confirmDismiss below), same as an in-quota row. The exception is a
+    // re-materialized "deleted upstream" staged row (isGone): a staged edit
+    // whose slot vanished, injected here by _materializeGoneStagedRows so it
+    // stays visible under the red-stripe overlay; its swipe discards the
+    // local edit instead of staging a delete (there is nothing left in the
+    // DB to delete).
     final isDirty = stagedSlotKeys.contains(_getSlotKey(slot));
     final isGone = stagedGoneSlotKeys.contains(_getSlotKey(slot));
     // A note / label / phone must still show when the row is out of quota.
@@ -1592,51 +1564,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
           }
           return false;
         }
-        final assignmentRepo = context.read<AssignmentRepository>();
-        final assignmentBloc = context.read<AssignmentBloc>();
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => Directionality(
-            textDirection: TextDirection.rtl,
-            child: AlertDialog(
-              title: const Text('מחיקת שיבוץ מחוץ למכסה'),
-              content: const Text(
-                'שיבוץ זה נמצא מחוץ למכסת האירוע. האם למחוק אותו?',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('ביטול'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('מחק', style: TextStyle(color: Colors.red)),
-                ),
-              ],
-            ),
-          ),
-        );
-        if (confirmed == true) {
-          Logger.action('delete:offQuotaAssignment', {
-            'assignmentId': assignment.id,
-          });
-          try {
-            await assignmentRepo.deleteAssignment(assignment.id);
-            // Refresh extra-past cache if this row is from an event older than
-            // the live window (no-op for in-window events).
-            assignmentBloc.add(ExternalExtraPastMutation(assignment.eventId));
-            if (mounted) {
-              _showAssignmentSnackBar('השיבוץ נמחק בהצלחה',
-                  backgroundColor: Colors.green);
-            }
-          } catch (e) {
-            if (mounted) {
-              _showAssignmentSnackBar('שגיאה במחיקת השיבוץ: $e',
-                  backgroundColor: Colors.red);
-            }
-          }
-        }
-        return false; // real-time stream removes the row after delete
+        // Off-quota row backed by a real DB assignment: stage its deletion
+        // (reversible — red "יימחק בשמירה" stripe + inline ↩ until Save)
+        // instead of writing immediately. No quota change on Save either —
+        // the derived-quota helper ignores slotIndex >= baseline. Always
+        // return false so the Dismissible snaps back instead of actually
+        // dismissing; see the in-quota row's confirmDismiss for why an
+        // actual dismissal would throw once the row re-renders from staged
+        // state.
+        Logger.action('swipe:stageDelete', {'slot': _getSlotKey(slot)});
+        context.read<AssignmentBloc>().add(StageSlotDeletion(slot));
+        return false;
       },
       child: Container(
         decoration: BoxDecoration(
@@ -1726,109 +1664,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
   }
 
-  /// Handle dismissing a slot - removes role slot from event (reduces capacity)
-  /// If the slot is filled, also deletes the assignment
+  /// Handle dismissing a slot: stage it for deletion (swipe-to-delete on an
+  /// in-quota row, filled or empty).
   Future<void> _handleSlotDismiss(AssignmentSlot slot) async {
-    if (_isMutationInFlight) {
-      return;
-    }
-
-    // Drop any staged edit for this slot first so a pending stage can't
-    // resurrect it after the immediate delete below removes the underlying
-    // assignment/quota.
-    context.read<AssignmentBloc>().add(
-          DiscardStagedSlot(
-            '${slot.event.id}_${slot.role.key}_${slot.slotIndex}',
-          ),
-        );
-
-    _startMutation('מוחק משרה...');
-    try {
-      final assignmentRepo = context.read<AssignmentRepository>();
-      final eventBloc = context.read<EventBloc>();
-      final assignmentBloc = context.read<AssignmentBloc>();
-
-      // Step 1: Delete the assignment if it exists (filled slot)
-      if (slot.currentAssignment != null) {
-        _updateMutationMessage('מוחק שיבוץ...');
-        await assignmentRepo.deleteAssignment(slot.currentAssignment!.id);
-
-        // CRITICAL: Clear the cache to prevent stale data
-        assignmentRepo.clearCache();
-      }
-
-      // Step 2: Get all remaining assignments for this event and role
-      final allAssignments =
-          await assignmentRepo.getAssignmentsByEvent(slot.event.id);
-      final roleAssignments = allAssignments
-          .where((a) => a.roleType == slot.role.key)
-          .toList()
-        ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
-
-      // Step 3: Reorder remaining assignments to fill gaps
-      _updateMutationMessage('מעדכן סדר משרות...');
-      for (int i = 0; i < roleAssignments.length; i++) {
-        if (roleAssignments[i].slotIndex != i) {
-          final updated = roleAssignments[i].copyWith(
-            slotIndex: i,
-            updatedAt: DateTime.now(),
-          );
-          await assignmentRepo.updateAssignmentUnchecked(updated);
-        }
-      }
-
-      // Step 4: Reduce the event's quota for this role by 1
-      final updatedRoleRequirements =
-          Map<String, int>.from(slot.event.roleRequirements);
-      final currentQuota = updatedRoleRequirements[slot.role.key] ?? 0;
-      if (currentQuota > 0) {
-        updatedRoleRequirements[slot.role.key] = currentQuota - 1;
-      }
-
-      final updatedEvent = slot.event.copyWith(
-        roleRequirements: updatedRoleRequirements,
-        updatedAt: DateTime.now(),
-      );
-
-      // Step 5: Update the event
-      _updateMutationMessage('מעדכן מכסת אירוע...');
-      final updateResult = await _dispatchMutation(
-        (completion) => eventBloc.add(
-          UpdateEvent(updatedEvent, completion: completion),
-        ),
-        showErrorSnackBar: false,
-      );
-
-      if (updateResult.isFailure) {
-        _finishMutation();
-        return;
-      }
-
-      _finishMutation();
-
-      // Refresh extra-past cache if this event is older than the live window
-      // (no-op for in-window events; dispatch via captured bloc, not context).
-      assignmentBloc.add(ExternalExtraPastMutation(slot.event.id));
-
-      // Show success message
-      if (mounted) {
-        _showAssignmentSnackBar(
-          'המשרה נמחקה בהצלחה',
-          backgroundColor: Colors.green,
-        );
-      }
-
-      // Real-time streams will automatically reload assignment slots to reflect changes
-    } catch (e) {
-      _finishMutation();
-      // Show error message
-      if (mounted) {
-        _showAssignmentSnackBar(
-          'שגיאה במחיקת המשרה: $e',
-          backgroundColor: Colors.red,
-        );
-      }
-    }
+    // Staged: mark the row for deletion (keeps it visible, struck through);
+    // the assignment delete + quota lower + reindex happen atomically on Save.
+    context.read<AssignmentBloc>().add(StageSlotDeletion(slot));
   }
 
   /// Show notes dialog for editing assignment notes
@@ -3508,6 +3349,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
   /// Show event form modal for editing an event
   void _showEventFormModal(Event event, {String? selectedRoleKey}) {
+    // Capture the app-scoped AssignmentBloc up front so the onEventSaved
+    // callback (invoked later, from inside the modal) never reaches across an
+    // async gap for `context`.
+    final assignmentBloc = context.read<AssignmentBloc>();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -3518,6 +3363,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         event: event,
         selectedRoleKey: selectedRoleKey,
         filterIndex: 1, // Default to future for assignments screen
+        // The event form changes a role's quota IMMEDIATELY (outside staging).
+        // When the admin raises a role's quota here AFTER swipe-deleting/adding
+        // on that same role, re-sync the staged-Save baseline so their OWN edit
+        // applies as a delta on the new quota instead of firing a spurious
+        // type-G "quota changed" conflict at Save. Race-free: the modal hands us
+        // the just-saved quotas EXPLICITLY, not a live-cache read. Re-baselining
+        // to the same value (quota unchanged) is a harmless no-op.
+        onEventSaved: (eventId, roleRequirements) {
+          assignmentBloc
+              .add(RebaselineQuotasForEvent(eventId, roleRequirements));
+        },
         onSuccess: () {
           Navigator.of(modalContext).pop();
           // Real-time streams will automatically reload assignment slots to reflect changes
@@ -3549,138 +3405,14 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     }
   }
 
-  /// Create assignment and increase event quota for the selected role
+  /// Stage a manual assignment (from the 3-step manual-assignment-flow
+  /// dialog): appends a dirty slot for this member. The quota +1 and the
+  /// assignment create happen atomically on Save.
   Future<void> _createAssignmentAndQuota(
       Event event, TeamMember teamMember, String roleType) async {
-    if (_isMutationInFlight) {
-      return;
-    }
-
-    try {
-      final eventBloc = context.read<EventBloc>();
-      final assignmentBloc = context.read<AssignmentBloc>();
-
-      // Step 1: Find slot indices already used for this event+role from the
-      // bloc's in-memory state (avoids a Firestore round-trip + relation
-      // population, since the bloc's real-time stream already has this data).
-      // Falls back to a Firestore read if the bloc hasn't loaded yet.
-      final assignmentState = assignmentBloc.state;
-      List<int> usedSlotIndices;
-      if (assignmentState is AssignmentsLoaded) {
-        usedSlotIndices = assignmentState.assignments
-            .where((a) => a.eventId == event.id && a.roleType == roleType)
-            .map((a) => a.slotIndex)
-            .toList();
-      } else if (assignmentState is AssignmentSlotsLoaded) {
-        usedSlotIndices = assignmentState.slots
-            .where((s) =>
-                s.event.id == event.id &&
-                s.role.key == roleType &&
-                s.currentAssignment != null)
-            .map((s) => s.currentAssignment!.slotIndex)
-            .toList();
-      } else {
-        final existingAssignments = await context
-            .read<AssignmentRepository>()
-            .getAssignmentsByEvent(event.id);
-        usedSlotIndices = existingAssignments
-            .where((a) => a.roleType == roleType)
-            .map((a) => a.slotIndex)
-            .toList();
-      }
-      usedSlotIndices.sort();
-
-      // Step 2: Find the next available slot index (first gap, or end of list)
-      int nextSlotIndex = 0;
-      for (final slotIndex in usedSlotIndices) {
-        if (slotIndex == nextSlotIndex) {
-          nextSlotIndex++;
-        } else {
-          break; // Found a gap
-        }
-      }
-
-      // Step 3: Create the new assignment
-      final newAssignment = Assignment(
-        id: const Uuid().v4(),
-        eventId: event.id,
-        teamMemberId: teamMember.id,
-        roleType: roleType,
-        slotIndex: nextSlotIndex,
-        status: AssignmentStatus.confirmed,
-        notes: '',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        event: event,
-        teamMember: teamMember,
-      );
-
-      // Step 4: Update event's role requirements (increase quota by 1)
-      final updatedRoleRequirements =
-          Map<String, int>.from(event.roleRequirements);
-      final currentQuota = updatedRoleRequirements[roleType] ?? 0;
-      updatedRoleRequirements[roleType] = currentQuota + 1;
-
-      final updatedEvent = event.copyWith(
-        roleRequirements: updatedRoleRequirements,
-        updatedAt: DateTime.now(),
-      );
-
-      _startMutation('מעדכן מכסת אירוע...');
-
-      final quotaUpdateResult = await _dispatchMutation(
-        (completion) => eventBloc.add(
-          UpdateEvent(updatedEvent, completion: completion),
-        ),
-        showErrorSnackBar: false,
-      );
-
-      if (quotaUpdateResult.isFailure) {
-        _finishMutation();
-        return;
-      }
-
-      _updateMutationMessage('יוצר שיבוץ...');
-
-      final assignmentResult = await _dispatchMutation(
-        (completion) => context.read<AssignmentBloc>().add(
-              CreateAssignmentWithBypass(
-                newAssignment,
-                completion: completion,
-              ),
-            ),
-        showErrorSnackBar: false,
-      );
-
-      if (assignmentResult.isFailure) {
-        _updateMutationMessage('משחזר מכסת אירוע...');
-        final rollbackResult = await _dispatchMutation(
-          (completion) => eventBloc.add(
-            UpdateEvent(event, completion: completion),
-          ),
-          showErrorSnackBar: false,
+    context.read<AssignmentBloc>().add(
+          StageManualAdd(event: event, member: teamMember, roleType: roleType),
         );
-        _finishMutation();
-        if (rollbackResult.isFailure && mounted) {
-          _showAssignmentSnackBar(
-            'השיבוץ נכשל וגם שחזור המכסה לא הושלם. יש לבדוק את האירוע ידנית.',
-            backgroundColor: Colors.red,
-          );
-        }
-        return;
-      }
-
-      _finishMutation();
-    } catch (e) {
-      // Show error message
-      _finishMutation();
-      if (mounted) {
-        _showAssignmentSnackBar(
-          'שגיאה ביצירת שיבוץ: $e',
-          backgroundColor: Colors.red,
-        );
-      }
-    }
   }
 
   Future<void> _logout(BuildContext context) async {

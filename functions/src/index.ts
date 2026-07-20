@@ -2844,6 +2844,63 @@ export function planEventQuotaBumps(
   });
 }
 
+// Pure validator/shaper for assignment.saveBatch's OPTIONAL exact quota
+// targets (the staged quota LOWER/SET path — distinct from eventQuotaBumps,
+// which only raises via max-merge). Each entry carries the desired `target`
+// count AND the client's `expected` baseline for optimistic concurrency
+// (see planEventQuotaSetWrites). target may be 0 (role emptied). Absent field
+// => [] (identical to pre-feature behaviour). Side-effect-free for unit tests.
+export function planEventQuotaSets(
+  raw: unknown,
+): Array<{eventId: string; roleType: string; target: number; expected: number}> {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    throw new HttpError(400, 'eventQuotaSets must be an array');
+  }
+  const intInRange = (v: unknown): v is number =>
+    typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 999;
+  return raw.map((entry) => {
+    const e = (entry ?? {}) as Record<string, unknown>;
+    const eventId = requireString(e['eventId'], 'eventQuotaSet.eventId');
+    const roleType = requireString(e['roleType'], 'eventQuotaSet.roleType');
+    if (!intInRange(e['target'])) {
+      throw new HttpError(400, 'eventQuotaSet.target must be an integer between 0 and 999');
+    }
+    if (!intInRange(e['expected'])) {
+      throw new HttpError(400, 'eventQuotaSet.expected must be an integer between 0 and 999');
+    }
+    return {eventId, roleType, target: e['target'], expected: e['expected']};
+  });
+}
+
+// Pure concurrency + diff step for assignment.saveBatch's exact quota targets.
+// For each set: read the live quota (0 if absent). If it differs from BOTH the
+// client's `expected` baseline AND the desired `target`, a co-admin moved it
+// under the client and it was not resolved -> conflict (the case handler
+// rejects the save). Otherwise emit an event write only when the target
+// actually changes the live value. Side-effect-free for unit tests.
+export function planEventQuotaSetWrites(args: {
+  sets: Array<{eventId: string; roleType: string; target: number; expected: number}>;
+  liveQuotas: Map<string, number>;
+}): {
+  writes: Array<{eventId: string; roleType: string; from: number; to: number}>;
+  conflicts: Array<{eventId: string; roleType: string; expected: number; live: number}>;
+} {
+  const writes: Array<{eventId: string; roleType: string; from: number; to: number}> = [];
+  const conflicts: Array<{eventId: string; roleType: string; expected: number; live: number}> = [];
+  for (const s of args.sets) {
+    const live = args.liveQuotas.get(`${s.eventId}_${s.roleType}`) ?? 0;
+    if (live !== s.expected && live !== s.target) {
+      conflicts.push({eventId: s.eventId, roleType: s.roleType, expected: s.expected, live});
+      continue;
+    }
+    if (s.target !== live) {
+      writes.push({eventId: s.eventId, roleType: s.roleType, from: live, to: s.target});
+    }
+  }
+  return {writes, conflicts};
+}
+
 // Pure helper for assignment.saveBatch's batch-aware duplicate-role check.
 //
 // validateAssignmentPayload's own duplicate-role check (see
@@ -4559,6 +4616,28 @@ async function executeMutation(
         }
       }
 
+      // Optional EXACT quota targets (staged set/lower; see planEventQuotaSets):
+      // read each target event's live quota, guard concurrency, and diff to
+      // writes. A conflict here means a co-admin moved the quota under the
+      // client's baseline AND the client did not resolve it -> reject the whole
+      // save (nothing is written) so the client re-syncs. Reads precede the batch.
+      const quotaSets = planEventQuotaSets(payload['eventQuotaSets']);
+      const liveQuotas = new Map<string, number>();
+      for (const s of quotaSets) {
+        const snap = await db.collection(collections.events).doc(s.eventId).get();
+        if (!snap.exists) {
+          throw new HttpError(404, 'האירוע של השיבוץ כבר לא קיים');
+        }
+        const rr = (snap.data()?.['roleRequirements'] ?? {}) as Record<string, unknown>;
+        const cur = typeof rr[s.roleType] === 'number' ? (rr[s.roleType] as number) : 0;
+        liveQuotas.set(`${s.eventId}_${s.roleType}`, cur);
+      }
+      const {writes: quotaSetWrites, conflicts: quotaSetConflicts} =
+        planEventQuotaSetWrites({sets: quotaSets, liveQuotas});
+      if (quotaSetConflicts.length > 0) {
+        throw new HttpError(409, 'המכסה של התפקיד שונתה בינתיים — יש לטעון מחדש');
+      }
+
       // One atomic batch (≤500 ops — a meeting is far under).
       const batch = db.batch();
       for (const {id, doc} of plan.creates) {
@@ -4573,6 +4652,14 @@ async function executeMutation(
       // Restore-to-quota writes ride the SAME batch as the assignment ops, so
       // the quota and the (re-created) assignment commit together or not at all.
       for (const w of quotaBumpWrites) {
+        batch.update(db.collection(collections.events).doc(w.eventId), {
+          [`roleRequirements.${w.roleType}`]: w.to,
+          updatedAt: Timestamp.now(),
+        });
+      }
+      // Exact quota targets ride the SAME batch as the assignment ops (staged
+      // lower/set), so the quota and the (reindexed) assignments commit together.
+      for (const w of quotaSetWrites) {
         batch.update(db.collection(collections.events).doc(w.eventId), {
           [`roleRequirements.${w.roleType}`]: w.to,
           updatedAt: Timestamp.now(),
@@ -4606,6 +4693,15 @@ async function executeMutation(
           after: {[`roleRequirements.${w.roleType}`]: w.to},
         });
       }
+      for (const w of quotaSetWrites) {
+        await writeAuditLog(db, collections, actor, 'event.update', 'event', w.eventId, {
+          quotaSet: true,
+          roleType: w.roleType,
+        }, {
+          before: {[`roleRequirements.${w.roleType}`]: w.from},
+          after: {[`roleRequirements.${w.roleType}`]: w.to},
+        });
+      }
 
       return {
         ok: true,
@@ -4614,6 +4710,7 @@ async function executeMutation(
           updated: plan.updates.length,
           deleted: plan.deletes.length,
           quotaBumped: quotaBumpWrites.length,
+          quotaSet: quotaSetWrites.length,
         },
       };
     }

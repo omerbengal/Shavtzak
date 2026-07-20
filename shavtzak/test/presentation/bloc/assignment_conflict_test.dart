@@ -255,8 +255,27 @@ void main() {
     expect(conflicts.single.slotKey, 'e1_medic_0');
   });
 
-  test('classifies a staged fill whose slot no longer exists as slotVanished',
-      () async {
+  test(
+      'a staged fill whose slot no longer exists is kept visible '
+      '(materialized off-quota) instead of vanishing, and no longer needs a '
+      'Save-time conflict resolution', () async {
+    // UPDATED by the fresh-fill-vanished materialization fix
+    // (_computeStagedGoneKeys): before that fix, this exact row (a fresh fill,
+    // baselineMemberId == null, over a slot that then vanished under a quota
+    // shrink) dropped out of `.slots` entirely and was the one case that still
+    // reached classifyStagedConflicts' D ("!slotKeysPresent.contains(key)")
+    // branch. The fix now re-materializes it (off-quota, red-striped) exactly
+    // like the sibling DB-backed case already did (see
+    // assignment_bloc_save_test.dart) — so it no longer disappears, but as a
+    // DIRECT consequence the row is now always present in `.slots`, which
+    // means D can no longer fire for it either. This is safe: a fresh fill has
+    // no baseline to diverge from (A/B/C don't fire: baselineMemberId is
+    // null), and _onSaveStagedChanges' `else if (dbAssignment == null)` branch
+    // (re)creates a baseline-less fill UNCONDITIONALLY regardless of any
+    // conflict resolution — exactly like an ordinary fresh fill or a
+    // manual-add already does — so no admin decision is actually needed here
+    // any more; the grid's red stripe is now the only signal, replacing the
+    // Save-time dialog for this one sub-case.
     final bloc = buildBloc();
     addTearDown(() async => bloc.close());
     bloc.add(const LoadAssignmentSlots());
@@ -275,23 +294,26 @@ void main() {
     await pumpEventQueue();
 
     // DB now shows the event's medic quota reduced to 0 - the slot itself no
-    // longer exists in the grid.
+    // longer renders in the ordinary required-count loop.
     eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 0})]);
     await pumpEventQueue();
 
     final after = bloc.state as AssignmentSlotsLoaded;
-    expect(
-      after.slots
-          .where((s) => s.role.key == 'medic' && s.slotIndex == 0)
-          .isEmpty,
-      isTrue,
+    // THE FIX: flagged gone (red-striped) ...
+    expect(after.stagedGoneSlotKeys, contains('e1_medic_0'));
+    // ... and kept visible as a materialized off-quota row carrying m1,
+    // instead of dropping out of the grid entirely.
+    final goneRow = after.slots.firstWhere(
+      (s) => s.event.id == 'e1' && s.role.key == 'medic' && s.slotIndex == 0,
+      orElse: () => throw StateError('vanished fresh-fill row was dropped'),
     );
+    expect(goneRow.isOffQuota, isTrue);
+    expect(goneRow.currentAssignment?.teamMemberId, 'm1');
 
+    // classifyStagedConflicts no longer reports a conflict for this key (see
+    // the comment above) — Save handles it unconditionally on its own.
     final conflicts = bloc.classifyStagedConflicts(after.slots);
-    expect(conflicts, hasLength(1));
-    expect(conflicts.single.type, AssignmentConflictType.slotVanished);
-    expect(conflicts.single.slotKey, 'e1_medic_0');
-    expect(conflicts.single.discardOnly, isFalse);
+    expect(conflicts, isEmpty);
   });
 
   test('returns no conflicts when the DB has not diverged from the baseline',

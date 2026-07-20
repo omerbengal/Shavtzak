@@ -396,6 +396,47 @@ class DiscardStagedSlot extends AssignmentEvent {
   List<Object?> get props => [slotKey];
 }
 
+/// Stage a swipe-deletion of [slot]: the row stays visible (struck through)
+/// until Save; on Save the assignment (if any) is deleted and — for an IN-quota
+/// slot — the role's quota lowers by 1.
+class StageSlotDeletion extends AssignmentEvent {
+  final AssignmentSlot slot;
+  const StageSlotDeletion(this.slot);
+  @override
+  List<Object?> get props => [slot];
+}
+
+/// Stage a manual-add: append a new dirty slot for [member] in [roleType] at
+/// [event], raising the role's derived quota by 1 (applied on Save).
+class StageManualAdd extends AssignmentEvent {
+  final Event event;
+  final TeamMember member;
+  final String roleType;
+  const StageManualAdd({required this.event, required this.member, required this.roleType});
+  @override
+  List<Object?> get props => [event, member, roleType];
+}
+
+/// Re-sync the captured `_baselineQuota` for [eventId] to the admin's OWN
+/// event-form quota edit, so a staged deletion/add already touching that role
+/// applies as a DELTA on the NEW quota instead of raising a spurious type-G
+/// "quota changed" conflict at Save.
+///
+/// [newRoleRequirements] carries the modal's just-saved role→quota map
+/// EXPLICITLY (not read from the live event cache): the event-stream update
+/// that refreshes the in-memory quota is async and may not have landed when
+/// this fires, so passing the values inline is race-free. Only roles that
+/// ALREADY have a captured baseline entry are re-synced — a role with no staged
+/// quota action seeds its baseline lazily (from the then-current quota) on
+/// first staging, so it must be left alone here.
+class RebaselineQuotasForEvent extends AssignmentEvent {
+  final String eventId;
+  final Map<String, int> newRoleRequirements;
+  const RebaselineQuotasForEvent(this.eventId, this.newRoleRequirements);
+  @override
+  List<Object?> get props => [eventId, newRoleRequirements];
+}
+
 /// Discard every staged change, reverting the whole grid to its DB baseline.
 class DiscardAllStagedChanges extends AssignmentEvent {
   const DiscardAllStagedChanges();

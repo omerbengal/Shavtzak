@@ -12,6 +12,8 @@ import '../bloc/assignment/assignment_bloc.dart';
 import '../bloc/assignment/assignment_event.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
+import '../screens/assignment/widgets/saving_changes_dialog.dart';
+import '../screens/assignment/widgets/staged_save_conflict_flow.dart';
 import '../screens/assignment/widgets/unsaved_changes_dialog.dart';
 import 'test_environment_indicator.dart';
 
@@ -166,15 +168,58 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
         }
 
         if (decision == LeaveDecision.save) {
-          // Deliberate simplification: this tab-switch "save" resolves any
-          // conflicts with the DEFAULT resolution (override — "my edits
-          // win") and does NOT pop the per-conflict resolution dialog,
-          // because that dialog lives in the assignments screen, not this
-          // nav wrapper. The full conflict-resolution flow stays available
-          // via the on-screen Save button.
+          // Resolves staged-vs-DB conflicts via the SAME shared helper the
+          // on-screen Save button uses (resolveStagedConflictsForSave, in
+          // staged_save_conflict_flow.dart) — classifying conflicts and, if
+          // any exist, showing the exact same ConflictResolutionDialog and
+          // awaiting the admin's resolutions before saving. Cancelling that
+          // dialog leaves the admin on the assignments tab with staging
+          // fully intact, exactly like cancelling from the on-screen Save
+          // button.
+          //
+          // Slots come from the bloc's cached `lastLoadedSlots`, NOT a
+          // `state is AssignmentSlotsLoaded ? state.slots : []` branch: this
+          // bloc is the app-scoped singleton, so at leave-guard time its
+          // live state is often AssignmentOperating (a save in flight) or
+          // another non-slots state, and an empty list would make
+          // classifyStagedConflicts misflag every still-present staged slot
+          // as a false `slotVanished` conflict.
+          final resolutions = await resolveStagedConflictsForSave(
+            context,
+            assignmentBloc,
+            assignmentBloc.lastLoadedSlots,
+          );
+          if (!mounted) return;
+          if (resolutions == null) {
+            return; // conflict dialog cancelled — stay on the tab
+          }
+
+          // Show the same blocking "saving" feedback the on-screen Save
+          // button gives (assignment_list_screen.dart's mutation overlay),
+          // since this path bypasses that screen's _onSavePressed entirely.
+          // The root navigator is captured up front (matching showDialog's
+          // own default useRootNavigator: true) so the dismissal below pops
+          // exactly this dialog and never some other route — mirrors the
+          // established pattern in admin_choice_screen.dart's
+          // _performAssignmentsExport.
+          final navigator = Navigator.of(context, rootNavigator: true);
+          var isSavingDialogOpen = true;
+          showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => const SavingChangesDialog(),
+          ).then((_) => isSavingDialogOpen = false);
+
           final completer = Completer<CrudActionResult>();
-          assignmentBloc.add(SaveStagedChanges(completion: completer));
+          assignmentBloc.add(
+            SaveStagedChanges(resolutions: resolutions, completion: completer),
+          );
           final result = await completer.future;
+
+          if (isSavingDialogOpen && navigator.mounted) {
+            navigator.pop();
+          }
+
           if (!mounted) return;
           if (!result.isSuccess) {
             return; // save failed — stay; staging + cache remain intact

@@ -20,6 +20,7 @@
 // repository types.
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
@@ -27,6 +28,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/core/services/user_cache_service.dart';
 import 'package:shavtzak/core/utils/crud_action_result.dart';
+import 'package:shavtzak/core/utils/filter_persistence.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/role.dart';
@@ -82,6 +84,27 @@ void main() {
       assemblyTime: '08:30',
       requiresArmed: false,
       roleRequirements: roleRequirements ?? const {'medic': 1},
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  // Past event (200 days ago) reachable only via the extra-past cache
+  // ("load more history"), used to exercise carry (b)'s post-save refresh.
+  Event pastEvent(String id, {Map<String, int>? roleRequirements}) {
+    final base = DateTime.now().subtract(const Duration(days: 200));
+    final start = DateTime(base.year, base.month, base.day, 9, 0);
+    final end = DateTime(base.year, base.month, base.day, 17, 0);
+    return Event(
+      id: id,
+      name: 'past-$id',
+      startDate: start,
+      endDate: end,
+      startTime: '09:00',
+      endTime: '17:00',
+      assemblyTime: '08:30',
+      requiresArmed: false,
+      roleRequirements: roleRequirements ?? const {'medic': 2},
       createdAt: now,
       updatedAt: now,
     );
@@ -191,6 +214,18 @@ void main() {
         null, // CalendarSyncBloc is optional
         userCacheService: UserCacheService(),
       );
+
+  /// Task 12: the cache now stores a JSON OBJECT
+  /// (`{'changes': [...], 'baselineQuota': {...}}`), not a bare list — decode
+  /// down to just the changes list for tests that only care about that shape.
+  Future<List<dynamic>> cachedChanges() async {
+    final raw = await UserCacheService().getPendingAssignmentChanges();
+    if (raw == null) return const [];
+    final decoded = jsonDecode(raw);
+    return decoded is List
+        ? decoded
+        : (decoded['changes'] as List? ?? const []);
+  }
 
   test(
       'save of a staged fill against an empty DB slot batches it as a create, '
@@ -304,7 +339,7 @@ void main() {
     // Retry-safe: the staged change (in-memory AND cached) must survive a
     // failed write so the admin can retry without losing the edit.
     expect(bloc.hasStagedChanges, isTrue);
-    final cached = await UserCacheService().getPendingAssignmentChanges();
+    final cached = await cachedChanges();
     expect(cached, hasLength(1));
     expect(cached.single['desiredMemberId'], 'm1');
   });
@@ -407,7 +442,7 @@ void main() {
     bloc.add(const DiscardAllStagedChanges());
     await pumpEventQueue();
     expect(bloc.hasStagedChanges, isTrue);
-    final cachedMidSave = await UserCacheService().getPendingAssignmentChanges();
+    final cachedMidSave = await cachedChanges();
     expect(cachedMidSave, hasLength(1)); // NOT wiped by the rejected discard
 
     // Let the save resolve — its own success path clears the applied change.
@@ -521,7 +556,7 @@ void main() {
     // The cache must reflect the survivor, NOT be blanket-cleared (the bug:
     // clearPendingAssignmentChanges() here would wipe e2's entry too, losing
     // it from crash-recovery even though it correctly stayed in memory).
-    final cached = await UserCacheService().getPendingAssignmentChanges();
+    final cached = await cachedChanges();
     expect(cached, hasLength(1));
     expect(cached.single['slotKey'], 'e2_medic_0');
     expect(cached.single['desiredMemberId'], 'm2');
@@ -834,6 +869,94 @@ void main() {
   });
 
   test(
+      'a FRESH staged fill (no baseline) whose slot VANISHES under a quota '
+      'shrink is red-striped + materialized off-quota, while a manual-add '
+      '(also baseline-less, but rendered) is NOT', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    // e1: medic quota 3, slots #0/#1 filled from DB, #2 empty (in-quota).
+    // e2: medic quota 1, DB-empty — used ONLY for the case-6 manual-add below
+    // so it can never interact with e1's staged fill via a shared
+    // _baselineQuota entry: a plain StageMemberChange on e1 never seeds one,
+    // but staging a manual-add on the SAME (event, role) would — and would
+    // then retroactively count the already-staged fill towards
+    // _stagedAddCount, re-growing the grid and flipping it back to
+    // "present". A separate event keeps the two cases independent.
+    eventStream.add([
+      futureEvent('e1', roleRequirements: const {'medic': 3}),
+      futureEvent('e2', roleRequirements: const {'medic': 1}),
+    ]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m2'), member('T'), member('m9')]);
+    assignmentStream.add([
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final emptySlot2 = loaded.slots.firstWhere(
+        (s) => s.event.id == 'e1' && s.role.key == 'medic' && s.slotIndex == 2);
+    expect(emptySlot2.isFilled, isFalse); // sanity: starts empty, in-quota
+
+    // Stage a FRESH fill of T on slot #2 (baselineMemberId == null: no DB row
+    // for this slot at stage time) — an ordinary fill, NOT a manual add.
+    bloc.add(StageMemberChange(slot: emptySlot2, member: member('T')));
+    await pumpEventQueue();
+
+    var state = bloc.state as AssignmentSlotsLoaded;
+    expect(state.stagedSlotKeys, contains('e1_medic_2'));
+    // Sanity: while the slot still renders (quota still 3), it is an
+    // ordinary pending fill, not gone.
+    expect(state.stagedGoneSlotKeys, isEmpty);
+
+    // Concurrent DB quota shrink: a co-admin lowers e1's medic quota 3 -> 2,
+    // so slot #2 no longer renders in the required-count loop. No assignment
+    // change (a1/a2 untouched); e2 is re-emitted unchanged so it stays in the
+    // window (the event-stream listener replaces the whole window map on
+    // every emit).
+    eventStream.add([
+      futureEvent('e1', roleRequirements: const {'medic': 2}),
+      futureEvent('e2', roleRequirements: const {'medic': 1}),
+    ]);
+    await pumpEventQueue();
+
+    state = bloc.state as AssignmentSlotsLoaded;
+    // THE FIX (case 5): the fresh fill's slot vanished -> red-striped ...
+    expect(state.stagedGoneSlotKeys, contains('e1_medic_2'));
+    // ... and re-materialized (kept visible) as an off-quota row carrying T,
+    // instead of dropping out of the grid entirely.
+    final goneRow = state.slots.firstWhere(
+      (s) => s.event.id == 'e1' && s.role.key == 'medic' && s.slotIndex == 2,
+      orElse: () => throw StateError('vanished fresh-fill row was dropped'),
+    );
+    expect(goneRow.isOffQuota, isTrue);
+    expect(goneRow.currentAssignment?.teamMemberId, 'T');
+
+    // Case 6: a manual-add is ALSO a fresh fill (baselineMemberId == null),
+    // but its slot renders because the grid grows via _stagedAddCount for
+    // that role — it must stay a normal pending row, never red-striped. e2's
+    // medic quota is 1 (slot #0 empty); a manual add lands at slot #1.
+    bloc.add(StageManualAdd(
+      event: futureEvent('e2', roleRequirements: const {'medic': 1}),
+      member: member('m9'),
+      roleType: 'medic',
+    ));
+    await pumpEventQueue();
+
+    final afterAdd = bloc.state as AssignmentSlotsLoaded;
+    expect(afterAdd.stagedSlotKeys, contains('e2_medic_1'));
+    expect(afterAdd.stagedGoneSlotKeys, isNot(contains('e2_medic_1')));
+    expect(
+      afterAdd.slots.any((s) =>
+          s.event.id == 'e2' && s.role.key == 'medic' && s.slotIndex == 1),
+      isTrue,
+    );
+  });
+
+  test(
       'a re-materialized gone row is Equatable-stable across rebuilds '
       '(no DateTime.now() churn that would defeat no-op emit suppression)',
       () async {
@@ -941,5 +1064,869 @@ void main() {
 
     final result = await completer.future;
     expect(result.isSuccess, isTrue);
+  });
+
+  // --- Task 10: Save applies staged DELETIONS + survivor reindex + exact ------
+  // --- eventQuotaSets (add / in-quota-delete drive the derived quota target) --
+  //
+  // These seed a medic quota of 2 with slots #0=a1(m1), #1=a2(m2) so an
+  // in-quota deletion has a survivor to renumber and a real baseline (2) to
+  // report as the backend concurrency guard's `expected`.
+
+  // A save stub that also matches the (now non-empty) eventQuotaSets arg, so
+  // the batch resolves via thenAnswer rather than the missing-stub fallback.
+  void stubBatchAcceptingSets() {
+    when(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
+    )).thenAnswer((_) async {});
+  }
+
+  Future<AssignmentSlotsLoaded> loadMedic2(AssignmentBloc bloc) async {
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m2'), member('m9')]);
+    assignmentStream.add([
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    await pumpEventQueue();
+    return bloc.state as AssignmentSlotsLoaded;
+  }
+
+  test(
+      'Save of a staged deletion sends the delete + reindex + a lowering '
+      'eventQuotaSet', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    final loaded = await loadMedic2(bloc);
+
+    final medic0 = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    bloc.add(StageSlotDeletion(medic0));
+    await pumpEventQueue();
+
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: captureAnyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured;
+    // Disambiguate by element type (do not rely on capture order).
+    final updates =
+        captured.firstWhere((c) => c is List<Assignment>) as List<Assignment>;
+    final deletes =
+        captured.firstWhere((c) => c is List<String>) as List<String>;
+    final sets = captured.firstWhere(
+        (c) => c is! List<Assignment> && c is! List<String>) as List;
+
+    expect(deletes, contains('a1')); // deleted #0
+    // m2 reindexed from #1 -> #0 (survivor renumbered contiguous from 0).
+    expect(updates.any((u) => u.id == 'a2' && u.slotIndex == 0), isTrue);
+    // Exact lowering target: baseline 2 - 1 in-quota deletion = 1;
+    // `expected` = the captured baseline (2) for the backend concurrency guard.
+    expect(sets.single,
+        (eventId: 'e1', roleType: 'medic', target: 1, expected: 2));
+    expect(bloc.hasStagedChanges, isFalse);
+  });
+
+  test('Save of a manual-add sends a raising eventQuotaSet + the create',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    await loadMedic2(bloc);
+
+    bloc.add(StageManualAdd(
+      event: futureEvent('e1', roleRequirements: const {'medic': 2}),
+      member: member('m9'),
+      roleType: 'medic',
+    ));
+    await pumpEventQueue();
+
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: captureAnyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured;
+    final creates =
+        captured.firstWhere((c) => c is List<Assignment>) as List<Assignment>;
+    final sets =
+        captured.firstWhere((c) => c is! List<Assignment>) as List;
+
+    expect(creates.any((a) => a.teamMemberId == 'm9'), isTrue);
+    // baseline 2 + 1 add = 3; expected = baseline 2.
+    expect(sets.single,
+        (eventId: 'e1', roleType: 'medic', target: 3, expected: 2));
+    expect(bloc.hasStagedChanges, isFalse);
+  });
+
+  test(
+      'a staged manual-add emits its quota via eventQuotaSets and NOT a '
+      'duplicate eventQuotaBump for the same off-quota create (carry c)',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    await loadMedic2(bloc);
+
+    bloc.add(StageManualAdd(
+      event: futureEvent('e1', roleRequirements: const {'medic': 2}),
+      member: member('m9'),
+      roleType: 'medic',
+    ));
+    await pumpEventQueue();
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    final bumps = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: captureAnyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
+    )).captured.single as List;
+    // The manual-add's create lands off-quota (slot 2 >= live quota 2). Without
+    // carry (c) that create ALSO produces a max-merge bump; carry (c) drops it
+    // because the exact SET already sets the quota (the backend would otherwise
+    // read the event twice and the SET wins the batch anyway).
+    expect(bumps, isEmpty);
+  });
+
+  test(
+      'a manual-add does NOT reindex/compact a pre-existing off-quota DB row '
+      'into the new slot (reindex is deletion-only, no collision)', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+    roleStream.add([medicRole()]);
+    teamStream
+        .add([member('m1'), member('m2'), member('m3'), member('m9')]);
+    assignmentStream.add([
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+      // Off-quota DB row (quota is 2, so indices 0-1 are in-quota).
+      assignment('a3', 'e1', 'm3', slotIndex: 5),
+    ]);
+    await pumpEventQueue();
+
+    // A PURE manual-add (no deletion). It creates m9 at slot 2 (liveQuota).
+    bloc.add(StageManualAdd(
+      event: futureEvent('e1', roleRequirements: const {'medic': 2}),
+      member: member('m9'),
+      roleType: 'medic',
+    ));
+    await pumpEventQueue();
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    final updates = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
+    )).captured.single as List<Assignment>;
+    // Reindex must NOT fire for a deletion-free role: the off-quota a3 stays at
+    // slot 5. Compacting it to slot 2 would collide with the manual-add create.
+    expect(updates.any((u) => u.id == 'a3'), isFalse);
+    expect(updates, isEmpty);
+  });
+
+  // --- Carry (a): a discarded session must not leak a stale derived-quota -----
+  // --- baseline into the next staging session --------------------------------
+
+  test(
+      'DiscardAllStagedChanges clears the derived-quota baseline so a later '
+      'live quota change is not shadowed by a stale captured baseline',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    final loaded = await loadMedic2(bloc);
+
+    final medic0 = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    // Stage a deletion -> seeds _baselineQuota[e1_medic] = live quota (2).
+    bloc.add(StageSlotDeletion(medic0));
+    await pumpEventQueue();
+    expect(bloc.derivedQuota('e1', 'medic'), 1); // 2 baseline - 1 deletion
+
+    bloc.add(const DiscardAllStagedChanges());
+    await pumpEventQueue();
+    expect(bloc.hasStagedChanges, isFalse);
+
+    // A concurrent DB quota change grows medic to 5. With the baseline CLEARED,
+    // derivedQuota tracks the live quota; a leaked stale baseline (2) would
+    // shadow it and wrongly return 2.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 5})]);
+    await pumpEventQueue();
+    expect(bloc.derivedQuota('e1', 'medic'), 5);
+  });
+
+  test(
+      'DiscardStagedSlot drops a role\'s baseline once it has no remaining '
+      'staged changes (so a later live quota change is not shadowed)',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    final loaded = await loadMedic2(bloc);
+
+    final medic0 = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    bloc.add(StageSlotDeletion(medic0)); // seeds baseline 2, key e1_medic_0
+    await pumpEventQueue();
+    expect(bloc.derivedQuota('e1', 'medic'), 1);
+
+    // Discard that single slot -> role medic now has NO staged changes left ->
+    // its baseline entry must be dropped.
+    bloc.add(const DiscardStagedSlot('e1_medic_0'));
+    await pumpEventQueue();
+    expect(bloc.hasStagedChanges, isFalse);
+
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 5})]);
+    await pumpEventQueue();
+    expect(bloc.derivedQuota('e1', 'medic'), 5); // tracks live, no stale baseline
+  });
+
+  // --- Fix wave (Task 10 review): quota-target / bump math edge cases --------
+  //
+  // Invariant enforced per role: after the batch applies, eventQuotaSet.target
+  // must fit every create the admin wants IN-quota (target >= max(slotIndex+1)
+  // over that role's creates) AND reflect only the deletions ACTUALLY applied
+  // (not takeDb-cancelled ones).
+
+  // Record aliases for capture disambiguation (bump has `count`, set has
+  // `target`/`expected`; both are List<record>, distinct runtime types).
+  List<({int count, String eventId, String roleType})> pickBumps(
+          List captured) =>
+      captured.firstWhere(
+              (c) => c is List<({int count, String eventId, String roleType})>)
+          as List<({int count, String eventId, String roleType})>;
+  List<({String eventId, int expected, String roleType, int target})> pickSets(
+          List captured) =>
+      captured.firstWhere((c) =>
+              c is List<
+                  ({String eventId, int expected, String roleType, int target})>)
+          as List<({String eventId, int expected, String roleType, int target})>;
+
+  test(
+      'Fix #1: an override-restore create + same-role manual-add makes the '
+      'eventQuotaSet target cover the highest create slotIndex (no row left '
+      'off-quota) and drops the now-redundant bump', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 1})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m9')]);
+    assignmentStream.add([assignment('a1', 'e1', 'm1', slotIndex: 0)]);
+    await pumpEventQueue();
+
+    final slot0 = (bloc.state as AssignmentSlotsLoaded)
+        .slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    // Notes-edit on slot0 (baseline m1) — will become a slotVanished conflict.
+    bloc.add(StageNotesChange(slot: slot0, notes: 'edited'));
+    await pumpEventQueue();
+
+    // Concurrent: medic quota shrinks 1 -> 0 and a1 is deleted (slot0 vanishes).
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 0})]);
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    // Admin also manual-adds m9 to medic (baseline is now 0 -> appends slot 1).
+    bloc.add(StageManualAdd(
+      event: futureEvent('e1', roleRequirements: const {'medic': 0}),
+      member: member('m9'),
+      roleType: 'medic',
+    ));
+    await pumpEventQueue();
+
+    // Save; the slotVanished conflict is resolved overrideDb (dialog default).
+    bloc.add(const SaveStagedChanges(
+      resolutions: {'e1_medic_0': ConflictResolution.overrideDb},
+    ));
+    await pumpEventQueue();
+
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: captureAnyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: captureAnyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured;
+    final creates =
+        captured.firstWhere((c) => c is List<Assignment>) as List<Assignment>;
+    final bumps = pickBumps(captured);
+    final sets = pickSets(captured);
+
+    // Both rows are (re)created: a1 restored @0, m9 @1.
+    expect(creates.map((a) => a.slotIndex).toSet(), {0, 1});
+    // The SET target must cover the highest create slotIndex+1 (m9 @1 -> 2), so
+    // neither row is left off-quota. Pre-fix target was derivedQuota (1).
+    expect(sets.single.target, greaterThanOrEqualTo(2));
+    // …and the per-role bump is redundant (the SET covers all creates).
+    expect(bumps.where((b) => b.roleType == 'medic'), isEmpty);
+  });
+
+  test(
+      'Fix #2: a staged deletion resolved takeDb is NOT counted in the '
+      'eventQuotaSet target (the cancelled deletion must not lower the quota)',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    final loaded = await loadMedic2(bloc);
+
+    final medic0 = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    bloc.add(StageSlotDeletion(medic0)); // baseline 2, key e1_medic_0
+    await pumpEventQueue();
+
+    // Concurrent: a1 is notes-edited in the DB (NOT deleted) so the staged
+    // deletion becomes a type-F conflict the admin resolves "take DB".
+    assignmentStream.add([
+      assignment('a1', 'e1', 'm1', slotIndex: 0).copyWith(notes: 'db-edited'),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    await pumpEventQueue();
+
+    bloc.add(const SaveStagedChanges(
+      resolutions: {'e1_medic_0': ConflictResolution.takeDb},
+    ));
+    await pumpEventQueue();
+
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: captureAnyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured;
+    final deletes =
+        captured.firstWhere((c) => c is List<String>) as List<String>;
+    final updates =
+        captured.firstWhere((c) => c is List<Assignment>) as List<Assignment>;
+    final sets = pickSets(captured);
+
+    expect(deletes, isEmpty); // takeDb -> a1 not deleted
+    expect(updates, isEmpty); // the only deletion was cancelled -> no reindex
+    // The cancelled deletion must NOT lower the quota: target stays baseline 2.
+    expect(sets.single,
+        (eventId: 'e1', roleType: 'medic', target: 2, expected: 2));
+  });
+
+  test(
+      'Fix #3: a reindex-only save on an extra-past event marks that event for '
+      'refresh (touchedEventIds), so its stale cache is reconciled', () async {
+    FilterPersistence.showPastEvents = true;
+    addTearDown(() => FilterPersistence.showPastEvents = false);
+    stubBatchAcceptingSets();
+    // Extra-past event e0 (out of window), fetched via the "load more" round-trip.
+    when(eventRepo.getEventsBeforeDate(any, limit: anyNamed('limit')))
+        .thenAnswer((_) async => [pastEvent('e0')]);
+    when(assignmentRepo.getAssignmentsByEventIds(['e0'])).thenAnswer((_) async =>
+        [
+          assignment('a0', 'e0', 'm1', slotIndex: 0),
+          assignment('a0b', 'e0', 'm2', slotIndex: 1),
+        ]);
+    when(eventRepo.getEventById('e0')).thenAnswer((_) async => pastEvent('e0'));
+
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1')]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m2')]);
+    assignmentStream.add(const <Assignment>[]); // live window empty
+    await pumpEventQueue();
+
+    // Load the extra-past event into the cache.
+    bloc.add(const LoadMorePastAssignmentSlots());
+    await pumpEventQueue();
+    final pastSlot0 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+        (s) => s.event.id == 'e0' && s.role.key == 'medic' && s.slotIndex == 0);
+
+    // Stage a deletion of e0's slot0 (a0).
+    bloc.add(StageSlotDeletion(pastSlot0));
+    await pumpEventQueue();
+
+    // Concurrent remote delete of a0: refresh the extra-past cache so a0 is
+    // gone but the sibling a0b survives. Now the staged deletion has NO DB row
+    // (dbAssignment == null) yet a0b still needs a reindex 1 -> 0. Only the
+    // reindex-site touchedEventIds.add covers e0 (the delete branch adds nothing).
+    when(assignmentRepo.getAssignmentsByEventIds(['e0'])).thenAnswer(
+        (_) async => [assignment('a0b', 'e0', 'm2', slotIndex: 1)]);
+    bloc.add(const ExternalExtraPastMutation('e0'));
+    await pumpEventQueue();
+
+    // Isolate the save-triggered refresh from the load-more / mutation calls.
+    clearInteractions(eventRepo);
+
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    // The batch ran (a0b reindexed to slot 0, no delete), and carry (b) fired a
+    // refresh for e0 — proving the reindex-only path marked the event touched.
+    final updates = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
+    )).captured.single as List<Assignment>;
+    expect(updates.any((u) => u.id == 'a0b' && u.slotIndex == 0), isTrue);
+    verify(eventRepo.getEventById('e0')).called(1); // _refreshExtraPastEvent(e0)
+  });
+
+  // --- Final-review fix wave (Task 10 ⨉ Task 11): quota-target/bump math ------
+
+  test(
+      'Critical #1: a type-G quotaChanged override emits expected=LIVE quota '
+      '(not baseline), so the backend applies the set instead of 409-ing',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    final loaded = await loadMedic2(bloc); // medic 2, a1@0, a2@1
+    final medic0 = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    // In-quota deletion -> baseline 2, derived 1.
+    bloc.add(StageSlotDeletion(medic0));
+    await pumpEventQueue();
+
+    // Concurrent co-admin RAISES the live medic quota 2 -> 5 (rows unchanged).
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 5})]);
+    await pumpEventQueue();
+
+    // Sanity: this is a type-G conflict keyed by the eventRoleKey 'e1_medic'.
+    final conflicts = bloc
+        .classifyStagedConflicts((bloc.state as AssignmentSlotsLoaded).slots);
+    expect(
+        conflicts.any((c) =>
+            c.slotKey == 'e1_medic' &&
+            c.type == AssignmentConflictType.quotaChanged),
+        isTrue);
+
+    // Admin overrides (the dialog DEFAULT).
+    bloc.add(const SaveStagedChanges(
+      resolutions: {'e1_medic': ConflictResolution.overrideDb},
+    ));
+    await pumpEventQueue();
+
+    final sets = pickSets(verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured);
+    // target = derived (1); expected = LIVE (5), NOT baseline (2). The backend's
+    // planEventQuotaSetWrites accepts a set when live == expected on override.
+    expect(sets.single,
+        (eventId: 'e1', roleType: 'medic', target: 1, expected: 5));
+  });
+
+  test(
+      'Important #2: an in-quota deletion + same-role manual-add keeps the '
+      'quota (target == baseline), repacks the manual-add into the freed slot, '
+      'and leaves no gap or duplicate', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    final loaded = await loadMedic2(bloc); // medic 2, a1@0(m1), a2@1(m2)
+    // Swipe-delete slot1 (a2/m2) — an IN-quota deletion.
+    final medic1 = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 1);
+    bloc.add(StageSlotDeletion(medic1));
+    await pumpEventQueue();
+    // Manual-add m9 (appends at slotIndex = liveQuota 2).
+    bloc.add(StageManualAdd(
+      event: futureEvent('e1', roleRequirements: const {'medic': 2}),
+      member: member('m9'),
+      roleType: 'medic',
+    ));
+    await pumpEventQueue();
+    expect(bloc.derivedQuota('e1', 'medic'), 2); // 2 - 1 delete + 1 add
+
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: captureAnyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: captureAnyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured;
+    // creates and updates are BOTH List<Assignment>; fold them so we don't rely
+    // on capture order to tell them apart.
+    final allWrites =
+        captured.whereType<List<Assignment>>().expand((l) => l).toList();
+    final deletes =
+        captured.firstWhere((c) => c is List<String>) as List<String>;
+    final sets = pickSets(captured);
+
+    // Quota is NOT inflated: target stays baseline (2), not baseline+adds (3).
+    expect(sets.single.target, 2);
+    // a2 deleted; m9 repacked into the freed IN-quota slot (index 1).
+    expect(deletes, contains('a2'));
+    final m9 = allWrites.firstWhere((a) => a.teamMemberId == 'm9');
+    expect(m9.slotIndex, 1);
+    // No two writes target the same (event, role, slotIndex), and nothing is
+    // left off-quota at index 2.
+    final medicWriteSlots =
+        allWrites.where((a) => a.roleType == 'medic').map((a) => a.slotIndex).toList();
+    expect(medicWriteSlots.toSet().length, medicWriteSlots.length);
+    expect(medicWriteSlots, isNot(contains(2)));
+  });
+
+  test(
+      'Minor #3: a type-G takeDb still applies the deletion AND reindexes '
+      'survivors (only the quota-set is skipped)', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    final loaded = await loadMedic2(bloc);
+    final medic0 = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    bloc.add(StageSlotDeletion(medic0)); // delete slot0 (a1)
+    await pumpEventQueue();
+    // Concurrent live quota raise -> type-G conflict on 'e1_medic'.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 5})]);
+    await pumpEventQueue();
+
+    // Admin keeps the DB quota (takeDb) for the role-level type-G conflict.
+    bloc.add(const SaveStagedChanges(
+      resolutions: {'e1_medic': ConflictResolution.takeDb},
+    ));
+    await pumpEventQueue();
+
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: captureAnyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured;
+    final updates =
+        captured.firstWhere((c) => c is List<Assignment>) as List<Assignment>;
+    final deletes =
+        captured.firstWhere((c) => c is List<String>) as List<String>;
+    final sets = pickSets(captured);
+
+    expect(deletes, contains('a1')); // deletion still applied under takeDb
+    // Survivor a2 reindexed 1 -> 0 despite the role-level takeDb.
+    expect(updates.any((u) => u.id == 'a2' && u.slotIndex == 0), isTrue);
+    // The quota-SET is skipped (keep the DB quota).
+    expect(sets.where((s) => s.roleType == 'medic'), isEmpty);
+  });
+
+  test(
+      'Minor #4: deleting ONLY an off-quota row seeds no phantom type-G on a '
+      'concurrent quota change, yet still deletes at Save', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m2'), member('m3')]);
+    assignmentStream.add([
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+      assignment('a3', 'e1', 'm3', slotIndex: 5), // off-quota (quota 2)
+    ]);
+    await pumpEventQueue();
+
+    final offSlot = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+        (s) => s.role.key == 'medic' && s.isOffQuota && s.slotIndex == 5);
+    bloc.add(StageSlotDeletion(offSlot)); // off-quota-only deletion
+    await pumpEventQueue();
+
+    // A concurrent DB quota change would (pre-fix) fire a phantom type-G here.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 3})]);
+    await pumpEventQueue();
+    final conflicts = bloc
+        .classifyStagedConflicts((bloc.state as AssignmentSlotsLoaded).slots);
+    expect(
+        conflicts
+            .where((c) => c.type == AssignmentConflictType.quotaChanged),
+        isEmpty); // no phantom type-G
+
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+    final deletes = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: captureAnyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
+    )).captured.single as List<String>;
+    expect(deletes, contains('a3')); // off-quota delete still applies
+  });
+
+  test(
+      'Minor #5: Save-success clears the baseline per fully-applied role, not '
+      'only when staging empties, so a mid-save survivor cannot strand a stale '
+      'baseline', () async {
+    final batchCompleter = Completer<void>();
+    when(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
+    )).thenAnswer((_) => batchCompleter.future);
+
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    // Two future events, each medic:2 with two assignments.
+    eventStream.add([
+      futureEvent('e1', roleRequirements: const {'medic': 2}),
+      futureEvent('e2', roleRequirements: const {'medic': 2}),
+    ]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m2')]);
+    assignmentStream.add([
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+      assignment('b1', 'e2', 'm1', slotIndex: 0),
+      assignment('b2', 'e2', 'm2', slotIndex: 1),
+    ]);
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final e1medic0 = loaded.slots.firstWhere(
+        (s) => s.event.id == 'e1' && s.role.key == 'medic' && s.slotIndex == 0);
+    final e2medic0 = loaded.slots.firstWhere(
+        (s) => s.event.id == 'e2' && s.role.key == 'medic' && s.slotIndex == 0);
+
+    // Stage an in-quota deletion on e1 (seeds baseline e1_medic = 2), Save.
+    bloc.add(StageSlotDeletion(e1medic0));
+    await pumpEventQueue();
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    // Mid-save (overlay-less leave-guard), stage a deletion on e2 -> a survivor
+    // that keeps _stagedChanges non-empty when the save-success clear runs.
+    bloc.add(StageSlotDeletion(e2medic0));
+    await pumpEventQueue();
+
+    batchCompleter.complete();
+    await pumpEventQueue();
+
+    // e1 fully applied (its entry removed); e2 survives.
+    expect(bloc.stagedCount, 1);
+
+    // Concurrent co-admin raises e1's live medic quota to 7. With e1_medic's
+    // baseline cleared per-role, derivedQuota tracks the LIVE quota; a coarse
+    // clear (only when _stagedChanges empties) would leave the stale baseline 2.
+    eventStream.add([
+      futureEvent('e1', roleRequirements: const {'medic': 7}),
+      futureEvent('e2', roleRequirements: const {'medic': 2}),
+    ]);
+    await pumpEventQueue();
+    expect(bloc.derivedQuota('e1', 'medic'), 7);
+  });
+
+  // ---------------------------------------------------------------------
+  // Manual-add flag bugfix: the Save-time quota math (both the maxCreateBound
+  // "Fix #1" logic and the resolution-aware adds/inQuotaDeletions "Fix #2"
+  // recount) must key off StagedAssignmentChange.isManualAdd, never off a
+  // slot's position relative to `_baselineQuota`. Repro: role R (medic) quota
+  // 1, slot #0 empty. Swipe-delete slot #0 (baseline captured = 1). The event
+  // form immediately bumps R's DB quota 1 -> 2 (a real write; baseline stays
+  // the stale 1 on purpose — the resulting type-G divergence is intentional).
+  // Filling the freed slot #1 via StageMemberChange (an ORDINARY fill, NOT a
+  // manual add) used to inflate the "adds" count because slotIndex(1) >=
+  // stale-baseline(1) — corrupting BOTH the rendered grid (see
+  // assignment_bloc_quota_staging_test.dart) AND this Save-time target math.
+  // ---------------------------------------------------------------------
+
+  Future<void> stageQuotaRaiseWithOrdinaryFill(AssignmentBloc bloc) async {
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 1})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m9')]);
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    slotForIndex(int index) => (bloc.state as AssignmentSlotsLoaded)
+        .slots
+        .firstWhere((slot) =>
+            slot.event.id == 'e1' &&
+            slot.role.key == 'medic' &&
+            slot.slotIndex == index);
+
+    // Swipe-delete the (empty) slot #0 -> seeds _baselineQuota['e1_medic']=1.
+    bloc.add(StageSlotDeletion(slotForIndex(0)));
+    await pumpEventQueue();
+
+    // Event form: an admin immediately bumps the DB quota 1 -> 2.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+    await pumpEventQueue();
+
+    // Fill the freed slot #1 via its dropdown — an ORDINARY fill, NOT a
+    // manual add.
+    bloc.add(StageMemberChange(slot: slotForIndex(1), member: member('m9')));
+    await pumpEventQueue();
+  }
+
+  test(
+      'manual-add flag: an overrideDb type-G resolution after an ordinary '
+      'fill targets the LOCAL staged intent (0 — the only slot was deleted), '
+      'not the stale-baseline miscount (1)', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    await stageQuotaRaiseWithOrdinaryFill(bloc);
+
+    bloc.add(const SaveStagedChanges(
+      resolutions: {'e1_medic': ConflictResolution.overrideDb},
+    ));
+    await pumpEventQueue();
+
+    final sets = pickSets(verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured);
+
+    // expected = LIVE quota (2, per CRITICAL #1); target = the admin's real
+    // local intent (0). Pre-fix this computed target 1 (the ordinary fill
+    // miscounted as a manual add against the stale baseline).
+    expect(sets.single,
+        (eventId: 'e1', roleType: 'medic', target: 0, expected: 2));
+  });
+
+  test(
+      'manual-add flag: a takeDb type-G resolution after an ordinary fill '
+      'keeps the DB quota (no eventQuotaSet emitted for the role)', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    await stageQuotaRaiseWithOrdinaryFill(bloc);
+
+    bloc.add(const SaveStagedChanges(
+      resolutions: {'e1_medic': ConflictResolution.takeDb},
+    ));
+    await pumpEventQueue();
+
+    final sets = pickSets(verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured);
+
+    expect(sets.where((s) => s.roleType == 'medic'), isEmpty);
+  });
+
+  // ---------------------------------------------------------------------
+  // Re-baseline on the admin's OWN event-form quota edit (delta model).
+  //
+  // Same repro as stageQuotaRaiseWithOrdinaryFill above, but this time the
+  // admin's own event-form edit ALSO dispatches RebaselineQuotasForEvent (what
+  // the assignments screen now fires after the modal saves). Re-syncing the
+  // baseline to the new quota (2) makes the staged in-quota deletion apply as a
+  // DELTA (2 - 1 = 1): NO type-G conflict to resolve, and the emitted
+  // eventQuotaSet.target reflects the re-synced delta (1), not the stale-
+  // baseline miscount (0).
+  // ---------------------------------------------------------------------
+
+  Future<void> stageQuotaRaiseWithOwnRebaseline(AssignmentBloc bloc) async {
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 1})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m9')]);
+    // One in-quota DB assignment at slot #0.
+    assignmentStream.add([assignment('a1', 'e1', 'm1', slotIndex: 0)]);
+    await pumpEventQueue();
+
+    slotForIndex(int index) => (bloc.state as AssignmentSlotsLoaded)
+        .slots
+        .firstWhere((slot) =>
+            slot.event.id == 'e1' &&
+            slot.role.key == 'medic' &&
+            slot.slotIndex == index);
+
+    // Swipe-delete the (filled) slot #0 -> seeds _baselineQuota['e1_medic']=1.
+    bloc.add(StageSlotDeletion(slotForIndex(0)));
+    await pumpEventQueue();
+
+    // The admin's OWN event-form edit: DB quota 1 -> 2 AND a re-baseline.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+    bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 2}));
+    await pumpEventQueue();
+
+    // Fill the freed slot #1 via its dropdown — an ORDINARY fill.
+    bloc.add(StageMemberChange(slot: slotForIndex(1), member: member('m9')));
+    await pumpEventQueue();
+  }
+
+  test(
+      'an own event-form quota raise (RebaselineQuotasForEvent) re-baselines: '
+      'Save needs no type-G resolution and emits an eventQuotaSet whose target '
+      'is the re-synced delta (2 - 1 = 1), expected = the re-synced baseline (2)',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    await stageQuotaRaiseWithOwnRebaseline(bloc);
+
+    // Sanity: no type-G conflict to resolve (the admin's own edit re-synced
+    // the baseline), so Save runs with NO resolutions.
+    final conflicts = bloc
+        .classifyStagedConflicts((bloc.state as AssignmentSlotsLoaded).slots);
+    expect(conflicts.any((c) => c.type == AssignmentConflictType.quotaChanged),
+        isFalse);
+
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    final sets = pickSets(verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured);
+
+    // Delta on the re-synced baseline: 2 - 1 in-quota deletion = target 1;
+    // expected = the re-synced baseline (2). Pre-fix (stale baseline 1) this
+    // computed target 0 with expected 1.
+    expect(sets.single,
+        (eventId: 'e1', roleType: 'medic', target: 1, expected: 2));
+    expect(bloc.hasStagedChanges, isFalse);
   });
 }

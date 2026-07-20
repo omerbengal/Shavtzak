@@ -12,6 +12,7 @@
 // repository types.
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
@@ -168,6 +169,18 @@ void main() {
         userCacheService: UserCacheService(),
       );
 
+  /// Task 12: the cache now stores a JSON OBJECT
+  /// (`{'changes': [...], 'baselineQuota': {...}}`), not a bare list — decode
+  /// down to just the changes list for tests that only care about that shape.
+  Future<List<dynamic>> cachedChanges() async {
+    final raw = await UserCacheService().getPendingAssignmentChanges();
+    if (raw == null) return const [];
+    final decoded = jsonDecode(raw);
+    return decoded is List
+        ? decoded
+        : (decoded['changes'] as List? ?? const []);
+  }
+
   test('staging a member fill marks the slot filled and dirty', () async {
     final bloc = buildBloc();
     addTearDown(() async => bloc.close());
@@ -196,7 +209,7 @@ void main() {
     expect((bloc.state as AssignmentSlotsLoaded).pendingOperations['e1_medic_0']!.type, PendingOperationType.createAssignment);
 
     // Mirrored to cache (crash recovery) — awaited, not fire-and-forget.
-    final cached = await UserCacheService().getPendingAssignmentChanges();
+    final cached = await cachedChanges();
     expect(cached, hasLength(1));
     expect(cached.single['slotKey'], 'e1_medic_0');
     expect(cached.single['desiredMemberId'], 'm1');
@@ -234,7 +247,7 @@ void main() {
     );
 
     // Cache mirrors the reverted (now-empty) staging map.
-    final cached = await UserCacheService().getPendingAssignmentChanges();
+    final cached = await cachedChanges();
     expect(cached, isEmpty);
   });
 
@@ -291,8 +304,7 @@ void main() {
     bloc.add(StageMemberChange(slot: emptyMedicSlot, member: member('m1')));
     await pumpEventQueue();
     expect(bloc.hasStagedChanges, isTrue);
-    expect(
-        await UserCacheService().getPendingAssignmentChanges(), isNot(isEmpty));
+    expect(await cachedChanges(), isNot(isEmpty));
 
     bloc.add(const DiscardAllStagedChanges());
     await pumpEventQueue();
@@ -300,17 +312,22 @@ void main() {
     expect(bloc.hasStagedChanges, isFalse);
     final after = bloc.state as AssignmentSlotsLoaded;
     expect(after.stagedSlotKeys, isEmpty);
-    expect(await UserCacheService().getPendingAssignmentChanges(), isEmpty);
+    expect(await cachedChanges(), isEmpty);
   });
 
   test(
-      'RehydrateStagedChanges restores a cached staged change into a fresh '
-      'bloc and it renders on the grid', () async {
-    // Pre-seed the cache as if a previous app session staged this change and
-    // never saved (crash recovery scenario) — written directly via the JSON
-    // shape StagedAssignmentChange.toJson/fromJson round-trip, matching Task
-    // 1/2's contract.
-    await UserCacheService().savePendingAssignmentChanges([
+      'RehydrateStagedChanges tolerates the LEGACY bare-list cache format '
+      '(pre-Task-12, no baselineQuota ever persisted): restores the staged '
+      'change, renders it on the grid, and leaves the baseline empty',
+      () async {
+    // Pre-seed the cache as if a previous app session (running OLD code,
+    // before Task 12's wrapper-object format) staged this change and never
+    // saved (crash recovery scenario) — a bare JSON list, written directly
+    // via the JSON shape StagedAssignmentChange.toJson/fromJson round-trip,
+    // matching Task 1/2's contract. _onRehydrateStagedChanges must decode
+    // this exactly as before (no baseline to restore) rather than choke on
+    // the missing wrapper object.
+    await UserCacheService().savePendingAssignmentChanges(jsonEncode([
       {
         'slotKey': 'e1_medic_0',
         'eventId': 'e1',
@@ -328,7 +345,7 @@ void main() {
         'desiredAssignmentId': 'staged-a1',
         'stagedAtMillis': 1000,
       }
-    ]);
+    ]));
 
     final bloc = buildBloc();
     addTearDown(() async => bloc.close());
@@ -351,6 +368,13 @@ void main() {
     final medicSlot = after.slots
         .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
     expect(medicSlot.isFilled, isTrue);
+    // Empty baseline: this staged change never touched quota (it's an
+    // ordinary fill, baselineMemberId == null meaning the slot merely
+    // started empty — not a StageManualAdd/StageSlotDeletion), and a legacy
+    // cache never persisted a baseline to begin with. derivedQuota falls
+    // back to the raw live quota (1, this file's default) — the tell that
+    // no stray baseline got seeded from the legacy rehydrate.
+    expect(bloc.derivedQuota('e1', 'medic'), 1);
     expect(medicSlot.currentAssignment!.teamMemberId, 'm1');
   });
 }

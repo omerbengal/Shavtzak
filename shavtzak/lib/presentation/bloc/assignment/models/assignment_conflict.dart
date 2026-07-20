@@ -8,6 +8,7 @@ enum AssignmentConflictType {
   slotVanished, // D: quota shrank; slot no longer exists
   memberGone, // E: assigned member deactivated/deleted — DEFERRED, not produced yet
   notesChanged, // F: notes edit collides with a DB notes change
+  quotaChanged, // G: role quota changed in DB under a staged quota change
 }
 
 /// How the admin chose to resolve a two-button [AssignmentConflict].

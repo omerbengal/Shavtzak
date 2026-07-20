@@ -72,6 +72,12 @@ class _ConflictResolutionDialogState extends State<ConflictResolutionDialog> {
     setState(() => _resolutions[slotKey] = resolution);
   }
 
+  // quotaChanged (G — role quota changed in DB under a staged quota change)
+  // is not special-cased here: it falls through to the default 'דרוס DB',
+  // same as slotTaken/targetRemoved/clearCollision/notesChanged. Its override
+  // resolution is read at Save via resolutions[erk] (erk = the eventRoleKey,
+  // which IS this conflict's slotKey) to decide whether to emit or skip that
+  // role's eventQuotaSet — see _onSaveStagedChanges.
   String _overrideLabel(AssignmentConflict conflict) =>
       conflict.type == AssignmentConflictType.slotVanished
           ? 'שחזר למכסה'

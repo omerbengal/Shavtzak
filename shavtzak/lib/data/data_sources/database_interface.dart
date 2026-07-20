@@ -17,6 +17,13 @@ import '../../core/constants/calendar_constants.dart';
 /// applies `max(current, count)`, so a concurrent increase is never clobbered.
 typedef EventQuotaBump = ({String eventId, String roleType, int count});
 
+/// A request to set an event's role quota to EXACTLY [target] atomically inside
+/// [DatabaseInterface.saveAssignmentsBatch] — the staged quota lower/set path.
+/// [expected] is the client's baseline quota, used for optimistic-concurrency
+/// (the backend rejects the whole save when live ∉ {expected, target}). Unlike
+/// [EventQuotaBump] (max-merge raise), this can LOWER a quota.
+typedef EventQuotaSet = ({String eventId, String roleType, int target, int expected});
+
 /// Abstract database interface
 /// This allows the app to be backend-agnostic
 /// Implementations: FirestoreDatabase, SupabaseDatabase, LocalDatabase, etc.
@@ -215,12 +222,14 @@ abstract class DatabaseInterface {
 
   /// Atomically create + update + delete assignments in one server-side batch.
   /// [eventQuotaBumps] optionally raises event role quotas in the SAME batch
-  /// (restore-to-quota; see [EventQuotaBump]).
+  /// (restore-to-quota; see [EventQuotaBump]). [eventQuotaSets] optionally
+  /// sets/lowers event role quotas in the SAME batch (see [EventQuotaSet]).
   Future<void> saveAssignmentsBatch({
     required List<Assignment> creates,
     required List<Assignment> updates,
     required List<String> deletes,
     List<EventQuotaBump> eventQuotaBumps,
+    List<EventQuotaSet> eventQuotaSets,
   });
 
   // ========== Utility ==========

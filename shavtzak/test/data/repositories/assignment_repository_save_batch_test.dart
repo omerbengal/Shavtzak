@@ -23,6 +23,7 @@ void main() {
       updates: anyNamed('updates'),
       deletes: anyNamed('deletes'),
       eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
     )).thenAnswer((_) async {});
     final repo = AssignmentRepository(db);
 
@@ -35,6 +36,7 @@ void main() {
       updates: captureAnyNamed('updates'),
       deletes: captureAnyNamed('deletes'),
       eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
     )).captured;
     final creates = captured[0] as List<Assignment>;
     final updates = captured[1] as List<Assignment>;
@@ -53,6 +55,7 @@ void main() {
       updates: anyNamed('updates'),
       deletes: anyNamed('deletes'),
       eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
     )).thenAnswer((_) async {});
     final repo = AssignmentRepository(db);
 
@@ -67,5 +70,36 @@ void main() {
     // immediately-following post-save RebuildAssignmentSlots built an all-empty
     // grid ("0 משובצים") that never recovered once the DB had settled.
     expect(repo.getCurrentAssignments(), hasLength(2));
+  });
+
+  test('saveAssignmentsBatch forwards eventQuotaSets to the database', () async {
+    final db = MockDatabaseInterface();
+    when(db.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
+    )).thenAnswer((_) async {});
+    final repo = AssignmentRepository(db);
+
+    await repo.saveAssignmentsBatch(
+      creates: const [],
+      updates: const [],
+      deletes: const [],
+      eventQuotaSets: const [
+        (eventId: 'e1', roleType: 'medic', target: 2, expected: 3),
+      ],
+    );
+
+    final captured = verify(db.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: captureAnyNamed('eventQuotaSets'),
+    )).captured.single as List<EventQuotaSet>;
+    expect(captured.single.target, 2);
+    expect(captured.single.expected, 3);
   });
 }
