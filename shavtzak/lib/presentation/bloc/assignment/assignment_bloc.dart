@@ -1506,9 +1506,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex)))
           a,
     ];
-    // add the desired assignment for every staged fill/swap (staged CLEARs add nothing)
+    // add the desired assignment for every staged fill/swap (staged CLEARs and
+    // staged DELETIONS add nothing — a staged deletion frees the member for
+    // same-day availability, since the assignment will be gone at Save, even
+    // though its desiredMemberId is still set (kept only for rendering the
+    // red-stripe row) so isClear alone does not catch it).
     for (final c in _stagedChanges.values) {
-      if (c.isClear) continue;
+      if (c.isClear || c.markedForDeletion) continue;
       result.add(Assignment(
         id: c.desiredAssignmentId,
         eventId: c.eventId,
@@ -1707,21 +1711,34 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
-  /// Slot keys of dirty rows whose underlying DB assignment was DELETED
-  /// remotely while the row stayed dirty. A staged row qualifies when it is a
-  /// FILLED desired state (`desiredMemberId != null` — there is a visible row
-  /// to keep) that WAS anchored to a real DB assignment at stage time
-  /// (`baselineMemberId != null`), but no assignment for that slot exists in
-  /// the current raw DB snapshot (`getCurrentAssignments()` + paged extra-past,
-  /// the same source `classifyStagedConflicts`/Save read). Such rows are kept
-  /// visible (their staged state) and marked with the red diagonal-stripe
-  /// "deleted upstream, kept because dirty" overlay instead of vanishing.
+  /// Slot keys of dirty rows that would otherwise vanish from the grid
+  /// because their underlying slot is gone. Two cases qualify (both require
+  /// `desiredMemberId != null` — there is a visible row to keep; a staged
+  /// CLEAR's intent IS to remove the row, so that case is always excluded):
   ///
-  /// A staged CLEAR (desired empty) is intentionally excluded: the admin's
-  /// intent there IS to remove the row, so an empty row is correct. A fresh
-  /// FILL over a slot that started empty (`baselineMemberId == null`) is also
-  /// excluded: it is an ordinary pending fill, not a remote deletion.
-  Set<String> _computeStagedGoneKeys() {
+  ///  1. DB-backed: the row WAS anchored to a real DB assignment at stage
+  ///     time (`baselineMemberId != null`), but no assignment for that slot
+  ///     exists in the current raw DB snapshot (`getCurrentAssignments()` +
+  ///     paged extra-past, the same source `classifyStagedConflicts`/Save
+  ///     read) — i.e. it was deleted remotely while the row stayed dirty.
+  ///  2. Fresh-fill-vanished: the slot started empty (`baselineMemberId ==
+  ///     null` — there was never a DB row to lose), but its slot key is no
+  ///     longer present in [builtSlots] — e.g. a co-admin shrank the role's
+  ///     quota below this slotIndex. A fresh fill whose slot still renders is
+  ///     NOT gone — including a manual-add, which renders because the grid
+  ///     grows via `_stagedAddCount` for that role; only a fresh fill whose
+  ///     slot no longer renders at all qualifies.
+  ///
+  /// Either way, qualifying rows are kept visible (their staged state) and
+  /// marked with the red diagonal-stripe "deleted upstream, kept because
+  /// dirty" overlay instead of vanishing (see `_materializeGoneStagedRows`,
+  /// which [builtSlots] must also be passed to).
+  ///
+  /// [builtSlots] must be the SAME built-but-not-yet-materialized slot list
+  /// the caller is about to pass to `_materializeGoneStagedRows`, so case 2's
+  /// "does it still render" check reflects the actual grid just built, not a
+  /// stale or unrelated one.
+  Set<String> _computeStagedGoneKeys(List<AssignmentSlot> builtSlots) {
     if (_stagedChanges.isEmpty) return const {};
     final dbKeys = <String>{
       for (final a in [
@@ -1730,11 +1747,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       ])
         StagedAssignmentChange.slotKeyFor(a.eventId, a.roleType, a.slotIndex),
     };
+    final presentKeys = builtSlots.map(_getSlotKey).toSet();
     final gone = <String>{};
     _stagedChanges.forEach((key, c) {
-      if (c.desiredMemberId != null &&
-          c.baselineMemberId != null &&
-          !dbKeys.contains(key)) {
+      if (c.desiredMemberId == null) return;
+      final dbBackedAndDeleted =
+          c.baselineMemberId != null && !dbKeys.contains(key);
+      final freshFillVanished =
+          c.baselineMemberId == null && !presentKeys.contains(key);
+      if (dbBackedAndDeleted || freshFillVanished) {
         gone.add(key);
       }
     });
@@ -2970,7 +2991,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // 7. Sort slots deterministically so same-role rows do not flip order.
     annotatedSlots.sort(_compareAssignmentSlots);
 
-    final goneKeys = _computeStagedGoneKeys();
+    final goneKeys = _computeStagedGoneKeys(annotatedSlots);
     return AssignmentSlotsLoaded(
       _materializeGoneStagedRows(annotatedSlots, goneKeys),
       selectedEventIds: selectedEventIds ?? {},
@@ -3079,7 +3100,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       );
 
       final capped = _applyPastRevealCap(mergedSlots);
-      final goneKeys = _computeStagedGoneKeys();
+      final goneKeys = _computeStagedGoneKeys(capped.slots);
 
       _emitOrLog(
           emit,
@@ -3348,7 +3369,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       );
 
       final capped = _applyPastRevealCap(mergedSlots);
-      final goneKeys = _computeStagedGoneKeys();
+      final goneKeys = _computeStagedGoneKeys(capped.slots);
 
       _emitOrLog(
           emit,

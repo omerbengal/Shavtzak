@@ -869,6 +869,94 @@ void main() {
   });
 
   test(
+      'a FRESH staged fill (no baseline) whose slot VANISHES under a quota '
+      'shrink is red-striped + materialized off-quota, while a manual-add '
+      '(also baseline-less, but rendered) is NOT', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    // e1: medic quota 3, slots #0/#1 filled from DB, #2 empty (in-quota).
+    // e2: medic quota 1, DB-empty — used ONLY for the case-6 manual-add below
+    // so it can never interact with e1's staged fill via a shared
+    // _baselineQuota entry: a plain StageMemberChange on e1 never seeds one,
+    // but staging a manual-add on the SAME (event, role) would — and would
+    // then retroactively count the already-staged fill towards
+    // _stagedAddCount, re-growing the grid and flipping it back to
+    // "present". A separate event keeps the two cases independent.
+    eventStream.add([
+      futureEvent('e1', roleRequirements: const {'medic': 3}),
+      futureEvent('e2', roleRequirements: const {'medic': 1}),
+    ]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m2'), member('T'), member('m9')]);
+    assignmentStream.add([
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 1),
+    ]);
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final emptySlot2 = loaded.slots.firstWhere(
+        (s) => s.event.id == 'e1' && s.role.key == 'medic' && s.slotIndex == 2);
+    expect(emptySlot2.isFilled, isFalse); // sanity: starts empty, in-quota
+
+    // Stage a FRESH fill of T on slot #2 (baselineMemberId == null: no DB row
+    // for this slot at stage time) — an ordinary fill, NOT a manual add.
+    bloc.add(StageMemberChange(slot: emptySlot2, member: member('T')));
+    await pumpEventQueue();
+
+    var state = bloc.state as AssignmentSlotsLoaded;
+    expect(state.stagedSlotKeys, contains('e1_medic_2'));
+    // Sanity: while the slot still renders (quota still 3), it is an
+    // ordinary pending fill, not gone.
+    expect(state.stagedGoneSlotKeys, isEmpty);
+
+    // Concurrent DB quota shrink: a co-admin lowers e1's medic quota 3 -> 2,
+    // so slot #2 no longer renders in the required-count loop. No assignment
+    // change (a1/a2 untouched); e2 is re-emitted unchanged so it stays in the
+    // window (the event-stream listener replaces the whole window map on
+    // every emit).
+    eventStream.add([
+      futureEvent('e1', roleRequirements: const {'medic': 2}),
+      futureEvent('e2', roleRequirements: const {'medic': 1}),
+    ]);
+    await pumpEventQueue();
+
+    state = bloc.state as AssignmentSlotsLoaded;
+    // THE FIX (case 5): the fresh fill's slot vanished -> red-striped ...
+    expect(state.stagedGoneSlotKeys, contains('e1_medic_2'));
+    // ... and re-materialized (kept visible) as an off-quota row carrying T,
+    // instead of dropping out of the grid entirely.
+    final goneRow = state.slots.firstWhere(
+      (s) => s.event.id == 'e1' && s.role.key == 'medic' && s.slotIndex == 2,
+      orElse: () => throw StateError('vanished fresh-fill row was dropped'),
+    );
+    expect(goneRow.isOffQuota, isTrue);
+    expect(goneRow.currentAssignment?.teamMemberId, 'T');
+
+    // Case 6: a manual-add is ALSO a fresh fill (baselineMemberId == null),
+    // but its slot renders because the grid grows via _stagedAddCount for
+    // that role — it must stay a normal pending row, never red-striped. e2's
+    // medic quota is 1 (slot #0 empty); a manual add lands at slot #1.
+    bloc.add(StageManualAdd(
+      event: futureEvent('e2', roleRequirements: const {'medic': 1}),
+      member: member('m9'),
+      roleType: 'medic',
+    ));
+    await pumpEventQueue();
+
+    final afterAdd = bloc.state as AssignmentSlotsLoaded;
+    expect(afterAdd.stagedSlotKeys, contains('e2_medic_1'));
+    expect(afterAdd.stagedGoneSlotKeys, isNot(contains('e2_medic_1')));
+    expect(
+      afterAdd.slots.any((s) =>
+          s.event.id == 'e2' && s.role.key == 'medic' && s.slotIndex == 1),
+      isTrue,
+    );
+  });
+
+  test(
       'a re-materialized gone row is Equatable-stable across rebuilds '
       '(no DateTime.now() churn that would defeat no-op emit suppression)',
       () async {
