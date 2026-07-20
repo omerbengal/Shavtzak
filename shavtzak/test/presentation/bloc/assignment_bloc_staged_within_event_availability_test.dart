@@ -314,4 +314,40 @@ void main() {
     final slot1After = slotForIndex(bloc, 1);
     expect(slot1After.availableMembers.map((m) => m.id), contains('T'));
   });
+
+  test(
+      'staging a FILL into slot #1 still counts the filled member as '
+      "assigned to e1 (no same-event double-booking regression)", () async {
+    // Guards the OTHER direction of the fix: making assignedMemberIds
+    // staged-aware must not stop counting a staged fill/swap as "assigned" —
+    // _stagedEffectiveAssignments adds the desired assignment back in for
+    // any staged change that is neither a clear nor a deletion, so a member
+    // staged INTO one slot must still be excluded from every OTHER slot in
+    // the same event, exactly like a real DB assignment would.
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadFilledSlotThenGrowQuota(bloc);
+    // Grow the quota again (2 -> 3) so there are TWO empty slots (#1, #2) to
+    // stage into / observe from.
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 3})]);
+    await pumpEventQueue();
+    // Make U a known active (medic-capable) member so the staged fill can
+    // render/participate in availability like the quota-staging harness does
+    // for its manual-add tests.
+    teamStream.add([member('T'), member('U')]);
+    await pumpEventQueue();
+
+    final slot1 = slotForIndex(bloc, 1);
+    bloc.add(StageMemberChange(slot: slot1, member: member('U')));
+    await pumpEventQueue();
+
+    final slot2After = slotForIndex(bloc, 2);
+    // THE GUARD: U must NOT be offered again in slot #2 — U is already
+    // (staged-)assigned to e1 via slot #1.
+    expect(slot2After.availableMembers.map((m) => m.id), isNot(contains('U')));
+    expect(slot2After.alreadyAssignedMembers.map((m) => m.id), contains('U'));
+    // T (still DB-assigned to slot #0, untouched by this staging action) is
+    // likewise still reported as already-assigned, unaffected by the fix.
+    expect(slot2After.alreadyAssignedMembers.map((m) => m.id), contains('T'));
+  });
 }
