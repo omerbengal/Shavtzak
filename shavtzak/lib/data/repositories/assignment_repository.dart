@@ -123,8 +123,21 @@ class AssignmentRepository {
   }
 
   /// Update assignment without conflict checking (for internal operations like slot reassignment)
+  ///
+  /// "Unchecked" has to hold on the BACKEND too, not just here. The only
+  /// callers are the post-quota-reduction compaction loops in
+  /// `event_form_modal.dart`, which rewrite nothing but `slotIndex` to close a
+  /// gap. Those rows already exist, and one of them may have been
+  /// force-assigned on purpose ("שבץ בכל זאת") to a member who is not
+  /// available for the event. Omitting `bypassAvailability` left it false, so
+  /// `assignment.update` re-ran `memberAvailableForEvent` against that
+  /// untouched row and failed the whole reduction with
+  /// 'חבר/ת הצוות לא זמין/ה לאירוע זה'.
   Future<void> updateAssignmentUnchecked(Assignment assignment) async {
-    await _database.updateAssignment(assignment);
+    await _database.updateAssignment(
+      assignment,
+      bypassAvailability: true,
+    );
   }
 
   /// Update assignment bypassing availability checks (for forced reassignments)
