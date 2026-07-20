@@ -114,6 +114,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   // gets a staged quota-changing action. Conflict detection ONLY (type-G).
   final Map<String, int> _baselineQuota = {};
 
+  // Slots of the last emitted AssignmentSlotsLoaded, kept live via onChange so
+  // conflict classification has a robust slot source even when the currently
+  // emitted state is NOT AssignmentSlotsLoaded (e.g. AssignmentOperating while
+  // a save is in flight). Read via [lastLoadedSlots]. Never cleared back to
+  // empty once slots have loaded — an empty grid genuinely emits an empty
+  // AssignmentSlotsLoaded, which correctly updates this to empty.
+  List<AssignmentSlot> _lastLoadedSlots = const [];
+
   final UserCacheService _userCache;
 
   /// True when there is at least one unsaved staged change.
@@ -126,6 +134,21 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// `AssignmentSlotsLoaded`) — leave-guards must use this, not a
   /// state-type branch, to get an accurate count.
   int get stagedCount => _stagedChanges.length;
+
+  /// The current grid slots for conflict classification: the live
+  /// `AssignmentSlotsLoaded.slots` when that is the emitted state, else the
+  /// last-known slots cached by [onChange]. Callers (both Save paths) must
+  /// use this rather than branching on `state` themselves — this bloc is the
+  /// app-scoped singleton, so during a leave-guard its state may be
+  /// `AssignmentOperating`/`AssignmentsLoaded`/etc. (not `AssignmentSlotsLoaded`),
+  /// and a raw `state is AssignmentSlotsLoaded ? state.slots : []` branch
+  /// would hand `classifyStagedConflicts` an EMPTY slot list — making every
+  /// still-present staged slot fail the type-D containment check and get
+  /// misclassified as `slotVanished` (a false conflict). See the identical
+  /// caveat on [stagedCount].
+  List<AssignmentSlot> get lastLoadedSlots => state is AssignmentSlotsLoaded
+      ? (state as AssignmentSlotsLoaded).slots
+      : _lastLoadedSlots;
 
   /// True while a SaveStagedChanges write is in flight. Guards against a
   /// second concurrent SaveStagedChanges dispatch (flutter_bloc runs
@@ -815,6 +838,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       );
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
+    }
+  }
+
+  /// Keep [_lastLoadedSlots] in sync with every emitted
+  /// `AssignmentSlotsLoaded` so [lastLoadedSlots] can serve the last-known
+  /// grid even when the current state is something else (see that getter).
+  @override
+  void onChange(Change<AssignmentState> change) {
+    super.onChange(change);
+    final next = change.nextState;
+    if (next is AssignmentSlotsLoaded) {
+      _lastLoadedSlots = next.slots;
     }
   }
 

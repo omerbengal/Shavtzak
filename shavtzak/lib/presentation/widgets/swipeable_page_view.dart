@@ -10,10 +10,8 @@ import '../../core/services/environment_service.dart';
 import '../../core/utils/crud_action_result.dart';
 import '../bloc/assignment/assignment_bloc.dart';
 import '../bloc/assignment/assignment_event.dart';
-import '../bloc/assignment/assignment_state.dart';
 import '../bloc/user_selection/user_selection_bloc.dart';
 import '../bloc/user_selection/user_selection_state.dart';
-import '../screens/assignment/models/assignment_slot.dart';
 import '../screens/assignment/widgets/saving_changes_dialog.dart';
 import '../screens/assignment/widgets/staged_save_conflict_flow.dart';
 import '../screens/assignment/widgets/unsaved_changes_dialog.dart';
@@ -178,13 +176,18 @@ class _SwipeablePageViewState extends State<SwipeablePageView> {
           // dialog leaves the admin on the assignments tab with staging
           // fully intact, exactly like cancelling from the on-screen Save
           // button.
-          final slots = assignmentBloc.state is AssignmentSlotsLoaded
-              ? (assignmentBloc.state as AssignmentSlotsLoaded).slots
-              : const <AssignmentSlot>[];
+          //
+          // Slots come from the bloc's cached `lastLoadedSlots`, NOT a
+          // `state is AssignmentSlotsLoaded ? state.slots : []` branch: this
+          // bloc is the app-scoped singleton, so at leave-guard time its
+          // live state is often AssignmentOperating (a save in flight) or
+          // another non-slots state, and an empty list would make
+          // classifyStagedConflicts misflag every still-present staged slot
+          // as a false `slotVanished` conflict.
           final resolutions = await resolveStagedConflictsForSave(
             context,
             assignmentBloc,
-            slots,
+            assignmentBloc.lastLoadedSlots,
           );
           if (!mounted) return;
           if (resolutions == null) {

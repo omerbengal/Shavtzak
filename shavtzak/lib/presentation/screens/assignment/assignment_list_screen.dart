@@ -219,12 +219,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     if (!bloc.hasStagedChanges) return;
     Logger.action('tap:saveStagedChanges');
 
-    final blocState = bloc.state;
-    final slots = blocState is AssignmentSlotsLoaded
-        ? blocState.slots
-        : (_lastSlotsState?.slots ?? const <AssignmentSlot>[]);
-    final resolutions =
-        await resolveStagedConflictsForSave(context, bloc, slots);
+    // Slots come from the bloc's cached `lastLoadedSlots` (identical source
+    // to the tab-switch leave-guard, for parity): the live `state.slots`
+    // when loaded, else the bloc's last-known grid — never an empty list
+    // just because the bloc is transiently non-loaded.
+    final resolutions = await resolveStagedConflictsForSave(
+        context, bloc, bloc.lastLoadedSlots);
     if (!mounted) return;
     if (resolutions == null) {
       return; // cancelled — nothing saved, staging intact

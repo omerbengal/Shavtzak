@@ -45,7 +45,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/core/utils/crud_action_result.dart';
+import 'package:shavtzak/domain/entities/assignment.dart';
+import 'package:shavtzak/domain/entities/event.dart';
+import 'package:shavtzak/domain/entities/role.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_event.dart';
@@ -64,6 +68,7 @@ class _MockAssignmentBloc extends MockBloc<AssignmentEvent, AssignmentState>
     required this.hasStagedChanges,
     required this.stagedCount,
     this.conflictsToReturn = const [],
+    this.lastLoadedSlotsToReturn = const [],
   });
 
   @override
@@ -78,10 +83,28 @@ class _MockAssignmentBloc extends MockBloc<AssignmentEvent, AssignmentState>
   /// referenced from this file's own header).
   final List<AssignmentConflict> conflictsToReturn;
 
+  /// Canned return for the bloc-cached [lastLoadedSlots] getter — the robust
+  /// slot source both Save paths now read (instead of branching on a
+  /// possibly-non-loaded live `state`). Defaults empty for tests that don't
+  /// exercise the slots argument.
+  final List<AssignmentSlot> lastLoadedSlotsToReturn;
+
+  @override
+  List<AssignmentSlot> get lastLoadedSlots => lastLoadedSlotsToReturn;
+
+  /// The `currentSlots` argument [classifyStagedConflicts] was last invoked
+  /// with. Lets a test prove the leave-guard passed the REAL cached slots
+  /// (from [lastLoadedSlots]) and not an empty list — the regression this
+  /// mock previously couldn't catch, because the old override ignored its
+  /// argument entirely.
+  List<AssignmentSlot>? capturedClassifySlots;
+
   @override
   List<AssignmentConflict> classifyStagedConflicts(
-          List<AssignmentSlot> currentSlots) =>
-      conflictsToReturn;
+      List<AssignmentSlot> currentSlots) {
+    capturedClassifySlots = currentSlots;
+    return conflictsToReturn;
+  }
 
   /// Events the widget dispatched onto this mock bloc. In particular, lets
   /// the test grab the SaveStagedChanges event's own `completion` completer
@@ -112,6 +135,60 @@ void main() {
     isAdmin: true,
   );
 
+  // A single real filled slot (slotKey "e1_medic_0"), used to prove the
+  // leave-guard hands classifyStagedConflicts the bloc's cached slots rather
+  // than an empty list when the live state is not AssignmentSlotsLoaded.
+  final assignedMember = TeamMember(
+    id: 'm1',
+    name: 'יוסי כהן',
+    isActive: true,
+    constraints: const [],
+    roleCapabilities: const {'medic': true},
+    createdAt: now,
+    updatedAt: now,
+    uniqueKey: 'unique-m1',
+  );
+  final event = Event(
+    id: 'e1',
+    name: 'אירוע קיץ',
+    startDate: now,
+    endDate: now,
+    startTime: '18:00',
+    endTime: '22:00',
+    assemblyTime: '17:00',
+    requiresArmed: false,
+    roleRequirements: const {'medic': 1},
+    createdAt: now,
+    updatedAt: now,
+  );
+  final role = Role(
+    id: 'medic',
+    key: 'medic',
+    hebrewName: 'חובש',
+    sortOrder: 0,
+    createdAt: now,
+    updatedAt: now,
+  );
+  final assignment = Assignment(
+    id: 'a1',
+    eventId: 'e1',
+    teamMemberId: 'm1',
+    roleType: 'medic',
+    slotIndex: 0,
+    status: AssignmentStatus.confirmed,
+    notes: '',
+    createdAt: now,
+    updatedAt: now,
+    teamMember: assignedMember,
+  );
+  final realSlot = AssignmentSlot(
+    event: event,
+    role: role,
+    slotIndex: 0,
+    currentAssignment: assignment,
+    availableMembers: [assignedMember],
+  );
+
   /// Builds a minimal admin shell (matching app_router.dart's branch order:
   /// home / team-members / events / assignments / checklist) starting on
   /// the assignments tab, with SwipeablePageView as the real shell builder.
@@ -120,16 +197,19 @@ void main() {
     required bool hasStagedChanges,
     int stagedCount = 1,
     List<AssignmentConflict> conflictsToReturn = const [],
+    List<AssignmentSlot> lastLoadedSlotsToReturn = const [],
+    AssignmentState initialState = const AssignmentInitial(),
   }) async {
     final assignmentBloc = _MockAssignmentBloc(
       hasStagedChanges: hasStagedChanges,
       stagedCount: stagedCount,
       conflictsToReturn: conflictsToReturn,
+      lastLoadedSlotsToReturn: lastLoadedSlotsToReturn,
     );
     whenListen(
       assignmentBloc,
       Stream<AssignmentState>.empty(),
-      initialState: const AssignmentInitial(),
+      initialState: initialState,
     );
 
     final userSelectionBloc = _MockUserSelectionBloc();
@@ -406,6 +486,60 @@ void main() {
         final bottomNav = tester
             .widget<BottomNavigationBar>(find.byType(BottomNavigationBar));
         expect(bottomNav.currentIndex, 3);
+      },
+    );
+  });
+
+  // REGRESSION (fix wave): the leave-guard must source the slots it
+  // classifies from the bloc's cached `lastLoadedSlots`, NOT from a
+  // `state is AssignmentSlotsLoaded ? state.slots : const []` branch. The
+  // AssignmentBloc is the app-scoped singleton, so during a leave-guard its
+  // live state is frequently NOT AssignmentSlotsLoaded (e.g.
+  // AssignmentOperating while a save is in flight — see the getter's own doc
+  // and stagedCount's). Passing const [] there makes every still-present
+  // staged slot fail classifyStagedConflicts' type-D containment check and
+  // get misclassified as a false `slotVanished` conflict.
+  group('tab-switch save slots source (regression: bloc-cached slots)', () {
+    testWidgets(
+      'passes the bloc-cached lastLoadedSlots (not an empty list) to '
+      'classifyStagedConflicts when the shared bloc is mid-save '
+      '(AssignmentOperating, not AssignmentSlotsLoaded)',
+      (tester) async {
+        final assignmentBloc = await pumpAdminShellOnAssignmentsTab(
+          tester,
+          hasStagedChanges: true,
+          stagedCount: 1,
+          // The regression scenario: the app-scoped bloc is NOT currently
+          // AssignmentSlotsLoaded, yet it holds real last-known grid slots.
+          initialState: const AssignmentOperating('saving'),
+          lastLoadedSlotsToReturn: [realSlot],
+          // No real conflicts -> the save proceeds; this test is about WHICH
+          // slots the guard classifies with, not the dialog.
+          conflictsToReturn: const [],
+        );
+
+        await triggerTabSwitchAndChooseSave(tester);
+
+        // With the pre-fix `state is AssignmentSlotsLoaded ? ... : const []`
+        // code, an AssignmentOperating live state hands classifyStagedConflicts
+        // an EMPTY list here (RED). Reading lastLoadedSlots hands it the real
+        // cached slot (GREEN).
+        expect(assignmentBloc.capturedClassifySlots, isNotNull);
+        expect(
+          assignmentBloc.capturedClassifySlots,
+          isNotEmpty,
+          reason: 'the leave-guard must not pass an empty slot list just '
+              'because the live state is not AssignmentSlotsLoaded — that '
+              'misclassifies every staged slot as a false slotVanished',
+        );
+        expect(assignmentBloc.capturedClassifySlots, equals([realSlot]));
+
+        // No conflicts -> no dialog, straight to the save dispatch.
+        expect(find.byType(ConflictResolutionDialog), findsNothing);
+        expect(
+          assignmentBloc.addedEvents.whereType<SaveStagedChanges>(),
+          hasLength(1),
+        );
       },
     );
   });
