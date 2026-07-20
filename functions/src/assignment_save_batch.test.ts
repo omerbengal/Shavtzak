@@ -217,6 +217,69 @@ test('findBatchDuplicateRoleAssignments rejects the same double-booking when the
   assert.deepEqual(result, [{eventId: 'e1', roleType: 'medic', teamMemberId: 'Ziv'}]);
 });
 
+// The check must only blame the batch for duplicates the batch itself
+// introduces. Live events accumulate legitimate pre-existing same-role
+// occupancy (a pool member with allowMultipleAssignments, or legacy data), and
+// saveBatch derives exemptMemberIds ONLY from members its own creates/updates
+// touch -- so an untouched member is never exempt. Judging the resulting
+// occupancy in absolute terms therefore rejected saves that had nothing to do
+// with the duplicate, permanently bricking the event.
+
+test('findBatchDuplicateRoleAssignments ignores a pre-existing duplicate the batch never touches', () => {
+  // Production regression (2026-07-20): the shared pool member
+  // "תגבורת לשכת גיוס ירושלים" legitimately holds entryScreening in FOUR slots
+  // of the event. Staging an unrelated safetyManager fill must still save --
+  // the batch neither created nor worsened that group. Pool is deliberately
+  // NOT in exemptMemberIds, mirroring what saveBatch actually computes for a
+  // member it does not touch.
+  const result = findBatchDuplicateRoleAssignments({
+    existing: [
+      {id: 'x1', eventId: 'e1', roleType: 'entryScreening', teamMemberId: 'Pool'},
+      {id: 'x2', eventId: 'e1', roleType: 'entryScreening', teamMemberId: 'Pool'},
+      {id: 'x3', eventId: 'e1', roleType: 'entryScreening', teamMemberId: 'Pool'},
+      {id: 'x4', eventId: 'e1', roleType: 'entryScreening', teamMemberId: 'Pool'},
+    ],
+    creates: [{id: 'a1', eventId: 'e1', roleType: 'safetyManager', teamMemberId: 'Noa'}],
+    updates: [],
+    deletes: [],
+    exemptMemberIds: new Set(),
+  });
+  assert.deepEqual(result, []);
+});
+
+test('findBatchDuplicateRoleAssignments still rejects a batch that ADDS to a pre-existing duplicate', () => {
+  // Ron already holds medic twice (pre-existing). Adding a THIRD makes it
+  // strictly worse, so the batch IS to blame and must still be rejected.
+  const result = findBatchDuplicateRoleAssignments({
+    existing: [
+      {id: 'x1', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'},
+      {id: 'x2', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'},
+    ],
+    creates: [{id: 'a1', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'}],
+    updates: [],
+    deletes: [],
+    exemptMemberIds: new Set(),
+  });
+  assert.deepEqual(result, [{eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'}]);
+});
+
+test('findBatchDuplicateRoleAssignments allows re-indexing one row of a pre-existing duplicate', () => {
+  // A slot-compaction save rewrites x2 in place (same event/role/member, only
+  // slotIndex differs). Occupancy is unchanged at 2, so the pre-existing
+  // duplicate must not block an otherwise-valid maintenance write.
+  const result = findBatchDuplicateRoleAssignments({
+    existing: [
+      {id: 'x1', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'},
+      {id: 'x2', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'},
+    ],
+    creates: [],
+    updates: [{id: 'x2', eventId: 'e1', roleType: 'medic', teamMemberId: 'Ron'}],
+    deletes: [],
+    exemptMemberIds: new Set(),
+  });
+  assert.deepEqual(result, []);
+});
+
 // ---- planEventQuotaBumps: optional atomic quota restores for saveBatch ----
 
 test('planEventQuotaBumps returns [] for missing / null / empty input', () => {

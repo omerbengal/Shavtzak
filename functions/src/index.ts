@@ -2918,7 +2918,9 @@ export function planEventQuotaSetWrites(args: {
 // create/update entry instead (or, for deletes, by nothing). Add the
 // batch's creates + updates (their NEW state) to what survives. Group the
 // result by (eventId, roleType, teamMemberId) and return any group with
-// more than one member.
+// more than one member THAT THE BATCH GREW -- a group already that size
+// before the batch is pre-existing state this save is not responsible for
+// (and cannot fix), so blocking on it would brick the event.
 //
 // Kept side-effect-free (no Firestore reads) so it can be unit-tested
 // directly -- see assignment_save_batch.test.ts. The 'assignment.saveBatch'
@@ -2940,6 +2942,40 @@ export function findBatchDuplicateRoleAssignments(args: {
 }): Array<{eventId: string; roleType: string; teamMemberId: string}> {
   const {existing, creates, updates, deletes, exemptMemberIds} = args;
 
+  // Drop exempt members' entries entirely -- with none left for a given
+  // teamMemberId, no group (and therefore no false duplicate) can ever form
+  // for them, no matter how many same-role slots they occupy.
+  const notExempt = (item: {teamMemberId: string}) =>
+    !exemptMemberIds?.has(item.teamMemberId);
+
+  // The NUL separator can never occur inside a Firestore id, so the composite
+  // key is unambiguous. Written as an escape rather than a raw 0x00 byte: a
+  // literal NUL makes grep/ripgrep classify index.ts as BINARY and skip it
+  // silently, which hid this very function from a source search.
+  const countOccupancy = (
+    items: Array<{eventId: string; roleType: string; teamMemberId: string}>,
+  ) => {
+    const groups = new Map<
+      string,
+      {eventId: string; roleType: string; teamMemberId: string; count: number}
+    >();
+    for (const item of items) {
+      const key = `${item.eventId}\u0000${item.roleType}\u0000${item.teamMemberId}`;
+      const group = groups.get(key);
+      if (group) {
+        group.count += 1;
+      } else {
+        groups.set(key, {
+          eventId: item.eventId,
+          roleType: item.roleType,
+          teamMemberId: item.teamMemberId,
+          count: 1,
+        });
+      }
+    }
+    return groups;
+  };
+
   const removedIds = new Set<string>([
     ...deletes,
     ...updates.map((item) => item.id),
@@ -2947,35 +2983,27 @@ export function findBatchDuplicateRoleAssignments(args: {
   ]);
   const survivingExisting = existing.filter((item) => !removedIds.has(item.id));
 
-  // Drop exempt members' entries entirely -- with none left for a given
-  // teamMemberId, no group (and therefore no false duplicate) can ever form
-  // for them, no matter how many same-role slots they occupy.
-  const resulting = [...survivingExisting, ...creates, ...updates].filter(
-    (item) => !exemptMemberIds?.has(item.teamMemberId),
+  const after = countOccupancy(
+    [...survivingExisting, ...creates, ...updates].filter(notExempt),
   );
+  const before = countOccupancy(existing.filter(notExempt));
 
-  const groups = new Map<
-    string,
-    {eventId: string; roleType: string; teamMemberId: string; count: number}
-  >();
-  for (const item of resulting) {
-    const key = `${item.eventId} ${item.roleType} ${item.teamMemberId}`;
-    const group = groups.get(key);
-    if (group) {
-      group.count += 1;
-    } else {
-      groups.set(key, {
-        eventId: item.eventId,
-        roleType: item.roleType,
-        teamMemberId: item.teamMemberId,
-        count: 1,
-      });
-    }
-  }
-
-  return Array.from(groups.values())
-    .filter((group) => group.count > 1)
-    .map(({eventId, roleType, teamMemberId}) => ({eventId, roleType, teamMemberId}));
+  // Only blame the BATCH for groups it actually made worse. Judging `after` in
+  // absolute terms rejected saves over duplicates that were ALREADY in the
+  // event and that the batch never touched -- and because saveBatch derives
+  // exemptMemberIds solely from members its own creates/updates touch, a
+  // shared pool member (allowMultipleAssignments) legitimately holding one
+  // role across several slots is never exempt here. That made every event
+  // containing such a member permanently unsaveable, with no way for an admin
+  // to clear it from the UI. Comparing against the pre-batch count still
+  // rejects genuine regressions (a create taking a group 1 -> 2, or 2 -> 3)
+  // while letting untouched (2 -> 2) and improving (delete, 2 -> 1) batches
+  // through.
+  return Array.from(after.entries())
+    .filter(
+      ([key, group]) => group.count > 1 && group.count > (before.get(key)?.count ?? 0),
+    )
+    .map(([, {eventId, roleType, teamMemberId}]) => ({eventId, roleType, teamMemberId}));
 }
 
 function assignmentLabelDocFromJson(
