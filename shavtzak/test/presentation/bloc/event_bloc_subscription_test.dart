@@ -229,4 +229,100 @@ void main() {
     verify(mockEventRepository.watchEvents()).called(1);
     verify(mockAssignmentRepository.watchAssignments()).called(1);
   });
+
+  test('a stream error re-subscribes fresh instead of dying (recovery)',
+      () async {
+    final bloc = EventBloc(
+      mockEventRepository,
+      mockAssignmentRepository,
+      calendarSyncBloc: null,
+      resubscribeBackoff: const Duration(milliseconds: 10),
+      watchdogTimeout: const Duration(seconds: 30), // long: isolate error path
+    );
+    addTearDown(bloc.close);
+
+    bloc.add(const LoadEvents());
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    verify(mockEventRepository.watchEvents()).called(1);
+    verify(mockAssignmentRepository.watchAssignments()).called(1);
+
+    // The events stream errors — previously this settled on empty with a dead
+    // listener; now it must re-subscribe both streams fresh.
+    eventsController.addError(Exception('transient'));
+    await Future<void>.delayed(const Duration(milliseconds: 40)); // > backoff
+
+    verify(mockEventRepository.watchEvents()).called(1); // the re-subscribe
+    verify(mockAssignmentRepository.watchAssignments()).called(1);
+  });
+
+  test('the watchdog re-subscribes when no authoritative data arrives in time',
+      () async {
+    final bloc = EventBloc(
+      mockEventRepository,
+      mockAssignmentRepository,
+      calendarSyncBloc: null,
+      watchdogTimeout: const Duration(milliseconds: 30),
+      resubscribeBackoff: const Duration(milliseconds: 10),
+    );
+    addTearDown(bloc.close);
+
+    bloc.add(const LoadEvents());
+    // Never emit on either stream — simulates a cold cache-empty snapshot
+    // (skipped by the repository) whose first server snapshot is parked.
+    await Future<void>.delayed(const Duration(milliseconds: 90));
+
+    // Watchdog fired → at least one fresh re-subscribe.
+    verify(mockEventRepository.watchEvents()).called(greaterThanOrEqualTo(2));
+  });
+
+  test('the watchdog does not re-subscribe once authoritative data arrives',
+      () async {
+    final bloc = EventBloc(
+      mockEventRepository,
+      mockAssignmentRepository,
+      calendarSyncBloc: null,
+      watchdogTimeout: const Duration(milliseconds: 30),
+      resubscribeBackoff: const Duration(milliseconds: 10),
+    );
+    addTearDown(bloc.close);
+
+    bloc.add(const LoadEvents());
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    // Authoritative data arrives before the watchdog would fire.
+    eventsController.add([event(id: 'a', name: 'Alpha')]);
+    assignmentsController.add(<Assignment>[]);
+    await Future<void>.delayed(const Duration(milliseconds: 60)); // > timeout
+
+    // Still exactly one subscription each — watchdog disarmed on the emit.
+    verify(mockEventRepository.watchEvents()).called(1);
+    verify(mockAssignmentRepository.watchAssignments()).called(1);
+  });
+
+  test('a fresh Load after the recovery budget is exhausted re-subscribes',
+      () async {
+    final bloc = EventBloc(
+      mockEventRepository,
+      mockAssignmentRepository,
+      calendarSyncBloc: null,
+      watchdogTimeout: const Duration(milliseconds: 20),
+      resubscribeBackoff: const Duration(milliseconds: 10),
+      maxResubscribes: 2,
+    );
+    addTearDown(bloc.close);
+
+    bloc.add(const LoadEvents());
+    // Never emit → the watchdog exhausts the (2) re-subscribe budget, then the
+    // bloc gives up (would otherwise be stuck until a full page reload).
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+
+    // Reset recorded subscriptions so the next assertion is unambiguous.
+    clearInteractions(mockEventRepository);
+    clearInteractions(mockAssignmentRepository);
+
+    // A fresh Load is a user-driven retry → it must re-subscribe fresh.
+    bloc.add(const LoadEvents());
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    verify(mockEventRepository.watchEvents()).called(1);
+    verify(mockAssignmentRepository.watchAssignments()).called(1);
+  });
 }

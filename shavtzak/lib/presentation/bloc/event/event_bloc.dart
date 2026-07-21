@@ -36,11 +36,36 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   bool _assignmentsLoaded = false;
   bool _upcomingOnly = false;
 
+  // Self-healing recovery for the combined subscriptions. If the first
+  // authoritative emission doesn't arrive within [_watchdogTimeout] (e.g. a
+  // cold cache-empty snapshot was skipped and the first server snapshot is
+  // parked), or a stream errors, re-subscribe fresh — as a page reload would —
+  // up to [_maxResubscribes] times (the budget resets once healthy). The
+  // healthy path (repeat Loads / filter switches on a live subscription) never
+  // re-subscribes, so real-time streaming is preserved.
+  final Duration _watchdogTimeout;
+  final Duration _resubscribeBackoff;
+  final int _maxResubscribes;
+  Timer? _watchdogTimer;
+  Timer? _resubscribeTimer;
+  int _resubscribeCount = 0;
+  bool _hasEmittedSinceSubscribe = false;
+  // Set once the retry budget is exhausted with no data. A subsequent Load
+  // (e.g. navigating back to an event screen) then counts as a user-driven
+  // retry and re-subscribes fresh, so the bloc is never permanently stuck.
+  bool _gaveUp = false;
+
   EventBloc(
     this._repository,
     this._assignmentRepository, {
     CalendarSyncBloc? calendarSyncBloc,
+    Duration watchdogTimeout = const Duration(seconds: 10),
+    Duration resubscribeBackoff = const Duration(seconds: 2),
+    int maxResubscribes = 5,
   })  : _calendarSyncBloc = calendarSyncBloc,
+        _watchdogTimeout = watchdogTimeout,
+        _resubscribeBackoff = resubscribeBackoff,
+        _maxResubscribes = maxResubscribes,
         super(const EventInitial()) {
     // Register event handlers
     on<LoadEvents>(_onLoadEvents);
@@ -83,7 +108,14 @@ class EventBloc extends Bloc<EventEvent, EventState> {
   /// current _upcomingOnly filter instantly — no re-subscribe, no loading flash.
   Future<void> _ensureWatching(Emitter<EventState> emit) async {
     if (_isWatching) {
-      _emitCombinedIfReady();
+      if (_gaveUp) {
+        // Recovery budget was exhausted; this Load is a user-driven retry.
+        _gaveUp = false;
+        _resubscribeCount = 0;
+        unawaited(_startCombinedStreams());
+      } else {
+        _emitCombinedIfReady();
+      }
       return;
     }
     emit(const EventLoading());
@@ -99,7 +131,9 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 
   /// Start combined stream subscriptions for events and assignments
   Future<void> _startCombinedStreams() async {
-    // Cancel previous subscriptions before starting new ones to prevent memory leaks
+    // Cancel previous subscriptions + recovery timers before (re)subscribing.
+    _watchdogTimer?.cancel();
+    _resubscribeTimer?.cancel();
     await _eventsSubscription?.cancel();
     await _assignmentsSubscription?.cancel();
 
@@ -108,39 +142,72 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     _assignmentsLoaded = false;
     _latestEvents = [];
     _latestAssignments = [];
+    _hasEmittedSinceSubscribe = false;
 
-    // Subscribe to events stream
+    // Subscribe to events stream. On error, re-subscribe fresh (with backoff)
+    // instead of settling on empty and leaving a dead listener.
     _eventsSubscription = _repository.watchEvents().listen(
       (events) {
         _latestEvents = events;
         _eventsLoaded = true;
         _emitCombinedIfReady();
       },
-      onError: (error) {
-        _latestEvents = [];
-        _eventsLoaded = true;
-        _emitCombinedIfReady();
-      },
+      onError: (error) => _scheduleResubscribe('events-stream-error'),
     );
 
-    // Subscribe to assignments stream
+    // Subscribe to assignments stream (same recovery on error).
     _assignmentsSubscription = _assignmentRepository.watchAssignments().listen(
       (assignments) {
         _latestAssignments = assignments;
         _assignmentsLoaded = true;
         _emitCombinedIfReady();
       },
-      onError: (error) {
-        _latestAssignments = [];
-        _assignmentsLoaded = true;
-        _emitCombinedIfReady();
-      },
+      onError: (error) => _scheduleResubscribe('assignments-stream-error'),
     );
+
+    _armWatchdog();
+  }
+
+  /// Fire a fresh re-subscribe if the first authoritative combined emission
+  /// hasn't arrived within [_watchdogTimeout] of (re)subscribing — covers a
+  /// cold cache-empty snapshot (skipped by the repository) whose first server
+  /// snapshot is parked, which would otherwise leave the UI stuck.
+  void _armWatchdog() {
+    _watchdogTimer?.cancel();
+    _watchdogTimer = Timer(_watchdogTimeout, () {
+      if (isClosed || _hasEmittedSinceSubscribe) return;
+      _scheduleResubscribe('watchdog-no-data');
+    });
+  }
+
+  /// Cancel the current subscriptions and re-subscribe after a short backoff,
+  /// bounded by [_maxResubscribes]. The budget resets once a healthy emission
+  /// arrives (see [_emitCombinedIfReady]).
+  void _scheduleResubscribe(String reason) {
+    if (isClosed) return;
+    if (_resubscribeTimer?.isActive ?? false) return; // already pending
+    if (_resubscribeCount >= _maxResubscribes) {
+      _gaveUp = true; // exhausted; a fresh Load will retry (see _ensureWatching)
+      return;
+    }
+    _resubscribeCount++;
+    _watchdogTimer?.cancel();
+    _resubscribeTimer = Timer(_resubscribeBackoff, () {
+      if (isClosed) return;
+      _startCombinedStreams();
+    });
   }
 
   /// Emit combined data when both streams have loaded
   void _emitCombinedIfReady() {
     if (!_eventsLoaded || !_assignmentsLoaded) return;
+
+    // Authoritative data arrived — the subscription is healthy. Disarm the
+    // recovery machinery and refresh the retry budget for any future hiccup.
+    _hasEmittedSinceSubscribe = true;
+    _resubscribeCount = 0;
+    _gaveUp = false;
+    _watchdogTimer?.cancel();
 
     // Calculate assignment counts per event
     final counts = <String, int>{};
@@ -706,7 +773,9 @@ class EventBloc extends Bloc<EventEvent, EventState> {
 
   @override
   Future<void> close() async {
-    // Cancel stream subscriptions to prevent memory leaks
+    // Cancel recovery timers + stream subscriptions to prevent leaks.
+    _watchdogTimer?.cancel();
+    _resubscribeTimer?.cancel();
     await _eventsSubscription?.cancel();
     await _assignmentsSubscription?.cancel();
     return super.close();

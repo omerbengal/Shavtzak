@@ -16,6 +16,7 @@ import '../../core/constants/role_types.dart';
 import '../../core/services/backend_api_service.dart';
 import '../../core/services/environment_service.dart';
 import '../../core/utils/event_sorting.dart';
+import '../../core/utils/firestore_snapshot_gate.dart';
 import '../models/assignment_model.dart';
 import '../models/assignment_label_model.dart';
 import '../models/category_model.dart';
@@ -513,6 +514,10 @@ class FirestoreDatabase implements DatabaseInterface {
         .collection(_eventsCollection)
         .orderBy('startDate', descending: true)
         .snapshots()
+        .where((snapshot) => shouldEmitFirestoreSnapshot(
+              isFromCache: snapshot.metadata.isFromCache,
+              isEmpty: snapshot.docs.isEmpty,
+            ))
         .map((snapshot) {
       // Diagnostic: is this relation-cache source served locally or from the
       // server? A cold source's first server snapshot is where the ~30s park
@@ -743,6 +748,10 @@ class FirestoreDatabase implements DatabaseInterface {
     return _firestore
         .collection(_assignmentsCollection)
         .snapshots()
+        .where((snapshot) => shouldEmitFirestoreSnapshot(
+              isFromCache: snapshot.metadata.isFromCache,
+              isEmpty: snapshot.docs.isEmpty,
+            ))
         .asyncMap((snapshot) async {
       final assignments = snapshot.docs
           .map((doc) => AssignmentModel.fromFirestore(doc).toEntity())
