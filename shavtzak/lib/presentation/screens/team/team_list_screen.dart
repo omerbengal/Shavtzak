@@ -46,6 +46,7 @@ import '../../widgets/vehicle_info_copy_dialog.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
+import '../../../data/repositories/event_repository.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../widgets/archived_members_dialog.dart';
@@ -1095,6 +1096,15 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   List<DateConstraint> _constraints = [];
   List<String> _availableEventIds =
       []; // Event-based availability for non-permanent members
+
+  // Events for the availability section are fetched directly from the
+  // repository (a fresh one-shot get) instead of the shared EventBloc, whose
+  // "subscribe once" stream can get stuck on an empty first snapshot and show
+  // no events until a full page reload. (Matches the assignment-export dialog.)
+  List<Event>? _modalEvents;
+  bool _modalEventsLoading = true;
+  String? _modalEventsError;
+
   bool _isDirty = false;
   String? _roleError; // Track role validation error
   bool _isSaving = false;
@@ -1144,14 +1154,31 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     _phoneController.addListener(() => _isDirty = true);
     _commentsController.addListener(() => _isDirty = true);
 
-    // Ensure events are loaded so the availability section resolves instead of
-    // showing an indefinite spinner when EventBloc hasn't reached EventsLoaded
-    // on this screen yet (idempotent — re-emits from cache when already watching).
+    // Fetch events for the availability section directly (see _modalEvents).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.read<EventBloc>().add(const LoadEvents());
-      }
+      if (mounted) _loadModalEvents();
     });
+  }
+
+  Future<void> _loadModalEvents() async {
+    setState(() {
+      _modalEventsLoading = true;
+      _modalEventsError = null;
+    });
+    try {
+      final events = await context.read<EventRepository>().getAllEvents();
+      if (!mounted) return;
+      setState(() {
+        _modalEvents = events;
+        _modalEventsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _modalEventsError = e.toString();
+        _modalEventsLoading = false;
+      });
+    }
   }
 
   void _updateBirthdayController() {
@@ -2527,34 +2554,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                       if (_isPermanent)
                                         ..._buildVisibleConstraintsList()
                                       else
-                                        BlocBuilder<EventBloc, EventState>(
-                                          builder: (context, eventState) {
-                                            // Resolve events from whatever state
-                                            // EventBloc settled into. EventsEmpty
-                                            // is "loaded but empty" — not a reason
-                                            // to spin forever. Only the genuinely
-                                            // transient states show a spinner (the
-                                            // modal dispatches LoadEvents on open,
-                                            // so it resolves).
-                                            final List<Event> loadedEvents;
-                                            if (eventState is EventsLoaded) {
-                                              loadedEvents = eventState.events;
-                                            } else if (eventState
-                                                is EventsEmpty) {
-                                              loadedEvents = const [];
-                                            } else if (eventState
-                                                is EventError) {
-                                              return Padding(
-                                                padding:
-                                                    const EdgeInsets.all(16),
-                                                child: Text(
-                                                  'שגיאה בטעינת אירועים',
-                                                  style: TextStyle(
-                                                      color: Colors.red[700]),
-                                                  textAlign: TextAlign.center,
-                                                ),
-                                              );
-                                            } else {
+                                        Builder(
+                                          builder: (context) {
+                                            // Events come from a direct fetch
+                                            // (see _modalEvents), not the shared
+                                            // EventBloc whose stream can get stuck
+                                            // empty.
+                                            if (_modalEventsLoading &&
+                                                _modalEvents == null) {
                                               return const Padding(
                                                 padding: EdgeInsets.all(16),
                                                 child: Center(
@@ -2562,6 +2569,37 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                                         CircularProgressIndicator()),
                                               );
                                             }
+                                            if (_modalEventsError != null &&
+                                                _modalEvents == null) {
+                                              return Padding(
+                                                padding:
+                                                    const EdgeInsets.all(16),
+                                                child: Column(
+                                                  children: [
+                                                    Text(
+                                                      'שגיאה בטעינת אירועים',
+                                                      style: TextStyle(
+                                                          color:
+                                                              Colors.red[700]),
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                    ),
+                                                    const SizedBox(height: 8),
+                                                    OutlinedButton.icon(
+                                                      onPressed:
+                                                          _loadModalEvents,
+                                                      icon: const Icon(
+                                                          Icons.refresh,
+                                                          size: 20),
+                                                      label:
+                                                          const Text('נסה שוב'),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }
+                                            final loadedEvents =
+                                                _modalEvents ?? const <Event>[];
 
                                             final now = DateTime.now();
                                             final today = DateTime(
@@ -3514,14 +3552,10 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
   /// Open the availability events editor modal
   void _editAvailabilityEvents() async {
-    final eventState = context.read<EventBloc>().state;
-    // Accept EventsLoaded and EventsEmpty (loaded-but-empty); only bail while
-    // genuinely still loading. EventBloc is (re)loaded when the modal opens.
-    final loadedEvents = eventState is EventsLoaded
-        ? eventState.events
-        : eventState is EventsEmpty
-            ? const <Event>[]
-            : null;
+    // Use the directly-fetched events (see _modalEvents), not the shared
+    // EventBloc whose stream can get stuck empty. Bail quietly if the fetch
+    // hasn't finished yet.
+    final loadedEvents = _modalEvents;
     if (loadedEvents == null) return;
 
     final now = DateTime.now();

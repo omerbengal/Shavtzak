@@ -11,9 +11,7 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
-import '../../bloc/event/event_bloc.dart';
-import '../../bloc/event/event_event.dart';
-import '../../bloc/event/event_state.dart';
+import '../../../data/repositories/event_repository.dart';
 import '../../../core/utils/event_filter_utils.dart';
 import '../../widgets/date_picker_dialog.dart';
 import '../../widgets/event_search_filter_bar.dart';
@@ -58,14 +56,44 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
   String _searchQuery = '';
   Set<String> _selectedCategoryIds = <String>{};
 
+  // Events are fetched directly from the repository (a fresh one-shot get)
+  // instead of the shared EventBloc. EventBloc's "subscribe once" stream can
+  // get stuck on an empty first snapshot and then show no events until a full
+  // page reload — a fresh fetch per screen avoids that. (Matches the
+  // assignment-export dialog, which fetches events the same way.)
+  List<Event>? _allEvents;
+  bool _eventsLoading = true;
+  String? _eventsError;
+
   @override
   void initState() {
     super.initState();
-    // Load future events and team members for real-time updates
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<EventBloc>().add(const LoadUpcomingEvents());
+      if (!mounted) return;
       context.read<TeamBloc>().add(const LoadTeamMembers());
+      _loadEvents();
     });
+  }
+
+  Future<void> _loadEvents() async {
+    setState(() {
+      _eventsLoading = true;
+      _eventsError = null;
+    });
+    try {
+      final events = await context.read<EventRepository>().getAllEvents();
+      if (!mounted) return;
+      setState(() {
+        _allEvents = events;
+        _eventsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _eventsError = e.toString();
+        _eventsLoading = false;
+      });
+    }
   }
 
   @override
@@ -200,39 +228,40 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
   }
 
   Widget _buildAvailabilityContent(BuildContext context, TeamMember user) {
-    return BlocBuilder<EventBloc, EventState>(
-      builder: (context, eventState) {
-        if (eventState is EventLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    // Initial events fetch still in flight (nothing to show yet).
+    if (_eventsLoading && _allEvents == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    // Initial fetch failed with nothing to show.
+    if (_eventsError != null && _allEvents == null) {
+      return _buildEventsErrorState(context);
+    }
 
-        if (eventState is EventsLoaded) {
-          _futureEvents = eventState.events
-              .where((event) {
-                // Show ALL future events relevant to the extended team — full or
-                // not, marked or not. (Previously also hid events with no free
-                // slots; per product decision, full events now appear too.)
-                if (_isPastEvent(event)) return false;
-                if (!event.relevantForExtendedTeam) return false;
-                return true;
-              })
-              .toList()
-            ..sort((a, b) {
-              // Sort by date first, then by name
-              final dateComparison = a.startDate.compareTo(b.startDate);
-              if (dateComparison != 0) return dateComparison;
-              return a.name.compareTo(b.name);
-            });
-        }
+    _futureEvents = (_allEvents ?? const <Event>[])
+        .where((event) {
+          // Show ALL future events relevant to the extended team — full or
+          // not, marked or not. (Previously also hid events with no free
+          // slots; per product decision, full events now appear too.)
+          if (_isPastEvent(event)) return false;
+          if (!event.relevantForExtendedTeam) return false;
+          return true;
+        })
+        .toList()
+      ..sort((a, b) {
+        // Sort by date first, then by name
+        final dateComparison = a.startDate.compareTo(b.startDate);
+        if (dateComparison != 0) return dateComparison;
+        return a.name.compareTo(b.name);
+      });
 
-        final filteredEvents = filterEventsBySearchAndCategory(
-          _futureEvents,
-          query: _searchQuery,
-          categoryIds: _selectedCategoryIds,
-        );
-        final hasAnyEvents = _futureEvents.isNotEmpty;
+    final filteredEvents = filterEventsBySearchAndCategory(
+      _futureEvents,
+      query: _searchQuery,
+      categoryIds: _selectedCategoryIds,
+    );
+    final hasAnyEvents = _futureEvents.isNotEmpty;
 
-        return Column(
+    return Column(
           children: [
             // Header
             Container(
@@ -312,7 +341,35 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
             ),
           ],
         );
-      },
+  }
+
+  Widget _buildEventsErrorState(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.cloud_off, size: 56, color: Colors.grey[400]),
+            const SizedBox(height: 12),
+            Text(
+              'שגיאה בטעינת אירועים',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Colors.grey[700],
+                  ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () {
+                Logger.action('tap:retryLoadAvailabilityEvents');
+                _loadEvents();
+              },
+              icon: const Icon(Icons.refresh, size: 20),
+              label: const Text('נסה שוב'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
