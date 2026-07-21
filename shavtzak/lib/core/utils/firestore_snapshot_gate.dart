@@ -11,6 +11,13 @@
 /// Every other snapshot is forwarded, including a genuinely-empty *server*
 /// snapshot (`isFromCache == false`), so a truly empty collection still
 /// resolves to an empty result rather than hanging.
+///
+/// IMPORTANT: the empty *server* snapshot for a truly-empty collection is a
+/// metadata-only change (same empty doc set), which the default `.snapshots()`
+/// suppresses. Callers that gate an empty collection MUST subscribe with
+/// `includeMetadataChanges: true` so that server snapshot is delivered —
+/// otherwise the only emission (empty-from-cache) is dropped and consumers
+/// hang. See `FirestoreDatabase.watchEvents`.
 bool shouldEmitFirestoreSnapshot({
   required bool isFromCache,
   required bool isEmpty,

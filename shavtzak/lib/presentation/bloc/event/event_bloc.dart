@@ -81,6 +81,7 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     on<DeactivateEventRequested>(_onDeactivateEvent);
     on<ReactivateEventRequested>(_onReactivateEvent);
     on<_EventsDataUpdated>(_onEventsDataUpdated);
+    on<_RecoveryGaveUp>(_onRecoveryGaveUp);
   }
 
   /// Live stream of each event's Google Calendar sync status, keyed by event
@@ -188,6 +189,10 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     if (_resubscribeTimer?.isActive ?? false) return; // already pending
     if (_resubscribeCount >= _maxResubscribes) {
       _gaveUp = true; // exhausted; a fresh Load will retry (see _ensureWatching)
+      // Surface an error so consumers show a retry affordance instead of an
+      // indefinite spinner (the retry re-Loads, which _ensureWatching treats as
+      // a user-driven retry via _gaveUp).
+      add(const _RecoveryGaveUp());
       return;
     }
     _resubscribeCount++;
@@ -196,6 +201,18 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       if (isClosed) return;
       _startCombinedStreams();
     });
+  }
+
+  Future<void> _onRecoveryGaveUp(
+    _RecoveryGaveUp event,
+    Emitter<EventState> emit,
+  ) async {
+    // Only surface the error if we're still stuck (no authoritative data raced
+    // in first). Consumers render a retry that re-Loads → _ensureWatching sees
+    // _gaveUp and re-subscribes fresh.
+    if (state is! EventsLoaded && state is! EventsEmpty) {
+      emit(const EventError('שגיאה בטעינת אירועים. נסו שוב.'));
+    }
   }
 
   /// Emit combined data when both streams have loaded
@@ -814,4 +831,11 @@ class _EventsDataUpdated extends EventEvent {
   @override
   List<Object?> get props =>
       [events, assignmentCounts, eventBirthdays, upcomingOnly];
+}
+
+/// Internal event: the stream recovery budget was exhausted with no data. Used
+/// to surface an error state (with a retry affordance) instead of leaving the
+/// UI on an indefinite spinner.
+class _RecoveryGaveUp extends EventEvent {
+  const _RecoveryGaveUp();
 }

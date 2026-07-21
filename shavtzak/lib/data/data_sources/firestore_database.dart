@@ -513,7 +513,12 @@ class FirestoreDatabase implements DatabaseInterface {
     return _firestore
         .collection(_eventsCollection)
         .orderBy('startDate', descending: true)
-        .snapshots()
+        // includeMetadataChanges so the cache->server transition is delivered:
+        // for a genuinely-empty collection the empty *server* snapshot is a
+        // metadata-only change (same empty doc set), which the default
+        // .snapshots() would suppress — leaving the gate below with nothing to
+        // forward and hanging every consumer (incl. the relation cache).
+        .snapshots(includeMetadataChanges: true)
         .where((snapshot) => shouldEmitFirestoreSnapshot(
               isFromCache: snapshot.metadata.isFromCache,
               isEmpty: snapshot.docs.isEmpty,
@@ -745,13 +750,14 @@ class FirestoreDatabase implements DatabaseInterface {
   /// Watch all assignments in real-time
   @override
   Stream<List<Assignment>> watchAssignments() {
+    // NOTE: intentionally NOT gated with shouldEmitFirestoreSnapshot. The gate
+    // is only applied to watchEvents, whose consumers (EventBloc, relation
+    // cache) tolerate/recover from a suppressed cold-empty snapshot. AssignmentBloc
+    // consumes this stream with no watchdog, so gating here could leave it stuck
+    // on AssignmentLoading instead of resolving to AssignmentsEmpty.
     return _firestore
         .collection(_assignmentsCollection)
         .snapshots()
-        .where((snapshot) => shouldEmitFirestoreSnapshot(
-              isFromCache: snapshot.metadata.isFromCache,
-              isEmpty: snapshot.docs.isEmpty,
-            ))
         .asyncMap((snapshot) async {
       final assignments = snapshot.docs
           .map((doc) => AssignmentModel.fromFirestore(doc).toEntity())

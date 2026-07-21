@@ -325,4 +325,29 @@ void main() {
     verify(mockEventRepository.watchEvents()).called(1);
     verify(mockAssignmentRepository.watchAssignments()).called(1);
   });
+
+  test('exhausting the recovery budget surfaces EventError (retry affordance)',
+      () async {
+    final bloc = EventBloc(
+      mockEventRepository,
+      mockAssignmentRepository,
+      calendarSyncBloc: null,
+      watchdogTimeout: const Duration(milliseconds: 15),
+      resubscribeBackoff: const Duration(milliseconds: 5),
+      maxResubscribes: 1,
+    );
+    addTearDown(bloc.close);
+
+    final emitted = <EventState>[];
+    final sub = bloc.stream.listen(emitted.add);
+    addTearDown(sub.cancel);
+
+    bloc.add(const LoadEvents());
+    // Never emit → the watchdog exhausts the budget and the bloc gives up.
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+
+    // Must surface EventError so consumers show a retry button rather than an
+    // indefinite spinner.
+    expect(emitted.whereType<EventError>(), isNotEmpty);
+  });
 }
