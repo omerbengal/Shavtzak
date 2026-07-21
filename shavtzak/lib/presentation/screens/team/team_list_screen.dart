@@ -39,6 +39,7 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/role/role_bloc.dart';
 import '../../bloc/role/role_state.dart';
 import '../../widgets/date_picker_dialog.dart';
+import '../../widgets/event_search_filter_bar.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/swipeable_page_view.dart';
 import '../../widgets/admin_passcode_dialog.dart';
@@ -5111,6 +5112,10 @@ class _AdminAvailabilityDialog extends StatefulWidget {
 class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
   late Set<String> _selectedEventIds;
 
+  // Ephemeral search + category filter over the events list.
+  String _searchQuery = '';
+  Set<String> _selectedCategoryIds = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -5253,7 +5258,12 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final groupedEvents = _groupEventsByMonth(widget.events);
+    final filteredEvents = filterEventsBySearchAndCategory(
+      widget.events,
+      query: _searchQuery,
+      categoryIds: _selectedCategoryIds,
+    );
+    final groupedEvents = _groupEventsByMonth(filteredEvents);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -5308,16 +5318,31 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
                 ),
               ),
 
+              // Search + category filter over the events.
+              if (widget.events.isNotEmpty)
+                EventSearchFilterBar(
+                  logField: 'adminAvailabilityEvents',
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  searchQuery: _searchQuery,
+                  onSearchChanged: (value) =>
+                      setState(() => _searchQuery = value),
+                  selectedCategoryIds: _selectedCategoryIds,
+                  onCategoryFilterChanged: (ids) =>
+                      setState(() => _selectedCategoryIds = ids),
+                ),
+
               const Divider(height: 1),
 
               // Events list
               Expanded(
-                child: widget.events.isEmpty
+                child: (widget.events.isEmpty || filteredEvents.isEmpty)
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(32),
                           child: Text(
-                            'אין אירועים עתידיים',
+                            widget.events.isEmpty
+                                ? 'אין אירועים עתידיים'
+                                : 'אין אירועים התואמים לסינון',
                             style: TextStyle(
                                 color: Colors.grey[600], fontSize: 16),
                           ),
