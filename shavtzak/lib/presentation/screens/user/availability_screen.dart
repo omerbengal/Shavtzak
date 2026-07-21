@@ -243,6 +243,7 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
           // not, marked or not. (Previously also hid events with no free
           // slots; per product decision, full events now appear too.)
           if (_isPastEvent(event)) return false;
+          if (event.isDeactivated) return false; // on-hold events are hidden
           if (!event.relevantForExtendedTeam) return false;
           return true;
         })

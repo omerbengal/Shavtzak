@@ -3563,6 +3563,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     final today = DateTime(now.year, now.month, now.day);
 
     final futureEvents = loadedEvents.where((event) {
+      if (event.isDeactivated) return false; // on-hold events are hidden
       final eventEndDate =
           DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
       return !eventEndDate.isBefore(today);

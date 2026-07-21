@@ -74,6 +74,10 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
       final events = await context.read<EventRepository>().getAllEvents();
       final today = _dateOnly(DateTime.now());
       final futureEvents = events.where((event) {
+        // Deactivated ("on hold") events are excluded from exports on the
+        // backend, so they must not be selectable here — otherwise selecting
+        // one fails validation ("Selected future event IDs are invalid").
+        if (event.isDeactivated) return false;
         final endDate = _dateOnly(event.endDate);
         return !endDate.isBefore(today);
       }).toList()
