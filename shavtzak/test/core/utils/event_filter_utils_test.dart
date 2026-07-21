@@ -1,0 +1,208 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/core/utils/event_filter_utils.dart';
+import 'package:shavtzak/domain/entities/event.dart';
+
+void main() {
+  group('filterEventsBySearchAndCategory', () {
+    final events = [
+      _event(id: 'a', name: 'הופעה בפארק', location: 'תל אביב', categoryId: 'c1'),
+      _event(id: 'b', name: 'טקס זיכרון', location: 'ירושלים', categoryId: 'c2'),
+      _event(id: 'c', name: 'הופעה באולם', location: 'חיפה', categoryId: null),
+    ];
+
+    test('empty query and empty categories returns all', () {
+      final result = filterEventsBySearchAndCategory(
+        events,
+        query: '',
+        categoryIds: <String>{},
+      );
+      expect(result.map((e) => e.id), ['a', 'b', 'c']);
+    });
+
+    test('search matches event name', () {
+      final result = filterEventsBySearchAndCategory(
+        events,
+        query: 'הופעה',
+        categoryIds: <String>{},
+      );
+      expect(result.map((e) => e.id), ['a', 'c']);
+    });
+
+    test('search matches event location', () {
+      final result = filterEventsBySearchAndCategory(
+        events,
+        query: 'ירושלים',
+        categoryIds: <String>{},
+      );
+      expect(result.map((e) => e.id), ['b']);
+    });
+
+    test('search is punctuation-insensitive via normalizeForSearch', () {
+      final withApostrophe = [
+        _event(id: 'x', name: "מג'יק", location: ''),
+      ];
+      final result = filterEventsBySearchAndCategory(
+        withApostrophe,
+        query: 'מגיק',
+        categoryIds: <String>{},
+      );
+      expect(result.map((e) => e.id), ['x']);
+    });
+
+    test('category filter keeps only matching categories', () {
+      final result = filterEventsBySearchAndCategory(
+        events,
+        query: '',
+        categoryIds: {'c1', 'c2'},
+      );
+      expect(result.map((e) => e.id), ['a', 'b']);
+    });
+
+    test('uncategorized events are excluded when a category filter is active', () {
+      final result = filterEventsBySearchAndCategory(
+        events,
+        query: '',
+        categoryIds: {'c1'},
+      );
+      expect(result.map((e) => e.id), ['a']);
+    });
+
+    test('search and category filter combine (AND)', () {
+      final result = filterEventsBySearchAndCategory(
+        events,
+        query: 'הופעה',
+        categoryIds: {'c1'},
+      );
+      // Only 'a' is both "הופעה" and category c1 ('c' is uncategorized).
+      expect(result.map((e) => e.id), ['a']);
+    });
+  });
+
+  group('eventIdsInDateRange', () {
+    test('single-day event inside the range is included', () {
+      final events = [_event(id: 'a', start: DateTime(2026, 7, 15))];
+      final result = eventIdsInDateRange(
+        events,
+        DateTime(2026, 7, 10),
+        DateTime(2026, 7, 20),
+      );
+      expect(result, {'a'});
+    });
+
+    test('event outside the range is excluded', () {
+      final events = [_event(id: 'a', start: DateTime(2026, 7, 25))];
+      final result = eventIdsInDateRange(
+        events,
+        DateTime(2026, 7, 10),
+        DateTime(2026, 7, 20),
+      );
+      expect(result, isEmpty);
+    });
+
+    test('range boundaries are inclusive (start and end days match)', () {
+      final events = [
+        _event(id: 'start', start: DateTime(2026, 7, 10)),
+        _event(id: 'end', start: DateTime(2026, 7, 20)),
+      ];
+      final result = eventIdsInDateRange(
+        events,
+        DateTime(2026, 7, 10),
+        DateTime(2026, 7, 20),
+      );
+      expect(result, {'start', 'end'});
+    });
+
+    test('boundary comparison ignores time-of-day', () {
+      final events = [
+        _event(id: 'a', start: DateTime(2026, 7, 20, 23, 30)),
+      ];
+      final result = eventIdsInDateRange(
+        events,
+        DateTime(2026, 7, 10, 8),
+        DateTime(2026, 7, 20, 6),
+      );
+      expect(result, {'a'});
+    });
+
+    test('multi-day event overlapping the range edge is included', () {
+      final events = [
+        // Spans 8–12; range is 10–20 → overlaps on 10–12.
+        _event(
+          id: 'span',
+          start: DateTime(2026, 7, 8),
+          end: DateTime(2026, 7, 12),
+        ),
+      ];
+      final result = eventIdsInDateRange(
+        events,
+        DateTime(2026, 7, 10),
+        DateTime(2026, 7, 20),
+      );
+      expect(result, {'span'});
+    });
+
+    test('single-day range selects only that day', () {
+      final events = [
+        _event(id: 'hit', start: DateTime(2026, 7, 15)),
+        _event(id: 'miss', start: DateTime(2026, 7, 16)),
+      ];
+      final result = eventIdsInDateRange(
+        events,
+        DateTime(2026, 7, 15),
+        DateTime(2026, 7, 15),
+      );
+      expect(result, {'hit'});
+    });
+  });
+
+  group('eventCoverageDays', () {
+    test('single-day event contributes one day', () {
+      final days = eventCoverageDays([
+        _event(id: 'a', start: DateTime(2026, 7, 15, 18)),
+      ]);
+      expect(days, {DateTime(2026, 7, 15)});
+    });
+
+    test('multi-day event contributes every day inclusive', () {
+      final days = eventCoverageDays([
+        _event(
+          id: 'a',
+          start: DateTime(2026, 7, 10),
+          end: DateTime(2026, 7, 12),
+        ),
+      ]);
+      expect(days, {
+        DateTime(2026, 7, 10),
+        DateTime(2026, 7, 11),
+        DateTime(2026, 7, 12),
+      });
+    });
+  });
+}
+
+Event _event({
+  required String id,
+  DateTime? start,
+  DateTime? end,
+  String name = 'אירוע',
+  String location = '',
+  String? categoryId,
+}) {
+  final now = DateTime(2026, 7, 1);
+  final startDate = start ?? DateTime(2026, 7, 15);
+  return Event(
+    id: id,
+    name: name,
+    startDate: startDate,
+    endDate: end ?? startDate,
+    startTime: '18:00',
+    endTime: '22:00',
+    assemblyTime: '17:00',
+    location: location,
+    requiresArmed: false,
+    categoryId: categoryId,
+    roleRequirements: const {'medic': 1},
+    createdAt: now,
+    updatedAt: now,
+  );
+}

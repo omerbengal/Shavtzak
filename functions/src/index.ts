@@ -2721,6 +2721,27 @@ function teamMemberDocFromJson(member: Record<string, unknown>, existing?: Recor
   return next;
 }
 
+// Projection applied when a NON-admin member updates their OWN record via
+// teamMember.update (access is gated by requireSelfOrAdmin). Every field except
+// the ones listed here is preserved from the existing document, so a self-edit
+// can never escalate privileges (isAdmin, roleCapabilities, canAccess*) or alter
+// identity. `availableEventIds` is self-editable because non-permanent members
+// manage their own event availability from /user/constraints.
+function applySelfEditableFields(
+  existing: Record<string, unknown>,
+  next: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...existing,
+    phoneNumber: next['phoneNumber'] ?? null,
+    email: next['email'] ?? null,
+    birthday: next['birthday'] ?? null,
+    vehicleInfo: next['vehicleInfo'] ?? null,
+    availableEventIds: next['availableEventIds'] ?? [],
+    updatedAt: next['updatedAt'],
+  };
+}
+
 function eventDocFromJson(event: Record<string, unknown>): Record<string, unknown> {
   return stripUndefined({
     id: event['id'],
@@ -3363,14 +3384,7 @@ async function executeMutation(
       let next = teamMemberDocFromJson(member, existing);
       if (!actor.isAdmin) {
         requireSelfOrAdmin(actor, memberId);
-        next = {
-          ...existing,
-          phoneNumber: next['phoneNumber'] ?? null,
-          email: next['email'] ?? null,
-          birthday: next['birthday'] ?? null,
-          vehicleInfo: next['vehicleInfo'] ?? null,
-          updatedAt: next['updatedAt'],
-        };
+        next = applySelfEditableFields(existing, next);
       }
       delete next['passcode'];
       // Constraints are owned by constraint.{add,edit,remove}. Stripping the field here
@@ -6196,4 +6210,5 @@ export {
   normalizeDayInIsrael as __testNormalizeDayInIsrael,
   constraintMatchesDate as __testConstraintMatchesDate,
   memberAvailableForEvent as __testMemberAvailableForEvent,
+  applySelfEditableFields as __testApplySelfEditableFields,
 };

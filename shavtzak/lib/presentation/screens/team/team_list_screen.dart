@@ -21,6 +21,7 @@ import '../../../core/utils/time_range_utils.dart';
 import '../../../core/utils/search_utils.dart';
 import '../../../core/utils/constraint_event_overlap.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/event_filter_utils.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/utilities_service.dart';
 import 'package:uuid/uuid.dart';
@@ -38,6 +39,7 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/role/role_bloc.dart';
 import '../../bloc/role/role_state.dart';
 import '../../widgets/date_picker_dialog.dart';
+import '../../widgets/event_search_filter_bar.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/swipeable_page_view.dart';
 import '../../widgets/admin_passcode_dialog.dart';
@@ -45,6 +47,7 @@ import '../../widgets/vehicle_info_copy_dialog.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../../data/repositories/user_selection_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
+import '../../../data/repositories/event_repository.dart';
 import '../../bloc/calendar_sync/calendar_sync_bloc.dart';
 import '../../bloc/calendar_sync/calendar_sync_event.dart';
 import '../../widgets/archived_members_dialog.dart';
@@ -1094,6 +1097,15 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   List<DateConstraint> _constraints = [];
   List<String> _availableEventIds =
       []; // Event-based availability for non-permanent members
+
+  // Events for the availability section are fetched directly from the
+  // repository (a fresh one-shot get) instead of the shared EventBloc, whose
+  // "subscribe once" stream can get stuck on an empty first snapshot and show
+  // no events until a full page reload. (Matches the assignment-export dialog.)
+  List<Event>? _modalEvents;
+  bool _modalEventsLoading = true;
+  String? _modalEventsError;
+
   bool _isDirty = false;
   String? _roleError; // Track role validation error
   bool _isSaving = false;
@@ -1142,6 +1154,32 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     _nameController.addListener(() => _isDirty = true);
     _phoneController.addListener(() => _isDirty = true);
     _commentsController.addListener(() => _isDirty = true);
+
+    // Fetch events for the availability section directly (see _modalEvents).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadModalEvents();
+    });
+  }
+
+  Future<void> _loadModalEvents() async {
+    setState(() {
+      _modalEventsLoading = true;
+      _modalEventsError = null;
+    });
+    try {
+      final events = await context.read<EventRepository>().getAllEvents();
+      if (!mounted) return;
+      setState(() {
+        _modalEvents = events;
+        _modalEventsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _modalEventsError = e.toString();
+        _modalEventsLoading = false;
+      });
+    }
   }
 
   void _updateBirthdayController() {
@@ -2517,9 +2555,14 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                       if (_isPermanent)
                                         ..._buildVisibleConstraintsList()
                                       else
-                                        BlocBuilder<EventBloc, EventState>(
-                                          builder: (context, eventState) {
-                                            if (eventState is! EventsLoaded) {
+                                        Builder(
+                                          builder: (context) {
+                                            // Events come from a direct fetch
+                                            // (see _modalEvents), not the shared
+                                            // EventBloc whose stream can get stuck
+                                            // empty.
+                                            if (_modalEventsLoading &&
+                                                _modalEvents == null) {
                                               return const Padding(
                                                 padding: EdgeInsets.all(16),
                                                 child: Center(
@@ -2527,14 +2570,44 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                                         CircularProgressIndicator()),
                                               );
                                             }
+                                            if (_modalEventsError != null &&
+                                                _modalEvents == null) {
+                                              return Padding(
+                                                padding:
+                                                    const EdgeInsets.all(16),
+                                                child: Column(
+                                                  children: [
+                                                    Text(
+                                                      'שגיאה בטעינת אירועים',
+                                                      style: TextStyle(
+                                                          color:
+                                                              Colors.red[700]),
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                    ),
+                                                    const SizedBox(height: 8),
+                                                    OutlinedButton.icon(
+                                                      onPressed:
+                                                          _loadModalEvents,
+                                                      icon: const Icon(
+                                                          Icons.refresh,
+                                                          size: 20),
+                                                      label:
+                                                          const Text('נסה שוב'),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }
+                                            final loadedEvents =
+                                                _modalEvents ?? const <Event>[];
 
                                             final now = DateTime.now();
                                             final today = DateTime(
                                                 now.year, now.month, now.day);
 
                                             // Get future events that this member is available for
-                                            final availableEvents = eventState
-                                                .events
+                                            final availableEvents = loadedEvents
                                                 .where((event) {
                                               final eventEndDate = DateTime(
                                                   event.endDate.year,
@@ -3480,13 +3553,17 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
 
   /// Open the availability events editor modal
   void _editAvailabilityEvents() async {
-    final eventState = context.read<EventBloc>().state;
-    if (eventState is! EventsLoaded) return;
+    // Use the directly-fetched events (see _modalEvents), not the shared
+    // EventBloc whose stream can get stuck empty. Bail quietly if the fetch
+    // hasn't finished yet.
+    final loadedEvents = _modalEvents;
+    if (loadedEvents == null) return;
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    final futureEvents = eventState.events.where((event) {
+    final futureEvents = loadedEvents.where((event) {
+      if (event.isDeactivated) return false; // on-hold events are hidden
       final eventEndDate =
           DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
       return !eventEndDate.isBefore(today);
@@ -5036,6 +5113,10 @@ class _AdminAvailabilityDialog extends StatefulWidget {
 class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
   late Set<String> _selectedEventIds;
 
+  // Ephemeral search + category filter over the events list.
+  String _searchQuery = '';
+  Set<String> _selectedCategoryIds = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -5050,6 +5131,36 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
         _selectedEventIds.add(eventId);
       }
     });
+  }
+
+  /// Feature 1b: pick a date range and union every event in that range into the
+  /// dialog's selection. The change is persisted via the member modal's existing
+  /// staged save path (this dialog only returns the selected IDs).
+  Future<void> _pickDateRange() async {
+    if (widget.events.isEmpty) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final result = await showDialog<Map<String, DateTime?>>(
+      context: context,
+      builder: (_) => DualCalendarDatePicker(
+        isSingleDate: false,
+        title: 'בחירת זמינות לפי טווח תאריכים',
+        minDate: today,
+        highlightedDates: eventCoverageDays(widget.events),
+      ),
+    );
+    if (result == null || result['startDate'] == null) return;
+
+    final start = result['startDate']!;
+    final end = result['endDate'] ?? start;
+    final idsInRange = eventIdsInDateRange(widget.events, start, end);
+    Logger.action(
+        'tap:availabilityDateRangeUnion', {'count': idsInRange.length});
+    if (!mounted) return;
+    if (idsInRange.isNotEmpty) {
+      setState(() => _selectedEventIds.addAll(idsInRange));
+    }
   }
 
   /// Group events by month
@@ -5148,7 +5259,17 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final groupedEvents = _groupEventsByMonth(widget.events);
+    final filteredEvents = filterEventsBySearchAndCategory(
+      widget.events,
+      query: _searchQuery,
+      categoryIds: _selectedCategoryIds,
+    );
+    final filteredIds = filteredEvents.map((e) => e.id).toSet();
+    final selectedFilteredCount =
+        filteredIds.where((id) => _selectedEventIds.contains(id)).length;
+    final allFilteredSelected =
+        filteredIds.isNotEmpty && selectedFilteredCount == filteredIds.length;
+    final groupedEvents = _groupEventsByMonth(filteredEvents);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -5180,20 +5301,93 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
                             color: Colors.grey[600],
                           ),
                     ),
+                    // Feature 1b: bulk-mark availability across a date range.
+                    if (widget.events.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Logger.action('open:availabilityDateRangePicker',
+                                {'context': 'adminModal'});
+                            _pickDateRange();
+                          },
+                          icon: const Icon(Icons.date_range, size: 20),
+                          label: const Text('בחירה לפי טווח תאריכים'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.green[700],
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
+
+              // Search + category filter over the events.
+              if (widget.events.isNotEmpty)
+                EventSearchFilterBar(
+                  logField: 'adminAvailabilityEvents',
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  searchQuery: _searchQuery,
+                  onSearchChanged: (value) =>
+                      setState(() => _searchQuery = value),
+                  selectedCategoryIds: _selectedCategoryIds,
+                  onCategoryFilterChanged: (ids) =>
+                      setState(() => _selectedCategoryIds = ids),
+                ),
+
+              // "Select all filtered" ⇄ "clear filtered" toggle + count.
+              if (filteredEvents.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton.icon(
+                        onPressed: () {
+                          Logger.action('tap:selectAllAdminAvailability', {
+                            'allSelected': allFilteredSelected,
+                            'count': filteredIds.length,
+                          });
+                          setState(() {
+                            if (allFilteredSelected) {
+                              _selectedEventIds.removeAll(filteredIds);
+                            } else {
+                              _selectedEventIds.addAll(filteredIds);
+                            }
+                          });
+                        },
+                        icon: Icon(
+                          allFilteredSelected
+                              ? Icons.remove_done
+                              : Icons.done_all,
+                          size: 20,
+                        ),
+                        label: Text(
+                            allFilteredSelected ? 'בטל בחירה' : 'בחר הכל'),
+                      ),
+                      Text(
+                        'נבחרו $selectedFilteredCount מתוך ${filteredIds.length}',
+                        style:
+                            TextStyle(color: Colors.grey[600], fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
 
               const Divider(height: 1),
 
               // Events list
               Expanded(
-                child: widget.events.isEmpty
+                child: (widget.events.isEmpty || filteredEvents.isEmpty)
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(32),
                           child: Text(
-                            'אין אירועים עתידיים',
+                            widget.events.isEmpty
+                                ? 'אין אירועים עתידיים'
+                                : 'אין אירועים התואמים לסינון',
                             style: TextStyle(
                                 color: Colors.grey[600], fontSize: 16),
                           ),
