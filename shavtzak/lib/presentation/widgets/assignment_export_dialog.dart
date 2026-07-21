@@ -37,6 +37,11 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
   String _searchQuery = '';
   Set<String> _selectedCategoryIds = <String>{};
 
+  // Shared by the events Scrollbar + ListView so the Scrollbar always has a
+  // ScrollPosition attached (a bare Scrollbar over a shrinkWrap ListView falls
+  // back to the PrimaryScrollController, which the list never attaches to).
+  final ScrollController _eventsScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -47,6 +52,7 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
   @override
   void dispose() {
     EnvironmentService.instance.removeListener(_handleEnvironmentChanged);
+    _eventsScrollController.dispose();
     super.dispose();
   }
 
@@ -351,7 +357,9 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 320),
             child: Scrollbar(
+              controller: _eventsScrollController,
               child: ListView.builder(
+                controller: _eventsScrollController,
                 shrinkWrap: true,
                 itemCount: filteredEvents.length,
                 itemBuilder: (context, index) {
