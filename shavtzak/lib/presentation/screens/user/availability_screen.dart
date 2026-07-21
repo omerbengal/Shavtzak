@@ -11,7 +11,9 @@ import '../../bloc/user_selection/user_selection_state.dart';
 import '../../bloc/team/team_bloc.dart';
 import '../../bloc/team/team_event.dart';
 import '../../bloc/team/team_state.dart';
-import '../../../data/repositories/event_repository.dart';
+import '../../bloc/event/event_bloc.dart';
+import '../../bloc/event/event_event.dart';
+import '../../bloc/event/event_state.dart';
 import '../../../core/utils/event_filter_utils.dart';
 import '../../widgets/date_picker_dialog.dart';
 import '../../widgets/event_search_filter_bar.dart';
@@ -56,44 +58,15 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
   String _searchQuery = '';
   Set<String> _selectedCategoryIds = <String>{};
 
-  // Events are fetched directly from the repository (a fresh one-shot get)
-  // instead of the shared EventBloc. EventBloc's "subscribe once" stream can
-  // get stuck on an empty first snapshot and then show no events until a full
-  // page reload — a fresh fetch per screen avoids that. (Matches the
-  // assignment-export dialog, which fetches events the same way.)
-  List<Event>? _allEvents;
-  bool _eventsLoading = true;
-  String? _eventsError;
-
   @override
   void initState() {
     super.initState();
+    // Real-time events via the shared EventBloc (now self-healing) + team data.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      context.read<EventBloc>().add(const LoadUpcomingEvents());
       context.read<TeamBloc>().add(const LoadTeamMembers());
-      _loadEvents();
     });
-  }
-
-  Future<void> _loadEvents() async {
-    setState(() {
-      _eventsLoading = true;
-      _eventsError = null;
-    });
-    try {
-      final events = await context.read<EventRepository>().getAllEvents();
-      if (!mounted) return;
-      setState(() {
-        _allEvents = events;
-        _eventsLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _eventsError = e.toString();
-        _eventsLoading = false;
-      });
-    }
   }
 
   @override
@@ -228,41 +201,47 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
   }
 
   Widget _buildAvailabilityContent(BuildContext context, TeamMember user) {
-    // Initial events fetch still in flight (nothing to show yet).
-    if (_eventsLoading && _allEvents == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    // Initial fetch failed with nothing to show.
-    if (_eventsError != null && _allEvents == null) {
-      return _buildEventsErrorState(context);
-    }
+    return BlocBuilder<EventBloc, EventState>(
+      builder: (context, eventState) {
+        // Derive the events list from EventBloc's (now self-healing) state.
+        final List<Event> allEvents;
+        if (eventState is EventsLoaded) {
+          allEvents = eventState.events;
+        } else if (eventState is EventsEmpty) {
+          allEvents = const [];
+        } else if (eventState is EventError) {
+          return _buildEventsErrorState(context);
+        } else {
+          // EventInitial / EventLoading — still loading.
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    _futureEvents = (_allEvents ?? const <Event>[])
-        .where((event) {
-          // Show ALL future events relevant to the extended team — full or
-          // not, marked or not. (Previously also hid events with no free
-          // slots; per product decision, full events now appear too.)
-          if (_isPastEvent(event)) return false;
-          if (event.isDeactivated) return false; // on-hold events are hidden
-          if (!event.relevantForExtendedTeam) return false;
-          return true;
-        })
-        .toList()
-      ..sort((a, b) {
-        // Sort by date first, then by name
-        final dateComparison = a.startDate.compareTo(b.startDate);
-        if (dateComparison != 0) return dateComparison;
-        return a.name.compareTo(b.name);
-      });
+        _futureEvents = allEvents
+            .where((event) {
+              // Show ALL future events relevant to the extended team — full or
+              // not, marked or not. (Previously also hid events with no free
+              // slots; per product decision, full events now appear too.)
+              if (_isPastEvent(event)) return false;
+              if (event.isDeactivated) return false; // on-hold events are hidden
+              if (!event.relevantForExtendedTeam) return false;
+              return true;
+            })
+            .toList()
+          ..sort((a, b) {
+            // Sort by date first, then by name
+            final dateComparison = a.startDate.compareTo(b.startDate);
+            if (dateComparison != 0) return dateComparison;
+            return a.name.compareTo(b.name);
+          });
 
-    final filteredEvents = filterEventsBySearchAndCategory(
-      _futureEvents,
-      query: _searchQuery,
-      categoryIds: _selectedCategoryIds,
-    );
-    final hasAnyEvents = _futureEvents.isNotEmpty;
+        final filteredEvents = filterEventsBySearchAndCategory(
+          _futureEvents,
+          query: _searchQuery,
+          categoryIds: _selectedCategoryIds,
+        );
+        final hasAnyEvents = _futureEvents.isNotEmpty;
 
-    return Column(
+        return Column(
           children: [
             // Header
             Container(
@@ -342,6 +321,8 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
             ),
           ],
         );
+      },
+    );
   }
 
   Widget _buildEventsErrorState(BuildContext context) {
@@ -363,7 +344,7 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
             OutlinedButton.icon(
               onPressed: () {
                 Logger.action('tap:retryLoadAvailabilityEvents');
-                _loadEvents();
+                context.read<EventBloc>().add(const LoadUpcomingEvents());
               },
               icon: const Icon(Icons.refresh, size: 20),
               label: const Text('נסה שוב'),

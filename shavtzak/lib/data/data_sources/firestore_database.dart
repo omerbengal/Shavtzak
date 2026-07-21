@@ -16,6 +16,7 @@ import '../../core/constants/role_types.dart';
 import '../../core/services/backend_api_service.dart';
 import '../../core/services/environment_service.dart';
 import '../../core/utils/event_sorting.dart';
+import '../../core/utils/firestore_snapshot_gate.dart';
 import '../models/assignment_model.dart';
 import '../models/assignment_label_model.dart';
 import '../models/category_model.dart';
@@ -512,7 +513,16 @@ class FirestoreDatabase implements DatabaseInterface {
     return _firestore
         .collection(_eventsCollection)
         .orderBy('startDate', descending: true)
-        .snapshots()
+        // includeMetadataChanges so the cache->server transition is delivered:
+        // for a genuinely-empty collection the empty *server* snapshot is a
+        // metadata-only change (same empty doc set), which the default
+        // .snapshots() would suppress — leaving the gate below with nothing to
+        // forward and hanging every consumer (incl. the relation cache).
+        .snapshots(includeMetadataChanges: true)
+        .where((snapshot) => shouldEmitFirestoreSnapshot(
+              isFromCache: snapshot.metadata.isFromCache,
+              isEmpty: snapshot.docs.isEmpty,
+            ))
         .map((snapshot) {
       // Diagnostic: is this relation-cache source served locally or from the
       // server? A cold source's first server snapshot is where the ~30s park
@@ -740,6 +750,11 @@ class FirestoreDatabase implements DatabaseInterface {
   /// Watch all assignments in real-time
   @override
   Stream<List<Assignment>> watchAssignments() {
+    // NOTE: intentionally NOT gated with shouldEmitFirestoreSnapshot. The gate
+    // is only applied to watchEvents, whose consumers (EventBloc, relation
+    // cache) tolerate/recover from a suppressed cold-empty snapshot. AssignmentBloc
+    // consumes this stream with no watchdog, so gating here could leave it stuck
+    // on AssignmentLoading instead of resolving to AssignmentsEmpty.
     return _firestore
         .collection(_assignmentsCollection)
         .snapshots()

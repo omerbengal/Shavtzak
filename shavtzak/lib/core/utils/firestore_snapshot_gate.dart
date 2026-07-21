@@ -1,0 +1,26 @@
+/// Whether a Firestore query snapshot should be forwarded to stream consumers.
+///
+/// Skips the cold-start "empty from cache" snapshot: when a `.snapshots()`
+/// listener attaches to a collection whose local cache is empty, Firestore
+/// emits an empty snapshot from cache first (`isFromCache == true`), then the
+/// authoritative server snapshot. Forwarding that first empty snapshot makes
+/// consumers flash "no data" before the real data arrives — and, combined with
+/// a slow/stuck first server snapshot, can leave them stuck showing empty until
+/// a full reload.
+///
+/// Every other snapshot is forwarded, including a genuinely-empty *server*
+/// snapshot (`isFromCache == false`), so a truly empty collection still
+/// resolves to an empty result rather than hanging.
+///
+/// IMPORTANT: the empty *server* snapshot for a truly-empty collection is a
+/// metadata-only change (same empty doc set), which the default `.snapshots()`
+/// suppresses. Callers that gate an empty collection MUST subscribe with
+/// `includeMetadataChanges: true` so that server snapshot is delivered —
+/// otherwise the only emission (empty-from-cache) is dropped and consumers
+/// hang. See `FirestoreDatabase.watchEvents`.
+bool shouldEmitFirestoreSnapshot({
+  required bool isFromCache,
+  required bool isEmpty,
+}) {
+  return !(isFromCache && isEmpty);
+}
