@@ -14,6 +14,9 @@ import '../../bloc/team/team_state.dart';
 import '../../bloc/event/event_bloc.dart';
 import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
+import '../../../core/utils/event_filter_utils.dart';
+import '../../widgets/date_picker_dialog.dart';
+import '../../widgets/event_search_filter_bar.dart';
 import '../../widgets/loading_overlay.dart';
 
 class _UserAvailabilityContext {
@@ -50,6 +53,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
   List<Event> _futureEvents = [];
   bool _isMutationInFlight = false;
   String _mutationMessage = '';
+
+  // Feature 2: ephemeral search + category filter over the events list.
+  String _searchQuery = '';
+  Set<String> _selectedCategoryIds = <String>{};
 
   @override
   void initState() {
@@ -230,11 +237,18 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
             });
         }
 
+        final filteredEvents = filterEventsBySearchAndCategory(
+          _futureEvents,
+          query: _searchQuery,
+          categoryIds: _selectedCategoryIds,
+        );
+        final hasAnyEvents = _futureEvents.isNotEmpty;
+
         return Column(
           children: [
             // Header
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -279,11 +293,34 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
               ),
             ),
 
+            // Feature 1: bulk-mark availability across a date range.
+            if (hasAnyEvents) _buildDateRangeButton(context, user),
+
+            // Feature 2: search + category filter over the events.
+            if (hasAnyEvents)
+              EventSearchFilterBar(
+                logField: 'availabilityEvents',
+                searchQuery: _searchQuery,
+                onSearchChanged: (value) {
+                  setState(() => _searchQuery = value);
+                },
+                selectedCategoryIds: _selectedCategoryIds,
+                onCategoryFilterChanged: (ids) {
+                  setState(() => _selectedCategoryIds = ids);
+                },
+              ),
+
+            // Feature 2: "select all filtered" toggle + count.
+            if (hasAnyEvents)
+              _buildSelectAllRow(context, user, filteredEvents),
+
             // Events list
             Expanded(
-              child: _futureEvents.isEmpty
+              child: !hasAnyEvents
                   ? _buildEmptyState(context)
-                  : _buildEventsList(context, user),
+                  : (filteredEvents.isEmpty
+                      ? _buildNoResultsState(context)
+                      : _buildEventsList(context, user, filteredEvents)),
             ),
           ],
         );
@@ -321,9 +358,92 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
     );
   }
 
-  Widget _buildEventsList(BuildContext context, TeamMember user) {
+  /// Feature 1: button that opens the date-range picker to bulk-mark availability.
+  Widget _buildDateRangeButton(BuildContext context, TeamMember user) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: OutlinedButton.icon(
+          onPressed: () {
+            Logger.action('open:availabilityDateRangePicker');
+            _pickDateRangeForAvailability(context, user);
+          },
+          icon: const Icon(Icons.date_range, size: 20),
+          label: const Text('בחירה לפי טווח תאריכים'),
+          style: OutlinedButton.styleFrom(foregroundColor: Colors.green[700]),
+        ),
+      ),
+    );
+  }
+
+  /// Feature 2: "select all filtered" ⇄ "clear filtered" toggle + count.
+  Widget _buildSelectAllRow(
+    BuildContext context,
+    TeamMember user,
+    List<Event> filteredEvents,
+  ) {
+    final filteredIds = filteredEvents.map((e) => e.id).toSet();
+    final selectedCount =
+        filteredIds.where((id) => user.availableEventIds.contains(id)).length;
+    final allSelected =
+        filteredIds.isNotEmpty && selectedCount == filteredIds.length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          TextButton.icon(
+            onPressed: filteredEvents.isEmpty
+                ? null
+                : () {
+                    Logger.action('tap:selectAllFilteredAvailability', {
+                      'allSelected': allSelected,
+                      'count': filteredIds.length,
+                    });
+                    _toggleSelectAllFiltered(context, user, filteredEvents);
+                  },
+            icon: Icon(
+              allSelected ? Icons.remove_done : Icons.done_all,
+              size: 20,
+            ),
+            label: Text(allSelected ? 'בטל בחירה' : 'בחר הכל'),
+          ),
+          Text(
+            'נבחרו $selectedCount מתוך ${filteredIds.length}',
+            style: TextStyle(color: Colors.grey[600], fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoResultsState(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search_off, size: 56, color: Colors.grey[400]),
+          const SizedBox(height: 12),
+          Text(
+            'אין אירועים התואמים לסינון',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Colors.grey[600],
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEventsList(
+    BuildContext context,
+    TeamMember user,
+    List<Event> events,
+  ) {
     // Group events by month
-    final groupedEvents = _groupEventsByMonth(_futureEvents);
+    final groupedEvents = _groupEventsByMonth(events);
 
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -450,7 +570,7 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
             ),
       );
 
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
         ..showSnackBar(
@@ -473,6 +593,156 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
           ),
         );
     }
+  }
+
+  /// Resolve the freshest copy of the current user from live BLoC state,
+  /// falling back to [fallback] when state is unavailable.
+  TeamMember _resolveCurrentUser(BuildContext context, TeamMember fallback) {
+    final teamState = context.read<TeamBloc>().state;
+    final userState = context.read<UserSelectionBloc>().state;
+    if (teamState is TeamLoaded && userState is UserAuthenticated) {
+      return teamState.members.firstWhere(
+        (member) => member.id == userState.user.id,
+        orElse: () => fallback,
+      );
+    }
+    return fallback;
+  }
+
+  /// Feature 1: pick a date range and union every event in that range into the
+  /// user's availability with a single batched write.
+  Future<void> _pickDateRangeForAvailability(
+    BuildContext context,
+    TeamMember user,
+  ) async {
+    final eligible = _futureEvents;
+    if (eligible.isEmpty) return;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final result = await showDialog<Map<String, DateTime?>>(
+      context: context,
+      builder: (_) => DualCalendarDatePicker(
+        isSingleDate: false,
+        title: 'בחירת זמינות לפי טווח תאריכים',
+        minDate: today,
+        highlightedDates: eventCoverageDays(eligible),
+      ),
+    );
+    if (result == null || result['startDate'] == null) return;
+
+    final start = result['startDate']!;
+    final end = result['endDate'] ?? start;
+    final idsInRange = eventIdsInDateRange(eligible, start, end);
+
+    if (!context.mounted) return;
+    final currentUser = _resolveCurrentUser(context, user);
+    final currentIds = currentUser.availableEventIds;
+    final merged = <String>{...currentIds, ...idsInRange};
+    final addedCount = merged.length - currentIds.length;
+
+    if (addedCount == 0) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Text('לא נמצאו אירועים חדשים בטווח שנבחר'),
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      return;
+    }
+
+    await _persistAvailabilityIds(
+      context,
+      baseUser: currentUser,
+      newIds: merged.toList(),
+      progressMessage: 'מסמן זמינות לטווח...',
+      successText: 'נוספה זמינות ל-$addedCount אירועים',
+    );
+  }
+
+  /// Feature 2: toggle availability for every currently-filtered event with a
+  /// single batched write (select-all when not all are marked, else clear).
+  Future<void> _toggleSelectAllFiltered(
+    BuildContext context,
+    TeamMember user,
+    List<Event> filteredEvents,
+  ) async {
+    if (filteredEvents.isEmpty) return;
+
+    final currentUser = _resolveCurrentUser(context, user);
+    final currentIds = currentUser.availableEventIds;
+    final filteredIds = filteredEvents.map((e) => e.id).toSet();
+    final allSelected = filteredIds.every((id) => currentIds.contains(id));
+
+    final List<String> newIds;
+    final String successText;
+    final Color successColor;
+    if (allSelected) {
+      newIds =
+          currentIds.where((id) => !filteredIds.contains(id)).toList();
+      successText = 'הוסרה זמינות מ-${filteredIds.length} אירועים';
+      successColor = Colors.orange;
+    } else {
+      final merged = <String>{...currentIds, ...filteredIds};
+      final addedCount = merged.length - currentIds.length;
+      newIds = merged.toList();
+      successText = 'נוספה זמינות ל-$addedCount אירועים';
+      successColor = Colors.green;
+    }
+
+    await _persistAvailabilityIds(
+      context,
+      baseUser: currentUser,
+      newIds: newIds,
+      progressMessage: allSelected ? 'מסיר זמינות...' : 'מוסיף זמינות...',
+      successText: successText,
+      successColor: successColor,
+    );
+  }
+
+  /// Shared batched persist for bulk availability changes (date range + select
+  /// all). One [UpdateTeamMember]; the real-time stream refreshes the checkboxes.
+  Future<void> _persistAvailabilityIds(
+    BuildContext context, {
+    required TeamMember baseUser,
+    required List<String> newIds,
+    required String progressMessage,
+    required String successText,
+    Color successColor = Colors.green,
+  }) async {
+    final updatedUser = baseUser.copyWith(availableEventIds: newIds);
+
+    final result = await _runBlockingMutation(
+      message: progressMessage,
+      dispatch: (completion) => context.read<TeamBloc>().add(
+            UpdateTeamMember(updatedUser, completion: completion),
+          ),
+    );
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Text(
+              result.isSuccess
+                  ? successText
+                  : (result.message ?? 'שגיאה בעדכון הזמינות'),
+            ),
+          ),
+          backgroundColor: result.isSuccess ? successColor : Colors.red,
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 
   void _showPastEventsModal(BuildContext context, TeamMember user) {

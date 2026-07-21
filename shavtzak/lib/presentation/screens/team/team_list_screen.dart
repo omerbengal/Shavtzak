@@ -21,6 +21,7 @@ import '../../../core/utils/time_range_utils.dart';
 import '../../../core/utils/search_utils.dart';
 import '../../../core/utils/constraint_event_overlap.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/event_filter_utils.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/services/utilities_service.dart';
 import 'package:uuid/uuid.dart';
@@ -5052,6 +5053,36 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
     });
   }
 
+  /// Feature 1b: pick a date range and union every event in that range into the
+  /// dialog's selection. The change is persisted via the member modal's existing
+  /// staged save path (this dialog only returns the selected IDs).
+  Future<void> _pickDateRange() async {
+    if (widget.events.isEmpty) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final result = await showDialog<Map<String, DateTime?>>(
+      context: context,
+      builder: (_) => DualCalendarDatePicker(
+        isSingleDate: false,
+        title: 'בחירת זמינות לפי טווח תאריכים',
+        minDate: today,
+        highlightedDates: eventCoverageDays(widget.events),
+      ),
+    );
+    if (result == null || result['startDate'] == null) return;
+
+    final start = result['startDate']!;
+    final end = result['endDate'] ?? start;
+    final idsInRange = eventIdsInDateRange(widget.events, start, end);
+    Logger.action(
+        'tap:availabilityDateRangeUnion', {'count': idsInRange.length});
+    if (!mounted) return;
+    if (idsInRange.isNotEmpty) {
+      setState(() => _selectedEventIds.addAll(idsInRange));
+    }
+  }
+
   /// Group events by month
   Map<String, List<Event>> _groupEventsByMonth(List<Event> events) {
     final grouped = <String, List<Event>>{};
@@ -5180,6 +5211,25 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
                             color: Colors.grey[600],
                           ),
                     ),
+                    // Feature 1b: bulk-mark availability across a date range.
+                    if (widget.events.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Logger.action('open:availabilityDateRangePicker',
+                                {'context': 'adminModal'});
+                            _pickDateRange();
+                          },
+                          icon: const Icon(Icons.date_range, size: 20),
+                          label: const Text('בחירה לפי טווח תאריכים'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.green[700],
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
