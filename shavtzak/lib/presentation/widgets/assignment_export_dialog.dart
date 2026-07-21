@@ -8,6 +8,7 @@ import '../../core/utils/date_utils.dart' as app_date_utils;
 import '../../core/utils/event_filter_utils.dart';
 import '../../data/repositories/event_repository.dart';
 import '../../domain/entities/event.dart';
+import 'date_picker_dialog.dart';
 import 'event_search_filter_bar.dart';
 
 class AssignmentExportDialog extends StatefulWidget {
@@ -212,6 +213,31 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
     );
   }
 
+  /// Pick a date range and add every future event overlapping it to the export
+  /// selection (union — existing picks are kept). Operates on all future events,
+  /// independent of the active search/category filter.
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final result = await showDialog<Map<String, DateTime?>>(
+      context: context,
+      builder: (_) => DualCalendarDatePicker(
+        isSingleDate: false,
+        title: 'בחירת אירועים לפי טווח תאריכים',
+        minDate: today,
+        highlightedDates: eventCoverageDays(_futureEvents),
+      ),
+    );
+    if (result == null || result['startDate'] == null) return;
+    final start = result['startDate']!;
+    final end = result['endDate'] ?? start;
+    final idsInRange = eventIdsInDateRange(_futureEvents, start, end);
+    if (!mounted) return;
+    if (idsInRange.isNotEmpty) {
+      setState(() => _selectedEventIds.addAll(idsInRange));
+    }
+  }
+
   Widget _buildPerEventContent() {
     if (_isLoadingEvents) {
       return const SizedBox(
@@ -250,6 +276,19 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Bulk-select events across a date range (adds to the selection).
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              Logger.action('open:exportDateRangePicker');
+              _pickDateRange();
+            },
+            icon: const Icon(Icons.date_range, size: 20),
+            label: const Text('בחירה לפי טווח תאריכים'),
+          ),
+        ),
+        const SizedBox(height: 8),
         // Feature 3: search + category filter.
         EventSearchFilterBar(
           logField: 'exportEvents',
