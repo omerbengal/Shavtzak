@@ -5263,6 +5263,11 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
       query: _searchQuery,
       categoryIds: _selectedCategoryIds,
     );
+    final filteredIds = filteredEvents.map((e) => e.id).toSet();
+    final selectedFilteredCount =
+        filteredIds.where((id) => _selectedEventIds.contains(id)).length;
+    final allFilteredSelected =
+        filteredIds.isNotEmpty && selectedFilteredCount == filteredIds.length;
     final groupedEvents = _groupEventsByMonth(filteredEvents);
 
     return Directionality(
@@ -5322,13 +5327,52 @@ class _AdminAvailabilityDialogState extends State<_AdminAvailabilityDialog> {
               if (widget.events.isNotEmpty)
                 EventSearchFilterBar(
                   logField: 'adminAvailabilityEvents',
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   searchQuery: _searchQuery,
                   onSearchChanged: (value) =>
                       setState(() => _searchQuery = value),
                   selectedCategoryIds: _selectedCategoryIds,
                   onCategoryFilterChanged: (ids) =>
                       setState(() => _selectedCategoryIds = ids),
+                ),
+
+              // "Select all filtered" ⇄ "clear filtered" toggle + count.
+              if (filteredEvents.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton.icon(
+                        onPressed: () {
+                          Logger.action('tap:selectAllAdminAvailability', {
+                            'allSelected': allFilteredSelected,
+                            'count': filteredIds.length,
+                          });
+                          setState(() {
+                            if (allFilteredSelected) {
+                              _selectedEventIds.removeAll(filteredIds);
+                            } else {
+                              _selectedEventIds.addAll(filteredIds);
+                            }
+                          });
+                        },
+                        icon: Icon(
+                          allFilteredSelected
+                              ? Icons.remove_done
+                              : Icons.done_all,
+                          size: 20,
+                        ),
+                        label: Text(
+                            allFilteredSelected ? 'בטל בחירה' : 'בחר הכל'),
+                      ),
+                      Text(
+                        'נבחרו $selectedFilteredCount מתוך ${filteredIds.length}',
+                        style:
+                            TextStyle(color: Colors.grey[600], fontSize: 13),
+                      ),
+                    ],
+                  ),
                 ),
 
               const Divider(height: 1),
