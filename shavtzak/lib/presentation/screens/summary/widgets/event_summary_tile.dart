@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
+import 'package:collection/collection.dart';
 import '../../../../core/constants/role_types.dart';
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/same_day_assignments.dart';
+import '../../../../core/utils/slot_annotations.dart';
+import '../../../../data/repositories/assignment_label_repository.dart';
 import '../../../../domain/entities/assignment.dart';
+import '../../../../domain/entities/assignment_label.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/checklist_item.dart';
 import '../../../../domain/entities/role.dart';
+import '../../../../domain/entities/slot_annotation.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../../../bloc/role/role_bloc.dart';
 import '../../../bloc/role/role_state.dart';
@@ -15,6 +20,7 @@ import '../../../bloc/team/team_bloc.dart';
 import '../../../bloc/team/team_state.dart';
 import '../../../bloc/assignment/assignment_bloc.dart';
 import '../../../bloc/assignment/assignment_event.dart';
+import '../../../widgets/assignment_label_chip.dart';
 import '../../../widgets/map_location_picker.dart';
 import '../../event/widgets/event_assignments_dialog.dart';
 
@@ -376,15 +382,27 @@ class EventSummaryTile extends StatelessWidget {
                   .toList();
             }
 
-            // Build individual slot entries for each missing role
+            // Build individual slot entries for each missing role, using the
+            // REAL empty slot indices (not anonymous 1/2/3 ordinals) so a
+            // chip's slot index matches the assignments screen and the
+            // annotation keys stored on Event.slotAnnotations.
             final missingSlots = <_MissingSlot>[];
             for (final roleObj in roles) {
-              final count = data.missingRoles[roleObj.key] ?? 0;
-              for (int i = 0; i < count; i++) {
+              final required = data.event.getRequiredCountForRole(roleObj.key);
+              if (required == 0) continue;
+              final filled = allAssignments
+                  .where((a) =>
+                      a.eventId == data.event.id && a.roleType == roleObj.key)
+                  .map((a) => a.slotIndex);
+              final resolved = reconcileGapAnnotations(
+                  data.event.slotAnnotations, roleObj.key, required, filled);
+              for (final gapIndex
+                  in emptySlotIndicesForRole(required, filled.toList())) {
                 missingSlots.add(_MissingSlot(
                   roleKey: roleObj.key,
                   roleHebrewName: roleObj.hebrewName,
-                  slotIndex: i + 1,
+                  slotIndex: gapIndex,
+                  annotation: resolved[gapIndex]?.annotation,
                 ));
               }
             }
@@ -411,18 +429,36 @@ class EventSummaryTile extends StatelessWidget {
                         .toList()
                     : <TeamMember>[];
 
-                return Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: missingSlots.map((slot) {
-                    return _buildRoleAssignmentDropdown(
-                      outerContext,
-                      slot.roleKey,
-                      slot.roleHebrewName,
-                      data.event,
-                      teamMembers,
+                // One shared label stream for the whole chip row rather than
+                // one per chip. watchAssignmentLabels() already multicasts a
+                // single underlying Firestore listener (shareValue()), but
+                // subscribing once here — instead of once per chip inside
+                // _buildRoleAssignmentDropdown — keeps this section from
+                // fanning out N StreamBuilders for N missing-role chips.
+                return StreamBuilder<List<AssignmentLabel>>(
+                  stream: outerContext
+                      .read<AssignmentLabelRepository>()
+                      .watchAssignmentLabels(),
+                  builder: (context, labelSnapshot) {
+                    final labels =
+                        labelSnapshot.data ?? const <AssignmentLabel>[];
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: missingSlots.map((slot) {
+                        return _buildRoleAssignmentDropdown(
+                          outerContext,
+                          slot.roleKey,
+                          slot.roleHebrewName,
+                          slot.slotIndex,
+                          slot.annotation,
+                          labels,
+                          data.event,
+                          teamMembers,
+                        );
+                      }).toList(),
                     );
-                  }).toList(),
+                  },
                 );
               },
             );
@@ -436,6 +472,9 @@ class EventSummaryTile extends StatelessWidget {
     BuildContext outerContext,
     String roleKey,
     String hebrewName,
+    int slotIndex,
+    SlotAnnotation? annotation,
+    List<AssignmentLabel> labels,
     Event event,
     List<TeamMember> teamMembers,
   ) {
@@ -454,6 +493,9 @@ class EventSummaryTile extends StatelessWidget {
       alreadyAssignedMembers: categorized.alreadyAssigned,
       sameDayAssignedMembers: categorized.sameDayAssigned,
     );
+    final annotationLabel = annotation?.labelId == null
+        ? null
+        : labels.firstWhereOrNull((l) => l.id == annotation!.labelId);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -481,6 +523,35 @@ class EventSummaryTile extends StatelessWidget {
               ),
             ],
           ),
+          // Read-only display of the gap's carried-over note/label — editing
+          // stays on /admin/assignments. Purple note box mirrors the styling
+          // used there (assignment_list_screen._buildGapAnnotationInfo) for
+          // visual consistency.
+          if (annotation != null && !annotation.isEmpty) ...[
+            const SizedBox(height: 4),
+            if (annotationLabel != null)
+              Align(
+                alignment: Alignment.centerRight,
+                child:
+                    AssignmentLabelChip(label: annotationLabel, fontSize: 10),
+              ),
+            if (annotation.note.trim().isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 2),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.purple.shade200),
+                ),
+                child: Text(
+                  annotation.note,
+                  style:
+                      TextStyle(fontSize: 11, color: Colors.purple.shade900),
+                ),
+              ),
+          ],
           if (categorized.available.isNotEmpty ||
               categorized.alreadyAssigned.isNotEmpty ||
               constrainedMembers.isNotEmpty) ...[
@@ -521,6 +592,8 @@ class EventSummaryTile extends StatelessWidget {
                         event,
                         roleKey,
                         hebrewName,
+                        slotIndex,
+                        annotation,
                         selectedMember.id,
                         selectedMember,
                       );
@@ -538,6 +611,8 @@ class EventSummaryTile extends StatelessWidget {
                         event,
                         roleKey,
                         hebrewName,
+                        slotIndex,
+                        annotation,
                         selectedMember.id,
                         selectedMember,
                       );
@@ -551,6 +626,8 @@ class EventSummaryTile extends StatelessWidget {
                       event,
                       roleKey,
                       hebrewName,
+                      slotIndex,
+                      annotation,
                       member.id,
                       member,
                     );
@@ -821,6 +898,8 @@ class EventSummaryTile extends StatelessWidget {
     Event event,
     String roleKey,
     String roleHebrewName,
+    int slotIndex,
+    SlotAnnotation? annotation,
     String memberId,
     TeamMember member,
   ) {
@@ -848,12 +927,6 @@ class EventSummaryTile extends StatelessWidget {
                 Logger.action('tap:confirmAssignment', {'eventId': event.id, 'roleKey': roleKey, 'memberId': memberId});
                 Navigator.of(dialogContext).pop();
                 final now = DateTime.now();
-                // Calculate slot index - find first available slot for this role
-                final existingAssignments = allAssignments
-                    .where(
-                        (a) => a.eventId == event.id && a.roleType == roleKey)
-                    .toList();
-                final slotIndex = existingAssignments.length;
 
                 context.read<AssignmentBloc>().add(
                       CreateAssignment(
@@ -864,7 +937,8 @@ class EventSummaryTile extends StatelessWidget {
                           roleType: roleKey,
                           slotIndex: slotIndex,
                           status: AssignmentStatus.pending,
-                          notes: '',
+                          notes: annotation?.note ?? '',
+                          semanticLabelId: annotation?.labelId,
                           createdAt: now,
                           updatedAt: now,
                         ),
@@ -1324,11 +1398,13 @@ class _MissingSlot {
   final String roleKey;
   final String roleHebrewName;
   final int slotIndex;
+  final SlotAnnotation? annotation;
 
   _MissingSlot({
     required this.roleKey,
     required this.roleHebrewName,
     required this.slotIndex,
+    this.annotation,
   });
 }
 
