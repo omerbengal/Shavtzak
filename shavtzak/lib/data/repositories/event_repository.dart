@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/assignment.dart';
+import '../../domain/entities/slot_annotation.dart';
 import '../../core/constants/calendar_constants.dart';
 import '../../core/constants/role_types.dart';
 import '../../core/services/drive_service.dart';
@@ -174,6 +175,18 @@ class EventRepository {
 
 
     return event;
+  }
+
+  /// Upsert/clear one slot annotation (bypasses [updateEvent]'s duplicate check
+  /// + Drive rename; this is a lightweight targeted write).
+  Future<void> updateSlotAnnotation(
+    String eventId,
+    String key,
+    SlotAnnotation? value, {
+    String? staleKey,
+  }) {
+    return _database.updateEventSlotAnnotation(eventId, key, value,
+        staleKey: staleKey);
   }
 
   /// Delete an event

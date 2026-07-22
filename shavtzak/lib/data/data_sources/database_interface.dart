@@ -5,6 +5,7 @@ import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
+import '../../domain/entities/slot_annotation.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
@@ -76,6 +77,17 @@ abstract class DatabaseInterface {
 
   /// Update an existing event
   Future<void> updateEvent(Event event);
+
+  /// Upsert (or clear, when [value] is null) a single slot annotation on an
+  /// event. Routes through the backend `event.updateSlotAnnotation` mutation
+  /// (clients cannot write events directly). [staleKey], when set, deletes a
+  /// drifted key in the same write (self-heal).
+  Future<void> updateEventSlotAnnotation(
+    String eventId,
+    String key,
+    SlotAnnotation? value, {
+    String? staleKey,
+  });
 
   /// Delete an event
   Future<void> deleteEvent(String id);
