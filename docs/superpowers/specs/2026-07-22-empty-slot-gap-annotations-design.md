@@ -81,28 +81,32 @@ Firestore shape:
 }
 ```
 
-### 4.4 Targeted write — interface + Firestore
+### 4.4 Targeted write — via a new backend mutation (⚠️ requires a Cloud Functions deploy)
 
-Add to `DatabaseInterface` (`database_interface.dart`) and `FirestoreDatabase`:
+**Clients cannot write events directly.** Firestore rules for `events`/`test_events` are `allow write: if false` (`firestore.rules:56-63`); every event write goes through a backend Cloud Function mutation (`FirestoreDatabase._invokeMutation(op, payload)` → `BackendApiService.mutate`). The existing `event.update` mutation is unsuitable for an annotation edit: it runs a same-day **duplicate-name check**, writes an **audit log**, and **enqueues a calendar-sync job** (`functions/src/index.ts:3913-3990` — `markEventCalendarJob` + `enqueueEventCalendarJob`). We must not trigger calendar work for a note edit.
 
-```dart
-Future<void> updateEventSlotAnnotation(
-  String eventId,
-  String key,             // "<roleKey>#<slotIndex>"
-  SlotAnnotation? value,  // null / isEmpty → delete the key
-);
-```
+So add a **dedicated, side-effect-free** backend mutation `event.updateSlotAnnotation`:
 
-Implementation uses a **single-key** Firestore update on the env-prefixed `events` collection so concurrent edits to *different* slots of the same event don't clobber each other:
+- **Backend** (`functions/src/index.ts`, new `case 'event.updateSlotAnnotation'` in `executeMutation`'s `switch (operation)`): admin-gated (`actor.isAdmin`, else `HttpError(403)`); verify the event exists; then a **nested merge-set** that touches only the one key (so concurrent edits to *different* slots don't clobber each other) and **no** calendar/duplicate logic:
 
-```dart
-final field = FieldPath(['slotAnnotations', key]);
-value == null || value.isEmpty
-  ? doc.update({field: FieldValue.delete()})
-  : doc.update({field: {'note': value.note, 'labelId': value.labelId}});
-```
+  ```ts
+  const merge = buildSlotAnnotationMerge(key, value); // pure, unit-tested
+  await eventRef.set(merge, {merge: true});
+  // buildSlotAnnotationMerge:
+  //   clear  → { slotAnnotations: { [key]: FieldValue.delete() } }
+  //   upsert → { slotAnnotations: { [key]: { note, labelId } } }
+  //   (+ optional { [staleKey]: FieldValue.delete() } for self-heal, §10)
+  ```
 
-This deliberately **bypasses `EventRepository.updateEvent`** (which runs a duplicate-event check and rewrites the whole doc, ~line 132) — an annotation edit must not trigger either. `EventRepository` exposes a thin passthrough `updateSlotAnnotation(eventId, key, value)`.
+  Merge-set with a nested map updates only the listed sub-keys; siblings are preserved. Keys use `#` (safe as a JS/Firestore map key). A minimal audit-log entry is written for parity with other mutations.
+
+- **`slotAnnotations` is NOT added to `eventDocFromJson`** (the full-event whitelist used by `event.update`/`event.insert`, `index.ts:2744`). Because Firestore `update()`/merge only touches listed fields, leaving it out means a normal full event edit **preserves** existing annotations, and an old client (pre-deploy) can't wipe them. Annotations are only ever written by the targeted mutation.
+
+- **Client** — `DatabaseInterface.updateEventSlotAnnotation(String eventId, String key, SlotAnnotation? value, {String? staleKey})` implemented in `FirestoreDatabase` as `_invokeMutation('event.updateSlotAnnotation', {eventId, key, note, labelId, staleKey})`. `EventRepository` exposes a thin passthrough `updateSlotAnnotation(...)`. **This bypasses `EventRepository.updateEvent`** (duplicate check + Drive rename, `event_repository.dart:132`) entirely.
+
+- **Reads** need no backend change: `EventModel.fromFirestore` reads `slotAnnotations` straight from the doc the mutation wrote.
+
+> **Deploy:** the backend change means `firebase deploy --only functions` is required before the feature works in an environment. Called out again in the plan.
 
 ## 5. Shared derivation helper
 
@@ -178,22 +182,24 @@ Annotations live on the Event; both screens already rebuild from the Event strea
 1. `lib/domain/entities/slot_annotation.dart` — **new** value object.
 2. `lib/domain/entities/event.dart` — `slotAnnotations` field + `copyWith` + `props`.
 3. `lib/data/models/event_model.dart` — serialize `slotAnnotations` (6 paths).
-4. `lib/data/data_sources/database_interface.dart` + `firestore_database.dart` — `updateEventSlotAnnotation` (targeted, env-prefixed).
-5. `lib/data/repositories/event_repository.dart` — `updateSlotAnnotation` passthrough.
-6. `lib/presentation/bloc/event/event_event.dart` + `event_bloc.dart` — `UpsertSlotAnnotation` + handler.
-7. `lib/core/utils/slot_annotations.dart` — **new** key helper, empty-index enumeration, reconciliation.
-8. `lib/presentation/screens/assignment/models/assignment_slot.dart` — `gapAnnotation` field.
-9. `lib/presentation/bloc/assignment/assignment_bloc.dart` — populate `gapAnnotation` in the 2 build sites; seed carry-over at the fill site (~1673).
-10. `lib/presentation/screens/assignment/assignment_list_screen.dart` — enable empty-row edit swipe; simplified annotation dialog; render gap note + label.
-11. `lib/presentation/screens/summary/widgets/event_summary_tile.dart` — real gap indices; render annotation; align assign-from-gap slotIndex + carry-over seed.
-12. Tests (§13).
+4. `functions/src/index.ts` — **new** `case 'event.updateSlotAnnotation'` + pure `buildSlotAnnotationMerge` helper (⚠️ deploy).
+5. `lib/data/data_sources/database_interface.dart` + `firestore_database.dart` — `updateEventSlotAnnotation` → `_invokeMutation('event.updateSlotAnnotation', …)`.
+6. `lib/data/repositories/event_repository.dart` — `updateSlotAnnotation` passthrough.
+7. `lib/presentation/bloc/event/event_event.dart` + `event_bloc.dart` — `UpsertSlotAnnotation` + handler.
+8. `lib/core/utils/slot_annotations.dart` — **new** key helper, empty-index enumeration, reconciliation.
+9. `lib/presentation/screens/assignment/models/assignment_slot.dart` — `gapAnnotation` field.
+10. `lib/presentation/bloc/assignment/assignment_bloc.dart` — populate `gapAnnotation` in the 2 build sites; seed carry-over at the fill site (~1673).
+11. `lib/presentation/screens/assignment/assignment_list_screen.dart` — enable empty-row edit swipe; simplified annotation dialog; render gap note + label.
+12. `lib/presentation/screens/summary/widgets/event_summary_tile.dart` — real gap indices; render annotation; align assign-from-gap slotIndex + carry-over seed.
+13. Tests (§13); **deploy** `firebase deploy --only functions`.
 
 ## 13. Testing
 
 `flutter analyze` must stay clean (repo baseline: only pre-existing infos; zero **new**). Add:
 
-- **Unit:** `SlotAnnotation` equality/`copyWith`/`isEmpty`; `EventModel` round-trip incl. `slotAnnotations` (and legacy docs without it); `slotAnnotationKey`; `emptySlotIndicesForRole`; `reconcileGapAnnotations` including the delete-middle drift case.
-- **Bloc:** `UpsertSlotAnnotation` → repo call (upsert + delete-on-empty); carry-over seeds `desiredNotes`/`desiredSemanticLabelId` when filling an annotated slot.
+- **Unit (Dart):** `SlotAnnotation` equality/`copyWith`/`isEmpty`; `EventModel` round-trip incl. `slotAnnotations` (and legacy docs without it); `slotAnnotationKey`; `emptySlotIndicesForRole`; `reconcileGapAnnotations` including the delete-middle drift case.
+- **Backend (functions, `node --test`):** `buildSlotAnnotationMerge` pure helper — upsert, clear (`FieldValue.delete()`), and self-heal (optional stale-key delete) shapes.
+- **Bloc:** `UpsertSlotAnnotation` → repo call (upsert + delete-on-empty); carry-over seeds `desiredNotes`/`desiredSemanticLabelId` when filling an annotated slot. (Carry-over then persists through the existing `assignment.saveBatch` → `assignmentDocFromJson`, which already writes `notes` + `semanticLabelId` — no backend change.)
 - **Widget (light):** empty row renders purple note + label chip from `gapAnnotation`; summary tile renders the annotation on the matching gap.
 
 ## 14. Non-goals
