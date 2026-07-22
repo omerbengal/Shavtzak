@@ -540,5 +540,55 @@ void main() {
         staleKey: 'medic#1',
       )).called(1);
     });
+
+    test(
+        'a normalization write that FAILS is retried on a later rebuild '
+        '(catchError removes the opKey so the next rebuild re-dispatches it)',
+        () async {
+      // Overrides setUp's always-succeeds stub: fail the very first call,
+      // succeed on every call after.
+      var slotAnnCalls = 0;
+      when(eventRepo.updateSlotAnnotation(any, any, any,
+              staleKey: anyNamed('staleKey')))
+          .thenAnswer((_) async {
+        slotAnnCalls++;
+        if (slotAnnCalls == 1) throw Exception('boom'); // first attempt fails
+      });
+
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([
+        futureEvent('e1').copyWith(slotAnnotations: {
+          'medic#1': const SlotAnnotation(note: 'x', labelId: 'L'),
+        }),
+      ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]); // no assignments at all
+      await pumpEventQueue();
+      // First normalize attempt has now run and thrown; the catchError in
+      // _normalizeSlotAnnotations removed the opKey from
+      // _normalizedSlotAnnotationOps so a future rebuild isn't permanently
+      // blocked from retrying.
+
+      // A later, separate rebuild with UNCHANGED data (same drift, same
+      // quota) — same trigger the dedup test above uses. Since the opKey was
+      // freed by catchError, this rebuild re-dispatches the write instead of
+      // being suppressed by the session guard.
+      teamStream.add([member('m1')]);
+      await pumpEventQueue();
+
+      // Attempted twice: the failed first attempt + the successful retry.
+      // Mockito records a call even when the stubbed body throws, so this
+      // FAILS at .called(1) if the catchError's `remove` were ever dropped
+      // (the retry would never happen).
+      verify(eventRepo.updateSlotAnnotation(
+        'e1',
+        'medic#0',
+        const SlotAnnotation(note: 'x', labelId: 'L'),
+        staleKey: 'medic#1',
+      )).called(2);
+    });
   });
 }

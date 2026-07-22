@@ -67,6 +67,24 @@ void main() {
       expect(res[0]!.annotation, a0);
       expect(res[2]!.annotation, a2);
     });
+
+    test('multiple out-of-range drifts fill remaining gaps in ascending order', () {
+      const a = SlotAnnotation(note: 'a', labelId: 'L');
+      const b = SlotAnnotation(note: 'b');
+      // Quota 3 (gaps [0,1,2], none filled); both stored indices (5,7) are
+      // out-of-range, so they drift onto the free gaps in ascending stored-
+      // index order: medic#5 (lower) → gap 0, medic#7 → gap 1, gap 2 unused.
+      // Map literal is written in DESCENDING (7 before 5) insertion order —
+      // deliberately the reverse of numeric order — so this only passes if
+      // reconcileGapAnnotations actually sorts the out-of-range indices
+      // before assigning gaps, rather than incidentally walking them in
+      // Map-insertion order (which a LinkedHashMap would otherwise preserve).
+      final res = reconcileGapAnnotations(
+          {'medic#7': b, 'medic#5': a}, 'medic', 3, {});
+      expect(res[0]!.annotation, a);
+      expect(res[1]!.annotation, b);
+      expect(res.containsKey(2), isFalse);
+    });
   });
 
   group('computeSlotAnnotationNormalization', () {
@@ -101,6 +119,31 @@ void main() {
       final writes = computeSlotAnnotationNormalization(
           {'medic#2': a}, 'medic', 2, {});
       expect(writes, [(key: 'medic#0', value: a, staleKey: 'medic#2')]);
+    });
+
+    test('two out-of-range notes: nearest re-keys to the free gap, the other is deleted', () {
+      // Quota shrunk to 1 (only gap 0 survives); both medic#2 and medic#3 are
+      // now out-of-range. Reconcile drifts the LOWEST-index one (medic#2) onto
+      // the sole free gap; medic#3 has no gap left → true orphan, deleted.
+      // Map literal is written in DESCENDING (3 before 2) insertion order —
+      // deliberately the reverse of numeric order — so this only passes if
+      // the underlying reconcileGapAnnotations sort is actually discriminating
+      // by numeric index, not by Map-insertion order (which a LinkedHashMap
+      // would otherwise preserve unchanged).
+      final ops = computeSlotAnnotationNormalization(
+          {'medic#3': b, 'medic#2': a}, 'medic', 1, {});
+      expect(ops, unorderedEquals([
+        (key: 'medic#0', value: a, staleKey: 'medic#2'),
+        (key: 'medic#3', value: null, staleKey: null),
+      ]));
+    });
+
+    test('quota 0 deletes every stored note for the role', () {
+      // requiredCount 0 → no valid slots at all → every stored note for the
+      // role is a true orphan (there is no gap it could ever drift onto).
+      final ops =
+          computeSlotAnnotationNormalization({'medic#0': a}, 'medic', 0, {});
+      expect(ops, [(key: 'medic#0', value: null, staleKey: null)]);
     });
 
     test('annotations of other roles are ignored', () {
