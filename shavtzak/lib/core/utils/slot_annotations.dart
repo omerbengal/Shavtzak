@@ -31,6 +31,8 @@ typedef ResolvedGapAnnotation = ({SlotAnnotation annotation, String sourceKey});
 /// Maps a role's stored annotations onto its ACTUAL current gaps so a note
 /// never silently vanishes when slots renumber. Exact index matches win; any
 /// leftover (drifted) annotations fill the remaining gaps in ascending order.
+/// A note on an in-quota FILLED slot stays dormant (excluded from the result);
+/// only out-of-range annotations drift onto a free gap.
 Map<int, ResolvedGapAnnotation> reconcileGapAnnotations(
   Map<String, SlotAnnotation> eventSlotAnnotations,
   String roleKey,
@@ -75,4 +77,56 @@ Map<int, ResolvedGapAnnotation> reconcileGapAnnotations(
         (annotation: byIndex[idx]!, sourceKey: slotAnnotationKey(roleKey, idx));
   }
   return result;
+}
+
+/// One normalization write for [computeSlotAnnotationNormalization]: upsert
+/// [value] at [key] (deleting [staleKey] in the same write when set), or delete
+/// [key] when [value] is null.
+typedef SlotAnnotationWrite = ({String key, SlotAnnotation? value, String? staleKey});
+
+/// The writes that reconcile a role's stored annotations with the current quota
+/// + filled slots, so the DB keys match what [reconcileGapAnnotations] displays:
+/// - a note that drifted onto a different gap is re-keyed to that gap (old key
+///   deleted via staleKey),
+/// - a note with no surviving gap (a true orphan) is deleted,
+/// - a note on an in-quota FILLED slot is KEPT untouched (dormant carry-back).
+/// Empty list when nothing needs changing. Pure — the caller performs the writes.
+List<SlotAnnotationWrite> computeSlotAnnotationNormalization(
+  Map<String, SlotAnnotation> eventSlotAnnotations,
+  String roleKey,
+  int requiredCount,
+  Iterable<int> filledSlotIndices,
+) {
+  final filled = filledSlotIndices.toSet();
+  final storedForRole = <String, SlotAnnotation>{};
+  eventSlotAnnotations.forEach((k, v) {
+    final parsed = parseSlotAnnotationKey(k);
+    if (parsed != null && parsed.roleKey == roleKey && !v.isEmpty) {
+      storedForRole[k] = v;
+    }
+  });
+  if (storedForRole.isEmpty) return const [];
+
+  final reconciled =
+      reconcileGapAnnotations(eventSlotAnnotations, roleKey, requiredCount, filled);
+
+  final writes = <SlotAnnotationWrite>[];
+  final sourceKeys = <String>{};
+  // Rule 1: re-key any annotation whose reconciled gap differs from its stored key.
+  reconciled.forEach((gapIndex, resolved) {
+    sourceKeys.add(resolved.sourceKey);
+    final canonicalKey = slotAnnotationKey(roleKey, gapIndex);
+    if (canonicalKey != resolved.sourceKey) {
+      writes.add((key: canonicalKey, value: resolved.annotation, staleKey: resolved.sourceKey));
+    }
+  });
+  // Rules 2 & 3: delete true orphans; keep dormant-on-filled untouched.
+  storedForRole.forEach((k, v) {
+    if (sourceKeys.contains(k)) return; // moved/kept via re-key above
+    final idx = parseSlotAnnotationKey(k)!.slotIndex;
+    final dormantOnFilled = idx < requiredCount && filled.contains(idx);
+    if (dormantOnFilled) return; // keep dormant carry-back copy
+    writes.add((key: k, value: null, staleKey: null)); // orphan → delete
+  });
+  return writes;
 }

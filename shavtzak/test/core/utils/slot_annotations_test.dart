@@ -68,4 +68,45 @@ void main() {
       expect(res[2]!.annotation, a2);
     });
   });
+
+  group('computeSlotAnnotationNormalization', () {
+    const a = SlotAnnotation(note: 'a', labelId: 'L');
+    const b = SlotAnnotation(note: 'b');
+
+    test('re-key: a drifted annotation is rewritten onto its resolved gap', () {
+      final writes = computeSlotAnnotationNormalization(
+          {'medic#1': a}, 'medic', 1, {});
+      expect(writes, [(key: 'medic#0', value: a, staleKey: 'medic#1')]);
+    });
+
+    test('orphan delete: a note with no surviving gap is deleted', () {
+      final writes = computeSlotAnnotationNormalization(
+          {'medic#0': a, 'medic#1': b}, 'medic', 1, {});
+      expect(writes, [(key: 'medic#1', value: null, staleKey: null)]);
+    });
+
+    test('dormant-on-filled note is kept untouched (no-op)', () {
+      final writes = computeSlotAnnotationNormalization(
+          {'medic#0': a}, 'medic', 2, {0});
+      expect(writes, isEmpty);
+    });
+
+    test('no drift, no orphan: nothing to do (no-op)', () {
+      final writes = computeSlotAnnotationNormalization(
+          {'medic#0': a, 'medic#1': b}, 'medic', 2, {});
+      expect(writes, isEmpty);
+    });
+
+    test('out-of-range annotation re-keys onto the free gap', () {
+      final writes = computeSlotAnnotationNormalization(
+          {'medic#2': a}, 'medic', 2, {});
+      expect(writes, [(key: 'medic#0', value: a, staleKey: 'medic#2')]);
+    });
+
+    test('annotations of other roles are ignored', () {
+      final writes = computeSlotAnnotationNormalization(
+          {'guard#0': a}, 'medic', 1, {});
+      expect(writes, isEmpty);
+    });
+  });
 }
