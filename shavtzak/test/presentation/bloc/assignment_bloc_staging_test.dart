@@ -455,8 +455,17 @@ void main() {
       assignmentStream.add(const <Assignment>[]); // no assignments at all
       await pumpEventQueue();
 
-      // The session guard makes this exactly once even though multiple
-      // RebuildAssignmentSlotsFromData dispatches occur while streams arrive.
+      // The session guard is what makes this exactly ONE write. Once events/
+      // roles/assignments have each delivered once, the first-paint gate
+      // (_onRebuildAssignmentSlotsFromData's early-return) is open for ALL
+      // THREE of the RebuildAssignmentSlotsFromData events dispatched by
+      // this batch's three stream listeners, not just the last one — by the
+      // time the bloc processes any of them, every listener above has
+      // already run and flipped its ready-flag. So this single stream-settling
+      // batch alone calls _normalizeSlotAnnotations 3 times with the identical
+      // drift; verified by temporarily disabling the guard, which turns this
+      // into "called 3 times" instead of 1. The guard is exercised again
+      // across a LATER, separate rebuild by the next test.
       verify(eventRepo.updateSlotAnnotation(
         'e1',
         'medic#0',
@@ -483,6 +492,53 @@ void main() {
 
       verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
           staleKey: anyNamed('staleKey')));
+    });
+
+    test(
+        'the session guard suppresses a duplicate write when an UNRELATED '
+        'stream re-emission re-enters the rebuild with the SAME drift after '
+        'first paint', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([
+        futureEvent('e1').copyWith(slotAnnotations: {
+          'medic#1': const SlotAnnotation(note: 'x', labelId: 'L'),
+        }),
+      ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]); // no assignments at all
+      await pumpEventQueue();
+      // First paint reached — the gate is open for good from here on (see the
+      // previous test's comment: this batch alone already drove several
+      // rebuild passes, all suppressed down to the one write by the guard).
+
+      // A completely UNRELATED stream (team members) emits AFTER first paint,
+      // well after the batch above has fully settled. Its listener
+      // unconditionally dispatches RebuildAssignmentSlotsFromData regardless
+      // of what changed, and since the gate is already open this runs the
+      // FULL rebuild body again — including _normalizeSlotAnnotations — with
+      // the exact SAME event/assignment drift as before (nothing about the
+      // annotation or quota changed). Without the session guard this would
+      // redispatch the identical write yet again.
+      teamStream.add([member('m1')]);
+      await pumpEventQueue();
+
+      // A single check spanning EVERY rebuild pass above (this batch's
+      // several plus the team-triggered one), not separate counts per batch:
+      // mockito's verify() consumes prior matches (each verify() call on a
+      // given invocation pattern counts only NEW calls since the last verify
+      // on that same pattern), so a second verify(...).called(n) here would
+      // incorrectly check only the remainder rather than the true total. This
+      // assertion fails (with more than 1 call recorded) if the session guard
+      // is deleted — confirmed by temporarily disabling it.
+      verify(eventRepo.updateSlotAnnotation(
+        'e1',
+        'medic#0',
+        const SlotAnnotation(note: 'x', labelId: 'L'),
+        staleKey: 'medic#1',
+      )).called(1);
     });
   });
 }
