@@ -13,11 +13,13 @@ import '../../../data/repositories/team_repository.dart';
 import '../../../core/constants/assignment_label_palette.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/slot_annotations.dart';
 import '../../../core/services/environment_service.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/event/event_bloc.dart';
+import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
@@ -702,9 +704,10 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     return StreamBuilder<List<AssignmentLabel>>(
       stream: context.read<AssignmentLabelRepository>().watchAssignmentLabels(),
       builder: (context, labelSnapshot) {
+        final liveLabels = labelSnapshot.data ?? const <AssignmentLabel>[];
         final liveSlots = _applyAssignmentLabelsToSlots(
           state.slots,
-          labelSnapshot.data ?? const <AssignmentLabel>[],
+          liveLabels,
         );
 
         // Store all slots for checking
@@ -883,8 +886,11 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               if (showLoadMore && index == slots.length) {
                                 return _buildLoadMorePastButton(state);
                               }
-                              final row = _buildSlotRow(slots[index],
-                                  state.stagedSlotKeys, state.stagedGoneSlotKeys);
+                              final row = _buildSlotRow(
+                                  slots[index],
+                                  state.stagedSlotKeys,
+                                  state.stagedGoneSlotKeys,
+                                  liveLabels);
                               // A row queued for delete (swipe-delete, not yet
                               // saved) takes precedence over "gone" — it's an
                               // explicit local action — and gets the
@@ -1181,8 +1187,77 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
   }
 
+  /// Purple note card + label chip for an EMPTY slot's gap annotation. Mirrors
+  /// the filled-row extra-info styling. Returns null when the gap has none.
+  Widget? _buildGapAnnotationInfo(
+      AssignmentSlot slot, List<AssignmentLabel> labels) {
+    final ann = slot.gapAnnotation?.annotation;
+    if (ann == null || ann.isEmpty) return null;
+    final label = ann.labelId == null
+        ? null
+        : labels.firstWhereOrNull((l) => l.id == ann.labelId);
+    final hasNote = ann.note.trim().isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Column(
+          children: [
+            if (label != null) ...[
+              Align(
+                alignment: Alignment.center,
+                child: AssignmentLabelChip(
+                  label: label,
+                  fontSize: 10,
+                  maxLines: 3,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+              ),
+              if (hasNote) const SizedBox(height: 4),
+            ],
+            if (hasNote)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.purple.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.note_alt_outlined,
+                        size: 14, color: Colors.purple.shade700),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text.rich(TextSpan(children: [
+                        TextSpan(
+                          text: 'הערת שיבוץ: ',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.purple.shade800),
+                        ),
+                        TextSpan(
+                          text: ann.note,
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.purple.shade900),
+                        ),
+                      ])),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSlotRow(AssignmentSlot slot, Set<String> stagedSlotKeys,
-      Set<String> stagedGoneSlotKeys) {
+      Set<String> stagedGoneSlotKeys, List<AssignmentLabel> liveLabels) {
     if (slot.isOffQuota) {
       return _buildOffQuotaRow(slot, stagedSlotKeys, stagedGoneSlotKeys);
     }
@@ -1193,7 +1268,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     // docs/superpowers/specs/2026-07-15-assignments-staged-save-design.md.
     final isDirty = stagedSlotKeys.contains(_getSlotKey(slot));
 
-    final extraInfo = _buildAssignmentExtraInfo(slot.currentAssignment);
+    final extraInfo = slot.isFilled
+        ? _buildAssignmentExtraInfo(slot.currentAssignment)
+        : _buildGapAnnotationInfo(slot, liveLabels);
 
     final rowContent = Container(
       decoration: BoxDecoration(
@@ -1436,12 +1513,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
 
     // Return the assignment row with swipe gestures:
     // - Swipe left (endToStart): Delete slot
-    // - Swipe right (startToEnd): Edit notes (only for filled slots)
+    // - Swipe right (startToEnd): Edit notes (filled) / gap annotation (empty)
     return Dismissible(
       key: Key('slot_${slot.event.id}_${slot.role.key}_${slot.slotIndex}'),
-      direction: slot.isFilled
-          ? DismissDirection.horizontal // Both directions for filled slots
-          : DismissDirection.endToStart, // Only delete for empty slots
+      // Both directions, for filled AND empty slots: right-swipe edits
+      // (notes for a filled slot, the gap annotation for an empty one);
+      // left-swipe stages a delete either way.
+      direction: DismissDirection.horizontal,
       // Right-to-left swipe (delete) - red background
       secondaryBackground: Container(
         alignment: Alignment.centerLeft, // RTL: left side is the visible side
@@ -1462,7 +1540,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       },
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
-          // Notes swipe - show notes dialog
+          // Notes / gap-annotation swipe - show the appropriate dialog
           if (slot.isFilled && slot.currentAssignment != null) {
             Logger.action('swipeEdit:notesDialog', {
               'assignmentId': slot.currentAssignment?.id,
@@ -1470,6 +1548,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
                 _showNotesDialog(slot);
+              }
+            });
+          } else if (!slot.isFilled) {
+            Logger.action('swipeEdit:gapAnnotationDialog', {
+              'eventId': slot.event.id,
+              'role': slot.role.key,
+              'slotIndex': slot.slotIndex,
+            });
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showGapAnnotationDialog(slot);
               }
             });
           }
@@ -1935,6 +2024,88 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     // Intentionally do not dispose these immediately after showDialog returns.
     // On Flutter Web, the editable subtree can still be unwinding for a frame
     // after pop, and eager disposal here causes use-after-dispose assertions.
+  }
+
+  /// Simplified note+label editor for an EMPTY slot (no phone — that is
+  /// member-level). Writes to Event.slotAnnotations via UpsertSlotAnnotation.
+  Future<void> _showGapAnnotationDialog(AssignmentSlot slot) async {
+    final ann = slot.gapAnnotation?.annotation;
+    final noteController = TextEditingController(text: ann?.note ?? '');
+    String? selectedLabelId = ann?.labelId;
+    // Self-heal: if the shown annotation drifted from this row's own index,
+    // delete the stale key when we write the new one.
+    final ownKey = slotAnnotationKey(slot.role.key, slot.slotIndex);
+    final sourceKey = slot.gapAnnotation?.sourceKey;
+    final staleKey = (sourceKey != null && sourceKey != ownKey) ? sourceKey : null;
+
+    final labels = await context
+        .read<AssignmentLabelRepository>()
+        .watchAssignmentLabels()
+        .first;
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: StatefulBuilder(
+          builder: (context, setStateDialog) => AlertDialog(
+            title: Text('הערת שיבוץ — ${slot.role.hebrewName}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: noteController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'הערה',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  initialValue: selectedLabelId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'לייבל',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                        value: null, child: Text('ללא לייבל')),
+                    ...labels.map((l) => DropdownMenuItem<String?>(
+                        value: l.id, child: Text(l.hebrewName))),
+                  ],
+                  onChanged: (v) => setStateDialog(() => selectedLabelId = v),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('ביטול'),
+              ),
+              TextButton(
+                onPressed: () {
+                  context.read<EventBloc>().add(UpsertSlotAnnotation(
+                        eventId: slot.event.id,
+                        roleKey: slot.role.key,
+                        slotIndex: slot.slotIndex,
+                        note: noteController.text.trim(),
+                        labelId: selectedLabelId,
+                        staleKey: staleKey,
+                      ));
+                  Navigator.of(dialogContext).pop();
+                  _showAssignmentSnackBar('ההערה נשמרה',
+                      backgroundColor: Colors.green);
+                },
+                child: const Text('שמירה'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<_AssignmentLabelSelectionResult?> _showAssignmentLabelPickerDialog(
