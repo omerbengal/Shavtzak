@@ -45,12 +45,19 @@ void main() {
       expect(res, isEmpty);
     });
 
-    test('drifted annotation (index now filled) surfaces on a remaining gap', () {
-      // a0 stored at index 0, but index 0 is filled → must not vanish; it
-      // lands on the first free gap (index 1) so the note stays visible.
+    test('an out-of-range drifted annotation surfaces on a remaining gap', () {
+      // a0 stored at index 2, but quota is 2 so index 2 no longer exists →
+      // it must not vanish; it lands on the first free gap.
+      final res = reconcileGapAnnotations({'medic#2': a0}, 'medic', 2, {});
+      expect(res[0]!.annotation, a0);
+      expect(res[0]!.sourceKey, 'medic#2');
+    });
+
+    test('a note on an in-quota FILLED slot stays dormant (does not surface on another gap)', () {
+      // a0 stored at index 0 which is FILLED → dormant carry-back copy for that
+      // slot; must NOT re-home onto the empty gap at index 1.
       final res = reconcileGapAnnotations({'medic#0': a0}, 'medic', 2, {0});
-      expect(res[1]!.annotation, a0);
-      expect(res[1]!.sourceKey, 'medic#0');
+      expect(res, isEmpty);
     });
 
     test('exact matches win before drifted ones fill leftovers', () {

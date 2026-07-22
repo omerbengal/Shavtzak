@@ -50,7 +50,6 @@ Map<int, ResolvedGapAnnotation> reconcileGapAnnotations(
   });
   if (byIndex.isEmpty) return const {};
 
-  final gapSet = gaps.toSet();
   final result = <int, ResolvedGapAnnotation>{};
   final claimed = <int>{};
 
@@ -62,10 +61,13 @@ Map<int, ResolvedGapAnnotation> reconcileGapAnnotations(
       claimed.add(gap);
     }
   }
-  // 2) Drifted annotations (stored index not a current gap) → remaining gaps.
-  final leftover = (byIndex.keys.toList()..sort())
-      .where((idx) => !gapSet.contains(idx))
-      .toList();
+  // 2) Only OUT-OF-RANGE annotations (index >= requiredCount — the slot no longer
+  // exists after a quota reduction) drift onto a free gap. A note on an
+  // in-range FILLED slot stays DORMANT: it is the carry-back copy for THAT
+  // specific slot and must not surface on another gap (that would double it
+  // alongside the assignment's own carried-over note).
+  final leftover =
+      (byIndex.keys.where((idx) => idx >= requiredCount).toList()..sort());
   final freeGaps = gaps.where((g) => !claimed.contains(g)).toList();
   for (var i = 0; i < leftover.length && i < freeGaps.length; i++) {
     final idx = leftover[i];
