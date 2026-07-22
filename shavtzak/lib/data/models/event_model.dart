@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/utils/israel_calendar.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/participant_group.dart';
+import '../../domain/entities/slot_annotation.dart';
 
 /// Data model for Event with JSON serialization
 class EventModel {
@@ -22,6 +23,7 @@ class EventModel {
   final String comments;
   final String? categoryId; // Foreign key to Category
   final Map<String, int> roleRequirements; // Stored as string keys in Firestore
+  final Map<String, SlotAnnotation> slotAnnotations;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -54,6 +56,7 @@ class EventModel {
     this.comments = '',
     this.categoryId,
     required this.roleRequirements,
+    this.slotAnnotations = const {},
     required this.createdAt,
     required this.updatedAt,
     this.driveFolderId,
@@ -120,6 +123,24 @@ class EventModel {
     return const [];
   }
 
+  /// Parse slot annotations, tolerating missing/malformed data so legacy
+  /// documents (written before this field existed) read as an empty map
+  /// instead of throwing.
+  static Map<String, SlotAnnotation> _parseSlotAnnotations(Object? raw) {
+    if (raw is! Map) return const {};
+    final result = <String, SlotAnnotation>{};
+    raw.forEach((key, value) {
+      if (key is String && value is Map) {
+        result[key] = SlotAnnotation.fromJson(Map<String, dynamic>.from(value));
+      }
+    });
+    return result;
+  }
+
+  Map<String, dynamic> _slotAnnotationsToJson() => {
+        for (final e in slotAnnotations.entries) e.key: e.value.toJson(),
+      };
+
   /// Convert from domain entity
   factory EventModel.fromEntity(Event entity) {
     return EventModel(
@@ -142,6 +163,7 @@ class EventModel {
       comments: entity.comments,
       categoryId: entity.categoryId,
       roleRequirements: Map<String, int>.from(entity.roleRequirements),
+      slotAnnotations: Map<String, SlotAnnotation>.from(entity.slotAnnotations),
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       driveFolderId: entity.driveFolderId,
@@ -173,6 +195,7 @@ class EventModel {
       comments: comments,
       categoryId: categoryId,
       roleRequirements: Map<String, int>.from(roleRequirements),
+      slotAnnotations: Map<String, SlotAnnotation>.from(slotAnnotations),
       createdAt: createdAt,
       updatedAt: updatedAt,
       driveFolderId: driveFolderId,
@@ -210,6 +233,7 @@ class EventModel {
       categoryId: data['categoryId'] as String?,
       roleRequirements:
           Map<String, int>.from(data['roleRequirements'] as Map? ?? {}),
+      slotAnnotations: _parseSlotAnnotations(data['slotAnnotations']),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
       driveFolderId: data['driveFolderId'] as String?,
@@ -243,6 +267,7 @@ class EventModel {
       'comments': comments,
       'categoryId': categoryId,
       'roleRequirements': roleRequirements,
+      'slotAnnotations': _slotAnnotationsToJson(),
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
       'driveFolderId': driveFolderId,
@@ -278,6 +303,7 @@ class EventModel {
       categoryId: json['categoryId'] as String?,
       roleRequirements:
           Map<String, int>.from(json['roleRequirements'] as Map? ?? {}),
+      slotAnnotations: _parseSlotAnnotations(json['slotAnnotations']),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       driveFolderId: json['driveFolderId'] as String?,
@@ -311,6 +337,7 @@ class EventModel {
       'comments': comments,
       'categoryId': categoryId,
       'roleRequirements': roleRequirements,
+      'slotAnnotations': _slotAnnotationsToJson(),
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'driveFolderId': driveFolderId,
