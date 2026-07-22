@@ -157,6 +157,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// staged changes as two separate batch writes.
   bool _saveInFlight = false;
 
+  // Slot-annotation writes already dispatched this session (see
+  // _normalizeSlotAnnotations). Prevents re-dispatching the same cleanup on
+  // every rebuild while the write is in flight / after it succeeds. Best-effort:
+  // reconcileGapAnnotations keeps the DISPLAY correct regardless.
+  final Set<String> _normalizedSlotAnnotationOps = {};
+
   AssignmentBloc(
     this._repository,
     this._eventRepository,
@@ -3293,6 +3299,50 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     }
   }
 
+  /// Eagerly reconcile each loaded event's stored slotAnnotations with its
+  /// current quota + filled slots, so the DB keys match what the UI shows after
+  /// a quota change (re-key moved notes, delete true orphans, keep
+  /// dormant-on-filled). Fire-and-forget cleanup — never blocks a rebuild, and
+  /// each distinct write is dispatched at most once per session.
+  ///
+  /// Uses the RAW persisted [assignments] + persisted roleRequirements (the
+  /// same inputs reconcileGapAnnotations uses for display), NOT staged/optimistic
+  /// state — the DB annotations must track the SAVED quota/assignments.
+  void _normalizeSlotAnnotations(
+      List<Event> events, List<Assignment> assignments) {
+    for (final event in events) {
+      if (event.slotAnnotations.isEmpty) continue;
+      final roleKeys = <String>{};
+      for (final k in event.slotAnnotations.keys) {
+        final parsed = parseSlotAnnotationKey(k);
+        if (parsed != null) roleKeys.add(parsed.roleKey);
+      }
+      for (final roleKey in roleKeys) {
+        final quota = event.roleRequirements[roleKey] ?? 0;
+        final filled = assignments
+            .where((a) => a.eventId == event.id && a.roleType == roleKey)
+            .map((a) => a.slotIndex);
+        final ops = computeSlotAnnotationNormalization(
+            event.slotAnnotations, roleKey, quota, filled);
+        for (final op in ops) {
+          final opKey =
+              '${event.id}|${op.key}|${op.staleKey ?? ''}|${op.value?.note ?? ''}|${op.value?.labelId ?? ''}';
+          if (!_normalizedSlotAnnotationOps.add(opKey)) continue; // already dispatched
+          _eventRepository
+              .updateSlotAnnotation(event.id, op.key, op.value,
+                  staleKey: op.staleKey)
+              .catchError((Object e) {
+            Logger.warning('normalizeSlotAnnotations failed', {
+              'eventId': event.id,
+              'key': op.key,
+              'error': e.toString(),
+            });
+          });
+        }
+      }
+    }
+  }
+
   /// Rebuild slots using pre-loaded data (for real-time updates)
   Future<void> _onRebuildAssignmentSlotsFromData(
     RebuildAssignmentSlotsFromData rebuildEvent,
@@ -3366,6 +3416,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 e.endDate.isAfter(todayStart.subtract(const Duration(days: 1))))
             .toList();
       }
+
+      // Eagerly self-heal stored slotAnnotations against the fresh DB data —
+      // same raw events/assignments this handler feeds into reconcileGapAnnotations
+      // below (NOT the staged/optimistic effectiveMergedAssignments view). Called
+      // once per rebuild (not per-role/per-event) since it iterates internally;
+      // fire-and-forget, so it never blocks or alters this rebuild's own emit.
+      _normalizeSlotAnnotations(filteredEvents, mergedAssignments);
 
       // Build slots using the existing method
       final slots = <AssignmentSlot>[];

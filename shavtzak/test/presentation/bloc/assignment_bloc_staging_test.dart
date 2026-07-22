@@ -152,6 +152,13 @@ void main() {
     when(eventRepo.getAllEvents()).thenAnswer((_) async => [futureEvent('e1')]);
     when(assignmentRepo.getAllAssignments())
         .thenAnswer((_) async => const <Assignment>[]);
+
+    // Task ff3: eager slotAnnotations normalization writes through this method
+    // (see _normalizeSlotAnnotations in AssignmentBloc). Stubbed globally so
+    // every test's rebuild can dispatch it without a MissingStubError; most
+    // tests never trigger a write since their events have empty slotAnnotations.
+    when(eventRepo.updateSlotAnnotation(any, any, any,
+        staleKey: anyNamed('staleKey'))).thenAnswer((_) async {});
   });
 
   tearDown(() async {
@@ -423,5 +430,59 @@ void main() {
     // gapAnnotation's own "null when filled" invariant: now that the slot is
     // optimistically filled, it must no longer carry the gap annotation.
     expect(medicSlot.gapAnnotation, isNull);
+  });
+
+  // Task ff3: eager slotAnnotations normalization. _onRebuildAssignmentSlotsFromData
+  // (the live-stream rebuild handler, fired when fresh DB data arrives) computes
+  // each role's normalization writes via the pure computeSlotAnnotationNormalization
+  // helper and dispatches them through EventRepository.updateSlotAnnotation, so a
+  // quota change self-heals the stored keys instead of leaving them drifted/
+  // orphaned for reconcileGapAnnotations to keep papering over on every render.
+  group('eager slotAnnotations normalization on quota change', () {
+    test(
+        'a note stored on a since-shrunk-out-of-range slot is re-keyed onto the '
+        'surviving gap (staleKey deletes the old key)', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([
+        futureEvent('e1').copyWith(slotAnnotations: {
+          'medic#1': const SlotAnnotation(note: 'x', labelId: 'L'),
+        }),
+      ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]); // no assignments at all
+      await pumpEventQueue();
+
+      // The session guard makes this exactly once even though multiple
+      // RebuildAssignmentSlotsFromData dispatches occur while streams arrive.
+      verify(eventRepo.updateSlotAnnotation(
+        'e1',
+        'medic#0',
+        const SlotAnnotation(note: 'x', labelId: 'L'),
+        staleKey: 'medic#1',
+      )).called(1);
+    });
+
+    test(
+        'a note already on its correct (in-range, empty) gap is left untouched '
+        '— no write dispatched', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([
+        futureEvent('e1').copyWith(slotAnnotations: {
+          'medic#0': const SlotAnnotation(note: 'x'),
+        }),
+      ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]); // no assignments at all
+      await pumpEventQueue();
+
+      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
+          staleKey: anyNamed('staleKey')));
+    });
   });
 }
