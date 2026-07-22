@@ -46,6 +46,7 @@ import type {
   ConstraintSyncReport,
 } from './calendar_sync_backend';
 import {normalizeParticipantGroups} from './participant_groups';
+import {buildSlotAnnotationMerge} from './slot_annotations';
 
 initializeApp();
 
@@ -3985,6 +3986,38 @@ async function executeMutation(
       await writeAuditLog(db, collections, actor, operation, 'event', eventId, {name}, {
         before: existing,
         after: nextEvent,
+      });
+      return {ok: true};
+    }
+
+    case 'event.updateSlotAnnotation': {
+      if (!actor.isAdmin) {
+        throw new HttpError(403, 'אין הרשאה');
+      }
+      const eventId = requireString(payload['eventId'], 'eventId');
+      const key = requireString(payload['key'], 'key');
+      const staleKey = optionalString(payload['staleKey']);
+      const note = typeof payload['note'] === 'string'
+        ? (payload['note'] as string)
+        : '';
+      const labelIdRaw = payload['labelId'];
+      const labelId = typeof labelIdRaw === 'string' && labelIdRaw.length > 0
+        ? labelIdRaw
+        : null;
+      const eventRef = db.collection(collections.events).doc(eventId);
+      const existing = await eventRef.get();
+      if (!existing.exists) {
+        throw new HttpError(404, 'Event not found');
+      }
+      const clear = note.trim().length === 0 && labelId === null;
+      const merge = buildSlotAnnotationMerge(
+        key, clear ? null : {note, labelId}, staleKey);
+      // Targeted merge-set: no calendar job, no duplicate check — unlike
+      // event.update — so a note edit never triggers calendar/Drive work.
+      await eventRef.set(merge, {merge: true});
+      await writeAuditLog(db, collections, actor, operation, 'event', eventId, {
+        key,
+        cleared: clear,
       });
       return {ok: true};
     }
