@@ -10,6 +10,7 @@ import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/event_sorting.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/utils/same_day_assignments.dart';
+import '../../../core/utils/slot_annotations.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/team_repository.dart';
@@ -1289,10 +1290,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // honest answer until the stream re-emits — see the note below.
         // hasDoubleAssignment/otherRoles need no such care: they are recomputed
         // wholesale by annotateDoubleAssignments below.
+        //
+        // gapAnnotation must honor its own "null when filled" invariant too:
+        // an optimistic FILL (optimistic != null) clears it, since baseSlot's
+        // gapAnnotation was populated from the (still-empty-in-DB) build and
+        // would otherwise leak through onto a now-filled row. An optimistic
+        // CLEAR-back-to-empty (optimistic == null) instead KEEPS baseSlot's
+        // gapAnnotation (bare `null` param -> copyWith preserves it) so the
+        // re-emptied slot still shows its annotation.
         return baseSlot.copyWith(
           currentAssignment: optimistic,
           clearCurrentAssignment: optimistic == null,
           sameDayOtherEvents: const [],
+          gapAnnotation: optimistic != null ? () => null : null,
         );
       }
     }).toList();
@@ -1397,8 +1407,25 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   Future<void> _upsertStagedMember(
       AssignmentSlot slot, String? memberId) async {
     final key = _slotKey(slot);
-    final base = _stagedChanges[key] ?? _seedStaged(slot);
-    await _commitStaged(key, base.copyWith(desiredMemberId: () => memberId));
+    final existing = _stagedChanges[key];
+    final base = existing ?? _seedStaged(slot);
+    var next = base.copyWith(desiredMemberId: () => memberId);
+    // Carry-over (spec §9): filling a previously-empty, annotated gap seeds the
+    // job's note + label onto the new assignment. Only on the FIRST staging of
+    // this slot (existing == null), when actually filling (memberId != null),
+    // and the slot has no DB occupant.
+    final ann = slot.gapAnnotation?.annotation;
+    if (existing == null &&
+        memberId != null &&
+        slot.currentAssignment == null &&
+        ann != null &&
+        !ann.isEmpty) {
+      next = next.copyWith(
+        desiredNotes: ann.note,
+        desiredSemanticLabelId: () => ann.labelId,
+      );
+    }
+    await _commitStaged(key, next);
   }
 
   /// Stage a notes/label/alt-phone edit (member left unchanged).
@@ -2979,6 +3006,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
         final renderCount =
             requiredCount + _stagedAddCount(event.id, role.key);
+        // Reconcile this role's stored gap annotations onto its ACTUAL empty
+        // slots (raw DB, not staged-effective — mirrors every other
+        // DB-truth-only use of `assignments`/`roleAssignments` in this loop,
+        // e.g. currentAssignment/off-quota rows).
+        final gapAnnotations = reconcileGapAnnotations(
+          event.slotAnnotations,
+          role.key,
+          requiredCount,
+          roleAssignments.map((a) => a.slotIndex),
+        );
         // Create slots (one per required count, grown by staged manual-adds)
         for (int i = 0; i < renderCount; i++) {
           // Find if this slot is filled (match by slotIndex, not array position)
@@ -3101,6 +3138,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             alreadyAssignedMembers: alreadyAssignedMembers,
             sameDayAssignedMembers: sameDayAssignedMembers,
             sameDayEventInfo: sameDayEventInfoMap,
+            gapAnnotation: assignment == null ? gapAnnotations[i] : null,
           ));
           if (assignment != null) placedAssignmentIds.add(assignment.id);
         }
@@ -3352,6 +3390,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
           final renderCount =
               requiredCount + _stagedAddCount(eventData.id, role.key);
+          // Reconcile this role's stored gap annotations onto its ACTUAL empty
+          // slots. Mirrors _buildSlotsFromAssignments: raw roleAssignments
+          // (DB truth), not the staged-effective view.
+          final gapAnnotations = reconcileGapAnnotations(
+            eventData.slotAnnotations,
+            role.key,
+            requiredCount,
+            roleAssignments.map((a) => a.slotIndex),
+          );
           // Create slots (one per required count, grown by staged manual-adds)
           for (int i = 0; i < renderCount; i++) {
             // Find if this slot is filled (match by slotIndex, not array position)
@@ -3460,6 +3507,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               alreadyAssignedMembers: alreadyAssignedMembers,
               sameDayAssignedMembers: sameDayAssignedMembers,
               sameDayEventInfo: sameDayEventInfoMap,
+              gapAnnotation: assignment == null ? gapAnnotations[i] : null,
             ));
             if (assignment != null) placedAssignmentIds.add(assignment.id);
           }

@@ -22,6 +22,7 @@ import 'package:shavtzak/core/services/user_cache_service.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/role.dart';
+import 'package:shavtzak/domain/entities/slot_annotation.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_event.dart';
@@ -376,5 +377,51 @@ void main() {
     // no stray baseline got seeded from the legacy rehydrate.
     expect(bloc.derivedQuota('e1', 'medic'), 1);
     expect(medicSlot.currentAssignment!.teamMemberId, 'm1');
+  });
+
+  // Task 7: an empty quota slot carries the event's reconciled gap
+  // annotation (AssignmentSlot.gapAnnotation), and staging a fresh fill onto
+  // that gap carries the note + label over onto the new (staged, optimistic)
+  // assignment — see _upsertStagedMember's carry-over seed.
+  test(
+      'staging a member fill onto an annotated empty gap carries the note '
+      '+ label onto the optimistic assignment', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([
+      futureEvent('e1').copyWith(slotAnnotations: {
+        'medic#0': const SlotAnnotation(note: 'C', labelId: 'L2'),
+      }),
+    ]);
+    roleStream.add([medicRole()]);
+    assignmentStream.add(const <Assignment>[]);
+    await pumpEventQueue();
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final emptyMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    expect(emptyMedicSlot.currentAssignment, isNull);
+    // The empty slot itself now carries the reconciled gap annotation.
+    expect(emptyMedicSlot.gapAnnotation, isNotNull);
+    expect(emptyMedicSlot.gapAnnotation!.annotation.note, 'C');
+    expect(emptyMedicSlot.gapAnnotation!.annotation.labelId, 'L2');
+
+    bloc.add(StageMemberChange(slot: emptyMedicSlot, member: member('m1')));
+    await pumpEventQueue();
+
+    final after = bloc.state as AssignmentSlotsLoaded;
+    final medicSlot = after.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    expect(medicSlot.currentAssignment, isNotNull);
+    expect(medicSlot.currentAssignment!.teamMemberId, 'm1');
+    // Carry-over: the staged fill's optimistic assignment inherits the
+    // gap's note + label instead of starting blank.
+    expect(medicSlot.currentAssignment!.notes, 'C');
+    expect(medicSlot.currentAssignment!.semanticLabelId, 'L2');
+    // gapAnnotation's own "null when filled" invariant: now that the slot is
+    // optimistically filled, it must no longer carry the gap annotation.
+    expect(medicSlot.gapAnnotation, isNull);
   });
 }
