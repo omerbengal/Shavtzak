@@ -8,8 +8,6 @@ import '../../../domain/entities/assignment.dart';
 import '../../../core/constants/calendar_constants.dart';
 import '../../../core/constants/role_types.dart';
 import '../../../core/utils/crud_action_result.dart';
-import '../../../core/utils/slot_annotations.dart';
-import '../../../domain/entities/slot_annotation.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
 import '../calendar_sync/calendar_sync_event.dart';
 import 'event_event.dart';
@@ -82,7 +80,6 @@ class EventBloc extends Bloc<EventEvent, EventState> {
     on<RefreshEvents>(_onRefreshEvents);
     on<DeactivateEventRequested>(_onDeactivateEvent);
     on<ReactivateEventRequested>(_onReactivateEvent);
-    on<UpsertSlotAnnotation>(_onUpsertSlotAnnotation);
     on<_EventsDataUpdated>(_onEventsDataUpdated);
     on<_RecoveryGaveUp>(_onRecoveryGaveUp);
   }
@@ -788,26 +785,6 @@ class EventBloc extends Bloc<EventEvent, EventState> {
       final message = 'שגיאה בהפעלת האירוע: $e';
       emit(EventError(message));
       _completeActionFailure(event.completion, message);
-    }
-  }
-
-  /// Upsert (or clear) a single empty-slot annotation. No local state emit on
-  /// success — the event stream re-emits with the new slotAnnotations map and
-  /// both screens rebuild from it.
-  Future<void> _onUpsertSlotAnnotation(
-      UpsertSlotAnnotation event, Emitter<EventState> emit) async {
-    final key = slotAnnotationKey(event.roleKey, event.slotIndex);
-    final note = event.note.trim();
-    final value = (note.isEmpty && event.labelId == null)
-        ? null
-        : SlotAnnotation(note: note, labelId: event.labelId);
-    try {
-      await _repository.updateSlotAnnotation(event.eventId, key, value,
-          staleKey: event.staleKey);
-      // The event stream re-emits with the new slotAnnotations; both screens
-      // rebuild from it. No local state emit needed.
-    } catch (e) {
-      emit(const EventError('שמירת ההערה נכשלה'));
     }
   }
 

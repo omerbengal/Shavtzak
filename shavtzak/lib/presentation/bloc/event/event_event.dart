@@ -171,30 +171,6 @@ class DuplicateEvent extends EventEvent {
       ];
 }
 
-/// Upsert (or clear, when note is blank and labelId is null) a single slot
-/// annotation. [staleKey] self-heals a drifted stored key (see spec §10).
-class UpsertSlotAnnotation extends EventEvent {
-  final String eventId;
-  final String roleKey;
-  final int slotIndex;
-  final String note;
-  final String? labelId;
-  final String? staleKey;
-
-  const UpsertSlotAnnotation({
-    required this.eventId,
-    required this.roleKey,
-    required this.slotIndex,
-    required this.note,
-    required this.labelId,
-    this.staleKey,
-  });
-
-  @override
-  List<Object?> get props =>
-      [eventId, roleKey, slotIndex, note, labelId, staleKey];
-}
-
 /// Confirm duplication after user resolves conflicts
 /// This event is dispatched AFTER the user selects which assignments to exclude
 class ConfirmDuplicationWithExclusions extends EventEvent {
