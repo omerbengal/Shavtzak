@@ -469,4 +469,60 @@ void main() {
     expect(bloc.hasStagedChanges, isFalse);
     expect(await cachedAnnotations(), isEmpty);
   });
+
+  // ---- Task 3: display overlay — a staged edit shows immediately ----------
+
+  test(
+      'staging a note on an empty slot overlays the rebuilt gapAnnotation '
+      'immediately, before Save', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadSlots(bloc);
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final emptyMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    expect(emptyMedicSlot.gapAnnotation, isNull); // no stored annotation yet
+
+    bloc.add(StageSlotAnnotation(
+        slot: emptyMedicSlot, note: 'תזכורת', labelId: 'L1'));
+    await pumpEventQueue();
+
+    final after = bloc.state as AssignmentSlotsLoaded;
+    final rebuiltSlot = after.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    expect(rebuiltSlot.gapAnnotation, isNotNull);
+    expect(rebuiltSlot.gapAnnotation!.annotation,
+        const SlotAnnotation(note: 'תזכורת', labelId: 'L1'));
+  });
+
+  test(
+      'staging a DELETE (blank note, no label) on a slot with a stored DB '
+      'annotation overlays the rebuilt gapAnnotation to null immediately',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadSlots(bloc, slotAnnotations: {
+      'medic#0': const SlotAnnotation(note: 'x'),
+    });
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final emptyMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    expect(emptyMedicSlot.gapAnnotation, isNotNull); // stored DB annotation
+
+    // Blank note + no label => desired == null (a staged delete). This
+    // differs from the non-null baseline ('x'), so it is NOT a no-op and
+    // stays staged (confirmed via stagedCount below) rather than being
+    // dropped immediately.
+    bloc.add(
+        StageSlotAnnotation(slot: emptyMedicSlot, note: '', labelId: null));
+    await pumpEventQueue();
+    expect(bloc.stagedCount, 1);
+
+    final after = bloc.state as AssignmentSlotsLoaded;
+    final rebuiltSlot = after.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    expect(rebuiltSlot.gapAnnotation, isNull);
+  });
 }

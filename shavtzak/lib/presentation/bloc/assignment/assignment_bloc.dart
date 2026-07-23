@@ -1636,6 +1636,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return result;
   }
 
+  /// The gap annotation to render for a slot: the STAGED edit if one exists
+  /// (so a pending edit shows immediately), else the reconciled DB value.
+  ResolvedGapAnnotation? _effectiveGapAnnotation(
+      String eventId, String roleKey, int slotIndex, ResolvedGapAnnotation? reconciled) {
+    final key = StagedAssignmentChange.slotKeyFor(eventId, roleKey, slotIndex);
+    final staged = _stagedSlotAnnotations[key];
+    if (staged == null) return reconciled;
+    if (staged.desired == null) return null; // staged delete → show nothing
+    final ownKey = slotAnnotationKey(roleKey, slotIndex);
+    return (annotation: staged.desired!, sourceKey: staged.staleKey ?? ownKey);
+  }
+
   /// Reconcile `_pendingOperations` with the current staged-changes snapshot,
   /// called immediately before each slots-view merge call.
   ///
@@ -3208,7 +3220,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             alreadyAssignedMembers: alreadyAssignedMembers,
             sameDayAssignedMembers: sameDayAssignedMembers,
             sameDayEventInfo: sameDayEventInfoMap,
-            gapAnnotation: assignment == null ? gapAnnotations[i] : null,
+            gapAnnotation: assignment == null
+                ? _effectiveGapAnnotation(
+                    event.id, role.key, i, gapAnnotations[i])
+                : null,
           ));
           if (assignment != null) placedAssignmentIds.add(assignment.id);
         }
@@ -3641,7 +3656,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               alreadyAssignedMembers: alreadyAssignedMembers,
               sameDayAssignedMembers: sameDayAssignedMembers,
               sameDayEventInfo: sameDayEventInfoMap,
-              gapAnnotation: assignment == null ? gapAnnotations[i] : null,
+              gapAnnotation: assignment == null
+                  ? _effectiveGapAnnotation(
+                      eventData.id, role.key, i, gapAnnotations[i])
+                  : null,
             ));
             if (assignment != null) placedAssignmentIds.add(assignment.id);
           }
