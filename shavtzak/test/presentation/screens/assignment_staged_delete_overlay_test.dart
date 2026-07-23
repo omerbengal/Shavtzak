@@ -39,6 +39,7 @@ import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/assignment_label.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/role.dart';
+import 'package:shavtzak/domain/entities/slot_annotation.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_bloc.dart';
 import 'package:shavtzak/presentation/bloc/assignment/assignment_event.dart';
@@ -168,12 +169,37 @@ void main() {
     availableMembers: [member],
   );
 
+  // Task 7 (SG7): a staged annotation DELETE that fell out of quota — no
+  // assignment (currentAssignment: null), only the note about to be removed
+  // on Save, carried in gapAnnotation. Same event/role as `slot` above but a
+  // DIFFERENT slotIndex (1), so it renders as a distinct sibling row (slotKey
+  // "e1_medic_1") instead of colliding with `slot`'s ("e1_medic_0").
+  final orphanedNoteSlot = AssignmentSlot(
+    event: event,
+    role: role,
+    slotIndex: 1,
+    currentAssignment: null,
+    availableMembers: const [],
+    isOffQuota: true,
+    gapAnnotation: (
+      annotation: const SlotAnnotation(note: 'הערה שתימחק'),
+      sourceKey: 'medic#1',
+    ),
+  );
+
   /// Returns the mocked [AssignmentBloc] so callers can `verify(...)` events
   /// dispatched onto it (Task 9: swipe-to-delete must stage, not write).
+  ///
+  /// [extraSlots] (Task 7 / SG7) defaults to none, so every EXISTING call
+  /// site below renders exactly `[slot]`, unchanged — it exists purely to let
+  /// the new orphaned-annotation-row test add `orphanedNoteSlot` alongside
+  /// `slot` (needed to satisfy the availableMembers spinner-gate above, since
+  /// an orphaned-annotation row's own availableMembers is always empty).
   Future<_MockAssignmentBloc> pumpAssignmentListWith(
     WidgetTester tester, {
     required Set<String> stagedDeletionSlotKeys,
     AssignmentRepository? assignmentRepository,
+    List<AssignmentSlot> extraSlots = const [],
   }) async {
     // FilterPersistence is process-global static state; pin it to the
     // "show everything" defaults so no filter hides our single test slot.
@@ -187,7 +213,7 @@ void main() {
       assignmentBloc,
       Stream<AssignmentState>.empty(),
       initialState: AssignmentSlotsLoaded(
-        [slot],
+        [slot, ...extraSlots],
         stagedDeletionSlotKeys: stagedDeletionSlotKeys,
       ),
     );
@@ -304,5 +330,60 @@ void main() {
     // (MockBloc's fixed state never removes the slot; confirmDismiss must
     // have returned false rather than letting Dismissible remove the row).
     expect(find.byKey(const ValueKey('slot_e1_medic_0')), findsOneWidget);
+  });
+
+  // Task 7 (SG7): an orphaned-annotation row (isOffQuota, currentAssignment
+  // null, gapAnnotation set) is a SEPARATE code path from both the normal row
+  // above and the real off-quota ASSIGNMENT row covered elsewhere — it must
+  // render its note + its own inline "יימחק בשמירה" stripe (NOT driven by
+  // stagedDeletionSlotKeys, which is _stagedChanges-only and never contains
+  // this slot's key — see AssignmentListScreen's itemBuilder doc comment),
+  // and swiping it must discard the staged delete rather than stage a fresh
+  // one (there is no assignment here to delete).
+  testWidgets(
+      'an orphaned-annotation row renders its note + the "יימחק בשמירה" '
+      'badge, and swiping it dispatches DiscardStagedSlot (not '
+      'StageSlotDeletion)', (tester) async {
+    final assignmentBloc = await pumpAssignmentListWith(
+      tester,
+      // Deliberately NOT containing this row's slotKey: proves the badge on
+      // THIS row does not depend on stagedDeletionSlotKeys at all.
+      stagedDeletionSlotKeys: const {},
+      extraSlots: [orphanedNoteSlot],
+    );
+
+    // Exactly one "יימחק בשמירה" badge: `slot` (the normal filled row) must
+    // NOT also show it (stagedDeletionSlotKeys is empty), so this also
+    // guards against the two rows being conflated.
+    expect(find.text('יימחק בשמירה'), findsOneWidget);
+    // The note itself renders via the shared _buildGapAnnotationInfo card, as
+    // the second TextSpan of a Text.rich (prefixed by "הערת שיבוץ: ") — so the
+    // flattened text is a superset of the bare note, hence textContaining
+    // rather than an exact find.text match.
+    expect(find.textContaining('הערה שתימחק'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // Swipe it (positive offset → endToStart under the screen's ambient RTL
+    // Directionality — see the identical reasoning in the test above).
+    await tester.drag(
+      find.byKey(const ValueKey('orphanNote_e1_medic_1')),
+      const Offset(500, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final discardEvents =
+        assignmentBloc.addedEvents.whereType<DiscardStagedSlot>().toList();
+    expect(discardEvents, hasLength(1));
+    expect(discardEvents.single.slotKey, 'e1_medic_1');
+    // Never a StageSlotDeletion: there is no assignment on this row to stage
+    // a delete for — the row already IS a pending removal.
+    expect(
+        assignmentBloc.addedEvents.whereType<StageSlotDeletion>(), isEmpty);
+
+    // Not actually dismissed (confirmDismiss always returns false): the row
+    // is still in the tree (MockBloc's fixed state never removes it).
+    expect(find.byKey(const ValueKey('orphanNote_e1_medic_1')),
+        findsOneWidget);
   });
 }

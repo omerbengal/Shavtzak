@@ -982,6 +982,74 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return result;
   }
 
+  /// Task 7 (SG7): synthesize a display-only, note-only row for each staged
+  /// slot-annotation DELETE (`desired == null`) for [role] that has fallen
+  /// out of the rendered range — `slotIndex >= renderCount`, so the per-role
+  /// `for (i in [0, renderCount))` loop (just above each call site) never
+  /// builds it a normal row. `_stageSlotAnnotationCleanup` (SG6) stages
+  /// exactly this kind of entry when a quota reduction orphans a note (no
+  /// surviving gap for it to drift onto via `computeSlotAnnotationNormalization`),
+  /// but until now that made the pending removal invisible — nothing rendered
+  /// at that slotIndex to show it on. This is the fix.
+  ///
+  /// Mirrors [_buildOffQuotaSlots]'s shape (`isOffQuota: true`, so it stays
+  /// out of quota/double-assignment/same-day math exactly like a real
+  /// off-quota row) but — unlike a real off-quota ASSIGNMENT row —
+  /// `currentAssignment` stays null; the row exists only to show the
+  /// `baseline` note via `gapAnnotation` so the admin can see and Save/Discard
+  /// it. The screen (`_buildSlotRow`) intercepts `isOffQuota &&
+  /// currentAssignment == null && gapAnnotation != null` BEFORE
+  /// `_buildOffQuotaRow`, which force-unwraps `currentAssignment!` and would
+  /// otherwise crash on this note-only slot.
+  ///
+  /// Two guards beyond the brief's literal `slotIndex >= requiredCount`, both
+  /// defending against rendering the same slotIndex twice:
+  /// - `renderCount` (not `requiredCount`) is the actual cutoff, so a
+  ///   slotIndex a staged manual-add already extended the grid to cover
+  ///   (which DOES get a normal row from the loop above) is never
+  ///   double-rendered here too.
+  /// - [roleAssignments] (this role's real, DB-backed assignments — filled OR
+  ///   already off-quota) is checked too: a dormant carry-back note that goes
+  ///   orphan on a slotIndex a REAL assignment still occupies must not spawn a
+  ///   second row next to the one `_buildOffQuotaSlots` already renders for
+  ///   that assignment.
+  List<AssignmentSlot> _buildOrphanedAnnotationSlots(
+    Event event,
+    Role role,
+    int renderCount,
+    List<Assignment> roleAssignments,
+  ) {
+    final result = <AssignmentSlot>[];
+    for (final staged in _stagedSlotAnnotations.values) {
+      if (staged.eventId != event.id || staged.roleType != role.key) continue;
+      if (staged.desired != null) continue; // not an orphan DELETE
+      if (staged.slotIndex < renderCount) continue; // already has a normal row
+      if (roleAssignments.any((a) => a.slotIndex == staged.slotIndex)) {
+        continue; // a real assignment already renders this slotIndex
+      }
+      final baseline = staged.baseline;
+      // Shouldn't happen: a stored (non-isNoop) delete with staleKey == null
+      // always has a non-null baseline (see StagedSlotAnnotation.isNoop and
+      // _stageSlotAnnotationCleanup's baseline lookup) — kept as a defensive
+      // guard so a malformed/legacy cache entry can't render a blank row.
+      if (baseline == null) continue;
+      result.add(AssignmentSlot(
+        event: event,
+        role: role,
+        slotIndex: staged.slotIndex,
+        currentAssignment: null,
+        availableMembers: const [],
+        alreadyAssignedMembers: const [],
+        isOffQuota: true,
+        gapAnnotation: (
+          annotation: baseline,
+          sourceKey: slotAnnotationKey(staged.roleType, staged.slotIndex),
+        ),
+      ));
+    }
+    return result;
+  }
+
   int _compareAssignmentSlots(AssignmentSlot a, AssignmentSlot b) {
     // Past ON → newest→oldest so "load older" reads downward (like /db);
     // Past OFF (default/upcoming view) → oldest→newest, unchanged.
@@ -3277,6 +3345,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           ));
           if (assignment != null) placedAssignmentIds.add(assignment.id);
         }
+
+        // Task 7 (SG7): this role's slots are all built — now surface any
+        // staged orphan-delete annotation that fell outside renderCount (see
+        // _buildOrphanedAnnotationSlots).
+        slots.addAll(_buildOrphanedAnnotationSlots(
+            event, role, renderCount, roleAssignments));
       }
 
       final eventAssignmentsAll =
@@ -3713,6 +3787,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             ));
             if (assignment != null) placedAssignmentIds.add(assignment.id);
           }
+
+          // Task 7 (SG7): this role's slots are all built — now surface any
+          // staged orphan-delete annotation that fell outside renderCount
+          // (see _buildOrphanedAnnotationSlots).
+          slots.addAll(_buildOrphanedAnnotationSlots(
+              eventData, role, renderCount, roleAssignments));
         }
 
         final eventAssignmentsAll = mergedAssignments

@@ -621,10 +621,27 @@ void main() {
       verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
           staleKey: anyNamed('staleKey')));
       // The rebuild this handler triggers also reflects the reduced quota
-      // immediately (no eventStream round-trip needed): only ONE medic slot
-      // renders now.
-      expect(
-          after.slots.where((s) => s.role.key == 'medic'), hasLength(1));
+      // immediately (no eventStream round-trip needed): only ONE NORMAL
+      // (in-quota) medic slot renders now.
+      final medicSlots =
+          after.slots.where((s) => s.role.key == 'medic').toList();
+      final normalMedicSlots = medicSlots.where((s) => !s.isOffQuota).toList();
+      expect(normalMedicSlots, hasLength(1));
+      expect(normalMedicSlots.single.slotIndex, 0);
+
+      // Task 7 (SG7): the orphaned note (slot 1, no longer in quota) does not
+      // just silently vanish — it surfaces as a synthesized, note-only
+      // off-quota row (AssignmentBloc._buildOrphanedAnnotationSlots) so the
+      // admin can see and Save/Discard the pending removal instead of it
+      // being invisible.
+      final orphanedNoteSlots = medicSlots.where((s) => s.isOffQuota).toList();
+      expect(orphanedNoteSlots, hasLength(1));
+      final orphanedNoteSlot = orphanedNoteSlots.single;
+      expect(orphanedNoteSlot.slotIndex, 1);
+      expect(orphanedNoteSlot.currentAssignment, isNull);
+      expect(orphanedNoteSlot.gapAnnotation, isNotNull);
+      expect(orphanedNoteSlot.gapAnnotation!.annotation,
+          const SlotAnnotation(note: 'y', labelId: 'L2'));
 
       // Confirm it converges correctly at Save: the orphan is deleted.
       bloc.add(const SaveStagedChanges());

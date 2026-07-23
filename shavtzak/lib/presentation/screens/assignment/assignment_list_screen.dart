@@ -889,6 +889,36 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                                   state.stagedSlotKeys,
                                   state.stagedGoneSlotKeys,
                                   liveLabels);
+                              // Task 7 (SG7): a synthesized orphaned-annotation
+                              // row (AssignmentBloc._buildOrphanedAnnotationSlots)
+                              // already carries its OWN "יימחק בשמירה" stripe,
+                              // built inline in
+                              // _buildOrphanedAnnotationRemovalRow — its
+                              // slotKey can never be in stagedDeletionSlotKeys
+                              // or stagedGoneSlotKeys below (both are pure
+                              // functions of _stagedChanges, unrelated to
+                              // _stagedSlotAnnotations — see
+                              // AssignmentBloc._computeStagedDeletionKeys /
+                              // _computeStagedGoneKeys) UNLESS this exact
+                              // (event, role, slotIndex) also independently
+                              // carries a staged ASSIGNMENT change that
+                              // happens to satisfy stagedGoneSlotKeys — an
+                              // edge case narrow enough that guarding it here
+                              // (skip both generic checks for this row type)
+                              // is simpler and safer than teaching the bloc's
+                              // two _stagedChanges-only helpers about the
+                              // unrelated annotation-staging map. Real
+                              // off-quota ASSIGNMENT rows and normal rows are
+                              // unaffected (isOrphanedAnnotationRow is false
+                              // for both), so this changes nothing about the
+                              // two checks below for them.
+                              final slot = slots[index];
+                              final isOrphanedAnnotationRow = slot.isOffQuota &&
+                                  slot.currentAssignment == null &&
+                                  slot.gapAnnotation != null;
+                              if (isOrphanedAnnotationRow) {
+                                return row;
+                              }
                               // A row queued for delete (swipe-delete, not yet
                               // saved) takes precedence over "gone" — it's an
                               // explicit local action — and gets the
@@ -897,7 +927,7 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                               // kept visible but marked with the red
                               // diagonal-stripe overlay (see stagedGoneSlotKeys
                               // / _withDeletedRemotelyOverlay).
-                              final slotKey = _getSlotKey(slots[index]);
+                              final slotKey = _getSlotKey(slot);
                               if (state.stagedDeletionSlotKeys
                                   .contains(slotKey)) {
                                 return _withStripeOverlay(row,
@@ -1257,6 +1287,17 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   Widget _buildSlotRow(AssignmentSlot slot, Set<String> stagedSlotKeys,
       Set<String> stagedGoneSlotKeys, List<AssignmentLabel> liveLabels) {
     if (slot.isOffQuota) {
+      // Task 7 (SG7): a synthesized note-only row
+      // (AssignmentBloc._buildOrphanedAnnotationSlots) for a staged
+      // annotation DELETE that fell out of quota — there is no assignment
+      // here, so it must be intercepted BEFORE _buildOffQuotaRow, which
+      // force-unwraps `currentAssignment!` and would crash on it. A REAL
+      // off-quota row (an assignment with no matching quota slot) always has
+      // a non-null currentAssignment, so it is untouched and still falls
+      // through to _buildOffQuotaRow exactly as before.
+      if (slot.currentAssignment == null && slot.gapAnnotation != null) {
+        return _buildOrphanedAnnotationRemovalRow(slot, liveLabels);
+      }
       return _buildOffQuotaRow(slot, stagedSlotKeys, stagedGoneSlotKeys);
     }
 
@@ -1749,6 +1790,116 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
         ),
       ),
     );
+  }
+
+  /// Task 7 (SG7): a note-only row for a staged annotation DELETE that fell
+  /// out of quota (see `AssignmentBloc._buildOrphanedAnnotationSlots`) — there
+  /// is no assignment (`slot.currentAssignment == null`), only the `baseline`
+  /// note about to be removed on Save, carried in `slot.gapAnnotation`.
+  /// Display + discard only, like `_buildOffQuotaRow`: no dropdown, no
+  /// notes-edit swipe — the row IS the pending removal, so there is nothing
+  /// to edit, only "keep it" (discard the staged delete).
+  ///
+  /// Always wrapped in the red "יימחק בשמירה" stripe (`_withStripeOverlay`) —
+  /// the SAME visual treatment a staged ASSIGNMENT deletion gets — applied
+  /// HERE rather than via the generic `stagedDeletionSlotKeys` check in the
+  /// `ListView.builder` above: that set is a pure function of `_stagedChanges`
+  /// (see `AssignmentBloc._computeStagedDeletionKeys`), unrelated to
+  /// `_stagedSlotAnnotations`, so a staged annotation delete never appears in
+  /// it and the generic wrap would never fire for this row.
+  Widget _buildOrphanedAnnotationRemovalRow(
+      AssignmentSlot slot, List<AssignmentLabel> liveLabels) {
+    final noteInfo = _buildGapAnnotationInfo(slot, liveLabels);
+
+    final row = Dismissible(
+      key: Key('orphanNote_${_getSlotKey(slot)}'),
+      direction: DismissDirection.endToStart,
+      secondaryBackground: Container(
+        alignment: Alignment.centerLeft, // RTL: left side is the visible side
+        padding: const EdgeInsets.only(left: 20),
+        color: Colors.blue,
+        child: const Icon(Icons.undo, color: Colors.white, size: 32),
+      ),
+      background: const SizedBox.shrink(),
+      dismissThresholds: const {DismissDirection.endToStart: 0.5},
+      confirmDismiss: (direction) async {
+        // This row IS the pending removal already — swiping it KEEPS the
+        // note (discards the staged delete) rather than deleting anything
+        // further.
+        Logger.action(
+            'swipe:discardOrphanedAnnotation', {'slot': _getSlotKey(slot)});
+        context
+            .read<AssignmentBloc>()
+            .add(DiscardStagedSlot(_getSlotKey(slot)));
+        // Always false so the Dismissible snaps back instead of actually
+        // dismissing: the row stays in the tree (the bloc's rebuilt state,
+        // once the discard lands, simply stops synthesizing this row at all)
+        // — see the identical reasoning on every other staged-row swipe in
+        // this file (e.g. _buildOffQuotaRow's confirmDismiss) for why
+        // returning true / letting the dismissal proceed would throw
+        // Flutter's "A dismissed Dismissible widget is still part of the
+        // tree" on the next rebuild.
+        return false;
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.amber.shade50,
+          border: Border(
+              bottom: BorderSide(color: Colors.grey.shade400, width: 1.5)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(slot.event.name,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 13)),
+                      Text(_formatEventDatesHebrew(slot.event),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey.shade600)),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Text(slot.role.hebrewName,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade200,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Text('מחוץ למכסה',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 10, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+            if (noteInfo != null) noteInfo,
+          ],
+        ),
+      ),
+    );
+
+    return _withStripeOverlay(row, badgeText: 'יימחק בשמירה');
   }
 
   /// Handle dismissing a slot: stage it for deletion (swipe-to-delete on an
