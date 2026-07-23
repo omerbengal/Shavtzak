@@ -2679,6 +2679,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // (NOT part of the atomic assignment batch); run only after the batch
       // committed. A failure here leaves these entries staged for the next
       // Save while the assignment write stands.
+      final annotationsWritten =
+          _stagedSlotAnnotations.length; // capture before clear
       for (final s in _stagedSlotAnnotations.values.toList()) {
         await _eventRepository.updateSlotAnnotation(
             s.eventId, slotAnnotationKey(s.roleType, s.slotIndex), s.desired,
@@ -2687,7 +2689,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       _stagedSlotAnnotations.clear();
       await _persistStaged();
 
-      final written = creates.length + updates.length + deletes.length;
+      final written =
+          creates.length + updates.length + deletes.length + annotationsWritten;
       // Never a bare 'נשמרו 0 שינויים' while a baseline-anchored change was
       // dropped for lack of a DB row: report the skip alongside the write
       // count instead of pretending nothing happened.

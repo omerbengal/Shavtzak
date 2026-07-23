@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shavtzak/core/services/user_cache_service.dart';
+import 'package:shavtzak/core/utils/crud_action_result.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/role.dart';
@@ -556,7 +557,8 @@ void main() {
     await pumpEventQueue();
     expect(bloc.stagedCount, 1); // annotation-only: no StageMemberChange etc.
 
-    bloc.add(const SaveStagedChanges());
+    final completer = Completer<CrudActionResult>();
+    bloc.add(SaveStagedChanges(completion: completer));
     await pumpEventQueue();
 
     verify(eventRepo.updateSlotAnnotation(
@@ -571,6 +573,16 @@ void main() {
     final after = bloc.state as AssignmentSlotsLoaded;
     expect(after.stagedSlotKeys, isEmpty);
     expect(await cachedAnnotations(), isEmpty); // re-persisted as cleared
+
+    // The annotation write must be reflected in the completion message — NOT
+    // a bare "0 changes" that reads as if nothing happened, even though the
+    // annotation write just succeeded (the exact bug the comment right above
+    // `written`'s computation in _onSaveStagedChanges already warns against
+    // for the skip case; this is the same class of bug for annotations).
+    final result = await completer.future;
+    expect(result.isSuccess, isTrue);
+    expect(result.message, isNot(contains('0 שינויים')));
+    expect(result.message, contains('נשמרו 1'));
   });
 
   test(
