@@ -132,9 +132,11 @@ void main() {
     when(assignmentRepo.getAllAssignments())
         .thenAnswer((_) async => const <Assignment>[]);
 
-    // Task ff3: eager slotAnnotations normalization writes through this method
-    // (see _normalizeSlotAnnotations in AssignmentBloc). Stubbed globally so
-    // every test's rebuild can dispatch it without a MissingStubError.
+    // Task SG6: the quota-driven slotAnnotations cleanup (see
+    // _stageSlotAnnotationCleanup in AssignmentBloc) STAGES its fix instead of
+    // writing through this method immediately; it's only called at Save. Still
+    // stubbed globally so this file's own Save tests (Task 5) don't hit a
+    // MissingStubError.
     when(eventRepo.updateSlotAnnotation(any, any, any,
         staleKey: anyNamed('staleKey'))).thenAnswer((_) async {});
 

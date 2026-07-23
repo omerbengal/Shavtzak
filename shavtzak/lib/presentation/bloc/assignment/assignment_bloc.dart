@@ -167,15 +167,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// staged changes as two separate batch writes.
   bool _saveInFlight = false;
 
-  // Slot-annotation writes already dispatched this session (see
-  // _normalizeSlotAnnotations). Prevents re-dispatching the same cleanup on
-  // every rebuild while the write is in flight / after it succeeds. A FAILED
-  // write removes its own key (see the catchError there), so the next real
-  // rebuild retries it instead of leaving the drift stuck forever on this
-  // never-recreated app-root singleton. Best-effort either way:
-  // reconcileGapAnnotations keeps the DISPLAY correct regardless.
-  final Set<String> _normalizedSlotAnnotationOps = {};
-
   AssignmentBloc(
     this._repository,
     this._eventRepository,
@@ -1827,6 +1818,44 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     if (changed) {
       await _persistStaged();
     }
+
+    // Issue-1 fix: STAGE the quota-cleanup deterministically, right here,
+    // instead of waiting for the event-stream listener to re-deliver this
+    // event with its new roleRequirements. Before this fix, an event-form
+    // quota reduction only dispatched RebuildAssignmentSlots (this handler's
+    // own trailing `add` below) — the OTHER rebuild handler
+    // (_onRebuildAssignmentSlotsFromData) is the only one that calls the
+    // cleanup, so the orphan/re-key normalization silently never ran until
+    // the Firestore listener happened to re-emit later (Issue 1).
+    //
+    // Write the just-saved roleRequirements into the cached event ourselves
+    // (rather than waiting for the event-stream update) so both the cleanup
+    // below and the immediately-following rebuild see the reduced quota. This
+    // is NOT the same race the class doc above warns about: that note is
+    // about never DERIVING the baseline resync's "new quota" FROM the live
+    // map (which may still be stale); here we WRITE the authoritative
+    // just-saved values the modal handed us directly INTO the map, so there
+    // is nothing to race — no read of the (possibly stale) live map involved.
+    final cachedEvent =
+        _windowEventsMap[event.eventId] ?? _extraPastEventsMap[event.eventId];
+    if (cachedEvent != null) {
+      final updatedEvent =
+          cachedEvent.copyWith(roleRequirements: event.newRoleRequirements);
+      if (_windowEventsMap.containsKey(event.eventId)) {
+        _windowEventsMap[event.eventId] = updatedEvent;
+      } else {
+        _extraPastEventsMap[event.eventId] = updatedEvent;
+      }
+      final rawAssignmentsForEvent = <Assignment>[
+        for (final a in _repository.getCurrentAssignments())
+          if (a.eventId == event.eventId) a,
+        for (final a in _extraPastAssignments)
+          if (a.eventId == event.eventId) a,
+      ];
+      await _stageSlotAnnotationCleanup(
+          [updatedEvent], rawAssignmentsForEvent);
+    }
+
     Logger.action('stage:rebaselineQuotas', {
       'event': event.eventId,
       'roles': event.newRoleRequirements.keys.toList(),
@@ -3399,25 +3428,23 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     }
   }
 
-  /// Eagerly reconcile each loaded event's stored slotAnnotations with its
-  /// current quota + filled slots, so the DB keys match what the UI shows after
-  /// a quota change (re-key moved notes, delete true orphans, keep
-  /// dormant-on-filled). Fire-and-forget cleanup — never blocks a rebuild, and
-  /// each distinct write is dispatched at most once per session UNLESS a prior
-  /// attempt failed, in which case the next rebuild retries it (see the
-  /// catchError below).
+  /// After a quota change, STAGE the annotation cleanup (re-key moved notes,
+  /// delete true orphans) so it shows as a pending change and is applied on
+  /// Save — never an immediate write. Idempotent: skips a slot the user has
+  /// already staged, and re-running recomputes the same entries.
   ///
   /// Uses the RAW persisted [assignments] + persisted roleRequirements (the
   /// same inputs reconcileGapAnnotations uses for display), NOT staged/optimistic
-  /// state — the DB annotations must track the SAVED quota/assignments.
-  void _normalizeSlotAnnotations(
-      List<Event> events, List<Assignment> assignments) {
+  /// state — the cleanup must track the SAVED quota/assignments.
+  Future<void> _stageSlotAnnotationCleanup(
+      List<Event> events, List<Assignment> assignments) async {
+    var changed = false;
     for (final event in events) {
       if (event.slotAnnotations.isEmpty) continue;
       final roleKeys = <String>{};
       for (final k in event.slotAnnotations.keys) {
-        final parsed = parseSlotAnnotationKey(k);
-        if (parsed != null) roleKeys.add(parsed.roleKey);
+        final p = parseSlotAnnotationKey(k);
+        if (p != null) roleKeys.add(p.roleKey);
       }
       for (final roleKey in roleKeys) {
         final quota = event.roleRequirements[roleKey] ?? 0;
@@ -3427,33 +3454,33 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final ops = computeSlotAnnotationNormalization(
             event.slotAnnotations, roleKey, quota, filled);
         for (final op in ops) {
-          // Keyed only on the canonical, delimiter-free (eventId, key, staleKey)
-          // triple — NOT the free-text note/labelId, which could contain '|'
-          // and collide two genuinely distinct writes into the same opKey. For
-          // a given (eventId, key, staleKey) the write's value is deterministic
-          // within one drift state, so this stays collision-free.
-          final opKey = '${event.id}|${op.key}|${op.staleKey ?? ''}';
-          if (!_normalizedSlotAnnotationOps.add(opKey)) continue; // already dispatched
-          _eventRepository
-              .updateSlotAnnotation(event.id, op.key, op.value,
-                  staleKey: op.staleKey)
-              .catchError((Object e) {
-            // Allow a later rebuild to retry: this bloc is an app-root
-            // singleton that's never recreated, so if we left the opKey in
-            // the set here, a write that fails (e.g. a sustained backend
-            // outage outlasting BackendApiService's transient retries) would
-            // never be retried again for the rest of the session and the
-            // drift would silently never heal.
-            _normalizedSlotAnnotationOps.remove(opKey);
-            Logger.warning('normalizeSlotAnnotations failed', {
-              'eventId': event.id,
-              'key': op.key,
-              'error': e.toString(),
-            });
-          });
+          final parsed = parseSlotAnnotationKey(op.key);
+          if (parsed == null) continue;
+          final slotKey = StagedAssignmentChange.slotKeyFor(
+              event.id, parsed.roleKey, parsed.slotIndex);
+          if (_stagedSlotAnnotations.containsKey(slotKey)) continue; // don't clobber a user edit
+          // Baseline is the CURRENTLY-stored value at whatever key this op is
+          // replacing — for a re-key that is the STALE source key (op.key
+          // itself is the fresh canonical target, normally unoccupied); for an
+          // orphan delete there is no staleKey, and op.key IS the stored key
+          // being removed. Looking up op.key directly (instead of
+          // op.staleKey ?? op.key) would read the wrong slot for a re-key,
+          // resolving to null and corrupting the baseline a later manual edit
+          // on the same slot would preserve (see StagedSlotAnnotation.baseline
+          // and _onStageSlotAnnotation's existing-entry preservation).
+          final staged = StagedSlotAnnotation(
+            eventId: event.id, roleType: parsed.roleKey, slotIndex: parsed.slotIndex,
+            desired: op.value,
+            baseline: event.slotAnnotations[op.staleKey ?? op.key],
+            staleKey: op.staleKey);
+          if (!staged.isNoop) {
+            _stagedSlotAnnotations[slotKey] = staged;
+            changed = true;
+          }
         }
       }
     }
+    if (changed) await _persistStaged();
   }
 
   /// Rebuild slots using pre-loaded data (for real-time updates)
@@ -3530,12 +3557,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             .toList();
       }
 
-      // Eagerly self-heal stored slotAnnotations against the fresh DB data —
+      // Eagerly STAGE the slotAnnotations cleanup against the fresh DB data —
       // same raw events/assignments this handler feeds into reconcileGapAnnotations
-      // below (NOT the staged/optimistic effectiveMergedAssignments view). Called
-      // once per rebuild (not per-role/per-event) since it iterates internally;
-      // fire-and-forget, so it never blocks or alters this rebuild's own emit.
-      _normalizeSlotAnnotations(filteredEvents, mergedAssignments);
+      // below (NOT the staged/optimistic effectiveMergedAssignments view). This is
+      // the live-stream backstop: it catches a co-admin's quota change (or any
+      // other drift) once the event stream re-emits. The deterministic path for
+      // the admin's OWN quota edit is _onRebaselineQuotasForEvent, which stages
+      // the same cleanup immediately without waiting for this stream to re-fire.
+      await _stageSlotAnnotationCleanup(filteredEvents, mergedAssignments);
 
       // Build slots using the existing method
       final slots = <AssignmentSlot>[];

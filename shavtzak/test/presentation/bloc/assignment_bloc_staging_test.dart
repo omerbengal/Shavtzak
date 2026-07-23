@@ -153,12 +153,24 @@ void main() {
     when(assignmentRepo.getAllAssignments())
         .thenAnswer((_) async => const <Assignment>[]);
 
-    // Task ff3: eager slotAnnotations normalization writes through this method
-    // (see _normalizeSlotAnnotations in AssignmentBloc). Stubbed globally so
-    // every test's rebuild can dispatch it without a MissingStubError; most
-    // tests never trigger a write since their events have empty slotAnnotations.
+    // Task SG6: the quota-driven slotAnnotations cleanup (see
+    // _stageSlotAnnotationCleanup in AssignmentBloc) STAGES its fix into
+    // _stagedSlotAnnotations instead of calling this immediately — it is only
+    // ever written via SaveStagedChanges. Stubbed globally anyway so a test
+    // that DOES dispatch SaveStagedChanges (the Issue-1 regression test below)
+    // doesn't hit a MissingStubError.
     when(eventRepo.updateSlotAnnotation(any, any, any,
         staleKey: anyNamed('staleKey'))).thenAnswer((_) async {});
+
+    // Needed by the Issue-1 regression test, which dispatches SaveStagedChanges
+    // on an annotation-only staged set — _onSaveStagedChanges unconditionally
+    // calls the assignment-batch write on every Save (see
+    // assignment_bloc_staged_annotations_test.dart's identical stub).
+    when(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+    )).thenAnswer((_) async {});
   });
 
   tearDown(() async {
@@ -432,16 +444,20 @@ void main() {
     expect(medicSlot.gapAnnotation, isNull);
   });
 
-  // Task ff3: eager slotAnnotations normalization. _onRebuildAssignmentSlotsFromData
-  // (the live-stream rebuild handler, fired when fresh DB data arrives) computes
-  // each role's normalization writes via the pure computeSlotAnnotationNormalization
-  // helper and dispatches them through EventRepository.updateSlotAnnotation, so a
-  // quota change self-heals the stored keys instead of leaving them drifted/
-  // orphaned for reconcileGapAnnotations to keep papering over on every render.
-  group('eager slotAnnotations normalization on quota change', () {
+  // Task SG6: quota-driven slotAnnotations cleanup STAGES the fix instead of
+  // writing immediately. _onRebuildAssignmentSlotsFromData (the live-stream
+  // rebuild handler, fired when fresh DB data arrives) computes each role's
+  // normalization writes via the pure computeSlotAnnotationNormalization
+  // helper and STAGES them into _stagedSlotAnnotations (_stageSlotAnnotationCleanup),
+  // so a quota change self-heals the stored keys via the SAME staged-Save path
+  // as a manual StageSlotAnnotation edit — never an immediate DB write. The fix
+  // shows up right away via the existing Task-3 overlay and is only persisted
+  // by SaveStagedChanges.
+  group('staged slotAnnotations cleanup on quota change', () {
     test(
-        'a note stored on a since-shrunk-out-of-range slot is re-keyed onto the '
-        'surviving gap (staleKey deletes the old key)', () async {
+        'a note stored on a since-shrunk-out-of-range slot is STAGED as a '
+        're-key onto the surviving gap (staleKey \'medic#1\'), never written '
+        'immediately', () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
       bloc.add(const LoadAssignmentSlots());
@@ -455,28 +471,31 @@ void main() {
       assignmentStream.add(const <Assignment>[]); // no assignments at all
       await pumpEventQueue();
 
-      // The session guard is what makes this exactly ONE write. Once events/
-      // roles/assignments have each delivered once, the first-paint gate
-      // (_onRebuildAssignmentSlotsFromData's early-return) is open for ALL
-      // THREE of the RebuildAssignmentSlotsFromData events dispatched by
-      // this batch's three stream listeners, not just the last one — by the
-      // time the bloc processes any of them, every listener above has
-      // already run and flipped its ready-flag. So this single stream-settling
-      // batch alone calls _normalizeSlotAnnotations 3 times with the identical
-      // drift; verified by temporarily disabling the guard, which turns this
-      // into "called 3 times" instead of 1. The guard is exercised again
-      // across a LATER, separate rebuild by the next test.
-      verify(eventRepo.updateSlotAnnotation(
-        'e1',
-        'medic#0',
-        const SlotAnnotation(note: 'x', labelId: 'L'),
-        staleKey: 'medic#1',
-      )).called(1);
+      // Staged, not written: no DB call from ANY of the several rebuild
+      // passes this stream-settling batch drives (each of the three streams'
+      // first emit dispatches its own RebuildAssignmentSlotsFromData once the
+      // first-paint gate is open).
+      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
+          staleKey: anyNamed('staleKey')));
+
+      final after = bloc.state as AssignmentSlotsLoaded;
+      expect(after.stagedSlotKeys, contains('e1_medic_0'));
+      expect(bloc.stagedCount, 1);
+      expect(bloc.hasStagedChanges, isTrue);
+
+      // The staged re-key renders immediately via the Task-3 overlay: the
+      // surviving gap (index 0) shows the drifted note, remembering the
+      // STALE source key it moved from (so Save can self-heal the DB key).
+      final medicSlot = after.slots
+          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+      expect(medicSlot.gapAnnotation!.annotation,
+          const SlotAnnotation(note: 'x', labelId: 'L'));
+      expect(medicSlot.gapAnnotation!.sourceKey, 'medic#1');
     });
 
     test(
-        'a note already on its correct (in-range, empty) gap is left untouched '
-        '— no write dispatched', () async {
+        'a note already on its correct (in-range, empty) gap is left '
+        'untouched — nothing staged, no write dispatched', () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
       bloc.add(const LoadAssignmentSlots());
@@ -492,12 +511,16 @@ void main() {
 
       verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
           staleKey: anyNamed('staleKey')));
+      final after = bloc.state as AssignmentSlotsLoaded;
+      expect(after.stagedSlotKeys, isEmpty);
+      expect(bloc.stagedCount, 0);
+      expect(bloc.hasStagedChanges, isFalse);
     });
 
     test(
-        'the session guard suppresses a duplicate write when an UNRELATED '
-        'stream re-emission re-enters the rebuild with the SAME drift after '
-        'first paint', () async {
+        'the "already staged" skip does not clobber an edit the admin made on '
+        'top of the auto-staged cleanup, across a later UNRELATED stream '
+        're-emission carrying the IDENTICAL underlying drift', () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
       bloc.add(const LoadAssignmentSlots());
@@ -510,85 +533,106 @@ void main() {
       roleStream.add([medicRole()]);
       assignmentStream.add(const <Assignment>[]); // no assignments at all
       await pumpEventQueue();
-      // First paint reached — the gate is open for good from here on (see the
-      // previous test's comment: this batch alone already drove several
-      // rebuild passes, all suppressed down to the one write by the guard).
 
-      // A completely UNRELATED stream (team members) emits AFTER first paint,
-      // well after the batch above has fully settled. Its listener
-      // unconditionally dispatches RebuildAssignmentSlotsFromData regardless
-      // of what changed, and since the gate is already open this runs the
-      // FULL rebuild body again — including _normalizeSlotAnnotations — with
-      // the exact SAME event/assignment drift as before (nothing about the
-      // annotation or quota changed). Without the session guard this would
-      // redispatch the identical write yet again.
+      // The auto-cleanup already staged the re-key onto medic#0.
+      var after = bloc.state as AssignmentSlotsLoaded;
+      expect(after.stagedSlotKeys, contains('e1_medic_0'));
+      var medicSlot = after.slots
+          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+      // The admin edits that SAME slot's note by hand, on top of the
+      // auto-staged entry.
+      bloc.add(StageSlotAnnotation(
+          slot: medicSlot, note: 'admin-edit', labelId: null));
+      await pumpEventQueue();
+      // Still ONE entry at that key — the admin's edit replaced the
+      // auto-computed one in place, it didn't add a second.
+      expect(bloc.stagedCount, 1);
+
+      // A completely UNRELATED stream (team members) re-emits, driving a full
+      // rebuild — including _stageSlotAnnotationCleanup — with the exact SAME
+      // drift as before (nothing about the annotation or quota changed). The
+      // `_stagedSlotAnnotations.containsKey(slotKey)` skip (see
+      // _stageSlotAnnotationCleanup) must leave the admin's edit alone rather
+      // than clobbering it back to the auto-computed re-key.
       teamStream.add([member('m1')]);
       await pumpEventQueue();
 
-      // A single check spanning EVERY rebuild pass above (this batch's
-      // several plus the team-triggered one), not separate counts per batch:
-      // mockito's verify() consumes prior matches (each verify() call on a
-      // given invocation pattern counts only NEW calls since the last verify
-      // on that same pattern), so a second verify(...).called(n) here would
-      // incorrectly check only the remainder rather than the true total. This
-      // assertion fails (with more than 1 call recorded) if the session guard
-      // is deleted — confirmed by temporarily disabling it.
-      verify(eventRepo.updateSlotAnnotation(
-        'e1',
-        'medic#0',
-        const SlotAnnotation(note: 'x', labelId: 'L'),
-        staleKey: 'medic#1',
-      )).called(1);
+      after = bloc.state as AssignmentSlotsLoaded;
+      expect(bloc.stagedCount, 1);
+      medicSlot = after.slots
+          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+      expect(medicSlot.gapAnnotation!.annotation.note, 'admin-edit');
+      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
+          staleKey: anyNamed('staleKey')));
     });
 
+    // ---- Issue 1 regression: the quota-reduction TRIGGER fix -------------
+    //
+    // Before this fix, an event-form quota reduction dispatched
+    // RebaselineQuotasForEvent, whose handler only ever fired
+    // RebuildAssignmentSlots (the OTHER rebuild handler) — which never called
+    // the cleanup at all. The cleanup only ran once the Firestore event stream
+    // happened to re-emit the reduced quota later, so an orphaned note could
+    // sit un-cleaned-up right after a quota reduction. This test drives the
+    // exact same event (RebaselineQuotasForEvent) WITHOUT any further
+    // eventStream emission, proving the cleanup now fires deterministically
+    // from that handler itself.
     test(
-        'a normalization write that FAILS is retried on a later rebuild '
-        '(catchError removes the opKey so the next rebuild re-dispatches it)',
-        () async {
-      // Overrides setUp's always-succeeds stub: fail the very first call,
-      // succeed on every call after.
-      var slotAnnCalls = 0;
-      when(eventRepo.updateSlotAnnotation(any, any, any,
-              staleKey: anyNamed('staleKey')))
-          .thenAnswer((_) async {
-        slotAnnCalls++;
-        if (slotAnnCalls == 1) throw Exception('boom'); // first attempt fails
-      });
-
+        'Issue 1 fix: an event-form-style quota reduction (RebaselineQuotasForEvent) '
+        'STAGES the orphan cleanup immediately, without waiting for the event '
+        'stream to re-deliver the reduced quota', () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
       bloc.add(const LoadAssignmentSlots());
       await pumpEventQueue();
+      // Quota 2: slot 0 filled by 'm1', a note stored on slot 1 (in-range,
+      // empty) — a valid, non-drifted annotation at load time.
       eventStream.add([
-        futureEvent('e1').copyWith(slotAnnotations: {
-          'medic#1': const SlotAnnotation(note: 'x', labelId: 'L'),
-        }),
+        futureEvent('e1', roleRequirements: const {'medic': 2}).copyWith(
+          slotAnnotations: {
+            'medic#1': const SlotAnnotation(note: 'y', labelId: 'L2'),
+          },
+        ),
       ]);
       roleStream.add([medicRole()]);
-      assignmentStream.add(const <Assignment>[]); // no assignments at all
-      await pumpEventQueue();
-      // First normalize attempt has now run and thrown; the catchError in
-      // _normalizeSlotAnnotations removed the opKey from
-      // _normalizedSlotAnnotationOps so a future rebuild isn't permanently
-      // blocked from retrying.
-
-      // A later, separate rebuild with UNCHANGED data (same drift, same
-      // quota) — same trigger the dedup test above uses. Since the opKey was
-      // freed by catchError, this rebuild re-dispatches the write instead of
-      // being suppressed by the session guard.
-      teamStream.add([member('m1')]);
+      assignmentStream.add([assignment('a1', 'e1', 'm1', slotIndex: 0)]);
       await pumpEventQueue();
 
-      // Attempted twice: the failed first attempt + the successful retry.
-      // Mockito records a call even when the stubbed body throws, so this
-      // FAILS at .called(1) if the catchError's `remove` were ever dropped
-      // (the retry would never happen).
-      verify(eventRepo.updateSlotAnnotation(
-        'e1',
-        'medic#0',
-        const SlotAnnotation(note: 'x', labelId: 'L'),
-        staleKey: 'medic#1',
-      )).called(2);
+      // No drift yet at quota 2: nothing staged, no write.
+      expect(bloc.stagedCount, 0);
+      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
+          staleKey: anyNamed('staleKey')));
+
+      // The admin reduces the quota 2 -> 1 via the event-form modal (exactly
+      // what AssignmentListScreen/EventListScreen dispatch from
+      // EventFormModal.onEventSaved). Slot 1 (holding the note) no longer
+      // exists and slot 0 is filled, so the note becomes a TRUE ORPHAN — with
+      // NO further eventStream emission, simulating the async event-stream
+      // update not having landed yet.
+      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 1}));
+      await pumpEventQueue();
+
+      // Staged immediately by _onRebaselineQuotasForEvent itself, not waiting
+      // for a fresh eventStream emission.
+      final after = bloc.state as AssignmentSlotsLoaded;
+      expect(after.stagedSlotKeys, contains('e1_medic_1'));
+      expect(bloc.stagedCount, 1);
+      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
+          staleKey: anyNamed('staleKey')));
+      // The rebuild this handler triggers also reflects the reduced quota
+      // immediately (no eventStream round-trip needed): only ONE medic slot
+      // renders now.
+      expect(
+          after.slots.where((s) => s.role.key == 'medic'), hasLength(1));
+
+      // Confirm it converges correctly at Save: the orphan is deleted.
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+      verify(eventRepo.updateSlotAnnotation('e1', 'medic#1', null,
+              staleKey: null))
+          .called(1);
+      expect(bloc.stagedCount, 0);
     });
   });
 }
