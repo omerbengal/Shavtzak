@@ -13,13 +13,11 @@ import '../../../data/repositories/team_repository.dart';
 import '../../../core/constants/assignment_label_palette.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/utils/crud_action_result.dart';
-import '../../../core/utils/slot_annotations.dart';
 import '../../../core/services/environment_service.dart';
 import '../../bloc/assignment/assignment_bloc.dart';
 import '../../bloc/assignment/assignment_event.dart';
 import '../../bloc/assignment/assignment_state.dart';
 import '../../bloc/event/event_bloc.dart';
-import '../../bloc/event/event_event.dart';
 import '../../bloc/event/event_state.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_event.dart';
@@ -2027,16 +2025,13 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
   }
 
   /// Simplified note+label editor for an EMPTY slot (no phone — that is
-  /// member-level). Writes to Event.slotAnnotations via UpsertSlotAnnotation.
+  /// member-level). Stages the edit via AssignmentBloc.StageSlotAnnotation;
+  /// written to Event.slotAnnotations on Save (the bloc handler computes the
+  /// self-heal staleKey from slot.gapAnnotation).
   Future<void> _showGapAnnotationDialog(AssignmentSlot slot) async {
     final ann = slot.gapAnnotation?.annotation;
     final noteController = TextEditingController(text: ann?.note ?? '');
     String? selectedLabelId = ann?.labelId;
-    // Self-heal: if the shown annotation drifted from this row's own index,
-    // delete the stale key when we write the new one.
-    final ownKey = slotAnnotationKey(slot.role.key, slot.slotIndex);
-    final sourceKey = slot.gapAnnotation?.sourceKey;
-    final staleKey = (sourceKey != null && sourceKey != ownKey) ? sourceKey : null;
 
     final labels = await context
         .read<AssignmentLabelRepository>()
@@ -2087,17 +2082,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
               ),
               TextButton(
                 onPressed: () {
-                  context.read<EventBloc>().add(UpsertSlotAnnotation(
-                        eventId: slot.event.id,
-                        roleKey: slot.role.key,
-                        slotIndex: slot.slotIndex,
+                  context.read<AssignmentBloc>().add(StageSlotAnnotation(
+                        slot: slot,
                         note: noteController.text.trim(),
                         labelId: selectedLabelId,
-                        staleKey: staleKey,
                       ));
                   Navigator.of(dialogContext).pop();
-                  _showAssignmentSnackBar('ההערה נשמרה',
-                      backgroundColor: Colors.green);
                 },
                 child: const Text('שמירה'),
               ),
