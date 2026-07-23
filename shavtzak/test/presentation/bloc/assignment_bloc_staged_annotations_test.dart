@@ -136,6 +136,17 @@ void main() {
     // every test's rebuild can dispatch it without a MissingStubError.
     when(eventRepo.updateSlotAnnotation(any, any, any,
         staleKey: anyNamed('staleKey'))).thenAnswer((_) async {});
+
+    // Task 5: _onSaveStagedChanges unconditionally calls the assignment-batch
+    // write on every Save — including an annotation-only one, whose
+    // creates/updates/deletes/quotaBumps/quotaSets all end up empty. Stubbed
+    // globally (mirrors assignment_bloc_save_test.dart's setUp) so the new
+    // Save tests below don't hit a MissingStubError.
+    when(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+    )).thenAnswer((_) async {});
   });
 
   tearDown(() async {
@@ -524,5 +535,85 @@ void main() {
     final rebuiltSlot = after.slots
         .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
     expect(rebuiltSlot.gapAnnotation, isNull);
+  });
+
+  // ---- Task 5: Save phase 2 — writes staged gap annotations ---------------
+
+  test(
+      'Save with ONE staged gap annotation and NO assignment changes writes '
+      'it via updateSlotAnnotation and clears the staged-annotations map',
+      () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    await loadSlots(bloc);
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final emptyMedicSlot = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+
+    bloc.add(
+        StageSlotAnnotation(slot: emptyMedicSlot, note: 'x', labelId: 'L'));
+    await pumpEventQueue();
+    expect(bloc.stagedCount, 1); // annotation-only: no StageMemberChange etc.
+
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    verify(eventRepo.updateSlotAnnotation(
+      'e1',
+      'medic#0',
+      const SlotAnnotation(note: 'x', labelId: 'L'),
+      staleKey: null,
+    )).called(1);
+
+    expect(bloc.stagedCount, 0);
+    expect(bloc.hasStagedChanges, isFalse);
+    final after = bloc.state as AssignmentSlotsLoaded;
+    expect(after.stagedSlotKeys, isEmpty);
+    expect(await cachedAnnotations(), isEmpty); // re-persisted as cleared
+  });
+
+  test(
+      'MIXED Save — a staged member fill AND a staged gap annotation on '
+      'different slots — writes BOTH (assignment batch + annotation write) '
+      'and clears both staged maps', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    // Quota 2 on a single event: slot #0 stays empty (gets the annotation),
+    // slot #1 gets the staged member fill — independent slotKeys.
+    await loadSlots(bloc, roleRequirements: const {'medic': 2});
+
+    final loaded = bloc.state as AssignmentSlotsLoaded;
+    final slot0 = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    final slot1 = loaded.slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 1);
+
+    bloc.add(StageSlotAnnotation(slot: slot0, note: 'x', labelId: 'L'));
+    await pumpEventQueue();
+    bloc.add(StageMemberChange(slot: slot1, member: member('m1')));
+    await pumpEventQueue();
+    expect(bloc.stagedCount, 2);
+
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: anyNamed('updates'),
+      deletes: anyNamed('deletes'),
+    )).called(1);
+    verify(eventRepo.updateSlotAnnotation(
+      'e1',
+      'medic#0',
+      const SlotAnnotation(note: 'x', labelId: 'L'),
+      staleKey: null,
+    )).called(1);
+
+    expect(bloc.stagedCount, 0);
+    expect(bloc.hasStagedChanges, isFalse);
+    final after = bloc.state as AssignmentSlotsLoaded;
+    expect(after.stagedSlotKeys, isEmpty);
+    expect(await cachedAnnotations(), isEmpty);
   });
 }

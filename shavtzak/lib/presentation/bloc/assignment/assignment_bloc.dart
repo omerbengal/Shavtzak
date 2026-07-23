@@ -2301,7 +2301,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// message instead of silently vanishing behind `'נשמרו 0 שינויים'`.
   Future<void> _onSaveStagedChanges(
       SaveStagedChanges event, Emitter<AssignmentState> emit) async {
-    if (_stagedChanges.isEmpty) {
+    // Phase 2 (staged gap annotations) can be the ONLY thing staged — this
+    // guard must not short-circuit before ever reaching it. `hasStagedChanges`
+    // is the union of both maps (see its doc comment), so an annotation-only
+    // Save now proceeds through the (empty) assignment partition below and
+    // into phase 2.
+    if (!hasStagedChanges) {
       _completeActionSuccess(event.completion, 'אין שינויים לשמירה');
       return;
     }
@@ -2669,6 +2674,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // appliedKeys was captured, that survivor stays in _stagedChanges (not in
       // appliedKeys) and must NOT be wiped from crash-recovery.
       await _persistStaged();
+
+      // Phase 2: staged gap-annotation edits. Separate event-doc mutations
+      // (NOT part of the atomic assignment batch); run only after the batch
+      // committed. A failure here leaves these entries staged for the next
+      // Save while the assignment write stands.
+      for (final s in _stagedSlotAnnotations.values.toList()) {
+        await _eventRepository.updateSlotAnnotation(
+            s.eventId, slotAnnotationKey(s.roleType, s.slotIndex), s.desired,
+            staleKey: s.staleKey);
+      }
+      _stagedSlotAnnotations.clear();
+      await _persistStaged();
+
       final written = creates.length + updates.length + deletes.length;
       // Never a bare 'נשמרו 0 שינויים' while a baseline-anchored change was
       // dropped for lack of a DB row: report the skip alongside the write
