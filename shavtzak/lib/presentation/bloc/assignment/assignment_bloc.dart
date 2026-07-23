@@ -3195,17 +3195,29 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Iterate through roles in sortOrder (not enum order)
       for (final role in sortedRoles) {
         final requiredCount = event.roleRequirements[role.key] ?? 0;
-        if (requiredCount == 0 && _stagedAddCount(event.id, role.key) == 0) {
-          continue; // Skip roles with 0 requirement and no staged adds
-        }
+        final stagedAdds = _stagedAddCount(event.id, role.key);
+        final renderCount = requiredCount + stagedAdds;
 
         // Get assignments for this event+role
         final roleAssignments = assignments
             .where((a) => a.eventId == event.id && a.roleType == role.key)
             .toList();
 
-        final renderCount =
-            requiredCount + _stagedAddCount(event.id, role.key);
+        // Task 7 (SG7): surface any staged orphan-delete annotation for this
+        // role BEFORE the zero-quota gate below — a role whose quota was
+        // reduced all the way to 0 (not just lowered), removing the role
+        // from the event entirely, still needs its pending-removal row to
+        // render (and be Discard-able); _stageSlotAnnotationCleanup already
+        // stages the orphan-delete for it regardless. The gate below only
+        // skips building this role's NORMAL slots, which correctly don't
+        // exist for a zeroed role.
+        slots.addAll(_buildOrphanedAnnotationSlots(
+            event, role, renderCount, roleAssignments));
+
+        if (requiredCount == 0 && stagedAdds == 0) {
+          continue; // Skip NORMAL slot-building: 0 requirement, no staged adds
+        }
+
         // Reconcile this role's stored gap annotations onto its ACTUAL empty
         // slots (raw DB, not staged-effective — mirrors every other
         // DB-truth-only use of `assignments`/`roleAssignments` in this loop,
@@ -3345,12 +3357,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           ));
           if (assignment != null) placedAssignmentIds.add(assignment.id);
         }
-
-        // Task 7 (SG7): this role's slots are all built — now surface any
-        // staged orphan-delete annotation that fell outside renderCount (see
-        // _buildOrphanedAnnotationSlots).
-        slots.addAll(_buildOrphanedAnnotationSlots(
-            event, role, renderCount, roleAssignments));
       }
 
       final eventAssignmentsAll =
@@ -3647,10 +3653,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // Iterate through roles in sortOrder (not enum order)
         for (final role in sortedRoles) {
           final requiredCount = eventData.roleRequirements[role.key] ?? 0;
-          if (requiredCount == 0 &&
-              _stagedAddCount(eventData.id, role.key) == 0) {
-            continue; // Skip roles with 0 requirement and no staged adds
-          }
+          final stagedAdds = _stagedAddCount(eventData.id, role.key);
+          final renderCount = requiredCount + stagedAdds;
 
           // Get assignments for this event+role from the assignments list
           final roleAssignments = mergedAssignments
@@ -3661,8 +3665,21 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                   ))
               .toList();
 
-          final renderCount =
-              requiredCount + _stagedAddCount(eventData.id, role.key);
+          // Task 7 (SG7): surface any staged orphan-delete annotation for
+          // this role BEFORE the zero-quota gate below — a role whose quota
+          // was reduced all the way to 0 (not just lowered), removing the
+          // role from the event entirely, still needs its pending-removal
+          // row to render (and be Discard-able); _stageSlotAnnotationCleanup
+          // already stages the orphan-delete for it regardless. The gate
+          // below only skips building this role's NORMAL slots, which
+          // correctly don't exist for a zeroed role.
+          slots.addAll(_buildOrphanedAnnotationSlots(
+              eventData, role, renderCount, roleAssignments));
+
+          if (requiredCount == 0 && stagedAdds == 0) {
+            continue; // Skip NORMAL slot-building: 0 requirement, no staged adds
+          }
+
           // Reconcile this role's stored gap annotations onto its ACTUAL empty
           // slots. Mirrors _buildSlotsFromAssignments: raw roleAssignments
           // (DB truth), not the staged-effective view.
@@ -3787,12 +3804,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             ));
             if (assignment != null) placedAssignmentIds.add(assignment.id);
           }
-
-          // Task 7 (SG7): this role's slots are all built — now surface any
-          // staged orphan-delete annotation that fell outside renderCount
-          // (see _buildOrphanedAnnotationSlots).
-          slots.addAll(_buildOrphanedAnnotationSlots(
-              eventData, role, renderCount, roleAssignments));
         }
 
         final eventAssignmentsAll = mergedAssignments
