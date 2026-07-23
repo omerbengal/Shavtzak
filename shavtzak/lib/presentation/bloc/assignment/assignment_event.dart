@@ -388,6 +388,17 @@ class StageNotesChange extends AssignmentEvent {
       [slot, notes, semanticLabelId, alternativePhoneNumber];
 }
 
+/// Stage a gap-annotation (note/label) edit on an EMPTY slot — the annotation
+/// parallel of StageNotesChange. Written on Save, not immediately.
+class StageSlotAnnotation extends AssignmentEvent {
+  final AssignmentSlot slot;
+  final String note;
+  final String? labelId;
+  const StageSlotAnnotation({required this.slot, required this.note, required this.labelId});
+  @override
+  List<Object?> get props => [slot, note, labelId];
+}
+
 /// Discard a single staged slot, reverting it to its DB baseline.
 class DiscardStagedSlot extends AssignmentEvent {
   final String slotKey;

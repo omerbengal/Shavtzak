@@ -18,11 +18,13 @@ import '../../../data/repositories/role_repository.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/role.dart';
+import '../../../domain/entities/slot_annotation.dart';
 import '../../../domain/entities/team_member.dart';
 import 'assignment_event.dart';
 import 'assignment_state.dart';
 import 'models/assignment_conflict.dart';
 import 'models/staged_assignment_change.dart';
+import 'models/staged_slot_annotation.dart';
 import '../../screens/assignment/models/assignment_slot.dart';
 import '../../screens/assignment/models/assignment_slot_annotations.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
@@ -111,6 +113,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   // renders them with no changes to the merge function itself.
   final Map<String, StagedAssignmentChange> _stagedChanges = {};
 
+  /// Pending gap-annotation edits (note/label on empty slots), keyed by the
+  /// same slotKey as _stagedChanges. Written on Save (see _onSaveStagedChanges
+  /// phase 2); parallel to _stagedChanges, never routed through the assignment
+  /// save partition.
+  final Map<String, StagedSlotAnnotation> _stagedSlotAnnotations = {};
+
   // Baseline DB quota per "eventId_roleType", captured the first time a role
   // gets a staged quota-changing action. Conflict detection ONLY (type-G).
   final Map<String, int> _baselineQuota = {};
@@ -125,16 +133,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
   final UserCacheService _userCache;
 
-  /// True when there is at least one unsaved staged change.
-  bool get hasStagedChanges => _stagedChanges.isNotEmpty;
+  /// True when there is at least one unsaved staged change (member/notes
+  /// changes OR gap-annotation edits).
+  bool get hasStagedChanges =>
+      _stagedChanges.isNotEmpty || _stagedSlotAnnotations.isNotEmpty;
 
-  /// Number of unsaved staged changes. Unlike reading
-  /// `state.stagedSlotKeys.length`, this is correct regardless of the
-  /// bloc's currently emitted state (e.g. during `AssignmentOperating`
-  /// while a save is in flight, when state is no longer
-  /// `AssignmentSlotsLoaded`) — leave-guards must use this, not a
+  /// Number of unsaved staged changes (member/notes changes PLUS
+  /// gap-annotation edits). Unlike reading `state.stagedSlotKeys.length`,
+  /// this is correct regardless of the bloc's currently emitted state (e.g.
+  /// during `AssignmentOperating` while a save is in flight, when state is
+  /// no longer `AssignmentSlotsLoaded`) — leave-guards must use this, not a
   /// state-type branch, to get an accurate count.
-  int get stagedCount => _stagedChanges.length;
+  int get stagedCount => _stagedChanges.length + _stagedSlotAnnotations.length;
 
   /// The current grid slots for conflict classification: the live
   /// `AssignmentSlotsLoaded.slots` when that is the emitted state, else the
@@ -206,6 +216,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<ExternalExtraPastMutation>(_onExternalExtraPastMutation);
     on<StageMemberChange>(_onStageMemberChange);
     on<StageNotesChange>(_onStageNotesChange);
+    on<StageSlotAnnotation>(_onStageSlotAnnotation);
     on<StageSlotDeletion>(_onStageSlotDeletion);
     on<StageManualAdd>(_onStageManualAdd);
     on<RebaselineQuotasForEvent>(_onRebaselineQuotasForEvent);
@@ -1460,6 +1471,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final payload = jsonEncode({
       'changes': _stagedChanges.values.map((c) => c.toJson()).toList(),
       'baselineQuota': _baselineQuota,
+      'slotAnnotations':
+          _stagedSlotAnnotations.values.map((s) => s.toJson()).toList(),
     });
     await _userCache.savePendingAssignmentChanges(payload);
   }
@@ -1666,6 +1679,46 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
+  Future<void> _onStageSlotAnnotation(
+      StageSlotAnnotation event, Emitter<AssignmentState> emit) async {
+    final slot = event.slot;
+    final key = _slotKey(slot);
+    final note = event.note.trim();
+    final desired = (note.isEmpty && event.labelId == null)
+        ? null
+        : SlotAnnotation(note: note, labelId: event.labelId);
+    final existing = _stagedSlotAnnotations[key];
+    // Baseline + staleKey are captured ONCE, on the first stage of this slot,
+    // from the slot's reconciled DB annotation (slot.gapAnnotation). On a
+    // re-edit (existing != null) they are preserved — never re-read from the
+    // now-overlaid display value (see Task 3). staleKey carries a drifted
+    // source key so Save self-heals the DB key at the same time.
+    final SlotAnnotation? baseline;
+    final String? staleKey;
+    if (existing != null) {
+      baseline = existing.baseline;
+      staleKey = existing.staleKey;
+    } else {
+      final resolved = slot.gapAnnotation;
+      baseline = resolved?.annotation;
+      final ownKey = slotAnnotationKey(slot.role.key, slot.slotIndex);
+      staleKey = (resolved != null && resolved.sourceKey != ownKey)
+          ? resolved.sourceKey
+          : null;
+    }
+    final staged = StagedSlotAnnotation(
+      eventId: slot.event.id, roleType: slot.role.key, slotIndex: slot.slotIndex,
+      desired: desired, baseline: baseline, staleKey: staleKey);
+    if (staged.isNoop) {
+      _stagedSlotAnnotations.remove(key);
+    } else {
+      _stagedSlotAnnotations[key] = staged;
+    }
+    await _persistStaged();
+    Logger.action('stage:slotAnnotation', {'slot': key, 'stagedCount': _stagedSlotAnnotations.length});
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
   Future<void> _onStageSlotDeletion(
       StageSlotDeletion event, Emitter<AssignmentState> emit) async {
     final slot = event.slot;
@@ -1790,6 +1843,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         _baselineQuota.remove(_eventRoleKey(removed.eventId, removed.roleType));
       }
     }
+    _stagedSlotAnnotations.remove(event.slotKey);
     await _persistStaged();
     Logger.action('stage:discardSlot', {
       'slot': event.slotKey,
@@ -1805,6 +1859,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     if (_saveInFlight) return;
     Logger.action('stage:discardAll', {'had': _stagedChanges.length});
     _stagedChanges.clear();
+    _stagedSlotAnnotations.clear();
     // carry (a): a full discard also clears every captured derived-quota
     // baseline, so the next staging session re-seeds from the live DB quota.
     _baselineQuota.clear();
@@ -1848,6 +1903,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           .map((e) =>
               StagedAssignmentChange.fromJson(e as Map<String, dynamic>))
           .map((c) => MapEntry(c.slotKey, c)));
+    _stagedSlotAnnotations
+      ..clear()
+      ..addEntries(((decoded is Map ? decoded['slotAnnotations'] as List? : null) ?? const [])
+          .map((e) => StagedSlotAnnotation.fromJson(e as Map<String, dynamic>))
+          .map((s) => MapEntry(
+              StagedAssignmentChange.slotKeyFor(s.eventId, s.roleType, s.slotIndex), s)));
     Logger.action('stage:rehydrate', {'loaded': _stagedChanges.length});
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
@@ -3178,7 +3239,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return AssignmentSlotsLoaded(
       _materializeGoneStagedRows(annotatedSlots, goneKeys),
       selectedEventIds: selectedEventIds ?? {},
-      stagedSlotKeys: _stagedChanges.keys.toSet(),
+      stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
       stagedGoneSlotKeys: goneKeys,
       stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
     );
@@ -3293,7 +3354,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             pendingOperations: _pendingOperations,
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
-            stagedSlotKeys: _stagedChanges.keys.toSet(),
+            stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
             stagedGoneSlotKeys: goneKeys,
             stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
           ));
@@ -3641,7 +3702,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             pendingOperations: _pendingOperations,
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
-            stagedSlotKeys: _stagedChanges.keys.toSet(),
+            stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
             stagedGoneSlotKeys: goneKeys,
             stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
           ));
