@@ -15,6 +15,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shavtzak/core/constants/role_types.dart';
 import 'package:shavtzak/core/services/user_cache_service.dart';
 import 'package:shavtzak/core/utils/crud_action_result.dart';
 import 'package:shavtzak/domain/entities/assignment.dart';
@@ -82,6 +83,28 @@ void main() {
         key: 'medic',
         hebrewName: hebrewName,
         sortOrder: 0,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+  // Mirrors assignment_bloc_staging_test.dart's helper — needed by the
+  // quota-reduce-then-raise repro group below, which fills slot 0 so slot 1's
+  // note has nowhere to drift to on a reduction (a true orphan).
+  Assignment assignment(
+    String id,
+    String eventId,
+    String memberId, {
+    String roleType = 'medic',
+    int slotIndex = 0,
+  }) =>
+      Assignment(
+        id: id,
+        eventId: eventId,
+        teamMemberId: memberId,
+        roleType: roleType,
+        slotIndex: slotIndex,
+        status: AssignmentStatus.confirmed,
+        notes: '',
         createdAt: now,
         updatedAt: now,
       );
@@ -629,5 +652,144 @@ void main() {
     final after = bloc.state as AssignmentSlotsLoaded;
     expect(after.stagedSlotKeys, isEmpty);
     expect(await cachedAnnotations(), isEmpty);
+  });
+
+  // ---- Note-loss fix: retract stale auto-staged annotation cleanups -------
+  //
+  // _stageSlotAnnotationCleanup used to be add-only: it staged orphan-delete
+  // / re-key entries but never retracted one it no longer needed. Repro: a
+  // note on medic#1 (quota 2, slot 0 filled so slot 1 is the note's home).
+  // Reduce 2->1 stages an orphan-delete for medic#1 (no free gap to drift
+  // onto). Raise 1->2 BEFORE saving makes medic#1 a valid gap again — the
+  // fresh cleanup computes NO delete for it, but the STALE delete used to
+  // stay staged, so Save would wrongly delete the note. Fixed via the `auto`
+  // provenance flag (StagedSlotAnnotation.auto) + a per-(event,role) retract
+  // of stale auto entries in _stageSlotAnnotationCleanup.
+  group('quota reduce-then-raise: retract stale auto-staged cleanups', () {
+    test(
+        'REPRO: raising the quota back up before Save retracts the stale '
+        'auto-staged orphan-delete for a note that is valid again (prevents '
+        'note loss)', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      // Quota 2: slot 0 filled by 'm1', a note stored on the OTHER (empty)
+      // gap, slot 1 — valid, non-drifted, nothing staged at load.
+      await loadSlots(bloc,
+          roleRequirements: const {'medic': 2},
+          slotAnnotations: {'medic#1': const SlotAnnotation(note: 'keep')},
+          assignments: [assignment('a1', 'e1', 'm1', slotIndex: 0)]);
+      expect(bloc.stagedCount, 0);
+
+      // Reduce 2 -> 1 (event-form style, exactly like the SG6 Issue-1 test):
+      // slot 0 (filled) is the ONLY remaining slot, so the note on slot 1 has
+      // nowhere to drift to — a TRUE orphan. Staged as a delete.
+      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 1}));
+      await pumpEventQueue();
+
+      var after = bloc.state as AssignmentSlotsLoaded;
+      expect(after.stagedSlotKeys, contains('e1_medic_1'));
+      expect(bloc.stagedCount, 1);
+
+      // Raise BACK to 2 before saving: slot 1 is a valid gap again and the
+      // note is exactly where it belongs (medic#1) — the fresh cleanup
+      // computes NO delete for it.
+      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 2}));
+      await pumpEventQueue();
+
+      after = bloc.state as AssignmentSlotsLoaded;
+      // The bug: the STALE auto-staged delete from the reduce used to
+      // survive even though it is no longer wanted. The fix retracts it.
+      expect(after.stagedSlotKeys, isNot(contains('e1_medic_1')));
+      expect(bloc.stagedCount, 0);
+      expect(bloc.hasStagedChanges, isFalse);
+
+      // Save must NOT delete the note.
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+      verifyNever(
+          eventRepo.updateSlotAnnotation('e1', 'medic#1', null, staleKey: null));
+    });
+
+    test(
+        'a USER-edited annotation (auto:false) is never auto-retracted, even '
+        'when a fresh cleanup pass wants nothing for that exact slot',
+        () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      await loadSlots(bloc,
+          roleRequirements: const {'medic': 2},
+          slotAnnotations: {'medic#1': const SlotAnnotation(note: 'keep')},
+          assignments: [assignment('a1', 'e1', 'm1', slotIndex: 0)]);
+
+      final loaded = bloc.state as AssignmentSlotsLoaded;
+      final gapSlot = loaded.slots
+          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 1);
+      expect(gapSlot.gapAnnotation, isNotNull);
+
+      // The admin edits that note by hand — a user-owned (auto:false) entry
+      // that OVERWRITES what would otherwise be the auto-cleanup's territory.
+      bloc.add(StageSlotAnnotation(
+          slot: gapSlot, note: 'user-note', labelId: null));
+      await pumpEventQueue();
+      expect(bloc.stagedCount, 1);
+      expect((bloc.state as AssignmentSlotsLoaded).stagedSlotKeys,
+          contains('e1_medic_1'));
+
+      // Re-dispatch the SAME quota (2) — _onRebaselineQuotasForEvent always
+      // re-runs the cleanup regardless of whether the quota actually moved,
+      // and it computes NO ops for medic (nothing drifted): a pass that
+      // "wants nothing" for this exact slot. If retraction ever keyed off
+      // wantedKeys alone (ignoring `auto`), this would wrongly wipe the
+      // admin's edit.
+      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 2}));
+      await pumpEventQueue();
+
+      final after = bloc.state as AssignmentSlotsLoaded;
+      expect(after.stagedSlotKeys, contains('e1_medic_1'));
+      expect(bloc.stagedCount, 1);
+      expect(bloc.hasStagedChanges, isTrue);
+      final survivor = after.slots
+          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 1);
+      expect(survivor.gapAnnotation!.annotation.note, 'user-note');
+    });
+
+    test(
+        'a PERSISTENT orphan (quota reduced and never raised back) stays '
+        'staged as a delete — a repeated cleanup pass over the same '
+        'still-reduced quota must not wrongly retract it', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      await loadSlots(bloc,
+          roleRequirements: const {'medic': 2},
+          slotAnnotations: {'medic#1': const SlotAnnotation(note: 'keep')},
+          assignments: [assignment('a1', 'e1', 'm1', slotIndex: 0)]);
+
+      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 1}));
+      await pumpEventQueue();
+
+      var after = bloc.state as AssignmentSlotsLoaded;
+      expect(after.stagedSlotKeys, contains('e1_medic_1'));
+      expect(bloc.stagedCount, 1);
+
+      // A completely UNRELATED stream re-emission drives another full
+      // rebuild — including _stageSlotAnnotationCleanup — over the SAME
+      // (still-reduced) quota: the orphan-delete is recomputed identically
+      // every time, so it must NOT be retracted.
+      teamStream.add([member('m1')]);
+      await pumpEventQueue();
+
+      after = bloc.state as AssignmentSlotsLoaded;
+      expect(after.stagedSlotKeys, contains('e1_medic_1'));
+      expect(bloc.stagedCount, 1);
+      expect(bloc.hasStagedChanges, isTrue);
+
+      // Confirm Save still applies the (still-valid) orphan delete.
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+      verify(eventRepo.updateSlotAnnotation('e1', 'medic#1', null,
+              staleKey: null))
+          .called(1);
+      expect(bloc.stagedCount, 0);
+    });
   });
 }

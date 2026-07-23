@@ -1779,7 +1779,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     }
     final staged = StagedSlotAnnotation(
       eventId: slot.event.id, roleType: slot.role.key, slotIndex: slot.slotIndex,
-      desired: desired, baseline: baseline, staleKey: staleKey);
+      desired: desired, baseline: baseline, staleKey: staleKey,
+      // A user's own edit is user-OWNED — even when it overwrites a prior
+      // auto-staged entry (see the "don't clobber a user edit" guard in
+      // _stageSlotAnnotationCleanup) — so editing a re-keyed/orphaned note
+      // takes ownership of it and it will never be auto-retracted.
+      auto: false);
     if (staged.isNoop) {
       _stagedSlotAnnotations.remove(key);
     } else {
@@ -3533,11 +3538,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             .map((a) => a.slotIndex);
         final ops = computeSlotAnnotationNormalization(
             event.slotAnnotations, roleKey, quota, filled);
+        // The slotKeys the FRESH computation wants for this (event, role) —
+        // used below to retract any auto-staged entry it no longer needs
+        // (e.g. a quota raise that makes a previously-orphaned note valid
+        // again). Collected regardless of the "don't clobber" skip just
+        // below: a key that's skipped because it's already staged is still
+        // WANTED, so it must never be retracted either.
+        final wantedKeys = <String>{};
         for (final op in ops) {
           final parsed = parseSlotAnnotationKey(op.key);
           if (parsed == null) continue;
           final slotKey = StagedAssignmentChange.slotKeyFor(
               event.id, parsed.roleKey, parsed.slotIndex);
+          wantedKeys.add(slotKey);
           if (_stagedSlotAnnotations.containsKey(slotKey)) continue; // don't clobber a user edit
           // Baseline is the CURRENTLY-stored value at whatever key this op is
           // replacing — for a re-key that is the STALE source key (op.key
@@ -3552,11 +3565,33 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             eventId: event.id, roleType: parsed.roleKey, slotIndex: parsed.slotIndex,
             desired: op.value,
             baseline: event.slotAnnotations[op.staleKey ?? op.key],
-            staleKey: op.staleKey);
+            staleKey: op.staleKey,
+            auto: true);
           if (!staged.isNoop) {
             _stagedSlotAnnotations[slotKey] = staged;
             changed = true;
           }
+        }
+        // Retract stale auto-staged entries: a previous pass over this
+        // (event, role) may have staged a re-key/orphan-delete that the
+        // FRESH computation above no longer wants (e.g. a quota reduction
+        // followed by a raise, before Save). Scoped to THIS (event, role) and
+        // to `auto` entries ONLY — a user's own edit (auto: false) is never
+        // auto-retracted, even if it happens to sit on a slotKey the cleanup
+        // no longer flags.
+        final staleAutoKeys = [
+          for (final e in _stagedSlotAnnotations.entries)
+            if (e.value.auto &&
+                e.value.eventId == event.id &&
+                e.value.roleType == roleKey &&
+                !wantedKeys.contains(e.key))
+              e.key,
+        ];
+        if (staleAutoKeys.isNotEmpty) {
+          for (final k in staleAutoKeys) {
+            _stagedSlotAnnotations.remove(k);
+          }
+          changed = true;
         }
       }
     }
