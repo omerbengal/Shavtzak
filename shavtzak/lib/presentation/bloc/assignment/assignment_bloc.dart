@@ -1954,8 +1954,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         for (final a in _extraPastAssignments)
           if (a.eventId == event.eventId) a,
       ];
-      await _stageSlotAnnotationCleanup(
-          [updatedEvent], rawAssignmentsForEvent);
+      // COMMIT (not stage) the cleanup: the quota change was already committed
+      // by event.update, so its forced orphan cleanup must be committed too —
+      // otherwise it lingers as a staged entry that Discard All would throw
+      // away, stranding the orphaned note in the DB.
+      await _commitSlotAnnotationCleanupForEvent(
+          updatedEvent, rawAssignmentsForEvent);
     }
 
     Logger.action('stage:rebaselineQuotas', {
@@ -3638,6 +3642,77 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
     }
     if (changed) await _persistStaged();
+  }
+
+  /// The COMMITTED-path counterpart of [_stageSlotAnnotationCleanup]: an
+  /// event-form quota change already committed its new roleRequirements via
+  /// event.update, so the annotation cleanup it forces must be committed too —
+  /// WRITTEN straight to the DB, never left staged. A staged cleanup here is
+  /// the asymmetry behind the "reduce a quota, then Discard All, and the
+  /// now-orphaned note is stranded in the DB" bug: the quota drop stays
+  /// (committed) while Discard throws away the only staged entry that would
+  /// have removed the orphan. Committing removes the orphan atomically-enough
+  /// with the quota change and leaves nothing to strand.
+  ///
+  /// Slots carrying a live USER edit (auto:false StagedSlotAnnotation) are left
+  /// untouched — those belong to the user's own staged Save.
+  Future<void> _commitSlotAnnotationCleanupForEvent(
+      Event event, List<Assignment> assignments) async {
+    final roleKeys = <String>{};
+    for (final k in event.slotAnnotations.keys) {
+      final p = parseSlotAnnotationKey(k);
+      if (p != null) roleKeys.add(p.roleKey);
+    }
+    if (roleKeys.isEmpty) return;
+
+    final ops = <SlotAnnotationWrite>[];
+    for (final roleKey in roleKeys) {
+      final quota = event.roleRequirements[roleKey] ?? 0;
+      final filled = assignments
+          .where((a) => a.eventId == event.id && a.roleType == roleKey)
+          .map((a) => a.slotIndex);
+      for (final op in computeSlotAnnotationNormalization(
+          event.slotAnnotations, roleKey, quota, filled)) {
+        final parsed = parseSlotAnnotationKey(op.key);
+        if (parsed == null) continue;
+        final slotKey = StagedAssignmentChange.slotKeyFor(
+            event.id, parsed.roleKey, parsed.slotIndex);
+        if (_stagedSlotAnnotations.containsKey(slotKey)) continue; // user edit
+        ops.add(op);
+      }
+    }
+    if (ops.isEmpty) return;
+
+    // Update the cached event FIRST (synchronously, before any await) so a
+    // rebuild that interleaves the writes below sees the already-cleaned map
+    // and never re-detects the orphan (which would re-stage it).
+    final annotations = Map<String, SlotAnnotation>.from(event.slotAnnotations);
+    for (final op in ops) {
+      if (op.value == null) {
+        annotations.remove(op.key);
+      } else {
+        annotations[op.key] = op.value!;
+      }
+      if (op.staleKey != null) annotations.remove(op.staleKey);
+    }
+    final cleaned = event.copyWith(slotAnnotations: annotations);
+    if (_windowEventsMap.containsKey(event.id)) {
+      _windowEventsMap[event.id] = cleaned;
+    } else if (_extraPastEventsMap.containsKey(event.id)) {
+      _extraPastEventsMap[event.id] = cleaned;
+    }
+
+    // Commit each cleanup write. A failure leaves the DB orphan in place; the
+    // next quota change or reload re-detects and retries — no staged residue.
+    for (final op in ops) {
+      try {
+        await _eventRepository.updateSlotAnnotation(
+            event.id, op.key, op.value,
+            staleKey: op.staleKey);
+      } catch (_) {
+        // best-effort; converges on the next cleanup pass
+      }
+    }
   }
 
   /// Rebuild slots using pre-loaded data (for real-time updates)

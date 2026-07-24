@@ -545,15 +545,16 @@ void main() {
     // eventStream emission, proving the cleanup now fires deterministically
     // from that handler itself.
     test(
-        'Issue 1 fix: an event-form-style quota reduction (RebaselineQuotasForEvent) '
-        'STAGES the orphan cleanup immediately, without waiting for the event '
-        'stream to re-deliver the reduced quota', () async {
+        'Issue 1 fix: an event-form quota reduction (RebaselineQuotasForEvent) '
+        'COMMITS the orphan cleanup immediately (writes it, nothing staged), '
+        'without waiting for the event stream to re-deliver the reduced quota',
+        () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
       bloc.add(const LoadAssignmentSlots());
       await pumpEventQueue();
       // Quota 2: slot 0 filled by 'm1', a note stored on slot 1 (in-range,
-      // empty) — a valid, non-drifted annotation at load time.
+      // empty) — a valid annotation at load time.
       eventStream.add([
         futureEvent('e1', roleRequirements: const {'medic': 2}).copyWith(
           slotAnnotations: {
@@ -565,79 +566,48 @@ void main() {
       assignmentStream.add([assignment('a1', 'e1', 'm1', slotIndex: 0)]);
       await pumpEventQueue();
 
-      // No drift yet at quota 2: nothing staged, no write.
+      // At quota 2 the note is valid: nothing staged, no write.
       expect(bloc.stagedCount, 0);
       verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
           staleKey: anyNamed('staleKey')));
 
-      // The admin reduces the quota 2 -> 1 via the event-form modal (exactly
-      // what AssignmentListScreen/EventListScreen dispatch from
-      // EventFormModal.onEventSaved). Slot 1 (holding the note) no longer
-      // exists and slot 0 is filled, so the note becomes a TRUE ORPHAN — with
-      // NO further eventStream emission, simulating the async event-stream
-      // update not having landed yet.
+      // Reduce 2 -> 1 via the event-form modal (committed by event.update).
+      // Slot 1 (holding the note) no longer exists and slot 0 is filled, so the
+      // note is a TRUE ORPHAN. NO further eventStream emission — proving
+      // _onRebaselineQuotasForEvent itself commits the cleanup.
       bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 1}));
       await pumpEventQueue();
 
-      // Staged immediately by _onRebaselineQuotasForEvent itself, not waiting
-      // for a fresh eventStream emission.
-      final after = bloc.state as AssignmentSlotsLoaded;
-      expect(after.stagedSlotKeys, contains('e1_medic_1'));
-      expect(bloc.stagedCount, 1);
-      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
-          staleKey: anyNamed('staleKey')));
-      // The rebuild this handler triggers also reflects the reduced quota
-      // immediately (no eventStream round-trip needed): only ONE NORMAL
-      // (in-quota) medic slot renders now.
-      final medicSlots =
-          after.slots.where((s) => s.role.key == 'medic').toList();
-      final normalMedicSlots = medicSlots.where((s) => !s.isOffQuota).toList();
-      expect(normalMedicSlots, hasLength(1));
-      expect(normalMedicSlots.single.slotIndex, 0);
-
-      // Task 7 (SG7): the orphaned note (slot 1, no longer in quota) does not
-      // just silently vanish — it surfaces as a synthesized, note-only
-      // off-quota row (AssignmentBloc._buildOrphanedAnnotationSlots) so the
-      // admin can see and Save/Discard the pending removal instead of it
-      // being invisible.
-      final orphanedNoteSlots = medicSlots.where((s) => s.isOffQuota).toList();
-      expect(orphanedNoteSlots, hasLength(1));
-      final orphanedNoteSlot = orphanedNoteSlots.single;
-      expect(orphanedNoteSlot.slotIndex, 1);
-      expect(orphanedNoteSlot.currentAssignment, isNull);
-      expect(orphanedNoteSlot.gapAnnotation, isNotNull);
-      expect(orphanedNoteSlot.gapAnnotation!.annotation,
-          const SlotAnnotation(note: 'y', labelId: 'L2'));
-
-      // Confirm it converges correctly at Save: the orphan is deleted.
-      bloc.add(const SaveStagedChanges());
-      await pumpEventQueue();
+      // WRITTEN immediately, NOTHING staged (so a later Discard can't strand
+      // the orphan). This is the fix: the committed quota drop and its forced
+      // orphan cleanup are both committed, not split into committed-quota +
+      // discardable-cleanup.
       verify(eventRepo.updateSlotAnnotation('e1', 'medic#1', null,
               staleKey: null))
           .called(1);
       expect(bloc.stagedCount, 0);
+      expect(bloc.hasStagedChanges, isFalse);
+
+      // The reduced quota is reflected immediately: exactly ONE in-quota medic
+      // slot (index 0), and NO pending-removal off-quota row (the orphan was
+      // committed, not staged for review).
+      final after = bloc.state as AssignmentSlotsLoaded;
+      final medicSlots =
+          after.slots.where((s) => s.role.key == 'medic').toList();
+      expect(medicSlots, hasLength(1));
+      expect(medicSlots.single.slotIndex, 0);
+      expect(medicSlots.single.isOffQuota, isFalse);
     });
 
-    // ---- SG7 review fix: quota reduced ALL THE WAY TO 0 -------------------
-    //
-    // The per-role slot-build loop's zero-quota gate
-    // (`if (requiredCount == 0 && stagedAdds == 0) continue;`) used to sit
-    // BEFORE the orphaned-annotation synthesis call — so a role whose quota
-    // dropped to exactly 0 (the role removed from the event entirely, not
-    // just lowered) never got its pending-removal row rendered, even though
-    // _stageSlotAnnotationCleanup correctly staged the orphan-delete for it.
-    // Fixed by hoisting the synthesis call to BEFORE the gate at both build
-    // sites, so it runs for every role regardless of whether the gate then
-    // skips that role's NORMAL slot-building.
+    // ---- Quota reduced ALL THE WAY TO 0 -----------------------------------
     test(
-        'a role reduced ALL THE WAY TO 0 (not just lowered) still surfaces '
-        'its orphaned note as a pending-removal row', () async {
+        'a role reduced ALL THE WAY TO 0 (not just lowered) commits its orphan '
+        'delete immediately', () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
       bloc.add(const LoadAssignmentSlots());
       await pumpEventQueue();
-      // Quota 1, a note already on its own (in-range, empty) gap — no drift,
-      // nothing staged yet.
+      // Quota 1, a note already on its own (in-range, empty) gap.
       eventStream.add([
         futureEvent('e1', roleRequirements: const {'medic': 1}).copyWith(
           slotAnnotations: {
@@ -651,42 +621,21 @@ void main() {
 
       expect(bloc.stagedCount, 0);
 
-      // The admin removes the role from the event entirely (quota 1 -> 0)
-      // via the event-form modal — the SAME dispatch
-      // _onRebaselineQuotasForEvent handles for an ordinary reduction, just
-      // taken all the way to 0.
+      // Remove the role from the event entirely (quota 1 -> 0) via the event
+      // form. Every slot is gone, so the note is orphaned — committed (deleted)
+      // immediately, nothing staged.
       bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 0}));
       await pumpEventQueue();
 
-      // Staged immediately, exactly like any other quota reduction.
-      final after = bloc.state as AssignmentSlotsLoaded;
-      expect(after.stagedSlotKeys, contains('e1_medic_0'));
-      expect(bloc.stagedCount, 1);
-      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
-          staleKey: anyNamed('staleKey')));
-
-      // The pending-removal row renders even though the role's quota is now
-      // 0 — before the fix, the zero-quota gate skipped this role's slot
-      // build entirely (including the orphaned-annotation synthesis), so
-      // NO row rendered here at all.
-      final medicSlots =
-          after.slots.where((s) => s.role.key == 'medic').toList();
-      expect(medicSlots, hasLength(1));
-      final orphanedNoteSlot = medicSlots.single;
-      expect(orphanedNoteSlot.isOffQuota, isTrue);
-      expect(orphanedNoteSlot.currentAssignment, isNull);
-      expect(orphanedNoteSlot.slotIndex, 0);
-      expect(orphanedNoteSlot.gapAnnotation, isNotNull);
-      expect(orphanedNoteSlot.gapAnnotation!.annotation,
-          const SlotAnnotation(note: 'z'));
-
-      // Confirm it converges correctly at Save: the orphan is deleted.
-      bloc.add(const SaveStagedChanges());
-      await pumpEventQueue();
       verify(eventRepo.updateSlotAnnotation('e1', 'medic#0', null,
               staleKey: null))
           .called(1);
       expect(bloc.stagedCount, 0);
+      expect(bloc.hasStagedChanges, isFalse);
+      // Quota 0 → no medic rows at all (the orphan was committed, not surfaced
+      // as a pending-removal row).
+      final after = bloc.state as AssignmentSlotsLoaded;
+      expect(after.slots.where((s) => s.role.key == 'medic'), isEmpty);
     });
   });
 }
