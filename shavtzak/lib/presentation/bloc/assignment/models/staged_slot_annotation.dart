@@ -38,8 +38,19 @@ class StagedSlotAnnotation extends Equatable {
     this.auto = false,
   });
 
-  /// Reverts to baseline and carries no move → nothing to save, drop it.
-  bool get isNoop => desired == baseline && staleKey == null;
+  /// True when the desired note+label equal the baseline — the USER changed
+  /// nothing. Unlike [isNoop] this IGNORES [staleKey]: re-keying a drifted
+  /// stored key is the quota auto-cleanup's job, NOT something a user's
+  /// unchanged Save should stage. Used by `_onStageSlotAnnotation` so that
+  /// reopening a drifted note and pressing שמירה without editing never lights
+  /// the row up as dirty just to self-heal the key.
+  bool get isContentNoop => desired == baseline;
+
+  /// Reverts to baseline AND carries no move → nothing to save, drop it. Used
+  /// by the auto-cleanup (`_stageSlotAnnotationCleanup`), which OWNS drift
+  /// re-keying: a pure re-key (content unchanged but [staleKey] set) is
+  /// intentionally NOT a noop here, so a quota change still heals the DB key.
+  bool get isNoop => isContentNoop && staleKey == null;
 
   Map<String, dynamic> toJson() => {
         'eventId': eventId,

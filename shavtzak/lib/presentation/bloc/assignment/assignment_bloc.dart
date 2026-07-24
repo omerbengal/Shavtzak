@@ -1701,10 +1701,34 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       String eventId, String roleKey, int slotIndex, ResolvedGapAnnotation? reconciled) {
     final key = StagedAssignmentChange.slotKeyFor(eventId, roleKey, slotIndex);
     final staged = _stagedSlotAnnotations[key];
-    if (staged == null) return reconciled;
+    if (staged == null) {
+      // Approach A: a stored note that a LIVE staged edit already owns via its
+      // staleKey must NOT also render as its own gap. Repro: a drifted note is
+      // edited on its drifted display slot (edit keyed there, staleKey = the
+      // stored key), then a quota bump makes that stored key canonical again on
+      // a DIFFERENT slot. Without this, the edit shows on the old slot AND the
+      // original value resurfaces here — a phantom duplicate — and Save would
+      // then delete THIS note via the (now cross-slot) stale key.
+      if (reconciled != null &&
+          _stagedEditClaimsSourceKey(eventId, reconciled.sourceKey)) {
+        return null;
+      }
+      return reconciled;
+    }
     if (staged.desired == null) return null; // staged delete → show nothing
     final ownKey = slotAnnotationKey(roleKey, slotIndex);
     return (annotation: staged.desired!, sourceKey: staged.staleKey ?? ownKey);
+  }
+
+  /// True when some LIVE staged annotation edit for [eventId] already owns the
+  /// stored key [sourceKey] via its `staleKey` (a drifted note it will re-key
+  /// or delete on Save). The staleKey encodes role#index, so a match is
+  /// same-role by construction. See Approach A in [_effectiveGapAnnotation].
+  bool _stagedEditClaimsSourceKey(String eventId, String sourceKey) {
+    for (final s in _stagedSlotAnnotations.values) {
+      if (s.eventId == eventId && s.staleKey == sourceKey) return true;
+    }
+    return false;
   }
 
   /// Reconcile `_pendingOperations` with the current staged-changes snapshot,
@@ -1785,7 +1809,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // _stageSlotAnnotationCleanup) — so editing a re-keyed/orphaned note
       // takes ownership of it and it will never be auto-retracted.
       auto: false);
-    if (staged.isNoop) {
+    // isContentNoop (NOT isNoop): a user who opened the dialog and pressed Save
+    // without changing the note/label staged nothing — drop it — even when the
+    // stored key drifted (staleKey != null). Re-keying a drifted note is the
+    // auto-cleanup's job (it runs on quota changes); it must never surface as a
+    // phantom "dirty" mark the admin gets just by reopening + Saving unchanged.
+    if (staged.isContentNoop) {
       _stagedSlotAnnotations.remove(key);
     } else {
       _stagedSlotAnnotations[key] = staged;
@@ -1961,7 +1990,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     await _persistStaged();
     Logger.action('stage:discardSlot', {
       'slot': event.slotKey,
-      'stagedCount': _stagedChanges.length,
+      'changes': _stagedChanges.length,
+      'annotations': _stagedSlotAnnotations.length,
     });
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
@@ -1971,7 +2001,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // See _onDiscardStagedSlot: guard against discarding while a Save is
     // already converging its own captured snapshot to the DB.
     if (_saveInFlight) return;
-    Logger.action('stage:discardAll', {'had': _stagedChanges.length});
+    // Report BOTH staged maps: the UI's discard-dialog count is the union of
+    // member changes AND slot annotations (stagedSlotKeys), so logging only
+    // _stagedChanges here reads as a phantom desync (dialog "1" vs "had: 0")
+    // when the sole staged item is an annotation — e.g. an auto re-key staged
+    // by a quota change.
+    Logger.action('stage:discardAll', {
+      'changes': _stagedChanges.length,
+      'annotations': _stagedSlotAnnotations.length,
+    });
     _stagedChanges.clear();
     _stagedSlotAnnotations.clear();
     // carry (a): a full discard also clears every captured derived-quota
@@ -2023,7 +2061,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           .map((e) => StagedSlotAnnotation.fromJson(e as Map<String, dynamic>))
           .map((s) => MapEntry(
               StagedAssignmentChange.slotKeyFor(s.eventId, s.roleType, s.slotIndex), s)));
-    Logger.action('stage:rehydrate', {'loaded': _stagedChanges.length});
+    Logger.action('stage:rehydrate', {
+      'changes': _stagedChanges.length,
+      'annotations': _stagedSlotAnnotations.length,
+    });
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
@@ -2436,7 +2477,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     };
 
     Logger.action('save:start', {
-      'staged': _stagedChanges.length,
+      'changes': _stagedChanges.length,
+      'annotations': _stagedSlotAnnotations.length,
       'dbTruth': dbByKey.length,
       'resolutions': resolutions.map((k, v) => MapEntry(k, v.name)),
     });
@@ -3605,7 +3647,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   ) async {
     Logger.action('stream:rebuild', {
       'assignments': rebuildEvent.assignments.length,
-      'stagedCount': _stagedChanges.length,
+      'changes': _stagedChanges.length,
+      'annotations': _stagedSlotAnnotations.length,
     });
     try {
       // First-paint gate: until the roles, events, and assignments streams have

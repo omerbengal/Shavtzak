@@ -792,4 +792,164 @@ void main() {
       expect(bloc.stagedCount, 0);
     });
   });
+
+  // ---- Unchanged reopen+Save is a no-op (isContentNoop) -------------------
+  //
+  // Opening the gap dialog and pressing שמירה WITHOUT touching the note/label
+  // must never mark the row dirty. Regression: for a DRIFTED note (stored key
+  // != displayed gap) staleKey was non-null, so the old `isNoop` (which ANDs
+  // in `staleKey == null`) returned false and staged a phantom re-key. Now the
+  // user path keys off `isContentNoop` (staleKey-agnostic), so an unchanged
+  // Save is a no-op regardless of drift; drift still self-heals via the quota
+  // auto-cleanup / a real edit.
+  group('unchanged reopen+Save is a no-op', () {
+    test(
+        'CANONICAL: reopening a note stored at its own key and Saving the '
+        'SAME note/label does not mark the row dirty', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      await loadSlots(bloc, slotAnnotations: {
+        'medic#0': const SlotAnnotation(note: '123', labelId: null),
+      });
+
+      final slot0 = (bloc.state as AssignmentSlotsLoaded)
+          .slots
+          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+      expect(slot0.gapAnnotation!.sourceKey, 'medic#0'); // canonical
+
+      // Exactly what the dialog dispatches on an untouched Save.
+      bloc.add(StageSlotAnnotation(slot: slot0, note: '123', labelId: null));
+      await pumpEventQueue();
+
+      expect(bloc.stagedCount, 0);
+      expect(bloc.hasStagedChanges, isFalse);
+      expect((bloc.state as AssignmentSlotsLoaded).stagedSlotKeys, isEmpty);
+      expect(await cachedAnnotations(), isEmpty);
+    });
+
+    test(
+        'DRIFTED: reopening a note whose stored key drifted onto this gap and '
+        'Saving the SAME note/label does not mark the row dirty', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      // Quota 1 (only gap index 0), but the note is stored under index 1 (out
+      // of range) — reconcile drifts it onto gap 0 with sourceKey 'medic#1'.
+      await loadSlots(bloc, slotAnnotations: {
+        'medic#1': const SlotAnnotation(note: '123', labelId: null),
+      });
+
+      final slot0 = (bloc.state as AssignmentSlotsLoaded)
+          .slots
+          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+      expect(slot0.gapAnnotation!.annotation.note, '123');
+      expect(slot0.gapAnnotation!.sourceKey, 'medic#1'); // DRIFTED
+
+      // User changes nothing and hits Save.
+      bloc.add(StageSlotAnnotation(slot: slot0, note: '123', labelId: null));
+      await pumpEventQueue();
+
+      expect(bloc.stagedCount, 0,
+          reason: 'no content change must not mark the row dirty');
+      expect(bloc.hasStagedChanges, isFalse);
+      expect((bloc.state as AssignmentSlotsLoaded).stagedSlotKeys, isEmpty);
+      expect(await cachedAnnotations(), isEmpty);
+    });
+
+    test(
+        'DRIFTED but an ACTUAL edit still stages + captures staleKey so Save '
+        'self-heals the key (fix must not neuter real drifted edits)', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      await loadSlots(bloc, slotAnnotations: {
+        'medic#1': const SlotAnnotation(note: '123', labelId: null),
+      });
+
+      final slot0 = (bloc.state as AssignmentSlotsLoaded)
+          .slots
+          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+      expect(slot0.gapAnnotation!.sourceKey, 'medic#1');
+
+      // A genuine change (note '123' -> '456') is NOT a content noop.
+      bloc.add(StageSlotAnnotation(slot: slot0, note: '456', labelId: null));
+      await pumpEventQueue();
+
+      expect(bloc.stagedCount, 1);
+      final cached = await cachedAnnotations();
+      expect(cached.single['staleKey'], 'medic#1'); // still self-heals on Save
+      expect(cached.single['desired']['note'], '456');
+    });
+  });
+
+  // ---- Staged edit on a drifted note + quota bump must not duplicate -------
+  //
+  // A note stored at medic#1 while quota is 1 drifts onto the only gap (slot
+  // 0). The admin edits it there (staged: slotIndex 0, desired '456', staleKey
+  // 'medic#1'). Then raises the quota 1 -> 2: medic#1 is IN range again, so
+  // reconcile puts the ORIGINAL '123' back on its canonical slot 1 — while the
+  // staged '456' stays pinned to slot 0. Without Approach A the note SPLITS
+  // into two rows ('456' on slot 0, a resurrected '123' on slot 1), and Save
+  // would then delete the slot-1 note via the now-stale staleKey. Approach A
+  // suppresses a stored note that a live staged edit already claims via its
+  // staleKey, so slot 1 renders empty.
+  group('staged edit on a drifted note survives a quota bump w/o duplicating',
+      () {
+    test(
+        'raising the quota after editing a drifted note does NOT resurrect the '
+        'original value on the newly-canonical slot', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      // Quota 1, note stored at medic#1 (out of range) → drifts onto gap 0.
+      await loadSlots(bloc, slotAnnotations: {
+        'medic#1': const SlotAnnotation(note: '123', labelId: null),
+      });
+
+      final slot0 = (bloc.state as AssignmentSlotsLoaded)
+          .slots
+          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+      expect(slot0.gapAnnotation!.sourceKey, 'medic#1'); // drifted
+
+      // Stage an EDIT (123 -> 456) on the drifted display slot.
+      bloc.add(StageSlotAnnotation(slot: slot0, note: '456', labelId: null));
+      await pumpEventQueue();
+      expect(bloc.stagedCount, 1);
+
+      // Quota 1 -> 2 (event edit re-emits with the new requirement; the stored
+      // annotation is unchanged). medic#1 is now IN range → canonical on slot 1.
+      eventStream.add([
+        futureEvent('e1', roleRequirements: const {'medic': 2}).copyWith(
+            slotAnnotations: {
+              'medic#1': const SlotAnnotation(note: '123', labelId: null)
+            }),
+      ]);
+      await pumpEventQueue();
+
+      final after = bloc.state as AssignmentSlotsLoaded;
+      final s0 = after.slots
+          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+      final s1 = after.slots
+          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 1);
+
+      // The staged edit still shows on slot 0...
+      expect(s0.gapAnnotation!.annotation.note, '456');
+      // ...and the original '123' must NOT reappear on slot 1 (Approach A).
+      expect(s1.gapAnnotation, isNull);
+
+      // Exactly one staged entry, on slot 0 — slot 1 is a plain empty row.
+      expect(bloc.stagedCount, 1);
+      expect(after.stagedSlotKeys, contains('e1_medic_0'));
+      expect(after.stagedSlotKeys, isNot(contains('e1_medic_1')));
+
+      // ...and Save stays consistent: the edit re-keys to the canonical slot 0
+      // and deletes the stale medic#1 in the SAME write — no orphaned '123'.
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+      verify(eventRepo.updateSlotAnnotation(
+        'e1',
+        'medic#0',
+        const SlotAnnotation(note: '456', labelId: null),
+        staleKey: 'medic#1',
+      )).called(1);
+      expect(bloc.stagedCount, 0);
+    });
+  });
 }
