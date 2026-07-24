@@ -28,11 +28,12 @@ List<int> emptySlotIndicesForRole(
 /// spec §10). `sourceKey` lets the editor self-heal a drifted key.
 typedef ResolvedGapAnnotation = ({SlotAnnotation annotation, String sourceKey});
 
-/// Maps a role's stored annotations onto its ACTUAL current gaps so a note
-/// never silently vanishes when slots renumber. Exact index matches win; any
-/// leftover (drifted) annotations fill the remaining gaps in ascending order.
-/// A note on an in-quota FILLED slot stays dormant (excluded from the result);
-/// only out-of-range annotations drift onto a free gap.
+/// Maps a role's stored annotations onto its current empty gaps by EXACT index
+/// only: a note shows on its own slot, or not at all. A note whose slot no longer
+/// exists (index >= requiredCount, e.g. after a quota reduction / row delete) is
+/// NOT drifted onto another free gap — a note belongs to its slot and is deleted
+/// with it (see [computeSlotAnnotationNormalization]). A note on an in-quota
+/// FILLED slot stays dormant (not a current gap, excluded here).
 Map<int, ResolvedGapAnnotation> reconcileGapAnnotations(
   Map<String, SlotAnnotation> eventSlotAnnotations,
   String roleKey,
@@ -53,28 +54,14 @@ Map<int, ResolvedGapAnnotation> reconcileGapAnnotations(
   if (byIndex.isEmpty) return const {};
 
   final result = <int, ResolvedGapAnnotation>{};
-  final claimed = <int>{};
-
-  // 1) Exact matches: annotation whose stored index is a current gap.
+  // Exact matches only: a note whose stored index is a current empty gap shows
+  // there. Nothing drifts — an out-of-range note (index >= requiredCount) has no
+  // slot, so it is left out here and deleted by computeSlotAnnotationNormalization.
   for (final gap in gaps) {
     final ann = byIndex[gap];
     if (ann != null) {
       result[gap] = (annotation: ann, sourceKey: slotAnnotationKey(roleKey, gap));
-      claimed.add(gap);
     }
-  }
-  // 2) Only OUT-OF-RANGE annotations (index >= requiredCount — the slot no longer
-  // exists after a quota reduction) drift onto a free gap. A note on an
-  // in-range FILLED slot stays DORMANT: it is the carry-back copy for THAT
-  // specific slot and must not surface on another gap (that would double it
-  // alongside the assignment's own carried-over note).
-  final leftover =
-      (byIndex.keys.where((idx) => idx >= requiredCount).toList()..sort());
-  final freeGaps = gaps.where((g) => !claimed.contains(g)).toList();
-  for (var i = 0; i < leftover.length && i < freeGaps.length; i++) {
-    final idx = leftover[i];
-    result[freeGaps[i]] =
-        (annotation: byIndex[idx]!, sourceKey: slotAnnotationKey(roleKey, idx));
   }
   return result;
 }
@@ -85,11 +72,12 @@ Map<int, ResolvedGapAnnotation> reconcileGapAnnotations(
 typedef SlotAnnotationWrite = ({String key, SlotAnnotation? value, String? staleKey});
 
 /// The writes that reconcile a role's stored annotations with the current quota
-/// + filled slots, so the DB keys match what [reconcileGapAnnotations] displays:
-/// - a note that drifted onto a different gap is re-keyed to that gap (old key
-///   deleted via staleKey),
-/// - a note with no surviving gap (a true orphan) is deleted,
-/// - a note on an in-quota FILLED slot is KEPT untouched (dormant carry-back).
+/// + filled slots, so the DB matches what [reconcileGapAnnotations] displays:
+/// - a note whose slot no longer exists (index >= quota — a quota reduction or
+///   row delete) is DELETED from the DB; a note belongs to its slot and dies
+///   with it (nothing drifts onto another row),
+/// - a note on an in-quota FILLED slot is KEPT untouched (dormant carry-back),
+/// - a note on its own in-quota EMPTY gap is KEPT at its key.
 /// Empty list when nothing needs changing. Pure — the caller performs the writes.
 List<SlotAnnotationWrite> computeSlotAnnotationNormalization(
   Map<String, SlotAnnotation> eventSlotAnnotations,
@@ -107,26 +95,22 @@ List<SlotAnnotationWrite> computeSlotAnnotationNormalization(
   });
   if (storedForRole.isEmpty) return const [];
 
-  final reconciled =
-      reconcileGapAnnotations(eventSlotAnnotations, roleKey, requiredCount, filled);
+  // Keys that sit on a current empty gap (exact match) are valid — keep them.
+  // With drift gone, a resolved sourceKey always equals the stored key, so this
+  // is simply "which stored notes are still on a live gap".
+  final validKeys = reconcileGapAnnotations(
+          eventSlotAnnotations, roleKey, requiredCount, filled)
+      .values
+      .map((r) => r.sourceKey)
+      .toSet();
 
   final writes = <SlotAnnotationWrite>[];
-  final sourceKeys = <String>{};
-  // Rule 1: re-key any annotation whose reconciled gap differs from its stored key.
-  reconciled.forEach((gapIndex, resolved) {
-    sourceKeys.add(resolved.sourceKey);
-    final canonicalKey = slotAnnotationKey(roleKey, gapIndex);
-    if (canonicalKey != resolved.sourceKey) {
-      writes.add((key: canonicalKey, value: resolved.annotation, staleKey: resolved.sourceKey));
-    }
-  });
-  // Rules 2 & 3: delete true orphans; keep dormant-on-filled untouched.
   storedForRole.forEach((k, v) {
-    if (sourceKeys.contains(k)) return; // moved/kept via re-key above
+    if (validKeys.contains(k)) return; // on its own gap → keep
     final idx = parseSlotAnnotationKey(k)!.slotIndex;
     final dormantOnFilled = idx < requiredCount && filled.contains(idx);
     if (dormantOnFilled) return; // keep dormant carry-back copy
-    writes.add((key: k, value: null, staleKey: null)); // orphan → delete
+    writes.add((key: k, value: null, staleKey: null)); // slot gone → delete
   });
   return writes;
 }

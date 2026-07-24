@@ -45,12 +45,12 @@ void main() {
       expect(res, isEmpty);
     });
 
-    test('an out-of-range drifted annotation surfaces on a remaining gap', () {
-      // a0 stored at index 2, but quota is 2 so index 2 no longer exists →
-      // it must not vanish; it lands on the first free gap.
+    test('an out-of-range note is NOT surfaced on another gap (no drift)', () {
+      // a0 stored at index 2, but quota is 2 so slot 2 no longer exists. It does
+      // NOT drift onto a free gap — it belongs to slot 2, which is gone, so it
+      // surfaces nowhere (and computeSlotAnnotationNormalization deletes it).
       final res = reconcileGapAnnotations({'medic#2': a0}, 'medic', 2, {});
-      expect(res[0]!.annotation, a0);
-      expect(res[0]!.sourceKey, 'medic#2');
+      expect(res, isEmpty);
     });
 
     test('a note on an in-quota FILLED slot stays dormant (does not surface on another gap)', () {
@@ -60,7 +60,7 @@ void main() {
       expect(res, isEmpty);
     });
 
-    test('exact matches win before drifted ones fill leftovers', () {
+    test('each note maps to its own gap by exact index', () {
       final res = reconcileGapAnnotations(
         {'medic#0': a0, 'medic#2': a2}, 'medic', 3, {1});
       // gaps = [0,2]; a0 exact→0, a2 exact→2
@@ -68,22 +68,15 @@ void main() {
       expect(res[2]!.annotation, a2);
     });
 
-    test('multiple out-of-range drifts fill remaining gaps in ascending order', () {
+    test('out-of-range notes never fill lower gaps (no drift)', () {
       const a = SlotAnnotation(note: 'a', labelId: 'L');
       const b = SlotAnnotation(note: 'b');
       // Quota 3 (gaps [0,1,2], none filled); both stored indices (5,7) are
-      // out-of-range, so they drift onto the free gaps in ascending stored-
-      // index order: medic#5 (lower) → gap 0, medic#7 → gap 1, gap 2 unused.
-      // Map literal is written in DESCENDING (7 before 5) insertion order —
-      // deliberately the reverse of numeric order — so this only passes if
-      // reconcileGapAnnotations actually sorts the out-of-range indices
-      // before assigning gaps, rather than incidentally walking them in
-      // Map-insertion order (which a LinkedHashMap would otherwise preserve).
+      // out-of-range. They belong to slots 5/7, which don't exist, so they
+      // surface on NO gap — a note never drifts down onto a free lower slot.
       final res = reconcileGapAnnotations(
           {'medic#7': b, 'medic#5': a}, 'medic', 3, {});
-      expect(res[0]!.annotation, a);
-      expect(res[1]!.annotation, b);
-      expect(res.containsKey(2), isFalse);
+      expect(res, isEmpty);
     });
   });
 
@@ -91,10 +84,12 @@ void main() {
     const a = SlotAnnotation(note: 'a', labelId: 'L');
     const b = SlotAnnotation(note: 'b');
 
-    test('re-key: a drifted annotation is rewritten onto its resolved gap', () {
+    test('an out-of-range note is DELETED, not re-keyed onto a free gap', () {
+      // medic#1 with quota 1: slot 1 is gone. It is deleted from the DB (a note
+      // belongs to its slot) rather than drifting onto the free medic#0.
       final writes = computeSlotAnnotationNormalization(
           {'medic#1': a}, 'medic', 1, {});
-      expect(writes, [(key: 'medic#0', value: a, staleKey: 'medic#1')]);
+      expect(writes, [(key: 'medic#1', value: null, staleKey: null)]);
     });
 
     test('orphan delete: a note with no surviving gap is deleted', () {
@@ -115,25 +110,21 @@ void main() {
       expect(writes, isEmpty);
     });
 
-    test('out-of-range annotation re-keys onto the free gap', () {
+    test('out-of-range annotation is deleted (even with a free lower gap)', () {
+      // medic#2 with quota 2: gaps [0,1] are free, but the note belongs to the
+      // now-gone slot 2, so it is deleted rather than drifting onto medic#0.
       final writes = computeSlotAnnotationNormalization(
           {'medic#2': a}, 'medic', 2, {});
-      expect(writes, [(key: 'medic#0', value: a, staleKey: 'medic#2')]);
+      expect(writes, [(key: 'medic#2', value: null, staleKey: null)]);
     });
 
-    test('two out-of-range notes: nearest re-keys to the free gap, the other is deleted', () {
+    test('multiple out-of-range notes are ALL deleted (none drift down)', () {
       // Quota shrunk to 1 (only gap 0 survives); both medic#2 and medic#3 are
-      // now out-of-range. Reconcile drifts the LOWEST-index one (medic#2) onto
-      // the sole free gap; medic#3 has no gap left → true orphan, deleted.
-      // Map literal is written in DESCENDING (3 before 2) insertion order —
-      // deliberately the reverse of numeric order — so this only passes if
-      // the underlying reconcileGapAnnotations sort is actually discriminating
-      // by numeric index, not by Map-insertion order (which a LinkedHashMap
-      // would otherwise preserve unchanged).
+      // out-of-range. Neither drifts onto the free medic#0 — both are deleted.
       final ops = computeSlotAnnotationNormalization(
           {'medic#3': b, 'medic#2': a}, 'medic', 1, {});
       expect(ops, unorderedEquals([
-        (key: 'medic#0', value: a, staleKey: 'medic#2'),
+        (key: 'medic#2', value: null, staleKey: null),
         (key: 'medic#3', value: null, staleKey: null),
       ]));
     });

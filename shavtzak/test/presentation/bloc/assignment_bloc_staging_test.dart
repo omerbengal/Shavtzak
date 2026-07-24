@@ -456,8 +456,8 @@ void main() {
   group('staged slotAnnotations cleanup on quota change', () {
     test(
         'a note stored on a since-shrunk-out-of-range slot is STAGED as a '
-        're-key onto the surviving gap (staleKey \'medic#1\'), never written '
-        'immediately', () async {
+        'DELETE (never drifted onto the surviving gap, never written '
+        'immediately)', () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
       bloc.add(const LoadAssignmentSlots());
@@ -479,18 +479,34 @@ void main() {
           staleKey: anyNamed('staleKey')));
 
       final after = bloc.state as AssignmentSlotsLoaded;
-      expect(after.stagedSlotKeys, contains('e1_medic_0'));
+      // The orphan-delete is keyed to the note's OWN (gone) slot 1 — NOT
+      // drifted onto the free medic#0.
+      expect(after.stagedSlotKeys, contains('e1_medic_1'));
+      expect(after.stagedSlotKeys, isNot(contains('e1_medic_0')));
       expect(bloc.stagedCount, 1);
       expect(bloc.hasStagedChanges, isTrue);
 
-      // The staged re-key renders immediately via the Task-3 overlay: the
-      // surviving gap (index 0) shows the drifted note, remembering the
-      // STALE source key it moved from (so Save can self-heal the DB key).
-      final medicSlot = after.slots
-          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
-      expect(medicSlot.gapAnnotation!.annotation,
+      // The surviving in-quota gap (slot 0) stays a PLAIN empty slot — the note
+      // did not move onto it.
+      final medicSlot0 = after.slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 0 && !s.isOffQuota);
+      expect(medicSlot0.gapAnnotation, isNull);
+
+      // The orphaned note surfaces as a pending-removal off-quota row (SG7) so
+      // the admin can see/Save/Discard it rather than it vanishing silently.
+      final orphan = after.slots
+          .firstWhere((s) => s.role.key == 'medic' && s.isOffQuota);
+      expect(orphan.slotIndex, 1);
+      expect(orphan.gapAnnotation!.annotation,
           const SlotAnnotation(note: 'x', labelId: 'L'));
-      expect(medicSlot.gapAnnotation!.sourceKey, 'medic#1');
+
+      // Save deletes it from the DB.
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+      verify(eventRepo.updateSlotAnnotation('e1', 'medic#1', null,
+              staleKey: null))
+          .called(1);
+      expect(bloc.stagedCount, 0);
     });
 
     test(
@@ -515,56 +531,6 @@ void main() {
       expect(after.stagedSlotKeys, isEmpty);
       expect(bloc.stagedCount, 0);
       expect(bloc.hasStagedChanges, isFalse);
-    });
-
-    test(
-        'the "already staged" skip does not clobber an edit the admin made on '
-        'top of the auto-staged cleanup, across a later UNRELATED stream '
-        're-emission carrying the IDENTICAL underlying drift', () async {
-      final bloc = buildBloc();
-      addTearDown(() async => bloc.close());
-      bloc.add(const LoadAssignmentSlots());
-      await pumpEventQueue();
-      eventStream.add([
-        futureEvent('e1').copyWith(slotAnnotations: {
-          'medic#1': const SlotAnnotation(note: 'x', labelId: 'L'),
-        }),
-      ]);
-      roleStream.add([medicRole()]);
-      assignmentStream.add(const <Assignment>[]); // no assignments at all
-      await pumpEventQueue();
-
-      // The auto-cleanup already staged the re-key onto medic#0.
-      var after = bloc.state as AssignmentSlotsLoaded;
-      expect(after.stagedSlotKeys, contains('e1_medic_0'));
-      var medicSlot = after.slots
-          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
-
-      // The admin edits that SAME slot's note by hand, on top of the
-      // auto-staged entry.
-      bloc.add(StageSlotAnnotation(
-          slot: medicSlot, note: 'admin-edit', labelId: null));
-      await pumpEventQueue();
-      // Still ONE entry at that key — the admin's edit replaced the
-      // auto-computed one in place, it didn't add a second.
-      expect(bloc.stagedCount, 1);
-
-      // A completely UNRELATED stream (team members) re-emits, driving a full
-      // rebuild — including _stageSlotAnnotationCleanup — with the exact SAME
-      // drift as before (nothing about the annotation or quota changed). The
-      // `_stagedSlotAnnotations.containsKey(slotKey)` skip (see
-      // _stageSlotAnnotationCleanup) must leave the admin's edit alone rather
-      // than clobbering it back to the auto-computed re-key.
-      teamStream.add([member('m1')]);
-      await pumpEventQueue();
-
-      after = bloc.state as AssignmentSlotsLoaded;
-      expect(bloc.stagedCount, 1);
-      medicSlot = after.slots
-          .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
-      expect(medicSlot.gapAnnotation!.annotation.note, 'admin-edit');
-      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
-          staleKey: anyNamed('staleKey')));
     });
 
     // ---- Issue 1 regression: the quota-reduction TRIGGER fix -------------
