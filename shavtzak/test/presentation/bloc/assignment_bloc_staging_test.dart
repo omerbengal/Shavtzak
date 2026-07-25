@@ -760,7 +760,8 @@ void main() {
 
     test(
         'MIXED: swipe-delete the FILLED first row of [member@0, empty+"X"@1] '
-        'shifts "X" up to slot 0 (notes pack the way assignments do)', () async {
+        'shifts "X" up to slot 0 (notes shift in lockstep with assignments)',
+        () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
       bloc.add(const LoadAssignmentSlots());
@@ -783,8 +784,9 @@ void main() {
       bloc.add(const SaveStagedChanges());
       await pumpEventQueue();
 
-      // No assignment survives → the empty "X" row packs to slot 0; medic#1
-      // cleared. "X" is NOT stranded on the (now gone) filled slot.
+      // Row 0 (the assignment) is deleted → everything below shifts up one, so
+      // the empty "X" row moves to slot 0; medic#1 cleared. "X" is NOT stranded
+      // on the (now gone) filled slot.
       verify(eventRepo.updateSlotAnnotation(
               'e1', 'medic#0', const SlotAnnotation(note: 'X'),
               staleKey: null))

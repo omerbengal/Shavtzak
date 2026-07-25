@@ -2375,21 +2375,27 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return conflicts;
   }
 
-  /// Repack a role's post-save rows contiguous from 0 (Save-time only), after a
-  /// staged deletion freed a slot. The rows that will exist for the role =
-  /// DB survivors (not in [deletes]) + this role's [creates] (manual-adds,
-  /// override-restores, fresh fills). Renumbering the UNION keeps in-quota rows
-  /// packed AND lets a same-role manual-add fill the freed in-quota slot instead
-  /// of being stranded off-quota (IMPORTANT #2). DB survivors write back to
-  /// [updates] (merging into any staged member/notes edit already queued for
-  /// them); creates are mutated in place in [creates]. Reads the raw DB snapshot
+  /// Reindex a role's post-save rows after a staged deletion (Save-time only),
+  /// VISUAL-ORDER-PRESERVING (Model B): every surviving row shifts up by the
+  /// number of deleted rows BELOW it (`deletedIndices`), keeping its relative
+  /// position — a filled row never jumps ahead of an empty note-row, and empty
+  /// slots stay interleaved where they were. With no empty slots this is exactly
+  /// the old contiguous pack; with them it differs (that's the point).
+  ///
+  /// The rows that will exist for the role = DB survivors (not in [deletes]) +
+  /// this role's [creates] (manual-adds appended above the survivors). The
+  /// gap-note reindex ([computeNoteReindexAfterDeletion]) uses the IDENTICAL
+  /// shift, so notes and assignments move together and can never collide. DB
+  /// survivors write back to [updates] (merging into any staged edit already
+  /// queued); creates are mutated in place. Reads the raw DB snapshot
   /// (getCurrentAssignments + paged extra-past), the same source the rest of
   /// Save converges against.
   void _reindexRoleAfterDeletion(String eventId, String roleType,
-      List<String> deletes, List<Assignment> updates, List<Assignment> creates) {
+      List<String> deletes, List<Assignment> updates, List<Assignment> creates,
+      Set<int> deletedIndices) {
     final deletedIds = deletes.toSet(); // O(1) survivor filtering
-    // Sortable union tagged by source: a DB survivor (write back to `updates`)
-    // or an index into `creates` (mutate in place).
+    // Union tagged by source: a DB survivor (write back to `updates`) or an
+    // index into `creates` (mutate in place).
     final items = <({int slotIndex, Assignment? survivor, int? createIdx})>[];
     for (final a in [
       ..._repository.getCurrentAssignments(),
@@ -2407,21 +2413,21 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             (slotIndex: creates[i].slotIndex, survivor: null, createIdx: i));
       }
     }
-    items.sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
-    for (var i = 0; i < items.length; i++) {
-      final it = items[i];
-      if (it.slotIndex == i) continue; // already contiguous at this index
+    for (final it in items) {
+      final newIndex = it.slotIndex -
+          deletedIndices.where((d) => d < it.slotIndex).length;
+      if (it.slotIndex == newIndex) continue; // already at its shifted index
       if (it.survivor != null) {
         final a = it.survivor!;
         final existing = updates.indexWhere((u) => u.id == a.id);
         if (existing >= 0) {
-          updates[existing] = updates[existing].copyWith(slotIndex: i);
+          updates[existing] = updates[existing].copyWith(slotIndex: newIndex);
         } else {
-          updates.add(a.copyWith(slotIndex: i, updatedAt: DateTime.now()));
+          updates.add(a.copyWith(slotIndex: newIndex, updatedAt: DateTime.now()));
         }
       } else {
         final ci = it.createIdx!;
-        creates[ci] = creates[ci].copyWith(slotIndex: i);
+        creates[ci] = creates[ci].copyWith(slotIndex: newIndex);
       }
     }
   }
@@ -2648,18 +2654,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // reindexed). Mark the event touched so carry (b) reconciles its stale
         // extra-past cache (no-op for in-window events).
         touchedEventIds.add(role.eventId);
-        // IMPORTANT #2: repack survivors AND this role's creates contiguous, so
-        // a same-role manual-add fills the freed IN-quota slot instead of being
-        // stranded off-quota. Runs BEFORE maxCreateBound below so a pure
-        // delete+add lands on derivedTarget, not baseline+adds.
-        _reindexRoleAfterDeletion(
-            role.eventId, role.roleType, deletes, updates, creates);
-        // Note parallel: repack this role's gap notes so the DELETED row's note
-        // is dropped and notes on lower rows shift up — using the pre-deletion
-        // quota (baseline) and the exact deleted in-quota indices. Without this
-        // the quota-based cleanup would just delete the HIGHEST note regardless
-        // of which row was actually removed (the swipe-delete-wrong-note bug).
         final baselineForNotes = _baselineQuota[erk]!;
+        // The exact deleted IN-quota row indices for this role — the single
+        // shift driver for BOTH the assignment reindex and the gap-note reindex,
+        // so rows and their notes move together (visual-order-preserving).
         final deletedIndices = <int>{
           for (final e in _stagedChanges.entries)
             if (e.value.eventId == role.eventId &&
@@ -2669,26 +2667,21 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                 e.value.slotIndex < baselineForNotes)
               e.value.slotIndex,
         };
+        // Runs BEFORE maxCreateBound below so a pure delete+add lands on
+        // derivedTarget, not baseline+adds.
+        _reindexRoleAfterDeletion(role.eventId, role.roleType, deletes, updates,
+            creates, deletedIndices);
+        // Gap-note parallel: shift the surviving notes by the same "deleted rows
+        // below" mapping, so the DELETED row's note is dropped and lower rows'
+        // notes shift up in lockstep with the assignments.
         final evForNotes = _windowEventsMap[role.eventId] ??
             _extraPastEventsMap[role.eventId];
-        // Which slots hold a DB assignment — so notes pack the SAME way the
-        // assignment reindex above packs its rows (filled to the front, empty
-        // slots and their gap notes to the back).
-        final filledIndices = <int>{
-          for (final a in _repository.getCurrentAssignments())
-            if (a.eventId == role.eventId && a.roleType == role.roleType)
-              a.slotIndex,
-          for (final a in _extraPastAssignments)
-            if (a.eventId == role.eventId && a.roleType == role.roleType)
-              a.slotIndex,
-        };
         if (evForNotes != null) {
           for (final w in computeNoteReindexAfterDeletion(
               evForNotes.slotAnnotations,
               role.roleType,
               baselineForNotes,
-              deletedIndices,
-              filledIndices)) {
+              deletedIndices)) {
             // Defer to any annotation already staged for this slot (a user edit
             // or an auto orphan-cleanup) — it's written by the phase-2 loop and
             // must not be double-written by the reindex.

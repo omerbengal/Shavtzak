@@ -117,15 +117,12 @@ List<SlotAnnotationWrite> computeSlotAnnotationNormalization(
 
 /// After TARGETED row-deletions remove [deletedIndices] from a role that had
 /// [oldQuota] slots, repack the surviving notes to follow their rows — the note
-/// parallel of `_reindexRoleAfterDeletion`. Returns the writes (rewrite/delete)
-/// that turn the stored notes into that layout.
-///
-/// CRUCIAL: it packs the same way the assignment reindex does — surviving
-/// FILLED slots ([filledIndices]) contiguous from 0, then surviving EMPTY slots
-/// after them. A gap note lives on an empty slot, so it lands after the packed
-/// assignments; without this a note could collide onto a filled slot (a stray
-/// dormant note). With no assignments (the pure-empty case) this is just a
-/// plain shift-up. A deleted row's note is dropped.
+/// parallel of `_reindexRoleAfterDeletion`. Every surviving row's note shifts up
+/// by the number of deleted rows BELOW it (visual-order-preserving, Model B), so
+/// it moves in exact lockstep with the assignment reindex (which uses the same
+/// mapping) — no filled/empty distinction needed, and notes can never collide
+/// onto a filled slot. A deleted row's note is dropped. Returns the writes
+/// (rewrite/delete) that turn the stored notes into that layout.
 ///
 /// This is what makes "swipe-delete a row, keep the right note" work.
 /// Contrast [computeSlotAnnotationNormalization], which only deletes notes that
@@ -137,7 +134,6 @@ List<SlotAnnotationWrite> computeNoteReindexAfterDeletion(
   String roleKey,
   int oldQuota,
   Set<int> deletedIndices,
-  Set<int> filledIndices,
 ) {
   if (deletedIndices.isEmpty || oldQuota <= 0) return const [];
 
@@ -149,34 +145,20 @@ List<SlotAnnotationWrite> computeNoteReindexAfterDeletion(
     }
   });
 
-  // Surviving old indices split filled-vs-empty, mirroring the assignment
-  // reindex: filled slots pack contiguous onto new indices 0..k-1, then the
-  // empty slots onto k..newQuota-1. Each surviving slot carries its own note.
-  final survivingFilled = [
+  // Old indices [0, oldQuota) that survive, ascending — they shift onto new
+  // indices 0,1,2,… so surviving[newIdx] is the OLD index whose note now
+  // belongs at newIdx (identical to oldIndex - deletedRowsBelow(oldIndex)).
+  final surviving = [
     for (var i = 0; i < oldQuota; i++)
-      if (filledIndices.contains(i) && !deletedIndices.contains(i)) i,
+      if (!deletedIndices.contains(i)) i,
   ];
-  final survivingEmpty = [
-    for (var i = 0; i < oldQuota; i++)
-      if (!filledIndices.contains(i) && !deletedIndices.contains(i)) i,
-  ];
-  final k = survivingFilled.length;
-  final newQuota = k + survivingEmpty.length;
-
-  final desired = <int, SlotAnnotation?>{}; // new index -> its note
-  for (var p = 0; p < survivingFilled.length; p++) {
-    desired[p] = byIndex[survivingFilled[p]];
-  }
-  for (var p = 0; p < survivingEmpty.length; p++) {
-    desired[k + p] = byIndex[survivingEmpty[p]];
-  }
 
   final writes = <SlotAnnotationWrite>[];
-  // Touch every old in-range index: [0, newQuota) take the repacked note; the
-  // rest (freed by the deletion) are cleared.
+  // Touch every old in-range index: [0, surviving.length) take the shifted note;
+  // the rest (freed by the deletion) are cleared.
   for (var idx = 0; idx < oldQuota; idx++) {
     final oldNote = byIndex[idx];
-    final newNote = idx < newQuota ? desired[idx] : null;
+    final newNote = idx < surviving.length ? byIndex[surviving[idx]] : null;
     if (oldNote == newNote) continue; // unchanged at this index
     writes.add(
         (key: slotAnnotationKey(roleKey, idx), value: newNote, staleKey: null));
