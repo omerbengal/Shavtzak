@@ -114,3 +114,51 @@ List<SlotAnnotationWrite> computeSlotAnnotationNormalization(
   });
   return writes;
 }
+
+/// After TARGETED row-deletions remove [deletedIndices] from a role that had
+/// [oldQuota] slots, repack the surviving notes contiguous from 0 — the note
+/// parallel of `_reindexRoleAfterDeletion` (which repacks assignments). A
+/// deleted row's note is dropped; a note on a row BELOW a deleted row shifts up
+/// to follow its row. Returns the writes (rewrite / delete) that turn the stored
+/// notes into that layout.
+///
+/// This is what makes "swipe-delete the 2nd of two rows, keep the 1st" work.
+/// Contrast [computeSlotAnnotationNormalization], which only deletes notes that
+/// fell out of range (correct for "remove the LAST row" — an event-form
+/// decrement — but it deletes the highest note regardless of WHICH row you
+/// removed, and never shifts).
+List<SlotAnnotationWrite> computeNoteReindexAfterDeletion(
+  Map<String, SlotAnnotation> eventSlotAnnotations,
+  String roleKey,
+  int oldQuota,
+  Set<int> deletedIndices,
+) {
+  if (deletedIndices.isEmpty || oldQuota <= 0) return const [];
+
+  final byIndex = <int, SlotAnnotation>{};
+  eventSlotAnnotations.forEach((k, v) {
+    final p = parseSlotAnnotationKey(k);
+    if (p != null && p.roleKey == roleKey && !v.isEmpty) {
+      byIndex[p.slotIndex] = v;
+    }
+  });
+
+  // Old indices [0, oldQuota) that survive the deletion, in ascending order —
+  // they repack onto new indices 0,1,2,… so surviving[newIdx] is the OLD index
+  // whose note now belongs at newIdx.
+  final surviving = [
+    for (var i = 0; i < oldQuota; i++)
+      if (!deletedIndices.contains(i)) i,
+  ];
+
+  final writes = <SlotAnnotationWrite>[];
+  // Touch every old in-range index: indices < surviving.length take the
+  // repacked note; the rest (freed by the deletion) are cleared.
+  for (var k = 0; k < oldQuota; k++) {
+    final oldNote = byIndex[k];
+    final newNote = k < surviving.length ? byIndex[surviving[k]] : null;
+    if (oldNote == newNote) continue; // unchanged at this index
+    writes.add((key: slotAnnotationKey(roleKey, k), value: newNote, staleKey: null));
+  }
+  return writes;
+}

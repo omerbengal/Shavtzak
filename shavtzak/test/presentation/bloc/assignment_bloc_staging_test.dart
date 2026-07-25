@@ -638,4 +638,124 @@ void main() {
       expect(after.slots.where((s) => s.role.key == 'medic'), isEmpty);
     });
   });
+
+  // ---- Swipe-delete a row repacks the notes to follow their rows ----------
+  //
+  // The reported bug: two empty rows [row0="123", row1="456"]; swipe-delete
+  // row 0 and "123" survived while "456" got deleted — because the quota drop
+  // deletes the HIGHEST-index note regardless of WHICH row you removed, and
+  // never shifts. Fixed by computeNoteReindexAfterDeletion, wired into
+  // _onSaveStagedChanges next to the existing assignment reindex.
+  group('swipe-delete repacks notes (keeps the RIGHT note, not the highest)',
+      () {
+    test(
+        'swipe-delete row 0 of [row0="123", row1="456"] keeps "456" on the '
+        'remaining row (drops "123", shifts "456" up to medic#0)', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([
+        futureEvent('e1', roleRequirements: const {'medic': 2}).copyWith(
+          slotAnnotations: {
+            'medic#0': const SlotAnnotation(note: '123'),
+            'medic#1': const SlotAnnotation(note: '456'),
+          },
+        ),
+      ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
+      await pumpEventQueue();
+
+      final row0 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 0 && !s.isOffQuota);
+      bloc.add(StageSlotDeletion(row0));
+      await pumpEventQueue();
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+
+      // "456" shifts up to medic#0; the old top note (medic#1) is cleared.
+      verify(eventRepo.updateSlotAnnotation(
+              'e1', 'medic#0', const SlotAnnotation(note: '456'),
+              staleKey: null))
+          .called(1);
+      verify(eventRepo.updateSlotAnnotation('e1', 'medic#1', null,
+              staleKey: null))
+          .called(1);
+    });
+
+    test(
+        'swipe-delete row 1 (the "456" row) keeps "123" at row 0 untouched',
+        () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([
+        futureEvent('e1', roleRequirements: const {'medic': 2}).copyWith(
+          slotAnnotations: {
+            'medic#0': const SlotAnnotation(note: '123'),
+            'medic#1': const SlotAnnotation(note: '456'),
+          },
+        ),
+      ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
+      await pumpEventQueue();
+
+      final row1 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 1 && !s.isOffQuota);
+      bloc.add(StageSlotDeletion(row1));
+      await pumpEventQueue();
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+
+      // Deleting the LAST row: only medic#1 ("456") is cleared; "123" stays.
+      verify(eventRepo.updateSlotAnnotation('e1', 'medic#1', null,
+              staleKey: null))
+          .called(1);
+      verifyNever(eventRepo.updateSlotAnnotation('e1', 'medic#0', any,
+          staleKey: anyNamed('staleKey')));
+    });
+
+    test(
+        'swipe-delete the MIDDLE row of [A, B, C] shifts C up: result is [A, C]',
+        () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([
+        futureEvent('e1', roleRequirements: const {'medic': 3}).copyWith(
+          slotAnnotations: {
+            'medic#0': const SlotAnnotation(note: 'A'),
+            'medic#1': const SlotAnnotation(note: 'B'),
+            'medic#2': const SlotAnnotation(note: 'C'),
+          },
+        ),
+      ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
+      await pumpEventQueue();
+
+      final row1 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 1 && !s.isOffQuota);
+      bloc.add(StageSlotDeletion(row1)); // delete "B"
+      await pumpEventQueue();
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+
+      // "C" (row 2) shifts up into row 1; the freed top slot medic#2 is cleared;
+      // "A" (row 0) is untouched.
+      verify(eventRepo.updateSlotAnnotation(
+              'e1', 'medic#1', const SlotAnnotation(note: 'C'),
+              staleKey: null))
+          .called(1);
+      verify(eventRepo.updateSlotAnnotation('e1', 'medic#2', null,
+              staleKey: null))
+          .called(1);
+      verifyNever(eventRepo.updateSlotAnnotation('e1', 'medic#0', any,
+          staleKey: anyNamed('staleKey')));
+    });
+  });
 }

@@ -2491,6 +2491,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final updates = <Assignment>[];
     final deletes = <String>[];
     final appliedKeys = <String>[];
+    // Note parallel of _reindexRoleAfterDeletion: writes that repack a role's
+    // gap notes after a TARGETED row-deletion (deleted row's note dropped,
+    // lower rows' notes shift up). Collected during the deletion pass below and
+    // applied in the annotation phase (after the assignment batch commits),
+    // while _stagedChanges/_baselineQuota are still populated here.
+    final noteReindexWrites = <({String eventId, SlotAnnotationWrite write})>[];
     // Distinct eventIds this batch writes to (creates/updates/deletes). Used
     // after a successful write to refresh the extra-past cache for any touched
     // event that lives OUTSIDE the live window (paginated in via "load more
@@ -2648,6 +2654,42 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // delete+add lands on derivedTarget, not baseline+adds.
         _reindexRoleAfterDeletion(
             role.eventId, role.roleType, deletes, updates, creates);
+        // Note parallel: repack this role's gap notes so the DELETED row's note
+        // is dropped and notes on lower rows shift up — using the pre-deletion
+        // quota (baseline) and the exact deleted in-quota indices. Without this
+        // the quota-based cleanup would just delete the HIGHEST note regardless
+        // of which row was actually removed (the swipe-delete-wrong-note bug).
+        final baselineForNotes = _baselineQuota[erk]!;
+        final deletedIndices = <int>{
+          for (final e in _stagedChanges.entries)
+            if (e.value.eventId == role.eventId &&
+                e.value.roleType == role.roleType &&
+                e.value.markedForDeletion &&
+                resolutions[e.key] != ConflictResolution.takeDb &&
+                e.value.slotIndex < baselineForNotes)
+              e.value.slotIndex,
+        };
+        final evForNotes = _windowEventsMap[role.eventId] ??
+            _extraPastEventsMap[role.eventId];
+        if (evForNotes != null) {
+          for (final w in computeNoteReindexAfterDeletion(
+              evForNotes.slotAnnotations,
+              role.roleType,
+              baselineForNotes,
+              deletedIndices)) {
+            // Defer to any annotation already staged for this slot (a user edit
+            // or an auto orphan-cleanup) — it's written by the phase-2 loop and
+            // must not be double-written by the reindex.
+            final parsed = parseSlotAnnotationKey(w.key);
+            if (parsed != null &&
+                _stagedSlotAnnotations.containsKey(
+                    StagedAssignmentChange.slotKeyFor(
+                        role.eventId, parsed.roleKey, parsed.slotIndex))) {
+              continue;
+            }
+            noteReindexWrites.add((eventId: role.eventId, write: w));
+          }
+        }
       }
 
       // A role-level (type-G) takeDb keeps the DB quota: skip the SET. The
@@ -2836,6 +2878,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
       _stagedSlotAnnotations.clear();
       await _persistStaged();
+
+      // Repack gap notes after any targeted row-deletions (computed in the
+      // deletion pass above): a deleted row's note is dropped and lower rows'
+      // notes shift up, so "swipe-delete the row you meant" keeps the right
+      // note — never the highest-index one.
+      for (final r in noteReindexWrites) {
+        await _eventRepository.updateSlotAnnotation(
+            r.eventId, r.write.key, r.write.value,
+            staleKey: r.write.staleKey);
+      }
 
       final written =
           creates.length + updates.length + deletes.length + annotationsWritten;

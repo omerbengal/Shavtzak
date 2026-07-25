@@ -143,4 +143,90 @@ void main() {
       expect(writes, isEmpty);
     });
   });
+
+  group('computeNoteReindexAfterDeletion', () {
+    const nA = SlotAnnotation(note: 'A');
+    const nB = SlotAnnotation(note: 'B');
+    const nC = SlotAnnotation(note: 'C');
+
+    test('delete the FIRST of two rows: the 2nd note shifts up to row 0', () {
+      // The reported bug: [row0="123", row1="456"], swipe-delete row 0 -> keep
+      // "456" on the single remaining row.
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#0': nA, 'medic#1': nB}, 'medic', 2, {0});
+      expect(writes, unorderedEquals([
+        (key: 'medic#0', value: nB, staleKey: null),
+        (key: 'medic#1', value: null, staleKey: null),
+      ]));
+    });
+
+    test('delete the LAST of two rows: the 1st note stays put', () {
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#0': nA, 'medic#1': nB}, 'medic', 2, {1});
+      expect(writes, [(key: 'medic#1', value: null, staleKey: null)]);
+    });
+
+    test('delete a MIDDLE row of three: rows below shift up', () {
+      // [A,B,C] delete row 1 -> [A,C]
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#0': nA, 'medic#1': nB, 'medic#2': nC}, 'medic', 3, {1});
+      expect(writes, unorderedEquals([
+        (key: 'medic#1', value: nC, staleKey: null),
+        (key: 'medic#2', value: null, staleKey: null),
+      ]));
+    });
+
+    test('delete the FIRST of three rows: both below shift up', () {
+      // [A,B,C] delete row 0 -> [B,C]
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#0': nA, 'medic#1': nB, 'medic#2': nC}, 'medic', 3, {0});
+      expect(writes, unorderedEquals([
+        (key: 'medic#0', value: nB, staleKey: null),
+        (key: 'medic#1', value: nC, staleKey: null),
+        (key: 'medic#2', value: null, staleKey: null),
+      ]));
+    });
+
+    test('delete TWO rows at once: survivors compact', () {
+      // [A,B,C] delete rows 0 and 1 -> [C]
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#0': nA, 'medic#1': nB, 'medic#2': nC}, 'medic', 3, {0, 1});
+      expect(writes, unorderedEquals([
+        (key: 'medic#0', value: nC, staleKey: null),
+        (key: 'medic#1', value: null, staleKey: null),
+        (key: 'medic#2', value: null, staleKey: null),
+      ]));
+    });
+
+    test('delete an EMPTY row (no note) above a noted row: the note shifts up',
+        () {
+      // row 0 empty, row 1 = B; delete row 0 -> [B].
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#1': nB}, 'medic', 2, {0});
+      expect(writes, unorderedEquals([
+        (key: 'medic#0', value: nB, staleKey: null),
+        (key: 'medic#1', value: null, staleKey: null),
+      ]));
+    });
+
+    test('delete a noted row whose only survivor is empty: the note is dropped',
+        () {
+      // row 0 = A, row 1 empty; delete row 0 -> [] (A gone, nothing to shift).
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#0': nA}, 'medic', 2, {0});
+      expect(writes, [(key: 'medic#0', value: null, staleKey: null)]);
+    });
+
+    test('delete an EMPTY last row (no notes disturbed): no writes', () {
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#0': nA}, 'medic', 2, {1});
+      expect(writes, isEmpty);
+    });
+
+    test('no deletions → no writes', () {
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#0': nA, 'medic#1': nB}, 'medic', 2, {});
+      expect(writes, isEmpty);
+    });
+  });
 }
