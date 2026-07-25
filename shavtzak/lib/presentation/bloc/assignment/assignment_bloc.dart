@@ -2671,12 +2671,24 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         };
         final evForNotes = _windowEventsMap[role.eventId] ??
             _extraPastEventsMap[role.eventId];
+        // Which slots hold a DB assignment — so notes pack the SAME way the
+        // assignment reindex above packs its rows (filled to the front, empty
+        // slots and their gap notes to the back).
+        final filledIndices = <int>{
+          for (final a in _repository.getCurrentAssignments())
+            if (a.eventId == role.eventId && a.roleType == role.roleType)
+              a.slotIndex,
+          for (final a in _extraPastAssignments)
+            if (a.eventId == role.eventId && a.roleType == role.roleType)
+              a.slotIndex,
+        };
         if (evForNotes != null) {
           for (final w in computeNoteReindexAfterDeletion(
               evForNotes.slotAnnotations,
               role.roleType,
               baselineForNotes,
-              deletedIndices)) {
+              deletedIndices,
+              filledIndices)) {
             // Defer to any annotation already staged for this slot (a user edit
             // or an auto orphan-cleanup) — it's written by the phase-2 loop and
             // must not be double-written by the reindex.

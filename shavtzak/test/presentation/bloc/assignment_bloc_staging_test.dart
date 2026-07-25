@@ -757,5 +757,41 @@ void main() {
       verifyNever(eventRepo.updateSlotAnnotation('e1', 'medic#0', any,
           staleKey: anyNamed('staleKey')));
     });
+
+    test(
+        'MIXED: swipe-delete the FILLED first row of [member@0, empty+"X"@1] '
+        'shifts "X" up to slot 0 (notes pack the way assignments do)', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([
+        futureEvent('e1', roleRequirements: const {'medic': 2}).copyWith(
+          slotAnnotations: {'medic#1': const SlotAnnotation(note: 'X')},
+        ),
+      ]);
+      roleStream.add([medicRole()]);
+      // slot 0 filled by m1, slot 1 empty carrying note "X".
+      assignmentStream.add([assignment('a1', 'e1', 'm1', slotIndex: 0)]);
+      await pumpEventQueue();
+
+      final filledRow0 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 0 && !s.isOffQuota);
+      expect(filledRow0.isFilled, isTrue);
+      bloc.add(StageSlotDeletion(filledRow0)); // delete the assigned row
+      await pumpEventQueue();
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+
+      // No assignment survives → the empty "X" row packs to slot 0; medic#1
+      // cleared. "X" is NOT stranded on the (now gone) filled slot.
+      verify(eventRepo.updateSlotAnnotation(
+              'e1', 'medic#0', const SlotAnnotation(note: 'X'),
+              staleKey: null))
+          .called(1);
+      verify(eventRepo.updateSlotAnnotation('e1', 'medic#1', null,
+              staleKey: null))
+          .called(1);
+    });
   });
 }

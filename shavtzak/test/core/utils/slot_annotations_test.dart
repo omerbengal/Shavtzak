@@ -148,12 +148,13 @@ void main() {
     const nA = SlotAnnotation(note: 'A');
     const nB = SlotAnnotation(note: 'B');
     const nC = SlotAnnotation(note: 'C');
+    const noFill = <int>{}; // all rows empty (the common gap-annotation case)
 
     test('delete the FIRST of two rows: the 2nd note shifts up to row 0', () {
       // The reported bug: [row0="123", row1="456"], swipe-delete row 0 -> keep
       // "456" on the single remaining row.
       final writes = computeNoteReindexAfterDeletion(
-          {'medic#0': nA, 'medic#1': nB}, 'medic', 2, {0});
+          {'medic#0': nA, 'medic#1': nB}, 'medic', 2, {0}, noFill);
       expect(writes, unorderedEquals([
         (key: 'medic#0', value: nB, staleKey: null),
         (key: 'medic#1', value: null, staleKey: null),
@@ -162,14 +163,14 @@ void main() {
 
     test('delete the LAST of two rows: the 1st note stays put', () {
       final writes = computeNoteReindexAfterDeletion(
-          {'medic#0': nA, 'medic#1': nB}, 'medic', 2, {1});
+          {'medic#0': nA, 'medic#1': nB}, 'medic', 2, {1}, noFill);
       expect(writes, [(key: 'medic#1', value: null, staleKey: null)]);
     });
 
     test('delete a MIDDLE row of three: rows below shift up', () {
       // [A,B,C] delete row 1 -> [A,C]
       final writes = computeNoteReindexAfterDeletion(
-          {'medic#0': nA, 'medic#1': nB, 'medic#2': nC}, 'medic', 3, {1});
+          {'medic#0': nA, 'medic#1': nB, 'medic#2': nC}, 'medic', 3, {1}, noFill);
       expect(writes, unorderedEquals([
         (key: 'medic#1', value: nC, staleKey: null),
         (key: 'medic#2', value: null, staleKey: null),
@@ -179,7 +180,7 @@ void main() {
     test('delete the FIRST of three rows: both below shift up', () {
       // [A,B,C] delete row 0 -> [B,C]
       final writes = computeNoteReindexAfterDeletion(
-          {'medic#0': nA, 'medic#1': nB, 'medic#2': nC}, 'medic', 3, {0});
+          {'medic#0': nA, 'medic#1': nB, 'medic#2': nC}, 'medic', 3, {0}, noFill);
       expect(writes, unorderedEquals([
         (key: 'medic#0', value: nB, staleKey: null),
         (key: 'medic#1', value: nC, staleKey: null),
@@ -190,7 +191,8 @@ void main() {
     test('delete TWO rows at once: survivors compact', () {
       // [A,B,C] delete rows 0 and 1 -> [C]
       final writes = computeNoteReindexAfterDeletion(
-          {'medic#0': nA, 'medic#1': nB, 'medic#2': nC}, 'medic', 3, {0, 1});
+          {'medic#0': nA, 'medic#1': nB, 'medic#2': nC}, 'medic', 3, {0, 1},
+          noFill);
       expect(writes, unorderedEquals([
         (key: 'medic#0', value: nC, staleKey: null),
         (key: 'medic#1', value: null, staleKey: null),
@@ -202,7 +204,7 @@ void main() {
         () {
       // row 0 empty, row 1 = B; delete row 0 -> [B].
       final writes = computeNoteReindexAfterDeletion(
-          {'medic#1': nB}, 'medic', 2, {0});
+          {'medic#1': nB}, 'medic', 2, {0}, noFill);
       expect(writes, unorderedEquals([
         (key: 'medic#0', value: nB, staleKey: null),
         (key: 'medic#1', value: null, staleKey: null),
@@ -213,20 +215,57 @@ void main() {
         () {
       // row 0 = A, row 1 empty; delete row 0 -> [] (A gone, nothing to shift).
       final writes = computeNoteReindexAfterDeletion(
-          {'medic#0': nA}, 'medic', 2, {0});
+          {'medic#0': nA}, 'medic', 2, {0}, noFill);
       expect(writes, [(key: 'medic#0', value: null, staleKey: null)]);
     });
 
     test('delete an EMPTY last row (no notes disturbed): no writes', () {
       final writes = computeNoteReindexAfterDeletion(
-          {'medic#0': nA}, 'medic', 2, {1});
+          {'medic#0': nA}, 'medic', 2, {1}, noFill);
       expect(writes, isEmpty);
     });
 
     test('no deletions → no writes', () {
       final writes = computeNoteReindexAfterDeletion(
-          {'medic#0': nA, 'medic#1': nB}, 'medic', 2, {});
+          {'medic#0': nA, 'medic#1': nB}, 'medic', 2, {}, noFill);
       expect(writes, isEmpty);
+    });
+
+    // ---- Filled + empty MIXED: notes follow the assignment-packing layout ----
+
+    test('MIXED: [filled@0, empty+B@1], delete the filled@0 → B shifts to slot 0',
+        () {
+      // No assignment survives, so the empty "B" row packs to slot 0.
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#1': nB}, 'medic', 2, {0}, {0});
+      expect(writes, unorderedEquals([
+        (key: 'medic#0', value: nB, staleKey: null),
+        (key: 'medic#1', value: null, staleKey: null),
+      ]));
+    });
+
+    test(
+        'MIXED: [filled@0, empty+X@1, filled@2], delete filled@0 — the survivor '
+        'assignment packs to 0 and X STAYS at slot 1 (no collision onto it)', () {
+      // The bug the naive shift-up would cause: X would land on the surviving
+      // assignment now at slot 0. Filled-aware packing keeps X at slot 1.
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#1': nB}, 'medic', 3, {0}, {0, 2});
+      expect(writes, isEmpty); // X (medic#1) already sits where it belongs
+    });
+
+    test(
+        'MIXED with dormant notes: [filled@0(P), empty+X@1, filled@2(Q)], delete '
+        'filled@0 → Q follows its assignment to slot 0, X stays at slot 1', () {
+      const nP = SlotAnnotation(note: 'P');
+      const nQ = SlotAnnotation(note: 'Q');
+      final writes = computeNoteReindexAfterDeletion(
+          {'medic#0': nP, 'medic#1': nB, 'medic#2': nQ}, 'medic', 3, {0}, {0, 2});
+      expect(writes, unorderedEquals([
+        (key: 'medic#0', value: nQ, staleKey: null), // Q (from filled@2) -> 0
+        (key: 'medic#2', value: null, staleKey: null), // old top cleared
+        // medic#1 (X) unchanged — stays at slot 1
+      ]));
     });
   });
 }
