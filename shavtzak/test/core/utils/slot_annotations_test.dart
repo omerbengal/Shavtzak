@@ -248,5 +248,62 @@ void main() {
         (key: 'medic#2', value: null, staleKey: null), // old C slot cleared
       ]));
     });
+
+    // stagedByIndex: the layout that shifts is what the ADMIN SEES (DB overlaid
+    // with notes staged in the same batch), while the writes are still diffed
+    // against the stored map. Without this the repack was blind to a staged
+    // note, which then got written at its pre-shift key.
+    group('with staged (unsaved) notes overlaid', () {
+      test('a note staged ABOVE the deletion shifts down into the freed row',
+          () {
+        // Stored [A@0, B@1], staged C@2, delete row 1 -> [A, C].
+        final writes = computeNoteReindexAfterDeletion(
+            {'medic#0': nA, 'medic#1': nB}, 'medic', 3, {1},
+            stagedByIndex: {2: nC});
+        expect(writes, unorderedEquals([
+          (key: 'medic#1', value: nC, staleKey: null),
+        ]));
+      });
+
+      test('a note staged ON the deleted row is dropped with it', () {
+        // Stored [B@1, C@2], staged A@0, delete row 0 -> [B, C].
+        final writes = computeNoteReindexAfterDeletion(
+            {'medic#1': nB, 'medic#2': nC}, 'medic', 3, {0},
+            stagedByIndex: {0: nA});
+        expect(writes, unorderedEquals([
+          (key: 'medic#0', value: nB, staleKey: null),
+          (key: 'medic#1', value: nC, staleKey: null),
+          (key: 'medic#2', value: null, staleKey: null),
+        ]));
+      });
+
+      test('a staged DELETE (null) hides the stored note it overlays', () {
+        // Stored [A@0, B@1]; the admin staged "clear row 0" AND deleted row 1.
+        // Layout pre-deletion is [(none), B]; after -> [(none)] so A is cleared.
+        final writes = computeNoteReindexAfterDeletion(
+            {'medic#0': nA, 'medic#1': nB}, 'medic', 2, {1},
+            stagedByIndex: {0: null});
+        expect(writes, unorderedEquals([
+          (key: 'medic#0', value: null, staleKey: null),
+          (key: 'medic#1', value: null, staleKey: null),
+        ]));
+      });
+
+      test('a staged note equal to the stored one produces no extra write', () {
+        // Stored [A@0, B@1], staged A@0 again (re-typed identically), delete
+        // row 1 -> [A]: only the freed top slot is cleared.
+        final writes = computeNoteReindexAfterDeletion(
+            {'medic#0': nA, 'medic#1': nB}, 'medic', 2, {1},
+            stagedByIndex: {0: nA});
+        expect(writes, [(key: 'medic#1', value: null, staleKey: null)]);
+      });
+
+      test('an empty-note staged value is treated as "no note"', () {
+        final writes = computeNoteReindexAfterDeletion(
+            {'medic#0': nA}, 'medic', 2, {1},
+            stagedByIndex: {0: const SlotAnnotation(note: '')});
+        expect(writes, [(key: 'medic#0', value: null, staleKey: null)]);
+      });
+    });
   });
 }

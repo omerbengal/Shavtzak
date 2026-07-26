@@ -795,5 +795,104 @@ void main() {
               staleKey: null))
           .called(1);
     });
+
+    // The reported bug: a note STAGED in the same batch as the row-deletion was
+    // written at its PRE-shift index while the repack — computed from the DB
+    // map alone — never saw it. [#0="1", #1="2", stage #2="3", delete row 1]
+    // saved as [#0="1", gap, #2="3"] instead of [#0="1", #1="3"]. The repack
+    // must reindex the layout the ADMIN SEES (DB overlaid with staging), and it
+    // owns those slots on Save so the staged edit is not ALSO written unshifted.
+    test(
+        'a note staged in the SAME batch as the deletion shifts with its row '
+        '(stage "3" on row 2, delete row 1 → "3" lands on row 1)', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([
+        futureEvent('e1', roleRequirements: const {'medic': 3}).copyWith(
+          slotAnnotations: {
+            'medic#0': const SlotAnnotation(note: '1'),
+            'medic#1': const SlotAnnotation(note: '2'),
+          },
+        ),
+      ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
+      await pumpEventQueue();
+
+      final row2 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 2 && !s.isOffQuota);
+      bloc.add(StageSlotAnnotation(slot: row2, note: '3', labelId: null));
+      await pumpEventQueue();
+
+      final row1 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 1 && !s.isOffQuota);
+      bloc.add(StageSlotDeletion(row1)); // delete the "2" row
+      await pumpEventQueue();
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+
+      // Final layout is ["1", "3"]: "2" dies with its row and the staged "3"
+      // follows its row up from slot 2 to slot 1.
+      verify(eventRepo.updateSlotAnnotation(
+              'e1', 'medic#1', const SlotAnnotation(note: '3'),
+              staleKey: null))
+          .called(1);
+      // The staged edit must NOT also land at its pre-shift index.
+      verifyNever(eventRepo.updateSlotAnnotation(
+          'e1', 'medic#2', const SlotAnnotation(note: '3'),
+          staleKey: anyNamed('staleKey')));
+      verifyNever(eventRepo.updateSlotAnnotation('e1', 'medic#0', any,
+          staleKey: anyNamed('staleKey')));
+    });
+
+    test(
+        'a note staged on the row being DELETED dies with it, and the note '
+        'below still shifts up', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([
+        futureEvent('e1', roleRequirements: const {'medic': 3}).copyWith(
+          slotAnnotations: {
+            'medic#1': const SlotAnnotation(note: 'B'),
+            'medic#2': const SlotAnnotation(note: 'C'),
+          },
+        ),
+      ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
+      await pumpEventQueue();
+
+      final row0 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 0 && !s.isOffQuota);
+      bloc.add(StageSlotAnnotation(slot: row0, note: 'A', labelId: null));
+      await pumpEventQueue();
+
+      final freshRow0 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 0 && !s.isOffQuota);
+      bloc.add(StageSlotDeletion(freshRow0)); // delete the row "A" sits on
+      await pumpEventQueue();
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+
+      // [A(staged), B, C] minus row 0 → [B, C]. "A" is never written.
+      verify(eventRepo.updateSlotAnnotation(
+              'e1', 'medic#0', const SlotAnnotation(note: 'B'),
+              staleKey: null))
+          .called(1);
+      verify(eventRepo.updateSlotAnnotation(
+              'e1', 'medic#1', const SlotAnnotation(note: 'C'),
+              staleKey: null))
+          .called(1);
+      verify(eventRepo.updateSlotAnnotation('e1', 'medic#2', null,
+              staleKey: null))
+          .called(1);
+      verifyNever(eventRepo.updateSlotAnnotation(
+          'e1', any, const SlotAnnotation(note: 'A'),
+          staleKey: anyNamed('staleKey')));
+    });
   });
 }

@@ -2503,6 +2503,11 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // applied in the annotation phase (after the assignment batch commits),
     // while _stagedChanges/_baselineQuota are still populated here.
     final noteReindexWrites = <({String eventId, SlotAnnotationWrite write})>[];
+    // Staged-annotation slotKeys the repack above absorbed into its own writes
+    // (it reindexes the DB+staging layout, so their final value already lands at
+    // the SHIFTED key). Phase 2 skips them — writing them at their pre-shift key
+    // is exactly the bug the overlay fixes.
+    final annotationKeysOwnedByReindex = <String>{};
     // Distinct eventIds this batch writes to (creates/updates/deletes). Used
     // after a successful write to refresh the extra-past cache for any touched
     // event that lives OUTSIDE the live window (paginated in via "load more
@@ -2677,20 +2682,44 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         final evForNotes = _windowEventsMap[role.eventId] ??
             _extraPastEventsMap[role.eventId];
         if (evForNotes != null) {
+          // Notes staged in THIS batch are part of the layout the admin sees, so
+          // they must shift with their row instead of being written at their
+          // pre-shift index (the bug: stage a note on row 2, delete row 1 → the
+          // note stayed on row 2 while the repack, blind to it, cleared row 1).
+          // Only the reindex's own range [0, baselineForNotes) is overlaid; an
+          // entry above it is an out-of-quota orphan delete the repack never
+          // touches, so phase 2 still owns it. A legacy staleKey-carrying entry
+          // (a drift re-key — no live producer emits one any more) is likewise
+          // left to phase 2, which is the only writer that can pass staleKey
+          // through.
+          final overlay = <int, SlotAnnotation?>{};
+          for (final e in _stagedSlotAnnotations.entries) {
+            final s = e.value;
+            if (s.eventId != role.eventId || s.roleType != role.roleType) {
+              continue;
+            }
+            if (s.slotIndex >= baselineForNotes || s.staleKey != null) continue;
+            overlay[s.slotIndex] = s.desired;
+            // The repack's writes already converge these slots against the DB;
+            // writing the staged entry too would put it back unshifted.
+            annotationKeysOwnedByReindex.add(e.key);
+          }
           for (final w in computeNoteReindexAfterDeletion(
               evForNotes.slotAnnotations,
               role.roleType,
               baselineForNotes,
-              deletedIndices)) {
-            // Defer to any annotation already staged for this slot (a user edit
-            // or an auto orphan-cleanup) — it's written by the phase-2 loop and
-            // must not be double-written by the reindex.
+              deletedIndices,
+              stagedByIndex: overlay)) {
+            // A staged entry the overlay could NOT absorb (staleKey re-key)
+            // still wins its own slot — phase 2 writes it.
             final parsed = parseSlotAnnotationKey(w.key);
-            if (parsed != null &&
-                _stagedSlotAnnotations.containsKey(
-                    StagedAssignmentChange.slotKeyFor(
-                        role.eventId, parsed.roleKey, parsed.slotIndex))) {
-              continue;
+            if (parsed != null) {
+              final slotKey = StagedAssignmentChange.slotKeyFor(
+                  role.eventId, parsed.roleKey, parsed.slotIndex);
+              if (_stagedSlotAnnotations.containsKey(slotKey) &&
+                  !annotationKeysOwnedByReindex.contains(slotKey)) {
+                continue;
+              }
             }
             noteReindexWrites.add((eventId: role.eventId, write: w));
           }
@@ -2876,7 +2905,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Save while the assignment write stands.
       final annotationsWritten =
           _stagedSlotAnnotations.length; // capture before clear
-      for (final s in _stagedSlotAnnotations.values.toList()) {
+      for (final e in _stagedSlotAnnotations.entries.toList()) {
+        // Absorbed by the row-deletion repack below, which writes this note's
+        // final value at its SHIFTED key — writing it here too would restore it
+        // at the pre-shift index the admin just deleted out from under it.
+        if (annotationKeysOwnedByReindex.contains(e.key)) continue;
+        final s = e.value;
         await _eventRepository.updateSlotAnnotation(
             s.eventId, slotAnnotationKey(s.roleType, s.slotIndex), s.desired,
             staleKey: s.staleKey);

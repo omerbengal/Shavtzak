@@ -129,19 +129,40 @@ List<SlotAnnotationWrite> computeSlotAnnotationNormalization(
 /// fell out of range (correct for "remove the LAST row" — an event-form
 /// decrement — but it deletes the highest note regardless of WHICH row you
 /// removed, and never shifts).
+///
+/// [stagedByIndex] overlays UNSAVED note edits staged in the same batch as the
+/// deletion, by slot index (a present key wins over the stored note; a null
+/// value means "this slot has no note"). The layout that shifts is the one the
+/// admin SEES — DB overlaid with staging — so a note typed onto row 2 in the
+/// same batch that deletes row 1 lands on row 1, and a note typed onto the row
+/// being deleted dies with it. The returned writes are still diffed against the
+/// STORED map, so they alone converge the DB: the caller must NOT also write
+/// the overlaid staged entries at their pre-shift keys.
 List<SlotAnnotationWrite> computeNoteReindexAfterDeletion(
   Map<String, SlotAnnotation> eventSlotAnnotations,
   String roleKey,
   int oldQuota,
-  Set<int> deletedIndices,
-) {
+  Set<int> deletedIndices, {
+  Map<int, SlotAnnotation?> stagedByIndex = const {},
+}) {
   if (deletedIndices.isEmpty || oldQuota <= 0) return const [];
 
-  final byIndex = <int, SlotAnnotation>{};
+  // What the DB holds today — the diff base for the writes below.
+  final storedByIndex = <int, SlotAnnotation>{};
   eventSlotAnnotations.forEach((k, v) {
     final p = parseSlotAnnotationKey(k);
     if (p != null && p.roleKey == roleKey && !v.isEmpty) {
-      byIndex[p.slotIndex] = v;
+      storedByIndex[p.slotIndex] = v;
+    }
+  });
+
+  // What the admin sees pre-deletion — the layout that actually shifts.
+  final effectiveByIndex = Map<int, SlotAnnotation>.from(storedByIndex);
+  stagedByIndex.forEach((idx, value) {
+    if (value == null || value.isEmpty) {
+      effectiveByIndex.remove(idx);
+    } else {
+      effectiveByIndex[idx] = value;
     }
   });
 
@@ -157,9 +178,10 @@ List<SlotAnnotationWrite> computeNoteReindexAfterDeletion(
   // Touch every old in-range index: [0, surviving.length) take the shifted note;
   // the rest (freed by the deletion) are cleared.
   for (var idx = 0; idx < oldQuota; idx++) {
-    final oldNote = byIndex[idx];
-    final newNote = idx < surviving.length ? byIndex[surviving[idx]] : null;
-    if (oldNote == newNote) continue; // unchanged at this index
+    final dbNote = storedByIndex[idx];
+    final newNote =
+        idx < surviving.length ? effectiveByIndex[surviving[idx]] : null;
+    if (dbNote == newNote) continue; // DB already holds the final value
     writes.add(
         (key: slotAnnotationKey(roleKey, idx), value: newNote, staleKey: null));
   }
