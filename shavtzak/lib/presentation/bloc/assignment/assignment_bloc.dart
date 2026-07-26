@@ -1030,28 +1030,42 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     int renderCount,
     List<Assignment> roleAssignments,
   ) {
-    final result = <AssignmentSlot>[];
-    // Sourced from the DB, NOT from _stagedSlotAnnotations: an orphaned note
-    // exists because the EVENT stores it out of range, so its row must outlive
-    // any staged entry. Building it from staging was the "reduce a quota, then
-    // Discard All, and the row vanishes while the note stays in the DB" bug —
-    // discarding deleted the only thing drawing the row. A staged delete now
-    // only styles this row (pending removal), it no longer creates it.
+    // Every out-of-range slot this role has a note on — STORED or merely
+    // STAGED. Both sources matter, and for different bugs:
+    // - stored: an orphaned note must outlive any staged entry, or discarding
+    //   the staged removal deletes the only thing drawing its row while the
+    //   note stays in the DB (invisible, and back if the quota is raised).
+    // - staged: a note typed onto a row that a LATER quota reduction removed
+    //   has nothing stored behind it, and used to vanish while staying staged
+    //   — a dirty screen with nothing to show for it.
+    final indices = <int>{};
     event.slotAnnotations.forEach((key, stored) {
       final parsed = parseSlotAnnotationKey(key);
-      if (parsed == null || parsed.roleKey != role.key) return;
-      if (stored.isEmpty) return;
-      final slotIndex = parsed.slotIndex;
-      if (slotIndex < renderCount) return; // already has a normal row
-      if (roleAssignments.any((a) => a.slotIndex == slotIndex)) {
-        return; // a real assignment already renders this slotIndex
+      if (parsed != null && parsed.roleKey == role.key && !stored.isEmpty) {
+        indices.add(parsed.slotIndex);
       }
+    });
+    for (final s in _stagedSlotAnnotations.values) {
+      if (s.eventId == event.id && s.roleType == role.key) {
+        indices.add(s.slotIndex);
+      }
+    }
+
+    final result = <AssignmentSlot>[];
+    for (final slotIndex in indices.toList()..sort()) {
+      if (slotIndex < renderCount) continue; // already has a normal row
+      if (roleAssignments.any((a) => a.slotIndex == slotIndex)) {
+        continue; // a real assignment already renders this slotIndex
+      }
+      final stored =
+          event.slotAnnotations[slotAnnotationKey(role.key, slotIndex)];
+      final staged = _stagedSlotAnnotations[
+          StagedAssignmentChange.slotKeyFor(event.id, role.key, slotIndex)];
       // A staged EDIT shows its new text; a staged DELETE keeps showing the
       // note it is about to remove (that IS the pending-removal row); with
       // nothing staged the stored note shows as a plain out-of-quota row.
-      final staged = _stagedSlotAnnotations[
-          StagedAssignmentChange.slotKeyFor(event.id, role.key, slotIndex)];
       final shown = staged == null ? stored : (staged.desired ?? stored);
+      if (shown == null || shown.isEmpty) continue; // nothing to show
       result.add(AssignmentSlot(
         event: event,
         role: role,
@@ -1065,7 +1079,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           sourceKey: slotAnnotationKey(role.key, slotIndex),
         ),
       ));
-    });
+    }
     return result;
   }
 
@@ -2932,8 +2946,27 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // at the pre-shift index the admin just deleted out from under it.
         if (annotationKeysOwnedByReindex.contains(e.key)) continue;
         final s = e.value;
-        await _eventRepository.updateSlotAnnotation(
-            s.eventId, slotAnnotationKey(s.roleType, s.slotIndex), s.desired,
+        final key = slotAnnotationKey(s.roleType, s.slotIndex);
+        var desired = s.desired;
+        // The note's row may have been removed AFTER it was staged (a quota
+        // reduction from the event form, which commits immediately). Writing
+        // the note back onto a slot that no longer exists would manufacture the
+        // very orphan its out-of-quota row is warning about — a note belongs to
+        // its slot and dies with it. Clear whatever is stored there instead, or
+        // write nothing at all when there is nothing stored to clear. The bound
+        // is the grid's own renderCount, so "has a row" means exactly what the
+        // admin sees.
+        if (desired != null &&
+            s.slotIndex >=
+                _liveQuota(s.eventId, s.roleType) +
+                    _stagedAddCount(s.eventId, s.roleType)) {
+          final ev =
+              _windowEventsMap[s.eventId] ?? _extraPastEventsMap[s.eventId];
+          final stored = ev?.slotAnnotations[key];
+          if (stored == null || stored.isEmpty) continue;
+          desired = null;
+        }
+        await _eventRepository.updateSlotAnnotation(s.eventId, key, desired,
             staleKey: s.staleKey);
       }
       _stagedSlotAnnotations.clear();

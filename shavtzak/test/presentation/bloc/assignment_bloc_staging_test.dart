@@ -701,6 +701,105 @@ void main() {
           staleKey: anyNamed('staleKey')));
     });
 
+    // ---- A STAGED note whose row is removed out from under it -----------
+    //
+    // Type a note on the last row, then reduce the quota so that row is gone.
+    // The row used to VANISH while the edit stayed staged (a dirty screen with
+    // nothing to show for it) and Save then wrote the note at the dead index —
+    // manufacturing the very orphan the out-of-quota row exists to surface.
+    // The note must keep its row (struck through, since it is on its way out)
+    // and Save must never write it back onto a slot that no longer exists.
+    test(
+        'a note staged on a row a LATER quota reduction removes keeps its row '
+        '(pending removal) and is not written on Save', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      // Quota 3, all empty, NO stored notes — the note about to be staged has
+      // nothing behind it in the DB.
+      eventStream
+          .add([futureEvent('e1', roleRequirements: const {'medic': 3})]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
+      await pumpEventQueue();
+
+      final row2 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 2 && !s.isOffQuota);
+      bloc.add(StageSlotAnnotation(slot: row2, note: 'typed', labelId: null));
+      await pumpEventQueue();
+      expect(bloc.stagedCount, 1);
+
+      // Reduce 3 -> 2 from the event form: row #3 (index 2) is gone.
+      eventStream
+          .add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+      await pumpEventQueue();
+      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 2}));
+      await pumpEventQueue();
+
+      // The row is STILL THERE, out of quota, showing the staged text — and
+      // staged, so the screen stripes it as a pending removal.
+      final after = bloc.state as AssignmentSlotsLoaded;
+      final orphan = after.slots
+          .firstWhere((s) => s.role.key == 'medic' && s.isOffQuota);
+      expect(orphan.slotIndex, 2);
+      expect(orphan.gapAnnotation!.annotation.note, 'typed');
+      expect(after.stagedSlotKeys, contains('e1_medic_2'));
+
+      // Save writes NOTHING for it: the note died with its row, and there was
+      // no stored note to clear.
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
+          staleKey: anyNamed('staleKey')));
+      expect(bloc.stagedCount, 0);
+    });
+
+    test(
+        'the same, over an EXISTING stored note: Save CLEARS it rather than '
+        'rewriting the staged text at the dead index', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      final withNote = futureEvent('e1', roleRequirements: const {'medic': 3})
+          .copyWith(
+              slotAnnotations: {'medic#2': const SlotAnnotation(note: 'old')});
+      eventStream.add([withNote]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
+      await pumpEventQueue();
+
+      final row2 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 2 && !s.isOffQuota);
+      bloc.add(StageSlotAnnotation(slot: row2, note: 'edited', labelId: null));
+      await pumpEventQueue();
+
+      eventStream.add([
+        futureEvent('e1', roleRequirements: const {'medic': 2}).copyWith(
+            slotAnnotations: {'medic#2': const SlotAnnotation(note: 'old')}),
+      ]);
+      await pumpEventQueue();
+      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 2}));
+      await pumpEventQueue();
+
+      final orphan = (bloc.state as AssignmentSlotsLoaded)
+          .slots
+          .firstWhere((s) => s.role.key == 'medic' && s.isOffQuota);
+      expect(orphan.gapAnnotation!.annotation.note, 'edited');
+
+      bloc.add(const SaveStagedChanges());
+      await pumpEventQueue();
+      // The stored note is CLEARED — never replaced by the staged text on a
+      // slot that no longer exists.
+      verify(eventRepo.updateSlotAnnotation('e1', 'medic#2', null,
+              staleKey: null))
+          .called(1);
+      verifyNever(eventRepo.updateSlotAnnotation(
+          'e1', 'medic#2', const SlotAnnotation(note: 'edited'),
+          staleKey: anyNamed('staleKey')));
+    });
+
     test(
         'swiping a plain out-of-quota note row stages its removal, and Save '
         'writes it', () async {
