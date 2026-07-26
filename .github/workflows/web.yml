@@ -15,7 +15,12 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.1'
+          # Kept in step with the SDK the app is actually developed and
+          # smoke-tested on. When these drift, a local `flutter build web`
+          # stops being a valid check on the release build: 3.27.1 CI vs 3.41.9
+          # local turned DropdownButtonFormField's `initialValue` (a post-3.33
+          # rename) into a red main. See memory / commit 21c9367.
+          flutter-version: '3.41.9'
           channel: 'stable'
       
       - name: Install dependencies

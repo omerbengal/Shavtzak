@@ -10,6 +10,11 @@
 .worktrees/
 
 # Flutter/Dart/Pub
+# pubspec.lock IS tracked: this is an app, not a library, so the lockfile is
+# what makes a CI build reproducible and identical to what was tested locally.
+# The blanket `*.lock` above is template boilerplate (no other .lock file
+# exists in this repo), so it needs this negation to not swallow it.
+!shavtzak/pubspec.lock
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
