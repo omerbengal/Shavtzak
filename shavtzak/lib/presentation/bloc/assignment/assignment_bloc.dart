@@ -3757,6 +3757,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     if (roleKeys.isEmpty) return;
 
     final ops = <SlotAnnotationWrite>[];
+    // Auto-staged cleanups this commit supersedes — dropped below so they can't
+    // linger as a phantom pending row (and be thrown away by Discard All).
+    final supersededAutoKeys = <String>[];
     for (final roleKey in roleKeys) {
       final quota = event.roleRequirements[roleKey] ?? 0;
       final filled = assignments
@@ -3768,7 +3771,20 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         if (parsed == null) continue;
         final slotKey = StagedAssignmentChange.slotKeyFor(
             event.id, parsed.roleKey, parsed.slotIndex);
-        if (_stagedSlotAnnotations.containsKey(slotKey)) continue; // user edit
+        final staged = _stagedSlotAnnotations[slotKey];
+        if (staged != null) {
+          // A USER edit owns its slot — it belongs to the user's own Save.
+          if (!staged.auto) continue;
+          // Our OWN auto-staged cleanup for this slot. In production it is
+          // ALWAYS here: Firestore's listener fires optimistically on the local
+          // write, so the stream delivers the reduced quota (and
+          // _stageSlotAnnotationCleanup stages the orphan) before updateEvent's
+          // await resolves and this handler runs. Backing off on presence alone
+          // was the bug — the cleanup stayed staged, Discard All threw it away,
+          // and the orphaned note was stranded in the DB with no row to show
+          // it. Commit it here instead and drop the staged copy.
+          supersededAutoKeys.add(slotKey);
+        }
         ops.add(op);
       }
     }
@@ -3792,6 +3808,13 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     } else if (_extraPastEventsMap.containsKey(event.id)) {
       _extraPastEventsMap[event.id] = cleaned;
     }
+    // Same reason as the cached-event update above: drop the superseded staged
+    // entries SYNCHRONOUSLY, before any await, so an interleaving rebuild can't
+    // render them as pending-removal rows for a note this method already owns.
+    for (final k in supersededAutoKeys) {
+      _stagedSlotAnnotations.remove(k);
+    }
+    if (supersededAutoKeys.isNotEmpty) await _persistStaged();
 
     // Commit each cleanup write. A failure leaves the DB orphan in place; the
     // next quota change or reload re-detects and retries — no staged residue.

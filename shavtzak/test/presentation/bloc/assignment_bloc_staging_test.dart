@@ -637,6 +637,103 @@ void main() {
       final after = bloc.state as AssignmentSlotsLoaded;
       expect(after.slots.where((s) => s.role.key == 'medic'), isEmpty);
     });
+
+    // ---- The REAL production ordering -------------------------------------
+    //
+    // The two tests above dispatch RebaselineQuotasForEvent with no event-stream
+    // emission in between — which never happens in production. Firestore's
+    // listener fires OPTIMISTICALLY on the local write, so the reduced quota
+    // arrives on the stream BEFORE updateEvent's await resolves and before
+    // RebaselineQuotasForEvent is dispatched. The stream rebuild's backstop
+    // (_stageSlotAnnotationCleanup) therefore STAGES the orphan delete first,
+    // and the commit path then found the slot occupied and backed off —
+    // mistaking its OWN auto-staged entry for a user edit. Net effect: the
+    // cleanup stayed staged, Discard All threw it away, the row vanished and
+    // the note was stranded in the DB forever. Exactly the bug
+    // _commitSlotAnnotationCleanupForEvent exists to prevent.
+    test(
+        'the stream re-emitting the reduced quota FIRST (Firestore optimistic '
+        'emit) still commits the orphan cleanup — an auto-staged entry is '
+        'superseded, not treated as a user edit', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      // Quota 2, both slots empty, a note on the LAST row (medic#1).
+      eventStream.add([
+        futureEvent('e1', roleRequirements: const {'medic': 2}).copyWith(
+          slotAnnotations: {'medic#1': const SlotAnnotation(note: 'A')},
+        ),
+      ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
+      await pumpEventQueue();
+      expect(bloc.stagedCount, 0);
+
+      // 1) Firestore's optimistic emit lands the reduced quota on the stream
+      //    first — the backstop stages the orphan delete.
+      eventStream.add([
+        futureEvent('e1', roleRequirements: const {'medic': 1}).copyWith(
+          slotAnnotations: {'medic#1': const SlotAnnotation(note: 'A')},
+        ),
+      ]);
+      await pumpEventQueue();
+      expect(bloc.stagedCount, 1, reason: 'backstop staged the orphan delete');
+
+      // 2) updateEvent resolves and the modal dispatches the rebaseline.
+      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 1}));
+      await pumpEventQueue();
+
+      // The cleanup is COMMITTED and nothing is left staged, so a later
+      // Discard All has nothing to throw away and cannot strand the note.
+      verify(eventRepo.updateSlotAnnotation('e1', 'medic#1', null,
+              staleKey: null))
+          .called(1);
+      expect(bloc.stagedCount, 0);
+      expect(bloc.hasStagedChanges, isFalse);
+      expect(await cachedChanges(), isEmpty);
+
+      // One in-quota row, no pending-removal off-quota row.
+      final after = bloc.state as AssignmentSlotsLoaded;
+      final medicSlots =
+          after.slots.where((s) => s.role.key == 'medic').toList();
+      expect(medicSlots, hasLength(1));
+      expect(medicSlots.single.slotIndex, 0);
+      expect(medicSlots.single.isOffQuota, isFalse);
+    });
+
+    test(
+        'a USER edit on the orphaned slot is still left alone by the commit '
+        'path (only auto-staged cleanups are superseded)', () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      eventStream.add([
+        futureEvent('e1', roleRequirements: const {'medic': 2}).copyWith(
+          slotAnnotations: {'medic#1': const SlotAnnotation(note: 'A')},
+        ),
+      ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
+      await pumpEventQueue();
+
+      // The admin retypes the note on row 1 — a USER edit (auto: false).
+      final row1 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+          (s) => s.role.key == 'medic' && s.slotIndex == 1 && !s.isOffQuota);
+      bloc.add(StageSlotAnnotation(slot: row1, note: 'A-edited', labelId: null));
+      await pumpEventQueue();
+      expect(bloc.stagedCount, 1);
+
+      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 1}));
+      await pumpEventQueue();
+
+      // The user's own staged edit owns that slot — never committed away
+      // behind their back; it survives for their own Save/Discard.
+      verifyNever(eventRepo.updateSlotAnnotation('e1', 'medic#1', null,
+          staleKey: anyNamed('staleKey')));
+      expect(bloc.stagedCount, 1);
+    });
   });
 
   // ---- Swipe-delete a row repacks the notes to follow their rows ----------
