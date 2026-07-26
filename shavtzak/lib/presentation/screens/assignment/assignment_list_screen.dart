@@ -2229,7 +2229,12 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String?>(
-                  initialValue: selectedLabelId,
+                  // `value`, NOT `initialValue`: the rename only exists from
+                  // Flutter 3.33 and CI builds the web release on the pinned
+                  // 3.27.1 (see .github/workflows/web.yml), where it is a hard
+                  // compile error. Deprecated on newer local SDKs — an info,
+                  // and the form the rest of this repo uses.
+                  value: selectedLabelId,
                   isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'לייבל',
