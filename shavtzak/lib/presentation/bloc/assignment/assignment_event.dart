@@ -448,6 +448,28 @@ class RebaselineQuotasForEvent extends AssignmentEvent {
   List<Object?> get props => [eventId, newRoleRequirements];
 }
 
+/// The event form COMMITTED a targeted row removal for (eventId, roleType):
+/// the rows at [deletedIndices] are gone from the DB and every survivor has
+/// shifted up by the number of deleted rows below it (Model B).
+///
+/// Staging has to follow: an entry on a deleted row is dropped (its row no
+/// longer exists — nothing to save it onto) and the rest are re-keyed to their
+/// new slot indices, so a pending edit keeps pointing at the row the admin
+/// made it on. Dispatched by EventFormModal._resolveQuotaReductions, which
+/// already performed the DB half.
+class ApplyCommittedRowRemoval extends AssignmentEvent {
+  final String eventId;
+  final String roleType;
+  final Set<int> deletedIndices;
+  const ApplyCommittedRowRemoval({
+    required this.eventId,
+    required this.roleType,
+    required this.deletedIndices,
+  });
+  @override
+  List<Object?> get props => [eventId, roleType, deletedIndices];
+}
+
 /// Discard every staged change, reverting the whole grid to its DB baseline.
 class DiscardAllStagedChanges extends AssignmentEvent {
   const DiscardAllStagedChanges();

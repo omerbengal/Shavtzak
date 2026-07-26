@@ -536,27 +536,23 @@ void main() {
       expect(bloc.hasStagedChanges, isFalse);
     });
 
-    // ---- Issue 1 regression: the quota-reduction TRIGGER fix -------------
+    // ---- The quota reduction no longer proposes anything here ------------
     //
-    // Before this fix, an event-form quota reduction dispatched
-    // RebaselineQuotasForEvent, whose handler only ever fired
-    // RebuildAssignmentSlots (the OTHER rebuild handler) — which never called
-    // the cleanup at all. The cleanup only ran once the Firestore event stream
-    // happened to re-emit the reduced quota later, so an orphaned note could
-    // sit un-flagged right after a quota reduction. This test drives the exact
-    // same event (RebaselineQuotasForEvent) WITHOUT any further eventStream
-    // emission, proving the cleanup now fires deterministically from that
-    // handler itself.
+    // A reduction removes ROWS, and which rows it removes is now decided (and
+    // applied, notes included) by the event form itself — see
+    // EventFormModal._resolveQuotaReductions and quota_reduction_planner_test.
+    // So the bloc never auto-stages a "pending removal" any more. The whole
+    // pending-removal model existed to let the admin Save/Discard a cleanup the
+    // reduction had already forced on them, and it never worked: Discard threw
+    // the cleanup away and stranded the note in the DB, and re-proposing on the
+    // next stream emit made Discard meaningless.
     test(
-        'Issue 1 fix: an event-form quota reduction (RebaselineQuotasForEvent) '
-        'proposes the orphan removal immediately, without waiting for the '
-        'event stream to re-deliver the reduced quota', () async {
+        'an event-form quota reduction (RebaselineQuotasForEvent) stages '
+        'NOTHING and writes nothing — the form already resolved it', () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
       bloc.add(const LoadAssignmentSlots());
       await pumpEventQueue();
-      // Quota 2: slot 0 filled by 'm1', a note stored on slot 1 (in-range,
-      // empty) — a valid annotation at load time.
       eventStream.add([
         futureEvent('e1', roleRequirements: const {'medic': 2}).copyWith(
           slotAnnotations: {
@@ -567,138 +563,181 @@ void main() {
       roleStream.add([medicRole()]);
       assignmentStream.add([assignment('a1', 'e1', 'm1', slotIndex: 0)]);
       await pumpEventQueue();
-
-      // At quota 2 the note is valid: nothing staged, no write.
       expect(bloc.stagedCount, 0);
-      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
-          staleKey: anyNamed('staleKey')));
 
-      // Reduce 2 -> 1 via the event-form modal (committed by event.update).
-      // Slot 1 (holding the note) no longer exists and slot 0 is filled, so the
-      // note is a TRUE ORPHAN. NO further eventStream emission — proving
-      // _onRebaselineQuotasForEvent itself runs the cleanup.
       bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 1}));
       await pumpEventQueue();
 
-      // PROPOSED, not written: the admin gets a pending-removal row to Save or
-      // Discard. The quota drop is committed; the note's fate is theirs.
+      expect(bloc.stagedCount, 0);
+      expect(bloc.hasStagedChanges, isFalse);
       verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
           staleKey: anyNamed('staleKey')));
-      expect(bloc.stagedCount, 1);
-      final after = bloc.state as AssignmentSlotsLoaded;
-      expect(after.stagedSlotKeys, contains('e1_medic_1'));
-      // One in-quota row (slot 0) plus the pending-removal note row (slot 1).
-      final medicSlots =
-          after.slots.where((s) => s.role.key == 'medic').toList();
-      expect(medicSlots, hasLength(2));
-      expect(medicSlots.firstWhere((s) => s.isOffQuota).slotIndex, 1);
     });
 
-    // ---- Quota reduced ALL THE WAY TO 0 -----------------------------------
-    test(
-        'a role reduced ALL THE WAY TO 0 (not just lowered) still gets its '
-        'pending-removal row', () async {
+    test('the same when the role is zeroed out entirely', () async {
       final bloc = buildBloc();
       addTearDown(() async => bloc.close());
       bloc.add(const LoadAssignmentSlots());
       await pumpEventQueue();
-      // Quota 1, a note already on its own (in-range, empty) gap.
       eventStream.add([
         futureEvent('e1', roleRequirements: const {'medic': 1}).copyWith(
-          slotAnnotations: {
-            'medic#0': const SlotAnnotation(note: 'z'),
-          },
-        ),
-      ]);
-      roleStream.add([medicRole()]);
-      assignmentStream.add(const <Assignment>[]); // slot 0 stays empty
-      await pumpEventQueue();
-
-      expect(bloc.stagedCount, 0);
-
-      // Remove the role from the event entirely (quota 1 -> 0). Every slot is
-      // gone, so the note is orphaned — it must STILL render (the zero-quota
-      // gate must not swallow it) as a pending-removal row.
-      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 0}));
-      await pumpEventQueue();
-
-      expect(bloc.stagedCount, 1);
-      final after = bloc.state as AssignmentSlotsLoaded;
-      final orphan =
-          after.slots.firstWhere((s) => s.role.key == 'medic' && s.isOffQuota);
-      expect(orphan.slotIndex, 0);
-      expect(orphan.gapAnnotation!.annotation.note, 'z');
-
-      bloc.add(const SaveStagedChanges());
-      await pumpEventQueue();
-      verify(eventRepo.updateSlotAnnotation('e1', 'medic#0', null,
-              staleKey: null))
-          .called(1);
-      expect(bloc.stagedCount, 0);
-    });
-
-    // ---- The REAL production ordering -------------------------------------
-    //
-    // Firestore's listener fires OPTIMISTICALLY on the local write, so the
-    // reduced quota reaches the stream BEFORE updateEvent's await resolves and
-    // before RebaselineQuotasForEvent is dispatched. Both paths therefore
-    // observe the same drop; the proposal must be staged exactly ONCE.
-    test(
-        'the stream re-emitting the reduced quota FIRST (Firestore optimistic '
-        'emit) proposes the removal exactly once', () async {
-      final bloc = buildBloc();
-      addTearDown(() async => bloc.close());
-      bloc.add(const LoadAssignmentSlots());
-      await pumpEventQueue();
-      // Quota 2, both slots empty, a note on the LAST row (medic#1).
-      eventStream.add([
-        futureEvent('e1', roleRequirements: const {'medic': 2}).copyWith(
-          slotAnnotations: {'medic#1': const SlotAnnotation(note: 'A')},
+          slotAnnotations: {'medic#0': const SlotAnnotation(note: 'z')},
         ),
       ]);
       roleStream.add([medicRole()]);
       assignmentStream.add(const <Assignment>[]);
       await pumpEventQueue();
-      expect(bloc.stagedCount, 0);
 
-      // 1) Firestore's optimistic emit lands the reduced quota first.
+      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 0}));
+      await pumpEventQueue();
+
+      expect(bloc.stagedCount, 0);
+      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
+          staleKey: anyNamed('staleKey')));
+    });
+
+    // ---- ApplyCommittedRowRemoval: staging follows the rows ---------------
+    //
+    // The event form has already deleted rows in the DB and shifted the
+    // survivors. Staged edits have to move with them, or a pending edit ends up
+    // pointing at somebody else's row.
+    group('ApplyCommittedRowRemoval', () {
+      test('drops a staged note on a deleted row and shifts the ones above',
+          () async {
+        final bloc = buildBloc();
+        addTearDown(() async => bloc.close());
+        bloc.add(const LoadAssignmentSlots());
+        await pumpEventQueue();
+        eventStream
+            .add([futureEvent('e1', roleRequirements: const {'medic': 3})]);
+        roleStream.add([medicRole()]);
+        assignmentStream.add(const <Assignment>[]);
+        await pumpEventQueue();
+
+        final loaded = bloc.state as AssignmentSlotsLoaded;
+        for (final i in [1, 2]) {
+          final row = loaded.slots.firstWhere(
+              (s) => s.role.key == 'medic' && s.slotIndex == i && !s.isOffQuota);
+          bloc.add(StageSlotAnnotation(
+              slot: row, note: 'note$i', labelId: null));
+          await pumpEventQueue();
+        }
+        expect(bloc.stagedCount, 2);
+
+        // The form removed row 1: its note dies, row 2's note shifts to 1.
+        eventStream
+            .add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+        await pumpEventQueue();
+        bloc.add(const ApplyCommittedRowRemoval(
+            eventId: 'e1', roleType: 'medic', deletedIndices: {1}));
+        await pumpEventQueue();
+
+        expect(bloc.stagedCount, 1);
+        final after = bloc.state as AssignmentSlotsLoaded;
+        expect(after.stagedSlotKeys, {'e1_medic_1'});
+        final row1 = after.slots.firstWhere(
+            (s) => s.role.key == 'medic' && s.slotIndex == 1 && !s.isOffQuota);
+        expect(row1.gapAnnotation!.annotation.note, 'note2');
+      });
+
+      test('shifts a staged MEMBER change onto its new row', () async {
+        final bloc = buildBloc();
+        addTearDown(() async => bloc.close());
+        bloc.add(const LoadAssignmentSlots());
+        await pumpEventQueue();
+        eventStream
+            .add([futureEvent('e1', roleRequirements: const {'medic': 3})]);
+        roleStream.add([medicRole()]);
+        assignmentStream.add(const <Assignment>[]);
+        await pumpEventQueue();
+
+        final row2 = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+            (s) => s.role.key == 'medic' && s.slotIndex == 2 && !s.isOffQuota);
+        bloc.add(StageMemberChange(slot: row2, member: member('m1')));
+        await pumpEventQueue();
+        expect((bloc.state as AssignmentSlotsLoaded).stagedSlotKeys,
+            contains('e1_medic_2'));
+
+        eventStream
+            .add([futureEvent('e1', roleRequirements: const {'medic': 2})]);
+        await pumpEventQueue();
+        bloc.add(const ApplyCommittedRowRemoval(
+            eventId: 'e1', roleType: 'medic', deletedIndices: {0}));
+        await pumpEventQueue();
+
+        // The fill followed its row from 2 down to 1 — it did NOT stay on a
+        // slot index that now belongs to a different row.
+        final after = bloc.state as AssignmentSlotsLoaded;
+        expect(after.stagedSlotKeys, {'e1_medic_1'});
+        final row1 = after.slots.firstWhere(
+            (s) => s.role.key == 'medic' && s.slotIndex == 1 && !s.isOffQuota);
+        expect(row1.currentAssignment!.teamMemberId, 'm1');
+      });
+
+      test('leaves other roles and other events alone', () async {
+        final bloc = buildBloc();
+        addTearDown(() async => bloc.close());
+        bloc.add(const LoadAssignmentSlots());
+        await pumpEventQueue();
+        eventStream.add([
+          futureEvent('e1', roleRequirements: const {'medic': 2, 'guard': 2})
+        ]);
+        roleStream.add([
+          medicRole(),
+          Role(
+              id: 'role-guard',
+              key: 'guard',
+              hebrewName: 'מאבטח',
+              sortOrder: 1,
+              createdAt: now,
+              updatedAt: now),
+        ]);
+        assignmentStream.add(const <Assignment>[]);
+        await pumpEventQueue();
+
+        final guardRow = (bloc.state as AssignmentSlotsLoaded).slots.firstWhere(
+            (s) => s.role.key == 'guard' && s.slotIndex == 1 && !s.isOffQuota);
+        bloc.add(
+            StageSlotAnnotation(slot: guardRow, note: 'g', labelId: null));
+        await pumpEventQueue();
+
+        bloc.add(const ApplyCommittedRowRemoval(
+            eventId: 'e1', roleType: 'medic', deletedIndices: {0}));
+        await pumpEventQueue();
+
+        expect((bloc.state as AssignmentSlotsLoaded).stagedSlotKeys,
+            {'e1_guard_1'});
+      });
+    });
+
+    // ---- The safety net: orphans that arrive some OTHER way ---------------
+    test(
+        'a note orphaned by something other than this admin still surfaces as '
+        'a plain out-of-quota row (never auto-staged, never auto-deleted)',
+        () async {
+      final bloc = buildBloc();
+      addTearDown(() async => bloc.close());
+      bloc.add(const LoadAssignmentSlots());
+      await pumpEventQueue();
+      // Quota 1 with a note stored on the (non-existent) slot 1 — pre-existing
+      // data, or a co-admin's quota change arriving over the stream.
       eventStream.add([
         futureEvent('e1', roleRequirements: const {'medic': 1}).copyWith(
-          slotAnnotations: {'medic#1': const SlotAnnotation(note: 'A')},
+          slotAnnotations: {'medic#1': const SlotAnnotation(note: 'orphan')},
         ),
       ]);
+      roleStream.add([medicRole()]);
+      assignmentStream.add(const <Assignment>[]);
       await pumpEventQueue();
-      expect(bloc.stagedCount, 1);
 
-      // 2) updateEvent resolves and the modal dispatches the rebaseline. The
-      //    drop is already accounted for, so this must not double-propose.
-      bloc.add(const RebaselineQuotasForEvent('e1', {'medic': 1}));
-      await pumpEventQueue();
-      expect(bloc.stagedCount, 1);
-      verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
-          staleKey: anyNamed('staleKey')));
-
-      // 3) Discard All keeps the note AND its row — and no later stream emit
-      //    re-proposes the removal.
-      bloc.add(const DiscardAllStagedChanges());
-      await pumpEventQueue();
-      expect(bloc.hasStagedChanges, isFalse);
-      expect(await cachedChanges(), isEmpty);
-      var kept = (bloc.state as AssignmentSlotsLoaded)
-          .slots
-          .firstWhere((s) => s.role.key == 'medic' && s.isOffQuota);
-      expect(kept.slotIndex, 1);
-      expect(kept.gapAnnotation!.annotation.note, 'A');
-
-      teamStream.add([member('m1')]);
-      await pumpEventQueue();
       expect(bloc.stagedCount, 0);
-      kept = (bloc.state as AssignmentSlotsLoaded)
-          .slots
-          .firstWhere((s) => s.role.key == 'medic' && s.isOffQuota);
-      expect(kept.gapAnnotation!.annotation.note, 'A');
       verifyNever(eventRepo.updateSlotAnnotation(any, any, any,
           staleKey: anyNamed('staleKey')));
+      final orphan = (bloc.state as AssignmentSlotsLoaded)
+          .slots
+          .firstWhere((s) => s.role.key == 'medic' && s.isOffQuota);
+      expect(orphan.slotIndex, 1);
+      expect(orphan.gapAnnotation!.annotation.note, 'orphan');
     });
 
     // ---- A STAGED note whose row is removed out from under it -----------
