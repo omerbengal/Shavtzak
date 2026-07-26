@@ -13,6 +13,7 @@ import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
+import '../../domain/entities/slot_annotation.dart';
 import '../../domain/entities/team_member.dart';
 import 'database_interface.dart';
 
@@ -249,6 +250,21 @@ class LoggingDatabase implements DatabaseInterface {
         ctx: {'collection': 'events', 'id': event.id},
         countOf: (_) => null,
         action: () => _inner.updateEvent(event),
+      );
+
+  @override
+  Future<void> updateEventSlotAnnotation(
+    String eventId,
+    String key,
+    SlotAnnotation? value, {
+    String? staleKey,
+  }) =>
+      _runFuture(
+        op: 'updateEventSlotAnnotation',
+        ctx: {'collection': 'events', 'id': eventId, 'key': key},
+        countOf: (_) => null,
+        action: () => _inner.updateEventSlotAnnotation(eventId, key, value,
+            staleKey: staleKey),
       );
 
   @override

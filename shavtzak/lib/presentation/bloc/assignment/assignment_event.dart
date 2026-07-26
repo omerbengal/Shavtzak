@@ -388,6 +388,17 @@ class StageNotesChange extends AssignmentEvent {
       [slot, notes, semanticLabelId, alternativePhoneNumber];
 }
 
+/// Stage a gap-annotation (note/label) edit on an EMPTY slot — the annotation
+/// parallel of StageNotesChange. Written on Save, not immediately.
+class StageSlotAnnotation extends AssignmentEvent {
+  final AssignmentSlot slot;
+  final String note;
+  final String? labelId;
+  const StageSlotAnnotation({required this.slot, required this.note, required this.labelId});
+  @override
+  List<Object?> get props => [slot, note, labelId];
+}
+
 /// Discard a single staged slot, reverting it to its DB baseline.
 class DiscardStagedSlot extends AssignmentEvent {
   final String slotKey;
@@ -435,6 +446,28 @@ class RebaselineQuotasForEvent extends AssignmentEvent {
   const RebaselineQuotasForEvent(this.eventId, this.newRoleRequirements);
   @override
   List<Object?> get props => [eventId, newRoleRequirements];
+}
+
+/// The event form COMMITTED a targeted row removal for (eventId, roleType):
+/// the rows at [deletedIndices] are gone from the DB and every survivor has
+/// shifted up by the number of deleted rows below it (Model B).
+///
+/// Staging has to follow: an entry on a deleted row is dropped (its row no
+/// longer exists — nothing to save it onto) and the rest are re-keyed to their
+/// new slot indices, so a pending edit keeps pointing at the row the admin
+/// made it on. Dispatched by EventFormModal._resolveQuotaReductions, which
+/// already performed the DB half.
+class ApplyCommittedRowRemoval extends AssignmentEvent {
+  final String eventId;
+  final String roleType;
+  final Set<int> deletedIndices;
+  const ApplyCommittedRowRemoval({
+    required this.eventId,
+    required this.roleType,
+    required this.deletedIndices,
+  });
+  @override
+  List<Object?> get props => [eventId, roleType, deletedIndices];
 }
 
 /// Discard every staged change, reverting the whole grid to its DB baseline.

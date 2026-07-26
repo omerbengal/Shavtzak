@@ -10,6 +10,7 @@ import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/event_sorting.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/utils/same_day_assignments.dart';
+import '../../../core/utils/slot_annotations.dart';
 import '../../../data/repositories/assignment_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/team_repository.dart';
@@ -17,11 +18,13 @@ import '../../../data/repositories/role_repository.dart';
 import '../../../domain/entities/assignment.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/role.dart';
+import '../../../domain/entities/slot_annotation.dart';
 import '../../../domain/entities/team_member.dart';
 import 'assignment_event.dart';
 import 'assignment_state.dart';
 import 'models/assignment_conflict.dart';
 import 'models/staged_assignment_change.dart';
+import 'models/staged_slot_annotation.dart';
 import '../../screens/assignment/models/assignment_slot.dart';
 import '../../screens/assignment/models/assignment_slot_annotations.dart';
 import '../calendar_sync/calendar_sync_bloc.dart';
@@ -110,6 +113,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   // renders them with no changes to the merge function itself.
   final Map<String, StagedAssignmentChange> _stagedChanges = {};
 
+  /// Pending gap-annotation edits (note/label on empty slots), keyed by the
+  /// same slotKey as _stagedChanges. Written on Save (see _onSaveStagedChanges
+  /// phase 2); parallel to _stagedChanges, never routed through the assignment
+  /// save partition.
+  final Map<String, StagedSlotAnnotation> _stagedSlotAnnotations = {};
+
   // Baseline DB quota per "eventId_roleType", captured the first time a role
   // gets a staged quota-changing action. Conflict detection ONLY (type-G).
   final Map<String, int> _baselineQuota = {};
@@ -124,16 +133,18 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
 
   final UserCacheService _userCache;
 
-  /// True when there is at least one unsaved staged change.
-  bool get hasStagedChanges => _stagedChanges.isNotEmpty;
+  /// True when there is at least one unsaved staged change (member/notes
+  /// changes OR gap-annotation edits).
+  bool get hasStagedChanges =>
+      _stagedChanges.isNotEmpty || _stagedSlotAnnotations.isNotEmpty;
 
-  /// Number of unsaved staged changes. Unlike reading
-  /// `state.stagedSlotKeys.length`, this is correct regardless of the
-  /// bloc's currently emitted state (e.g. during `AssignmentOperating`
-  /// while a save is in flight, when state is no longer
-  /// `AssignmentSlotsLoaded`) — leave-guards must use this, not a
+  /// Number of unsaved staged changes (member/notes changes PLUS
+  /// gap-annotation edits). Unlike reading `state.stagedSlotKeys.length`,
+  /// this is correct regardless of the bloc's currently emitted state (e.g.
+  /// during `AssignmentOperating` while a save is in flight, when state is
+  /// no longer `AssignmentSlotsLoaded`) — leave-guards must use this, not a
   /// state-type branch, to get an accurate count.
-  int get stagedCount => _stagedChanges.length;
+  int get stagedCount => _stagedChanges.length + _stagedSlotAnnotations.length;
 
   /// The current grid slots for conflict classification: the live
   /// `AssignmentSlotsLoaded.slots` when that is the emitted state, else the
@@ -196,7 +207,9 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     on<ExternalExtraPastMutation>(_onExternalExtraPastMutation);
     on<StageMemberChange>(_onStageMemberChange);
     on<StageNotesChange>(_onStageNotesChange);
+    on<StageSlotAnnotation>(_onStageSlotAnnotation);
     on<StageSlotDeletion>(_onStageSlotDeletion);
+    on<ApplyCommittedRowRemoval>(_onApplyCommittedRowRemoval);
     on<StageManualAdd>(_onStageManualAdd);
     on<RebaselineQuotasForEvent>(_onRebaselineQuotasForEvent);
     on<DiscardStagedSlot>(_onDiscardStagedSlot);
@@ -970,6 +983,96 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return result;
   }
 
+  /// Task 7 (SG7): synthesize a display-only, note-only row for each staged
+  /// slot-annotation DELETE (`desired == null`) for [role] that has fallen
+  /// out of the rendered range — `slotIndex >= renderCount`, so the per-role
+  /// `for (i in [0, renderCount))` loop (just above each call site) never
+  /// builds it a normal row. `_stageSlotAnnotationCleanup` (SG6) stages
+  /// exactly this kind of entry when a quota reduction orphans a note (no
+  /// surviving gap for it to drift onto via `computeSlotAnnotationNormalization`),
+  /// but until now that made the pending removal invisible — nothing rendered
+  /// at that slotIndex to show it on. This is the fix.
+  ///
+  /// Mirrors [_buildOffQuotaSlots]'s shape (`isOffQuota: true`, so it stays
+  /// out of quota/double-assignment/same-day math exactly like a real
+  /// off-quota row) but — unlike a real off-quota ASSIGNMENT row —
+  /// `currentAssignment` stays null; the row exists only to show the
+  /// `baseline` note via `gapAnnotation` so the admin can see and Save/Discard
+  /// it. The screen (`_buildSlotRow`) intercepts `isOffQuota &&
+  /// currentAssignment == null && gapAnnotation != null` BEFORE
+  /// `_buildOffQuotaRow`, which force-unwraps `currentAssignment!` and would
+  /// otherwise crash on this note-only slot.
+  ///
+  /// Two guards beyond the brief's literal `slotIndex >= requiredCount`, both
+  /// defending against rendering the same slotIndex twice:
+  /// - `renderCount` (not `requiredCount`) is the actual cutoff, so a
+  ///   slotIndex a staged manual-add already extended the grid to cover
+  ///   (which DOES get a normal row from the loop above) is never
+  ///   double-rendered here too.
+  /// - [roleAssignments] (this role's real, DB-backed assignments — filled OR
+  ///   already off-quota) is checked too: a dormant carry-back note that goes
+  ///   orphan on a slotIndex a REAL assignment still occupies must not spawn a
+  ///   second row next to the one `_buildOffQuotaSlots` already renders for
+  ///   that assignment.
+  List<AssignmentSlot> _buildOrphanedAnnotationSlots(
+    Event event,
+    Role role,
+    int renderCount,
+    List<Assignment> roleAssignments,
+  ) {
+    // Every out-of-range slot this role has a note on — STORED or merely
+    // STAGED. Both sources matter, and for different bugs:
+    // - stored: an orphaned note must outlive any staged entry, or discarding
+    //   the staged removal deletes the only thing drawing its row while the
+    //   note stays in the DB (invisible, and back if the quota is raised).
+    // - staged: a note typed onto a row that a LATER quota reduction removed
+    //   has nothing stored behind it, and used to vanish while staying staged
+    //   — a dirty screen with nothing to show for it.
+    final indices = <int>{};
+    event.slotAnnotations.forEach((key, stored) {
+      final parsed = parseSlotAnnotationKey(key);
+      if (parsed != null && parsed.roleKey == role.key && !stored.isEmpty) {
+        indices.add(parsed.slotIndex);
+      }
+    });
+    for (final s in _stagedSlotAnnotations.values) {
+      if (s.eventId == event.id && s.roleType == role.key) {
+        indices.add(s.slotIndex);
+      }
+    }
+
+    final result = <AssignmentSlot>[];
+    for (final slotIndex in indices.toList()..sort()) {
+      if (slotIndex < renderCount) continue; // already has a normal row
+      if (roleAssignments.any((a) => a.slotIndex == slotIndex)) {
+        continue; // a real assignment already renders this slotIndex
+      }
+      final stored =
+          event.slotAnnotations[slotAnnotationKey(role.key, slotIndex)];
+      final staged = _stagedSlotAnnotations[
+          StagedAssignmentChange.slotKeyFor(event.id, role.key, slotIndex)];
+      // A staged EDIT shows its new text; a staged DELETE keeps showing the
+      // note it is about to remove (that IS the pending-removal row); with
+      // nothing staged the stored note shows as a plain out-of-quota row.
+      final shown = staged == null ? stored : (staged.desired ?? stored);
+      if (shown == null || shown.isEmpty) continue; // nothing to show
+      result.add(AssignmentSlot(
+        event: event,
+        role: role,
+        slotIndex: slotIndex,
+        currentAssignment: null,
+        availableMembers: const [],
+        alreadyAssignedMembers: const [],
+        isOffQuota: true,
+        gapAnnotation: (
+          annotation: shown,
+          sourceKey: slotAnnotationKey(role.key, slotIndex),
+        ),
+      ));
+    }
+    return result;
+  }
+
   int _compareAssignmentSlots(AssignmentSlot a, AssignmentSlot b) {
     // Past ON → newest→oldest so "load older" reads downward (like /db);
     // Past OFF (default/upcoming view) → oldest→newest, unchanged.
@@ -1289,10 +1392,19 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // honest answer until the stream re-emits — see the note below.
         // hasDoubleAssignment/otherRoles need no such care: they are recomputed
         // wholesale by annotateDoubleAssignments below.
+        //
+        // gapAnnotation must honor its own "null when filled" invariant too:
+        // an optimistic FILL (optimistic != null) clears it, since baseSlot's
+        // gapAnnotation was populated from the (still-empty-in-DB) build and
+        // would otherwise leak through onto a now-filled row. An optimistic
+        // CLEAR-back-to-empty (optimistic == null) instead KEEPS baseSlot's
+        // gapAnnotation (bare `null` param -> copyWith preserves it) so the
+        // re-emptied slot still shows its annotation.
         return baseSlot.copyWith(
           currentAssignment: optimistic,
           clearCurrentAssignment: optimistic == null,
           sameDayOtherEvents: const [],
+          gapAnnotation: optimistic != null ? () => null : null,
         );
       }
     }).toList();
@@ -1397,8 +1509,25 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   Future<void> _upsertStagedMember(
       AssignmentSlot slot, String? memberId) async {
     final key = _slotKey(slot);
-    final base = _stagedChanges[key] ?? _seedStaged(slot);
-    await _commitStaged(key, base.copyWith(desiredMemberId: () => memberId));
+    final existing = _stagedChanges[key];
+    final base = existing ?? _seedStaged(slot);
+    var next = base.copyWith(desiredMemberId: () => memberId);
+    // Carry-over (spec §9): filling a previously-empty, annotated gap seeds the
+    // job's note + label onto the new assignment. Only on the FIRST staging of
+    // this slot (existing == null), when actually filling (memberId != null),
+    // and the slot has no DB occupant.
+    final ann = slot.gapAnnotation?.annotation;
+    if (existing == null &&
+        memberId != null &&
+        slot.currentAssignment == null &&
+        ann != null &&
+        !ann.isEmpty) {
+      next = next.copyWith(
+        desiredNotes: ann.note,
+        desiredSemanticLabelId: () => ann.labelId,
+      );
+    }
+    await _commitStaged(key, next);
   }
 
   /// Stage a notes/label/alt-phone edit (member left unchanged).
@@ -1424,6 +1553,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final payload = jsonEncode({
       'changes': _stagedChanges.values.map((c) => c.toJson()).toList(),
       'baselineQuota': _baselineQuota,
+      'slotAnnotations':
+          _stagedSlotAnnotations.values.map((s) => s.toJson()).toList(),
     });
     await _userCache.savePendingAssignmentChanges(payload);
   }
@@ -1587,6 +1718,42 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return result;
   }
 
+  /// The gap annotation to render for a slot: the STAGED edit if one exists
+  /// (so a pending edit shows immediately), else the reconciled DB value.
+  ResolvedGapAnnotation? _effectiveGapAnnotation(
+      String eventId, String roleKey, int slotIndex, ResolvedGapAnnotation? reconciled) {
+    final key = StagedAssignmentChange.slotKeyFor(eventId, roleKey, slotIndex);
+    final staged = _stagedSlotAnnotations[key];
+    if (staged == null) {
+      // Approach A: a stored note that a LIVE staged edit already owns via its
+      // staleKey must NOT also render as its own gap. Repro: a drifted note is
+      // edited on its drifted display slot (edit keyed there, staleKey = the
+      // stored key), then a quota bump makes that stored key canonical again on
+      // a DIFFERENT slot. Without this, the edit shows on the old slot AND the
+      // original value resurfaces here — a phantom duplicate — and Save would
+      // then delete THIS note via the (now cross-slot) stale key.
+      if (reconciled != null &&
+          _stagedEditClaimsSourceKey(eventId, reconciled.sourceKey)) {
+        return null;
+      }
+      return reconciled;
+    }
+    if (staged.desired == null) return null; // staged delete → show nothing
+    final ownKey = slotAnnotationKey(roleKey, slotIndex);
+    return (annotation: staged.desired!, sourceKey: staged.staleKey ?? ownKey);
+  }
+
+  /// True when some LIVE staged annotation edit for [eventId] already owns the
+  /// stored key [sourceKey] via its `staleKey` (a drifted note it will re-key
+  /// or delete on Save). The staleKey encodes role#index, so a match is
+  /// same-role by construction. See Approach A in [_effectiveGapAnnotation].
+  bool _stagedEditClaimsSourceKey(String eventId, String sourceKey) {
+    for (final s in _stagedSlotAnnotations.values) {
+      if (s.eventId == eventId && s.staleKey == sourceKey) return true;
+    }
+    return false;
+  }
+
   /// Reconcile `_pendingOperations` with the current staged-changes snapshot,
   /// called immediately before each slots-view merge call.
   ///
@@ -1626,6 +1793,171 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     Logger.action('stage:notes', {
       'slot': _slotKey(event.slot),
       'stagedCount': _stagedChanges.length,
+    });
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  Future<void> _onStageSlotAnnotation(
+      StageSlotAnnotation event, Emitter<AssignmentState> emit) async {
+    final slot = event.slot;
+    final key = _slotKey(slot);
+    final note = event.note.trim();
+    final desired = (note.isEmpty && event.labelId == null)
+        ? null
+        : SlotAnnotation(note: note, labelId: event.labelId);
+    final existing = _stagedSlotAnnotations[key];
+    // Baseline + staleKey are captured ONCE, on the first stage of this slot,
+    // from the slot's reconciled DB annotation (slot.gapAnnotation). On a
+    // re-edit (existing != null) they are preserved — never re-read from the
+    // now-overlaid display value (see Task 3). staleKey carries a drifted
+    // source key so Save self-heals the DB key at the same time.
+    final SlotAnnotation? baseline;
+    final String? staleKey;
+    if (existing != null) {
+      baseline = existing.baseline;
+      staleKey = existing.staleKey;
+    } else {
+      final resolved = slot.gapAnnotation;
+      baseline = resolved?.annotation;
+      final ownKey = slotAnnotationKey(slot.role.key, slot.slotIndex);
+      staleKey = (resolved != null && resolved.sourceKey != ownKey)
+          ? resolved.sourceKey
+          : null;
+    }
+    final staged = StagedSlotAnnotation(
+      eventId: slot.event.id, roleType: slot.role.key, slotIndex: slot.slotIndex,
+      desired: desired, baseline: baseline, staleKey: staleKey,
+      // A user's own edit is user-OWNED — even when it overwrites a prior
+      // auto-staged entry (see the "don't clobber a user edit" guard in
+      // _stageSlotAnnotationCleanup) — so editing a re-keyed/orphaned note
+      // takes ownership of it and it will never be auto-retracted.
+      auto: false);
+    // isContentNoop (NOT isNoop): a user who opened the dialog and pressed Save
+    // without changing the note/label staged nothing — drop it — even when the
+    // stored key drifted (staleKey != null). Re-keying a drifted note is the
+    // auto-cleanup's job (it runs on quota changes); it must never surface as a
+    // phantom "dirty" mark the admin gets just by reopening + Saving unchanged.
+    if (staged.isContentNoop) {
+      _stagedSlotAnnotations.remove(key);
+    } else {
+      _stagedSlotAnnotations[key] = staged;
+    }
+    await _persistStaged();
+    Logger.action('stage:slotAnnotation', {'slot': key, 'stagedCount': _stagedSlotAnnotations.length});
+    add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
+  }
+
+  /// Slot indices of (eventId, roleType) that carry an UNSAVED staged note —
+  /// including a staged CLEAR, which [stagedNoteValuesFor] simply has no value
+  /// for. Read by EventFormModal so a quota reduction counts a note the admin
+  /// just typed as a note, instead of seeing a "clean" row and binning it.
+  Set<int> stagedNoteIndicesFor(String eventId, String roleType) => {
+        for (final s in _stagedSlotAnnotations.values)
+          if (s.eventId == eventId && s.roleType == roleType) s.slotIndex,
+      };
+
+  /// The staged note VALUES for (eventId, roleType), by slot index. A staged
+  /// clear is absent here (its slot appears only in [stagedNoteIndicesFor]).
+  Map<int, SlotAnnotation> stagedNoteValuesFor(
+          String eventId, String roleType) =>
+      {
+        for (final s in _stagedSlotAnnotations.values)
+          if (s.eventId == eventId &&
+              s.roleType == roleType &&
+              s.desired != null)
+            s.slotIndex: s.desired!,
+      };
+
+  /// See [ApplyCommittedRowRemoval]: rows are gone from the DB, so staging has
+  /// to follow them — drop what sat on a deleted row, shift the rest.
+  Future<void> _onApplyCommittedRowRemoval(
+      ApplyCommittedRowRemoval event, Emitter<AssignmentState> emit) async {
+    final gone = event.deletedIndices;
+    if (gone.isEmpty) return;
+    int shifted(int index) => index - gone.where((d) => d < index).length;
+
+    bool matches(String eventId, String roleType) =>
+        eventId == event.eventId && roleType == event.roleType;
+
+    // Rebuild both staging maps under their new keys in one pass. Entries on a
+    // deleted row are dropped; the rest move to their shifted slotIndex.
+    final nextAnnotations = <String, StagedSlotAnnotation>{};
+    _stagedSlotAnnotations.forEach((key, s) {
+      if (!matches(s.eventId, s.roleType)) {
+        nextAnnotations[key] = s;
+        return;
+      }
+      if (gone.contains(s.slotIndex)) return; // its row is gone
+      final index = shifted(s.slotIndex);
+      nextAnnotations[
+              StagedAssignmentChange.slotKeyFor(s.eventId, s.roleType, index)] =
+          StagedSlotAnnotation(
+        eventId: s.eventId,
+        roleType: s.roleType,
+        slotIndex: index,
+        desired: s.desired,
+        baseline: s.baseline,
+        // The stale key would point at the pre-shift slot; the reindex the
+        // event form just performed already moved the stored note.
+        staleKey: null,
+        auto: s.auto,
+      );
+    });
+    _stagedSlotAnnotations
+      ..clear()
+      ..addAll(nextAnnotations);
+
+    final nextChanges = <String, StagedAssignmentChange>{};
+    _stagedChanges.forEach((key, c) {
+      if (!matches(c.eventId, c.roleType)) {
+        nextChanges[key] = c;
+        return;
+      }
+      if (gone.contains(c.slotIndex)) return;
+      final index = shifted(c.slotIndex);
+      final nextKey =
+          StagedAssignmentChange.slotKeyFor(c.eventId, c.roleType, index);
+      // slotKey/slotIndex are identity, so copyWith deliberately can't move
+      // them — rebuild the entry at its new row, everything else verbatim.
+      nextChanges[nextKey] = StagedAssignmentChange(
+        slotKey: nextKey,
+        eventId: c.eventId,
+        roleType: c.roleType,
+        slotIndex: index,
+        desiredMemberId: c.desiredMemberId,
+        desiredNotes: c.desiredNotes,
+        desiredSemanticLabelId: c.desiredSemanticLabelId,
+        desiredAltPhone: c.desiredAltPhone,
+        baselineAssignmentId: c.baselineAssignmentId,
+        baselineMemberId: c.baselineMemberId,
+        baselineNotes: c.baselineNotes,
+        baselineSemanticLabelId: c.baselineSemanticLabelId,
+        baselineAltPhone: c.baselineAltPhone,
+        desiredAssignmentId: c.desiredAssignmentId,
+        stagedAtMillis: c.stagedAtMillis,
+        markedForDeletion: c.markedForDeletion,
+        isManualAdd: c.isManualAdd,
+      );
+    });
+    _stagedChanges
+      ..clear()
+      ..addAll(nextChanges);
+
+    // The role's quota just changed under any captured baseline; re-seed it to
+    // the post-removal value so a staged delta still derives correctly.
+    final erk = _eventRoleKey(event.eventId, event.roleType);
+    if (_baselineQuota.containsKey(erk)) {
+      _baselineQuota[erk] =
+          (_baselineQuota[erk]! - gone.length).clamp(0, 999).toInt();
+    }
+
+    await _persistStaged();
+    Logger.action('stage:applyCommittedRowRemoval', {
+      'event': event.eventId,
+      'role': event.roleType,
+      'deleted': (gone.toList()..sort()),
+      'changes': _stagedChanges.length,
+      'annotations': _stagedSlotAnnotations.length,
     });
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
@@ -1726,6 +2058,48 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     if (changed) {
       await _persistStaged();
     }
+
+    // Issue-1 fix: STAGE the quota-cleanup deterministically, right here,
+    // instead of waiting for the event-stream listener to re-deliver this
+    // event with its new roleRequirements. Before this fix, an event-form
+    // quota reduction only dispatched RebuildAssignmentSlots (this handler's
+    // own trailing `add` below) — the OTHER rebuild handler
+    // (_onRebuildAssignmentSlotsFromData) is the only one that calls the
+    // cleanup, so the orphan/re-key normalization silently never ran until
+    // the Firestore listener happened to re-emit later (Issue 1).
+    //
+    // Write the just-saved roleRequirements into the cached event ourselves
+    // (rather than waiting for the event-stream update) so both the cleanup
+    // below and the immediately-following rebuild see the reduced quota. This
+    // is NOT the same race the class doc above warns about: that note is
+    // about never DERIVING the baseline resync's "new quota" FROM the live
+    // map (which may still be stale); here we WRITE the authoritative
+    // just-saved values the modal handed us directly INTO the map, so there
+    // is nothing to race — no read of the (possibly stale) live map involved.
+    final cachedEvent =
+        _windowEventsMap[event.eventId] ?? _extraPastEventsMap[event.eventId];
+    if (cachedEvent != null) {
+      final updatedEvent =
+          cachedEvent.copyWith(roleRequirements: event.newRoleRequirements);
+      if (_windowEventsMap.containsKey(event.eventId)) {
+        _windowEventsMap[event.eventId] = updatedEvent;
+      } else {
+        _extraPastEventsMap[event.eventId] = updatedEvent;
+      }
+      final rawAssignmentsForEvent = <Assignment>[
+        for (final a in _repository.getCurrentAssignments())
+          if (a.eventId == event.eventId) a,
+        for (final a in _extraPastAssignments)
+          if (a.eventId == event.eventId) a,
+      ];
+      // Retract any auto-staged cleanup left over for this event (an older
+      // build, or a rehydrated cache). Nothing is PROPOSED here any more: the
+      // event form already decided which rows the reduction removes and
+      // applied it, notes included, so there is no orphan left to clean up.
+      await _stageSlotAnnotationCleanup(
+          [updatedEvent], rawAssignmentsForEvent);
+    }
+
     Logger.action('stage:rebaselineQuotas', {
       'event': event.eventId,
       'roles': event.newRoleRequirements.keys.toList(),
@@ -1754,10 +2128,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         _baselineQuota.remove(_eventRoleKey(removed.eventId, removed.roleType));
       }
     }
+    _stagedSlotAnnotations.remove(event.slotKey);
     await _persistStaged();
     Logger.action('stage:discardSlot', {
       'slot': event.slotKey,
-      'stagedCount': _stagedChanges.length,
+      'changes': _stagedChanges.length,
+      'annotations': _stagedSlotAnnotations.length,
     });
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
@@ -1767,8 +2143,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     // See _onDiscardStagedSlot: guard against discarding while a Save is
     // already converging its own captured snapshot to the DB.
     if (_saveInFlight) return;
-    Logger.action('stage:discardAll', {'had': _stagedChanges.length});
+    // Report BOTH staged maps: the UI's discard-dialog count is the union of
+    // member changes AND slot annotations (stagedSlotKeys), so logging only
+    // _stagedChanges here reads as a phantom desync (dialog "1" vs "had: 0")
+    // when the sole staged item is an annotation — e.g. an auto re-key staged
+    // by a quota change.
+    Logger.action('stage:discardAll', {
+      'changes': _stagedChanges.length,
+      'annotations': _stagedSlotAnnotations.length,
+    });
     _stagedChanges.clear();
+    _stagedSlotAnnotations.clear();
     // carry (a): a full discard also clears every captured derived-quota
     // baseline, so the next staging session re-seeds from the live DB quota.
     _baselineQuota.clear();
@@ -1812,7 +2197,16 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
           .map((e) =>
               StagedAssignmentChange.fromJson(e as Map<String, dynamic>))
           .map((c) => MapEntry(c.slotKey, c)));
-    Logger.action('stage:rehydrate', {'loaded': _stagedChanges.length});
+    _stagedSlotAnnotations
+      ..clear()
+      ..addEntries(((decoded is Map ? decoded['slotAnnotations'] as List? : null) ?? const [])
+          .map((e) => StagedSlotAnnotation.fromJson(e as Map<String, dynamic>))
+          .map((s) => MapEntry(
+              StagedAssignmentChange.slotKeyFor(s.eventId, s.roleType, s.slotIndex), s)));
+    Logger.action('stage:rehydrate', {
+      'changes': _stagedChanges.length,
+      'annotations': _stagedSlotAnnotations.length,
+    });
     add(RebuildAssignmentSlots(preservedFilter: _currentEventFilter));
   }
 
@@ -2119,21 +2513,27 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return conflicts;
   }
 
-  /// Repack a role's post-save rows contiguous from 0 (Save-time only), after a
-  /// staged deletion freed a slot. The rows that will exist for the role =
-  /// DB survivors (not in [deletes]) + this role's [creates] (manual-adds,
-  /// override-restores, fresh fills). Renumbering the UNION keeps in-quota rows
-  /// packed AND lets a same-role manual-add fill the freed in-quota slot instead
-  /// of being stranded off-quota (IMPORTANT #2). DB survivors write back to
-  /// [updates] (merging into any staged member/notes edit already queued for
-  /// them); creates are mutated in place in [creates]. Reads the raw DB snapshot
+  /// Reindex a role's post-save rows after a staged deletion (Save-time only),
+  /// VISUAL-ORDER-PRESERVING (Model B): every surviving row shifts up by the
+  /// number of deleted rows BELOW it (`deletedIndices`), keeping its relative
+  /// position — a filled row never jumps ahead of an empty note-row, and empty
+  /// slots stay interleaved where they were. With no empty slots this is exactly
+  /// the old contiguous pack; with them it differs (that's the point).
+  ///
+  /// The rows that will exist for the role = DB survivors (not in [deletes]) +
+  /// this role's [creates] (manual-adds appended above the survivors). The
+  /// gap-note reindex ([computeNoteReindexAfterDeletion]) uses the IDENTICAL
+  /// shift, so notes and assignments move together and can never collide. DB
+  /// survivors write back to [updates] (merging into any staged edit already
+  /// queued); creates are mutated in place. Reads the raw DB snapshot
   /// (getCurrentAssignments + paged extra-past), the same source the rest of
   /// Save converges against.
   void _reindexRoleAfterDeletion(String eventId, String roleType,
-      List<String> deletes, List<Assignment> updates, List<Assignment> creates) {
+      List<String> deletes, List<Assignment> updates, List<Assignment> creates,
+      Set<int> deletedIndices) {
     final deletedIds = deletes.toSet(); // O(1) survivor filtering
-    // Sortable union tagged by source: a DB survivor (write back to `updates`)
-    // or an index into `creates` (mutate in place).
+    // Union tagged by source: a DB survivor (write back to `updates`) or an
+    // index into `creates` (mutate in place).
     final items = <({int slotIndex, Assignment? survivor, int? createIdx})>[];
     for (final a in [
       ..._repository.getCurrentAssignments(),
@@ -2151,21 +2551,21 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             (slotIndex: creates[i].slotIndex, survivor: null, createIdx: i));
       }
     }
-    items.sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
-    for (var i = 0; i < items.length; i++) {
-      final it = items[i];
-      if (it.slotIndex == i) continue; // already contiguous at this index
+    for (final it in items) {
+      final newIndex = it.slotIndex -
+          deletedIndices.where((d) => d < it.slotIndex).length;
+      if (it.slotIndex == newIndex) continue; // already at its shifted index
       if (it.survivor != null) {
         final a = it.survivor!;
         final existing = updates.indexWhere((u) => u.id == a.id);
         if (existing >= 0) {
-          updates[existing] = updates[existing].copyWith(slotIndex: i);
+          updates[existing] = updates[existing].copyWith(slotIndex: newIndex);
         } else {
-          updates.add(a.copyWith(slotIndex: i, updatedAt: DateTime.now()));
+          updates.add(a.copyWith(slotIndex: newIndex, updatedAt: DateTime.now()));
         }
       } else {
         final ci = it.createIdx!;
-        creates[ci] = creates[ci].copyWith(slotIndex: i);
+        creates[ci] = creates[ci].copyWith(slotIndex: newIndex);
       }
     }
   }
@@ -2192,7 +2592,12 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   /// message instead of silently vanishing behind `'נשמרו 0 שינויים'`.
   Future<void> _onSaveStagedChanges(
       SaveStagedChanges event, Emitter<AssignmentState> emit) async {
-    if (_stagedChanges.isEmpty) {
+    // Phase 2 (staged gap annotations) can be the ONLY thing staged — this
+    // guard must not short-circuit before ever reaching it. `hasStagedChanges`
+    // is the union of both maps (see its doc comment), so an annotation-only
+    // Save now proceeds through the (empty) assignment partition below and
+    // into phase 2.
+    if (!hasStagedChanges) {
       _completeActionSuccess(event.completion, 'אין שינויים לשמירה');
       return;
     }
@@ -2220,7 +2625,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     };
 
     Logger.action('save:start', {
-      'staged': _stagedChanges.length,
+      'changes': _stagedChanges.length,
+      'annotations': _stagedSlotAnnotations.length,
       'dbTruth': dbByKey.length,
       'resolutions': resolutions.map((k, v) => MapEntry(k, v.name)),
     });
@@ -2229,6 +2635,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     final updates = <Assignment>[];
     final deletes = <String>[];
     final appliedKeys = <String>[];
+    // Note parallel of _reindexRoleAfterDeletion: writes that repack a role's
+    // gap notes after a TARGETED row-deletion (deleted row's note dropped,
+    // lower rows' notes shift up). Collected during the deletion pass below and
+    // applied in the annotation phase (after the assignment batch commits),
+    // while _stagedChanges/_baselineQuota are still populated here.
+    final noteReindexWrites = <({String eventId, SlotAnnotationWrite write})>[];
+    // Staged-annotation slotKeys the repack above absorbed into its own writes
+    // (it reindexes the DB+staging layout, so their final value already lands at
+    // the SHIFTED key). Phase 2 skips them — writing them at their pre-shift key
+    // is exactly the bug the overlay fixes.
+    final annotationKeysOwnedByReindex = <String>{};
     // Distinct eventIds this batch writes to (creates/updates/deletes). Used
     // after a successful write to refresh the extra-past cache for any touched
     // event that lives OUTSIDE the live window (paginated in via "load more
@@ -2380,12 +2797,71 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // reindexed). Mark the event touched so carry (b) reconciles its stale
         // extra-past cache (no-op for in-window events).
         touchedEventIds.add(role.eventId);
-        // IMPORTANT #2: repack survivors AND this role's creates contiguous, so
-        // a same-role manual-add fills the freed IN-quota slot instead of being
-        // stranded off-quota. Runs BEFORE maxCreateBound below so a pure
-        // delete+add lands on derivedTarget, not baseline+adds.
-        _reindexRoleAfterDeletion(
-            role.eventId, role.roleType, deletes, updates, creates);
+        final baselineForNotes = _baselineQuota[erk]!;
+        // The exact deleted IN-quota row indices for this role — the single
+        // shift driver for BOTH the assignment reindex and the gap-note reindex,
+        // so rows and their notes move together (visual-order-preserving).
+        final deletedIndices = <int>{
+          for (final e in _stagedChanges.entries)
+            if (e.value.eventId == role.eventId &&
+                e.value.roleType == role.roleType &&
+                e.value.markedForDeletion &&
+                resolutions[e.key] != ConflictResolution.takeDb &&
+                e.value.slotIndex < baselineForNotes)
+              e.value.slotIndex,
+        };
+        // Runs BEFORE maxCreateBound below so a pure delete+add lands on
+        // derivedTarget, not baseline+adds.
+        _reindexRoleAfterDeletion(role.eventId, role.roleType, deletes, updates,
+            creates, deletedIndices);
+        // Gap-note parallel: shift the surviving notes by the same "deleted rows
+        // below" mapping, so the DELETED row's note is dropped and lower rows'
+        // notes shift up in lockstep with the assignments.
+        final evForNotes = _windowEventsMap[role.eventId] ??
+            _extraPastEventsMap[role.eventId];
+        if (evForNotes != null) {
+          // Notes staged in THIS batch are part of the layout the admin sees, so
+          // they must shift with their row instead of being written at their
+          // pre-shift index (the bug: stage a note on row 2, delete row 1 → the
+          // note stayed on row 2 while the repack, blind to it, cleared row 1).
+          // Only the reindex's own range [0, baselineForNotes) is overlaid; an
+          // entry above it is an out-of-quota orphan delete the repack never
+          // touches, so phase 2 still owns it. A legacy staleKey-carrying entry
+          // (a drift re-key — no live producer emits one any more) is likewise
+          // left to phase 2, which is the only writer that can pass staleKey
+          // through.
+          final overlay = <int, SlotAnnotation?>{};
+          for (final e in _stagedSlotAnnotations.entries) {
+            final s = e.value;
+            if (s.eventId != role.eventId || s.roleType != role.roleType) {
+              continue;
+            }
+            if (s.slotIndex >= baselineForNotes || s.staleKey != null) continue;
+            overlay[s.slotIndex] = s.desired;
+            // The repack's writes already converge these slots against the DB;
+            // writing the staged entry too would put it back unshifted.
+            annotationKeysOwnedByReindex.add(e.key);
+          }
+          for (final w in computeNoteReindexAfterDeletion(
+              evForNotes.slotAnnotations,
+              role.roleType,
+              baselineForNotes,
+              deletedIndices,
+              stagedByIndex: overlay)) {
+            // A staged entry the overlay could NOT absorb (staleKey re-key)
+            // still wins its own slot — phase 2 writes it.
+            final parsed = parseSlotAnnotationKey(w.key);
+            if (parsed != null) {
+              final slotKey = StagedAssignmentChange.slotKeyFor(
+                  role.eventId, parsed.roleKey, parsed.slotIndex);
+              if (_stagedSlotAnnotations.containsKey(slotKey) &&
+                  !annotationKeysOwnedByReindex.contains(slotKey)) {
+                continue;
+              }
+            }
+            noteReindexWrites.add((eventId: role.eventId, write: w));
+          }
+        }
       }
 
       // A role-level (type-G) takeDb keeps the DB quota: skip the SET. The
@@ -2560,7 +3036,57 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // appliedKeys was captured, that survivor stays in _stagedChanges (not in
       // appliedKeys) and must NOT be wiped from crash-recovery.
       await _persistStaged();
-      final written = creates.length + updates.length + deletes.length;
+
+      // Phase 2: staged gap-annotation edits. Separate event-doc mutations
+      // (NOT part of the atomic assignment batch); run only after the batch
+      // committed. A failure here leaves these entries staged for the next
+      // Save while the assignment write stands.
+      final annotationsWritten =
+          _stagedSlotAnnotations.length; // capture before clear
+      for (final e in _stagedSlotAnnotations.entries.toList()) {
+        // Absorbed by the row-deletion repack below, which writes this note's
+        // final value at its SHIFTED key — writing it here too would restore it
+        // at the pre-shift index the admin just deleted out from under it.
+        if (annotationKeysOwnedByReindex.contains(e.key)) continue;
+        final s = e.value;
+        final key = slotAnnotationKey(s.roleType, s.slotIndex);
+        var desired = s.desired;
+        // The note's row may have been removed AFTER it was staged (a quota
+        // reduction from the event form, which commits immediately). Writing
+        // the note back onto a slot that no longer exists would manufacture the
+        // very orphan its out-of-quota row is warning about — a note belongs to
+        // its slot and dies with it. Clear whatever is stored there instead, or
+        // write nothing at all when there is nothing stored to clear. The bound
+        // is the grid's own renderCount, so "has a row" means exactly what the
+        // admin sees.
+        if (desired != null &&
+            s.slotIndex >=
+                _liveQuota(s.eventId, s.roleType) +
+                    _stagedAddCount(s.eventId, s.roleType)) {
+          final ev =
+              _windowEventsMap[s.eventId] ?? _extraPastEventsMap[s.eventId];
+          final stored = ev?.slotAnnotations[key];
+          if (stored == null || stored.isEmpty) continue;
+          desired = null;
+        }
+        await _eventRepository.updateSlotAnnotation(s.eventId, key, desired,
+            staleKey: s.staleKey);
+      }
+      _stagedSlotAnnotations.clear();
+      await _persistStaged();
+
+      // Repack gap notes after any targeted row-deletions (computed in the
+      // deletion pass above): a deleted row's note is dropped and lower rows'
+      // notes shift up, so "swipe-delete the row you meant" keeps the right
+      // note — never the highest-index one.
+      for (final r in noteReindexWrites) {
+        await _eventRepository.updateSlotAnnotation(
+            r.eventId, r.write.key, r.write.value,
+            staleKey: r.write.staleKey);
+      }
+
+      final written =
+          creates.length + updates.length + deletes.length + annotationsWritten;
       // Never a bare 'נשמרו 0 שינויים' while a baseline-anchored change was
       // dropped for lack of a DB row: report the skip alongside the write
       // count instead of pretending nothing happened.
@@ -2968,17 +3494,39 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       // Iterate through roles in sortOrder (not enum order)
       for (final role in sortedRoles) {
         final requiredCount = event.roleRequirements[role.key] ?? 0;
-        if (requiredCount == 0 && _stagedAddCount(event.id, role.key) == 0) {
-          continue; // Skip roles with 0 requirement and no staged adds
-        }
+        final stagedAdds = _stagedAddCount(event.id, role.key);
+        final renderCount = requiredCount + stagedAdds;
 
         // Get assignments for this event+role
         final roleAssignments = assignments
             .where((a) => a.eventId == event.id && a.roleType == role.key)
             .toList();
 
-        final renderCount =
-            requiredCount + _stagedAddCount(event.id, role.key);
+        // Task 7 (SG7): surface any staged orphan-delete annotation for this
+        // role BEFORE the zero-quota gate below — a role whose quota was
+        // reduced all the way to 0 (not just lowered), removing the role
+        // from the event entirely, still needs its pending-removal row to
+        // render (and be Discard-able); _stageSlotAnnotationCleanup already
+        // stages the orphan-delete for it regardless. The gate below only
+        // skips building this role's NORMAL slots, which correctly don't
+        // exist for a zeroed role.
+        slots.addAll(_buildOrphanedAnnotationSlots(
+            event, role, renderCount, roleAssignments));
+
+        if (requiredCount == 0 && stagedAdds == 0) {
+          continue; // Skip NORMAL slot-building: 0 requirement, no staged adds
+        }
+
+        // Reconcile this role's stored gap annotations onto its ACTUAL empty
+        // slots (raw DB, not staged-effective — mirrors every other
+        // DB-truth-only use of `assignments`/`roleAssignments` in this loop,
+        // e.g. currentAssignment/off-quota rows).
+        final gapAnnotations = reconcileGapAnnotations(
+          event.slotAnnotations,
+          role.key,
+          requiredCount,
+          roleAssignments.map((a) => a.slotIndex),
+        );
         // Create slots (one per required count, grown by staged manual-adds)
         for (int i = 0; i < renderCount; i++) {
           // Find if this slot is filled (match by slotIndex, not array position)
@@ -3101,6 +3649,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             alreadyAssignedMembers: alreadyAssignedMembers,
             sameDayAssignedMembers: sameDayAssignedMembers,
             sameDayEventInfo: sameDayEventInfoMap,
+            gapAnnotation: assignment == null
+                ? _effectiveGapAnnotation(
+                    event.id, role.key, i, gapAnnotations[i])
+                : null,
           ));
           if (assignment != null) placedAssignmentIds.add(assignment.id);
         }
@@ -3131,7 +3683,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     return AssignmentSlotsLoaded(
       _materializeGoneStagedRows(annotatedSlots, goneKeys),
       selectedEventIds: selectedEventIds ?? {},
-      stagedSlotKeys: _stagedChanges.keys.toSet(),
+      stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
       stagedGoneSlotKeys: goneKeys,
       stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
     );
@@ -3246,13 +3798,84 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             pendingOperations: _pendingOperations,
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
-            stagedSlotKeys: _stagedChanges.keys.toSet(),
+            stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
             stagedGoneSlotKeys: goneKeys,
             stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
           ));
     } catch (e) {
       _emitOrLog(emit, AssignmentError('שגיאה בטעינת שיבוצים: $e'));
     }
+  }
+
+  /// After a quota change, STAGE the annotation cleanup (re-key moved notes,
+  /// delete true orphans) so it shows as a pending change and is applied on
+  /// Save — never an immediate write. Idempotent: skips a slot the user has
+  /// already staged, and re-running recomputes the same entries.
+  ///
+  /// Uses the RAW persisted [assignments] + persisted roleRequirements (the
+  /// same inputs reconcileGapAnnotations uses for display), NOT staged/optimistic
+  /// state — the cleanup must track the SAVED quota/assignments.
+  Future<void> _stageSlotAnnotationCleanup(
+      List<Event> events, List<Assignment> assignments) async {
+    var changed = false;
+    for (final event in events) {
+      if (event.slotAnnotations.isEmpty) continue;
+      final roleKeys = <String>{};
+      for (final k in event.slotAnnotations.keys) {
+        final p = parseSlotAnnotationKey(k);
+        if (p != null) roleKeys.add(p.roleKey);
+      }
+      for (final roleKey in roleKeys) {
+        final quota = event.roleRequirements[roleKey] ?? 0;
+        final filled = assignments
+            .where((a) => a.eventId == event.id && a.roleType == roleKey)
+            .map((a) => a.slotIndex);
+        final ops = computeSlotAnnotationNormalization(
+            event.slotAnnotations, roleKey, quota, filled);
+        // The slotKeys the normalization still wants for this (event, role).
+        // NOTHING is proposed from them any more — a quota reduction decides
+        // which rows die in the event form itself (see
+        // EventFormModal._resolveQuotaReductions) and applies it, notes
+        // included, so it can never leave an orphan for this pass to clean up.
+        // A genuine orphan (pre-existing data, a co-admin's edit) shows as a
+        // plain out-of-quota note row the admin can swipe away; that row is
+        // the safety net, not this.
+        //
+        // What the set is still for is the RETRACTION below: an auto entry
+        // this computation no longer wants — left by an older build or
+        // rehydrated from cache — must be dropped rather than stranded as a
+        // phantom pending row.
+        final wantedKeys = <String>{};
+        for (final op in ops) {
+          final parsed = parseSlotAnnotationKey(op.key);
+          if (parsed == null) continue;
+          wantedKeys.add(StagedAssignmentChange.slotKeyFor(
+              event.id, parsed.roleKey, parsed.slotIndex));
+        }
+        // Retract stale auto-staged entries: a previous pass over this
+        // (event, role) may have staged a re-key/orphan-delete that the
+        // FRESH computation above no longer wants (e.g. a quota reduction
+        // followed by a raise, before Save). Scoped to THIS (event, role) and
+        // to `auto` entries ONLY — a user's own edit (auto: false) is never
+        // auto-retracted, even if it happens to sit on a slotKey the cleanup
+        // no longer flags.
+        final staleAutoKeys = [
+          for (final e in _stagedSlotAnnotations.entries)
+            if (e.value.auto &&
+                e.value.eventId == event.id &&
+                e.value.roleType == roleKey &&
+                !wantedKeys.contains(e.key))
+              e.key,
+        ];
+        if (staleAutoKeys.isNotEmpty) {
+          for (final k in staleAutoKeys) {
+            _stagedSlotAnnotations.remove(k);
+          }
+          changed = true;
+        }
+      }
+    }
+    if (changed) await _persistStaged();
   }
 
   /// Rebuild slots using pre-loaded data (for real-time updates)
@@ -3262,7 +3885,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   ) async {
     Logger.action('stream:rebuild', {
       'assignments': rebuildEvent.assignments.length,
-      'stagedCount': _stagedChanges.length,
+      'changes': _stagedChanges.length,
+      'annotations': _stagedSlotAnnotations.length,
     });
     try {
       // First-paint gate: until the roles, events, and assignments streams have
@@ -3329,6 +3953,15 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             .toList();
       }
 
+      // Eagerly STAGE the slotAnnotations cleanup against the fresh DB data —
+      // same raw events/assignments this handler feeds into reconcileGapAnnotations
+      // below (NOT the staged/optimistic effectiveMergedAssignments view). This is
+      // the live-stream backstop: it catches a co-admin's quota change (or any
+      // other drift) once the event stream re-emits. The deterministic path for
+      // the admin's OWN quota edit is _onRebaselineQuotasForEvent, which stages
+      // the same cleanup immediately without waiting for this stream to re-fire.
+      await _stageSlotAnnotationCleanup(filteredEvents, mergedAssignments);
+
       // Build slots using the existing method
       final slots = <AssignmentSlot>[];
       for (final eventData in filteredEvents) {
@@ -3336,10 +3969,8 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         // Iterate through roles in sortOrder (not enum order)
         for (final role in sortedRoles) {
           final requiredCount = eventData.roleRequirements[role.key] ?? 0;
-          if (requiredCount == 0 &&
-              _stagedAddCount(eventData.id, role.key) == 0) {
-            continue; // Skip roles with 0 requirement and no staged adds
-          }
+          final stagedAdds = _stagedAddCount(eventData.id, role.key);
+          final renderCount = requiredCount + stagedAdds;
 
           // Get assignments for this event+role from the assignments list
           final roleAssignments = mergedAssignments
@@ -3350,8 +3981,30 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
                   ))
               .toList();
 
-          final renderCount =
-              requiredCount + _stagedAddCount(eventData.id, role.key);
+          // Task 7 (SG7): surface any staged orphan-delete annotation for
+          // this role BEFORE the zero-quota gate below — a role whose quota
+          // was reduced all the way to 0 (not just lowered), removing the
+          // role from the event entirely, still needs its pending-removal
+          // row to render (and be Discard-able); _stageSlotAnnotationCleanup
+          // already stages the orphan-delete for it regardless. The gate
+          // below only skips building this role's NORMAL slots, which
+          // correctly don't exist for a zeroed role.
+          slots.addAll(_buildOrphanedAnnotationSlots(
+              eventData, role, renderCount, roleAssignments));
+
+          if (requiredCount == 0 && stagedAdds == 0) {
+            continue; // Skip NORMAL slot-building: 0 requirement, no staged adds
+          }
+
+          // Reconcile this role's stored gap annotations onto its ACTUAL empty
+          // slots. Mirrors _buildSlotsFromAssignments: raw roleAssignments
+          // (DB truth), not the staged-effective view.
+          final gapAnnotations = reconcileGapAnnotations(
+            eventData.slotAnnotations,
+            role.key,
+            requiredCount,
+            roleAssignments.map((a) => a.slotIndex),
+          );
           // Create slots (one per required count, grown by staged manual-adds)
           for (int i = 0; i < renderCount; i++) {
             // Find if this slot is filled (match by slotIndex, not array position)
@@ -3460,6 +4113,10 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               alreadyAssignedMembers: alreadyAssignedMembers,
               sameDayAssignedMembers: sameDayAssignedMembers,
               sameDayEventInfo: sameDayEventInfoMap,
+              gapAnnotation: assignment == null
+                  ? _effectiveGapAnnotation(
+                      eventData.id, role.key, i, gapAnnotations[i])
+                  : null,
             ));
             if (assignment != null) placedAssignmentIds.add(assignment.id);
           }
@@ -3520,7 +4177,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             pendingOperations: _pendingOperations,
             hasMorePast: capped.hasMore,
             isLoadingMorePast: _loadingMorePast,
-            stagedSlotKeys: _stagedChanges.keys.toSet(),
+            stagedSlotKeys: {..._stagedChanges.keys, ..._stagedSlotAnnotations.keys},
             stagedGoneSlotKeys: goneKeys,
             stagedDeletionSlotKeys: _computeStagedDeletionKeys(),
           ));

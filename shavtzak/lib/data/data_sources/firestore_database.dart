@@ -9,6 +9,7 @@ import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
+import '../../domain/entities/slot_annotation.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
@@ -591,6 +592,29 @@ class FirestoreDatabase implements DatabaseInterface {
       );
     } catch (e) {
       throw DatabaseException('Failed to update event: $e');
+    }
+  }
+
+  @override
+  Future<void> updateEventSlotAnnotation(
+    String eventId,
+    String key,
+    SlotAnnotation? value, {
+    String? staleKey,
+  }) async {
+    try {
+      await _invokeMutation(
+        'event.updateSlotAnnotation',
+        payload: {
+          'eventId': eventId,
+          'key': key,
+          'note': value?.note ?? '',
+          'labelId': value?.labelId,
+          'staleKey': staleKey,
+        },
+      );
+    } catch (e) {
+      throw DatabaseException('Failed to update slot annotation: $e');
     }
   }
 

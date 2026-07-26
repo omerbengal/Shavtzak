@@ -1140,6 +1140,52 @@ void main() {
     expect(bloc.hasStagedChanges, isFalse);
   });
 
+  test(
+      'Model B: deleting a row ABOVE a survivor with an EMPTY slot between them '
+      'shifts the survivor up by one — it does NOT jump to the front (no '
+      'reorder of the filled row ahead of the empty one)', () async {
+    final bloc = buildBloc();
+    addTearDown(() async => bloc.close());
+    stubBatchAcceptingSets();
+    // medic 3: a1@0 (m1), slot 1 EMPTY, a2@2 (m2).
+    bloc.add(const LoadAssignmentSlots());
+    await pumpEventQueue();
+    eventStream.add([futureEvent('e1', roleRequirements: const {'medic': 3})]);
+    roleStream.add([medicRole()]);
+    teamStream.add([member('m1'), member('m2')]);
+    assignmentStream.add([
+      assignment('a1', 'e1', 'm1', slotIndex: 0),
+      assignment('a2', 'e1', 'm2', slotIndex: 2),
+    ]);
+    await pumpEventQueue();
+
+    final medic0 = (bloc.state as AssignmentSlotsLoaded)
+        .slots
+        .firstWhere((s) => s.role.key == 'medic' && s.slotIndex == 0);
+    bloc.add(StageSlotDeletion(medic0)); // delete the TOP assignment
+    await pumpEventQueue();
+    bloc.add(const SaveStagedChanges());
+    await pumpEventQueue();
+
+    final captured = verify(assignmentRepo.saveAssignmentsBatch(
+      creates: anyNamed('creates'),
+      updates: captureAnyNamed('updates'),
+      deletes: captureAnyNamed('deletes'),
+      eventQuotaBumps: anyNamed('eventQuotaBumps'),
+      eventQuotaSets: anyNamed('eventQuotaSets'),
+    )).captured;
+    final updates =
+        captured.firstWhere((c) => c is List<Assignment>) as List<Assignment>;
+    final deletes =
+        captured.firstWhere((c) => c is List<String>) as List<String>;
+
+    expect(deletes, contains('a1')); // top row deleted
+    // Model B: a2 shifts 2 -> 1 (exactly one deleted row below it), keeping the
+    // empty slot ABOVE it. Under the OLD pack-to-front it would have jumped to
+    // slot 0, reordering ahead of the empty row.
+    expect(updates.firstWhere((u) => u.id == 'a2').slotIndex, 1);
+  });
+
   test('Save of a manual-add sends a raising eventQuotaSet + the create',
       () async {
     final bloc = buildBloc();

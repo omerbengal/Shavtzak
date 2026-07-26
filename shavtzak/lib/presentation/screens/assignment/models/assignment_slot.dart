@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../../../core/utils/slot_annotations.dart';
 import '../../../../domain/entities/assignment.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/role.dart';
@@ -29,6 +30,11 @@ class AssignmentSlot extends Equatable {
   /// permanently-deleted role). Rendered as "מחוץ למכסה" and delete-only.
   final bool isOffQuota;
 
+  /// For an EMPTY slot: the reconciled gap annotation (note + label) to show,
+  /// with the stored key it came from (for self-heal on edit). Null when the
+  /// slot is filled or the gap has no annotation.
+  final ResolvedGapAnnotation? gapAnnotation;
+
   const AssignmentSlot({
     required this.event,
     required this.role,
@@ -42,6 +48,7 @@ class AssignmentSlot extends Equatable {
     this.sameDayEventInfo = const {},
     this.sameDayOtherEvents = const [],
     this.isOffQuota = false,
+    this.gapAnnotation,
   });
 
   /// Create a copy with updated fields (preserves every field, incl. isOffQuota)
@@ -64,6 +71,7 @@ class AssignmentSlot extends Equatable {
     Map<String, List<String>>? sameDayEventInfo,
     List<Event>? sameDayOtherEvents,
     bool? isOffQuota,
+    ResolvedGapAnnotation? Function()? gapAnnotation,
   }) {
     return AssignmentSlot(
       event: event ?? this.event,
@@ -82,6 +90,8 @@ class AssignmentSlot extends Equatable {
       sameDayEventInfo: sameDayEventInfo ?? this.sameDayEventInfo,
       sameDayOtherEvents: sameDayOtherEvents ?? this.sameDayOtherEvents,
       isOffQuota: isOffQuota ?? this.isOffQuota,
+      gapAnnotation:
+          gapAnnotation != null ? gapAnnotation() : this.gapAnnotation,
     );
   }
 
@@ -114,6 +124,7 @@ class AssignmentSlot extends Equatable {
         sameDayEventInfo,
         sameDayOtherEvents,
         isOffQuota,
+        gapAnnotation,
       ];
 
   @override

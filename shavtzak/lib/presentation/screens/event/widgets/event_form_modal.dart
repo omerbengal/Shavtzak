@@ -9,12 +9,16 @@ import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/date_utils.dart' as app_date_utils;
 import '../../../../core/utils/rtl_text_field_utils.dart';
+import '../../../../core/utils/slot_annotations.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/participant_group.dart';
 import 'participant_group_rows.dart';
+import '../../../../data/repositories/assignment_label_repository.dart';
 import '../../../../data/repositories/assignment_repository.dart';
 import '../../../../data/repositories/event_repository.dart';
+import '../../../bloc/assignment/assignment_bloc.dart';
+import '../../../bloc/assignment/assignment_event.dart';
 import '../../../bloc/category/category_bloc.dart';
 import '../../../bloc/category/category_state.dart';
 import '../../../bloc/category/category_event.dart';
@@ -28,6 +32,8 @@ import '../../../widgets/map_location_picker.dart';
 import '../../../widgets/parking_location_picker_dialog.dart';
 import '../../../widgets/loading_overlay.dart';
 import '../quota_reduction_analyzer.dart';
+import '../quota_reduction_planner.dart';
+import 'empty_note_removal_dialog.dart';
 import 'quota_reduction_dialog.dart';
 import 'duplication_conflict_resolution_dialog.dart';
 
@@ -546,116 +552,12 @@ class _EventFormModalState extends State<EventFormModal> {
       return;
     }
 
-    // NEW: Quota reduction analysis (edit mode only)
+    // Quota reduction: decide and apply which ROWS go, before the event write
+    // (edit mode only). See _resolveQuotaReductions.
     if (_isEditMode) {
       try {
-        final conflicts = await QuotaReductionAnalyzer.analyzeQuotaReductions(
-          originalEvent: widget.event!,
-          newRoleRequirements:
-              _roleRequirements, // Directly pass String-keyed map
-          assignmentRepo: context.read<AssignmentRepository>(),
-        );
-
-        // If there are assignments that need to be removed, show dialog
-        if (conflicts.isNotEmpty) {
-          if (!mounted) return;
-          final selectedIds = await QuotaReductionDialog.show(
-            context,
-            conflicts,
-          );
-
-          if (selectedIds == null) {
-            // User cancelled - revert quotas to original values
-            setState(() {
-              _roleRequirements = Map.from(widget.event!.roleRequirements);
-              _isSaving = false;
-              _loadingMessage = '';
-            });
-            return;
-          }
-
-          // Delete selected assignments
-          if (selectedIds.isNotEmpty && mounted) {
-            final assignmentRepo = context.read<AssignmentRepository>();
-            await assignmentRepo.deleteAssignmentsBatch(selectedIds);
-
-            // Reorder remaining assignments to fill slots sequentially
-            // This ensures slots 0, 1, 2, ... are filled without gaps
-            for (final conflict in conflicts) {
-              // Get all remaining assignments for this role
-              final allAssignments = await assignmentRepo.getAssignmentsByEvent(
-                widget.event!.id,
-              );
-              final remainingAssignments = allAssignments
-                  .where((a) =>
-                      a.roleType == conflict.roleKey &&
-                      !selectedIds.contains(a.id))
-                  .toList();
-
-              // Sort by current slotIndex to maintain relative order
-              remainingAssignments
-                  .sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
-
-              // Reassign sequential slot indices starting from 0
-              for (int i = 0; i < remainingAssignments.length; i++) {
-                if (remainingAssignments[i].slotIndex != i) {
-                  // Update this assignment with new slotIndex
-                  final updated = remainingAssignments[i].copyWith(
-                    slotIndex: i,
-                    updatedAt: DateTime.now(),
-                  );
-                  await assignmentRepo.updateAssignmentUnchecked(updated);
-                }
-              }
-            }
-            // Note: No need to manually reload - assignment screen uses real-time streams
-          }
-        }
-
-        // IMPORTANT: Always reorder assignments after quota reduction,
-        // even if there were no conflicts requiring deletion.
-        // This handles cases where assignments are beyond the new quota range
-        // (e.g., Person at slot 5 when quota reduced to 4)
-        if (mounted) {
-          final assignmentRepo = context.read<AssignmentRepository>();
-          final allAssignments = await assignmentRepo.getAssignmentsByEvent(
-            widget.event!.id,
-          );
-
-          // Check each role where quota was reduced
-          // Get all unique role keys from both old and new requirements
-          final allRoleKeys = {
-            ...widget.event!.roleRequirements.keys,
-            ..._roleRequirements.keys,
-          };
-
-          for (final roleKey in allRoleKeys) {
-            final oldQuota = widget.event!.roleRequirements[roleKey] ?? 0;
-            final newQuota = _roleRequirements[roleKey] ?? 0;
-
-            // Only process roles where quota was reduced
-            if (newQuota >= oldQuota) continue;
-
-            // Get all assignments for this role
-            final roleAssignments =
-                allAssignments.where((a) => a.roleType == roleKey).toList();
-
-            // Sort by current slotIndex to maintain relative order
-            roleAssignments.sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
-
-            // Reassign sequential slot indices starting from 0
-            // This moves any assignments beyond the quota range into the valid range
-            for (int i = 0; i < roleAssignments.length; i++) {
-              if (roleAssignments[i].slotIndex != i) {
-                final updated = roleAssignments[i].copyWith(
-                  slotIndex: i,
-                  updatedAt: DateTime.now(),
-                );
-                await assignmentRepo.updateAssignmentUnchecked(updated);
-              }
-            }
-          }
-        }
+        final proceed = await _resolveQuotaReductions();
+        if (!proceed) return; // cancelled — quotas already reverted
       } catch (e) {
         // Show error and don't proceed with save
         if (mounted) {
@@ -752,6 +654,187 @@ class _EventFormModalState extends State<EventFormModal> {
         ?.call(event.id, Map<String, int>.from(event.roleRequirements));
 
     widget.onSuccess();
+  }
+
+  /// Resolve every role whose quota is being reduced, BEFORE the event write.
+  ///
+  /// A reduction removes ROWS, so the only question is which ones. They are
+  /// spent cheapest-first (see [planRoleQuotaReduction]):
+  ///   1. clean rows (nothing on them)        — silently
+  ///   2. empty rows carrying a note/label    — the admin picks which
+  ///   3. assigned rows                       — the existing QuotaReductionDialog
+  ///
+  /// Everything is applied here and now, so a reduction can never leave a note
+  /// stranded on a row that no longer exists. Survivors — assignments AND notes
+  /// — shift by the same visual-order-preserving mapping the assignments
+  /// screen's swipe-delete uses ([shiftedSlotIndex] / Model B), so a note never
+  /// drifts off its row and never lands on a filled one.
+  ///
+  /// Returns false when the admin cancels (quotas reverted, save aborted).
+  Future<bool> _resolveQuotaReductions() async {
+    final original = widget.event!;
+    final reducedRoles = <String>[
+      for (final roleKey in {
+        ...original.roleRequirements.keys,
+        ..._roleRequirements.keys,
+      })
+        if ((_roleRequirements[roleKey] ?? 0) <
+            (original.roleRequirements[roleKey] ?? 0))
+          roleKey,
+    ];
+    if (reducedRoles.isEmpty) return true;
+
+    // Every context.read happens up front, before the first await, so nothing
+    // reaches for a BuildContext across an async gap.
+    final assignmentRepo = context.read<AssignmentRepository>();
+    final eventRepo = context.read<EventRepository>();
+    final assignmentBloc = context.read<AssignmentBloc>();
+    final labelRepo = context.read<AssignmentLabelRepository>();
+    final roleNames = _roleHebrewNames();
+    final allAssignments =
+        await assignmentRepo.getAssignmentsByEvent(original.id);
+
+    // Plan each reduced role against what the admin currently SEES — the stored
+    // rows overlaid with any unsaved staged note, so a note typed a moment ago
+    // is never binned without asking.
+    final plans = <String, RoleReductionPlan>{};
+    final rowsByRole = <String, List<QuotaRow>>{};
+    for (final roleKey in reducedRoles) {
+      final rows = classifyRoleRows(
+        roleKey: roleKey,
+        quota: original.roleRequirements[roleKey] ?? 0,
+        assignments: allAssignments,
+        slotAnnotations: original.slotAnnotations,
+        stagedNoteIndices:
+            assignmentBloc.stagedNoteIndicesFor(original.id, roleKey),
+        stagedNoteValues:
+            assignmentBloc.stagedNoteValuesFor(original.id, roleKey),
+      );
+      rowsByRole[roleKey] = rows;
+      plans[roleKey] = planRoleQuotaReduction(
+        roleKey: roleKey,
+        oldQuota: original.roleRequirements[roleKey] ?? 0,
+        newQuota: _roleRequirements[roleKey] ?? 0,
+        rows: rows,
+      );
+    }
+
+    // Deleted row indices per role, seeded with the silent (rung 1) ones.
+    final deleted = <String, Set<int>>{
+      for (final e in plans.entries) e.key: {...e.value.autoDeletedIndices},
+    };
+
+    // Rung 2: the admin chooses which annotated empty rows to give up.
+    final noteRequests = <EmptyNoteRemovalRequest>[
+      for (final plan in plans.values)
+        if (plan.needsNoteChoice)
+          EmptyNoteRemovalRequest(
+            roleKey: plan.roleKey,
+            roleHebrewName: roleNames[plan.roleKey] ?? plan.roleKey,
+            candidates: plan.notedCandidates,
+            countToRemove: plan.notedToRemove,
+          ),
+    ];
+    if (noteRequests.isNotEmpty) {
+      final labels = await labelRepo.getAssignmentLabels();
+      if (!mounted) return false;
+      final chosen =
+          await EmptyNoteRemovalDialog.show(context, noteRequests, labels);
+      if (chosen == null) return _revertQuotas();
+      chosen.forEach((roleKey, indices) => deleted[roleKey]!.addAll(indices));
+    }
+
+    // Rung 3: assignments must go — reuse the existing analyzer + dialog so its
+    // behavior (and its tests) stay exactly as they were.
+    final conflicts = QuotaReductionAnalyzer.analyzeQuotaReductionsWithAssignments(
+      originalEvent: original,
+      newRoleRequirements: _roleRequirements,
+      assignments: allAssignments,
+    );
+    var deletedAssignmentIds = const <String>[];
+    if (conflicts.isNotEmpty) {
+      if (!mounted) return false;
+      final selectedIds = await QuotaReductionDialog.show(context, conflicts);
+      if (selectedIds == null) return _revertQuotas();
+      deletedAssignmentIds = selectedIds;
+      for (final a in allAssignments) {
+        if (selectedIds.contains(a.id)) {
+          deleted[a.roleType]?.add(a.slotIndex);
+        }
+      }
+    }
+
+    Logger.action('quota:reduceRows', {
+      'event': original.id,
+      'deleted': deleted.map((k, v) => MapEntry(k, (v.toList()..sort()))),
+      'assignments': deletedAssignmentIds,
+    });
+
+    // ---- Apply -----------------------------------------------------------
+    if (deletedAssignmentIds.isNotEmpty) {
+      await assignmentRepo.deleteAssignmentsBatch(deletedAssignmentIds);
+    }
+
+    for (final roleKey in reducedRoles) {
+      final gone = deleted[roleKey] ?? const <int>{};
+      if (gone.isEmpty) continue;
+
+      // Surviving assignments follow their rows up.
+      for (final a in allAssignments) {
+        if (a.roleType != roleKey) continue;
+        if (deletedAssignmentIds.contains(a.id)) continue;
+        final newIndex = shiftedSlotIndex(a.slotIndex, gone);
+        if (newIndex == a.slotIndex) continue;
+        await assignmentRepo.updateAssignmentUnchecked(
+            a.copyWith(slotIndex: newIndex, updatedAt: DateTime.now()));
+      }
+
+      // ...and so do the STORED notes, by the identical mapping. Notes staged
+      // but unsaved aren't in the event doc — AssignmentBloc re-keys those
+      // itself below.
+      for (final write in computeNoteReindexAfterDeletion(
+          original.slotAnnotations,
+          roleKey,
+          original.roleRequirements[roleKey] ?? 0,
+          gone)) {
+        await eventRepo.updateSlotAnnotation(
+            original.id, write.key, write.value,
+            staleKey: write.staleKey);
+      }
+
+      // Drop staged entries on the rows that just died and re-key the rest, so
+      // the assignments screen's pending edits keep pointing at the right rows.
+      assignmentBloc.add(ApplyCommittedRowRemoval(
+        eventId: original.id,
+        roleType: roleKey,
+        deletedIndices: gone,
+      ));
+    }
+    return true;
+  }
+
+  /// Undo the in-form quota edits and stop the save — the admin cancelled one
+  /// of the row-removal dialogs.
+  bool _revertQuotas() {
+    if (mounted) {
+      setState(() {
+        _roleRequirements = Map.from(widget.event!.roleRequirements);
+        _isSaving = false;
+        _loadingMessage = '';
+      });
+    }
+    return false;
+  }
+
+  /// role key -> Hebrew display name, for the removal dialog. Snapshotted
+  /// before any await so no BuildContext is read across an async gap; a custom
+  /// role the RoleBloc doesn't know simply falls back to its raw key.
+  Map<String, String> _roleHebrewNames() {
+    final state = context.read<RoleBloc>().state;
+    if (state is RolesLoaded) {
+      return {for (final r in state.roles) r.key: r.hebrewName};
+    }
+    return const {};
   }
 
   /// Show confirm dialog and toggle the event's isDeactivated state.

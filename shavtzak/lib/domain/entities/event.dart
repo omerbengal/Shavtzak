@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'participant_group.dart';
+import 'slot_annotation.dart';
 
 /// Event domain entity
 class Event extends Equatable {
@@ -20,6 +21,10 @@ class Event extends Equatable {
   final String comments; // Comments about the event
   final String? categoryId; // Foreign key to Category (null = uncategorized)
   final Map<String, int> roleRequirements; // How many people needed per role (role key -> count)
+  // Per-slot job annotations (note + label), keyed by "<roleKey>#<slotIndex>".
+  // Independent of any assignment; shown on empty gaps and carried onto the
+  // member when a gap is filled. See docs/superpowers/specs/2026-07-22-*.
+  final Map<String, SlotAnnotation> slotAnnotations;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -53,6 +58,7 @@ class Event extends Equatable {
     this.comments = '',
     this.categoryId,
     required this.roleRequirements,
+    this.slotAnnotations = const {},
     required this.createdAt,
     required this.updatedAt,
     this.driveFolderId,
@@ -169,6 +175,7 @@ class Event extends Equatable {
     String? comments,
     String? categoryId,
     Map<String, int>? roleRequirements,
+    Map<String, SlotAnnotation>? slotAnnotations,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? driveFolderId,
@@ -197,6 +204,7 @@ class Event extends Equatable {
       comments: comments ?? this.comments,
       categoryId: clearCategoryId ? null : (categoryId ?? this.categoryId),
       roleRequirements: roleRequirements ?? this.roleRequirements,
+      slotAnnotations: slotAnnotations ?? this.slotAnnotations,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       driveFolderId: driveFolderId ?? this.driveFolderId,
@@ -227,6 +235,7 @@ class Event extends Equatable {
         comments,
         categoryId,
         roleRequirements,
+        slotAnnotations,
         createdAt,
         updatedAt,
         driveFolderId,
