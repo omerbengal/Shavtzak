@@ -1296,7 +1296,8 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       // a non-null currentAssignment, so it is untouched and still falls
       // through to _buildOffQuotaRow exactly as before.
       if (slot.currentAssignment == null && slot.gapAnnotation != null) {
-        return _buildOrphanedAnnotationRemovalRow(slot, liveLabels);
+        return _buildOrphanedAnnotationRemovalRow(
+            slot, liveLabels, stagedSlotKeys.contains(_getSlotKey(slot)));
       }
       return _buildOffQuotaRow(slot, stagedSlotKeys, stagedGoneSlotKeys);
     }
@@ -1792,23 +1793,25 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
     );
   }
 
-  /// Task 7 (SG7): a note-only row for a staged annotation DELETE that fell
-  /// out of quota (see `AssignmentBloc._buildOrphanedAnnotationSlots`) — there
-  /// is no assignment (`slot.currentAssignment == null`), only the `baseline`
-  /// note about to be removed on Save, carried in `slot.gapAnnotation`.
-  /// Display + discard only, like `_buildOffQuotaRow`: no dropdown, no
-  /// notes-edit swipe — the row IS the pending removal, so there is nothing
-  /// to edit, only "keep it" (discard the staged delete).
+  /// Task 7 (SG7): a note-only row for a gap note that fell out of quota (see
+  /// `AssignmentBloc._buildOrphanedAnnotationSlots`) — there is no assignment
+  /// (`slot.currentAssignment == null`), only the note itself, carried in
+  /// `slot.gapAnnotation`. Display + swipe only, like `_buildOffQuotaRow`: no
+  /// dropdown, no notes-edit dialog.
   ///
-  /// Always wrapped in the red "יימחק בשמירה" stripe (`_withStripeOverlay`) —
-  /// the SAME visual treatment a staged ASSIGNMENT deletion gets — applied
-  /// HERE rather than via the generic `stagedDeletionSlotKeys` check in the
-  /// `ListView.builder` above: that set is a pure function of `_stagedChanges`
-  /// (see `AssignmentBloc._computeStagedDeletionKeys`), unrelated to
+  /// The row is built from the DB, so it exists whether or not a removal is
+  /// staged, and [isPendingRemoval] decides which of the two states it is in:
+  /// - staged   → red "יימחק בשמירה" stripe; swipe = ↩ keep it (discard).
+  /// - unstaged → a plain out-of-quota note row; swipe = stage its removal.
+  ///
+  /// The stripe is applied HERE rather than via the generic
+  /// `stagedDeletionSlotKeys` check in the `ListView.builder` above: that set
+  /// is a pure function of `_stagedChanges` (see
+  /// `AssignmentBloc._computeStagedDeletionKeys`), unrelated to
   /// `_stagedSlotAnnotations`, so a staged annotation delete never appears in
   /// it and the generic wrap would never fire for this row.
-  Widget _buildOrphanedAnnotationRemovalRow(
-      AssignmentSlot slot, List<AssignmentLabel> liveLabels) {
+  Widget _buildOrphanedAnnotationRemovalRow(AssignmentSlot slot,
+      List<AssignmentLabel> liveLabels, bool isPendingRemoval) {
     final noteInfo = _buildGapAnnotationInfo(slot, liveLabels);
 
     final row = Dismissible(
@@ -1817,28 +1820,42 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       secondaryBackground: Container(
         alignment: Alignment.centerLeft, // RTL: left side is the visible side
         padding: const EdgeInsets.only(left: 20),
-        color: Colors.blue,
-        child: const Icon(Icons.undo, color: Colors.white, size: 32),
+        color: isPendingRemoval ? Colors.blue : Colors.red,
+        child: Icon(isPendingRemoval ? Icons.undo : Icons.delete,
+            color: Colors.white, size: 32),
       ),
       background: const SizedBox.shrink(),
       dismissThresholds: const {DismissDirection.endToStart: 0.5},
       confirmDismiss: (direction) async {
-        // This row IS the pending removal already — swiping it KEEPS the
-        // note (discards the staged delete) rather than deleting anything
-        // further.
-        Logger.action(
-            'swipe:discardOrphanedAnnotation', {'slot': _getSlotKey(slot)});
-        context
-            .read<AssignmentBloc>()
-            .add(DiscardStagedSlot(_getSlotKey(slot)));
+        if (isPendingRemoval) {
+          // This row IS the pending removal already — swiping it KEEPS the
+          // note (discards the staged delete) rather than deleting anything
+          // further. The row does NOT disappear: it is built from the DB note,
+          // which is still there, so it stays as a plain out-of-quota row.
+          Logger.action(
+              'swipe:discardOrphanedAnnotation', {'slot': _getSlotKey(slot)});
+          context
+              .read<AssignmentBloc>()
+              .add(DiscardStagedSlot(_getSlotKey(slot)));
+        } else {
+          // A leftover note nobody has proposed removing (an earlier session's
+          // orphan, or one whose removal was discarded). Swiping stages the
+          // removal — the only way to get rid of it now that a quota reduction
+          // no longer deletes notes behind the admin's back. Staged as an
+          // empty note, i.e. a user-owned delete (see _onStageSlotAnnotation),
+          // so the quota auto-cleanup never retracts it.
+          Logger.action(
+              'swipe:stageOrphanedAnnotationRemoval', {'slot': _getSlotKey(slot)});
+          context.read<AssignmentBloc>().add(
+              StageSlotAnnotation(slot: slot, note: '', labelId: null));
+        }
         // Always false so the Dismissible snaps back instead of actually
-        // dismissing: the row stays in the tree (the bloc's rebuilt state,
-        // once the discard lands, simply stops synthesizing this row at all)
-        // — see the identical reasoning on every other staged-row swipe in
-        // this file (e.g. _buildOffQuotaRow's confirmDismiss) for why
-        // returning true / letting the dismissal proceed would throw
-        // Flutter's "A dismissed Dismissible widget is still part of the
-        // tree" on the next rebuild.
+        // dismissing: the row stays in the tree and simply re-renders in its
+        // other state — see the identical reasoning on every other staged-row
+        // swipe in this file (e.g. _buildOffQuotaRow's confirmDismiss) for why
+        // returning true / letting the dismissal proceed would throw Flutter's
+        // "A dismissed Dismissible widget is still part of the tree" on the
+        // next rebuild.
         return false;
       },
       child: Container(
@@ -1899,7 +1916,9 @@ class _AssignmentListScreenState extends State<AssignmentListScreen> {
       ),
     );
 
-    return _withStripeOverlay(row, badgeText: 'יימחק בשמירה');
+    return isPendingRemoval
+        ? _withStripeOverlay(row, badgeText: 'יימחק בשמירה')
+        : row;
   }
 
   /// Handle dismissing a slot: stage it for deletion (swipe-to-delete on an

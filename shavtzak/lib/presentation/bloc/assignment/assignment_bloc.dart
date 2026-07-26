@@ -123,6 +123,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
   // gets a staged quota-changing action. Conflict detection ONLY (type-G).
   final Map<String, int> _baselineQuota = {};
 
+  // Last quota this session OBSERVED for "eventId_roleType" (any role holding
+  // gap notes), refreshed on every _stageSlotAnnotationCleanup pass. Lets that
+  // cleanup tell "the quota just dropped, propose removing the notes it
+  // orphaned" apart from "same quota, re-rendering" — without which a
+  // discarded pending-removal is re-staged by the very next Firestore emit and
+  // Discard means nothing. Deliberately NOT persisted: after a reload no drop
+  // is attributable to the admin, so a surviving orphan simply shows as a
+  // plain out-of-quota row. Distinct from _baselineQuota, which is about Save
+  // conflicts, not about note cleanup.
+  final Map<String, int> _lastKnownQuota = {};
+
   // Slots of the last emitted AssignmentSlotsLoaded, kept live via onChange so
   // conflict classification has a robust slot source even when the currently
   // emitted state is NOT AssignmentSlotsLoaded (e.g. AssignmentOperating while
@@ -1020,33 +1031,41 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
     List<Assignment> roleAssignments,
   ) {
     final result = <AssignmentSlot>[];
-    for (final staged in _stagedSlotAnnotations.values) {
-      if (staged.eventId != event.id || staged.roleType != role.key) continue;
-      if (staged.desired != null) continue; // not an orphan DELETE
-      if (staged.slotIndex < renderCount) continue; // already has a normal row
-      if (roleAssignments.any((a) => a.slotIndex == staged.slotIndex)) {
-        continue; // a real assignment already renders this slotIndex
+    // Sourced from the DB, NOT from _stagedSlotAnnotations: an orphaned note
+    // exists because the EVENT stores it out of range, so its row must outlive
+    // any staged entry. Building it from staging was the "reduce a quota, then
+    // Discard All, and the row vanishes while the note stays in the DB" bug —
+    // discarding deleted the only thing drawing the row. A staged delete now
+    // only styles this row (pending removal), it no longer creates it.
+    event.slotAnnotations.forEach((key, stored) {
+      final parsed = parseSlotAnnotationKey(key);
+      if (parsed == null || parsed.roleKey != role.key) return;
+      if (stored.isEmpty) return;
+      final slotIndex = parsed.slotIndex;
+      if (slotIndex < renderCount) return; // already has a normal row
+      if (roleAssignments.any((a) => a.slotIndex == slotIndex)) {
+        return; // a real assignment already renders this slotIndex
       }
-      final baseline = staged.baseline;
-      // Shouldn't happen: a stored (non-isNoop) delete with staleKey == null
-      // always has a non-null baseline (see StagedSlotAnnotation.isNoop and
-      // _stageSlotAnnotationCleanup's baseline lookup) — kept as a defensive
-      // guard so a malformed/legacy cache entry can't render a blank row.
-      if (baseline == null) continue;
+      // A staged EDIT shows its new text; a staged DELETE keeps showing the
+      // note it is about to remove (that IS the pending-removal row); with
+      // nothing staged the stored note shows as a plain out-of-quota row.
+      final staged = _stagedSlotAnnotations[
+          StagedAssignmentChange.slotKeyFor(event.id, role.key, slotIndex)];
+      final shown = staged == null ? stored : (staged.desired ?? stored);
       result.add(AssignmentSlot(
         event: event,
         role: role,
-        slotIndex: staged.slotIndex,
+        slotIndex: slotIndex,
         currentAssignment: null,
         availableMembers: const [],
         alreadyAssignedMembers: const [],
         isOffQuota: true,
         gapAnnotation: (
-          annotation: baseline,
-          sourceKey: slotAnnotationKey(staged.roleType, staged.slotIndex),
+          annotation: shown,
+          sourceKey: slotAnnotationKey(role.key, slotIndex),
         ),
       ));
-    }
+    });
     return result;
   }
 
@@ -1954,12 +1973,14 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
         for (final a in _extraPastAssignments)
           if (a.eventId == event.eventId) a,
       ];
-      // COMMIT (not stage) the cleanup: the quota change was already committed
-      // by event.update, so its forced orphan cleanup must be committed too —
-      // otherwise it lingers as a staged entry that Discard All would throw
-      // away, stranding the orphaned note in the DB.
-      await _commitSlotAnnotationCleanupForEvent(
-          updatedEvent, rawAssignmentsForEvent);
+      // STAGE the cleanup: the admin gets a pending-removal row they can Save
+      // or Discard. Discarding is not a leak — the note keeps its own
+      // out-of-quota row (built from the DB by _buildOrphanedAnnotationSlots),
+      // so it stays visible and removable instead of being silently deleted.
+      // Idempotent with the stream backstop: whichever observes the quota drop
+      // first stages it, and the second sees no drop (see _lastKnownQuota).
+      await _stageSlotAnnotationCleanup(
+          [updatedEvent], rawAssignmentsForEvent);
     }
 
     Logger.action('stage:rebaselineQuotas', {
@@ -3675,6 +3696,17 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
             .map((a) => a.slotIndex);
         final ops = computeSlotAnnotationNormalization(
             event.slotAnnotations, roleKey, quota, filled);
+        // Propose the removal only when the quota just DROPPED — never on a
+        // plain re-render. Re-proposing on every rebuild is what made Discard
+        // meaningless: the admin discarded the pending removal and the next
+        // Firestore emit staged it straight back. First sight only seeds (a
+        // note already orphaned when the screen loaded was orphaned by an
+        // earlier session, not by anything the admin just did — it renders as
+        // a plain out-of-quota row they can remove by hand).
+        final quotaKey = _eventRoleKey(event.id, roleKey);
+        final previousQuota = _lastKnownQuota[quotaKey];
+        _lastKnownQuota[quotaKey] = quota;
+        final quotaDropped = previousQuota != null && quota < previousQuota;
         // The slotKeys the FRESH computation wants for this (event, role) —
         // used below to retract any auto-staged entry it no longer needs
         // (e.g. a quota raise that makes a previously-orphaned note valid
@@ -3689,6 +3721,7 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
               event.id, parsed.roleKey, parsed.slotIndex);
           wantedKeys.add(slotKey);
           if (_stagedSlotAnnotations.containsKey(slotKey)) continue; // don't clobber a user edit
+          if (!quotaDropped) continue; // nothing just happened — don't re-propose
           // Baseline is the CURRENTLY-stored value at whatever key this op is
           // replacing — for a re-key that is the STALE source key (op.key
           // itself is the fresh canonical target, normally unoccupied); for an
@@ -3733,100 +3766,6 @@ class AssignmentBloc extends Bloc<AssignmentEvent, AssignmentState> {
       }
     }
     if (changed) await _persistStaged();
-  }
-
-  /// The COMMITTED-path counterpart of [_stageSlotAnnotationCleanup]: an
-  /// event-form quota change already committed its new roleRequirements via
-  /// event.update, so the annotation cleanup it forces must be committed too —
-  /// WRITTEN straight to the DB, never left staged. A staged cleanup here is
-  /// the asymmetry behind the "reduce a quota, then Discard All, and the
-  /// now-orphaned note is stranded in the DB" bug: the quota drop stays
-  /// (committed) while Discard throws away the only staged entry that would
-  /// have removed the orphan. Committing removes the orphan atomically-enough
-  /// with the quota change and leaves nothing to strand.
-  ///
-  /// Slots carrying a live USER edit (auto:false StagedSlotAnnotation) are left
-  /// untouched — those belong to the user's own staged Save.
-  Future<void> _commitSlotAnnotationCleanupForEvent(
-      Event event, List<Assignment> assignments) async {
-    final roleKeys = <String>{};
-    for (final k in event.slotAnnotations.keys) {
-      final p = parseSlotAnnotationKey(k);
-      if (p != null) roleKeys.add(p.roleKey);
-    }
-    if (roleKeys.isEmpty) return;
-
-    final ops = <SlotAnnotationWrite>[];
-    // Auto-staged cleanups this commit supersedes — dropped below so they can't
-    // linger as a phantom pending row (and be thrown away by Discard All).
-    final supersededAutoKeys = <String>[];
-    for (final roleKey in roleKeys) {
-      final quota = event.roleRequirements[roleKey] ?? 0;
-      final filled = assignments
-          .where((a) => a.eventId == event.id && a.roleType == roleKey)
-          .map((a) => a.slotIndex);
-      for (final op in computeSlotAnnotationNormalization(
-          event.slotAnnotations, roleKey, quota, filled)) {
-        final parsed = parseSlotAnnotationKey(op.key);
-        if (parsed == null) continue;
-        final slotKey = StagedAssignmentChange.slotKeyFor(
-            event.id, parsed.roleKey, parsed.slotIndex);
-        final staged = _stagedSlotAnnotations[slotKey];
-        if (staged != null) {
-          // A USER edit owns its slot — it belongs to the user's own Save.
-          if (!staged.auto) continue;
-          // Our OWN auto-staged cleanup for this slot. In production it is
-          // ALWAYS here: Firestore's listener fires optimistically on the local
-          // write, so the stream delivers the reduced quota (and
-          // _stageSlotAnnotationCleanup stages the orphan) before updateEvent's
-          // await resolves and this handler runs. Backing off on presence alone
-          // was the bug — the cleanup stayed staged, Discard All threw it away,
-          // and the orphaned note was stranded in the DB with no row to show
-          // it. Commit it here instead and drop the staged copy.
-          supersededAutoKeys.add(slotKey);
-        }
-        ops.add(op);
-      }
-    }
-    if (ops.isEmpty) return;
-
-    // Update the cached event FIRST (synchronously, before any await) so a
-    // rebuild that interleaves the writes below sees the already-cleaned map
-    // and never re-detects the orphan (which would re-stage it).
-    final annotations = Map<String, SlotAnnotation>.from(event.slotAnnotations);
-    for (final op in ops) {
-      if (op.value == null) {
-        annotations.remove(op.key);
-      } else {
-        annotations[op.key] = op.value!;
-      }
-      if (op.staleKey != null) annotations.remove(op.staleKey);
-    }
-    final cleaned = event.copyWith(slotAnnotations: annotations);
-    if (_windowEventsMap.containsKey(event.id)) {
-      _windowEventsMap[event.id] = cleaned;
-    } else if (_extraPastEventsMap.containsKey(event.id)) {
-      _extraPastEventsMap[event.id] = cleaned;
-    }
-    // Same reason as the cached-event update above: drop the superseded staged
-    // entries SYNCHRONOUSLY, before any await, so an interleaving rebuild can't
-    // render them as pending-removal rows for a note this method already owns.
-    for (final k in supersededAutoKeys) {
-      _stagedSlotAnnotations.remove(k);
-    }
-    if (supersededAutoKeys.isNotEmpty) await _persistStaged();
-
-    // Commit each cleanup write. A failure leaves the DB orphan in place; the
-    // next quota change or reload re-detects and retries — no staged residue.
-    for (final op in ops) {
-      try {
-        await _eventRepository.updateSlotAnnotation(
-            event.id, op.key, op.value,
-            staleKey: op.staleKey);
-      } catch (_) {
-        // best-effort; converges on the next cleanup pass
-      }
-    }
   }
 
   /// Rebuild slots using pre-loaded data (for real-time updates)

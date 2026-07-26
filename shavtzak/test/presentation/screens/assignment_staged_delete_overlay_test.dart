@@ -200,6 +200,7 @@ void main() {
     required Set<String> stagedDeletionSlotKeys,
     AssignmentRepository? assignmentRepository,
     List<AssignmentSlot> extraSlots = const [],
+    Set<String> stagedSlotKeys = const {},
   }) async {
     // FilterPersistence is process-global static state; pin it to the
     // "show everything" defaults so no filter hides our single test slot.
@@ -215,6 +216,7 @@ void main() {
       initialState: AssignmentSlotsLoaded(
         [slot, ...extraSlots],
         stagedDeletionSlotKeys: stagedDeletionSlotKeys,
+        stagedSlotKeys: stagedSlotKeys,
       ),
     );
 
@@ -334,12 +336,14 @@ void main() {
 
   // Task 7 (SG7): an orphaned-annotation row (isOffQuota, currentAssignment
   // null, gapAnnotation set) is a SEPARATE code path from both the normal row
-  // above and the real off-quota ASSIGNMENT row covered elsewhere — it must
-  // render its note + its own inline "יימחק בשמירה" stripe (NOT driven by
-  // stagedDeletionSlotKeys, which is _stagedChanges-only and never contains
-  // this slot's key — see AssignmentListScreen's itemBuilder doc comment),
-  // and swiping it must discard the staged delete rather than stage a fresh
-  // one (there is no assignment here to delete).
+  // above and the real off-quota ASSIGNMENT row covered elsewhere. The row is
+  // built from the DB note, so it exists in TWO states, covered by the two
+  // tests below:
+  //   staged   → inline "יימחק בשמירה" stripe; swipe = ↩ keep it.
+  //   unstaged → a plain out-of-quota note row; swipe = stage its removal.
+  // The stripe is keyed off stagedSlotKeys, NOT stagedDeletionSlotKeys (which
+  // is _stagedChanges-only and never contains an annotation slot's key — see
+  // AssignmentListScreen's itemBuilder doc comment).
   testWidgets(
       'an orphaned-annotation row renders its note + the "יימחק בשמירה" '
       'badge, and swiping it dispatches DiscardStagedSlot (not '
@@ -350,6 +354,7 @@ void main() {
       // THIS row does not depend on stagedDeletionSlotKeys at all.
       stagedDeletionSlotKeys: const {},
       extraSlots: [orphanedNoteSlot],
+      stagedSlotKeys: const {'e1_medic_1'}, // its removal IS staged
     );
 
     // Exactly one "יימחק בשמירה" badge: `slot` (the normal filled row) must
@@ -383,6 +388,48 @@ void main() {
 
     // Not actually dismissed (confirmDismiss always returns false): the row
     // is still in the tree (MockBloc's fixed state never removes it).
+    expect(find.byKey(const ValueKey('orphanNote_e1_medic_1')),
+        findsOneWidget);
+  });
+
+  // The other state of the same row: an orphaned note whose removal is NOT
+  // staged — either an earlier session's leftover, or one whose pending
+  // removal the admin discarded. It must render WITHOUT the pending-removal
+  // stripe (discarding has to look different from not-yet-discarded), and its
+  // swipe stages the removal (an empty note = a user-owned delete) rather than
+  // discarding a staged entry that doesn't exist.
+  testWidgets(
+      'an orphaned-annotation row with NO staged removal renders without the '
+      '"יימחק בשמירה" badge, and swiping it stages the removal', (tester) async {
+    final assignmentBloc = await pumpAssignmentListWith(
+      tester,
+      stagedDeletionSlotKeys: const {},
+      extraSlots: [orphanedNoteSlot],
+      stagedSlotKeys: const {}, // nothing staged for this row
+    );
+
+    // The note still shows — it is in the DB — but with no pending-removal
+    // stripe anywhere on screen.
+    expect(find.textContaining('הערה שתימחק'), findsOneWidget);
+    expect(find.text('יימחק בשמירה'), findsNothing);
+    expect(find.text('מחוץ למכסה'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.drag(
+      find.byKey(const ValueKey('orphanNote_e1_medic_1')),
+      const Offset(500, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final staged =
+        assignmentBloc.addedEvents.whereType<StageSlotAnnotation>().toList();
+    expect(staged, hasLength(1));
+    expect(staged.single.slot.slotIndex, 1);
+    expect(staged.single.note, ''); // empty note == delete this annotation
+    expect(staged.single.labelId, isNull);
+    // Never a discard: there is nothing staged on this row to discard.
+    expect(assignmentBloc.addedEvents.whereType<DiscardStagedSlot>(), isEmpty);
     expect(find.byKey(const ValueKey('orphanNote_e1_medic_1')),
         findsOneWidget);
   });
