@@ -1107,7 +1107,9 @@ Pure string builders, kept separate from the widget so the URL shapes are testab
 
 **Interfaces:**
 - Consumes: `EnvironmentService.instance.isTestMode`.
-- Produces: `CalendarFeedLinks.httpsUrl(String token)`, `.webcalUrl(String token)`, `.whatsappShareUrl({required String token, String? phoneNumber, required String memberName})`.
+- Produces: `CalendarFeedLinks.httpsUrl(String token, {required bool isTestMode})`, `.webcalUrl(String token, {required bool isTestMode})`, `.whatsappShareUrl({required String token, required String? phoneNumber, required bool isTestMode})`.
+
+(An earlier draft of this line advertised a `memberName` parameter that appears in neither the tests nor the implementation below. There is no personalised greeting: WhatsApp already opens the specific member's chat via the normalised phone number, so a name in the message body adds nothing. The code block below is authoritative.)
 
 - [ ] **Step 1: Write the failing test**
 
