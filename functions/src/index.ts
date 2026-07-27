@@ -3661,7 +3661,14 @@ async function executeMutation(
         };
       }
 
-      if (credentialDoc.exists || teamData['passcodeLength'] != null) {
+      // Test for an actual stored credential rather than mere document
+      // existence. clearPasscode now deletes only the passcode fields — the
+      // document survives because it also holds calendarFeedToken — so an
+      // exists check would report a member with no passcode at all as one
+      // whose passcode merely cannot be displayed.
+      const hasStoredCredential = credentialData?.['passcodeHash'] != null ||
+        credentialData?.['passcodeLength'] != null;
+      if (hasStoredCredential || teamData['passcodeLength'] != null) {
         throw new HttpError(
           409,
           'לא ניתן להציג את קוד הגישה הקיים. יש להגדיר קוד חדש',
