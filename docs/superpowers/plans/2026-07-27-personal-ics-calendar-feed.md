@@ -16,6 +16,7 @@
 - All UI text is in Hebrew. Code comments in English.
 - All screens wrap in `Directionality(textDirection: TextDirection.rtl)`.
 - Backend collection names always come from the `Collections` object (environment-prefixed). Never hardcode `teamMembers`/`events`/`assignments`.
+  - **One documented exception:** the roles list lives at `utilities/Lists`, and `utilities` is absent from the `Collections` type because it is a known pre-existing issue that this collection is not environment-prefixed. `drive_export.ts` hardcodes it the same way. Task 5 follows that precedent; do not invent a `Collections.utilities` entry as part of this feature.
 - Entities extend `Equatable` and include **all** fields in `props`.
 - Backend tests: `cd functions && npm test` (this runs `tsc` first, then `node --test "lib/**/*.test.js"`).
 - Flutter tests: `cd shavtzak && flutter test`. Analyzer: `cd shavtzak && flutter analyze` — the baseline has ~107 pre-existing infos, so "clean" means **zero new** findings.
@@ -987,18 +988,13 @@ app.get('/calendar/feed/:environment/:tokenFile', async (
 Run: `cd functions && npm run build && npm test`
 Expected: build clean, all tests pass.
 
-- [ ] **Step 3: Verify the route by hand**
+- [ ] **Step 3: Hand the route's verification to the owner — do not deploy**
 
-The spec asked for automated endpoint tests. This repo's `functions` suite is pure-unit with no Firestore emulator harness, and standing one up for four assertions is out of proportion to this feature. The route's logic is therefore kept thin — every rule worth testing lives in the pure functions from Tasks 1–3 — and the route itself is verified by hand below. If an emulator harness is ever added, promote these four checks into it.
+**Do not run `firebase deploy`.** Deploying is the owner's action, at the owner's timing. A deploy pushes all three functions (`api`, `calendarSyncTask`, `calendarJobSweep`) and would also carry any as-yet-unreleased `functions/` commits sitting on `main` — not something to trigger as a side effect of testing a route.
 
-Deploy to the test environment and fetch a feed with a real token:
+The spec asked for automated endpoint tests. This repo's `functions` suite is pure-unit with no Firestore emulator harness, and standing one up for four assertions is out of proportion to this feature. The route's logic is therefore kept deliberately thin — every rule worth testing lives in the pure functions from Tasks 1–3 — and the route itself stays unverified until the owner deploys.
 
-```bash
-firebase deploy --only functions
-curl -i "https://us-central1-tsevet-shir-shavtzak.cloudfunctions.net/api/calendar/feed/test/<token>.ics"
-```
-
-Expected: `200`, `Content-Type: text/calendar; charset=utf-8`, a body starting `BEGIN:VCALENDAR`. Then confirm `curl -o /dev/null -w '%{http_code}' ".../calendar/feed/test/bogus.ics"` returns `404`, and that a **test** token against `/prod/` also returns `404`.
+Record in the task report that the route is **built and type-checked but not exercised**, so the final review knows this is a known, accepted gap rather than an oversight. The owner's post-deploy checks are listed at the end of this plan.
 
 - [ ] **Step 4: Commit**
 
@@ -1278,13 +1274,26 @@ git commit -m "feat(calendar-feed): subscribe dialog with member and admin entry
 
 ---
 
-## Deployment
+## Deployment — owner-run, and the order matters
 
-**Cloud Functions do not auto-deploy.** After merging, the owner must run:
+**No subagent deploys anything.** Every task builds, type-checks and unit-tests locally.
+
+**Deploy functions BEFORE merging the branch.** The Flutter web app auto-deploys on merge to `main` (`.github/workflows/web.yml`); Cloud Functions never do. So merging first would put a web client that calls `teamMember.ensureCalendarFeedToken` in front of a backend that doesn't know the operation, and the subscribe dialog would fail for everyone until the deploy caught up. The reverse order is harmless — the new backend simply goes unused until the web app ships.
 
 ```bash
 cd "/Users/omerbengal/Documents/Github Projects/Shavtzak"
 firebase deploy --only functions
 ```
 
-Until that runs, the feed URL returns 404 in production regardless of what the web app shows. The Flutter web app **does** auto-deploy on merge to `main` via `.github/workflows/web.yml`.
+Note this pushes all three functions (`api`, `calendarSyncTask`, `calendarJobSweep`) and carries along any unreleased `functions/` commits already on `main` — check what those are before running it.
+
+### Post-deploy verification (owner)
+
+Get a token by opening the subscribe dialog in `/test`, then:
+
+```bash
+BASE="https://us-central1-tsevet-shir-shavtzak.cloudfunctions.net/api/calendar/feed"
+curl -i "$BASE/test/<token>.ics"                              # 200, text/calendar, BEGIN:VCALENDAR
+curl -o /dev/null -w '%{http_code}\n' "$BASE/test/bogus.ics"  # 404
+curl -o /dev/null -w '%{http_code}\n' "$BASE/prod/<token>.ics" # 404 — test token must not read prod
+```
