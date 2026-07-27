@@ -47,6 +47,7 @@ import type {
 } from './calendar_sync_backend';
 import {normalizeParticipantGroups} from './participant_groups';
 import {buildSlotAnnotationMerge} from './slot_annotations';
+import {buildMemberFeedParts, renderIcsFeed} from './calendar_feed';
 
 initializeApp();
 
@@ -6213,6 +6214,139 @@ app.post('/calendar/app-event-guest-cleanup/status', async (request: Request, re
       ok: true,
       ...serializeGuestCleanupJob(snapshot.id, snapshot.data() ?? {}),
     });
+  } catch (error) {
+    handleError(response, error);
+  }
+});
+
+app.get('/calendar/feed/:environment/:tokenFile', async (
+  request: Request,
+  response: Response,
+) => {
+  try {
+    const environmentParam = String(request.params['environment'] ?? '');
+    if (environmentParam !== 'prod' && environmentParam !== 'test') {
+      response.status(404).send('Not found');
+      return;
+    }
+    const environment: EnvironmentMode =
+      environmentParam === 'test' ? 'test' : 'production';
+    // getCollections is the existing prefixing helper (index.ts:182). Never
+    // write a second copy of the prefix logic.
+    const collections = getCollections(environment);
+
+    const token = String(request.params['tokenFile'] ?? '').replace(/\.ics$/i, '');
+    if (token.length === 0) {
+      response.status(404).send('Not found');
+      return;
+    }
+
+    // The token lives on the Admin-SDK-only private credentials document, NOT
+    // on teamMembers — every active member can read every teamMembers doc.
+    // The credential doc's id IS the member id.
+    const credentialSnapshot = await db
+      .collection(collections.privateCredentials)
+      .where('calendarFeedToken', '==', token)
+      .limit(1)
+      .get();
+    // Unknown and malformed tokens are indistinguishable to a caller.
+    if (credentialSnapshot.empty) {
+      response.status(404).send('Not found');
+      return;
+    }
+
+    const memberId = credentialSnapshot.docs[0].id;
+    const memberDoc = await db
+      .collection(collections.teamMembers)
+      .doc(memberId)
+      .get();
+    if (!memberDoc.exists) {
+      response.status(404).send('Not found');
+      return;
+    }
+    const memberData = memberDoc.data() ?? {};
+    const memberName = typeof memberData['name'] === 'string'
+      ? memberData['name']
+      : '';
+
+    const assignmentsSnapshot = await db
+      .collection(collections.assignments)
+      .where('teamMemberId', '==', memberId)
+      // Explicit order so the feed is byte-stable between polls. Without it a
+      // reordered role list inside a DESCRIPTION would look like a change to
+      // every subscriber's calendar on every refresh.
+      .orderBy('__name__')
+      .get();
+    const assignments = assignmentsSnapshot.docs.map((doc) => {
+      const data = doc.data() ?? {};
+      return {
+        eventId: typeof data['eventId'] === 'string' ? data['eventId'] : '',
+        roleType: typeof data['roleType'] === 'string' ? data['roleType'] : '',
+        notes: typeof data['notes'] === 'string' ? data['notes'] : '',
+      };
+    }).filter((assignment) => assignment.eventId.length > 0);
+
+    const eventIds = Array.from(new Set(assignments.map((a) => a.eventId)));
+    const eventsById = new Map<string, Record<string, unknown>>();
+    if (eventIds.length > 0) {
+      const refs = eventIds.map(
+        (id) => db.collection(collections.events).doc(id),
+      );
+      const eventDocs = await db.getAll(...refs);
+      for (const doc of eventDocs) {
+        if (doc.exists) {
+          eventsById.set(doc.id, doc.data() ?? {});
+        }
+      }
+    }
+
+    const listsDoc = await db.collection('utilities').doc('Lists').get();
+    const roleHebrewNames: Record<string, string> = {};
+    const rolesList = listsDoc.data()?.['Roles'];
+    if (Array.isArray(rolesList)) {
+      for (const entry of rolesList) {
+        if (entry == null || typeof entry !== 'object') continue;
+        const role = entry as Record<string, unknown>;
+        const key = typeof role['key'] === 'string' ? role['key'] : '';
+        const hebrewName = typeof role['hebrewName'] === 'string'
+          ? role['hebrewName']
+          : '';
+        if (key.length > 0) {
+          roleHebrewNames[key] = hebrewName.length > 0 ? hebrewName : key;
+        }
+      }
+    }
+
+    const parts = buildMemberFeedParts({
+      memberId: memberDoc.id,
+      // EnvironmentMode and BackendEnvironmentMode are both
+      // 'production' | 'test', so this passes through unchanged.
+      environment,
+      assignments,
+      eventsById,
+      roleHebrewNames,
+    });
+
+    const ics = renderIcsFeed({
+      calendarName: memberName.length > 0 ? `שבצק – ${memberName}` : 'שבצק',
+      dtstamp: new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''),
+      parts,
+    });
+
+    // The ETag is computed over the feed body with DTSTAMP stripped, since
+    // DTSTAMP changes on every render and would defeat every 304.
+    const etag = `"${createHash('sha256')
+      .update(ics.replace(/^DTSTAMP:.*$/gm, ''))
+      .digest('base64url')}"`;
+    response.setHeader('ETag', etag);
+    if (request.headers['if-none-match'] === etag) {
+      response.status(304).end();
+      return;
+    }
+
+    response.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    response.setHeader('Cache-Control', 'public, max-age=3600');
+    response.status(200).send(ics);
   } catch (error) {
     handleError(response, error);
   }
