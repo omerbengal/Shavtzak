@@ -47,6 +47,7 @@ import type {
 } from './calendar_sync_backend';
 import {normalizeParticipantGroups} from './participant_groups';
 import {buildSlotAnnotationMerge} from './slot_annotations';
+import {buildMemberFeedParts, renderIcsFeed} from './calendar_feed';
 
 initializeApp();
 
@@ -1567,6 +1568,15 @@ function finalDateCheck(value: string, fieldName: string): void {
 
 function toTimestamp(value: unknown, fieldName: string): Timestamp {
   return Timestamp.fromDate(asDate(value, fieldName));
+}
+
+/**
+ * 256 bits of entropy, base64url encoded. This value is a bearer credential
+ * that ends up in a URL pasted into calendar apps and WhatsApp, so it must
+ * never be derived from uniqueKey, which authenticates the member.
+ */
+function generateCalendarFeedToken(): string {
+  return randomBytes(32).toString('base64url');
 }
 
 const ISRAEL_TIME_ZONE = 'Asia/Jerusalem';
@@ -3480,7 +3490,16 @@ async function executeMutation(
         throw new HttpError(404, 'Team member not found');
       }
       const teamBefore = teamDoc.data() ?? {};
-      await db.collection(collections.privateCredentials).doc(memberId).delete();
+      // Field-scoped delete, not a whole-document delete: this document may
+      // also hold calendarFeedToken, which clearing a passcode must not
+      // destroy. set(..., {merge: true}) also succeeds when the member has
+      // no credentials document yet.
+      await db.collection(collections.privateCredentials).doc(memberId).set({
+        passcodeHash: FieldValue.delete(),
+        passcodeValue: FieldValue.delete(),
+        passcodeLength: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, {merge: true});
       await teamRef.update({
         passcodeLength: FieldValue.delete(),
         passcode: FieldValue.delete(),
@@ -3496,6 +3515,81 @@ async function executeMutation(
         after: teamAfter,
       });
       return {ok: true};
+    }
+
+    case 'teamMember.ensureCalendarFeedToken': {
+      const memberId = requireString(payload['memberId'], 'memberId');
+      requireSelfOrAdmin(actor, memberId);
+
+      // calendarFeedToken lives on privateCredentials, not teamMembers:
+      // firestore.rules grants every active member read on the whole
+      // teamMembers collection, which would let any teammate harvest
+      // another member's feed token. privateCredentials is Admin-SDK-only.
+      const teamRef = db.collection(collections.teamMembers).doc(memberId);
+      const teamDoc = await teamRef.get();
+      if (!teamDoc.exists) {
+        throw new HttpError(404, 'Team member not found');
+      }
+
+      const credentialRef = db.collection(collections.privateCredentials).doc(memberId);
+      // Transaction prevents two concurrent first-time calls from each
+      // minting a different token and racing on the write; without it, the
+      // losing caller could be handed a token that never matches what is
+      // persisted, and their feed link would 404.
+      const {token, minted} = await db.runTransaction(async (transaction) => {
+        const credentialDoc = await transaction.get(credentialRef);
+        const existing = credentialDoc.data()?.['calendarFeedToken'];
+        if (typeof existing === 'string' && existing.length > 0) {
+          return {token: existing, minted: false};
+        }
+
+        const newToken = generateCalendarFeedToken();
+        transaction.set(credentialRef, {
+          calendarFeedToken: newToken,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+        return {token: newToken, minted: true};
+      });
+
+      if (minted) {
+        // Audit the mint so there is a record of who was granted feed
+        // access (an admin can mint on another member's behalf). Returning
+        // an already-existing token changes nothing and is not logged. The
+        // token itself is a secret, so it is deliberately absent from the
+        // audit payload.
+        await writeAuditLog(
+          db, collections, actor, operation, 'teamMember', memberId, {}, {},
+        );
+      }
+      return {ok: true, token};
+    }
+
+    case 'teamMember.rotateCalendarFeedToken': {
+      const memberId = requireString(payload['memberId'], 'memberId');
+      requireSelfOrAdmin(actor, memberId);
+
+      // See ensureCalendarFeedToken above: calendarFeedToken lives on
+      // privateCredentials, not teamMembers, because teamMembers is
+      // readable by every active member per firestore.rules.
+      const teamRef = db.collection(collections.teamMembers).doc(memberId);
+      const teamDoc = await teamRef.get();
+      if (!teamDoc.exists) {
+        throw new HttpError(404, 'Team member not found');
+      }
+
+      const token = generateCalendarFeedToken();
+      // set(..., {merge: true}) rather than update(): a member may have no
+      // credentials document yet (e.g. one who never set a passcode).
+      await db.collection(collections.privateCredentials).doc(memberId).set({
+        calendarFeedToken: token,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, {merge: true});
+      // The token itself is a secret, so it is deliberately absent from the
+      // audit payload; only the fact of rotation is recorded.
+      await writeAuditLog(
+        db, collections, actor, operation, 'teamMember', memberId, {}, {},
+      );
+      return {ok: true, token};
     }
 
     case 'teamMember.getPasscode': {
@@ -3567,7 +3661,14 @@ async function executeMutation(
         };
       }
 
-      if (credentialDoc.exists || teamData['passcodeLength'] != null) {
+      // Test for an actual stored credential rather than mere document
+      // existence. clearPasscode now deletes only the passcode fields — the
+      // document survives because it also holds calendarFeedToken — so an
+      // exists check would report a member with no passcode at all as one
+      // whose passcode merely cannot be displayed.
+      const hasStoredCredential = credentialData?.['passcodeHash'] != null ||
+        credentialData?.['passcodeLength'] != null;
+      if (hasStoredCredential || teamData['passcodeLength'] != null) {
         throw new HttpError(
           409,
           'לא ניתן להציג את קוד הגישה הקיים. יש להגדיר קוד חדש',
@@ -3619,6 +3720,7 @@ async function executeMutation(
             passcodeLength: DEFAULT_TEAM_MEMBER_PASSCODE_LENGTH,
             updatedAt: FieldValue.serverTimestamp(),
           },
+          {merge: true},
         );
       }
       await batch.commit();
@@ -6119,6 +6221,156 @@ app.post('/calendar/app-event-guest-cleanup/status', async (request: Request, re
       ok: true,
       ...serializeGuestCleanupJob(snapshot.id, snapshot.data() ?? {}),
     });
+  } catch (error) {
+    handleError(response, error);
+  }
+});
+
+app.get('/calendar/feed/:environment/:tokenFile', async (
+  request: Request,
+  response: Response,
+) => {
+  try {
+    const environmentParam = String(request.params['environment'] ?? '');
+    if (environmentParam !== 'prod' && environmentParam !== 'test') {
+      response.status(404).send('Not found');
+      return;
+    }
+    const environment: EnvironmentMode =
+      environmentParam === 'test' ? 'test' : 'production';
+    // getCollections is the existing prefixing helper (index.ts:182). Never
+    // write a second copy of the prefix logic.
+    const collections = getCollections(environment);
+
+    const token = String(request.params['tokenFile'] ?? '').replace(/\.ics$/i, '');
+    // Tokens are always generateCalendarFeedToken()'s output (index.ts:1578)
+    // — exactly 43 base64url characters. Reject anything else before the
+    // Firestore lookup: a scripted junk request then costs 0 reads instead
+    // of 1, and the 404 stays byte-identical to every other failure path
+    // below so it remains indistinguishable to the caller.
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
+      response.status(404).send('Not found');
+      return;
+    }
+
+    // The token lives on the Admin-SDK-only private credentials document, NOT
+    // on teamMembers — every active member can read every teamMembers doc.
+    // The credential doc's id IS the member id.
+    const credentialSnapshot = await db
+      .collection(collections.privateCredentials)
+      .where('calendarFeedToken', '==', token)
+      .limit(1)
+      .get();
+    // Unknown and malformed tokens are indistinguishable to a caller.
+    if (credentialSnapshot.empty) {
+      response.status(404).send('Not found');
+      return;
+    }
+
+    const memberId = credentialSnapshot.docs[0].id;
+    const memberDoc = await db
+      .collection(collections.teamMembers)
+      .doc(memberId)
+      .get();
+    if (!memberDoc.exists) {
+      response.status(404).send('Not found');
+      return;
+    }
+    const memberData = memberDoc.data() ?? {};
+    // Feed access follows membership status: once a member is deactivated or
+    // archived, their link must stop resolving, or someone who has left the
+    // team would keep receiving live schedule updates indefinitely.
+    if (memberData['isActive'] !== true || memberData['isArchived'] === true) {
+      response.status(404).send('Not found');
+      return;
+    }
+    const memberName = typeof memberData['name'] === 'string'
+      ? memberData['name']
+      : '';
+
+    const assignmentsSnapshot = await db
+      .collection(collections.assignments)
+      .where('teamMemberId', '==', memberId)
+      // Explicit order so the feed is byte-stable between polls. Without it a
+      // reordered role list inside a DESCRIPTION would look like a change to
+      // every subscriber's calendar on every refresh.
+      .orderBy('__name__')
+      .get();
+    const assignments = assignmentsSnapshot.docs.map((doc) => {
+      const data = doc.data() ?? {};
+      return {
+        eventId: typeof data['eventId'] === 'string' ? data['eventId'] : '',
+        roleType: typeof data['roleType'] === 'string' ? data['roleType'] : '',
+        notes: typeof data['notes'] === 'string' ? data['notes'] : '',
+      };
+    }).filter((assignment) => assignment.eventId.length > 0);
+
+    const eventIds = Array.from(new Set(assignments.map((a) => a.eventId)));
+    const eventsById = new Map<string, Record<string, unknown>>();
+    if (eventIds.length > 0) {
+      const refs = eventIds.map(
+        (id) => db.collection(collections.events).doc(id),
+      );
+      const eventDocs = await db.getAll(...refs);
+      for (const doc of eventDocs) {
+        if (doc.exists) {
+          eventsById.set(doc.id, doc.data() ?? {});
+        }
+      }
+    }
+
+    const listsData = await getUtilitiesListsDoc();
+    const roleHebrewNames: Record<string, string> = {};
+    for (const role of getRolesArray(listsData)) {
+      if (role == null || typeof role !== 'object') continue;
+      const key = typeof role['key'] === 'string' ? role['key'] : '';
+      const hebrewName = typeof role['hebrewName'] === 'string'
+        ? role['hebrewName']
+        : '';
+      if (key.length > 0) {
+        roleHebrewNames[key] = hebrewName.length > 0 ? hebrewName : key;
+      }
+    }
+
+    const parts = buildMemberFeedParts({
+      memberId: memberDoc.id,
+      // EnvironmentMode and BackendEnvironmentMode are both
+      // 'production' | 'test', so this passes through unchanged.
+      environment,
+      assignments,
+      eventsById,
+      roleHebrewNames,
+    });
+
+    const ics = renderIcsFeed({
+      calendarName: memberName.length > 0 ? `שבצק – ${memberName}` : 'שבצק',
+      dtstamp: new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''),
+      parts,
+    });
+
+    // The ETag is computed over the feed body with DTSTAMP stripped, since
+    // DTSTAMP changes on every render and would defeat every 304.
+    const etag = `"${createHash('sha256')
+      .update(ics.replace(/^DTSTAMP:.*$/gm, ''))
+      .digest('base64url')}"`;
+    response.setHeader('ETag', etag);
+    // max-age=0 + must-revalidate, not a long max-age: the dialog tells
+    // members Apple Calendar polls roughly every 5 minutes, and a hint that
+    // lets a client skip revalidation for up to an hour would make most of
+    // those polls a silent no-op. It also bounds how long a rotated
+    // (revoked) link can keep serving from the client's own cache. The
+    // ETag still saves bandwidth on a 304 — it just can't save the
+    // Firestore reads above, which all happen before it's computed. Set
+    // on both branches (RFC 7232 SHOULD) so the 304 reply is cached the
+    // same way as the 200.
+    response.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    if (request.headers['if-none-match'] === etag) {
+      response.status(304).end();
+      return;
+    }
+
+    response.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    response.status(200).send(ics);
   } catch (error) {
     handleError(response, error);
   }

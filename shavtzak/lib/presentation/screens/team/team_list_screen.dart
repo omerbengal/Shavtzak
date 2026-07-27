@@ -43,6 +43,7 @@ import '../../widgets/event_search_filter_bar.dart';
 import '../../widgets/interactive_filter_bar.dart';
 import '../../widgets/swipeable_page_view.dart';
 import '../../widgets/admin_passcode_dialog.dart';
+import '../../widgets/calendar_feed_dialog.dart';
 import '../../widgets/vehicle_info_copy_dialog.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../../data/repositories/user_selection_repository.dart';
@@ -2806,6 +2807,47 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                               ),
                                             ],
                                           ),
+                                        ),
+                                        const SizedBox(height: 16),
+
+                                        // Personal calendar feed section
+                                        Row(
+                                          children: [
+                                            const Text(
+                                              'יומן אישי',
+                                              style: TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            TextButton.icon(
+                                              onPressed: () {
+                                                Logger.action(
+                                                    'open:calendarFeedDialog', {
+                                                  'memberId': widget.member?.id,
+                                                });
+                                                showCalendarFeedDialog(
+                                                  context,
+                                                  member: widget.member!,
+                                                  isAdminView: true,
+                                                );
+                                              },
+                                              icon: const Icon(
+                                                  Icons.calendar_month,
+                                                  size: 20),
+                                              label: const Text('קישור ליומן'),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor:
+                                                    Theme.of(context)
+                                                        .primaryColor,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 8),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                         const SizedBox(height: 16),
                                       ],
