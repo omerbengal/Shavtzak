@@ -4,6 +4,7 @@ import {
   escapeIcsText,
   foldIcsLine,
   renderIcsFeed,
+  buildMemberFeedParts,
   type FeedEventPart,
 } from './calendar_feed';
 
@@ -206,4 +207,147 @@ test('renderIcsFeed escapes UID like other text properties', () => {
   });
 
   assert.ok(ics.includes('UID:evt-with\\,semicolon\\;uid@shavtzak'));
+});
+
+function timedEvent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    name: 'היכל התרבות',
+    startDate: new Date('2026-08-14T21:00:00Z'),
+    endDate: new Date('2026-08-14T21:00:00Z'),
+    assemblyTime: '17:00',
+    startTime: '20:00',
+    endTime: '23:00',
+    location: 'תל אביב',
+    isDeactivated: false,
+    ...overrides,
+  };
+}
+
+test('buildMemberFeedParts emits an assembly part and a main part', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{eventId: 'evt-1', roleType: 'entryScreening'}],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: {entryScreening: 'סינון כניסה'},
+  });
+
+  assert.equal(parts.length, 2);
+  assert.deepEqual(
+    parts.map((part) => part.uid).sort(),
+    ['evt-1-assembly-mem-1@shavtzak', 'evt-1-main-mem-1@shavtzak'],
+  );
+  assert.ok(parts.every((part) => part.description.includes('סינון כניסה')));
+});
+
+test('buildMemberFeedParts collapses two assignments in one event to one pair', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [
+      {eventId: 'evt-1', roleType: 'entryScreening'},
+      {eventId: 'evt-1', roleType: 'investigation'},
+    ],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: {entryScreening: 'סינון כניסה', investigation: 'תחקור'},
+  });
+
+  assert.equal(parts.length, 2, 'expected one assembly + one main, not four');
+  assert.equal(new Set(parts.map((part) => part.uid)).size, 2, 'UIDs collided');
+  const main = parts.find((part) => part.uid.includes('-main-'))!;
+  assert.ok(main.description.includes('סינון כניסה'));
+  assert.ok(main.description.includes('תחקור'));
+});
+
+test('buildMemberFeedParts excludes deactivated events', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{eventId: 'evt-1', roleType: 'entryScreening'}],
+    eventsById: new Map([['evt-1', timedEvent({isDeactivated: true})]]),
+    roleHebrewNames: {},
+  });
+
+  assert.deepEqual(parts, []);
+});
+
+test('buildMemberFeedParts keeps past events — history is retained forever', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{eventId: 'old', roleType: 'entryScreening'}],
+    eventsById: new Map([['old', timedEvent({
+      startDate: new Date('2026-02-09T22:00:00Z'),
+      endDate: new Date('2026-02-09T22:00:00Z'),
+    })]]),
+    roleHebrewNames: {},
+  });
+
+  assert.equal(parts.length, 2);
+});
+
+test('buildMemberFeedParts falls back to one all-day part when times are missing', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{eventId: 'evt-1', roleType: 'entryScreening'}],
+    eventsById: new Map([['evt-1', timedEvent({assemblyTime: '', endTime: ''})]]),
+    roleHebrewNames: {},
+  });
+
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0].allDayStart, '2026-08-15');
+  assert.equal(parts[0].allDayEnd, '2026-08-16');
+  assert.equal(parts[0].start, null);
+});
+
+test('buildMemberFeedParts skips an assignment whose event is missing or malformed', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [
+      {eventId: 'gone', roleType: 'entryScreening'},
+      {eventId: 'broken', roleType: 'entryScreening'},
+      {eventId: 'evt-1', roleType: 'entryScreening'},
+    ],
+    // 'broken' has no name, so buildDesiredAppEventState throws for it. One bad
+    // document must not take down the whole feed.
+    eventsById: new Map<string, Record<string, unknown>>([
+      ['broken', {isDeactivated: false}],
+      ['evt-1', timedEvent()],
+    ]),
+    roleHebrewNames: {},
+  });
+
+  assert.equal(parts.length, 2);
+  assert.ok(parts.every((part) => part.uid.startsWith('evt-1-')));
+});
+
+test('buildMemberFeedParts includes assignment notes in the description', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{
+      eventId: 'evt-1',
+      roleType: 'entryScreening',
+      notes: 'מסייע לאורנה בכניסות',
+    }],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: {entryScreening: 'סינון כניסה'},
+  });
+
+  assert.ok(parts[0].description.includes('מסייע לאורנה בכניסות'));
+  assert.ok(parts[0].description.includes('סינון כניסה'));
+});
+
+test('buildMemberFeedParts falls back to the raw role key when there is no Hebrew name', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{eventId: 'evt-1', roleType: 'role_1770725991134'}],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: {},
+  });
+
+  assert.ok(parts[0].description.includes('role_1770725991134'));
 });

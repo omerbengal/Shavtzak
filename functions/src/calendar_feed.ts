@@ -3,6 +3,11 @@
  * Firestore or Express dependencies so every rule below is unit-testable.
  */
 
+import {
+  buildDesiredAppEventState,
+  type BackendEnvironmentMode,
+} from './calendar_sync_backend';
+
 /** Escapes a value for an RFC 5545 TEXT property (section 3.3.11). */
 export function escapeIcsText(value: string): string {
   return value
@@ -171,4 +176,102 @@ export function renderIcsFeed(params: {
 
   lines.push('END:VCALENDAR');
   return lines.map(foldIcsLine).join(CRLF) + CRLF;
+}
+
+type FeedAssignment = {eventId: string; roleType: string; notes?: string};
+
+/**
+ * Groups a member's assignments by event and renders each event as the same
+ * assembly/main pair the shared Shavtzak calendar produces.
+ *
+ * The grouping key is (member, event), NOT (member, assignment): a member can
+ * hold several roles in one event, and emitting a pair per assignment would
+ * produce duplicate UIDs and stacked identical blocks in their calendar.
+ */
+export function buildMemberFeedParts(params: {
+  memberId: string;
+  environment: BackendEnvironmentMode;
+  assignments: FeedAssignment[];
+  eventsById: Map<string, Record<string, unknown>>;
+  roleHebrewNames: Record<string, string>;
+}): FeedEventPart[] {
+  const rolesByEventId = new Map<string, string[]>();
+  const notesByEventId = new Map<string, string[]>();
+  for (const assignment of params.assignments) {
+    const roleName = params.roleHebrewNames[assignment.roleType] ??
+      assignment.roleType;
+    const roles = rolesByEventId.get(assignment.eventId) ?? [];
+    if (!roles.includes(roleName)) {
+      roles.push(roleName);
+    }
+    rolesByEventId.set(assignment.eventId, roles);
+
+    const note = (assignment.notes ?? '').trim();
+    const notes = notesByEventId.get(assignment.eventId) ?? [];
+    if (note.length > 0 && !notes.includes(note)) {
+      notes.push(note);
+    }
+    notesByEventId.set(assignment.eventId, notes);
+  }
+
+  const parts: FeedEventPart[] = [];
+
+  for (const [eventId, roles] of rolesByEventId) {
+    const eventData = params.eventsById.get(eventId);
+    if (eventData == null || eventData['isDeactivated'] === true) {
+      continue;
+    }
+
+    let desired;
+    try {
+      desired = buildDesiredAppEventState(eventId, eventData, params.environment);
+    } catch {
+      // A malformed event document must not take down the whole feed.
+      continue;
+    }
+
+    const notes = notesByEventId.get(eventId) ?? [];
+    const description = [`תפקיד: ${roles.join(', ')}`, ...notes].join('\n');
+    const base = {
+      location: desired.location,
+      description,
+      start: null,
+      end: null,
+      allDayStart: null,
+      allDayEnd: null,
+    };
+
+    if (desired.useAllDay) {
+      parts.push({
+        ...base,
+        uid: `${eventId}-main-${params.memberId}@shavtzak`,
+        title: desired.mainTitle,
+        allDayStart: desired.allDayStartDate,
+        allDayEnd: desired.allDayEndDate,
+      });
+      continue;
+    }
+
+    if (desired.assemblyStartPrefix != null && desired.assemblyEndPrefix != null) {
+      parts.push({
+        ...base,
+        uid: `${eventId}-assembly-${params.memberId}@shavtzak`,
+        title: desired.assemblyTitle,
+        start: desired.assemblyStartPrefix,
+        end: desired.assemblyEndPrefix,
+      });
+    }
+
+    if (desired.mainStartPrefix != null && desired.mainEndPrefix != null) {
+      parts.push({
+        ...base,
+        uid: `${eventId}-main-${params.memberId}@shavtzak`,
+        title: desired.mainTitle,
+        start: desired.mainStartPrefix,
+        end: desired.mainEndPrefix,
+      });
+    }
+  }
+
+  return parts;
 }
