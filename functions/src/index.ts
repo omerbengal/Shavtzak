@@ -1569,6 +1569,15 @@ function toTimestamp(value: unknown, fieldName: string): Timestamp {
   return Timestamp.fromDate(asDate(value, fieldName));
 }
 
+/**
+ * 256 bits of entropy, base64url encoded. This value is a bearer credential
+ * that ends up in a URL pasted into calendar apps and WhatsApp, so it must
+ * never be derived from uniqueKey, which authenticates the member.
+ */
+function generateCalendarFeedToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
 const ISRAEL_TIME_ZONE = 'Asia/Jerusalem';
 
 type CalendarDateParts = {
@@ -3496,6 +3505,52 @@ async function executeMutation(
         after: teamAfter,
       });
       return {ok: true};
+    }
+
+    case 'teamMember.ensureCalendarFeedToken': {
+      const memberId = requireString(payload['memberId'], 'memberId');
+      requireSelfOrAdmin(actor, memberId);
+
+      const teamRef = db.collection(collections.teamMembers).doc(memberId);
+      const teamDoc = await teamRef.get();
+      if (!teamDoc.exists) {
+        throw new HttpError(404, 'Team member not found');
+      }
+
+      const existing = teamDoc.data()?.['calendarFeedToken'];
+      if (typeof existing === 'string' && existing.length > 0) {
+        return {ok: true, token: existing};
+      }
+
+      const token = generateCalendarFeedToken();
+      await teamRef.update({
+        calendarFeedToken: token,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return {ok: true, token};
+    }
+
+    case 'teamMember.rotateCalendarFeedToken': {
+      const memberId = requireString(payload['memberId'], 'memberId');
+      requireSelfOrAdmin(actor, memberId);
+
+      const teamRef = db.collection(collections.teamMembers).doc(memberId);
+      const teamDoc = await teamRef.get();
+      if (!teamDoc.exists) {
+        throw new HttpError(404, 'Team member not found');
+      }
+
+      const token = generateCalendarFeedToken();
+      await teamRef.update({
+        calendarFeedToken: token,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      // The token itself is a secret, so it is deliberately absent from the
+      // audit payload; only the fact of rotation is recorded.
+      await writeAuditLog(
+        db, collections, actor, operation, 'teamMember', memberId, {}, {},
+      );
+      return {ok: true, token};
     }
 
     case 'teamMember.getPasscode': {
