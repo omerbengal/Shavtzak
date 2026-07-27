@@ -53,6 +53,9 @@ export function foldIcsLine(line: string): string {
 }
 
 export type FeedEventPart = {
+  /** The source event, kept separate from `uid` so it can be logged on its
+   *  own without incidentally logging the member id folded into the uid. */
+  eventId: string;
   uid: string;
   title: string;
   location: string | null;
@@ -126,6 +129,8 @@ function renderPart(part: FeedEventPart, dtstamp: string): string[] {
     isValidDateFormat(part.allDayStart) && isValidDateFormat(part.allDayEnd);
 
   if (!hasValidTimedPair && !hasValidAllDayPair) {
+    // No token or member name here — an event id alone is safe to log.
+    console.warn(`[calendar-feed] event ${part.eventId}: skipping malformed part (incomplete or invalid start/end pair)`);
     return [];
   }
 
@@ -181,6 +186,42 @@ export function renderIcsFeed(params: {
 type FeedAssignment = {eventId: string; roleType: string; notes?: string};
 
 /**
+ * Rolls the date portion of a 'YYYY-MM-DDTHH:MM' prefix forward by one day,
+ * preserving the time-of-day. Parses the digits into numbers and lets
+ * Date.UTC normalize the overflow, rather than doing string arithmetic on
+ * the day component, so this is correct across month and year boundaries
+ * (e.g. 31 August rolls to 1 September).
+ */
+function addOneDayToPrefix(prefix: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(T\d{2}:\d{2})$/.exec(prefix);
+  if (match == null) {
+    // Defensive only: every caller passes a prefix already shaped by
+    // formatDateTimePrefix. Nothing sane to roll, so return unchanged.
+    return prefix;
+  }
+  const [, year, month, day, timePart] = match;
+  const rolled = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day) + 1));
+  const y = String(rolled.getUTCFullYear()).padStart(4, '0');
+  const m = String(rolled.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(rolled.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}${timePart}`;
+}
+
+/**
+ * Ensures an event part's end prefix is strictly after its start prefix, per
+ * RFC 5545 §3.6.1. Both are 'YYYY-MM-DDTHH:MM' strings, so lexicographic
+ * comparison is a valid ordering check. An overnight shift (e.g. assembly at
+ * 22:00, endTime '00:00' on the same startDate) produces an end time that is
+ * on or before the start when read literally — the source data means "the
+ * next day", it just doesn't say so. Roll the end date forward instead of
+ * dropping the part: skipping it would delete the member's shift from their
+ * calendar entirely, which is worse than briefly showing a wrong time.
+ */
+function rollEndPrefixForward(startPrefix: string, endPrefix: string): string {
+  return endPrefix <= startPrefix ? addOneDayToPrefix(endPrefix) : endPrefix;
+}
+
+/**
  * Groups a member's assignments by event and renders each event as the same
  * assembly/main pair the shared Shavtzak calendar produces.
  *
@@ -225,14 +266,18 @@ export function buildMemberFeedParts(params: {
     let desired;
     try {
       desired = buildDesiredAppEventState(eventId, eventData, params.environment);
-    } catch {
-      // A malformed event document must not take down the whole feed.
+    } catch (error) {
+      // A malformed event document must not take down the whole feed. No
+      // token or member name here — an event id alone is safe to log.
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[calendar-feed] event ${eventId}: skipping malformed event document (${reason})`);
       continue;
     }
 
     const notes = notesByEventId.get(eventId) ?? [];
     const description = [`תפקיד: ${roles.join(', ')}`, ...notes].join('\n');
     const base = {
+      eventId,
       location: desired.location,
       description,
       start: null,
@@ -258,7 +303,10 @@ export function buildMemberFeedParts(params: {
         uid: `${eventId}-assembly-${params.memberId}@shavtzak`,
         title: desired.assemblyTitle,
         start: desired.assemblyStartPrefix,
-        end: desired.assemblyEndPrefix,
+        // Same-day wrap is possible here too: assemblyStart/End are both
+        // pinned to startDate, so a very late assembly + past-midnight show
+        // start can invert this pair exactly like the main pair below.
+        end: rollEndPrefixForward(desired.assemblyStartPrefix, desired.assemblyEndPrefix),
       });
     }
 
@@ -268,7 +316,11 @@ export function buildMemberFeedParts(params: {
         uid: `${eventId}-main-${params.memberId}@shavtzak`,
         title: desired.mainTitle,
         start: desired.mainStartPrefix,
-        end: desired.mainEndPrefix,
+        // mainEndPrefix is endDate+endTime with no roll-forward when the
+        // show ends after midnight (endTime wraps but endDate often equals
+        // startDate) — roll it here so DTEND is never <= DTSTART (RFC 5545
+        // §3.6.1). See rollEndPrefixForward for why we roll instead of skip.
+        end: rollEndPrefixForward(desired.mainStartPrefix, desired.mainEndPrefix),
       });
     }
   }

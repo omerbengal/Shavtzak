@@ -6236,7 +6236,12 @@ app.get('/calendar/feed/:environment/:tokenFile', async (
     const collections = getCollections(environment);
 
     const token = String(request.params['tokenFile'] ?? '').replace(/\.ics$/i, '');
-    if (token.length === 0) {
+    // Tokens are always generateCalendarFeedToken()'s output (index.ts:1578)
+    // — exactly 43 base64url characters. Reject anything else before the
+    // Firestore lookup: a scripted junk request then costs 0 reads instead
+    // of 1, and the 404 stays byte-identical to every other failure path
+    // below so it remains indistinguishable to the caller.
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
       response.status(404).send('Not found');
       return;
     }
@@ -6342,13 +6347,22 @@ app.get('/calendar/feed/:environment/:tokenFile', async (
       .update(ics.replace(/^DTSTAMP:.*$/gm, ''))
       .digest('base64url')}"`;
     response.setHeader('ETag', etag);
+    // max-age=0 + must-revalidate, not a long max-age: the dialog tells
+    // members Apple Calendar polls roughly every 5 minutes, and a hint that
+    // lets a client skip revalidation for up to an hour would make most of
+    // those polls a silent no-op. It also bounds how long a rotated
+    // (revoked) link can keep serving from the client's own cache. The
+    // ETag still saves bandwidth on a 304 — it just can't save the
+    // Firestore reads above, which all happen before it's computed. Set
+    // on both branches (RFC 7232 SHOULD) so the 304 reply is cached the
+    // same way as the 200.
+    response.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
     if (request.headers['if-none-match'] === etag) {
       response.status(304).end();
       return;
     }
 
     response.setHeader('Content-Type', 'text/calendar; charset=utf-8');
-    response.setHeader('Cache-Control', 'public, max-age=3600');
     response.status(200).send(ics);
   } catch (error) {
     handleError(response, error);

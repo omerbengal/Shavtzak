@@ -315,29 +315,36 @@ class _CalendarFeedDialogState extends State<_CalendarFeedDialog> {
       'memberId': widget.member.id,
     });
 
+    // Launch webcal: FIRST, before any other await. url_launcher_web routes
+    // a custom scheme like webcal: through window.open, which browsers gate
+    // on transient user activation from the tap that triggered this
+    // handler — and iOS Safari (the platform this one-tap button exists
+    // for) commonly refuses that window.open if an async hop, such as the
+    // clipboard write below, runs first and the activation has expired by
+    // the time we get to it.
+    //
     // On Flutter Web — the only platform this app ships to —
     // url_launcher_web's openNewWindow() unconditionally returns true for
     // any non-disallowed scheme (window.open cannot report whether a
     // webcal: handler actually caught it), so a launchUrl() return value
     // can never tell us whether the calendar app really opened. Copy the
-    // https link unconditionally first, so the member always has a working
-    // fallback regardless of what actually happened, then attempt the
-    // webcal: launch on top of that.
-    await Clipboard.setData(
-      ClipboardData(
-        text: CalendarFeedLinks.httpsUrl(token, isTestMode: _isTestMode),
-      ),
-    );
-    if (!mounted) return;
-
+    // https link afterwards so the member always has a working fallback
+    // regardless of what actually happened.
     final webcalUrl = CalendarFeedLinks.webcalUrl(token, isTestMode: _isTestMode);
     try {
       await launchUrl(Uri.parse(webcalUrl));
     } catch (_) {
       // A genuine exception is still possible (e.g. platform channel
-      // failure); the clipboard copy above already gives the member a
+      // failure); the clipboard copy below still gives the member a
       // working fallback either way.
     }
+    if (!mounted) return;
+
+    await Clipboard.setData(
+      ClipboardData(
+        text: CalendarFeedLinks.httpsUrl(token, isTestMode: _isTestMode),
+      ),
+    );
     if (!mounted) return;
 
     _showSnackBar(

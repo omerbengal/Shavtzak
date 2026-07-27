@@ -52,6 +52,7 @@ test('foldIcsLine never splits a multi-byte character', () => {
 });
 
 const TIMED_PART: FeedEventPart = {
+  eventId: 'evt-1',
   uid: 'evt-1-main-mem-1@shavtzak',
   title: 'היכל התרבות',
   location: 'תל אביב',
@@ -350,4 +351,164 @@ test('buildMemberFeedParts falls back to the raw role key when there is no Hebre
   });
 
   assert.ok(parts[0].description.includes('role_1770725991134'));
+});
+
+// --- DTEND roll-forward for overnight events (RFC 5545 §3.6.1: DTEND must
+// be strictly after DTSTART) ---------------------------------------------
+
+test('buildMemberFeedParts rolls the main part DTEND forward when it inverts overnight', () => {
+  // Real production shape (confirmed against a live event, 20 confirmed
+  // assignees): assembly 20:30, start 21:00, actualShowStartTime 22:00
+  // (wins as separatorTime), endTime 00:00, startDate == endDate. Read
+  // literally, mainEndPrefix (endDate+endTime) lands 22h before DTSTART.
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{eventId: 'evt-1', roleType: 'entryScreening'}],
+    eventsById: new Map([['evt-1', timedEvent({
+      assemblyTime: '20:30',
+      startTime: '21:00',
+      actualShowStartTime: '22:00',
+      endTime: '00:00',
+    })]]),
+    roleHebrewNames: {},
+  });
+
+  const main = parts.find((part) => part.uid.includes('-main-'))!;
+  const assembly = parts.find((part) => part.uid.includes('-assembly-'))!;
+
+  assert.equal(main.start, '2026-08-15T22:00');
+  assert.equal(main.end, '2026-08-16T00:00');
+  assert.ok(main.end! > main.start!, 'DTEND must be strictly after DTSTART');
+
+  // The assembly leg (20:30 -> 22:00, both same startDate) does not invert
+  // and must be left exactly as computed.
+  assert.equal(assembly.start, '2026-08-15T20:30');
+  assert.equal(assembly.end, '2026-08-15T22:00');
+
+  // End to end: the rendered feed must never emit an inverted pair.
+  const ics = renderIcsFeed({calendarName: 'שבצק', dtstamp: '20260727T090000Z', parts});
+  assert.ok(ics.includes('DTSTART;TZID=Asia/Jerusalem:20260815T220000'));
+  assert.ok(ics.includes('DTEND;TZID=Asia/Jerusalem:20260816T000000'));
+});
+
+test('buildMemberFeedParts leaves a normal same-day event completely unaffected', () => {
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    // timedEvent() defaults: assembly 17:00, start 20:00, end 23:00, no
+    // actualShowStartTime override — a plain same-day event.
+    assignments: [{eventId: 'evt-1', roleType: 'entryScreening'}],
+    eventsById: new Map([['evt-1', timedEvent()]]),
+    roleHebrewNames: {},
+  });
+
+  const main = parts.find((part) => part.uid.includes('-main-'))!;
+  const assembly = parts.find((part) => part.uid.includes('-assembly-'))!;
+
+  assert.equal(assembly.start, '2026-08-15T17:00');
+  assert.equal(assembly.end, '2026-08-15T20:00');
+  assert.equal(main.start, '2026-08-15T20:00');
+  assert.equal(main.end, '2026-08-15T23:00');
+});
+
+test('buildMemberFeedParts rolls DTEND forward across a month boundary correctly', () => {
+  // 2026-08-30T21:00Z is Israel-local midnight of 2026-08-31 (memory:
+  // startDate stores Israel local-midnight as UTC). The roll-forward must
+  // parse and re-format the date rather than incrementing the day digit as
+  // a string, or 31 -> 32 would be invalid instead of rolling to September.
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{eventId: 'evt-1', roleType: 'entryScreening'}],
+    eventsById: new Map([['evt-1', timedEvent({
+      startDate: new Date('2026-08-30T21:00:00Z'),
+      endDate: new Date('2026-08-30T21:00:00Z'),
+      assemblyTime: '22:00',
+      startTime: '23:00',
+      actualShowStartTime: '23:30',
+      endTime: '01:00',
+    })]]),
+    roleHebrewNames: {},
+  });
+
+  const main = parts.find((part) => part.uid.includes('-main-'))!;
+  assert.equal(main.start, '2026-08-31T23:30');
+  assert.equal(main.end, '2026-09-01T01:00');
+  assert.ok(main.end! > main.start!, 'DTEND must be strictly after DTSTART');
+});
+
+test('buildMemberFeedParts rolls the assembly part DTEND forward when it wraps past midnight', () => {
+  // Assembly pinned late (23:30) against startDate, while the show's actual
+  // start is recorded as just after midnight (00:15) — still the same
+  // startDate in the source data, so the assembly pair inverts even though
+  // the main pair (00:15 -> 02:00) does not.
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{eventId: 'evt-1', roleType: 'entryScreening'}],
+    eventsById: new Map([['evt-1', timedEvent({
+      assemblyTime: '23:30',
+      startTime: '23:45',
+      actualShowStartTime: '00:15',
+      endTime: '02:00',
+    })]]),
+    roleHebrewNames: {},
+  });
+
+  const assembly = parts.find((part) => part.uid.includes('-assembly-'))!;
+  const main = parts.find((part) => part.uid.includes('-main-'))!;
+
+  assert.equal(assembly.start, '2026-08-15T23:30');
+  assert.equal(assembly.end, '2026-08-16T00:15');
+  assert.ok(assembly.end! > assembly.start!, 'DTEND must be strictly after DTSTART');
+
+  // The main leg (00:15 -> 02:00, both against startDate) does not invert.
+  assert.equal(main.start, '2026-08-15T00:15');
+  assert.equal(main.end, '2026-08-15T02:00');
+});
+
+// --- console.warn observability on the two silent-skip paths -------------
+
+test('renderIcsFeed warns with the event id when a part is malformed', () => {
+  const originalWarn = console.warn;
+  const calls: unknown[][] = [];
+  console.warn = (...args: unknown[]) => calls.push(args);
+  try {
+    renderIcsFeed({
+      calendarName: 'שבצק',
+      dtstamp: '20260727T090000Z',
+      parts: [{...TIMED_PART, eventId: 'evt-broken-1', end: null}],
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(calls.length, 1);
+  const [message] = calls[0];
+  assert.ok(typeof message === 'string' && message.includes('evt-broken-1'));
+});
+
+test('buildMemberFeedParts warns with the event id when an event document is malformed', () => {
+  const originalWarn = console.warn;
+  const calls: unknown[][] = [];
+  console.warn = (...args: unknown[]) => calls.push(args);
+  try {
+    buildMemberFeedParts({
+      memberId: 'mem-1',
+      environment: 'production',
+      assignments: [{eventId: 'evt-broken-2', roleType: 'entryScreening'}],
+      // No 'name' field, so buildDesiredAppEventState throws for it.
+      eventsById: new Map<string, Record<string, unknown>>([
+        ['evt-broken-2', {isDeactivated: false}],
+      ]),
+      roleHebrewNames: {},
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(calls.length, 1);
+  const [message] = calls[0];
+  assert.ok(typeof message === 'string' && message.includes('evt-broken-2'));
 });
