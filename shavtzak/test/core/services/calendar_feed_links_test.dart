@@ -21,6 +21,9 @@ void main() {
     });
 
     test('WhatsApp URL targets the member and encodes the link', () {
+      // Test with prod mode
+      final expectedFeedUrl = CalendarFeedLinks.httpsUrl('abc123', isTestMode: false);
+      final encodedFeedUrl = Uri.encodeComponent(expectedFeedUrl);
       final url = CalendarFeedLinks.whatsappShareUrl(
         token: 'abc123',
         phoneNumber: '050-123-4567',
@@ -29,7 +32,20 @@ void main() {
       // Israeli local numbers must be normalised to international form and
       // stripped of separators, or wa.me rejects them.
       expect(url, startsWith('https://wa.me/972501234567?text='));
-      expect(url, contains(Uri.encodeComponent('.ics')));
+      expect(url, contains(encodedFeedUrl));
+    });
+
+    test('WhatsApp URL includes correct feed link in test mode', () {
+      // Ensure the link embedded in the message is correct for test mode
+      final expectedFeedUrl = CalendarFeedLinks.httpsUrl('xyz789', isTestMode: true);
+      final encodedFeedUrl = Uri.encodeComponent(expectedFeedUrl);
+      final url = CalendarFeedLinks.whatsappShareUrl(
+        token: 'xyz789',
+        phoneNumber: '050-123-4567',
+        isTestMode: true,
+      );
+      expect(url, contains(encodedFeedUrl));
+      expect(encodedFeedUrl, contains('%2Ftest%2F')); // Verify test mode is in the encoded URL
     });
 
     test('WhatsApp URL omits the recipient when there is no phone number', () {
@@ -39,6 +55,51 @@ void main() {
         isTestMode: false,
       );
       expect(url, startsWith('https://wa.me/?text='));
+    });
+
+    test('phone number starting with 972 passes through unchanged', () {
+      final url = CalendarFeedLinks.whatsappShareUrl(
+        token: 'abc123',
+        phoneNumber: '972-50-123-4567',
+        isTestMode: false,
+      );
+      expect(url, startsWith('https://wa.me/972501234567?text='));
+    });
+
+    test('phone number in +972 format is normalized', () {
+      final url = CalendarFeedLinks.whatsappShareUrl(
+        token: 'abc123',
+        phoneNumber: '+972-50-123-4567',
+        isTestMode: false,
+      );
+      expect(url, startsWith('https://wa.me/972501234567?text='));
+    });
+
+    test('empty phone number string opens wa.me without recipient', () {
+      final url = CalendarFeedLinks.whatsappShareUrl(
+        token: 'abc123',
+        phoneNumber: '',
+        isTestMode: false,
+      );
+      expect(url, startsWith('https://wa.me/?text='));
+    });
+
+    test('phone number with only separators opens wa.me without recipient', () {
+      final url = CalendarFeedLinks.whatsappShareUrl(
+        token: 'abc123',
+        phoneNumber: '---',
+        isTestMode: false,
+      );
+      expect(url, startsWith('https://wa.me/?text='));
+    });
+
+    test('phone number with internal spaces is normalized by removing non-digits', () {
+      final url = CalendarFeedLinks.whatsappShareUrl(
+        token: 'abc123',
+        phoneNumber: '050 123 4567',
+        isTestMode: false,
+      );
+      expect(url, startsWith('https://wa.me/972501234567?text='));
     });
   });
 }
