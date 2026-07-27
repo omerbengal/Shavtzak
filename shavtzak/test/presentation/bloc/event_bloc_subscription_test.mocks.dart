@@ -7,13 +7,12 @@ import 'dart:async' as _i4;
 
 import 'package:mockito/mockito.dart' as _i1;
 import 'package:shavtzak/core/constants/calendar_constants.dart' as _i5;
-import 'package:shavtzak/core/constants/role_types.dart' as _i8;
-import 'package:shavtzak/core/services/drive_service.dart' as _i7;
-import 'package:shavtzak/data/repositories/assignment_repository.dart' as _i10;
+import 'package:shavtzak/core/constants/role_types.dart' as _i7;
+import 'package:shavtzak/core/services/drive_service.dart' as _i6;
+import 'package:shavtzak/data/repositories/assignment_repository.dart' as _i9;
 import 'package:shavtzak/data/repositories/event_repository.dart' as _i3;
-import 'package:shavtzak/domain/entities/assignment.dart' as _i9;
+import 'package:shavtzak/domain/entities/assignment.dart' as _i8;
 import 'package:shavtzak/domain/entities/event.dart' as _i2;
-import 'package:shavtzak/domain/entities/slot_annotation.dart' as _i6;
 
 // ignore_for_file: type=lint
 // ignore_for_file: avoid_redundant_argument_values
@@ -206,27 +205,6 @@ class MockEventRepository extends _i1.Mock implements _i3.EventRepository {
       ) as _i4.Future<_i2.Event>);
 
   @override
-  _i4.Future<void> updateSlotAnnotation(
-    String? eventId,
-    String? key,
-    _i6.SlotAnnotation? value, {
-    String? staleKey,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #updateSlotAnnotation,
-          [
-            eventId,
-            key,
-            value,
-          ],
-          {#staleKey: staleKey},
-        ),
-        returnValue: _i4.Future<void>.value(),
-        returnValueForMissingStub: _i4.Future<void>.value(),
-      ) as _i4.Future<void>);
-
-  @override
   _i4.Future<void> deleteEvent(String? id) => (super.noSuchMethod(
         Invocation.method(
           #deleteEvent,
@@ -237,14 +215,14 @@ class MockEventRepository extends _i1.Mock implements _i3.EventRepository {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<List<_i7.DriveFile>> getEventFiles(String? eventId) =>
+  _i4.Future<List<_i6.DriveFile>> getEventFiles(String? eventId) =>
       (super.noSuchMethod(
         Invocation.method(
           #getEventFiles,
           [eventId],
         ),
-        returnValue: _i4.Future<List<_i7.DriveFile>>.value(<_i7.DriveFile>[]),
-      ) as _i4.Future<List<_i7.DriveFile>>);
+        returnValue: _i4.Future<List<_i6.DriveFile>>.value(<_i6.DriveFile>[]),
+      ) as _i4.Future<List<_i6.DriveFile>>);
 
   @override
   _i4.Future<List<_i2.Event>> searchEvents(String? query) =>
@@ -257,7 +235,7 @@ class MockEventRepository extends _i1.Mock implements _i3.EventRepository {
       ) as _i4.Future<List<_i2.Event>>);
 
   @override
-  _i4.Future<List<_i2.Event>> getEventsRequiringRole(_i8.RoleType? role) =>
+  _i4.Future<List<_i2.Event>> getEventsRequiringRole(_i7.RoleType? role) =>
       (super.noSuchMethod(
         Invocation.method(
           #getEventsRequiringRole,
@@ -307,7 +285,7 @@ class MockEventRepository extends _i1.Mock implements _i3.EventRepository {
   _i4.Future<void> duplicateEvent(
     _i2.Event? originalEvent,
     _i2.Event? newEvent,
-    List<_i9.Assignment>? originalAssignments,
+    List<_i8.Assignment>? originalAssignments,
   ) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -323,10 +301,10 @@ class MockEventRepository extends _i1.Mock implements _i3.EventRepository {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<Map<String, _i9.Assignment>> duplicateEventWithAssignmentIds(
+  _i4.Future<Map<String, _i8.Assignment>> duplicateEventWithAssignmentIds(
     _i2.Event? originalEvent,
     _i2.Event? newEvent,
-    List<_i9.Assignment>? originalAssignments,
+    List<_i8.Assignment>? originalAssignments,
   ) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -337,9 +315,9 @@ class MockEventRepository extends _i1.Mock implements _i3.EventRepository {
             originalAssignments,
           ],
         ),
-        returnValue: _i4.Future<Map<String, _i9.Assignment>>.value(
-            <String, _i9.Assignment>{}),
-      ) as _i4.Future<Map<String, _i9.Assignment>>);
+        returnValue: _i4.Future<Map<String, _i8.Assignment>>.value(
+            <String, _i8.Assignment>{}),
+      ) as _i4.Future<Map<String, _i8.Assignment>>);
 
   @override
   _i4.Future<void> removeAssignmentsAfterDuplication(
@@ -354,97 +332,97 @@ class MockEventRepository extends _i1.Mock implements _i3.EventRepository {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<_i7.CreateFolderResult?> ensureDriveFolder(_i2.Event? event) =>
+  _i4.Future<_i6.CreateFolderResult?> ensureDriveFolder(_i2.Event? event) =>
       (super.noSuchMethod(
         Invocation.method(
           #ensureDriveFolder,
           [event],
         ),
-        returnValue: _i4.Future<_i7.CreateFolderResult?>.value(),
-      ) as _i4.Future<_i7.CreateFolderResult?>);
+        returnValue: _i4.Future<_i6.CreateFolderResult?>.value(),
+      ) as _i4.Future<_i6.CreateFolderResult?>);
 }
 
 /// A class which mocks [AssignmentRepository].
 ///
 /// See the documentation for Mockito's code generation for more information.
 class MockAssignmentRepository extends _i1.Mock
-    implements _i10.AssignmentRepository {
+    implements _i9.AssignmentRepository {
   MockAssignmentRepository() {
     _i1.throwOnMissingStub(this);
   }
 
   @override
-  _i4.Stream<List<_i9.Assignment>> watchAssignments() => (super.noSuchMethod(
+  _i4.Stream<List<_i8.Assignment>> watchAssignments() => (super.noSuchMethod(
         Invocation.method(
           #watchAssignments,
           [],
         ),
-        returnValue: _i4.Stream<List<_i9.Assignment>>.empty(),
-      ) as _i4.Stream<List<_i9.Assignment>>);
+        returnValue: _i4.Stream<List<_i8.Assignment>>.empty(),
+      ) as _i4.Stream<List<_i8.Assignment>>);
 
   @override
-  _i4.Stream<List<_i9.Assignment>> watchAssignmentsByEvent(String? eventId) =>
+  _i4.Stream<List<_i8.Assignment>> watchAssignmentsByEvent(String? eventId) =>
       (super.noSuchMethod(
         Invocation.method(
           #watchAssignmentsByEvent,
           [eventId],
         ),
-        returnValue: _i4.Stream<List<_i9.Assignment>>.empty(),
-      ) as _i4.Stream<List<_i9.Assignment>>);
+        returnValue: _i4.Stream<List<_i8.Assignment>>.empty(),
+      ) as _i4.Stream<List<_i8.Assignment>>);
 
   @override
-  _i4.Stream<List<_i9.Assignment>> watchAssignmentsByPerson(
+  _i4.Stream<List<_i8.Assignment>> watchAssignmentsByPerson(
           String? teamMemberId) =>
       (super.noSuchMethod(
         Invocation.method(
           #watchAssignmentsByPerson,
           [teamMemberId],
         ),
-        returnValue: _i4.Stream<List<_i9.Assignment>>.empty(),
-      ) as _i4.Stream<List<_i9.Assignment>>);
+        returnValue: _i4.Stream<List<_i8.Assignment>>.empty(),
+      ) as _i4.Stream<List<_i8.Assignment>>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAllAssignments() => (super.noSuchMethod(
+  _i4.Future<List<_i8.Assignment>> getAllAssignments() => (super.noSuchMethod(
         Invocation.method(
           #getAllAssignments,
           [],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i8.Assignment>>.value(<_i8.Assignment>[]),
+      ) as _i4.Future<List<_i8.Assignment>>);
 
   @override
-  _i4.Future<_i9.Assignment?> getAssignmentById(String? id) =>
+  _i4.Future<_i8.Assignment?> getAssignmentById(String? id) =>
       (super.noSuchMethod(
         Invocation.method(
           #getAssignmentById,
           [id],
         ),
-        returnValue: _i4.Future<_i9.Assignment?>.value(),
-      ) as _i4.Future<_i9.Assignment?>);
+        returnValue: _i4.Future<_i8.Assignment?>.value(),
+      ) as _i4.Future<_i8.Assignment?>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignmentsByEvent(String? eventId) =>
+  _i4.Future<List<_i8.Assignment>> getAssignmentsByEvent(String? eventId) =>
       (super.noSuchMethod(
         Invocation.method(
           #getAssignmentsByEvent,
           [eventId],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i8.Assignment>>.value(<_i8.Assignment>[]),
+      ) as _i4.Future<List<_i8.Assignment>>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignmentsByPerson(
+  _i4.Future<List<_i8.Assignment>> getAssignmentsByPerson(
           String? teamMemberId) =>
       (super.noSuchMethod(
         Invocation.method(
           #getAssignmentsByPerson,
           [teamMemberId],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i8.Assignment>>.value(<_i8.Assignment>[]),
+      ) as _i4.Future<List<_i8.Assignment>>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignmentsByDateRange(
+  _i4.Future<List<_i8.Assignment>> getAssignmentsByDateRange(
     DateTime? start,
     DateTime? end,
   ) =>
@@ -456,11 +434,11 @@ class MockAssignmentRepository extends _i1.Mock
             end,
           ],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i8.Assignment>>.value(<_i8.Assignment>[]),
+      ) as _i4.Future<List<_i8.Assignment>>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignmentsInTimeWindow({
+  _i4.Future<List<_i8.Assignment>> getAssignmentsInTimeWindow({
     required DateTime? windowStart,
     required DateTime? windowEnd,
   }) =>
@@ -473,22 +451,22 @@ class MockAssignmentRepository extends _i1.Mock
             #windowEnd: windowEnd,
           },
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i8.Assignment>>.value(<_i8.Assignment>[]),
+      ) as _i4.Future<List<_i8.Assignment>>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignmentsByEventIds(
+  _i4.Future<List<_i8.Assignment>> getAssignmentsByEventIds(
           List<String>? eventIds) =>
       (super.noSuchMethod(
         Invocation.method(
           #getAssignmentsByEventIds,
           [eventIds],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i8.Assignment>>.value(<_i8.Assignment>[]),
+      ) as _i4.Future<List<_i8.Assignment>>);
 
   @override
-  _i4.Stream<List<_i9.Assignment>> watchAssignmentsInTimeWindow({
+  _i4.Stream<List<_i8.Assignment>> watchAssignmentsInTimeWindow({
     required DateTime? windowStart,
     required DateTime? windowEnd,
   }) =>
@@ -501,11 +479,11 @@ class MockAssignmentRepository extends _i1.Mock
             #windowEnd: windowEnd,
           },
         ),
-        returnValue: _i4.Stream<List<_i9.Assignment>>.empty(),
-      ) as _i4.Stream<List<_i9.Assignment>>);
+        returnValue: _i4.Stream<List<_i8.Assignment>>.empty(),
+      ) as _i4.Stream<List<_i8.Assignment>>);
 
   @override
-  _i4.Future<void> createAssignment(_i9.Assignment? assignment) =>
+  _i4.Future<void> createAssignment(_i8.Assignment? assignment) =>
       (super.noSuchMethod(
         Invocation.method(
           #createAssignment,
@@ -516,7 +494,7 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> createAssignmentUnchecked(_i9.Assignment? assignment) =>
+  _i4.Future<void> createAssignmentUnchecked(_i8.Assignment? assignment) =>
       (super.noSuchMethod(
         Invocation.method(
           #createAssignmentUnchecked,
@@ -527,7 +505,7 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> createAssignmentWithBypass(_i9.Assignment? assignment) =>
+  _i4.Future<void> createAssignmentWithBypass(_i8.Assignment? assignment) =>
       (super.noSuchMethod(
         Invocation.method(
           #createAssignmentWithBypass,
@@ -538,7 +516,7 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> updateAssignment(_i9.Assignment? assignment) =>
+  _i4.Future<void> updateAssignment(_i8.Assignment? assignment) =>
       (super.noSuchMethod(
         Invocation.method(
           #updateAssignment,
@@ -549,7 +527,7 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> updateAssignmentUnchecked(_i9.Assignment? assignment) =>
+  _i4.Future<void> updateAssignmentUnchecked(_i8.Assignment? assignment) =>
       (super.noSuchMethod(
         Invocation.method(
           #updateAssignmentUnchecked,
@@ -560,7 +538,7 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> updateAssignmentWithBypass(_i9.Assignment? assignment) =>
+  _i4.Future<void> updateAssignmentWithBypass(_i8.Assignment? assignment) =>
       (super.noSuchMethod(
         Invocation.method(
           #updateAssignmentWithBypass,
@@ -593,8 +571,8 @@ class MockAssignmentRepository extends _i1.Mock
 
   @override
   _i4.Future<void> saveAssignmentsBatch({
-    required List<_i9.Assignment>? creates,
-    required List<_i9.Assignment>? updates,
+    required List<_i8.Assignment>? creates,
+    required List<_i8.Assignment>? updates,
     required List<String>? deletes,
     List<({int count, String eventId, String roleType})>? eventQuotaBumps =
         const [],
@@ -618,7 +596,7 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<List<String>> checkConflicts(_i9.Assignment? assignment) =>
+  _i4.Future<List<String>> checkConflicts(_i8.Assignment? assignment) =>
       (super.noSuchMethod(
         Invocation.method(
           #checkConflicts,
@@ -628,29 +606,29 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i4.Future<List<String>>);
 
   @override
-  _i4.Future<Map<String, _i10.AssignmentStats>> getEventAssignmentStats(
+  _i4.Future<Map<String, _i9.AssignmentStats>> getEventAssignmentStats(
           String? eventId) =>
       (super.noSuchMethod(
         Invocation.method(
           #getEventAssignmentStats,
           [eventId],
         ),
-        returnValue: _i4.Future<Map<String, _i10.AssignmentStats>>.value(
-            <String, _i10.AssignmentStats>{}),
-      ) as _i4.Future<Map<String, _i10.AssignmentStats>>);
+        returnValue: _i4.Future<Map<String, _i9.AssignmentStats>>.value(
+            <String, _i9.AssignmentStats>{}),
+      ) as _i4.Future<Map<String, _i9.AssignmentStats>>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignmentsWithConflicts() =>
+  _i4.Future<List<_i8.Assignment>> getAssignmentsWithConflicts() =>
       (super.noSuchMethod(
         Invocation.method(
           #getAssignmentsWithConflicts,
           [],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i8.Assignment>>.value(<_i8.Assignment>[]),
+      ) as _i4.Future<List<_i8.Assignment>>);
 
   @override
-  _i4.Future<void> importAssignments(List<_i9.Assignment>? assignments) =>
+  _i4.Future<void> importAssignments(List<_i8.Assignment>? assignments) =>
       (super.noSuchMethod(
         Invocation.method(
           #importAssignments,
@@ -672,7 +650,7 @@ class MockAssignmentRepository extends _i1.Mock
   @override
   _i4.Future<void> updateAssignmentStatus(
     String? id,
-    _i8.AssignmentStatus? status,
+    _i7.AssignmentStatus? status,
   ) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -730,7 +708,7 @@ class MockAssignmentRepository extends _i1.Mock
       ) as _i4.Future<void>);
 
   @override
-  void cacheCurrentAssignments(List<_i9.Assignment>? assignments) =>
+  void cacheCurrentAssignments(List<_i8.Assignment>? assignments) =>
       super.noSuchMethod(
         Invocation.method(
           #cacheCurrentAssignments,
@@ -749,11 +727,11 @@ class MockAssignmentRepository extends _i1.Mock
       );
 
   @override
-  List<_i9.Assignment> getCurrentAssignments() => (super.noSuchMethod(
+  List<_i8.Assignment> getCurrentAssignments() => (super.noSuchMethod(
         Invocation.method(
           #getCurrentAssignments,
           [],
         ),
-        returnValue: <_i9.Assignment>[],
-      ) as List<_i9.Assignment>);
+        returnValue: <_i8.Assignment>[],
+      ) as List<_i8.Assignment>);
 }

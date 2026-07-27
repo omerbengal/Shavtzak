@@ -6,19 +6,17 @@
 import 'dart:async' as _i4;
 
 import 'package:mockito/mockito.dart' as _i1;
-import 'package:mockito/src/dummies.dart' as _i6;
-import 'package:shavtzak/core/constants/calendar_constants.dart' as _i11;
-import 'package:shavtzak/core/constants/constraint_status.dart' as _i12;
+import 'package:shavtzak/core/constants/calendar_constants.dart' as _i9;
+import 'package:shavtzak/core/constants/constraint_status.dart' as _i10;
 import 'package:shavtzak/core/services/drive_service.dart' as _i2;
 import 'package:shavtzak/data/data_sources/database_interface.dart' as _i3;
-import 'package:shavtzak/domain/entities/assignment.dart' as _i9;
-import 'package:shavtzak/domain/entities/assignment_label.dart' as _i10;
-import 'package:shavtzak/domain/entities/category.dart' as _i16;
-import 'package:shavtzak/domain/entities/checklist_item.dart' as _i13;
-import 'package:shavtzak/domain/entities/event.dart' as _i7;
-import 'package:shavtzak/domain/entities/preset.dart' as _i14;
-import 'package:shavtzak/domain/entities/role.dart' as _i15;
-import 'package:shavtzak/domain/entities/slot_annotation.dart' as _i8;
+import 'package:shavtzak/domain/entities/assignment.dart' as _i7;
+import 'package:shavtzak/domain/entities/assignment_label.dart' as _i8;
+import 'package:shavtzak/domain/entities/category.dart' as _i14;
+import 'package:shavtzak/domain/entities/checklist_item.dart' as _i11;
+import 'package:shavtzak/domain/entities/event.dart' as _i6;
+import 'package:shavtzak/domain/entities/preset.dart' as _i12;
+import 'package:shavtzak/domain/entities/role.dart' as _i13;
 import 'package:shavtzak/domain/entities/team_member.dart' as _i5;
 
 // ignore_for_file: type=lint
@@ -156,36 +154,6 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<String> ensureCalendarFeedToken(String? id) => (super.noSuchMethod(
-        Invocation.method(
-          #ensureCalendarFeedToken,
-          [id],
-        ),
-        returnValue: _i4.Future<String>.value(_i6.dummyValue<String>(
-          this,
-          Invocation.method(
-            #ensureCalendarFeedToken,
-            [id],
-          ),
-        )),
-      ) as _i4.Future<String>);
-
-  @override
-  _i4.Future<String> rotateCalendarFeedToken(String? id) => (super.noSuchMethod(
-        Invocation.method(
-          #rotateCalendarFeedToken,
-          [id],
-        ),
-        returnValue: _i4.Future<String>.value(_i6.dummyValue<String>(
-          this,
-          Invocation.method(
-            #rotateCalendarFeedToken,
-            [id],
-          ),
-        )),
-      ) as _i4.Future<String>);
-
-  @override
   _i4.Future<void> deleteTeamMember(String? id) => (super.noSuchMethod(
         Invocation.method(
           #deleteTeamMember,
@@ -196,34 +164,34 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<List<_i7.Event>> getEvents() => (super.noSuchMethod(
+  _i4.Future<List<_i6.Event>> getEvents() => (super.noSuchMethod(
         Invocation.method(
           #getEvents,
           [],
         ),
-        returnValue: _i4.Future<List<_i7.Event>>.value(<_i7.Event>[]),
-      ) as _i4.Future<List<_i7.Event>>);
+        returnValue: _i4.Future<List<_i6.Event>>.value(<_i6.Event>[]),
+      ) as _i4.Future<List<_i6.Event>>);
 
   @override
-  _i4.Stream<List<_i7.Event>> watchEvents() => (super.noSuchMethod(
+  _i4.Stream<List<_i6.Event>> watchEvents() => (super.noSuchMethod(
         Invocation.method(
           #watchEvents,
           [],
         ),
-        returnValue: _i4.Stream<List<_i7.Event>>.empty(),
-      ) as _i4.Stream<List<_i7.Event>>);
+        returnValue: _i4.Stream<List<_i6.Event>>.empty(),
+      ) as _i4.Stream<List<_i6.Event>>);
 
   @override
-  _i4.Future<_i7.Event?> getEventById(String? id) => (super.noSuchMethod(
+  _i4.Future<_i6.Event?> getEventById(String? id) => (super.noSuchMethod(
         Invocation.method(
           #getEventById,
           [id],
         ),
-        returnValue: _i4.Future<_i7.Event?>.value(),
-      ) as _i4.Future<_i7.Event?>);
+        returnValue: _i4.Future<_i6.Event?>.value(),
+      ) as _i4.Future<_i6.Event?>);
 
   @override
-  _i4.Future<void> insertEvent(_i7.Event? event) => (super.noSuchMethod(
+  _i4.Future<void> insertEvent(_i6.Event? event) => (super.noSuchMethod(
         Invocation.method(
           #insertEvent,
           [event],
@@ -233,31 +201,10 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> updateEvent(_i7.Event? event) => (super.noSuchMethod(
+  _i4.Future<void> updateEvent(_i6.Event? event) => (super.noSuchMethod(
         Invocation.method(
           #updateEvent,
           [event],
-        ),
-        returnValue: _i4.Future<void>.value(),
-        returnValueForMissingStub: _i4.Future<void>.value(),
-      ) as _i4.Future<void>);
-
-  @override
-  _i4.Future<void> updateEventSlotAnnotation(
-    String? eventId,
-    String? key,
-    _i8.SlotAnnotation? value, {
-    String? staleKey,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #updateEventSlotAnnotation,
-          [
-            eventId,
-            key,
-            value,
-          ],
-          {#staleKey: staleKey},
         ),
         returnValue: _i4.Future<void>.value(),
         returnValueForMissingStub: _i4.Future<void>.value(),
@@ -274,16 +221,16 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<List<_i7.Event>> getUpcomingEvents() => (super.noSuchMethod(
+  _i4.Future<List<_i6.Event>> getUpcomingEvents() => (super.noSuchMethod(
         Invocation.method(
           #getUpcomingEvents,
           [],
         ),
-        returnValue: _i4.Future<List<_i7.Event>>.value(<_i7.Event>[]),
-      ) as _i4.Future<List<_i7.Event>>);
+        returnValue: _i4.Future<List<_i6.Event>>.value(<_i6.Event>[]),
+      ) as _i4.Future<List<_i6.Event>>);
 
   @override
-  _i4.Future<List<_i7.Event>> getEventsByDateRange(
+  _i4.Future<List<_i6.Event>> getEventsByDateRange(
     DateTime? start,
     DateTime? end,
   ) =>
@@ -295,11 +242,11 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
             end,
           ],
         ),
-        returnValue: _i4.Future<List<_i7.Event>>.value(<_i7.Event>[]),
-      ) as _i4.Future<List<_i7.Event>>);
+        returnValue: _i4.Future<List<_i6.Event>>.value(<_i6.Event>[]),
+      ) as _i4.Future<List<_i6.Event>>);
 
   @override
-  _i4.Future<List<_i7.Event>> getEventsBeforeDate(
+  _i4.Future<List<_i6.Event>> getEventsBeforeDate(
     DateTime? cursor, {
     required int? limit,
   }) =>
@@ -309,11 +256,11 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
           [cursor],
           {#limit: limit},
         ),
-        returnValue: _i4.Future<List<_i7.Event>>.value(<_i7.Event>[]),
-      ) as _i4.Future<List<_i7.Event>>);
+        returnValue: _i4.Future<List<_i6.Event>>.value(<_i6.Event>[]),
+      ) as _i4.Future<List<_i6.Event>>);
 
   @override
-  _i4.Stream<List<_i7.Event>> watchEventsByDateRange(
+  _i4.Stream<List<_i6.Event>> watchEventsByDateRange(
     DateTime? start,
     DateTime? end,
   ) =>
@@ -325,8 +272,8 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
             end,
           ],
         ),
-        returnValue: _i4.Stream<List<_i7.Event>>.empty(),
-      ) as _i4.Stream<List<_i7.Event>>);
+        returnValue: _i4.Stream<List<_i6.Event>>.empty(),
+      ) as _i4.Stream<List<_i6.Event>>);
 
   @override
   _i4.Future<bool> isDuplicateEvent(
@@ -347,77 +294,77 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<bool>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignments() => (super.noSuchMethod(
+  _i4.Future<List<_i7.Assignment>> getAssignments() => (super.noSuchMethod(
         Invocation.method(
           #getAssignments,
           [],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i7.Assignment>>.value(<_i7.Assignment>[]),
+      ) as _i4.Future<List<_i7.Assignment>>);
 
   @override
-  _i4.Stream<List<_i9.Assignment>> watchAssignments() => (super.noSuchMethod(
+  _i4.Stream<List<_i7.Assignment>> watchAssignments() => (super.noSuchMethod(
         Invocation.method(
           #watchAssignments,
           [],
         ),
-        returnValue: _i4.Stream<List<_i9.Assignment>>.empty(),
-      ) as _i4.Stream<List<_i9.Assignment>>);
+        returnValue: _i4.Stream<List<_i7.Assignment>>.empty(),
+      ) as _i4.Stream<List<_i7.Assignment>>);
 
   @override
-  _i4.Stream<List<_i9.Assignment>> watchAssignmentsByEvent(String? eventId) =>
+  _i4.Stream<List<_i7.Assignment>> watchAssignmentsByEvent(String? eventId) =>
       (super.noSuchMethod(
         Invocation.method(
           #watchAssignmentsByEvent,
           [eventId],
         ),
-        returnValue: _i4.Stream<List<_i9.Assignment>>.empty(),
-      ) as _i4.Stream<List<_i9.Assignment>>);
+        returnValue: _i4.Stream<List<_i7.Assignment>>.empty(),
+      ) as _i4.Stream<List<_i7.Assignment>>);
 
   @override
-  _i4.Stream<List<_i9.Assignment>> watchAssignmentsByPerson(
+  _i4.Stream<List<_i7.Assignment>> watchAssignmentsByPerson(
           String? teamMemberId) =>
       (super.noSuchMethod(
         Invocation.method(
           #watchAssignmentsByPerson,
           [teamMemberId],
         ),
-        returnValue: _i4.Stream<List<_i9.Assignment>>.empty(),
-      ) as _i4.Stream<List<_i9.Assignment>>);
+        returnValue: _i4.Stream<List<_i7.Assignment>>.empty(),
+      ) as _i4.Stream<List<_i7.Assignment>>);
 
   @override
-  _i4.Future<_i9.Assignment?> getAssignmentById(String? id) =>
+  _i4.Future<_i7.Assignment?> getAssignmentById(String? id) =>
       (super.noSuchMethod(
         Invocation.method(
           #getAssignmentById,
           [id],
         ),
-        returnValue: _i4.Future<_i9.Assignment?>.value(),
-      ) as _i4.Future<_i9.Assignment?>);
+        returnValue: _i4.Future<_i7.Assignment?>.value(),
+      ) as _i4.Future<_i7.Assignment?>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignmentsByEvent(String? eventId) =>
+  _i4.Future<List<_i7.Assignment>> getAssignmentsByEvent(String? eventId) =>
       (super.noSuchMethod(
         Invocation.method(
           #getAssignmentsByEvent,
           [eventId],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i7.Assignment>>.value(<_i7.Assignment>[]),
+      ) as _i4.Future<List<_i7.Assignment>>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignmentsByPerson(
+  _i4.Future<List<_i7.Assignment>> getAssignmentsByPerson(
           String? teamMemberId) =>
       (super.noSuchMethod(
         Invocation.method(
           #getAssignmentsByPerson,
           [teamMemberId],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i7.Assignment>>.value(<_i7.Assignment>[]),
+      ) as _i4.Future<List<_i7.Assignment>>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignmentsByDateRange(
+  _i4.Future<List<_i7.Assignment>> getAssignmentsByDateRange(
     DateTime? start,
     DateTime? end,
   ) =>
@@ -429,11 +376,11 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
             end,
           ],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i7.Assignment>>.value(<_i7.Assignment>[]),
+      ) as _i4.Future<List<_i7.Assignment>>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignmentsInTimeWindow(
+  _i4.Future<List<_i7.Assignment>> getAssignmentsInTimeWindow(
     DateTime? windowStart,
     DateTime? windowEnd,
   ) =>
@@ -445,22 +392,22 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
             windowEnd,
           ],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i7.Assignment>>.value(<_i7.Assignment>[]),
+      ) as _i4.Future<List<_i7.Assignment>>);
 
   @override
-  _i4.Future<List<_i9.Assignment>> getAssignmentsByEventIds(
+  _i4.Future<List<_i7.Assignment>> getAssignmentsByEventIds(
           List<String>? eventIds) =>
       (super.noSuchMethod(
         Invocation.method(
           #getAssignmentsByEventIds,
           [eventIds],
         ),
-        returnValue: _i4.Future<List<_i9.Assignment>>.value(<_i9.Assignment>[]),
-      ) as _i4.Future<List<_i9.Assignment>>);
+        returnValue: _i4.Future<List<_i7.Assignment>>.value(<_i7.Assignment>[]),
+      ) as _i4.Future<List<_i7.Assignment>>);
 
   @override
-  _i4.Stream<List<_i9.Assignment>> watchAssignmentsInTimeWindow(
+  _i4.Stream<List<_i7.Assignment>> watchAssignmentsInTimeWindow(
     DateTime? windowStart,
     DateTime? windowEnd,
   ) =>
@@ -472,12 +419,12 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
             windowEnd,
           ],
         ),
-        returnValue: _i4.Stream<List<_i9.Assignment>>.empty(),
-      ) as _i4.Stream<List<_i9.Assignment>>);
+        returnValue: _i4.Stream<List<_i7.Assignment>>.empty(),
+      ) as _i4.Stream<List<_i7.Assignment>>);
 
   @override
   _i4.Future<void> insertAssignment(
-    _i9.Assignment? assignment, {
+    _i7.Assignment? assignment, {
     bool? bypassAvailability,
   }) =>
       (super.noSuchMethod(
@@ -492,7 +439,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
 
   @override
   _i4.Future<void> updateAssignment(
-    _i9.Assignment? assignment, {
+    _i7.Assignment? assignment, {
     bool? bypassAvailability,
   }) =>
       (super.noSuchMethod(
@@ -570,18 +517,18 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<List<_i10.AssignmentLabel>> getAssignmentLabels() =>
+  _i4.Future<List<_i8.AssignmentLabel>> getAssignmentLabels() =>
       (super.noSuchMethod(
         Invocation.method(
           #getAssignmentLabels,
           [],
         ),
-        returnValue: _i4.Future<List<_i10.AssignmentLabel>>.value(
-            <_i10.AssignmentLabel>[]),
-      ) as _i4.Future<List<_i10.AssignmentLabel>>);
+        returnValue: _i4.Future<List<_i8.AssignmentLabel>>.value(
+            <_i8.AssignmentLabel>[]),
+      ) as _i4.Future<List<_i8.AssignmentLabel>>);
 
   @override
-  _i4.Future<void> insertAssignmentLabel(_i10.AssignmentLabel? label) =>
+  _i4.Future<void> insertAssignmentLabel(_i8.AssignmentLabel? label) =>
       (super.noSuchMethod(
         Invocation.method(
           #insertAssignmentLabel,
@@ -592,7 +539,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> updateAssignmentLabel(_i10.AssignmentLabel? label) =>
+  _i4.Future<void> updateAssignmentLabel(_i8.AssignmentLabel? label) =>
       (super.noSuchMethod(
         Invocation.method(
           #updateAssignmentLabel,
@@ -645,14 +592,14 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Stream<List<_i10.AssignmentLabel>> watchAssignmentLabels() =>
+  _i4.Stream<List<_i8.AssignmentLabel>> watchAssignmentLabels() =>
       (super.noSuchMethod(
         Invocation.method(
           #watchAssignmentLabels,
           [],
         ),
-        returnValue: _i4.Stream<List<_i10.AssignmentLabel>>.empty(),
-      ) as _i4.Stream<List<_i10.AssignmentLabel>>);
+        returnValue: _i4.Stream<List<_i8.AssignmentLabel>>.empty(),
+      ) as _i4.Stream<List<_i8.AssignmentLabel>>);
 
   @override
   _i4.Future<void> insertTeamMembersBatch(List<_i5.TeamMember>? members) =>
@@ -666,7 +613,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> insertEventsBatch(List<_i7.Event>? events) =>
+  _i4.Future<void> insertEventsBatch(List<_i6.Event>? events) =>
       (super.noSuchMethod(
         Invocation.method(
           #insertEventsBatch,
@@ -677,7 +624,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> insertAssignmentsBatch(List<_i9.Assignment>? assignments) =>
+  _i4.Future<void> insertAssignmentsBatch(List<_i7.Assignment>? assignments) =>
       (super.noSuchMethod(
         Invocation.method(
           #insertAssignmentsBatch,
@@ -689,8 +636,8 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
 
   @override
   _i4.Future<void> saveAssignmentsBatch({
-    required List<_i9.Assignment>? creates,
-    required List<_i9.Assignment>? updates,
+    required List<_i7.Assignment>? creates,
+    required List<_i7.Assignment>? updates,
     required List<String>? deletes,
     List<({int count, String eventId, String roleType})>? eventQuotaBumps,
     List<({String eventId, int expected, String roleType, int target})>?
@@ -747,7 +694,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
     required String? constraintId,
     required String? calendarEventId,
     required String? teamMemberId,
-    required _i11.CalendarSyncStatus? status,
+    required _i9.CalendarSyncStatus? status,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -788,7 +735,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
   @override
   _i4.Future<void> updateCalendarSyncStatus(
     String? constraintId,
-    _i11.CalendarSyncStatus? status, {
+    _i9.CalendarSyncStatus? status, {
     String? errorMessage,
     int? retryCount,
   }) =>
@@ -862,7 +809,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
     required String? eventId,
     required String? assemblyCalendarEventId,
     required String? mainCalendarEventId,
-    required _i11.CalendarSyncStatus? status,
+    required _i9.CalendarSyncStatus? status,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -891,15 +838,15 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<Map<String, dynamic>?>);
 
   @override
-  _i4.Stream<Map<String, _i11.CalendarSyncStatus>>
+  _i4.Stream<Map<String, _i9.CalendarSyncStatus>>
       watchEventCalendarSyncStates() => (super.noSuchMethod(
             Invocation.method(
               #watchEventCalendarSyncStates,
               [],
             ),
             returnValue:
-                _i4.Stream<Map<String, _i11.CalendarSyncStatus>>.empty(),
-          ) as _i4.Stream<Map<String, _i11.CalendarSyncStatus>>);
+                _i4.Stream<Map<String, _i9.CalendarSyncStatus>>.empty(),
+          ) as _i4.Stream<Map<String, _i9.CalendarSyncStatus>>);
 
   @override
   _i4.Future<void> removeEventCalendarSyncState(String? eventId) =>
@@ -916,7 +863,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
   _i4.Future<void> updateConstraintStatus(
     String? teamMemberIdOrConstraintId,
     int? constraintIndex,
-    _i12.ConstraintStatus? newStatus, {
+    _i10.ConstraintStatus? newStatus, {
     String? note,
     bool? wasAutoRejectedFromCalendar,
   }) =>
@@ -1021,28 +968,28 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<Map<String, String?>?>);
 
   @override
-  _i4.Future<List<_i13.ChecklistItem>> getChecklistItems() =>
+  _i4.Future<List<_i11.ChecklistItem>> getChecklistItems() =>
       (super.noSuchMethod(
         Invocation.method(
           #getChecklistItems,
           [],
         ),
         returnValue:
-            _i4.Future<List<_i13.ChecklistItem>>.value(<_i13.ChecklistItem>[]),
-      ) as _i4.Future<List<_i13.ChecklistItem>>);
+            _i4.Future<List<_i11.ChecklistItem>>.value(<_i11.ChecklistItem>[]),
+      ) as _i4.Future<List<_i11.ChecklistItem>>);
 
   @override
-  _i4.Future<_i13.ChecklistItem?> getChecklistItemById(String? id) =>
+  _i4.Future<_i11.ChecklistItem?> getChecklistItemById(String? id) =>
       (super.noSuchMethod(
         Invocation.method(
           #getChecklistItemById,
           [id],
         ),
-        returnValue: _i4.Future<_i13.ChecklistItem?>.value(),
-      ) as _i4.Future<_i13.ChecklistItem?>);
+        returnValue: _i4.Future<_i11.ChecklistItem?>.value(),
+      ) as _i4.Future<_i11.ChecklistItem?>);
 
   @override
-  _i4.Future<List<_i13.ChecklistItem>> getChecklistItemsByEvent(
+  _i4.Future<List<_i11.ChecklistItem>> getChecklistItemsByEvent(
           String? eventId) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -1050,11 +997,11 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
           [eventId],
         ),
         returnValue:
-            _i4.Future<List<_i13.ChecklistItem>>.value(<_i13.ChecklistItem>[]),
-      ) as _i4.Future<List<_i13.ChecklistItem>>);
+            _i4.Future<List<_i11.ChecklistItem>>.value(<_i11.ChecklistItem>[]),
+      ) as _i4.Future<List<_i11.ChecklistItem>>);
 
   @override
-  _i4.Future<List<_i13.ChecklistItem>> getChecklistItemsForTeamMember(
+  _i4.Future<List<_i11.ChecklistItem>> getChecklistItemsForTeamMember(
           String? teamMemberId) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -1062,11 +1009,11 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
           [teamMemberId],
         ),
         returnValue:
-            _i4.Future<List<_i13.ChecklistItem>>.value(<_i13.ChecklistItem>[]),
-      ) as _i4.Future<List<_i13.ChecklistItem>>);
+            _i4.Future<List<_i11.ChecklistItem>>.value(<_i11.ChecklistItem>[]),
+      ) as _i4.Future<List<_i11.ChecklistItem>>);
 
   @override
-  _i4.Future<List<_i13.ChecklistItem>> getChecklistItemsWhereResponsible(
+  _i4.Future<List<_i11.ChecklistItem>> getChecklistItemsWhereResponsible(
           String? teamMemberId) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -1074,11 +1021,11 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
           [teamMemberId],
         ),
         returnValue:
-            _i4.Future<List<_i13.ChecklistItem>>.value(<_i13.ChecklistItem>[]),
-      ) as _i4.Future<List<_i13.ChecklistItem>>);
+            _i4.Future<List<_i11.ChecklistItem>>.value(<_i11.ChecklistItem>[]),
+      ) as _i4.Future<List<_i11.ChecklistItem>>);
 
   @override
-  _i4.Future<List<_i13.ChecklistItem>> getChecklistItemsWhereCc(
+  _i4.Future<List<_i11.ChecklistItem>> getChecklistItemsWhereCc(
           String? teamMemberId) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -1086,11 +1033,11 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
           [teamMemberId],
         ),
         returnValue:
-            _i4.Future<List<_i13.ChecklistItem>>.value(<_i13.ChecklistItem>[]),
-      ) as _i4.Future<List<_i13.ChecklistItem>>);
+            _i4.Future<List<_i11.ChecklistItem>>.value(<_i11.ChecklistItem>[]),
+      ) as _i4.Future<List<_i11.ChecklistItem>>);
 
   @override
-  _i4.Future<void> insertChecklistItem(_i13.ChecklistItem? item) =>
+  _i4.Future<void> insertChecklistItem(_i11.ChecklistItem? item) =>
       (super.noSuchMethod(
         Invocation.method(
           #insertChecklistItem,
@@ -1101,7 +1048,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> updateChecklistItem(_i13.ChecklistItem? item) =>
+  _i4.Future<void> updateChecklistItem(_i11.ChecklistItem? item) =>
       (super.noSuchMethod(
         Invocation.method(
           #updateChecklistItem,
@@ -1150,25 +1097,25 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<List<_i14.Preset>> getPresets() => (super.noSuchMethod(
+  _i4.Future<List<_i12.Preset>> getPresets() => (super.noSuchMethod(
         Invocation.method(
           #getPresets,
           [],
         ),
-        returnValue: _i4.Future<List<_i14.Preset>>.value(<_i14.Preset>[]),
-      ) as _i4.Future<List<_i14.Preset>>);
+        returnValue: _i4.Future<List<_i12.Preset>>.value(<_i12.Preset>[]),
+      ) as _i4.Future<List<_i12.Preset>>);
 
   @override
-  _i4.Future<_i14.Preset?> getPresetById(String? id) => (super.noSuchMethod(
+  _i4.Future<_i12.Preset?> getPresetById(String? id) => (super.noSuchMethod(
         Invocation.method(
           #getPresetById,
           [id],
         ),
-        returnValue: _i4.Future<_i14.Preset?>.value(),
-      ) as _i4.Future<_i14.Preset?>);
+        returnValue: _i4.Future<_i12.Preset?>.value(),
+      ) as _i4.Future<_i12.Preset?>);
 
   @override
-  _i4.Future<void> insertPreset(_i14.Preset? preset) => (super.noSuchMethod(
+  _i4.Future<void> insertPreset(_i12.Preset? preset) => (super.noSuchMethod(
         Invocation.method(
           #insertPreset,
           [preset],
@@ -1178,7 +1125,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> updatePreset(_i14.Preset? preset) => (super.noSuchMethod(
+  _i4.Future<void> updatePreset(_i12.Preset? preset) => (super.noSuchMethod(
         Invocation.method(
           #updatePreset,
           [preset],
@@ -1217,34 +1164,34 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<List<_i15.Role>> getRoles() => (super.noSuchMethod(
+  _i4.Future<List<_i13.Role>> getRoles() => (super.noSuchMethod(
         Invocation.method(
           #getRoles,
           [],
         ),
-        returnValue: _i4.Future<List<_i15.Role>>.value(<_i15.Role>[]),
-      ) as _i4.Future<List<_i15.Role>>);
+        returnValue: _i4.Future<List<_i13.Role>>.value(<_i13.Role>[]),
+      ) as _i4.Future<List<_i13.Role>>);
 
   @override
-  _i4.Future<_i15.Role?> getRoleById(String? id) => (super.noSuchMethod(
+  _i4.Future<_i13.Role?> getRoleById(String? id) => (super.noSuchMethod(
         Invocation.method(
           #getRoleById,
           [id],
         ),
-        returnValue: _i4.Future<_i15.Role?>.value(),
-      ) as _i4.Future<_i15.Role?>);
+        returnValue: _i4.Future<_i13.Role?>.value(),
+      ) as _i4.Future<_i13.Role?>);
 
   @override
-  _i4.Future<_i15.Role?> getRoleByKey(String? key) => (super.noSuchMethod(
+  _i4.Future<_i13.Role?> getRoleByKey(String? key) => (super.noSuchMethod(
         Invocation.method(
           #getRoleByKey,
           [key],
         ),
-        returnValue: _i4.Future<_i15.Role?>.value(),
-      ) as _i4.Future<_i15.Role?>);
+        returnValue: _i4.Future<_i13.Role?>.value(),
+      ) as _i4.Future<_i13.Role?>);
 
   @override
-  _i4.Future<void> insertRole(_i15.Role? role) => (super.noSuchMethod(
+  _i4.Future<void> insertRole(_i13.Role? role) => (super.noSuchMethod(
         Invocation.method(
           #insertRole,
           [role],
@@ -1254,7 +1201,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> updateRole(_i15.Role? role) => (super.noSuchMethod(
+  _i4.Future<void> updateRole(_i13.Role? role) => (super.noSuchMethod(
         Invocation.method(
           #updateRole,
           [role],
@@ -1294,13 +1241,13 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Stream<List<_i15.Role>> watchRoles() => (super.noSuchMethod(
+  _i4.Stream<List<_i13.Role>> watchRoles() => (super.noSuchMethod(
         Invocation.method(
           #watchRoles,
           [],
         ),
-        returnValue: _i4.Stream<List<_i15.Role>>.empty(),
-      ) as _i4.Stream<List<_i15.Role>>);
+        returnValue: _i4.Stream<List<_i13.Role>>.empty(),
+      ) as _i4.Stream<List<_i13.Role>>);
 
   @override
   _i4.Future<void> seedRolesFromEnum() => (super.noSuchMethod(
@@ -1324,34 +1271,34 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<List<_i16.Category>> getCategories() => (super.noSuchMethod(
+  _i4.Future<List<_i14.Category>> getCategories() => (super.noSuchMethod(
         Invocation.method(
           #getCategories,
           [],
         ),
-        returnValue: _i4.Future<List<_i16.Category>>.value(<_i16.Category>[]),
-      ) as _i4.Future<List<_i16.Category>>);
+        returnValue: _i4.Future<List<_i14.Category>>.value(<_i14.Category>[]),
+      ) as _i4.Future<List<_i14.Category>>);
 
   @override
-  _i4.Future<List<_i16.Category>> getActiveCategories() => (super.noSuchMethod(
+  _i4.Future<List<_i14.Category>> getActiveCategories() => (super.noSuchMethod(
         Invocation.method(
           #getActiveCategories,
           [],
         ),
-        returnValue: _i4.Future<List<_i16.Category>>.value(<_i16.Category>[]),
-      ) as _i4.Future<List<_i16.Category>>);
+        returnValue: _i4.Future<List<_i14.Category>>.value(<_i14.Category>[]),
+      ) as _i4.Future<List<_i14.Category>>);
 
   @override
-  _i4.Future<_i16.Category?> getCategoryById(String? id) => (super.noSuchMethod(
+  _i4.Future<_i14.Category?> getCategoryById(String? id) => (super.noSuchMethod(
         Invocation.method(
           #getCategoryById,
           [id],
         ),
-        returnValue: _i4.Future<_i16.Category?>.value(),
-      ) as _i4.Future<_i16.Category?>);
+        returnValue: _i4.Future<_i14.Category?>.value(),
+      ) as _i4.Future<_i14.Category?>);
 
   @override
-  _i4.Future<void> insertCategory(_i16.Category? category) =>
+  _i4.Future<void> insertCategory(_i14.Category? category) =>
       (super.noSuchMethod(
         Invocation.method(
           #insertCategory,
@@ -1362,7 +1309,7 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Future<void> updateCategory(_i16.Category? category) =>
+  _i4.Future<void> updateCategory(_i14.Category? category) =>
       (super.noSuchMethod(
         Invocation.method(
           #updateCategory,
@@ -1403,23 +1350,23 @@ class MockDatabaseInterface extends _i1.Mock implements _i3.DatabaseInterface {
       ) as _i4.Future<void>);
 
   @override
-  _i4.Stream<List<_i16.Category>> watchCategories() => (super.noSuchMethod(
+  _i4.Stream<List<_i14.Category>> watchCategories() => (super.noSuchMethod(
         Invocation.method(
           #watchCategories,
           [],
         ),
-        returnValue: _i4.Stream<List<_i16.Category>>.empty(),
-      ) as _i4.Stream<List<_i16.Category>>);
+        returnValue: _i4.Stream<List<_i14.Category>>.empty(),
+      ) as _i4.Stream<List<_i14.Category>>);
 
   @override
-  _i4.Stream<List<_i16.Category>> watchActiveCategories() =>
+  _i4.Stream<List<_i14.Category>> watchActiveCategories() =>
       (super.noSuchMethod(
         Invocation.method(
           #watchActiveCategories,
           [],
         ),
-        returnValue: _i4.Stream<List<_i16.Category>>.empty(),
-      ) as _i4.Stream<List<_i16.Category>>);
+        returnValue: _i4.Stream<List<_i14.Category>>.empty(),
+      ) as _i4.Stream<List<_i14.Category>>);
 }
 
 /// A class which mocks [DriveService].
