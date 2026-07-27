@@ -6265,6 +6265,13 @@ app.get('/calendar/feed/:environment/:tokenFile', async (
       return;
     }
     const memberData = memberDoc.data() ?? {};
+    // Feed access follows membership status: once a member is deactivated or
+    // archived, their link must stop resolving, or someone who has left the
+    // team would keep receiving live schedule updates indefinitely.
+    if (memberData['isActive'] !== true || memberData['isArchived'] === true) {
+      response.status(404).send('Not found');
+      return;
+    }
     const memberName = typeof memberData['name'] === 'string'
       ? memberData['name']
       : '';
@@ -6300,20 +6307,15 @@ app.get('/calendar/feed/:environment/:tokenFile', async (
       }
     }
 
-    const listsDoc = await db.collection('utilities').doc('Lists').get();
+    const listsData = await getUtilitiesListsDoc();
     const roleHebrewNames: Record<string, string> = {};
-    const rolesList = listsDoc.data()?.['Roles'];
-    if (Array.isArray(rolesList)) {
-      for (const entry of rolesList) {
-        if (entry == null || typeof entry !== 'object') continue;
-        const role = entry as Record<string, unknown>;
-        const key = typeof role['key'] === 'string' ? role['key'] : '';
-        const hebrewName = typeof role['hebrewName'] === 'string'
-          ? role['hebrewName']
-          : '';
-        if (key.length > 0) {
-          roleHebrewNames[key] = hebrewName.length > 0 ? hebrewName : key;
-        }
+    for (const role of getRolesArray(listsData)) {
+      const key = typeof role['key'] === 'string' ? role['key'] : '';
+      const hebrewName = typeof role['hebrewName'] === 'string'
+        ? role['hebrewName']
+        : '';
+      if (key.length > 0) {
+        roleHebrewNames[key] = hebrewName.length > 0 ? hebrewName : key;
       }
     }
 
