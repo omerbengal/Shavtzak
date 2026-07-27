@@ -3489,7 +3489,16 @@ async function executeMutation(
         throw new HttpError(404, 'Team member not found');
       }
       const teamBefore = teamDoc.data() ?? {};
-      await db.collection(collections.privateCredentials).doc(memberId).delete();
+      // Field-scoped delete, not a whole-document delete: this document may
+      // also hold calendarFeedToken, which clearing a passcode must not
+      // destroy. set(..., {merge: true}) also succeeds when the member has
+      // no credentials document yet.
+      await db.collection(collections.privateCredentials).doc(memberId).set({
+        passcodeHash: FieldValue.delete(),
+        passcodeValue: FieldValue.delete(),
+        passcodeLength: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, {merge: true});
       await teamRef.update({
         passcodeLength: FieldValue.delete(),
         passcode: FieldValue.delete(),
@@ -3703,6 +3712,7 @@ async function executeMutation(
             passcodeLength: DEFAULT_TEAM_MEMBER_PASSCODE_LENGTH,
             updatedAt: FieldValue.serverTimestamp(),
           },
+          {merge: true},
         );
       }
       await batch.commit();
