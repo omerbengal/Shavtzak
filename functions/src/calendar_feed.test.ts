@@ -153,3 +153,57 @@ test('renderIcsFeed returns a valid empty calendar for a member with no shifts',
   assert.ok(ics.endsWith('END:VCALENDAR\r\n'));
   assert.ok(!ics.includes('BEGIN:VEVENT'));
 });
+
+test('renderIcsFeed skips a part with start set and end null (malformed pair)', () => {
+  const ics = renderIcsFeed({
+    calendarName: 'שבצק',
+    dtstamp: '20260727T090000Z',
+    parts: [{...TIMED_PART, end: null}],
+  });
+
+  assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\n'));
+  assert.ok(ics.endsWith('END:VCALENDAR\r\n'));
+  assert.ok(!ics.includes('BEGIN:VEVENT'));
+});
+
+test('renderIcsFeed skips a part with a single-digit hour (invalid format)', () => {
+  const ics = renderIcsFeed({
+    calendarName: 'שבצק',
+    dtstamp: '20260727T090000Z',
+    parts: [{...TIMED_PART, start: '2026-08-15T9:00', end: '2026-08-15T10:00'}],
+  });
+
+  assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\n'));
+  assert.ok(ics.endsWith('END:VCALENDAR\r\n'));
+  assert.ok(!ics.includes('BEGIN:VEVENT'));
+});
+
+test('renderIcsFeed renders good parts and silently skips malformed ones', () => {
+  const ics = renderIcsFeed({
+    calendarName: 'שבצק',
+    dtstamp: '20260727T090000Z',
+    parts: [
+      TIMED_PART, // well-formed
+      {...TIMED_PART, uid: 'malformed@shavtzak', start: '2026-08-15T9:00', end: null}, // malformed
+    ],
+  });
+
+  // The good part is rendered
+  assert.ok(ics.includes('UID:evt-1-main-mem-1@shavtzak'));
+  assert.ok(ics.includes('DTSTART;TZID=Asia/Jerusalem:20260815T200000'));
+  // The malformed part is skipped (no second UID)
+  assert.ok(!ics.includes('malformed@shavtzak'));
+  // Calendar is still valid
+  assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\n'));
+  assert.ok(ics.endsWith('END:VCALENDAR\r\n'));
+});
+
+test('renderIcsFeed escapes UID like other text properties', () => {
+  const ics = renderIcsFeed({
+    calendarName: 'שבצק',
+    dtstamp: '20260727T090000Z',
+    parts: [{...TIMED_PART, uid: 'evt-with,semicolon;uid@shavtzak'}],
+  });
+
+  assert.ok(ics.includes('UID:evt-with\\,semicolon\\;uid@shavtzak'));
+});

@@ -100,19 +100,42 @@ function toIcsDate(dateKey: string): string {
   return dateKey.replace(/-/g, '');
 }
 
+/** Check if a string matches the timed-event format: YYYY-MM-DDTHH:MM (zero-padded hours). */
+function isValidTimedFormat(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value);
+}
+
+/** Check if a string matches the all-day format: YYYY-MM-DD. */
+function isValidDateFormat(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 function renderPart(part: FeedEventPart, dtstamp: string): string[] {
+  // Validate that the part is well-formed before emitting a VEVENT.
+  // A part with only one field of a pair (e.g., start but not end, or allDayStart
+  // but not allDayEnd) would produce a malformed VEVENT with no DTSTART/DTEND,
+  // poisoning the entire feed for downstream clients. Skip malformed parts silently.
+  const hasValidTimedPair = part.start != null && part.end != null &&
+    isValidTimedFormat(part.start) && isValidTimedFormat(part.end);
+  const hasValidAllDayPair = part.allDayStart != null && part.allDayEnd != null &&
+    isValidDateFormat(part.allDayStart) && isValidDateFormat(part.allDayEnd);
+
+  if (!hasValidTimedPair && !hasValidAllDayPair) {
+    return [];
+  }
+
   const lines = [
     'BEGIN:VEVENT',
-    `UID:${part.uid}`,
+    `UID:${escapeIcsText(part.uid)}`,
     `DTSTAMP:${dtstamp}`,
   ];
 
-  if (part.allDayStart != null && part.allDayEnd != null) {
-    lines.push(`DTSTART;VALUE=DATE:${toIcsDate(part.allDayStart)}`);
-    lines.push(`DTEND;VALUE=DATE:${toIcsDate(part.allDayEnd)}`);
-  } else if (part.start != null && part.end != null) {
-    lines.push(`DTSTART;TZID=Asia/Jerusalem:${toIcsLocalDateTime(part.start)}`);
-    lines.push(`DTEND;TZID=Asia/Jerusalem:${toIcsLocalDateTime(part.end)}`);
+  if (hasValidAllDayPair) {
+    lines.push(`DTSTART;VALUE=DATE:${toIcsDate(part.allDayStart!)}`);
+    lines.push(`DTEND;VALUE=DATE:${toIcsDate(part.allDayEnd!)}`);
+  } else {
+    lines.push(`DTSTART;TZID=Asia/Jerusalem:${toIcsLocalDateTime(part.start!)}`);
+    lines.push(`DTEND;TZID=Asia/Jerusalem:${toIcsLocalDateTime(part.end!)}`);
   }
 
   lines.push(`SUMMARY:${escapeIcsText(part.title)}`);
