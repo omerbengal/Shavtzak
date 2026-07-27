@@ -98,10 +98,12 @@ class _CalendarFeedDialogState extends State<_CalendarFeedDialog> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              Logger.action('tap:close:calendarFeedDialog');
-              Navigator.of(context).pop();
-            },
+            onPressed: _isRotating
+                ? null
+                : () {
+                    Logger.action('tap:close:calendarFeedDialog');
+                    Navigator.of(context).pop();
+                  },
             child: const Text('סגירה'),
           ),
         ],
@@ -313,31 +315,35 @@ class _CalendarFeedDialogState extends State<_CalendarFeedDialog> {
       'memberId': widget.member.id,
     });
 
+    // On Flutter Web — the only platform this app ships to —
+    // url_launcher_web's openNewWindow() unconditionally returns true for
+    // any non-disallowed scheme (window.open cannot report whether a
+    // webcal: handler actually caught it), so a launchUrl() return value
+    // can never tell us whether the calendar app really opened. Copy the
+    // https link unconditionally first, so the member always has a working
+    // fallback regardless of what actually happened, then attempt the
+    // webcal: launch on top of that.
+    await Clipboard.setData(
+      ClipboardData(
+        text: CalendarFeedLinks.httpsUrl(token, isTestMode: _isTestMode),
+      ),
+    );
+    if (!mounted) return;
+
     final webcalUrl = CalendarFeedLinks.webcalUrl(token, isTestMode: _isTestMode);
-    bool launched = false;
     try {
-      launched = await launchUrl(Uri.parse(webcalUrl));
+      await launchUrl(Uri.parse(webcalUrl));
     } catch (_) {
-      launched = false;
+      // A genuine exception is still possible (e.g. platform channel
+      // failure); the clipboard copy above already gives the member a
+      // working fallback either way.
     }
     if (!mounted) return;
 
-    // Desktop browsers frequently have no webcal:// handler registered, in
-    // which case launchUrl returns false. Never let the tap silently do
-    // nothing — fall back to copying the https link instead.
-    if (!launched) {
-      await Clipboard.setData(
-        ClipboardData(
-          text: CalendarFeedLinks.httpsUrl(token, isTestMode: _isTestMode),
-        ),
-      );
-      if (!mounted) return;
-      _showSnackBar(
-        'לא נמצאה אפליקציית יומן שנפתחת אוטומטית, אז העתקנו את הקישור '
-        'ללוח במקום',
-        backgroundColor: Colors.green,
-      );
-    }
+    _showSnackBar(
+      'אמור להיפתח יישום היומן. ליתר ביטחון, הקישור הועתק גם ללוח.',
+      backgroundColor: Colors.green,
+    );
   }
 
   Future<void> _copyLink() async {
@@ -368,14 +374,16 @@ class _CalendarFeedDialogState extends State<_CalendarFeedDialog> {
       phoneNumber: widget.member.phoneNumber,
       isTestMode: _isTestMode,
     );
-    bool launched = false;
+    // As with the webcal launch above, launchUrl's return value is not a
+    // reliable success signal on web — and here the URL is always
+    // https://wa.me/..., a scheme openNewWindow() always resolves to true
+    // for regardless, so there is no meaningful "did it fail" branch left
+    // to act on.
     try {
-      launched = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     } catch (_) {
-      launched = false;
+      // Nothing actionable to do differently for a thrown exception either.
     }
-    if (!mounted || launched) return;
-    _showSnackBar('לא ניתן היה לפתוח את וואטסאפ', backgroundColor: Colors.red);
   }
 
   Future<void> _confirmAndRotate() async {
