@@ -12,6 +12,7 @@
 
 - Design spec: `docs/superpowers/specs/2026-07-27-personal-ics-calendar-feed-design.md`. Read it before starting.
 - **Do not modify any existing Google Calendar sync behaviour.** No changes to `syncAppEventCalendars`, `reconcileSingleAppEvent`, attendee handling, or the Cloud Tasks path. This feature is purely additive.
+  - **One approved exception**, forced by moving the feed token onto `private_member_credentials`: that document previously held only passcode fields, so two sites treat it as wholly disposable. `teamMember.clearPasscode` (`index.ts:3492`) must change from a whole-document `.delete()` to a merge-set that removes only `passcodeHash` / `passcodeValue` / `passcodeLength`, and `teamMember.insertBatch` (`index.ts:3698`) must gain `{merge: true}`. Without these, clearing a passcode or re-importing a member silently destroys their feed token and breaks a live calendar subscription with no signal. `teamMember.delete` (`index.ts:3674`) keeps its whole-document delete — removing a member *should* remove their token.
 - **Do not re-enable Google Calendar guest invitations** on any path.
 - All UI text is in Hebrew. Code comments in English.
 - All screens wrap in `Directionality(textDirection: TextDirection.rtl)`.
