@@ -40,8 +40,6 @@
 - `shavtzak/test/core/services/calendar_feed_links_test.dart`
 
 **Flutter (modify):**
-- `shavtzak/lib/domain/entities/team_member.dart`
-- `shavtzak/lib/data/models/team_member_model.dart`
 - `shavtzak/lib/data/data_sources/database_interface.dart`
 - `shavtzak/lib/data/data_sources/firestore_database.dart`
 - `shavtzak/lib/presentation/screens/user/user_assignments_screen.dart`
@@ -886,18 +884,29 @@ app.get('/calendar/feed/:environment/:tokenFile', async (
       return;
     }
 
-    const memberSnapshot = await db
-      .collection(collections.teamMembers)
+    // The token lives on the Admin-SDK-only private credentials document, NOT
+    // on teamMembers — every active member can read every teamMembers doc.
+    // The credential doc's id IS the member id.
+    const credentialSnapshot = await db
+      .collection(collections.privateCredentials)
       .where('calendarFeedToken', '==', token)
       .limit(1)
       .get();
     // Unknown and malformed tokens are indistinguishable to a caller.
-    if (memberSnapshot.empty) {
+    if (credentialSnapshot.empty) {
       response.status(404).send('Not found');
       return;
     }
 
-    const memberDoc = memberSnapshot.docs[0];
+    const memberId = credentialSnapshot.docs[0].id;
+    const memberDoc = await db
+      .collection(collections.teamMembers)
+      .doc(memberId)
+      .get();
+    if (!memberDoc.exists) {
+      response.status(404).send('Not found');
+      return;
+    }
     const memberData = memberDoc.data() ?? {};
     const memberName = typeof memberData['name'] === 'string'
       ? memberData['name']
@@ -905,7 +914,11 @@ app.get('/calendar/feed/:environment/:tokenFile', async (
 
     const assignmentsSnapshot = await db
       .collection(collections.assignments)
-      .where('teamMemberId', '==', memberDoc.id)
+      .where('teamMemberId', '==', memberId)
+      // Explicit order so the feed is byte-stable between polls. Without it a
+      // reordered role list inside a DESCRIPTION would look like a change to
+      // every subscriber's calendar on every refresh.
+      .orderBy('__name__')
       .get();
     const assignments = assignmentsSnapshot.docs.map((doc) => {
       const data = doc.data() ?? {};
@@ -1005,27 +1018,19 @@ git commit -m "feat(calendar-feed): serve a per-member ICS feed on a public rout
 
 ---
 
-### Task 6: Flutter — persist the token on TeamMember
+### Task 6: Flutter — feed token methods on the data layer
 
 **Files:**
-- Modify: `shavtzak/lib/domain/entities/team_member.dart`
-- Modify: `shavtzak/lib/data/models/team_member_model.dart`
 - Modify: `shavtzak/lib/data/data_sources/database_interface.dart`
 - Modify: `shavtzak/lib/data/data_sources/firestore_database.dart`
 
 **Interfaces:**
 - Consumes: the mutations from Task 4.
-- Produces: `TeamMember.calendarFeedToken` (`String?`); `DatabaseInterface.ensureCalendarFeedToken(String id) → Future<String>` and `rotateCalendarFeedToken(String id) → Future<String>`.
+- Produces: `DatabaseInterface.ensureCalendarFeedToken(String id) → Future<String>` and `rotateCalendarFeedToken(String id) → Future<String>`.
 
-- [ ] **Step 1: Add the field to the entity**
+**Do NOT add `calendarFeedToken` to the `TeamMember` entity or model.** An earlier draft of this plan did. The token lives on the Admin-SDK-only `private_member_credentials` document, so the Flutter client cannot read it from Firestore at all — it only ever arrives as the return value of the minting mutation, and the dialog holds it in local widget state. Adding it to the entity would create a field that is permanently null in every streamed `TeamMember`, which is worse than useless: it would look like a token that had never been minted.
 
-In `team_member.dart`, add `final String? calendarFeedToken;` beside `uniqueKey`, add it to the constructor, to `copyWith` (following the existing nullable-field pattern in that file), and — critically — **to the `props` list**. Omitting it from `props` means the UI will not rebuild when a token is first minted.
-
-- [ ] **Step 2: Add the field to the model**
-
-In `team_member_model.dart`, mirror the field through the constructor, `fromEntity`, `toEntity`, `toFirestore`, and `fromFirestore` — following exactly how `passcodeLength` is handled at each site.
-
-- [ ] **Step 3: Add the interface methods**
+- [ ] **Step 1: Add the interface methods**
 
 In `database_interface.dart`:
 
@@ -1037,7 +1042,7 @@ In `database_interface.dart`:
   Future<String> rotateCalendarFeedToken(String id);
 ```
 
-- [ ] **Step 4: Implement them**
+- [ ] **Step 2: Implement them**
 
 In `firestore_database.dart`, following the `updateTeamMemberPasscode` pattern at line 343:
 
@@ -1077,16 +1082,16 @@ In `firestore_database.dart`, following the `updateTeamMemberPasscode` pattern a
   }
 ```
 
-- [ ] **Step 5: Verify**
+- [ ] **Step 3: Verify**
 
 Run: `cd shavtzak && flutter analyze && flutter test`
 Expected: zero **new** analyzer findings; all tests pass. If any fake/mock implements `DatabaseInterface`, the analyzer will flag the two missing overrides — add them there too, returning a canned token.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add shavtzak/lib/domain/entities/team_member.dart shavtzak/lib/data
-git commit -m "feat(calendar-feed): plumb calendarFeedToken through the data layer"
+git add shavtzak/lib/data
+git commit -m "feat(calendar-feed): add feed token methods to the data layer"
 ```
 
 ---

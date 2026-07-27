@@ -94,12 +94,29 @@ problem anyway — that is a notification problem, deferred (see Non-Goals).
 
 ### Data model
 
-One new field on `TeamMember`:
+One new field, `calendarFeedToken` — 256-bit random, base64url encoded — stored
+on the member's **`private_member_credentials/{memberId}`** document, alongside
+the passcode hash.
 
-- `calendarFeedToken: String?` — 256-bit random, base64url encoded.
+**Not on `teamMembers`.** An earlier draft of this spec put it there. That is
+insecure: `firestore.rules` grants `allow read: if isAuthorizedProdUser()` over
+the whole `teamMembers` collection, and `isAuthorizedProdUser()` only checks
+that the *caller* is an active member — not that they are reading their own
+document. Every one of the 51 active members can therefore read every other
+member's `teamMembers` document straight from the client SDK, so a bearer token
+stored there would be readable by the whole team, and the mutation-level
+`requireSelfOrAdmin` check would be bypassed entirely at the read layer.
+`private_member_credentials` is already `allow read, write: if false`
+(Admin-SDK-only), which is exactly the precedent the passcode hash follows. This
+choice needs **no rules change and no rules deploy**.
 
-Explicitly **not** `uniqueKey`. That is an authentication credential and must
-never appear in a URL that gets pasted into calendar apps and WhatsApp.
+A consequence worth stating: the token never reaches the Flutter client except
+as the return value of the minting mutation. It is therefore **not** a field on
+the `TeamMember` entity or model.
+
+The token is explicitly **not** `uniqueKey`. That is an authentication
+credential and must never appear in a URL that gets pasted into calendar apps
+and WhatsApp.
 
 Tokens are minted on demand by an authenticated backend mutation
 `ensureCalendarFeedToken(memberId)`, which returns the existing token or creates
