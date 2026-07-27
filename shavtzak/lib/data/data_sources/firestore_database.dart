@@ -370,6 +370,40 @@ class FirestoreDatabase implements DatabaseInterface {
   }
 
   @override
+  Future<String> ensureCalendarFeedToken(String id) async {
+    try {
+      final result = await _invokeMutation(
+        'teamMember.ensureCalendarFeedToken',
+        payload: {'memberId': id},
+      );
+      final token = result['token'] as String?;
+      if (token == null || token.isEmpty) {
+        throw DatabaseException('Backend returned no calendar feed token');
+      }
+      return token;
+    } catch (e) {
+      throw DatabaseException('Failed to ensure calendar feed token: $e');
+    }
+  }
+
+  @override
+  Future<String> rotateCalendarFeedToken(String id) async {
+    try {
+      final result = await _invokeMutation(
+        'teamMember.rotateCalendarFeedToken',
+        payload: {'memberId': id},
+      );
+      final token = result['token'] as String?;
+      if (token == null || token.isEmpty) {
+        throw DatabaseException('Backend returned no calendar feed token');
+      }
+      return token;
+    } catch (e) {
+      throw DatabaseException('Failed to rotate calendar feed token: $e');
+    }
+  }
+
+  @override
   Future<void> updateConstraintStatus(
     String teamMemberIdOrConstraintId,
     int? constraintIndex,

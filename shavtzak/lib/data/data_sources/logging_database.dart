@@ -204,6 +204,30 @@ class LoggingDatabase implements DatabaseInterface {
       );
 
   @override
+  Future<String> ensureCalendarFeedToken(String id) => _runFuture(
+        op: 'ensureCalendarFeedToken',
+        ctx: {
+          'collection': 'teamMembers',
+          'id': id,
+          'fields': const ['calendarFeedToken'],
+        },
+        countOf: (_) => null,
+        action: () => _inner.ensureCalendarFeedToken(id),
+      );
+
+  @override
+  Future<String> rotateCalendarFeedToken(String id) => _runFuture(
+        op: 'rotateCalendarFeedToken',
+        ctx: {
+          'collection': 'teamMembers',
+          'id': id,
+          'fields': const ['calendarFeedToken'],
+        },
+        countOf: (_) => null,
+        action: () => _inner.rotateCalendarFeedToken(id),
+      );
+
+  @override
   Future<void> deleteTeamMember(String id) => _runFuture(
         op: 'deleteTeamMember',
         ctx: {'collection': 'teamMembers', 'id': id},

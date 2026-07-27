@@ -58,6 +58,12 @@ abstract class DatabaseInterface {
   /// Clear passcode for a team member (field-specific, avoids race conditions)
   Future<void> clearTeamMemberPasscode(String id);
 
+  /// Returns the member's calendar feed token, creating one if absent.
+  Future<String> ensureCalendarFeedToken(String id);
+
+  /// Issues a new token, invalidating any previously shared feed URL.
+  Future<String> rotateCalendarFeedToken(String id);
+
   /// Delete a team member
   Future<void> deleteTeamMember(String id);
 
