@@ -21,6 +21,7 @@ import '../../bloc/role/role_state.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/parking_location_picker_dialog.dart';
 import '../../widgets/event_team_members_dialog.dart';
+import '../../widgets/calendar_feed_dialog.dart';
 import '../event/widgets/event_drive_files_section.dart';
 
 /// Screen for non-admin users to view their event assignments
@@ -272,21 +273,49 @@ class _UserAssignmentsScreenState extends State<UserAssignmentsScreen> {
           // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'האירועים שלי',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'האירועים שלי',
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineSmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'כאן מופיעים כל האירועים שאליהם שובצת',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'כאן מופיעים כל האירועים שאליהם שובצת',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.grey[600],
-                      ),
+                IconButton(
+                  tooltip: 'הוסף ליומן שלי',
+                  onPressed: () {
+                    final userState = context.read<UserSelectionBloc>().state;
+                    if (userState is! UserAuthenticated) return;
+                    Logger.action('open:calendarFeedDialog',
+                        {'memberId': userState.user.id});
+                    showCalendarFeedDialog(
+                      context,
+                      member: userState.user,
+                      isAdminView: false,
+                    );
+                  },
+                  icon: const Icon(Icons.calendar_month),
                 ),
               ],
             ),
