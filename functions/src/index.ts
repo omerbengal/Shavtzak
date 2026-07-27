@@ -3511,22 +3511,46 @@ async function executeMutation(
       const memberId = requireString(payload['memberId'], 'memberId');
       requireSelfOrAdmin(actor, memberId);
 
+      // calendarFeedToken lives on privateCredentials, not teamMembers:
+      // firestore.rules grants every active member read on the whole
+      // teamMembers collection, which would let any teammate harvest
+      // another member's feed token. privateCredentials is Admin-SDK-only.
       const teamRef = db.collection(collections.teamMembers).doc(memberId);
       const teamDoc = await teamRef.get();
       if (!teamDoc.exists) {
         throw new HttpError(404, 'Team member not found');
       }
 
-      const existing = teamDoc.data()?.['calendarFeedToken'];
-      if (typeof existing === 'string' && existing.length > 0) {
-        return {ok: true, token: existing};
-      }
+      const credentialRef = db.collection(collections.privateCredentials).doc(memberId);
+      // Transaction prevents two concurrent first-time calls from each
+      // minting a different token and racing on the write; without it, the
+      // losing caller could be handed a token that never matches what is
+      // persisted, and their feed link would 404.
+      const {token, minted} = await db.runTransaction(async (transaction) => {
+        const credentialDoc = await transaction.get(credentialRef);
+        const existing = credentialDoc.data()?.['calendarFeedToken'];
+        if (typeof existing === 'string' && existing.length > 0) {
+          return {token: existing, minted: false};
+        }
 
-      const token = generateCalendarFeedToken();
-      await teamRef.update({
-        calendarFeedToken: token,
-        updatedAt: FieldValue.serverTimestamp(),
+        const newToken = generateCalendarFeedToken();
+        transaction.set(credentialRef, {
+          calendarFeedToken: newToken,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+        return {token: newToken, minted: true};
       });
+
+      if (minted) {
+        // Audit the mint so there is a record of who was granted feed
+        // access (an admin can mint on another member's behalf). Returning
+        // an already-existing token changes nothing and is not logged. The
+        // token itself is a secret, so it is deliberately absent from the
+        // audit payload.
+        await writeAuditLog(
+          db, collections, actor, operation, 'teamMember', memberId, {}, {},
+        );
+      }
       return {ok: true, token};
     }
 
@@ -3534,6 +3558,9 @@ async function executeMutation(
       const memberId = requireString(payload['memberId'], 'memberId');
       requireSelfOrAdmin(actor, memberId);
 
+      // See ensureCalendarFeedToken above: calendarFeedToken lives on
+      // privateCredentials, not teamMembers, because teamMembers is
+      // readable by every active member per firestore.rules.
       const teamRef = db.collection(collections.teamMembers).doc(memberId);
       const teamDoc = await teamRef.get();
       if (!teamDoc.exists) {
@@ -3541,10 +3568,12 @@ async function executeMutation(
       }
 
       const token = generateCalendarFeedToken();
-      await teamRef.update({
+      // set(..., {merge: true}) rather than update(): a member may have no
+      // credentials document yet (e.g. one who never set a passcode).
+      await db.collection(collections.privateCredentials).doc(memberId).set({
         calendarFeedToken: token,
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      }, {merge: true});
       // The token itself is a secret, so it is deliberately absent from the
       // audit payload; only the fact of rotation is recorded.
       await writeAuditLog(
