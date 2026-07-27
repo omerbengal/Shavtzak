@@ -6310,6 +6310,7 @@ app.get('/calendar/feed/:environment/:tokenFile', async (
     const listsData = await getUtilitiesListsDoc();
     const roleHebrewNames: Record<string, string> = {};
     for (const role of getRolesArray(listsData)) {
+      if (role == null || typeof role !== 'object') continue;
       const key = typeof role['key'] === 'string' ? role['key'] : '';
       const hebrewName = typeof role['hebrewName'] === 'string'
         ? role['hebrewName']
