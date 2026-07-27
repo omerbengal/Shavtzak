@@ -162,8 +162,11 @@ roles for that event in the `DESCRIPTION`.
   `buildDesiredAppEventState` already falls back to an all-day event. Mirror
   that rule exactly — emit a single all-day `VEVENT` with `DTSTART;VALUE=DATE`.
 - **`LOCATION`**: the event's location.
-- **`DESCRIPTION`**: the member's role(s) in Hebrew, assembly and show times,
-  and event notes.
+- **`DESCRIPTION`**: the member's role(s) in Hebrew, plus their **assignment**
+  notes — production data has entries like `"מסייע לאורנה בכניסות"`, which is
+  exactly the per-member detail worth surfacing. There is no event-level notes
+  field; notes live on the assignment. Times are not repeated in the
+  description, since the two-block shape already shows them.
 
 A member with no assignments still gets a valid, empty `VCALENDAR` — never an
 empty body, which some clients treat as a fetch failure and others as a reason to
@@ -203,10 +206,14 @@ Two caveats: these reads add to whatever the app already consumes (an admin page
 load streams ~630 documents), and the per-request cost grows with career length
 rather than with any calendar window.
 
-**Therefore, cache exactly one thing: the events documents**, in a short-lived
-per-instance cache, because events are shared across every member's feed. Build
-no other caching. Anything further is optimising a cost of zero. If poll rates
-turn out high,
+**Therefore: build no caching at all in v1.** An earlier draft of this spec
+called for a shared per-instance cache of the events documents, on the reasoning
+that events are common to every member's feed. Working the arithmetic through
+reverses that: a whole-collection cache costs ~80 reads per refresh window
+regardless of traffic, whereas fetching only the events a member is actually
+assigned to costs ~25 reads per request. At ~720 requests/day the cache is the
+*more* expensive of the two, and both are inside the free tier. The simpler
+option therefore wins on both counts. If poll rates turn out high,
 the natural later optimisation is that past shifts are immutable, so the
 historical portion of a feed can be rendered once and cached — but that
 reintroduces state and is not justified now.
