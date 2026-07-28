@@ -14,11 +14,16 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
   final UserSelectionRepository _userSelectionRepository;
   final TeamRepository _teamRepository;
   StreamSubscription? _teamStreamSubscription;
+  StreamSubscription<bool>? _sessionPresenceSubscription;
 
+  /// [sessionPresence] reports whether the underlying auth credential still
+  /// exists — `false` means it is gone. Kept as a plain bool stream so the BLoC
+  /// stays independent of Firebase and testable without it.
   UserSelectionBloc(
     this._userSelectionRepository,
     this._teamRepository, [
     TeamMember? preAuthenticatedUser,
+    Stream<bool>? sessionPresence,
   ]) : super(preAuthenticatedUser != null
             ? UserAuthenticated(preAuthenticatedUser)
             : const UserSelectionInitial()) {
@@ -27,6 +32,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     on<SearchTeamMembers>(_onSearchTeamMembers);
     on<LoadAllTeamMembers>(_onLoadAllTeamMembers);
     on<SignOut>(_onSignOut);
+    on<SessionLost>(_onSessionLost);
     on<RefreshUserData>(_onRefreshUserData);
     on<UpdatePhoneNumber>(_onUpdatePhoneNumber);
     on<UpdateBirthday>(_onUpdateBirthday);
@@ -36,6 +42,12 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
 
     if (preAuthenticatedUser != null) {
       unawaited(_startTeamStream());
+    }
+
+    if (sessionPresence != null) {
+      _sessionPresenceSubscription = sessionPresence.listen((present) {
+        if (!present) add(const SessionLost());
+      });
     }
   }
 
@@ -51,6 +63,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
   @override
   Future<void> close() {
     _teamStreamSubscription?.cancel();
+    _sessionPresenceSubscription?.cancel();
     return super.close();
   }
 
@@ -217,6 +230,30 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
     } catch (e) {
       emit(UserSelectionError('שגיאה בהתנתקות: $e'));
     }
+  }
+
+  /// Handle the Firebase credential vanishing underneath an authenticated
+  /// session.
+  ///
+  /// Emitting [UserSignedOut] is what makes the loss *visible*: the router
+  /// sends the user back to /whoami instead of leaving them on a screen whose
+  /// data can no longer refresh, and the re-authentication that follows counts
+  /// as a first authentication — so `main.dart` reloads team members, roles and
+  /// categories, which a same-identity re-auth would otherwise skip.
+  Future<void> _onSessionLost(
+    SessionLost event,
+    Emitter<UserSelectionState> emit,
+  ) async {
+    if (state is! UserAuthenticated) return;
+
+    developer.log(
+      'Session lost while authenticated - forcing re-selection',
+      name: 'UserSelectionBloc',
+    );
+    await _stopTeamStream();
+    await _userSelectionRepository.clearUserSelection();
+    UserCacheService().clearPasscodeDialogFlag();
+    emit(const UserSignedOut());
   }
 
   /// Refresh current user data

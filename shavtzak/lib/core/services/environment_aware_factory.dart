@@ -1,3 +1,5 @@
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../../../data/repositories/team_repository.dart';
 import '../../../data/repositories/event_repository.dart';
 import '../../../data/repositories/assignment_repository.dart';
@@ -103,6 +105,10 @@ class EnvironmentAwareFactory {
       createUserSelectionRepository(),
       createTeamRepository(),
       preAuthenticatedUser,
+      // authStateChanges fires on sign-in/sign-out only — never on a routine
+      // token refresh — so a `false` here really does mean the credential is
+      // gone, not merely stale.
+      FirebaseAuth.instance.authStateChanges().map((user) => user != null),
     );
   }
 

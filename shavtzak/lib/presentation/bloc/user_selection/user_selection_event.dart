@@ -46,6 +46,16 @@ class SignOut extends UserSelectionEvent {
   const SignOut();
 }
 
+/// The underlying Firebase credential disappeared without the user asking to
+/// sign out — a rejected token, or a backend 401 that survived a token refresh.
+///
+/// Without this the app keeps rendering as if authenticated while every live
+/// Firestore listener is dead, so screens silently freeze on their last
+/// snapshot and any stream that errors stays broken until a full page reload.
+class SessionLost extends UserSelectionEvent {
+  const SessionLost();
+}
+
 /// Refresh user data
 class RefreshUserData extends UserSelectionEvent {
   const RefreshUserData();

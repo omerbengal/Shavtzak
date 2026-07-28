@@ -97,43 +97,58 @@ class BackendApiService {
       ...?body,
     };
 
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-    };
+    final uri = _buildUri(path);
+    final encodedBody = jsonEncode(requestBody);
 
+    Future<http.Response> send(String? token) async {
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      };
+      try {
+        return await retryTransient(
+          () => _client
+              .post(uri, headers: headers, body: encodedBody)
+              .timeout(_requestTimeout),
+          maxAttempts: _maxAttempts,
+          initialBackoff: _initialBackoff,
+        );
+      } catch (error) {
+        // A dropped connection / timeout never reached (or never heard back
+        // from) the backend. Surface it as a distinct, retryable network error
+        // so callers can show a friendly message instead of a hard failure.
+        if (isTransientError(error)) {
+          throw BackendApiException(
+            networkErrorMessage,
+            isNetworkError: true,
+            cause: error,
+          );
+        }
+        rethrow;
+      }
+    }
+
+    String? token;
     if (requireAuth) {
       final currentUser = _auth.currentUser;
       if (currentUser == null) {
         throw BackendApiException('אין סשן פעיל. יש להתחבר מחדש.');
       }
-      final token = await currentUser.getIdToken();
-      headers['Authorization'] = 'Bearer $token';
+      token = await currentUser.getIdToken();
     }
 
-    final uri = _buildUri(path);
-    final encodedBody = jsonEncode(requestBody);
+    var response = await send(token);
 
-    final http.Response response;
-    try {
-      response = await retryTransient(
-        () => _client
-            .post(uri, headers: headers, body: encodedBody)
-            .timeout(_requestTimeout),
-        maxAttempts: _maxAttempts,
-        initialBackoff: _initialBackoff,
-      );
-    } catch (error) {
-      // A dropped connection / timeout never reached (or never heard back from)
-      // the backend. Surface it as a distinct, retryable network error so
-      // callers can show a friendly message instead of a hard failure.
-      if (isTransientError(error)) {
-        throw BackendApiException(
-          networkErrorMessage,
-          isNetworkError: true,
-          cause: error,
-        );
+    // A 401 far more often means the cached ID token went stale — a suspended
+    // mobile tab, a sleeping laptop — than a session that is genuinely gone.
+    // Mint a fresh token and retry ONCE before concluding otherwise, because
+    // the sign-out below drops the Firebase credential and therefore kills
+    // EVERY live Firestore listener in the app at the same instant.
+    if (response.statusCode == 401 && requireAuth) {
+      final refreshed = await _refreshIdToken();
+      if (refreshed != null && refreshed != token) {
+        response = await send(refreshed);
       }
-      rethrow;
     }
 
     final decoded = response.body.isEmpty
@@ -150,6 +165,41 @@ class BackendApiService {
       await _cache.clearSelection();
     }
     throw BackendApiException(errorMessage, statusCode: response.statusCode);
+  }
+
+  /// Force-mints a new ID token for the current user.
+  ///
+  /// Returns `null` when there is nothing to refresh (no signed-in user) or
+  /// when the refresh was rejected — a revoked/disabled account — which leaves
+  /// the caller's 401 standing so the session is torn down.
+  ///
+  /// A refresh that fails for *connectivity* reasons is a different story: it
+  /// says nothing about whether the session is still valid, so it throws a
+  /// network error rather than letting the caller sign the user out.
+  Future<String?> _refreshIdToken() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return null;
+    try {
+      return await currentUser.getIdToken(true);
+    } on FirebaseAuthException catch (error) {
+      if (error.code == 'network-request-failed') {
+        throw BackendApiException(
+          networkErrorMessage,
+          isNetworkError: true,
+          cause: error,
+        );
+      }
+      return null;
+    } catch (error) {
+      if (isTransientError(error)) {
+        throw BackendApiException(
+          networkErrorMessage,
+          isNetworkError: true,
+          cause: error,
+        );
+      }
+      return null;
+    }
   }
 
   Future<List<Map<String, dynamic>>> listSelectableMembers() async {
