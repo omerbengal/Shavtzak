@@ -123,8 +123,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Global, NOT environment-scoped: roles, categories and vehicle lists are
+    // shared by both environments on purpose (see db_preview_screen's
+    // "כלים (גלובלי)" / useEnvironmentPrefix: false). Test users must be able
+    // to read it too — their uid comes from test_teamMembers and so never
+    // satisfies isAuthorizedProdUser(), which used to deny roles and
+    // categories to every test-mode session.
     match /utilities/{document=**} {
-      allow read: if isAuthorizedProdUser();
+      allow read: if isAuthorizedProdUser() || isAuthorizedTestUser();
       allow write: if false;
     }
 

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:rxdart/rxdart.dart';
-import 'environment_service.dart';
 
 /// Service to fetch utility data from Firebase
 /// Collection: utilities, Document: Lists
@@ -21,8 +20,11 @@ class UtilitiesService {
   // Stream subscriptions
   StreamSubscription? _listsDocSubscription;
 
-  /// Get the collection name with environment prefix
-  String get _collectionName => '${EnvironmentService.instance.collectionPrefix}utilities';
+  /// `utilities` is deliberately global — one shared copy for both
+  /// environments, like the roles/categories read paths in FirestoreDatabase.
+  /// It carries no environment prefix, and `test_utilities` does not exist:
+  /// prefixing this silently emptied the vehicle lists in test mode.
+  static const String _collectionName = 'utilities';
 
   /// Initialize the service and start listening for real-time updates
   void initialize() {
