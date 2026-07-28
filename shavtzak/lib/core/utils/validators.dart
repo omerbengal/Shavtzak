@@ -73,6 +73,31 @@ class Validators {
     return null;
   }
 
+  /// Regex pattern for valid HH:mm time format.
+  ///
+  /// Accepts an unpadded hour (`9:05`) because values stored before the time
+  /// fields became typable may not be padded.
+  static final timeOfDayPattern =
+      RegExp(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$');
+
+  /// Validate an optional time field (HH:mm).
+  ///
+  /// Unlike [validateTime], an empty value passes: the five event time fields
+  /// are all optional. Used as the `validator` on `EventTimeField`, so a time
+  /// the admin typed but never completed blocks the save with a red field.
+  static String? validateOptionalTime(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) {
+      return null;
+    }
+
+    if (!timeOfDayPattern.hasMatch(text)) {
+      return 'פורמט שעה לא תקין';
+    }
+
+    return null;
+  }
+
   /// Validate date range (end date must be after or equal to start date)
   static String? validateDateRange(DateTime? startDate, DateTime? endDate) {
     if (startDate == null || endDate == null) {

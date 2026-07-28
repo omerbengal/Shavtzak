@@ -1,9 +1,5 @@
 import 'package:flutter/services.dart';
-
-/// The `HH:mm` shape a finished time field must hold. Accepts an unpadded hour
-/// (`9:05`) because values stored before this field became typable may not be
-/// padded.
-final RegExp _validTime = RegExp(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$');
+import 'package:shavtzak/core/utils/validators.dart';
 
 /// Masks free typing into an `HH:mm` shape for the event time fields.
 ///
@@ -52,7 +48,7 @@ class TimeTextInputFormatter extends TextInputFormatter {
 String completePartialTime(String raw) {
   final text = raw.trim();
   if (text.isEmpty) return '';
-  if (_validTime.hasMatch(text)) return text;
+  if (Validators.timeOfDayPattern.hasMatch(text)) return text;
 
   final digits = text.replaceAll(RegExp(r'[^0-9]'), '');
   if (digits.isEmpty) return text;
@@ -63,5 +59,5 @@ String completePartialTime(String raw) {
     _ => '${digits.substring(0, 2)}:${digits.substring(2, 4)}',
   };
 
-  return _validTime.hasMatch(completed) ? completed : text;
+  return Validators.timeOfDayPattern.hasMatch(completed) ? completed : text;
 }
