@@ -1,0 +1,230 @@
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+
+import '../../../../core/debug/logger.dart';
+import '../../../../core/utils/time_input_formatter.dart';
+import '../../../../core/utils/validators.dart';
+
+/// One of the five optional time fields in the event form.
+///
+/// Typing is the primary path: the field raises a numpad and a formatter lays
+/// the digits into `HH:mm`. The Cupertino wheel is still there, behind the clock
+/// button — which RTL renders at the far *left* edge of the field, because the
+/// `suffixIcon` slot is the trailing one.
+class EventTimeField extends StatefulWidget {
+  /// Owned by the host form, which also disposes it.
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+
+  /// Suffix for this field's `Logger.action` keys, e.g. `assembly`.
+  final String logKey;
+
+  /// Fires on every edit, so the host form can mark itself dirty and rebuild.
+  /// The two derive arrows read the controllers' text at build time, so without
+  /// this they would go stale as soon as the admin typed instead of picked.
+  final VoidCallback onChanged;
+
+  /// Fires once the field holds a complete, valid time — from the wheel, or
+  /// from blur completion after typing. Never fires per keystroke, and never
+  /// when the value is unchanged since the field gained focus.
+  final void Function(String value)? onTimeSet;
+
+  const EventTimeField({
+    super.key,
+    required this.controller,
+    required this.label,
+    required this.hint,
+    required this.logKey,
+    required this.onChanged,
+    this.onTimeSet,
+  });
+
+  @override
+  State<EventTimeField> createState() => _EventTimeFieldState();
+}
+
+class _EventTimeFieldState extends State<EventTimeField> {
+  late final FocusNode _focusNode;
+  late bool _hasValue;
+  String _valueOnFocusGain = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _hasValue = widget.controller.text.isNotEmpty;
+    _focusNode = FocusNode()..addListener(_handleFocusChange);
+    widget.controller.addListener(_handleControllerChange);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleControllerChange);
+    _focusNode.removeListener(_handleFocusChange);
+    _focusNode.dispose();
+    // The controller belongs to the host form — do not dispose it here.
+    super.dispose();
+  }
+
+  /// Drives the ✕ button's visibility without depending on the host rebuilding.
+  void _handleControllerChange() {
+    final hasValue = widget.controller.text.isNotEmpty;
+    if (hasValue != _hasValue) {
+      setState(() => _hasValue = hasValue);
+    }
+  }
+
+  void _handleFocusChange() {
+    if (_focusNode.hasFocus) {
+      _valueOnFocusGain = widget.controller.text;
+      return;
+    }
+    _completeOnBlur();
+  }
+
+  /// Fill in a partial entry now that the admin has moved on.
+  void _completeOnBlur() {
+    final raw = widget.controller.text;
+    final completed = completePartialTime(raw);
+    if (completed != raw) {
+      widget.controller.text = completed;
+    }
+    if (completed == _valueOnFocusGain) {
+      return; // Focused and left without changing anything.
+    }
+    widget.onChanged();
+    if (completed.isNotEmpty &&
+        Validators.validateOptionalTime(completed) == null) {
+      widget.onTimeSet?.call(completed);
+    }
+  }
+
+  Future<void> _showWheelPicker() async {
+    final now = DateTime.now();
+    var initialTime = now;
+    final parts = widget.controller.text.trim().split(':');
+    if (parts.length == 2) {
+      final hour = int.tryParse(parts[0]);
+      final minute = int.tryParse(parts[1]);
+      // The range check matters now that the field is typable: DateTime would
+      // silently roll 25:70 over into the next day rather than reject it.
+      if (hour != null &&
+          minute != null &&
+          hour >= 0 &&
+          hour <= 23 &&
+          minute >= 0 &&
+          minute <= 59) {
+        initialTime = DateTime(now.year, now.month, now.day, hour, minute);
+      }
+    }
+
+    var selectedTime = initialTime;
+
+    final result = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SizedBox(
+          width: 280,
+          height: 220,
+          child: Column(
+            children: [
+              // Cupertino time picker wheel
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: initialTime,
+                  use24hFormat: true,
+                  onDateTimeChanged: (DateTime newTime) {
+                    selectedTime = newTime;
+                  },
+                ),
+              ),
+              // Footer with cancel/confirm buttons
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      child: const Text('ביטול'),
+                      onPressed: () {
+                        Logger.action('tap:cancel:timePicker');
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                    TextButton(
+                      child: const Text('אישור'),
+                      onPressed: () {
+                        Logger.action('tap:confirm:timePicker');
+                        Navigator.of(context).pop(selectedTime);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result == null) return;
+
+    final value = '${result.hour.toString().padLeft(2, '0')}:'
+        '${result.minute.toString().padLeft(2, '0')}';
+    widget.controller.text = value;
+    widget.onChanged();
+    widget.onTimeSet?.call(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: widget.controller,
+      focusNode: _focusNode,
+      keyboardType: TextInputType.number,
+      inputFormatters: [TimeTextInputFormatter()],
+      // Keep the digits and the caret LTR inside the RTL form — mixed-direction
+      // content is what makes Flutter's BiDi caret mapping misplace backspace.
+      // textAlign keeps the value hugging the right edge, where it has always
+      // sat.
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.right,
+      validator: Validators.validateOptionalTime,
+      onChanged: (_) => widget.onChanged(),
+      decoration: InputDecoration(
+        labelText: widget.label,
+        hintText: widget.hint,
+        border: const OutlineInputBorder(),
+        // RTL renders the suffix slot at the far left of the field.
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.access_time),
+              tooltip: 'בחירת שעה',
+              visualDensity: VisualDensity.compact,
+              onPressed: () {
+                Logger.action('open:timePicker:${widget.logKey}');
+                _showWheelPicker();
+              },
+            ),
+            if (_hasValue)
+              IconButton(
+                icon: const Icon(Icons.clear, color: Colors.grey),
+                tooltip: 'נקה שעה',
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  Logger.action('tap:clearTime:${widget.logKey}');
+                  widget.controller.clear();
+                  widget.onChanged();
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
