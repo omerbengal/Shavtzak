@@ -186,6 +186,138 @@ void main() {
       expect(picker.initialDateTime.minute, 0);
     });
 
+    // The five tests below pin the full onTimeSet firing matrix for the
+    // wheel-cancel seam: whether onTimeSet fires must depend only on
+    // "did the value actually change", never on "did the admin detour
+    // through the wheel dialog on the way out."
+    //
+    //   sequence                                    | onTimeSet fires?
+    //   1. type a time -> tap away (no wheel)        | yes
+    //   2. type a time -> open wheel -> confirm      | yes (wheel's value)
+    //   3. type a time -> open wheel -> cancel       | yes (typed value)
+    //   4. focus only -> open wheel -> cancel         | no
+    //   5. focus only -> tap away (no wheel)          | no
+    group('onTimeSet fires exactly when the value actually changed', () {
+      testWidgets('row 1: type a time, tap away with no wheel involved',
+          (tester) async {
+        final controller = TextEditingController();
+        final set = <String>[];
+        await tester.pumpWidget(
+          _host(controller: controller, onTimeSet: set.add),
+        );
+
+        await tester.enterText(find.byType(TextFormField), '1800');
+        await tester.pump();
+        await _unfocus(tester);
+
+        expect(set, ['18:00']);
+      });
+
+      testWidgets('row 2: type a time, open the wheel, confirm',
+          (tester) async {
+        final controller = TextEditingController();
+        final set = <String>[];
+        await tester.pumpWidget(
+          _host(controller: controller, onTimeSet: set.add),
+        );
+
+        await tester.enterText(find.byType(TextFormField), '1800');
+        await tester.pump();
+
+        await tester.tap(find.byTooltip('בחירת שעה'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('אישור'));
+        await tester.pumpAndSettle();
+
+        expect(controller.text, '18:00');
+        expect(set, ['18:00'], reason: 'must fire exactly once, on confirm');
+
+        // Same double-fire guard as row 3: focus returning to the field
+        // after the dialog closes must not leave a stale _valueOnFocusGain
+        // that a later plain blur would see as "changed" all over again.
+        await _unfocus(tester);
+        expect(set, ['18:00'], reason: 'a later plain blur must not refire');
+      });
+
+      testWidgets(
+          'row 3: type a time, open the wheel, cancel — onTimeSet must still '
+          'fire (the inconsistency being fixed)', (tester) async {
+        final controller = TextEditingController();
+        final set = <String>[];
+        var changes = 0;
+        await tester.pumpWidget(
+          _host(
+            controller: controller,
+            onTimeSet: set.add,
+            onChanged: () => changes++,
+          ),
+        );
+
+        await tester.enterText(find.byType(TextFormField), '1800');
+        await tester.pump();
+
+        await tester.tap(find.byTooltip('בחירת שעה'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('ביטול'));
+        await tester.pumpAndSettle();
+
+        expect(controller.text, '18:00',
+            reason: 'cancel must not discard the already-typed value');
+        expect(set, ['18:00'],
+            reason: 'must fire exactly once, same as tapping away directly');
+        // The dialog-opening blur already calls onChanged before it
+        // suppresses onTimeSet (see _openingWheel) — the derive arrows must
+        // still repaint on this path even though onTimeSet itself is decided
+        // later, on cancel.
+        expect(changes, greaterThan(0),
+            reason: 'the derive arrows must still repaint on this path');
+
+        // Guard against the natural focus-return-on-close accidentally
+        // masking a double fire: a genuine later blur, with nothing further
+        // typed, must not report the same value again.
+        await _unfocus(tester);
+        expect(set, ['18:00'], reason: 'a later plain blur must not refire');
+      });
+
+      testWidgets('row 4: focus only (no typing), open the wheel, cancel',
+          (tester) async {
+        final controller = TextEditingController(text: '18:00');
+        final set = <String>[];
+        await tester.pumpWidget(
+          _host(controller: controller, onTimeSet: set.add),
+        );
+
+        await tester.tap(find.byType(TextFormField));
+        await tester.pump();
+
+        await tester.tap(find.byTooltip('בחירת שעה'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('ביטול'));
+        await tester.pumpAndSettle();
+
+        expect(controller.text, '18:00');
+        expect(set, isEmpty,
+            reason: 'nothing changed, so there is nothing to report');
+      });
+
+      testWidgets('row 5: focus only (no typing), tap away with no wheel',
+          (tester) async {
+        final controller = TextEditingController(text: '18:00');
+        final set = <String>[];
+        await tester.pumpWidget(
+          _host(controller: controller, onTimeSet: set.add),
+        );
+
+        await tester.tap(find.byType(TextFormField));
+        await tester.pump();
+        await _unfocus(tester);
+
+        expect(controller.text, '18:00');
+        expect(set, isEmpty,
+            reason: 'nothing changed, so there is nothing to report');
+      });
+    });
+
     testWidgets('the clear button appears only once the field has a value',
         (tester) async {
       final controller = TextEditingController();

@@ -56,6 +56,20 @@ class _EventTimeFieldState extends State<EventTimeField> {
   /// the admin actually picked.
   bool _openingWheel = false;
 
+  /// `_valueOnFocusGain`, captured the instant before the wheel opens.
+  ///
+  /// The dialog-opening blur above makes `_completeOnBlur` skip `onTimeSet`
+  /// unconditionally, on the assumption that the wheel will report the
+  /// final value itself. Cancelling means it never does, so
+  /// `_completeOnWheelCancel` is the only place left that can still fire it
+  /// for a value the admin had already finished typing. It cannot compare
+  /// against `_valueOnFocusGain` directly at that point: popping the dialog
+  /// hands focus straight back to this field, re-running the focus-gained
+  /// branch and refreshing `_valueOnFocusGain` to whatever the field now
+  /// holds — erasing the very difference the cancel path needs to detect.
+  /// This snapshot is taken before that round trip and stays put through it.
+  String _valueBeforeWheelOpened = '';
+
   @override
   void initState() {
     super.initState();
@@ -114,6 +128,23 @@ class _EventTimeFieldState extends State<EventTimeField> {
     }
   }
 
+  /// The wheel's cancel path. `_completeOnBlur` already suppressed
+  /// `onTimeSet` unconditionally for the blur that opening the dialog
+  /// caused (see `_openingWheel`); the wheel's own confirm branch is the
+  /// only other place that fires it. Cancelling skips both, so without this
+  /// a value the admin finished typing before opening the wheel would never
+  /// reach the host — purely because they detoured through the wheel and
+  /// backed out, instead of tapping away directly. Whether this fires must
+  /// depend only on the value having actually changed, exactly like a plain
+  /// blur: focusing and cancelling without typing anything is a no-op.
+  void _completeOnWheelCancel() {
+    final completed = widget.controller.text;
+    if (completed.isEmpty) return;
+    if (completed == _valueBeforeWheelOpened) return;
+    if (Validators.validateOptionalTime(completed) != null) return;
+    widget.onTimeSet?.call(completed);
+  }
+
   Future<void> _showWheelPicker() async {
     final now = DateTime.now();
     var initialTime = now;
@@ -139,10 +170,16 @@ class _EventTimeFieldState extends State<EventTimeField> {
 
     var selectedTime = initialTime;
 
+    // Snapshot before anything below can change it — see
+    // _valueBeforeWheelOpened's doc comment for why _valueOnFocusGain itself
+    // cannot be read for this later, after the dialog has closed.
+    _valueBeforeWheelOpened = _valueOnFocusGain;
+
     // showDialog pushes a route, which steals primary focus off this field
     // and fires _completeOnBlur before the admin has touched the wheel.
     // _openingWheel tells that blur to skip onTimeSet; cleared in `finally`
-    // so it resets on both the confirm and the cancel path.
+    // so it resets on both the confirm and the cancel path. The cancel path
+    // itself is handled below, once the dialog result comes back null.
     _openingWheel = true;
     DateTime? result;
     try {
@@ -201,7 +238,10 @@ class _EventTimeFieldState extends State<EventTimeField> {
     }
 
     if (!mounted) return;
-    if (result == null) return;
+    if (result == null) {
+      _completeOnWheelCancel();
+      return;
+    }
 
     final value = '${result.hour.toString().padLeft(2, '0')}:'
         '${result.minute.toString().padLeft(2, '0')}';
