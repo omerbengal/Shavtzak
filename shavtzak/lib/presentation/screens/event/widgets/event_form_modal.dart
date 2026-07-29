@@ -349,9 +349,11 @@ class _EventFormModalState extends State<EventFormModal> {
     );
   }
 
-  /// Rebuild the form after a time field edit. The ✕ button and both derive
-  /// arrows are computed from the controllers' text at build time, so a typed
-  /// change has to repaint them the way a picked one always did.
+  /// Rebuild the form after a time field edit. The two derive arrows
+  /// (שעתיים לפני / שעה אחרי) are computed from the controllers' text at
+  /// build time, so a typed change has to repaint them the way a picked one
+  /// always did. (The ✕ button needs no help here — `EventTimeField` drives
+  /// its own visibility from a controller listener.)
   void _markTimeFieldDirty() {
     setState(() {
       _isDirty = true;

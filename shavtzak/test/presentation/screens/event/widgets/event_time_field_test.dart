@@ -48,6 +48,44 @@ void main() {
       expect(set, isEmpty, reason: '93 is not a time, nothing to hand on');
     });
 
+    testWidgets(
+        'a hydrated unpadded value survives focus-then-leave untouched',
+        (tester) async {
+      // 9:05 is the legacy unpadded shape a value stored before the field
+      // became typable may hold. Checking it (focus, then leave without
+      // typing) must not rewrite it and must not auto-fill a neighbour.
+      final controller = TextEditingController(text: '9:05');
+      final set = <String>[];
+      await tester.pumpWidget(
+        _host(controller: controller, onTimeSet: set.add),
+      );
+
+      await tester.tap(find.byType(TextFormField));
+      await tester.pump();
+      await _unfocus(tester);
+
+      expect(controller.text, '9:05');
+      expect(set, isEmpty,
+          reason: 'checking an existing value must not fire onTimeSet');
+    });
+
+    testWidgets('a hydrated normal value survives focus-then-leave untouched',
+        (tester) async {
+      final controller = TextEditingController(text: '18:00');
+      final set = <String>[];
+      await tester.pumpWidget(
+        _host(controller: controller, onTimeSet: set.add),
+      );
+
+      await tester.tap(find.byType(TextFormField));
+      await tester.pump();
+      await _unfocus(tester);
+
+      expect(controller.text, '18:00');
+      expect(set, isEmpty,
+          reason: 'checking an existing value must not fire onTimeSet');
+    });
+
     testWidgets('onTimeSet does not fire per keystroke', (tester) async {
       final controller = TextEditingController();
       final set = <String>[];
@@ -98,6 +136,54 @@ void main() {
       // The wheel opened on the field's own 18:00 and was confirmed untouched.
       expect(controller.text, '18:00');
       expect(set, ['18:00']);
+    });
+
+    testWidgets(
+        'opening the wheel after typing does not fire onTimeSet before confirm',
+        (tester) async {
+      final controller = TextEditingController();
+      final set = <String>[];
+      await tester.pumpWidget(
+        _host(controller: controller, onTimeSet: set.add),
+      );
+
+      // Typing focuses the field; controller now holds 18:00 and
+      // _valueOnFocusGain is still '' from before the typing started.
+      await tester.enterText(find.byType(TextFormField), '1800');
+      await tester.pump();
+
+      // Pushing the wheel dialog steals focus off the field, which used to
+      // fire onTimeSet with the pre-adjustment value before the admin had
+      // touched the wheel at all.
+      await tester.tap(find.byTooltip('בחירת שעה'));
+      await tester.pumpAndSettle();
+
+      expect(set, isEmpty,
+          reason: 'onTimeSet must not fire before the wheel is confirmed');
+
+      await tester.tap(find.text('אישור'));
+      await tester.pumpAndSettle();
+
+      // The wheel itself fires onTimeSet exactly once, on confirm.
+      expect(set, ['18:00']);
+    });
+
+    testWidgets('the wheel opens seeded from a partially-typed value, not now',
+        (tester) async {
+      final controller = TextEditingController();
+      await tester.pumpWidget(_host(controller: controller));
+
+      // Only the hour was typed; the field shows "18", not "18:00".
+      await tester.enterText(find.byType(TextFormField), '18');
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('בחירת שעה'));
+      await tester.pumpAndSettle();
+
+      final picker = tester
+          .widget<CupertinoDatePicker>(find.byType(CupertinoDatePicker));
+      expect(picker.initialDateTime.hour, 18);
+      expect(picker.initialDateTime.minute, 0);
     });
 
     testWidgets('the clear button appears only once the field has a value',

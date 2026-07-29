@@ -126,5 +126,18 @@ void main() {
       expect(completePartialTime('25:70'), '25:70');
       expect(completePartialTime('24:00'), '24:00');
     });
+
+    test('leaves non-digit text untouched instead of crashing', () {
+      // Without the digits.isEmpty guard, the fallback branch would call
+      // substring(0, 2) on an empty string and throw a RangeError.
+      expect(completePartialTime('abc'), 'abc');
+    });
+
+    test('more than four digits truncates to the first four', () {
+      // Intentional, not incidental: the switch's fallback branch only ever
+      // reads digits[0:2] and digits[2:4], so anything typed past the fourth
+      // digit is silently dropped.
+      expect(completePartialTime('18:00:00'), '18:00');
+    });
   });
 }

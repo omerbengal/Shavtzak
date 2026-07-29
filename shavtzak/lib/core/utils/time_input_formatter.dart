@@ -1,6 +1,10 @@
 import 'package:flutter/services.dart';
 import 'package:shavtzak/core/utils/validators.dart';
 
+/// Matches any non-digit character, so it can be stripped to get at just the
+/// digits typed so far.
+final _nonDigits = RegExp(r'[^0-9]');
+
 /// Masks free typing into an `HH:mm` shape for the event time fields.
 ///
 /// Digits only, capped at four, with the colon inserted once a third digit
@@ -15,7 +19,7 @@ class TimeTextInputFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    var digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    var digits = newValue.text.replaceAll(_nonDigits, '');
     if (digits.length > 4) {
       digits = digits.substring(0, 4);
     }
@@ -50,7 +54,7 @@ String completePartialTime(String raw) {
   if (text.isEmpty) return '';
   if (Validators.timeOfDayPattern.hasMatch(text)) return text;
 
-  final digits = text.replaceAll(RegExp(r'[^0-9]'), '');
+  final digits = text.replaceAll(_nonDigits, '');
   if (digits.isEmpty) return text;
 
   final completed = switch (digits.length) {

@@ -47,12 +47,20 @@ class EventTimeField extends StatefulWidget {
 class _EventTimeFieldState extends State<EventTimeField> {
   late final FocusNode _focusNode;
   late bool _hasValue;
-  String _valueOnFocusGain = '';
+  late String _valueOnFocusGain;
+
+  /// True while the wheel dialog is up. Pushing that dialog steals primary
+  /// focus off this field, which fires a blur — `_completeOnBlur` — before
+  /// the admin has touched the wheel at all. This flag tells that blur to
+  /// skip `onTimeSet`; the wheel calls it itself, on confirm, with whatever
+  /// the admin actually picked.
+  bool _openingWheel = false;
 
   @override
   void initState() {
     super.initState();
     _hasValue = widget.controller.text.isNotEmpty;
+    _valueOnFocusGain = widget.controller.text;
     _focusNode = FocusNode()..addListener(_handleFocusChange);
     widget.controller.addListener(_handleControllerChange);
   }
@@ -93,6 +101,13 @@ class _EventTimeFieldState extends State<EventTimeField> {
       return; // Focused and left without changing anything.
     }
     widget.onChanged();
+    if (_openingWheel) {
+      // This blur was caused by the wheel dialog stealing focus, not by the
+      // admin actually leaving the field — see _openingWheel. The wheel
+      // fires onTimeSet itself, on confirm, with whatever was actually
+      // picked.
+      return;
+    }
     if (completed.isNotEmpty &&
         Validators.validateOptionalTime(completed) == null) {
       widget.onTimeSet?.call(completed);
@@ -102,7 +117,11 @@ class _EventTimeFieldState extends State<EventTimeField> {
   Future<void> _showWheelPicker() async {
     final now = DateTime.now();
     var initialTime = now;
-    final parts = widget.controller.text.trim().split(':');
+    // Seed from the completed value — e.g. a partially-typed "18" becomes
+    // "18:00" — rather than the raw text, so the wheel opens on what the
+    // admin has typed so far instead of on DateTime.now().
+    final seedText = completePartialTime(widget.controller.text).trim();
+    final parts = seedText.split(':');
     if (parts.length == 2) {
       final hour = int.tryParse(parts[0]);
       final minute = int.tryParse(parts[1]);
@@ -120,56 +139,68 @@ class _EventTimeFieldState extends State<EventTimeField> {
 
     var selectedTime = initialTime;
 
-    final result = await showDialog<DateTime>(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: SizedBox(
-          width: 280,
-          height: 220,
-          child: Column(
-            children: [
-              // Cupertino time picker wheel
-              Expanded(
-                child: CupertinoDatePicker(
-                  mode: CupertinoDatePickerMode.time,
-                  initialDateTime: initialTime,
-                  use24hFormat: true,
-                  onDateTimeChanged: (DateTime newTime) {
-                    selectedTime = newTime;
-                  },
+    // showDialog pushes a route, which steals primary focus off this field
+    // and fires _completeOnBlur before the admin has touched the wheel.
+    // _openingWheel tells that blur to skip onTimeSet; cleared in `finally`
+    // so it resets on both the confirm and the cancel path.
+    _openingWheel = true;
+    DateTime? result;
+    try {
+      result = await showDialog<DateTime>(
+        context: context,
+        builder: (context) => Dialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: SizedBox(
+            width: 280,
+            height: 220,
+            child: Column(
+              children: [
+                // Cupertino time picker wheel
+                Expanded(
+                  child: CupertinoDatePicker(
+                    mode: CupertinoDatePickerMode.time,
+                    initialDateTime: initialTime,
+                    use24hFormat: true,
+                    onDateTimeChanged: (DateTime newTime) {
+                      selectedTime = newTime;
+                    },
+                  ),
                 ),
-              ),
-              // Footer with cancel/confirm buttons
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      child: const Text('ביטול'),
-                      onPressed: () {
-                        Logger.action('tap:cancel:timePicker');
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                    TextButton(
-                      child: const Text('אישור'),
-                      onPressed: () {
-                        Logger.action('tap:confirm:timePicker');
-                        Navigator.of(context).pop(selectedTime);
-                      },
-                    ),
-                  ],
+                // Footer with cancel/confirm buttons
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton(
+                        child: const Text('ביטול'),
+                        onPressed: () {
+                          Logger.action('tap:cancel:timePicker');
+                          Navigator.of(context).pop();
+                        },
+                      ),
+                      TextButton(
+                        child: const Text('אישור'),
+                        onPressed: () {
+                          Logger.action('tap:confirm:timePicker');
+                          Navigator.of(context).pop(selectedTime);
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      _openingWheel = false;
+    }
 
+    if (!mounted) return;
     if (result == null) return;
 
     final value = '${result.hour.toString().padLeft(2, '0')}:'
