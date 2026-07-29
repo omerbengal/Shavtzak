@@ -59,7 +59,12 @@ class Validators {
     return null;
   }
 
-  /// Validate time format (HH:mm)
+  /// Validate a REQUIRED time field (HH:mm) — an empty value is rejected.
+  ///
+  /// Currently has no callers. Before reaching for it, check that you want the
+  /// required semantics: every time field in the app today is optional, and
+  /// they all use [validateOptionalTime] instead. Kept because a required time
+  /// field is a reasonable thing to want later.
   static String? validateTime(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'שעה היא שדה חובה';
@@ -110,7 +115,11 @@ class Validators {
     return null;
   }
 
-  /// Validate time range (end time must be after start time)
+  /// Validate time range (end time must be after start time).
+  ///
+  /// Currently has no callers. Note it treats both times as required, and it
+  /// cannot express an event that ends after midnight — `23:00` to `00:30`
+  /// would be rejected. Check both before using it.
   static String? validateTimeRange(String? startTime, String? endTime) {
     if (startTime == null ||
         startTime.isEmpty ||
