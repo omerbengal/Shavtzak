@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
@@ -14,6 +13,7 @@ import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/participant_group.dart';
 import 'participant_group_rows.dart';
+import 'event_time_field.dart';
 import '../../../../data/repositories/assignment_label_repository.dart';
 import '../../../../data/repositories/assignment_repository.dart';
 import '../../../../data/repositories/event_repository.dart';
@@ -283,87 +283,6 @@ class _EventFormModalState extends State<EventFormModal> {
     });
   }
 
-  Future<void> _showTimePickerFor(
-    TextEditingController controller, {
-    void Function(String value)? onPicked,
-  }) async {
-    // Parse existing value as initial time, default to current time
-    final now = DateTime.now();
-    DateTime initialTime = now;
-    if (controller.text.isNotEmpty) {
-      final parts = controller.text.split(':');
-      if (parts.length == 2) {
-        final hour = int.tryParse(parts[0]);
-        final minute = int.tryParse(parts[1]);
-        if (hour != null && minute != null) {
-          initialTime = DateTime(now.year, now.month, now.day, hour, minute);
-        }
-      }
-    }
-
-    DateTime selectedTime = initialTime;
-
-    final result = await showDialog<DateTime>(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: SizedBox(
-          width: 280,
-          height: 220,
-          child: Column(
-            children: [
-              // Cupertino time picker wheel
-              Expanded(
-                child: CupertinoDatePicker(
-                  mode: CupertinoDatePickerMode.time,
-                  initialDateTime: initialTime,
-                  use24hFormat: true,
-                  onDateTimeChanged: (DateTime newTime) {
-                    selectedTime = newTime;
-                  },
-                ),
-              ),
-              // Footer with cancel/confirm buttons
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      child: const Text('ביטול'),
-                      onPressed: () {
-                        Logger.action('tap:cancel:timePicker');
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                    TextButton(
-                      child: const Text('אישור'),
-                      onPressed: () {
-                        Logger.action('tap:confirm:timePicker');
-                        Navigator.of(context).pop(selectedTime);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        final value =
-            '${result.hour.toString().padLeft(2, '0')}:${result.minute.toString().padLeft(2, '0')}';
-        controller.text = value;
-        _isDirty = true;
-        onPicked?.call(value);
-      });
-    }
-  }
-
   /// Collect the participant rows. Empty rows are dropped; a labeled row with
   /// no count is already blocked by the form validator.
   List<ParticipantGroup> _parseParticipantGroups() {
@@ -384,44 +303,6 @@ class _EventFormModalState extends State<EventFormModal> {
       target.text = derived;
       _isDirty = true;
     });
-  }
-
-  /// A read-only time-picker field (tap opens the wheel picker). Extracted so
-  /// the five event time fields share one definition instead of duplicating it.
-  Widget _buildTimeField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    required IconData prefixIcon,
-    required String logKey,
-    void Function(String value)? onPicked,
-  }) {
-    return TextFormField(
-      controller: controller,
-      readOnly: true,
-      onTap: () {
-        Logger.action('open:timePicker:$logKey');
-        _showTimePickerFor(controller, onPicked: onPicked);
-      },
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        prefixIcon: Icon(prefixIcon),
-        border: const OutlineInputBorder(),
-        suffixIcon: controller.text.isNotEmpty
-            ? IconButton(
-                icon: const Icon(Icons.clear, color: Colors.grey),
-                onPressed: () {
-                  Logger.action('tap:clearTime:$logKey');
-                  setState(() {
-                    controller.clear();
-                    _isDirty = true;
-                  });
-                },
-              )
-            : null,
-      ),
-    );
   }
 
   /// A small up/down arrow button placed between a source and a target time
@@ -466,6 +347,17 @@ class _EventFormModalState extends State<EventFormModal> {
         ),
       ),
     );
+  }
+
+  /// Rebuild the form after a time field edit. The two derive arrows
+  /// (שעתיים לפני / שעה אחרי) are computed from the controllers' text at
+  /// build time, so a typed change has to repaint them the way a picked one
+  /// always did. (The ✕ button needs no help here — `EventTimeField` drives
+  /// its own visibility from a controller listener.)
+  void _markTimeFieldDirty() {
+    setState(() {
+      _isDirty = true;
+    });
   }
 
   Future<void> _saveEvent() async {
@@ -2185,12 +2077,12 @@ class _EventFormModalState extends State<EventFormModal> {
                                         const SizedBox(height: 8),
 
                                         // Assembly Time (שעת התייצבות)
-                                        _buildTimeField(
+                                        EventTimeField(
                                           controller: _assemblyTimeController,
                                           label: 'שעת התייצבות (אופציונלי)',
                                           hint: 'לדוגמה: 17:00',
-                                          prefixIcon: Icons.access_time,
                                           logKey: 'assembly',
+                                          onChanged: _markTimeFieldDirty,
                                         ),
 
                                         // Derive arrow: התכנסות קהל → התייצבות
@@ -2208,13 +2100,13 @@ class _EventFormModalState extends State<EventFormModal> {
                                         const SizedBox(height: 8),
 
                                         // Start Time (Audience Gathering Time)
-                                        _buildTimeField(
+                                        EventTimeField(
                                           controller: _startTimeController,
                                           label: 'שעת התכנסות קהל (אופציונלי)',
                                           hint: 'לדוגמה: 18:00',
-                                          prefixIcon: Icons.access_time,
                                           logKey: 'start',
-                                          onPicked: (value) {
+                                          onChanged: _markTimeFieldDirty,
+                                          onTimeSet: (value) {
                                             // Live auto-fill: if התייצבות is
                                             // still empty, default it to 2h
                                             // before the gathering time.
@@ -2236,27 +2128,27 @@ class _EventFormModalState extends State<EventFormModal> {
                                         const SizedBox(height: 16),
 
                                         // Actual Show Start Time
-                                        _buildTimeField(
+                                        EventTimeField(
                                           controller:
                                               _actualShowStartTimeController,
                                           label:
                                               'שעת תחילת המופע בפועל (אופציונלי)',
                                           hint: 'לדוגמה: 19:00',
-                                          prefixIcon: Icons.play_circle_outline,
                                           logKey: 'actualShowStart',
+                                          onChanged: _markTimeFieldDirty,
                                         ),
 
                                         const SizedBox(height: 16),
 
                                         // End Time (show estimated end)
-                                        _buildTimeField(
+                                        EventTimeField(
                                           controller: _endTimeController,
                                           label:
                                               'שעת סיום משוערת של המופע (אופציונלי)',
                                           hint: 'לדוגמה: 23:00',
-                                          prefixIcon: Icons.access_time,
                                           logKey: 'end',
-                                          onPicked: (value) {
+                                          onChanged: _markTimeFieldDirty,
+                                          onTimeSet: (value) {
                                             // Live auto-fill: if סיום הצוות is
                                             // still empty, default it to 1h
                                             // after the show end time.
@@ -2289,13 +2181,13 @@ class _EventFormModalState extends State<EventFormModal> {
                                         const SizedBox(height: 8),
 
                                         // Team End Time (שעת סיום משוערת של הצוות)
-                                        _buildTimeField(
+                                        EventTimeField(
                                           controller: _teamEndTimeController,
                                           label:
                                               'שעת סיום משוערת של הצוות (אופציונלי)',
                                           hint: 'לדוגמה: 00:00',
-                                          prefixIcon: Icons.access_time,
                                           logKey: 'teamEnd',
+                                          onChanged: _markTimeFieldDirty,
                                         ),
 
                                         const SizedBox(height: 16),
