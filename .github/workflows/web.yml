@@ -27,9 +27,37 @@ jobs:
         working-directory: shavtzak
         run: flutter pub get
 
+      # NOTE: deliberately no --pwa-strategy. That flag is deprecated
+      # (flutter#156910) AND passing `none` was actively harmful here: it makes
+      # Flutter emit a ZERO BYTE flutter_service_worker.js. An empty worker is
+      # valid but never calls skipWaiting(), so it installs and then parks in
+      # the "waiting" state forever -- a waiting worker cannot take over while
+      # any client of the origin is open. Anyone who registered the real ~8.7KB
+      # offline-first worker this site shipped until 2026-02-15 therefore kept
+      # that old worker, kept being served its stale precached bundle, and was
+      # pinned to a months-old build that no refresh and no push to main could
+      # reach (a hard reload does not unregister a worker).
+      #
+      # The default build emits a SELF-DESTRUCTING worker instead
+      # (skipWaiting -> unregister -> navigate open tabs), which is upstream's
+      # resolution of that issue and is what finally evicts the old one.
       - name: Build for web
         working-directory: shavtzak
-        run: flutter build web --release --base-href /Shavtzak/ --pwa-strategy=none
+        run: flutter build web --release --base-href /Shavtzak/
+
+      # Regression guard. An inert worker strands users on an old build with no
+      # symptom visible anywhere in CI, so fail loudly rather than deploy it.
+      # Trips if --pwa-strategy=none comes back (0 bytes) or if a future Flutter
+      # changes what the default build emits.
+      - name: Verify the service worker self-destructs
+        working-directory: shavtzak
+        run: |
+          set -euo pipefail
+          out=build/web/flutter_service_worker.js
+          test -s "$out"
+          grep -q 'skipWaiting' "$out"
+          grep -q 'registration.unregister' "$out"
+          echo "service worker OK: $(wc -c < "$out") bytes"
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4
