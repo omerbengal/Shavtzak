@@ -480,7 +480,24 @@ When making changes to the code:
 1. Run `flutter analyze` to check for compilation errors and warnings
 2. **Do not run the app** - I will run the app myself to test the changes
 3. If `flutter analyze` passes, the code is ready for testing
-4. I will test the changes in both test and production environments as needed
+4. I will test the changes myself
+
+**How I actually test — do not plan around `/test`.** I run the app locally against
+**production** data (`flutter run` from the feature worktree), and once it looks good
+I ship straight to production. I rarely use the `/test` environment, even for local
+testing. So don't propose "verify it in `/test` first" as the safety net, and don't
+treat `/test` coverage as a substitute for real verification.
+
+**Consequence for backend changes:** a local `flutter run` still calls the *deployed*
+`api` Cloud Function — `backend_api_service.dart` hardcodes
+`us-central1-<project>.cloudfunctions.net` with no localhost override, there is one
+shared `api` deployment for both prod and `/test`, and `firebase.json` has no
+`emulators` block. So when a change touches `functions/`, **deploy Functions before
+asking me to test the client locally**, and design the backend change to be
+backward-compatible so deploying it ahead of the UI is safe. Verify backend logic
+locally with `cd functions && npm test` — the serializers are pure functions with
+injected data and an injected `now`, so unit tests substitute for a staging
+environment on this kind of work.
 
 ### Deploying
 1. Build production: `flutter build web`
