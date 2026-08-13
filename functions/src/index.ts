@@ -6419,7 +6419,7 @@ app.post('/drive/export', async (request: Request, response: Response) => {
       : [];
 
     if (type === 'assignments' && assignmentMode === 'perEvent' && eventIds.length === 0) {
-      throw new HttpError(400, 'Select at least one future event to export');
+      throw new HttpError(400, 'Select at least one event to export');
     }
 
     const result = await exportProductionDataToSheets(db, type, {

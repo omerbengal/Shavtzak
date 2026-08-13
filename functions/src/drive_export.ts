@@ -175,6 +175,48 @@ function filterFutureEventsData(
   );
 }
 
+type ExportEventPools = {
+  /** Events rows may be built from: future events plus selected past ones. */
+  rowPool: Record<string, Record<string, unknown>>;
+  /** Events the same-day double-booking mark is computed over: future only. */
+  annotationPool: Record<string, Record<string, unknown>>;
+};
+
+/**
+ * Build the two event pools an assignments export needs.
+ *
+ * `annotationPool` is the historical future-only pool, unchanged. `rowPool`
+ * adds back any explicitly selected past event so admins can export history.
+ *
+ * Widening is gated on perEvent deliberately. `shouldIncludeEvent` returns true
+ * for every event in perPerson mode, so the pool is the ONLY thing scoping that
+ * export — widening it there would turn "all future assignments" into "every
+ * assignment ever recorded".
+ *
+ * Deactivated events are never added back, so an explicit selection cannot
+ * resurrect one; it still fails validation downstream.
+ */
+function buildExportEventPools(
+  eventsData: Record<string, Record<string, unknown>>,
+  now: Date,
+  mode: AssignmentExportMode,
+  selectedEventIds: string[],
+): ExportEventPools {
+  const annotationPool = filterFutureEventsData(eventsData, now);
+  if (mode !== 'perEvent') {
+    return {rowPool: annotationPool, annotationPool};
+  }
+
+  const rowPool = {...annotationPool};
+  for (const eventId of selectedEventIds) {
+    if (rowPool[eventId] != null) continue;
+    const eventData = eventsData[eventId];
+    if (eventData == null || eventData['isDeactivated'] === true) continue;
+    rowPool[eventId] = eventData;
+  }
+  return {rowPool, annotationPool};
+}
+
 function formatDate(value: unknown): string {
   const date = parseDate(value);
   if (date == null) return '';
@@ -784,6 +826,12 @@ type AssignmentOnlySerializeOptions = {
   mode: AssignmentExportMode;
   selectedEventIds: string[];
   roleSortOrders: Record<string, number>;
+  /**
+   * Future-only pool the "משובץ גם ב" mark is computed over. Kept separate from
+   * the row pool so exported PAST rows never carry the mark, matching
+   * /admin/assignments and /summary which never flag past-day conflicts.
+   */
+  annotationEventsData: Record<string, Record<string, unknown>>;
 };
 
 type AssignmentOnlyRow = {
@@ -829,12 +877,11 @@ function eventsShareDay(
  * that event to which the member is also assigned, sorted by start date then
  * name.
  *
- * `eventsData` is the future-filtered pool (`filterFutureEventsData`'s output) —
- * the same set the export's own rows are built from, not every event ever
- * created. This is deliberate, for parity with the UI: `/admin/assignments` and
- * `/summary` never mark a conflict on a day that has already passed, so the
- * export must not either. An event that has already ended is simply absent from
- * `eventsData` and can never be named here.
+ * `eventsData` here is the ANNOTATION pool — future events only. It is
+ * deliberately NOT the row pool: a perEvent export may contain explicitly
+ * selected past events, and those rows must never be marked, for parity with
+ * `/admin/assignments` and `/summary`, which never flag a conflict on a day
+ * that has already passed.
  *
  * `filterFutureEventsData` already drops deactivated events too, so the inline
  * `isDeactivated` check below is belt-and-braces — redundant given the caller's
@@ -925,7 +972,7 @@ function serializeAssignmentsOnly(
     const invalidEventIds = dedupedSelectedEventIds.filter((eventId) => eventsData[eventId] == null);
     if (invalidEventIds.length > 0) {
       throw new DriveExportValidationError(
-        `Selected future event IDs are invalid: ${invalidEventIds.join(', ')}`,
+        `Selected event IDs are invalid: ${invalidEventIds.join(', ')}`,
       );
     }
   }
@@ -1009,7 +1056,7 @@ function serializeAssignmentsOnly(
   // perEvent only: the boss asked for the mark in the לפי אירוע export.
   const sameDayOtherEventNames =
     options.mode === 'perEvent'
-      ? buildSameDayOtherEventNames(assignments, eventsData)
+      ? buildSameDayOtherEventNames(assignments, options.annotationEventsData)
       : new Map<string, Map<string, string[]>>();
 
   return {
@@ -1189,14 +1236,22 @@ export async function exportProductionDataToSheets(
 
     const memberNames = buildMemberNames(teamMembers);
     const eventsData = buildEventsData(events);
-    const futureEventsData = filterFutureEventsData(eventsData, options.now ?? new Date());
+    const assignmentMode = options.assignmentMode ?? 'perPerson';
+    const selectedEventIds = options.eventIds ?? [];
+    const {rowPool, annotationPool} = buildExportEventPools(
+      eventsData,
+      options.now ?? new Date(),
+      assignmentMode,
+      selectedEventIds,
+    );
     const roleHebrewNames = buildRoleHebrewNames(listsData);
     const roleSortOrders = buildRoleSortOrders(listsData);
     const sheets = [
-      serializeAssignmentsOnly(assignments, futureEventsData, memberNames, roleHebrewNames, {
-        mode: options.assignmentMode ?? 'perPerson',
-        selectedEventIds: options.eventIds ?? [],
+      serializeAssignmentsOnly(assignments, rowPool, memberNames, roleHebrewNames, {
+        mode: assignmentMode,
+        selectedEventIds,
         roleSortOrders,
+        annotationEventsData: annotationPool,
       }),
     ];
 
@@ -1295,16 +1350,22 @@ export function __testSerializeAssignmentsOnly(input: {
   selectedEventIds: string[];
   now: Date;
 }): {sheetName: string; headers: string[]; rows: unknown[][]} {
-  const futureEventsData = filterFutureEventsData(input.eventsData, input.now);
+  const {rowPool, annotationPool} = buildExportEventPools(
+    input.eventsData,
+    input.now,
+    input.mode,
+    input.selectedEventIds,
+  );
   return serializeAssignmentsOnly(
     input.assignments,
-    futureEventsData,
+    rowPool,
     input.memberNames,
     input.roleHebrewNames,
     {
       mode: input.mode,
       selectedEventIds: input.selectedEventIds,
       roleSortOrders: input.roleSortOrders,
+      annotationEventsData: annotationPool,
     },
   ) as {sheetName: string; headers: string[]; rows: unknown[][]};
 }

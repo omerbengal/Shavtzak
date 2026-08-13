@@ -158,23 +158,21 @@ test('per-event assignments export filters selected events and sorts by event, r
   ]);
 });
 
-test('per-event assignments export rejects selected past or nonexistent event IDs', () => {
+test('per-event assignments export rejects nonexistent event IDs', () => {
   let error: unknown;
   try {
     __testSerializeAssignmentsOnly({
       assignments: [
         {id: 'future-assignment', data: {eventId: 'future', teamMemberId: 'm1', roleType: 'medic'}},
-        {id: 'past-assignment', data: {eventId: 'past', teamMemberId: 'm1', roleType: 'medic'}},
       ],
       eventsData: {
         future: {name: 'Future', startDate: new Date('2026-05-04T00:00:00.000Z'), endDate: new Date('2026-05-04T00:00:00.000Z')},
-        past: {name: 'Past', startDate: new Date('2026-05-01T00:00:00.000Z'), endDate: new Date('2026-05-01T00:00:00.000Z')},
       },
       memberNames: {m1: 'אדם אחד'},
       roleHebrewNames: {medic: 'חובש'},
       roleSortOrders: {medic: 0},
       mode: 'perEvent',
-      selectedEventIds: ['future', 'past', 'missing', 'past'],
+      selectedEventIds: ['future', 'missing', 'missing'],
       now: new Date('2026-05-03T00:00:00.000Z'),
     });
   } catch (caughtError) {
@@ -182,7 +180,37 @@ test('per-event assignments export rejects selected past or nonexistent event ID
   }
 
   assert.ok(error instanceof DriveExportValidationError);
-  assert.equal(error.message, 'Selected future event IDs are invalid: past, missing');
+  assert.equal(error.message, 'Selected event IDs are invalid: missing');
+});
+
+test('per-event assignments export rejects a selected deactivated event', () => {
+  let error: unknown;
+  try {
+    __testSerializeAssignmentsOnly({
+      assignments: [
+        {id: 'a1', data: {eventId: 'held', teamMemberId: 'm1', roleType: 'medic'}},
+      ],
+      eventsData: {
+        held: {
+          name: 'On Hold',
+          startDate: new Date('2026-05-01T00:00:00.000Z'),
+          endDate: new Date('2026-05-01T00:00:00.000Z'),
+          isDeactivated: true,
+        },
+      },
+      memberNames: {m1: 'אדם אחד'},
+      roleHebrewNames: {medic: 'חובש'},
+      roleSortOrders: {medic: 0},
+      mode: 'perEvent',
+      selectedEventIds: ['held'],
+      now: new Date('2026-05-03T00:00:00.000Z'),
+    });
+  } catch (caughtError) {
+    error = caughtError;
+  }
+
+  assert.ok(error instanceof DriveExportValidationError);
+  assert.equal(error.message, 'Selected event IDs are invalid: held');
 });
 
 test('per-event export suffixes a member who is booked in another event the same day', () => {
@@ -494,4 +522,96 @@ test('per-event export is symmetric: exporting both same-day events, each names 
   const nameByEvent = new Map(sheet.rows.map((row) => [row[2], row[0]]));
   assert.equal(nameByEvent.get('אירוע קיץ'), 'יוסי כהן (משובץ גם במופע ערב)');
   assert.equal(nameByEvent.get('מופע ערב'), 'יוסי כהן (משובץ גם באירוע קיץ)');
+});
+
+test('per-event assignments export includes an explicitly selected past event', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'a-past', data: {eventId: 'past', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a-future', data: {eventId: 'future', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      past: {name: 'Past', startDate: new Date('2026-05-01T00:00:00.000Z'), endDate: new Date('2026-05-01T00:00:00.000Z')},
+      future: {name: 'Future', startDate: new Date('2026-05-04T00:00:00.000Z'), endDate: new Date('2026-05-04T00:00:00.000Z')},
+    },
+    memberNames: {m1: 'אדם אחד'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    selectedEventIds: ['past'],
+    now: new Date('2026-05-03T00:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows.map((row) => row[2]), ['Past']);
+});
+
+test('per-person assignments export still excludes past events even when eventIds are sent', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'a-past', data: {eventId: 'past', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'a-future', data: {eventId: 'future', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      past: {name: 'Past', startDate: new Date('2026-05-01T00:00:00.000Z'), endDate: new Date('2026-05-01T00:00:00.000Z')},
+      future: {name: 'Future', startDate: new Date('2026-05-04T00:00:00.000Z'), endDate: new Date('2026-05-04T00:00:00.000Z')},
+    },
+    memberNames: {m1: 'אדם אחד'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perPerson',
+    selectedEventIds: ['past'],
+    now: new Date('2026-05-03T00:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows.map((row) => row[2]), ['Future']);
+});
+
+test('past rows never carry the same-day double-booking mark', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'p1', data: {eventId: 'past-a', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'p2', data: {eventId: 'past-b', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      'past-a': {name: 'Past A', startDate: new Date('2026-05-01T00:00:00.000Z'), endDate: new Date('2026-05-01T00:00:00.000Z')},
+      'past-b': {name: 'Past B', startDate: new Date('2026-05-01T00:00:00.000Z'), endDate: new Date('2026-05-01T00:00:00.000Z')},
+    },
+    memberNames: {m1: 'אדם אחד'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    selectedEventIds: ['past-a', 'past-b'],
+    now: new Date('2026-05-03T00:00:00.000Z'),
+  });
+
+  assert.deepEqual(sheet.rows.map((row) => row[0]), ['אדם אחד', 'אדם אחד']);
+});
+
+test('future rows still carry the same-day mark when a past event is also exported', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'f1', data: {eventId: 'future-a', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'f2', data: {eventId: 'future-b', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'p1', data: {eventId: 'past', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      'future-a': {name: 'Future A', startDate: new Date('2026-05-04T00:00:00.000Z'), endDate: new Date('2026-05-04T00:00:00.000Z')},
+      'future-b': {name: 'Future B', startDate: new Date('2026-05-04T00:00:00.000Z'), endDate: new Date('2026-05-04T00:00:00.000Z')},
+      past: {name: 'Past', startDate: new Date('2026-05-01T00:00:00.000Z'), endDate: new Date('2026-05-01T00:00:00.000Z')},
+    },
+    memberNames: {m1: 'אדם אחד'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    selectedEventIds: ['future-a', 'future-b', 'past'],
+    now: new Date('2026-05-03T00:00:00.000Z'),
+  });
+
+  // Rows sort by date ascending: the past row (05-01) sorts before both
+  // future rows (05-04), which then sort by event name (Future A, Future B).
+  assert.deepEqual(sheet.rows.map((row) => row[0]), [
+    'אדם אחד',
+    'אדם אחד (משובץ גם בFuture B)',
+    'אדם אחד (משובץ גם בFuture A)',
+  ]);
 });
