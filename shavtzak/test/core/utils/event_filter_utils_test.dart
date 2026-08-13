@@ -178,6 +178,67 @@ void main() {
       });
     });
   });
+
+  group('splitEventsByPast', () {
+    final today = DateTime(2026, 8, 13);
+
+    test('event ending today is future, event ending yesterday is past', () {
+      final result = splitEventsByPast([
+        _event(id: 'ends-today', start: DateTime(2026, 8, 13)),
+        _event(id: 'ended-yesterday', start: DateTime(2026, 8, 12)),
+      ], today);
+
+      expect(result.future.map((e) => e.id), ['ends-today']);
+      expect(result.past.map((e) => e.id), ['ended-yesterday']);
+    });
+
+    test('multi-day event spanning today is future', () {
+      final result = splitEventsByPast([
+        _event(
+          id: 'spans',
+          start: DateTime(2026, 8, 10),
+          end: DateTime(2026, 8, 15),
+        ),
+      ], today);
+
+      expect(result.future.map((e) => e.id), ['spans']);
+      expect(result.past, isEmpty);
+    });
+
+    test('future list is ascending by date', () {
+      final result = splitEventsByPast([
+        _event(id: 'later', start: DateTime(2026, 9, 1)),
+        _event(id: 'sooner', start: DateTime(2026, 8, 20)),
+      ], today);
+
+      expect(result.future.map((e) => e.id), ['sooner', 'later']);
+    });
+
+    test('past list is newest-first', () {
+      final result = splitEventsByPast([
+        _event(id: 'older', start: DateTime(2026, 7, 1)),
+        _event(id: 'newer', start: DateTime(2026, 8, 1)),
+      ], today);
+
+      expect(result.past.map((e) => e.id), ['newer', 'older']);
+    });
+
+    test('same-day future events tie-break on start time then name', () {
+      final result = splitEventsByPast([
+        _event(id: 'b', start: DateTime(2026, 8, 20), name: 'ב'),
+        _event(id: 'a', start: DateTime(2026, 8, 20), name: 'א'),
+      ], today);
+
+      expect(result.future.map((e) => e.id), ['a', 'b']);
+    });
+
+    test('empty input yields two empty lists', () {
+      final result = splitEventsByPast(const [], today);
+
+      expect(result.future, isEmpty);
+      expect(result.past, isEmpty);
+    });
+  });
 }
 
 Event _event({

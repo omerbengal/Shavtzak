@@ -69,5 +69,48 @@ Set<DateTime> eventCoverageDays(List<Event> events) {
   return days;
 }
 
+/// Split [events] into events that have not finished yet and events that are
+/// over, relative to [today].
+///
+/// An event whose `endDate` falls on [today] counts as future — it is still
+/// happening. `future` is ordered ascending (start date, then start time, then
+/// name) to match the export list; `past` is ordered newest-first, because the
+/// most recent history is what an admin reaches for.
+///
+/// Callers must exclude deactivated events before calling: this helper is
+/// purely about dates.
+({List<Event> future, List<Event> past}) splitEventsByPast(
+  List<Event> events,
+  DateTime today,
+) {
+  final todayDate = _dateOnly(today);
+  final future = <Event>[];
+  final past = <Event>[];
+
+  for (final event in events) {
+    if (_dateOnly(event.endDate).isBefore(todayDate)) {
+      past.add(event);
+    } else {
+      future.add(event);
+    }
+  }
+
+  future.sort((a, b) {
+    final dateCompare = _dateOnly(a.startDate).compareTo(_dateOnly(b.startDate));
+    if (dateCompare != 0) return dateCompare;
+    final timeCompare = a.startTime.compareTo(b.startTime);
+    if (timeCompare != 0) return timeCompare;
+    return a.name.compareTo(b.name);
+  });
+
+  past.sort((a, b) {
+    final dateCompare = _dateOnly(b.startDate).compareTo(_dateOnly(a.startDate));
+    if (dateCompare != 0) return dateCompare;
+    return a.name.compareTo(b.name);
+  });
+
+  return (future: future, past: past);
+}
+
 DateTime _dateOnly(DateTime value) =>
     DateTime(value.year, value.month, value.day);
