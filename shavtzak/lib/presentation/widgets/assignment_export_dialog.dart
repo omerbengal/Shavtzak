@@ -30,6 +30,7 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
   AssignmentExportMode _mode = AssignmentExportMode.perPerson;
   final Set<String> _selectedEventIds = {};
   List<Event> _futureEvents = [];
+  List<Event> _pastEvents = [];
   bool _isLoadingEvents = true;
   String? _loadError;
 
@@ -42,11 +43,15 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
   // back to the PrimaryScrollController, which the list never attaches to).
   final ScrollController _eventsScrollController = ScrollController();
 
+  /// Every event an admin may tick, future first then past. Deactivated events
+  /// are already excluded by the loader.
+  List<Event> get _allSelectableEvents => [..._futureEvents, ..._pastEvents];
+
   @override
   void initState() {
     super.initState();
     EnvironmentService.instance.addListener(_handleEnvironmentChanged);
-    _loadFutureEvents();
+    _loadEvents();
   }
 
   @override
@@ -75,30 +80,20 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
     });
   }
 
-  Future<void> _loadFutureEvents() async {
+  Future<void> _loadEvents() async {
     try {
       final events = await context.read<EventRepository>().getAllEvents();
-      final today = _dateOnly(DateTime.now());
-      final futureEvents = events.where((event) {
-        // Deactivated ("on hold") events are excluded from exports on the
-        // backend, so they must not be selectable here — otherwise selecting
-        // one fails validation ("Selected future event IDs are invalid").
-        if (event.isDeactivated) return false;
-        final endDate = _dateOnly(event.endDate);
-        return !endDate.isBefore(today);
-      }).toList()
-        ..sort((a, b) {
-          final dateCompare =
-              _dateOnly(a.startDate).compareTo(_dateOnly(b.startDate));
-          if (dateCompare != 0) return dateCompare;
-          final timeCompare = a.startTime.compareTo(b.startTime);
-          if (timeCompare != 0) return timeCompare;
-          return a.name.compareTo(b.name);
-        });
+      // Deactivated ("on hold") events are excluded from exports on the
+      // backend, so they must not be selectable here — otherwise selecting
+      // one fails validation ("Selected event IDs are invalid").
+      final selectable =
+          events.where((event) => !event.isDeactivated).toList();
+      final split = splitEventsByPast(selectable, DateTime.now());
 
       if (!mounted) return;
       setState(() {
-        _futureEvents = futureEvents;
+        _futureEvents = split.future;
+        _pastEvents = split.past;
         _isLoadingEvents = false;
       });
     } catch (error) {
@@ -223,25 +218,27 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
     );
   }
 
-  /// Pick a date range and add every future event overlapping it to the export
-  /// selection (union — existing picks are kept). Operates on all future events,
-  /// independent of the active search/category filter.
+  /// Pick a date range and add every event overlapping it to the export
+  /// selection (union — existing picks are kept). Operates on all selectable
+  /// events, past and future, independent of the active search/category filter.
   Future<void> _pickDateRange() async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    final selectable = _allSelectableEvents;
     final result = await showDialog<Map<String, DateTime?>>(
       context: context,
       builder: (_) => DualCalendarDatePicker(
         isSingleDate: false,
         title: 'בחירת אירועים לפי טווח תאריכים',
-        minDate: today,
-        highlightedDates: eventCoverageDays(_futureEvents),
+        // No minDate: past dates are selectable. They render dimmed instead.
+        dimBeforeDate: today,
+        highlightedDates: eventCoverageDays(selectable),
       ),
     );
     if (result == null || result['startDate'] == null) return;
     final start = result['startDate']!;
     final end = result['endDate'] ?? start;
-    final idsInRange = eventIdsInDateRange(_futureEvents, start, end);
+    final idsInRange = eventIdsInDateRange(selectable, start, end);
     if (!mounted) return;
     if (idsInRange.isNotEmpty) {
       setState(() => _selectedEventIds.addAll(idsInRange));
