@@ -232,6 +232,36 @@ void main() {
       expect(result.future.map((e) => e.id), ['a', 'b']);
     });
 
+    test('same-date future events sort by start time before name', () {
+      // Names deliberately sort opposite to start time ('א' < 'ב'), so this
+      // only passes if the time tie-break actually runs before the name one.
+      final result = splitEventsByPast([
+        _event(
+          id: 'later',
+          start: DateTime(2026, 8, 20),
+          name: 'א',
+          startTime: '20:00',
+        ),
+        _event(
+          id: 'earlier',
+          start: DateTime(2026, 8, 20),
+          name: 'ב',
+          startTime: '09:00',
+        ),
+      ], today);
+
+      expect(result.future.map((e) => e.id), ['earlier', 'later']);
+    });
+
+    test('same-date past events tie-break on name ascending', () {
+      final result = splitEventsByPast([
+        _event(id: 'b', start: DateTime(2026, 7, 1), name: 'ב'),
+        _event(id: 'a', start: DateTime(2026, 7, 1), name: 'א'),
+      ], today);
+
+      expect(result.past.map((e) => e.id), ['a', 'b']);
+    });
+
     test('empty input yields two empty lists', () {
       final result = splitEventsByPast(const [], today);
 
@@ -248,6 +278,7 @@ Event _event({
   String name = 'אירוע',
   String location = '',
   String? categoryId,
+  String startTime = '18:00',
 }) {
   final now = DateTime(2026, 7, 1);
   final startDate = start ?? DateTime(2026, 7, 15);
@@ -256,7 +287,7 @@ Event _event({
     name: name,
     startDate: startDate,
     endDate: end ?? startDate,
-    startTime: '18:00',
+    startTime: startTime,
     endTime: '22:00',
     assemblyTime: '17:00',
     location: location,

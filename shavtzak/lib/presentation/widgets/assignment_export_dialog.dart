@@ -6,6 +6,7 @@ import '../../core/services/environment_service.dart';
 import '../../core/services/export_service.dart';
 import '../../core/utils/date_utils.dart' as app_date_utils;
 import '../../core/utils/event_filter_utils.dart';
+import '../../core/utils/israel_calendar.dart';
 import '../../data/repositories/event_repository.dart';
 import '../../domain/entities/event.dart';
 import 'date_picker_dialog.dart';
@@ -93,7 +94,10 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
       // one fails validation ("Selected event IDs are invalid").
       final selectable =
           events.where((event) => !event.isDeactivated).toList();
-      final split = splitEventsByPast(selectable, DateTime.now());
+      final split = splitEventsByPast(
+        selectable,
+        IsraelCalendar.calendarDay(DateTime.now()),
+      );
 
       if (!mounted) return;
       setState(() {
@@ -123,6 +127,7 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
       textDirection: TextDirection.rtl,
       child: AlertDialog(
         title: const Text('ייצוא שיבוצים'),
+        scrollable: true,
         content: SizedBox(
           width: 520,
           child: Column(
@@ -227,8 +232,7 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
   /// selection (union — existing picks are kept). Operates on all selectable
   /// events, past and future, independent of the active search/category filter.
   Future<void> _pickDateRange() async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final today = IsraelCalendar.calendarDay(DateTime.now());
     final selectable = _allSelectableEvents;
     final result = await showDialog<Map<String, DateTime?>>(
       context: context,
@@ -381,7 +385,7 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
               ),
             ),
           ),
-        if (filteredPastEvents.isNotEmpty) ...[
+        if (_pastEvents.isNotEmpty) ...[
           const SizedBox(height: 12),
           InkWell(
             onTap: () {
@@ -407,19 +411,28 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
             ),
           ),
           if (_isPastExpanded)
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 240),
-              child: Scrollbar(
-                controller: _pastEventsScrollController,
-                child: ListView.builder(
+            if (filteredPastEvents.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  'אין אירועים התואמים לסינון',
+                  textAlign: TextAlign.center,
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 240),
+                child: Scrollbar(
                   controller: _pastEventsScrollController,
-                  shrinkWrap: true,
-                  itemCount: filteredPastEvents.length,
-                  itemBuilder: (context, index) =>
-                      _buildEventTile(filteredPastEvents[index]),
+                  child: ListView.builder(
+                    controller: _pastEventsScrollController,
+                    shrinkWrap: true,
+                    itemCount: filteredPastEvents.length,
+                    itemBuilder: (context, index) =>
+                        _buildEventTile(filteredPastEvents[index]),
+                  ),
                 ),
               ),
-            ),
         ],
       ],
     );

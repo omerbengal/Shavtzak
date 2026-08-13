@@ -615,3 +615,28 @@ test('future rows still carry the same-day mark when a past event is also export
     'אדם אחד (משובץ גם בFuture A)',
   ]);
 });
+
+test('neither row is marked when a past and future event genuinely overlap on a shared day', () => {
+  const sheet = __testSerializeAssignmentsOnly({
+    assignments: [
+      {id: 'p1', data: {eventId: 'past', teamMemberId: 'm1', roleType: 'medic'}},
+      {id: 'f1', data: {eventId: 'future', teamMemberId: 'm1', roleType: 'medic'}},
+    ],
+    eventsData: {
+      past: {name: 'Past', startDate: new Date('2026-05-01T00:00:00.000Z'), endDate: new Date('2026-05-02T00:00:00.000Z')},
+      future: {name: 'Future', startDate: new Date('2026-05-02T00:00:00.000Z'), endDate: new Date('2026-05-05T00:00:00.000Z')},
+    },
+    memberNames: {m1: 'אדם אחד'},
+    roleHebrewNames: {medic: 'חובש'},
+    roleSortOrders: {medic: 0},
+    mode: 'perEvent',
+    selectedEventIds: ['past', 'future'],
+    now: new Date('2026-05-03T00:00:00.000Z'),
+  });
+
+  // The past event (05-01..05-02) and the future event (05-02..05-05) truly
+  // overlap on 05-02, unlike the same-day-mark test above. The annotation
+  // pool is still future-only, so this real overlap must not produce a
+  // "(משובץ גם ב…)" mark on either row.
+  assert.deepEqual(sheet.rows.map((row) => row[0]), ['אדם אחד', 'אדם אחד']);
+});

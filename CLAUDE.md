@@ -500,10 +500,9 @@ injected data and an injected `now`, so unit tests substitute for a staging
 environment on this kind of work.
 
 ### Deploying
-1. Build production: `flutter build web`
-2. Deploy `build/web/` to hosting
-3. Users access production routes by default
-4. Test routes remain available at `/test/*`
+- **Web**: Auto-deploys on merge to `main`. `.github/workflows/web.yml` triggers on every push to `main` (and runs as a check on pull requests, but its `Deploy` step is gated to `github.ref == 'refs/heads/main'`, so a PR build never publishes). It runs `flutter build web --release --base-href /Shavtzak/` from `shavtzak/`, verifies the emitted service worker self-destructs, then pushes `shavtzak/build/web/` to GitHub Pages via `peaceiris/actions-gh-pages@v4`. **Do not tell the user to run `flutter build web` and deploy it manually** — merging to `main` is the deploy.
+- **Functions**: Do NOT auto-deploy — there is no CI step for `functions/`. After merging a change under `functions/`, deploy it manually: `firebase deploy --only functions:api`.
+- Production and `/test` are both served by the one deployed web build and the one deployed `api` Cloud Function (routing/collection prefixes are decided client-side by `EnvironmentService`), so a single deploy of each updates both environments.
 
 ### Debugging
 - Use Flutter DevTools for debugging
