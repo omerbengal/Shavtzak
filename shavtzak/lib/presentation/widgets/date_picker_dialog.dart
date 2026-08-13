@@ -23,6 +23,10 @@ class DualCalendarDatePicker extends StatefulWidget {
   /// Minimum selectable date (optional)
   final DateTime? minDate;
 
+  /// Days strictly before this date render dimmed but remain fully selectable.
+  /// Null disables dimming. Distinct from [minDate], which BLOCKS earlier days.
+  final DateTime? dimBeforeDate;
+
   /// Optional dates to render with a red frame (typically dates that contain events)
   final Set<DateTime> highlightedDates;
 
@@ -36,6 +40,7 @@ class DualCalendarDatePicker extends StatefulWidget {
     this.initialEndDate,
     required this.title,
     this.minDate,
+    this.dimBeforeDate,
     this.highlightedDates = const {},
     this.highlightedBorderColor = Colors.red,
   });
@@ -300,6 +305,13 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                           final isHighlighted =
                               normalizedHighlightedDates.contains(normalized);
 
+                          final dimBefore = widget.dimBeforeDate;
+                          // Selected days already sit on a filled background;
+                          // dimming those would read as a rendering bug.
+                          final isDimmed = dimBefore != null &&
+                              normalized.isBefore(_normalizeDate(dimBefore)) &&
+                              isSelected != true;
+
                           return Container(
                             decoration: isHighlighted
                                 ? BoxDecoration(
@@ -315,7 +327,10 @@ class _DualCalendarDatePickerState extends State<DualCalendarDatePicker> {
                               alignment: Alignment.center,
                               child: Text(
                                 '${date.day}',
-                                style: textStyle,
+                                style: isDimmed
+                                    ? (textStyle ?? const TextStyle())
+                                        .copyWith(color: Colors.grey.shade500)
+                                    : textStyle,
                               ),
                             ),
                           );
