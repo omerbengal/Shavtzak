@@ -43,6 +43,10 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
   // back to the PrimaryScrollController, which the list never attaches to).
   final ScrollController _eventsScrollController = ScrollController();
 
+  // Shared by the past-events Scrollbar + ListView, same reason as above.
+  final ScrollController _pastEventsScrollController = ScrollController();
+  bool _isPastExpanded = false;
+
   /// Every event an admin may tick, future first then past. Deactivated events
   /// are already excluded by the loader.
   List<Event> get _allSelectableEvents => [..._futureEvents, ..._pastEvents];
@@ -58,6 +62,7 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
   void dispose() {
     EnvironmentService.instance.removeListener(_handleEnvironmentChanged);
     _eventsScrollController.dispose();
+    _pastEventsScrollController.dispose();
     super.dispose();
   }
 
@@ -256,21 +261,26 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
 
     if (_loadError != null) {
       return Text(
-        'שגיאה בטעינת אירועים עתידיים:\n$_loadError',
+        'שגיאה בטעינת אירועים:\n$_loadError',
         key: const ValueKey('events-error'),
         style: const TextStyle(color: Colors.red),
       );
     }
 
-    if (_futureEvents.isEmpty) {
+    if (_futureEvents.isEmpty && _pastEvents.isEmpty) {
       return const Text(
-        'אין אירועים עתידיים לייצוא',
+        'אין אירועים לייצוא',
         key: ValueKey('events-empty'),
       );
     }
 
     final filteredEvents = filterEventsBySearchAndCategory(
       _futureEvents,
+      query: _searchQuery,
+      categoryIds: _selectedCategoryIds,
+    );
+    final filteredPastEvents = filterEventsBySearchAndCategory(
+      _pastEvents,
       query: _searchQuery,
       categoryIds: _selectedCategoryIds,
     );
@@ -307,37 +317,44 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
               setState(() => _selectedCategoryIds = ids),
         ),
         // "Select all filtered" ⇄ "clear filtered" toggle + selection count.
+        // The toggle stays future-only by design: a collapsed past section
+        // must never silently add past events to the selection.
         Row(
           children: [
-            TextButton.icon(
-              onPressed: filteredEvents.isEmpty
-                  ? null
-                  : () {
-                      Logger.action('tap:selectAllExportEvents', {
-                        'allSelected': allFilteredSelected,
-                        'count': filteredIds.length,
-                      });
-                      setState(() {
-                        if (allFilteredSelected) {
-                          _selectedEventIds.removeAll(filteredIds);
-                        } else {
-                          _selectedEventIds.addAll(filteredIds);
-                        }
-                      });
-                    },
-              icon: Icon(
-                allFilteredSelected ? Icons.remove_done : Icons.done_all,
-                size: 20,
+            Expanded(
+              child: TextButton.icon(
+                onPressed: filteredEvents.isEmpty
+                    ? null
+                    : () {
+                        Logger.action('tap:selectAllExportEvents', {
+                          'allSelected': allFilteredSelected,
+                          'count': filteredIds.length,
+                        });
+                        setState(() {
+                          if (allFilteredSelected) {
+                            _selectedEventIds.removeAll(filteredIds);
+                          } else {
+                            _selectedEventIds.addAll(filteredIds);
+                          }
+                        });
+                      },
+                icon: Icon(
+                  allFilteredSelected ? Icons.remove_done : Icons.done_all,
+                  size: 20,
+                ),
+                label: Text(
+                  allFilteredSelected
+                      ? 'בטל בחירה'
+                      : 'בחר את כל האירועים העתידיים המסוננים כרגע',
+                  style: const TextStyle(fontSize: 13),
+                ),
               ),
-              label: Text(allFilteredSelected ? 'בטל בחירה' : 'בחר הכל'),
             ),
-            const Spacer(),
-            Flexible(
-              child: Text(
-                'נבחרו ${_selectedEventIds.length} מתוך ${_futureEvents.length}',
-                textAlign: TextAlign.end,
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-              ),
+            const SizedBox(width: 8),
+            Text(
+              'נבחרו ${_selectedEventIds.length} מתוך ${_allSelectableEvents.length}',
+              textAlign: TextAlign.end,
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
             ),
           ],
         ),
@@ -359,33 +376,75 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
                 controller: _eventsScrollController,
                 shrinkWrap: true,
                 itemCount: filteredEvents.length,
-                itemBuilder: (context, index) {
-                  final event = filteredEvents[index];
-                  final isSelected = _selectedEventIds.contains(event.id);
-                  return CheckboxListTile(
-                    value: isSelected,
-                    title: Text(event.name),
-                    subtitle: Text(_formatEventSubtitle(event)),
-                    controlAffinity: ListTileControlAffinity.leading,
-                    onChanged: (value) {
-                      Logger.action('toggle:selectExportEvent', {
-                        'eventId': event.id,
-                        'on': value == true,
-                      });
-                      setState(() {
-                        if (value == true) {
-                          _selectedEventIds.add(event.id);
-                        } else {
-                          _selectedEventIds.remove(event.id);
-                        }
-                      });
-                    },
-                  );
-                },
+                itemBuilder: (context, index) =>
+                    _buildEventTile(filteredEvents[index]),
               ),
             ),
           ),
+        if (filteredPastEvents.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: () {
+              Logger.action('toggle:pastExportEventsSection',
+                  {'on': !_isPastExpanded});
+              setState(() => _isPastExpanded = !_isPastExpanded);
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'אירועים שעברו (${filteredPastEvents.length})',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  Icon(_isPastExpanded
+                      ? Icons.expand_less
+                      : Icons.expand_more),
+                ],
+              ),
+            ),
+          ),
+          if (_isPastExpanded)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: Scrollbar(
+                controller: _pastEventsScrollController,
+                child: ListView.builder(
+                  controller: _pastEventsScrollController,
+                  shrinkWrap: true,
+                  itemCount: filteredPastEvents.length,
+                  itemBuilder: (context, index) =>
+                      _buildEventTile(filteredPastEvents[index]),
+                ),
+              ),
+            ),
+        ],
       ],
+    );
+  }
+
+  Widget _buildEventTile(Event event) {
+    final isSelected = _selectedEventIds.contains(event.id);
+    return CheckboxListTile(
+      value: isSelected,
+      title: Text(event.name),
+      subtitle: Text(_formatEventSubtitle(event)),
+      controlAffinity: ListTileControlAffinity.leading,
+      onChanged: (value) {
+        Logger.action('toggle:selectExportEvent', {
+          'eventId': event.id,
+          'on': value == true,
+        });
+        setState(() {
+          if (value == true) {
+            _selectedEventIds.add(event.id);
+          } else {
+            _selectedEventIds.remove(event.id);
+          }
+        });
+      },
     );
   }
 
