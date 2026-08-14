@@ -92,8 +92,7 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
       // Deactivated ("on hold") events are excluded from exports on the
       // backend, so they must not be selectable here — otherwise selecting
       // one fails validation ("Selected event IDs are invalid").
-      final selectable =
-          events.where((event) => !event.isDeactivated).toList();
+      final selectable = events.where((event) => !event.isDeactivated).toList();
       final split = splitEventsByPast(
         selectable,
         IsraelCalendar.calendarDay(DateTime.now()),
@@ -127,22 +126,31 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
       textDirection: TextDirection.rtl,
       child: AlertDialog(
         title: const Text('ייצוא שיבוצים'),
-        scrollable: true,
+        // The scroll view lives INSIDE our SizedBox, not via
+        // `AlertDialog(scrollable: true)`. That flag puts a Flexible in the
+        // dialog's own Column, and a RenderFlex with a flexible child computes
+        // its intrinsic size by laying children out — which asks descendants
+        // for an intrinsic height that our shrink-wrapping ListViews cannot
+        // answer ("RenderShrinkWrappingViewport does not support returning
+        // intrinsic dimensions"). Here the SizedBox's tight width terminates
+        // the intrinsic query before it can reach the lists.
         content: SizedBox(
           width: 520,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildModePicker(),
-              const SizedBox(height: 16),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 150),
-                child: _mode == AssignmentExportMode.perPerson || isTestMode
-                    ? _buildPerPersonContent()
-                    : _buildPerEventContent(),
-              ),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildModePicker(),
+                const SizedBox(height: 16),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 150),
+                  child: _mode == AssignmentExportMode.perPerson || isTestMode
+                      ? _buildPerPersonContent()
+                      : _buildPerEventContent(),
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -252,6 +260,25 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
     if (idsInRange.isNotEmpty) {
       setState(() => _selectedEventIds.addAll(idsInRange));
     }
+  }
+
+  /// Roughly the dialog's non-list height: title, mode picker, filter bar,
+  /// select-all row, past-section header, actions and their paddings.
+  static const double _dialogChromeHeight = 360;
+
+  /// Total vertical space the event lists may occupy.
+  ///
+  /// The lists must fit the viewport by construction. `AlertDialog` cannot be
+  /// made `scrollable:` here: that wraps its column's content in a `Flexible`,
+  /// and a `RenderFlex` with a flexible child computes its intrinsic size by
+  /// laying children out — which asks descendants for an intrinsic height. A
+  /// shrink-wrapping `ListView` cannot answer that and throws
+  /// "RenderShrinkWrappingViewport does not support returning intrinsic
+  /// dimensions". So we bound the lists ourselves instead of delegating to a
+  /// scroll view.
+  double _listBudget(BuildContext context) {
+    final available = MediaQuery.of(context).size.height - _dialogChromeHeight;
+    return available.clamp(140.0, 560.0);
   }
 
   Widget _buildPerEventContent() {
@@ -373,7 +400,12 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
           )
         else
           ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 320),
+            constraints: BoxConstraints(
+              // Share the budget with the past list only while it is open.
+              maxHeight: _isPastExpanded && _pastEvents.isNotEmpty
+                  ? _listBudget(context) * 0.55
+                  : _listBudget(context),
+            ),
             child: Scrollbar(
               controller: _eventsScrollController,
               child: ListView.builder(
@@ -389,8 +421,8 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
           const SizedBox(height: 12),
           InkWell(
             onTap: () {
-              Logger.action('toggle:pastExportEventsSection',
-                  {'on': !_isPastExpanded});
+              Logger.action(
+                  'toggle:pastExportEventsSection', {'on': !_isPastExpanded});
               setState(() => _isPastExpanded = !_isPastExpanded);
             },
             child: Padding(
@@ -403,9 +435,7 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
-                  Icon(_isPastExpanded
-                      ? Icons.expand_less
-                      : Icons.expand_more),
+                  Icon(_isPastExpanded ? Icons.expand_less : Icons.expand_more),
                 ],
               ),
             ),
@@ -421,7 +451,9 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
               )
             else
               ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 240),
+                constraints: BoxConstraints(
+                  maxHeight: _listBudget(context) * 0.45,
+                ),
                 child: Scrollbar(
                   controller: _pastEventsScrollController,
                   child: ListView.builder(

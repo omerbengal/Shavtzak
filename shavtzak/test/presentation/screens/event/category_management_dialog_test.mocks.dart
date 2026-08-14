@@ -7,13 +7,14 @@ import 'dart:async' as _i5;
 
 import 'package:mockito/mockito.dart' as _i1;
 import 'package:shavtzak/core/constants/calendar_constants.dart' as _i7;
-import 'package:shavtzak/core/constants/role_types.dart' as _i9;
-import 'package:shavtzak/core/services/drive_service.dart' as _i8;
+import 'package:shavtzak/core/constants/role_types.dart' as _i10;
+import 'package:shavtzak/core/services/drive_service.dart' as _i9;
 import 'package:shavtzak/data/repositories/category_repository.dart' as _i4;
 import 'package:shavtzak/data/repositories/event_repository.dart' as _i6;
-import 'package:shavtzak/domain/entities/assignment.dart' as _i10;
+import 'package:shavtzak/domain/entities/assignment.dart' as _i11;
 import 'package:shavtzak/domain/entities/category.dart' as _i2;
 import 'package:shavtzak/domain/entities/event.dart' as _i3;
+import 'package:shavtzak/domain/entities/slot_annotation.dart' as _i8;
 
 // ignore_for_file: type=lint
 // ignore_for_file: avoid_redundant_argument_values
@@ -372,6 +373,27 @@ class MockEventRepository extends _i1.Mock implements _i6.EventRepository {
       ) as _i5.Future<_i3.Event>);
 
   @override
+  _i5.Future<void> updateSlotAnnotation(
+    String? eventId,
+    String? key,
+    _i8.SlotAnnotation? value, {
+    String? staleKey,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #updateSlotAnnotation,
+          [
+            eventId,
+            key,
+            value,
+          ],
+          {#staleKey: staleKey},
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
+
+  @override
   _i5.Future<void> deleteEvent(String? id) => (super.noSuchMethod(
         Invocation.method(
           #deleteEvent,
@@ -382,14 +404,14 @@ class MockEventRepository extends _i1.Mock implements _i6.EventRepository {
       ) as _i5.Future<void>);
 
   @override
-  _i5.Future<List<_i8.DriveFile>> getEventFiles(String? eventId) =>
+  _i5.Future<List<_i9.DriveFile>> getEventFiles(String? eventId) =>
       (super.noSuchMethod(
         Invocation.method(
           #getEventFiles,
           [eventId],
         ),
-        returnValue: _i5.Future<List<_i8.DriveFile>>.value(<_i8.DriveFile>[]),
-      ) as _i5.Future<List<_i8.DriveFile>>);
+        returnValue: _i5.Future<List<_i9.DriveFile>>.value(<_i9.DriveFile>[]),
+      ) as _i5.Future<List<_i9.DriveFile>>);
 
   @override
   _i5.Future<List<_i3.Event>> searchEvents(String? query) =>
@@ -402,7 +424,7 @@ class MockEventRepository extends _i1.Mock implements _i6.EventRepository {
       ) as _i5.Future<List<_i3.Event>>);
 
   @override
-  _i5.Future<List<_i3.Event>> getEventsRequiringRole(_i9.RoleType? role) =>
+  _i5.Future<List<_i3.Event>> getEventsRequiringRole(_i10.RoleType? role) =>
       (super.noSuchMethod(
         Invocation.method(
           #getEventsRequiringRole,
@@ -452,7 +474,7 @@ class MockEventRepository extends _i1.Mock implements _i6.EventRepository {
   _i5.Future<void> duplicateEvent(
     _i3.Event? originalEvent,
     _i3.Event? newEvent,
-    List<_i10.Assignment>? originalAssignments,
+    List<_i11.Assignment>? originalAssignments,
   ) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -468,10 +490,10 @@ class MockEventRepository extends _i1.Mock implements _i6.EventRepository {
       ) as _i5.Future<void>);
 
   @override
-  _i5.Future<Map<String, _i10.Assignment>> duplicateEventWithAssignmentIds(
+  _i5.Future<Map<String, _i11.Assignment>> duplicateEventWithAssignmentIds(
     _i3.Event? originalEvent,
     _i3.Event? newEvent,
-    List<_i10.Assignment>? originalAssignments,
+    List<_i11.Assignment>? originalAssignments,
   ) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -482,9 +504,9 @@ class MockEventRepository extends _i1.Mock implements _i6.EventRepository {
             originalAssignments,
           ],
         ),
-        returnValue: _i5.Future<Map<String, _i10.Assignment>>.value(
-            <String, _i10.Assignment>{}),
-      ) as _i5.Future<Map<String, _i10.Assignment>>);
+        returnValue: _i5.Future<Map<String, _i11.Assignment>>.value(
+            <String, _i11.Assignment>{}),
+      ) as _i5.Future<Map<String, _i11.Assignment>>);
 
   @override
   _i5.Future<void> removeAssignmentsAfterDuplication(
@@ -499,12 +521,12 @@ class MockEventRepository extends _i1.Mock implements _i6.EventRepository {
       ) as _i5.Future<void>);
 
   @override
-  _i5.Future<_i8.CreateFolderResult?> ensureDriveFolder(_i3.Event? event) =>
+  _i5.Future<_i9.CreateFolderResult?> ensureDriveFolder(_i3.Event? event) =>
       (super.noSuchMethod(
         Invocation.method(
           #ensureDriveFolder,
           [event],
         ),
-        returnValue: _i5.Future<_i8.CreateFolderResult?>.value(),
-      ) as _i5.Future<_i8.CreateFolderResult?>);
+        returnValue: _i5.Future<_i9.CreateFolderResult?>.value(),
+      ) as _i5.Future<_i9.CreateFolderResult?>);
 }

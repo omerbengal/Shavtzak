@@ -8,15 +8,16 @@ import 'dart:async' as _i5;
 import 'package:mockito/mockito.dart' as _i1;
 import 'package:shavtzak/core/constants/calendar_constants.dart' as _i11;
 import 'package:shavtzak/core/constants/role_types.dart' as _i7;
-import 'package:shavtzak/core/services/drive_service.dart' as _i12;
+import 'package:shavtzak/core/services/drive_service.dart' as _i13;
 import 'package:shavtzak/data/data_sources/database_interface.dart' as _i2;
 import 'package:shavtzak/data/repositories/assignment_repository.dart' as _i4;
 import 'package:shavtzak/data/repositories/event_repository.dart' as _i10;
-import 'package:shavtzak/data/repositories/role_repository.dart' as _i13;
+import 'package:shavtzak/data/repositories/role_repository.dart' as _i14;
 import 'package:shavtzak/data/repositories/team_repository.dart' as _i8;
 import 'package:shavtzak/domain/entities/assignment.dart' as _i6;
 import 'package:shavtzak/domain/entities/event.dart' as _i3;
-import 'package:shavtzak/domain/entities/role.dart' as _i14;
+import 'package:shavtzak/domain/entities/role.dart' as _i15;
+import 'package:shavtzak/domain/entities/slot_annotation.dart' as _i12;
 import 'package:shavtzak/domain/entities/team_member.dart' as _i9;
 
 // ignore_for_file: type=lint
@@ -789,6 +790,27 @@ class MockEventRepository extends _i1.Mock implements _i10.EventRepository {
       ) as _i5.Future<_i3.Event>);
 
   @override
+  _i5.Future<void> updateSlotAnnotation(
+    String? eventId,
+    String? key,
+    _i12.SlotAnnotation? value, {
+    String? staleKey,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #updateSlotAnnotation,
+          [
+            eventId,
+            key,
+            value,
+          ],
+          {#staleKey: staleKey},
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
+
+  @override
   _i5.Future<void> deleteEvent(String? id) => (super.noSuchMethod(
         Invocation.method(
           #deleteEvent,
@@ -799,14 +821,14 @@ class MockEventRepository extends _i1.Mock implements _i10.EventRepository {
       ) as _i5.Future<void>);
 
   @override
-  _i5.Future<List<_i12.DriveFile>> getEventFiles(String? eventId) =>
+  _i5.Future<List<_i13.DriveFile>> getEventFiles(String? eventId) =>
       (super.noSuchMethod(
         Invocation.method(
           #getEventFiles,
           [eventId],
         ),
-        returnValue: _i5.Future<List<_i12.DriveFile>>.value(<_i12.DriveFile>[]),
-      ) as _i5.Future<List<_i12.DriveFile>>);
+        returnValue: _i5.Future<List<_i13.DriveFile>>.value(<_i13.DriveFile>[]),
+      ) as _i5.Future<List<_i13.DriveFile>>);
 
   @override
   _i5.Future<List<_i3.Event>> searchEvents(String? query) =>
@@ -916,86 +938,86 @@ class MockEventRepository extends _i1.Mock implements _i10.EventRepository {
       ) as _i5.Future<void>);
 
   @override
-  _i5.Future<_i12.CreateFolderResult?> ensureDriveFolder(_i3.Event? event) =>
+  _i5.Future<_i13.CreateFolderResult?> ensureDriveFolder(_i3.Event? event) =>
       (super.noSuchMethod(
         Invocation.method(
           #ensureDriveFolder,
           [event],
         ),
-        returnValue: _i5.Future<_i12.CreateFolderResult?>.value(),
-      ) as _i5.Future<_i12.CreateFolderResult?>);
+        returnValue: _i5.Future<_i13.CreateFolderResult?>.value(),
+      ) as _i5.Future<_i13.CreateFolderResult?>);
 }
 
 /// A class which mocks [RoleRepository].
 ///
 /// See the documentation for Mockito's code generation for more information.
-class MockRoleRepository extends _i1.Mock implements _i13.RoleRepository {
+class MockRoleRepository extends _i1.Mock implements _i14.RoleRepository {
   MockRoleRepository() {
     _i1.throwOnMissingStub(this);
   }
 
   @override
-  _i5.Stream<List<_i14.Role>> watchRoles() => (super.noSuchMethod(
+  _i5.Stream<List<_i15.Role>> watchRoles() => (super.noSuchMethod(
         Invocation.method(
           #watchRoles,
           [],
         ),
-        returnValue: _i5.Stream<List<_i14.Role>>.empty(),
-      ) as _i5.Stream<List<_i14.Role>>);
+        returnValue: _i5.Stream<List<_i15.Role>>.empty(),
+      ) as _i5.Stream<List<_i15.Role>>);
 
   @override
-  _i5.Future<List<_i14.Role>> getAllRoles() => (super.noSuchMethod(
+  _i5.Future<List<_i15.Role>> getAllRoles() => (super.noSuchMethod(
         Invocation.method(
           #getAllRoles,
           [],
         ),
-        returnValue: _i5.Future<List<_i14.Role>>.value(<_i14.Role>[]),
-      ) as _i5.Future<List<_i14.Role>>);
+        returnValue: _i5.Future<List<_i15.Role>>.value(<_i15.Role>[]),
+      ) as _i5.Future<List<_i15.Role>>);
 
   @override
-  _i5.Future<List<_i14.Role>> getActiveRoles() => (super.noSuchMethod(
+  _i5.Future<List<_i15.Role>> getActiveRoles() => (super.noSuchMethod(
         Invocation.method(
           #getActiveRoles,
           [],
         ),
-        returnValue: _i5.Future<List<_i14.Role>>.value(<_i14.Role>[]),
-      ) as _i5.Future<List<_i14.Role>>);
+        returnValue: _i5.Future<List<_i15.Role>>.value(<_i15.Role>[]),
+      ) as _i5.Future<List<_i15.Role>>);
 
   @override
-  _i5.Future<List<_i14.Role>> getArchivedRoles() => (super.noSuchMethod(
+  _i5.Future<List<_i15.Role>> getArchivedRoles() => (super.noSuchMethod(
         Invocation.method(
           #getArchivedRoles,
           [],
         ),
-        returnValue: _i5.Future<List<_i14.Role>>.value(<_i14.Role>[]),
-      ) as _i5.Future<List<_i14.Role>>);
+        returnValue: _i5.Future<List<_i15.Role>>.value(<_i15.Role>[]),
+      ) as _i5.Future<List<_i15.Role>>);
 
   @override
-  _i5.Future<List<_i14.Role>> getVisibleRoles() => (super.noSuchMethod(
+  _i5.Future<List<_i15.Role>> getVisibleRoles() => (super.noSuchMethod(
         Invocation.method(
           #getVisibleRoles,
           [],
         ),
-        returnValue: _i5.Future<List<_i14.Role>>.value(<_i14.Role>[]),
-      ) as _i5.Future<List<_i14.Role>>);
+        returnValue: _i5.Future<List<_i15.Role>>.value(<_i15.Role>[]),
+      ) as _i5.Future<List<_i15.Role>>);
 
   @override
-  _i5.Future<_i14.Role?> getRoleById(String? id) => (super.noSuchMethod(
+  _i5.Future<_i15.Role?> getRoleById(String? id) => (super.noSuchMethod(
         Invocation.method(
           #getRoleById,
           [id],
         ),
-        returnValue: _i5.Future<_i14.Role?>.value(),
-      ) as _i5.Future<_i14.Role?>);
+        returnValue: _i5.Future<_i15.Role?>.value(),
+      ) as _i5.Future<_i15.Role?>);
 
   @override
-  _i5.Future<_i14.Role?> getRoleByKey(String? key) => (super.noSuchMethod(
+  _i5.Future<_i15.Role?> getRoleByKey(String? key) => (super.noSuchMethod(
         Invocation.method(
           #getRoleByKey,
           [key],
         ),
-        returnValue: _i5.Future<_i14.Role?>.value(),
-      ) as _i5.Future<_i14.Role?>);
+        returnValue: _i5.Future<_i15.Role?>.value(),
+      ) as _i5.Future<_i15.Role?>);
 
   @override
   _i5.Future<void> createRole({
@@ -1016,7 +1038,7 @@ class MockRoleRepository extends _i1.Mock implements _i13.RoleRepository {
       ) as _i5.Future<void>);
 
   @override
-  _i5.Future<void> updateRole(_i14.Role? role) => (super.noSuchMethod(
+  _i5.Future<void> updateRole(_i15.Role? role) => (super.noSuchMethod(
         Invocation.method(
           #updateRole,
           [role],
@@ -1083,7 +1105,7 @@ class MockRoleRepository extends _i1.Mock implements _i13.RoleRepository {
       ) as _i5.Future<void>);
 
   @override
-  _i5.Future<void> reorderRoles(List<_i14.Role>? reorderedRoles) =>
+  _i5.Future<void> reorderRoles(List<_i15.Role>? reorderedRoles) =>
       (super.noSuchMethod(
         Invocation.method(
           #reorderRoles,
