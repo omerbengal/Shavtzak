@@ -39,13 +39,10 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
   String _searchQuery = '';
   Set<String> _selectedCategoryIds = <String>{};
 
-  // Shared by the events Scrollbar + ListView so the Scrollbar always has a
-  // ScrollPosition attached (a bare Scrollbar over a shrinkWrap ListView falls
-  // back to the PrimaryScrollController, which the list never attaches to).
-  final ScrollController _eventsScrollController = ScrollController();
-
-  // Shared by the past-events Scrollbar + ListView, same reason as above.
-  final ScrollController _pastEventsScrollController = ScrollController();
+  // The dialog's ONE scroll view, shared with its Scrollbar so the bar always
+  // has a ScrollPosition attached (a bare Scrollbar falls back to the
+  // PrimaryScrollController, which this view never attaches to).
+  final ScrollController _contentScrollController = ScrollController();
   bool _isPastExpanded = false;
 
   /// Every event an admin may tick, future first then past. Deactivated events
@@ -62,8 +59,7 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
   @override
   void dispose() {
     EnvironmentService.instance.removeListener(_handleEnvironmentChanged);
-    _eventsScrollController.dispose();
-    _pastEventsScrollController.dispose();
+    _contentScrollController.dispose();
     super.dispose();
   }
 
@@ -126,30 +122,40 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
       textDirection: TextDirection.rtl,
       child: AlertDialog(
         title: const Text('ייצוא שיבוצים'),
-        // The scroll view lives INSIDE our SizedBox, not via
-        // `AlertDialog(scrollable: true)`. That flag puts a Flexible in the
-        // dialog's own Column, and a RenderFlex with a flexible child computes
-        // its intrinsic size by laying children out — which asks descendants
-        // for an intrinsic height that our shrink-wrapping ListViews cannot
-        // answer ("RenderShrinkWrappingViewport does not support returning
-        // intrinsic dimensions"). Here the SizedBox's tight width terminates
-        // the intrinsic query before it can reach the lists.
+        // This is the dialog's ONLY scroll view, and that is deliberate.
+        //
+        // Nothing inside may be independently scrollable: an inner scrollable
+        // claims the touch drag and does not chain it to the parent once it
+        // hits its end, which made the past-events section unreachable on
+        // mobile. (Mouse wheels chain, so it looked fine on desktop.) The
+        // event lists are therefore plain Columns.
+        //
+        // It also cannot be `AlertDialog(scrollable: true)`: that flag puts a
+        // Flexible in the dialog's own Column, and a RenderFlex with a
+        // flexible child computes its intrinsic size by laying children out,
+        // asking descendants for an intrinsic height that a viewport cannot
+        // answer. Nested here, our SizedBox's tight width terminates that
+        // query before it reaches this scroll view.
         content: SizedBox(
           width: 520,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildModePicker(),
-                const SizedBox(height: 16),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 150),
-                  child: _mode == AssignmentExportMode.perPerson || isTestMode
-                      ? _buildPerPersonContent()
-                      : _buildPerEventContent(),
-                ),
-              ],
+          child: Scrollbar(
+            controller: _contentScrollController,
+            child: SingleChildScrollView(
+              controller: _contentScrollController,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildModePicker(),
+                  const SizedBox(height: 16),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 150),
+                    child: _mode == AssignmentExportMode.perPerson || isTestMode
+                        ? _buildPerPersonContent()
+                        : _buildPerEventContent(),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -263,24 +269,6 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
   }
 
   /// Roughly the dialog's non-list height: title, mode picker, filter bar,
-  /// select-all row, past-section header, actions and their paddings.
-  static const double _dialogChromeHeight = 360;
-
-  /// Total vertical space the event lists may occupy.
-  ///
-  /// The lists must fit the viewport by construction. `AlertDialog` cannot be
-  /// made `scrollable:` here: that wraps its column's content in a `Flexible`,
-  /// and a `RenderFlex` with a flexible child computes its intrinsic size by
-  /// laying children out — which asks descendants for an intrinsic height. A
-  /// shrink-wrapping `ListView` cannot answer that and throws
-  /// "RenderShrinkWrappingViewport does not support returning intrinsic
-  /// dimensions". So we bound the lists ourselves instead of delegating to a
-  /// scroll view.
-  double _listBudget(BuildContext context) {
-    final available = MediaQuery.of(context).size.height - _dialogChromeHeight;
-    return available.clamp(140.0, 560.0);
-  }
-
   Widget _buildPerEventContent() {
     if (_isLoadingEvents) {
       return const SizedBox(
@@ -399,23 +387,14 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
             ),
           )
         else
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              // Share the budget with the past list only while it is open.
-              maxHeight: _isPastExpanded && _pastEvents.isNotEmpty
-                  ? _listBudget(context) * 0.55
-                  : _listBudget(context),
-            ),
-            child: Scrollbar(
-              controller: _eventsScrollController,
-              child: ListView.builder(
-                controller: _eventsScrollController,
-                shrinkWrap: true,
-                itemCount: filteredEvents.length,
-                itemBuilder: (context, index) =>
-                    _buildEventTile(filteredEvents[index]),
-              ),
-            ),
+          // Plain Column, NOT a ListView: the dialog has exactly one scroll
+          // view (see build()). An inner scrollable claims the touch drag and
+          // never chains it to the parent when it hits its end, which left
+          // everything below — including the past-events section — unreachable
+          // on mobile. Mouse wheels DO chain, so this only bites on touch.
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: filteredEvents.map(_buildEventTile).toList(),
           ),
         if (_pastEvents.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -450,20 +429,10 @@ class _AssignmentExportDialogState extends State<AssignmentExportDialog> {
                 ),
               )
             else
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: _listBudget(context) * 0.45,
-                ),
-                child: Scrollbar(
-                  controller: _pastEventsScrollController,
-                  child: ListView.builder(
-                    controller: _pastEventsScrollController,
-                    shrinkWrap: true,
-                    itemCount: filteredPastEvents.length,
-                    itemBuilder: (context, index) =>
-                        _buildEventTile(filteredPastEvents[index]),
-                  ),
-                ),
+              // Plain Column for the same reason as the future list above.
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: filteredPastEvents.map(_buildEventTile).toList(),
               ),
         ],
       ],

@@ -155,12 +155,10 @@ void main() {
     await tester.tap(find.text('לפי אירוע'));
     await tester.pumpAndSettle();
 
-    // The future list must be capped by the viewport budget (screen height
-    // 640 - 360 chrome = 280), not grow to fit all 15 events.
-    expect(
-      tester.getSize(find.byType(ListView).first).height,
-      lessThanOrEqualTo(280.0),
-    );
+    // The dialog must contain no inner scrollable list. An inner scrollable
+    // swallows the touch drag and never chains it to the parent, which is what
+    // made the past-events section unreachable on mobile.
+    expect(find.byType(ListView), findsNothing);
 
     final pastHeader = find.textContaining('אירועים שעברו');
     await tester.ensureVisible(pastHeader);
