@@ -19,6 +19,7 @@ import '../../../core/utils/phone_input_formatter.dart';
 import '../../../core/utils/filter_persistence.dart';
 import '../../../core/utils/time_range_utils.dart';
 import '../../../core/utils/search_utils.dart';
+import '../../../core/utils/constraint_assignment_conflicts.dart';
 import '../../../core/utils/constraint_event_overlap.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/event_filter_utils.dart';
@@ -1480,7 +1481,12 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
     return operationFutures;
   }
 
-  /// Get assignments that conflict with the new constraints
+  /// Get assignments that conflict with the constraints changed in this edit.
+  ///
+  /// Scoping and overlap rules live in [findNewlyConflictingAssignments] — the
+  /// member's untouched constraints must never surface here, since the modal
+  /// hides past and rejected ones and the dialog offers to delete whatever this
+  /// returns.
   Future<List<Assignment>> _getConflictingAssignments(TeamMember member) async {
     try {
       final assignmentRepository =
@@ -1488,25 +1494,12 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       final allAssignments =
           await assignmentRepository.getAssignmentsByPerson(member.id);
 
-      final conflicting = <Assignment>[];
-
-      for (final assignment in allAssignments) {
-        if (assignment.event == null) continue;
-
-        // Check if any ACTIVE constraint conflicts with the assignment's event date
-        // Rejected constraints should not cause conflicts
-        for (final constraint in member.constraints) {
-          // Skip rejected constraints - they should not affect assignments
-          if (constraint.status == ConstraintStatus.rejected) continue;
-
-          if (constraint.conflictsWith(assignment.event!.startDate)) {
-            conflicting.add(assignment);
-            break; // No need to check other constraints for this assignment
-          }
-        }
-      }
-
-      return conflicting;
+      return findNewlyConflictingAssignments(
+        originalConstraints: widget.member!.constraints,
+        updatedConstraints: member.constraints,
+        assignments: allAssignments,
+        now: DateTime.now(),
+      );
     } catch (e) {
       return [];
     }
