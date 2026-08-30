@@ -7,9 +7,11 @@ import 'calendar_share_models.dart';
 
 /// Builds the pure CalendarShareData snapshot from domain events.
 ///
-/// Time semantics mirror calendar_sync_service.syncAppEventToCalendar:
+/// Time semantics mirror buildDesiredAppEventState in the backend's
+/// functions/src/calendar_sync_backend.ts:
 ///   separator = actualShowStartTime if non-empty, else startTime
-///   allDay    = assemblyTime.isEmpty || endTime.isEmpty
+///   end       = teamEndTime if non-empty, else endTime
+///   allDay    = assemblyTime.isEmpty || end.isEmpty
 class CalendarShareDataBuilder {
   static CalendarShareData build({
     required List<Event> events,
@@ -192,9 +194,15 @@ class CalendarShareDataBuilder {
   }
 
   /// Mirrors the all-day predicate in _buildTimeLines: an event with no
-  /// assembly time or no end time renders as 'כל היום'.
+  /// assembly time, or with neither end time, renders as 'כל היום'.
+  ///
+  /// Either end time is enough to keep the event timed. סיום המופע and
+  /// סיום הצוות are both optional on the event form and admins routinely fill
+  /// only the team one; testing endTime alone collapsed such events to
+  /// 'כל היום' and hid the assembly and gathering times along with them.
   static bool _isAllDayEvent(Event event) =>
-      event.assemblyTime.trim().isEmpty || event.endTime.trim().isEmpty;
+      event.assemblyTime.trim().isEmpty ||
+      (event.endTime.trim().isEmpty && event.teamEndTime.trim().isEmpty);
 
   static String _formatRangeTitle(DateTime start, DateTime end) {
     final startMonth = app_date_utils.DateUtils.hebrewMonthName(start.month);

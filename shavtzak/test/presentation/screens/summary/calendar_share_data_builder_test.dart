@@ -100,13 +100,29 @@ void main() {
       expect(share.timeLines, ['כל היום']);
     });
 
-    test('all-day when endTime is empty', () {
+    test('all-day when both end times are empty', () {
       final share = CalendarShareDataBuilder.buildShareEvent(
-        makeEvent(endTime: ''),
+        makeEvent(endTime: '', teamEndTime: ''),
         today: today,
         isContinuation: false,
       );
       expect(share.timeLines, ['כל היום']);
+    });
+
+    test('not all-day when only סיום הצוות is filled', () {
+      // Shape of the real 'מירוץ באר שבע' event: סיום המופע left blank,
+      // סיום הצוות filled. Collapsing this to 'כל היום' hid three times that
+      // the document actually carries.
+      final share = CalendarShareDataBuilder.buildShareEvent(
+        makeEvent(endTime: '', teamEndTime: '22:30'),
+        today: today,
+        isContinuation: false,
+      );
+      expect(share.timeLines, [
+        'התייצבות - 15:00',
+        'התכנסות - 17:00',
+        'סיום צוות משוער - 22:30',
+      ]);
     });
 
     test('only end time present -> סיום מופע משוער line (no gathering/range)',

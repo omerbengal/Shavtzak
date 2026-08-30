@@ -571,3 +571,76 @@ test('planCalendarSyncTasks: no real event ids -> no tasks', () => {
   assert.deepEqual(planCalendarSyncTasks([], {}), []);
   assert.deepEqual(planCalendarSyncTasks(['', ''], {}), []);
 });
+
+// --- Effective end time: סיום הצוות (teamEndTime) vs סיום המופע (endTime) ---
+//
+// Commit 12a4b87 split the single "end" field into show-end (endTime) and
+// team-end (teamEndTime), both optional on the event form. The calendar layer
+// only ever read endTime, so an event where the admin filled in only
+// סיום הצוות fell through to the all-day branch despite having full timings.
+
+function buildEndTimeVariant(overrides: Record<string, unknown>) {
+  return buildDesiredAppEventState(
+    'event-end-times',
+    {
+      name: 'Show',
+      startDate: '2999-12-30T12:00:00.000Z',
+      endDate: '2999-12-30T12:00:00.000Z',
+      assemblyTime: '15:00',
+      startTime: '17:00',
+      actualShowStartTime: '',
+      location: 'Beer Sheva',
+      ...overrides,
+    },
+    'production',
+  );
+}
+
+test('desired app event: team end time keeps a show-end-less event timed', () => {
+  const desired = buildEndTimeVariant({endTime: '', teamEndTime: '22:30'});
+
+  assert.equal(desired.useAllDay, false);
+  assert.equal(desired.allDayStartDate, null);
+  assert.equal(desired.allDayEndDate, null);
+  assert.equal(desired.assemblyStartPrefix, '2999-12-30T15:00');
+  assert.equal(desired.assemblyEndPrefix, '2999-12-30T17:00');
+  assert.equal(desired.mainStartPrefix, '2999-12-30T17:00');
+  assert.equal(desired.mainEndPrefix, '2999-12-30T22:30');
+});
+
+test('desired app event: team end time wins over show end time', () => {
+  const desired = buildEndTimeVariant({endTime: '21:00', teamEndTime: '22:00'});
+
+  assert.equal(desired.useAllDay, false);
+  assert.equal(desired.mainEndPrefix, '2999-12-30T22:00');
+});
+
+test('desired app event: falls back to show end time when team end is unset', () => {
+  const desired = buildEndTimeVariant({endTime: '21:00', teamEndTime: ''});
+
+  assert.equal(desired.useAllDay, false);
+  assert.equal(desired.mainEndPrefix, '2999-12-30T21:00');
+});
+
+test('desired app event: stays all-day when neither end time is set', () => {
+  const desired = buildEndTimeVariant({endTime: '', teamEndTime: ''});
+
+  assert.equal(desired.useAllDay, true);
+  assert.equal(desired.mainEndPrefix, null);
+  assert.equal(desired.allDayStartDate, '2999-12-30');
+  assert.equal(desired.allDayEndDate, '2999-12-31');
+});
+
+test('desired app event: payload carries the effective end time onward', () => {
+  // calendar_integration.ts builds the real Google Calendar event end from
+  // payload.endTime and repeats the all-day rule against it, so the resolved
+  // value has to travel in the payload, not only in the prefixes.
+  assert.equal(
+    buildEndTimeVariant({endTime: '', teamEndTime: '22:30'}).payload['endTime'],
+    '22:30',
+  );
+  assert.equal(
+    buildEndTimeVariant({endTime: '21:00', teamEndTime: '22:00'}).payload['endTime'],
+    '22:00',
+  );
+});
