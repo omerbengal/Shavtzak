@@ -287,6 +287,31 @@ test('buildMemberFeedParts keeps past events — history is retained forever', (
   assert.equal(parts.length, 2);
 });
 
+test('buildMemberFeedParts uses סיום הצוות when only that end time is filled', () => {
+  // Shape of the real 'מירוץ באר שבע' document: assembly + audience-gathering
+  // time filled, סיום המופע left blank, סיום הצוות filled. Before the fix this
+  // collapsed to a single all-day block in the member's calendar.
+  const parts = buildMemberFeedParts({
+    memberId: 'mem-1',
+    environment: 'production',
+    assignments: [{eventId: 'evt-1', roleType: 'entryScreening'}],
+    eventsById: new Map([['evt-1', timedEvent({
+      assemblyTime: '15:00',
+      startTime: '17:00',
+      endTime: '',
+      teamEndTime: '22:30',
+    })]]),
+    roleHebrewNames: {},
+  });
+
+  assert.equal(parts.length, 2);
+  assert.equal(parts[0].start, '2026-08-15T15:00');
+  assert.equal(parts[0].end, '2026-08-15T17:00');
+  assert.equal(parts[1].start, '2026-08-15T17:00');
+  assert.equal(parts[1].end, '2026-08-15T22:30');
+  assert.ok(parts.every((part) => part.allDayStart == null));
+});
+
 test('buildMemberFeedParts falls back to one all-day part when times are missing', () => {
   const parts = buildMemberFeedParts({
     memberId: 'mem-1',

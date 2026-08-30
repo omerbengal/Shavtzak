@@ -916,7 +916,14 @@ export function buildDesiredAppEventState(
   const assemblyTime = normalizeOptionalText(eventData['assemblyTime']) ?? '';
   const startTime = normalizeOptionalText(eventData['startTime']) ?? '';
   const actualShowStartTime = normalizeOptionalText(eventData['actualShowStartTime']) ?? '';
-  const endTime = normalizeOptionalText(eventData['endTime']) ?? '';
+  const showEndTime = normalizeOptionalText(eventData['endTime']) ?? '';
+  const teamEndTime = normalizeOptionalText(eventData['teamEndTime']) ?? '';
+  // A calendar block stands for the member's shift, which runs until the team
+  // is released (סיום הצוות) — not until the show ends (סיום המופע). Both
+  // fields are optional on the event form and admins routinely fill only the
+  // team one, so prefer it and treat the show end as the fallback. Reading
+  // just 'endTime' here is what turned such events into all-day blocks.
+  const endTime = teamEndTime.length > 0 ? teamEndTime : showEndTime;
   const separatorTime = actualShowStartTime.length > 0 ? actualShowStartTime : startTime;
   const useAllDay = assemblyTime.length === 0 || endTime.length === 0;
   const location = normalizeOptionalText(eventData['location']);
