@@ -45,7 +45,11 @@ type CalendarEventPayload = {
   eventId: string;
   eventName: string;
   startDate: Date;
+  // Both end dates are already rolled onto the next day by
+  // buildDesiredAppEventState when the part runs past midnight, so an end is
+  // never on or before its start here.
   endDate: Date;
+  assemblyEndDate: Date;
   assemblyTime: string;
   separatorTime: string;
   endTime: string;
@@ -828,7 +832,7 @@ function buildAssemblyEventPayload(payload: CalendarEventPayload): Record<string
       timeZone: TIME_ZONE,
     },
     end: {
-      dateTime: combineDateAndTime(payload.startDate, payload.separatorTime),
+      dateTime: combineDateAndTime(payload.assemblyEndDate, payload.separatorTime),
       timeZone: TIME_ZONE,
     },
     location: payload.location,
@@ -948,6 +952,10 @@ function parseCalendarEventPayload(value: unknown): CalendarEventPayload {
     eventName: requireString(record['eventName'], 'event.eventName'),
     startDate: parseDateOnly(record['startDate'], 'event.startDate'),
     endDate: parseDateOnly(record['endDate'], 'event.endDate'),
+    assemblyEndDate: parseDateOnly(
+      record['assemblyEndDate'] ?? record['startDate'],
+      'event.assemblyEndDate',
+    ),
     assemblyTime: optionalString(record['assemblyTime']) ?? '',
     separatorTime: optionalString(record['separatorTime']) ?? '',
     endTime: optionalString(record['endTime']) ?? '',
