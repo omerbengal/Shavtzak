@@ -927,13 +927,41 @@ export function buildDesiredAppEventState(
   const separatorTime = actualShowStartTime.length > 0 ? actualShowStartTime : startTime;
   const useAllDay = assemblyTime.length === 0 || endTime.length === 0;
   const location = normalizeOptionalText(eventData['location']);
+  const mainStartTime = separatorTime.length > 0 ? separatorTime : assemblyTime;
+
+  // An overnight shift states the time a part ends but not the day: a team
+  // released at 00:00 goes home the morning after the show, while endDate
+  // almost always still equals startDate. Read literally, that end lands on or
+  // before the start — Google rejects the pair with 400 timeRangeEmpty and
+  // RFC 5545 §3.6.1 forbids it in the ICS feed. Roll the end onto the next day
+  // rather than drop the part: skipping it would erase the member's shift from
+  // their calendar, which is worse than briefly showing a wrong time. Both
+  // prefixes and the payload carry the rolled date, so the matcher, the Google
+  // Calendar request and the feed all agree; rollEndPrefixForward in
+  // calendar_feed.ts stays as the feed's own guard and simply stops firing.
+  // Prefixes are 'YYYY-MM-DDTHH:MM', so comparing them lexicographically is a
+  // valid ordering check.
+  const hasAssemblyPair = !useAllDay &&
+    assemblyTime.length > 0 && separatorTime.length > 0;
+  const hasMainPair = !useAllDay && endTime.length > 0 && mainStartTime.length > 0;
+  // Assembly start and end are both pinned to startDate, so an inverted pair
+  // there is purely a wrap past midnight.
+  const assemblyEndDate = hasAssemblyPair && separatorTime <= assemblyTime
+    ? addDays(startDate, 1)
+    : startDate;
+  const mainEndDate = hasMainPair &&
+    formatDateTimePrefix(endDate, endTime) <=
+      formatDateTimePrefix(startDate, mainStartTime)
+    ? addDays(endDate, 1)
+    : endDate;
 
   return {
     payload: stripUndefined({
       eventId,
       eventName,
       startDate: getIsraelDateKey(startDate),
-      endDate: getIsraelDateKey(endDate),
+      endDate: getIsraelDateKey(mainEndDate),
+      assemblyEndDate: getIsraelDateKey(assemblyEndDate),
       assemblyTime,
       separatorTime,
       endTime,
@@ -945,25 +973,18 @@ export function buildDesiredAppEventState(
     colorId: appEventColorId(environment),
     assemblyTitle: createAssemblyTitle(eventName, environment),
     mainTitle: createEventTitle(eventName, environment),
-    assemblyStartPrefix:
-      !useAllDay && assemblyTime.length > 0 && separatorTime.length > 0
-        ? formatDateTimePrefix(startDate, assemblyTime)
-        : null,
-    assemblyEndPrefix:
-      !useAllDay && assemblyTime.length > 0 && separatorTime.length > 0
-        ? formatDateTimePrefix(startDate, separatorTime)
-        : null,
-    mainStartPrefix:
-      !useAllDay && (separatorTime.length > 0 || assemblyTime.length > 0)
-        ? formatDateTimePrefix(
-          startDate,
-          separatorTime.length > 0 ? separatorTime : assemblyTime,
-        )
-        : null,
-    mainEndPrefix:
-      !useAllDay && endTime.length > 0
-        ? formatDateTimePrefix(endDate, endTime)
-        : null,
+    assemblyStartPrefix: hasAssemblyPair
+      ? formatDateTimePrefix(startDate, assemblyTime)
+      : null,
+    assemblyEndPrefix: hasAssemblyPair
+      ? formatDateTimePrefix(assemblyEndDate, separatorTime)
+      : null,
+    mainStartPrefix: hasMainPair
+      ? formatDateTimePrefix(startDate, mainStartTime)
+      : null,
+    mainEndPrefix: hasMainPair
+      ? formatDateTimePrefix(mainEndDate, endTime)
+      : null,
     allDayStartDate: useAllDay ? getIsraelDateKey(startDate) : null,
     allDayEndDate: useAllDay ? getIsraelDateKey(addDays(endDate, 1)) : null,
   };

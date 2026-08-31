@@ -45,7 +45,11 @@ type CalendarEventPayload = {
   eventId: string;
   eventName: string;
   startDate: Date;
+  // Both end dates are already rolled onto the next day by
+  // buildDesiredAppEventState when the part runs past midnight, so an end is
+  // never on or before its start here.
   endDate: Date;
+  assemblyEndDate: Date;
   assemblyTime: string;
   separatorTime: string;
   endTime: string;
@@ -828,7 +832,7 @@ function buildAssemblyEventPayload(payload: CalendarEventPayload): Record<string
       timeZone: TIME_ZONE,
     },
     end: {
-      dateTime: combineDateAndTime(payload.startDate, payload.separatorTime),
+      dateTime: combineDateAndTime(payload.assemblyEndDate, payload.separatorTime),
       timeZone: TIME_ZONE,
     },
     location: payload.location,
@@ -948,6 +952,10 @@ function parseCalendarEventPayload(value: unknown): CalendarEventPayload {
     eventName: requireString(record['eventName'], 'event.eventName'),
     startDate: parseDateOnly(record['startDate'], 'event.startDate'),
     endDate: parseDateOnly(record['endDate'], 'event.endDate'),
+    assemblyEndDate: parseDateOnly(
+      record['assemblyEndDate'] ?? record['startDate'],
+      'event.assemblyEndDate',
+    ),
     assemblyTime: optionalString(record['assemblyTime']) ?? '',
     separatorTime: optionalString(record['separatorTime']) ?? '',
     endTime: optionalString(record['endTime']) ?? '',
@@ -1257,6 +1265,50 @@ async function createAppEventCalendarEvents(
   return result;
 }
 
+/**
+ * Google Calendar PATCH merges nested objects field by field rather than
+ * replacing them, so whatever a part used to be stays underneath it. Patching
+ * a timed start onto a former all-day block leaves `start.date` in place and
+ * the API rejects a start carrying both `date` and `dateTime` with 400
+ * "Invalid start time"; patching `{useDefault: true}` over that block's
+ * reminder overrides leaves the overrides and is rejected with
+ * cannotUseDefaultRemindersAndSpecifyOverride. Every nested object a part
+ * payload touches must therefore be stated in full here, with the other date
+ * mode's fields explicitly nulled — the union of keys across the three part
+ * builders is summary, description, start, end, reminders, location, colorId
+ * and extendedProperties, and only those first five differ by mode.
+ *
+ * Only the PATCH path needs this: creates start from an empty resource, and
+ * the constraint path replaces the whole event with PUT.
+ */
+function buildAppEventPatchPayload(
+  payload: CalendarEventPayload,
+  eventType: 'assembly' | 'main' | 'allDay',
+): Record<string, unknown> {
+  const eventPayload = buildAppEventPartPayload(payload, eventType);
+  const isAllDay = eventType === 'allDay';
+  const clearedOtherMode = isAllDay
+    ? {dateTime: null, timeZone: null}
+    : {date: null};
+
+  eventPayload['start'] = {
+    ...(eventPayload['start'] as Record<string, unknown>),
+    ...clearedOtherMode,
+  };
+  eventPayload['end'] = {
+    ...(eventPayload['end'] as Record<string, unknown>),
+    ...clearedOtherMode,
+  };
+  // A freshly created timed part carries no reminders block at all, which
+  // Google reads as the calendar defaults. Saying that explicitly is what
+  // drops the all-day overrides when a part changes mode.
+  eventPayload['reminders'] = isAllDay
+    ? allDayReminders()
+    : {useDefault: true, overrides: []};
+
+  return eventPayload;
+}
+
 async function patchAppEventCalendarEvent(
   firestore: Firestore,
   environment: CalendarEnvironmentMode,
@@ -1264,10 +1316,7 @@ async function patchAppEventCalendarEvent(
   payload: CalendarEventPayload,
   eventType: 'assembly' | 'main' | 'allDay',
 ): Promise<boolean> {
-  const eventPayload = buildAppEventPartPayload(payload, eventType);
-  if (eventType === 'main') {
-    eventPayload['reminders'] = {useDefault: true};
-  }
+  const eventPayload = buildAppEventPatchPayload(payload, eventType);
 
   try {
     await patchCalendarEvent(

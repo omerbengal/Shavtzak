@@ -278,7 +278,59 @@ test('timed-to-all-day update silently deletes assembly and PATCHes main', async
     assert.equal(requests[1].url.searchParams.get('sendUpdates'), 'none');
     const body = JSON.parse(String(requests[1].init.body)) as Record<string, unknown>;
     assert.equal(Object.hasOwn(body, 'attendees'), false);
-    assert.deepEqual(body['start'], {date: '2026-07-20'});
+    // PATCH merges nested objects field by field, so the timed event's
+    // dateTime/timeZone survive unless they are explicitly cleared, and Google
+    // rejects a start carrying both date and dateTime with 400 Invalid start time.
+    assert.deepEqual(body['start'], {date: '2026-07-20', dateTime: null, timeZone: null});
+    assert.deepEqual(body['end'], {date: '2026-07-21', dateTime: null, timeZone: null});
+    assert.deepEqual(body['reminders'], {
+      useDefault: false,
+      overrides: [{method: 'popup', minutes: 420}],
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('all-day-to-timed update clears the leftover all-day date on both parts', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{url: URL; init: RequestInit}> = [];
+  globalThis.fetch = async (input, init = {}) => {
+    requests.push({url: new URL(String(input)), init});
+    return jsonResponse({});
+  };
+
+  try {
+    await executeCalendarAction(
+      fakeFirestore(),
+      adminActor,
+      'production',
+      'updateAppEventCalendarEvents',
+      {
+        assemblyCalendarEventId: 'assembly-id',
+        mainCalendarEventId: 'main-id',
+        event: appEventPayload(),
+      },
+    );
+
+    assert.deepEqual(requests.map((request) => request.init.method), ['PATCH', 'PATCH']);
+    // The main part is the calendar event that used to be the all-day block, so
+    // its stored start.date/end.date must be nulled out in the same patch that
+    // introduces dateTime — otherwise Google merges both and returns
+    // 400 Invalid start time.
+    for (const request of requests) {
+      const body = JSON.parse(String(request.init.body)) as Record<string, unknown>;
+      const start = body['start'] as Record<string, unknown>;
+      const end = body['end'] as Record<string, unknown>;
+      assert.equal(start['date'], null);
+      assert.equal(end['date'], null);
+      assert.equal(typeof start['dateTime'], 'string');
+      assert.equal(typeof end['dateTime'], 'string');
+      // The all-day block carries reminder overrides. Merging {useDefault: true}
+      // onto them keeps both, which Google rejects with
+      // cannotUseDefaultRemindersAndSpecifyOverride.
+      assert.deepEqual(body['reminders'], {useDefault: true, overrides: []});
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -644,3 +644,75 @@ test('desired app event: payload carries the effective end time onward', () => {
     '22:00',
   );
 });
+
+test('a team released after midnight rolls the main end onto the next day', () => {
+  // מופע סליחות: assembly 18:30, show 21:00, team released 00:00 the next
+  // morning while endDate still says the show day. Read literally the main
+  // part ends 21 hours before it starts, and Google rejects the create with
+  // 400 timeRangeEmpty.
+  const desired = buildDesiredAppEventState(
+    'event-1',
+    {
+      name: 'מופע סליחות',
+      startDate: '2026-09-06T21:00:00.000Z',
+      endDate: '2026-09-06T21:00:00.000Z',
+      assemblyTime: '18:30',
+      startTime: '21:00',
+      endTime: '23:00',
+      teamEndTime: '00:00',
+      location: 'בריכת הסולטן ירושלים',
+    },
+    'production',
+  );
+
+  assert.equal(desired.useAllDay, false);
+  assert.equal(desired.mainStartPrefix, '2026-09-07T21:00');
+  assert.equal(desired.mainEndPrefix, '2026-09-08T00:00');
+  assert.equal(desired.payload['endDate'], '2026-09-08');
+  // The assembly pair is in order, so it stays on the show day.
+  assert.equal(desired.assemblyStartPrefix, '2026-09-07T18:30');
+  assert.equal(desired.assemblyEndPrefix, '2026-09-07T21:00');
+  assert.equal(desired.payload['assemblyEndDate'], '2026-09-07');
+});
+
+test('a show starting after midnight rolls the assembly end onto the next day', () => {
+  const desired = buildDesiredAppEventState(
+    'event-1',
+    {
+      name: 'Late show',
+      startDate: '2026-09-06T21:00:00.000Z',
+      endDate: '2026-09-06T21:00:00.000Z',
+      assemblyTime: '22:00',
+      startTime: '00:30',
+      endTime: '02:00',
+      location: 'Main hall',
+    },
+    'production',
+  );
+
+  assert.equal(desired.assemblyStartPrefix, '2026-09-07T22:00');
+  assert.equal(desired.assemblyEndPrefix, '2026-09-08T00:30');
+  assert.equal(desired.payload['assemblyEndDate'], '2026-09-08');
+  assert.equal(desired.mainStartPrefix, '2026-09-07T00:30');
+  assert.equal(desired.mainEndPrefix, '2026-09-07T02:00');
+});
+
+test('a same-day event keeps both end dates where they are', () => {
+  const desired = buildDesiredAppEventState(
+    'event-1',
+    {
+      name: 'Show',
+      startDate: '2026-09-06T21:00:00.000Z',
+      endDate: '2026-09-06T21:00:00.000Z',
+      assemblyTime: '15:00',
+      startTime: '17:00',
+      endTime: '22:30',
+      location: 'Main hall',
+    },
+    'production',
+  );
+
+  assert.equal(desired.mainEndPrefix, '2026-09-07T22:30');
+  assert.equal(desired.payload['endDate'], '2026-09-07');
+  assert.equal(desired.payload['assemblyEndDate'], '2026-09-07');
+});
