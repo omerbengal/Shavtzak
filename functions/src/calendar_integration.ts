@@ -1257,6 +1257,26 @@ async function createAppEventCalendarEvents(
   return result;
 }
 
+/**
+ * Google Calendar PATCH merges nested objects field by field rather than
+ * replacing them, so a part that switches date mode keeps the fields of its
+ * previous mode: patching a timed start onto what used to be an all-day block
+ * leaves `start.date` in place, and the API rejects a start that carries both
+ * `date` and `dateTime` with 400 "Invalid start time". Clearing the other
+ * mode's fields in the same request is what makes the transition possible.
+ * Only the PATCH path needs this — creates start from an empty resource, and
+ * the constraint path replaces the whole event with PUT.
+ */
+function clearOtherDateMode(
+  slot: unknown,
+  eventType: 'assembly' | 'main' | 'allDay',
+): Record<string, unknown> {
+  const current = (slot ?? {}) as Record<string, unknown>;
+  return eventType === 'allDay'
+    ? {...current, dateTime: null, timeZone: null}
+    : {...current, date: null};
+}
+
 async function patchAppEventCalendarEvent(
   firestore: Firestore,
   environment: CalendarEnvironmentMode,
@@ -1268,6 +1288,8 @@ async function patchAppEventCalendarEvent(
   if (eventType === 'main') {
     eventPayload['reminders'] = {useDefault: true};
   }
+  eventPayload['start'] = clearOtherDateMode(eventPayload['start'], eventType);
+  eventPayload['end'] = clearOtherDateMode(eventPayload['end'], eventType);
 
   try {
     await patchCalendarEvent(
