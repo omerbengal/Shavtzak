@@ -283,6 +283,10 @@ test('timed-to-all-day update silently deletes assembly and PATCHes main', async
     // rejects a start carrying both date and dateTime with 400 Invalid start time.
     assert.deepEqual(body['start'], {date: '2026-07-20', dateTime: null, timeZone: null});
     assert.deepEqual(body['end'], {date: '2026-07-21', dateTime: null, timeZone: null});
+    assert.deepEqual(body['reminders'], {
+      useDefault: false,
+      overrides: [{method: 'popup', minutes: 420}],
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -322,6 +326,10 @@ test('all-day-to-timed update clears the leftover all-day date on both parts', a
       assert.equal(end['date'], null);
       assert.equal(typeof start['dateTime'], 'string');
       assert.equal(typeof end['dateTime'], 'string');
+      // The all-day block carries reminder overrides. Merging {useDefault: true}
+      // onto them keeps both, which Google rejects with
+      // cannotUseDefaultRemindersAndSpecifyOverride.
+      assert.deepEqual(body['reminders'], {useDefault: true, overrides: []});
     }
   } finally {
     globalThis.fetch = originalFetch;

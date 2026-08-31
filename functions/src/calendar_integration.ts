@@ -1259,22 +1259,46 @@ async function createAppEventCalendarEvents(
 
 /**
  * Google Calendar PATCH merges nested objects field by field rather than
- * replacing them, so a part that switches date mode keeps the fields of its
- * previous mode: patching a timed start onto what used to be an all-day block
- * leaves `start.date` in place, and the API rejects a start that carries both
- * `date` and `dateTime` with 400 "Invalid start time". Clearing the other
- * mode's fields in the same request is what makes the transition possible.
- * Only the PATCH path needs this — creates start from an empty resource, and
+ * replacing them, so whatever a part used to be stays underneath it. Patching
+ * a timed start onto a former all-day block leaves `start.date` in place and
+ * the API rejects a start carrying both `date` and `dateTime` with 400
+ * "Invalid start time"; patching `{useDefault: true}` over that block's
+ * reminder overrides leaves the overrides and is rejected with
+ * cannotUseDefaultRemindersAndSpecifyOverride. Every nested object a part
+ * payload touches must therefore be stated in full here, with the other date
+ * mode's fields explicitly nulled — the union of keys across the three part
+ * builders is summary, description, start, end, reminders, location, colorId
+ * and extendedProperties, and only those first five differ by mode.
+ *
+ * Only the PATCH path needs this: creates start from an empty resource, and
  * the constraint path replaces the whole event with PUT.
  */
-function clearOtherDateMode(
-  slot: unknown,
+function buildAppEventPatchPayload(
+  payload: CalendarEventPayload,
   eventType: 'assembly' | 'main' | 'allDay',
 ): Record<string, unknown> {
-  const current = (slot ?? {}) as Record<string, unknown>;
-  return eventType === 'allDay'
-    ? {...current, dateTime: null, timeZone: null}
-    : {...current, date: null};
+  const eventPayload = buildAppEventPartPayload(payload, eventType);
+  const isAllDay = eventType === 'allDay';
+  const clearedOtherMode = isAllDay
+    ? {dateTime: null, timeZone: null}
+    : {date: null};
+
+  eventPayload['start'] = {
+    ...(eventPayload['start'] as Record<string, unknown>),
+    ...clearedOtherMode,
+  };
+  eventPayload['end'] = {
+    ...(eventPayload['end'] as Record<string, unknown>),
+    ...clearedOtherMode,
+  };
+  // A freshly created timed part carries no reminders block at all, which
+  // Google reads as the calendar defaults. Saying that explicitly is what
+  // drops the all-day overrides when a part changes mode.
+  eventPayload['reminders'] = isAllDay
+    ? allDayReminders()
+    : {useDefault: true, overrides: []};
+
+  return eventPayload;
 }
 
 async function patchAppEventCalendarEvent(
@@ -1284,12 +1308,7 @@ async function patchAppEventCalendarEvent(
   payload: CalendarEventPayload,
   eventType: 'assembly' | 'main' | 'allDay',
 ): Promise<boolean> {
-  const eventPayload = buildAppEventPartPayload(payload, eventType);
-  if (eventType === 'main') {
-    eventPayload['reminders'] = {useDefault: true};
-  }
-  eventPayload['start'] = clearOtherDateMode(eventPayload['start'], eventType);
-  eventPayload['end'] = clearOtherDateMode(eventPayload['end'], eventType);
+  const eventPayload = buildAppEventPatchPayload(payload, eventType);
 
   try {
     await patchCalendarEvent(
