@@ -4708,16 +4708,19 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
 
       // Validate time range:
       // - If one time is set, the other must be set too
-      // - If both are set, start must be before end
+      // - If both are set on a single day, start must be before end
+      //   (over several days the end time falls on the last day)
       bool timeValid = true;
       final hasStart = _startTimeController.text.isNotEmpty;
       final hasEnd = _endTimeController.text.isNotEmpty;
       if (hasStart != hasEnd) {
         timeValid = false; // One set but not the other
       } else if (hasStart && hasEnd) {
-        timeValid = TimeRangeUtils.isValidTimeRange(
+        timeValid = TimeRangeUtils.isValidConstraintTimeRange(
           _startTimeController.text,
           _endTimeController.text,
+          spansMultipleDays:
+              TimeRangeUtils.spansMultipleDays(_startDate, _endDate),
         );
       }
 
@@ -4951,6 +4954,9 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                         },
                         decoration: InputDecoration(
                           labelText: 'שעת התחלה',
+                          helperText: TimeRangeUtils.spansMultipleDays(_startDate, _endDate)
+                              ? 'ביום הראשון'
+                              : null,
                           hintText: 'לדוגמה: 09:00',
                           prefixIcon: const Icon(Icons.access_time),
                           border: const OutlineInputBorder(),
@@ -4981,6 +4987,9 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                         },
                         decoration: InputDecoration(
                           labelText: 'שעת סיום',
+                          helperText: TimeRangeUtils.spansMultipleDays(_startDate, _endDate)
+                              ? 'ביום האחרון'
+                              : null,
                           hintText: 'לדוגמה: 17:00',
                           prefixIcon: const Icon(Icons.access_time),
                           border: const OutlineInputBorder(),
@@ -5014,9 +5023,11 @@ class _AdminConstraintDialogState extends State<_AdminConstraintDialog> {
                   ),
                 if (_startTimeController.text.isNotEmpty &&
                     _endTimeController.text.isNotEmpty &&
-                    !TimeRangeUtils.isValidTimeRange(
+                    !TimeRangeUtils.isValidConstraintTimeRange(
                       _startTimeController.text,
                       _endTimeController.text,
+                      spansMultipleDays:
+                          TimeRangeUtils.spansMultipleDays(_startDate, _endDate),
                     ))
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
