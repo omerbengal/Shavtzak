@@ -1769,9 +1769,10 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
       if (hasStart != hasEnd) {
         timeValid = false;
       } else if (hasStart && hasEnd) {
-        timeValid = TimeRangeUtils.isValidTimeRange(
+        timeValid = TimeRangeUtils.isValidConstraintTimeRange(
           startTimeController.text,
           endTimeController.text,
+          spansMultipleDays: TimeRangeUtils.spansMultipleDays(startDate, endDate),
         );
       }
       _canSubmit =
@@ -1959,6 +1960,9 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                       },
                       decoration: InputDecoration(
                         labelText: 'שעת התחלה',
+                        helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                            ? 'ביום הראשון'
+                            : null,
                         hintText: 'למשל 09:00',
                         prefixIcon: const Icon(Icons.access_time),
                         border: const OutlineInputBorder(),
@@ -1987,6 +1991,9 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                       },
                       decoration: InputDecoration(
                         labelText: 'שעת סיום',
+                        helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                            ? 'ביום האחרון'
+                            : null,
                         hintText: 'למשל 17:00',
                         prefixIcon: const Icon(Icons.access_time),
                         border: const OutlineInputBorder(),
@@ -2086,9 +2093,11 @@ class _ConstraintRequestDialogState extends State<_ConstraintRequestDialog> {
                     Logger.action('tap:submitConstraintRequest');
                     if (startTimeController.text.isNotEmpty &&
                         endTimeController.text.isNotEmpty) {
-                      if (!TimeRangeUtils.isValidTimeRange(
+                      if (!TimeRangeUtils.isValidConstraintTimeRange(
                         startTimeController.text,
                         endTimeController.text,
+                        spansMultipleDays:
+                            TimeRangeUtils.spansMultipleDays(startDate, endDate),
                       )) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -2268,9 +2277,10 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
       if (hasStart != hasEnd) {
         timeValid = false;
       } else if (hasStart && hasEnd) {
-        timeValid = TimeRangeUtils.isValidTimeRange(
+        timeValid = TimeRangeUtils.isValidConstraintTimeRange(
           startTimeController.text,
           endTimeController.text,
+          spansMultipleDays: TimeRangeUtils.spansMultipleDays(startDate, endDate),
         );
       }
       _canSubmit = _hasChanges() && timeValid;
@@ -2502,6 +2512,9 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                       },
                       decoration: InputDecoration(
                         labelText: 'שעת התחלה',
+                        helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                            ? 'ביום הראשון'
+                            : null,
                         hintText: 'למשל 09:00',
                         prefixIcon: const Icon(Icons.access_time),
                         border: const OutlineInputBorder(),
@@ -2528,6 +2541,9 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                       },
                       decoration: InputDecoration(
                         labelText: 'שעת סיום',
+                        helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                            ? 'ביום האחרון'
+                            : null,
                         hintText: 'למשל 17:00',
                         prefixIcon: const Icon(Icons.access_time),
                         border: const OutlineInputBorder(),
@@ -2624,8 +2640,10 @@ class _EditConstraintDialogState extends State<_EditConstraintDialog> {
                     Logger.action('tap:saveConstraint');
                     if (startTimeController.text.isNotEmpty &&
                         endTimeController.text.isNotEmpty) {
-                      if (!TimeRangeUtils.isValidTimeRange(
-                          startTimeController.text, endTimeController.text)) {
+                      if (!TimeRangeUtils.isValidConstraintTimeRange(
+                          startTimeController.text, endTimeController.text,
+                          spansMultipleDays: TimeRangeUtils.spansMultipleDays(
+                              startDate, endDate))) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Directionality(
@@ -3454,6 +3472,9 @@ class _EditExpiredConstraintDialogState
                     },
                     decoration: InputDecoration(
                       labelText: 'שעת התחלה',
+                      helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                          ? 'ביום הראשון'
+                          : null,
                       hintText: 'למשל 09:00',
                       prefixIcon: const Icon(Icons.access_time),
                       border: const OutlineInputBorder(),
@@ -3479,6 +3500,9 @@ class _EditExpiredConstraintDialogState
                     },
                     decoration: InputDecoration(
                       labelText: 'שעת סיום',
+                      helperText: TimeRangeUtils.spansMultipleDays(startDate, endDate)
+                          ? 'ביום האחרון'
+                          : null,
                       hintText: 'למשל 17:00',
                       prefixIcon: const Icon(Icons.access_time),
                       border: const OutlineInputBorder(),
@@ -3582,8 +3606,10 @@ class _EditExpiredConstraintDialogState
   Future<void> _saveExpiredConstraint() async {
     if (startTimeController.text.isNotEmpty &&
         endTimeController.text.isNotEmpty) {
-      if (!TimeRangeUtils.isValidTimeRange(
-          startTimeController.text, endTimeController.text)) {
+      if (!TimeRangeUtils.isValidConstraintTimeRange(
+          startTimeController.text, endTimeController.text,
+          spansMultipleDays:
+              TimeRangeUtils.spansMultipleDays(startDate, endDate))) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Directionality(

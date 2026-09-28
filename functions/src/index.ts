@@ -3138,12 +3138,48 @@ function constraintMatchesDate(constraint: Record<string, unknown>, date: Date):
   return false;
 }
 
+/**
+ * The constraint's hours on `day`; {null, null} means the whole day. A
+ * one-time constraint over several days with both times set is one continuous
+ * block, from startTime on its first day to endTime on its last (the way the
+ * calendar sync renders it): the first day runs startTime→midnight, the days
+ * in between are whole, and the last day runs midnight→endTime. Anything else
+ * keeps startTime–endTime on every day. Mirrors the client's
+ * TimeRangeUtils.rangeWindowOn.
+ */
+function constraintTimeWindowOn(
+  constraint: Record<string, unknown>,
+  day: Date,
+): {start: string | null; end: string | null} {
+  const start = optionalString(constraint['startTime']);
+  const end = optionalString(constraint['endTime']);
+  if (start == null || end == null || typeof constraint['repeatType'] === 'string') {
+    return {start, end};
+  }
+  const firstDay = normalizeDayInIsrael(constraint['startDate'] as Date).getTime();
+  const lastDay = constraint['endDate'] == null
+    ? firstDay
+    : normalizeDayInIsrael(constraint['endDate'] as Date).getTime();
+  if (firstDay === lastDay) {
+    return {start, end};
+  }
+  const target = normalizeDayInIsrael(day).getTime();
+  if (target !== firstDay && target !== lastDay) {
+    return {start: null, end: null};
+  }
+  // 23:59 as the day's end matches the client, which treats a missing end as 23:59.
+  return {
+    start: target === firstDay ? start : '00:00',
+    end: target === lastDay ? end : '23:59',
+  };
+}
+
 function constraintBlocksEvent(
   constraint: Record<string, unknown>,
   eventData: Record<string, unknown>,
+  day: Date,
 ): boolean {
-  const constraintStart = optionalString(constraint['startTime']);
-  const constraintEnd = optionalString(constraint['endTime']);
+  const {start: constraintStart, end: constraintEnd} = constraintTimeWindowOn(constraint, day);
   if (constraintStart == null && constraintEnd == null) {
     return true;
   }
@@ -3179,7 +3215,7 @@ function memberAvailableForEvent(
         if (constraint['status'] !== 'approved') continue;
         if (constraint['constraintType'] !== 'unavailability') continue;
         if (!constraintMatchesDate(constraint, day)) continue;
-        if (constraintBlocksEvent(constraint, eventData)) {
+        if (constraintBlocksEvent(constraint, eventData, day)) {
           return false;
         }
       }
@@ -3200,7 +3236,7 @@ function memberAvailableForEvent(
       if (constraint['status'] !== 'approved') continue;
       if (constraint['constraintType'] !== 'availability') continue;
       if (!constraintMatchesDate(constraint, day)) continue;
-      if (constraintBlocksEvent(constraint, eventData)) {
+      if (constraintBlocksEvent(constraint, eventData, day)) {
         availableOnDay = true;
         break;
       }

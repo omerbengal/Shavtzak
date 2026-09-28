@@ -60,12 +60,29 @@ bool constraintOverlapsEvent({
     return true;
   }
 
-  return TimeRangeUtils.timesOverlap(
-    constraint.startTime,
-    constraint.endTime,
-    event.startTime,
-    event.endTime,
-  );
+  // A multi-day constraint covers different hours on its first, middle and
+  // last days, so check each day the two date ranges share.
+  final constraintFirst = _dateOnly(constraint.startDate);
+  final eventFirst = _dateOnly(event.startDate);
+  final constraintLast = _dateOnly(constraintEnd);
+  final eventLast = _dateOnly(event.endDate);
+  final lastShared =
+      constraintLast.isBefore(eventLast) ? constraintLast : eventLast;
+  for (DateTime day =
+          constraintFirst.isAfter(eventFirst) ? constraintFirst : eventFirst;
+      !day.isAfter(lastShared);
+      day = DateTime(day.year, day.month, day.day + 1)) {
+    final (windowStart, windowEnd) = constraint.timeWindowOn(day);
+    if (TimeRangeUtils.timesOverlap(
+      windowStart,
+      windowEnd,
+      event.startTime,
+      event.endTime,
+    )) {
+      return true;
+    }
+  }
+  return false;
 }
 
 List<EventOverlapInfo> getConstraintEventOverlaps({
@@ -124,10 +141,17 @@ Set<DateTime> getHighlightedDatesForConstraintRange({
         break;
       }
 
+      final (windowStart, windowEnd) = TimeRangeUtils.rangeWindowOn(
+        day: day,
+        firstDay: start,
+        lastDay: end,
+        startTime: constraintStartTime,
+        endTime: constraintEndTime,
+      );
       if (!_eventHasValidTime(event) ||
           TimeRangeUtils.timesOverlap(
-            constraintStartTime,
-            constraintEndTime,
+            windowStart,
+            windowEnd,
             event.startTime,
             event.endTime,
           )) {

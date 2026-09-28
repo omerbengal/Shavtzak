@@ -69,6 +69,54 @@ class TimeRangeUtils {
     return startMinutes < endMinutes;
   }
 
+  /// Validate a one-time constraint's times.
+  /// Within a single day the end must follow the start. A range over several
+  /// days runs from [start] on its first day to [end] on its last, so any two
+  /// valid times will do (e.g. 17:00 → 11:00 three days later).
+  static bool isValidConstraintTimeRange(
+    String start,
+    String end, {
+    required bool spansMultipleDays,
+  }) {
+    if (!spansMultipleDays) return isValidTimeRange(start, end);
+    return isValidTimeString(start) && isValidTimeString(end);
+  }
+
+  /// Whether a constraint's date range covers more than one day
+  /// (a null end date means a single day).
+  static bool spansMultipleDays(DateTime? firstDay, DateTime? lastDay) =>
+      firstDay != null && lastDay != null && !_isSameDay(firstDay, lastDay);
+
+  /// The hours a one-time date-range constraint covers on [day], as
+  /// (start, end). A null bound runs to that edge of the day, so (null, null)
+  /// is the whole day.
+  ///
+  /// A range over several days with both times set is one continuous block,
+  /// from [startTime] on [firstDay] to [endTime] on [lastDay]: the first day
+  /// runs from [startTime] to midnight, the days in between are whole, and the
+  /// last day runs from midnight to [endTime]. Anything else keeps
+  /// [startTime]–[endTime] on every day.
+  static (String?, String?) rangeWindowOn({
+    required DateTime day,
+    required DateTime firstDay,
+    required DateTime lastDay,
+    String? startTime,
+    String? endTime,
+  }) {
+    final hasTimes = (startTime?.isNotEmpty ?? false) &&
+        (endTime?.isNotEmpty ?? false);
+    if (!hasTimes || _isSameDay(firstDay, lastDay)) {
+      return (startTime, endTime);
+    }
+    return (
+      _isSameDay(day, firstDay) ? startTime : null,
+      _isSameDay(day, lastDay) ? endTime : null,
+    );
+  }
+
+  static bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
   /// Format minutes since midnight to "HH:mm" format
   static String formatMinutesToTime(int minutes) {
     final hours = minutes ~/ 60;

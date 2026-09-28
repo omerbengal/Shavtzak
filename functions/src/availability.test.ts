@@ -253,6 +253,62 @@ test('memberAvailableForEvent: non-permanent with availability on Israel day →
   });
 });
 
+// A one-time constraint over several days with times is one continuous block:
+// from startTime on its first day to endTime on its last (as Google Calendar
+// shows it), not a startTime–endTime window repeated every day. The reported
+// case: unavailable from 17:00 on Oct 1 until 11:00 on Oct 3.
+function multiDaySpanMember(): Mutable {
+  return buildMember({
+    constraints: [
+      {
+        id: 'span',
+        startDate: '2026-10-01T00:00:00.000',
+        endDate: '2026-10-03T00:00:00.000',
+        status: 'approved',
+        constraintType: 'unavailability',
+        startTime: '17:00',
+        endTime: '11:00',
+      },
+    ],
+  });
+}
+
+// A one-day event on the given October 2026 day, stored as Israel midnight (IDT, UTC+3).
+function octoberEvent(day: number, assemblyTime: string, startTime: string, endTime: string): Mutable {
+  const israelMidnight = Timestamp.fromDate(new Date(Date.UTC(2026, 9, day - 1, 21)));
+  return buildEvent({startDate: israelMidnight, endDate: israelMidnight, assemblyTime, startTime, endTime});
+}
+
+test('memberAvailableForEvent: multi-day span — first day before the start time → available', () => {
+  withUtcTimezone(() => {
+    assert.equal(memberAvailableForEvent(multiDaySpanMember(), octoberEvent(1, '08:30', '09:00', '12:00')), true);
+  });
+});
+
+test('memberAvailableForEvent: multi-day span — first day after the start time → blocked', () => {
+  withUtcTimezone(() => {
+    assert.equal(memberAvailableForEvent(multiDaySpanMember(), octoberEvent(1, '17:30', '18:00', '22:00')), false);
+  });
+});
+
+test('memberAvailableForEvent: multi-day span — middle day is blocked all day', () => {
+  withUtcTimezone(() => {
+    assert.equal(memberAvailableForEvent(multiDaySpanMember(), octoberEvent(2, '08:30', '09:00', '12:00')), false);
+  });
+});
+
+test('memberAvailableForEvent: multi-day span — last day before the end time → blocked', () => {
+  withUtcTimezone(() => {
+    assert.equal(memberAvailableForEvent(multiDaySpanMember(), octoberEvent(3, '08:30', '09:00', '10:00')), false);
+  });
+});
+
+test('memberAvailableForEvent: multi-day span — last day after the end time → available', () => {
+  withUtcTimezone(() => {
+    assert.equal(memberAvailableForEvent(multiDaySpanMember(), octoberEvent(3, '11:30', '12:00', '15:00')), true);
+  });
+});
+
 test('memberAvailableForEvent: non-permanent with availability only on UTC day (June 7) → unavailable', () => {
   // Pre-fix regression check: previously the backend would have matched a
   // June 7 availability against the June 8 (Israel) event due to UTC normalization.

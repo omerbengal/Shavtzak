@@ -206,17 +206,48 @@ class DateConstraint extends Equatable {
     );
   }
 
+  /// This constraint's hours on [date] as (start, end); a null bound runs to
+  /// that edge of the day. A one-time constraint over several days is one
+  /// continuous block (see [TimeRangeUtils.rangeWindowOn]); a recurring one
+  /// repeats [startTime]–[endTime] on every matching day.
+  (String?, String?) timeWindowOn(DateTime date) {
+    if (repeatType != null) return (startTime, endTime);
+    return TimeRangeUtils.rangeWindowOn(
+      day: date,
+      firstDay: startDate,
+      lastDay: endDate ?? startDate,
+      startTime: startTime,
+      endTime: endTime,
+    );
+  }
+
   /// Check if this constraint blocks the member from being assigned to an event
+  /// on any of the event's days that the constraint covers.
+  bool blocksEventAssignment(Event event) {
+    final lastDay =
+        DateTime(event.endDate.year, event.endDate.month, event.endDate.day);
+    for (var day = DateTime(
+            event.startDate.year, event.startDate.month, event.startDate.day);
+        !day.isAfter(lastDay);
+        day = DateTime(day.year, day.month, day.day + 1)) {
+      if (conflictsWith(day) && blocksEventOn(event, day)) return true;
+    }
+    return false;
+  }
+
+  /// Check if this constraint's hours on [date] overlap the event's hours.
+  /// The caller has already matched [date] against the constraint ([conflictsWith]).
   /// For unavailability constraints with time specified: returns true ONLY if times overlap
   /// For unavailability constraints without time: returns true (unavailable all day)
-  bool blocksEventAssignment(Event event) {
+  bool blocksEventOn(Event event, DateTime date) {
     // Use assemblyTime as the event's start time if available, otherwise startTime
     final eventStart =
         event.assemblyTime.isNotEmpty ? event.assemblyTime : event.startTime;
     final eventEnd = event.endTime;
 
-    // If constraint has no time specified, it applies to entire day (blocks assignment)
-    if (startTime == null && endTime == null) {
+    // If constraint has no time on this day, it applies to entire day (blocks assignment)
+    final (windowStart, windowEnd) = timeWindowOn(date);
+    if (windowStart == null && windowEnd == null) {
       return true; // Member is unavailable all day
     }
 
@@ -229,7 +260,7 @@ class DateConstraint extends Equatable {
     // Check if the constraint's time range overlaps with event's time range
     // If they overlap, member is unavailable during the event
     return TimeRangeUtils.timesOverlap(
-        startTime, endTime, eventStart, eventEnd);
+        windowStart, windowEnd, eventStart, eventEnd);
   }
 
   /// Check if this constraint conflicts with an event's time range
@@ -429,7 +460,7 @@ class TeamMember extends Equatable {
           if (!constraint.conflictsWith(currentDate)) continue;
 
           // Date matches — check if constraint's time range blocks the event
-          if (constraint.blocksEventAssignment(event)) {
+          if (constraint.blocksEventOn(event, currentDate)) {
             return false;
           }
         }
@@ -454,7 +485,7 @@ class TeamMember extends Equatable {
           if (!constraint.conflictsWith(currentDate)) continue;
 
           // Date matches — check if the availability's time range covers the event
-          if (constraint.blocksEventAssignment(event)) {
+          if (constraint.blocksEventOn(event, currentDate)) {
             availableOnDay = true;
             break;
           }
