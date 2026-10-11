@@ -369,6 +369,16 @@ void main() {
       expect(added.focusNode, isA<RtlCursorFixedFocusNode>());
     });
 
+    testWidgets('events are listed date first, so a long name cannot push the '
+        'date out of view', (tester) async {
+      await openForm(tester);
+      await tester.tap(find.byKey(const Key('task-form-event')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('20/10/2026 · דו יומי צפון'), findsWidgets);
+      expect(find.text('27/10/2026 · דו יומי דרום'), findsWidgets);
+    });
+
     testWidgets('a past event is not offered when creating', (tester) async {
       await openForm(tester);
       await tester.tap(find.byKey(const Key('task-form-event')));

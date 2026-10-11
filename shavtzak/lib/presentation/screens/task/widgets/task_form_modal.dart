@@ -375,8 +375,10 @@ class _TaskFormModalState extends State<_TaskFormModal> {
         for (final event in _pickableEvents)
           DropdownMenuItem<String>(
             value: event.id,
+            // Date first: these names are long, and with the date last the
+            // ellipsis cut off the one part that tells two events apart.
             child: Text(
-              '${event.name} · ${_dateFormat.format(event.startDate)}',
+              '${_dateFormat.format(event.startDate)} · ${event.name}',
               overflow: TextOverflow.ellipsis,
             ),
           ),

@@ -59,6 +59,15 @@ class AppRouter {
     return (path == '/tasks' || path == '/test/tasks') ? path : null;
   }
 
+  /// Remember [route] when it is the tasks link. Called whenever a visitor who
+  /// is not signed in is turned away from a route, which also covers a tab
+  /// where the app is already loaded: there the link arrives as a hash change
+  /// and never passes through [capturedInitialHash].
+  static void rememberTasksLink(String route) {
+    final link = pendingTasksLinkFor(route);
+    if (link != null) _pendingDeepLink = link;
+  }
+
   /// Where a freshly authenticated member should land: the pending tasks link
   /// if there is one, otherwise [home]. The link is used once.
   static String postAuthDestination(String home) {
@@ -369,6 +378,7 @@ class AppRouter {
         // Handle authentication redirects
         if (currentState is UserSignedOut) {
           if (!strippedRoute.startsWith('/whoami')) {
+            rememberTasksLink(currentRoute);
             return '$envPrefix/whoami';
           }
         } else if (currentState is UserAuthenticated) {
@@ -410,6 +420,7 @@ class AppRouter {
               'unauthenticated, redirecting to whoami from "$currentRoute"',
               name: 'AppRouter',
             );
+            rememberTasksLink(currentRoute);
             return '$envPrefix/whoami';
           }
         }
