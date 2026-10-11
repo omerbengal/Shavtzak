@@ -14,6 +14,7 @@ import {
   isTaskAssignee,
   requireTaskManager,
   requireTaskParticipant,
+  taskAuditDetails,
   taskFromStored,
 } from './tasks';
 
@@ -171,6 +172,31 @@ test('buildNewTask rejects invalid input with 400', () => {
   for (const overrides of invalid) {
     assertTaskError(() => newTask(overrides), 400);
   }
+});
+
+test('buildNewTask rejects an id that is not a plain document id', () => {
+  // The id becomes a Firestore document path segment: a slash would address a
+  // nested document instead of a task.
+  for (const id of ['a/b/c', '../x', 'has space', 'x'.repeat(65), '.']) {
+    assertTaskError(() => newTask({id}), 400);
+  }
+  assert.equal(newTask({id: '3f2a9c1e-7b4d-4e8a-9c0f-1a2b3c4d5e6f'}).id.length, 36);
+});
+
+test('buildNewTask rejects a due date outside the representable range with 400', () => {
+  assertTaskError(() => newTask({dueAt: 1e20}), 400);
+  assertTaskError(() => newTask({dueAt: -1e20}), 400);
+});
+
+// ---- audit details ----
+
+test('taskAuditDetails names the task so the log viewer can show it', () => {
+  const details = taskAuditDetails(newTask(), {isDone: true});
+  assert.deepEqual(details, {
+    name: 'להזמין אוטובוס',
+    eventId: 'e1',
+    isDone: true,
+  });
 });
 
 // ---- applyTaskEdit ----

@@ -62,6 +62,11 @@ const MAX_DESCRIPTION_LENGTH = 5000;
 const MAX_SUBTASKS = 50;
 const MAX_ASSIGNEES = 100;
 const MAX_UPDATE_LENGTH = 2000;
+// 9999-12-31, the last day a Firestore Timestamp can hold, with a day to spare.
+const MAX_DUE_AT_MILLIS = 253_402_214_400_000;
+// The task id is a Firestore document id. The client sends a UUID; anything
+// with a slash would address a nested document instead.
+const TASK_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 // ---- permissions ----
 
@@ -86,6 +91,19 @@ export function requireTaskParticipant(task: TaskDoc, actor: TaskActor): void {
   if (!canManageTasks(actor) && !isTaskAssignee(task, actor)) {
     throw new TaskError(403, 'אין לך הרשאה לעדכן את המשימה');
   }
+}
+
+// ---- audit ----
+
+/**
+ * The `details` of a task's audit log entry. The task's title goes under
+ * `name` because that is the key the log reads an entity's display name from.
+ */
+export function taskAuditDetails(
+  task: Pick<TaskDoc, 'title' | 'eventId'>,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {name: task.title, eventId: task.eventId, ...extra};
 }
 
 // ---- reading a stored document ----
@@ -188,7 +206,11 @@ function parseDueAt(value: unknown): Timestamp | null {
     throw new TaskError(400, 'תאריך יעד לא תקין');
   }
   const millis = typeof value === 'number' ? value : Date.parse(value);
-  if (!Number.isFinite(millis)) throw new TaskError(400, 'תאריך יעד לא תקין');
+  // Timestamp itself throws on anything outside years 1..9999, which would
+  // surface as a 500 instead of a validation error.
+  if (!Number.isFinite(millis) || Math.abs(millis) > MAX_DUE_AT_MILLIS) {
+    throw new TaskError(400, 'תאריך יעד לא תקין');
+  }
   return Timestamp.fromMillis(millis);
 }
 
@@ -272,8 +294,8 @@ function withCompletion(
 
 export function buildNewTask(input: Record<string, unknown>, ctx: TaskContext): TaskDoc {
   const id = input['id'];
-  if (typeof id !== 'string' || id.length === 0) {
-    throw new TaskError(400, 'מזהה משימה חסר');
+  if (typeof id !== 'string' || !TASK_ID_PATTERN.test(id)) {
+    throw new TaskError(400, 'מזהה משימה לא תקין');
   }
   const fields = parseEditableFields(input);
   return {

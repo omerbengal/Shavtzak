@@ -57,6 +57,7 @@ import {
   buildNewTask,
   requireTaskManager,
   requireTaskParticipant,
+  taskAuditDetails,
   taskFromStored,
 } from './tasks';
 import {buildSlotAnnotationMerge} from './slot_annotations';
@@ -5040,6 +5041,7 @@ async function executeMutation(
         collections.assignmentLabels,
         collections.checklistItems,
         collections.presets,
+        collections.tasks,
         collections.calendarSync,
         collections.eventCalendarSync,
         collections.eventCalendarJobs,
@@ -5321,12 +5323,11 @@ async function executeMutation(
         );
         transaction.create(db.collection(collections.tasks).doc(next.id), next);
       });
-      await writeAuditLog(db, collections, actor, operation, 'task', next.id, {
-        title: next.title,
-        eventId: next.eventId,
-      }, {
-        after: next,
-      });
+      await writeAuditLog(
+        db, collections, actor, operation, 'task', next.id,
+        taskAuditDetails(next),
+        {after: next},
+      );
       return {ok: true};
     }
 
@@ -5351,13 +5352,11 @@ async function executeMutation(
           );
         },
       );
-      await writeAuditLog(db, collections, actor, operation, 'task', taskId, {
-        title: after.title,
-        eventId: after.eventId,
-      }, {
-        before,
-        after,
-      });
+      await writeAuditLog(
+        db, collections, actor, operation, 'task', taskId,
+        taskAuditDetails(after),
+        {before, after},
+      );
       return {ok: true};
     }
 
@@ -5370,12 +5369,11 @@ async function executeMutation(
       if (!existingDoc.exists) throw new HttpError(404, 'המשימה לא נמצאה');
       const existing = taskFromStored(taskId, existingDoc.data() ?? {});
       await docRef.delete();
-      await writeAuditLog(db, collections, actor, operation, 'task', taskId, {
-        title: existing.title,
-        eventId: existing.eventId,
-      }, {
-        before: existing,
-      });
+      await writeAuditLog(
+        db, collections, actor, operation, 'task', taskId,
+        taskAuditDetails(existing),
+        {before: existing},
+      );
       return {ok: true};
     }
 
@@ -5393,13 +5391,11 @@ async function executeMutation(
           return applySubtaskToggle(existing, subtaskId, isDone, {now, actor: taskActor});
         },
       );
-      await writeAuditLog(db, collections, actor, operation, 'task', taskId, {
-        title: after.title,
-        eventId: after.eventId,
+      await writeAuditLog(db, collections, actor, operation, 'task', taskId, taskAuditDetails(after, {
         subtaskTitle:
           after.subtasks.find((subtask) => subtask.id === subtaskId)?.title ?? null,
         isDone,
-      }, {
+      }), {
         before,
         after,
       });
@@ -5419,11 +5415,9 @@ async function executeMutation(
           return applySetComplete(existing, isComplete, {now, actor: taskActor});
         },
       );
-      await writeAuditLog(db, collections, actor, operation, 'task', taskId, {
-        title: after.title,
-        eventId: after.eventId,
+      await writeAuditLog(db, collections, actor, operation, 'task', taskId, taskAuditDetails(after, {
         isComplete,
-      }, {
+      }), {
         before,
         after,
       });
@@ -5448,11 +5442,9 @@ async function executeMutation(
       );
       // The saved text goes into the log entry itself: the task keeps only the
       // latest note, so the audit log is the history.
-      await writeAuditLog(db, collections, actor, operation, 'task', taskId, {
-        title: after.title,
-        eventId: after.eventId,
+      await writeAuditLog(db, collections, actor, operation, 'task', taskId, taskAuditDetails(after, {
         assigneeUpdate: after.assigneeUpdate,
-      }, {
+      }), {
         before,
         after,
       });
