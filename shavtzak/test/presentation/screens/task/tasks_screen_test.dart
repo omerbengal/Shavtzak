@@ -4,6 +4,8 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/core/services/environment_service.dart';
+import 'package:shavtzak/core/theme/app_theme.dart';
 import 'package:shavtzak/core/utils/rtl_text_field_utils.dart';
 import 'package:shavtzak/data/data_sources/firestore_database.dart';
 import 'package:shavtzak/data/repositories/task_repository.dart';
@@ -108,6 +110,7 @@ void main() {
     WidgetTester tester, {
     required TeamMember user,
     List<TaskItem>? tasks,
+    ThemeData? theme,
   }) async {
     tester.view.physicalSize = const Size(900, 2400);
     tester.view.devicePixelRatio = 1;
@@ -137,7 +140,10 @@ void main() {
         BlocProvider<TaskBloc>.value(value: taskBloc),
         BlocProvider<UserSelectionBloc>.value(value: userBloc),
       ],
-      child: MaterialApp(home: TasksScreen(clock: () => now)),
+      child: MaterialApp(
+        theme: theme,
+        home: TasksScreen(clock: () => now),
+      ),
     ));
     await tester.pump();
 
@@ -517,6 +523,45 @@ void main() {
         find.byKey(const Key('tasks-search')),
       );
       expect(field.focusNode, isA<RtlCursorFixedFocusNode>());
+    });
+  });
+
+  group('appearance', () {
+    double contrast(Color a, Color b) {
+      final la = a.computeLuminance();
+      final lb = b.computeLuminance();
+      final lighter = la > lb ? la : lb;
+      final darker = la > lb ? lb : la;
+      return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    testWidgets('the selected mine/all segment is readable under the app theme',
+        (tester) async {
+      // The app theme's default selected-segment colours are white text on
+      // light orange, which cannot be read.
+      await pumpScreen(tester, user: dana, tasks: [mine], theme: AppTheme.lightTheme);
+
+      final button = tester.widget<SegmentedButton<bool>>(
+        find.byType(SegmentedButton<bool>),
+      );
+      final style = button.style;
+      expect(style, isNotNull);
+      const selected = {WidgetState.selected};
+      final background = style!.backgroundColor!.resolve(selected)!;
+      final foreground = style.foregroundColor!.resolve(selected)!;
+      expect(contrast(foreground, background), greaterThanOrEqualTo(4.5));
+    });
+
+    testWidgets('shows the test-environment banner in test mode only',
+        (tester) async {
+      EnvironmentService.instance.updateFromPath('/test/tasks');
+      addTearDown(() => EnvironmentService.instance.updateFromPath('/tasks'));
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+      expect(find.textContaining('סביבת בדיקות'), findsOneWidget);
+
+      EnvironmentService.instance.updateFromPath('/tasks');
+      await tester.pump();
+      expect(find.textContaining('סביבת בדיקות'), findsNothing);
     });
   });
 

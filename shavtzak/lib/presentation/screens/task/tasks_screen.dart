@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/debug/logger.dart';
 import '../../../core/debug/search_action_logger.dart';
 import '../../../core/services/environment_service.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/utils/task_utils.dart';
@@ -17,6 +18,7 @@ import '../../../domain/entities/team_member.dart';
 import '../../bloc/task/task_bloc.dart';
 import '../../bloc/user_selection/user_selection_bloc.dart';
 import '../../bloc/user_selection/user_selection_state.dart';
+import '../../widgets/test_environment_indicator.dart';
 import 'widgets/assignee_update_dialog.dart';
 import 'widgets/task_card.dart';
 import 'widgets/task_filter_modal.dart';
@@ -273,7 +275,9 @@ class _TasksScreenState extends State<TasksScreen> {
                     onPressed: () => _goHome(user),
                   ),
                 ),
-                body: _buildBody(state, user),
+                body: TestEnvironmentIndicator(
+                  child: _buildBody(state, user),
+                ),
                 floatingActionButton: loaded != null && canManageTasks(user)
                     ? FloatingActionButton.extended(
                         key: const Key('tasks-add'),
@@ -336,6 +340,14 @@ class _TasksScreenState extends State<TasksScreen> {
             width: double.infinity,
             child: SegmentedButton<bool>(
               showSelectedIcon: false,
+              // Explicit colours: the app theme's defaults for a selected
+              // segment are white text on light orange, which is unreadable.
+              // The dark primary is used rather than the regular one because
+              // white on the regular primary falls short of 4.5:1.
+              style: SegmentedButton.styleFrom(
+                selectedBackgroundColor: AppTheme.primaryDark,
+                selectedForegroundColor: Colors.white,
+              ),
               segments: const [
                 ButtonSegment(value: false, label: Text('המשימות שלי')),
                 ButtonSegment(value: true, label: Text('כל המשימות')),
