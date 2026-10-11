@@ -46,6 +46,19 @@ import type {
   ConstraintSyncReport,
 } from './calendar_sync_backend';
 import {normalizeParticipantGroups} from './participant_groups';
+import {
+  TaskActor,
+  TaskDoc,
+  TaskError,
+  applyAssigneeUpdate,
+  applySetComplete,
+  applySubtaskToggle,
+  applyTaskEdit,
+  buildNewTask,
+  requireTaskManager,
+  requireTaskParticipant,
+  taskFromStored,
+} from './tasks';
 import {buildSlotAnnotationMerge} from './slot_annotations';
 import {buildMemberFeedParts, renderIcsFeed} from './calendar_feed';
 
@@ -83,6 +96,7 @@ type Collections = {
   assignmentLabels: string;
   checklistItems: string;
   presets: string;
+  tasks: string;
   calendarSync: string;
   eventCalendarSync: string;
   eventCalendarJobs: string;
@@ -189,6 +203,7 @@ function getCollections(environment: EnvironmentMode): Collections {
     assignmentLabels: `${prefix}assignmentLabels`,
     checklistItems: `${prefix}checklist_items`,
     presets: `${prefix}checklist_presets`,
+    tasks: `${prefix}tasks`,
     calendarSync: `${prefix}calendar_sync`,
     eventCalendarSync: `${prefix}event_calendar_sync`,
     eventCalendarJobs: `${prefix}event_calendar_jobs`,
@@ -456,7 +471,7 @@ async function deleteEventRelatedDocuments(
   eventId: string,
 ): Promise<void> {
   while (true) {
-    const [assignments, checklistItems] = await Promise.all([
+    const [assignments, checklistItems, tasks] = await Promise.all([
       db.collection(collections.assignments)
         .where('eventId', '==', eventId)
         .limit(200)
@@ -465,8 +480,16 @@ async function deleteEventRelatedDocuments(
         .where('eventId', '==', eventId)
         .limit(200)
         .get(),
+      db.collection(collections.tasks)
+        .where('eventId', '==', eventId)
+        .limit(100)
+        .get(),
     ]);
-    const documents = [...assignments.docs, ...checklistItems.docs];
+    const documents = [
+      ...assignments.docs,
+      ...checklistItems.docs,
+      ...tasks.docs,
+    ];
     if (documents.length === 0) return;
 
     const batch = db.batch();
@@ -521,6 +544,73 @@ async function requireWritableEventInTransaction(
   if (event.data()?.[EVENT_DELETION_PENDING_FIELD] === true) {
     throw new HttpError(409, 'האירוע נמצא בתהליך מחיקה');
   }
+}
+
+function taskActorFrom(actor: ActorContext): TaskActor {
+  return {
+    memberId: actor.memberId,
+    name: typeof actor.member['name'] === 'string' ? actor.member['name'] : null,
+    isAdmin: actor.isAdmin,
+    canManageTasks: actor.member['canManageTasks'] === true,
+  };
+}
+
+function requireTaskPayload(value: unknown): Record<string, unknown> {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, 'Missing or invalid task');
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireBooleanField(value: unknown, fieldName: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new HttpError(400, `Missing or invalid ${fieldName}`);
+  }
+  return value;
+}
+
+async function requireTaskAssigneesInTransaction(
+  transaction: FirebaseFirestore.Transaction,
+  collections: Collections,
+  assigneeIds: string[],
+): Promise<void> {
+  if (assigneeIds.length === 0) return;
+  const snapshots = await transaction.getAll(
+    ...assigneeIds.map((id) => db.collection(collections.teamMembers).doc(id)),
+  );
+  if (snapshots.some((snapshot) => !snapshot.exists)) {
+    throw new HttpError(400, 'חבר צוות לא נמצא');
+  }
+}
+
+/**
+ * Read a task, transform it and write the result back in one transaction.
+ *
+ * `transform` receives the latest stored task and returns the full next
+ * document; it runs again if the transaction retries, so it must stay pure.
+ * `beforeWrite` is for any extra transactional reads, which Firestore requires
+ * to precede the write.
+ */
+async function mutateTaskInTransaction(
+  collections: Collections,
+  taskId: string,
+  transform: (existing: TaskDoc) => TaskDoc,
+  beforeWrite?: (
+    transaction: FirebaseFirestore.Transaction,
+    existing: TaskDoc,
+    next: TaskDoc,
+  ) => Promise<void>,
+): Promise<{before: TaskDoc; after: TaskDoc}> {
+  const docRef = db.collection(collections.tasks).doc(taskId);
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(docRef);
+    if (!snapshot.exists) throw new HttpError(404, 'המשימה לא נמצאה');
+    const before = taskFromStored(taskId, snapshot.data() ?? {});
+    const after = transform(before);
+    if (beforeWrite != null) await beforeWrite(transaction, before, after);
+    transaction.set(docRef, after);
+    return {before, after};
+  });
 }
 
 async function drainEventCalendarJob(payload: CalendarSyncTaskPayload): Promise<void> {
@@ -2725,6 +2815,10 @@ function teamMemberDocFromJson(member: Record<string, unknown>, existing?: Recor
     canAccessSummaryScreen: member['canAccessSummaryScreen'] ?? false,
     canAccessShamapExport: member['canAccessShamapExport'] ?? false,
     canAccessConstraintsExamining: member['canAccessConstraintsExamining'] ?? false,
+    // Falls back to the stored value: a browser still running a web build from
+    // before this flag existed saves the member without it, and must not
+    // silently revoke task-manager access.
+    canManageTasks: member['canManageTasks'] ?? existing?.['canManageTasks'] ?? false,
     vehicleInfo: member['vehicleInfo'] ?? null,
     availableEventIds: member['availableEventIds'] ?? [],
   });
@@ -4164,11 +4258,12 @@ async function executeMutation(
       requireAdmin(actor);
       const eventId = requireString(payload['eventId'], 'eventId');
       const eventRef = db.collection(collections.events).doc(eventId);
-      const [eventDoc, assignmentSnapshot, checklistSnapshot] =
+      const [eventDoc, assignmentSnapshot, checklistSnapshot, taskSnapshot] =
         await Promise.all([
           eventRef.get(),
           db.collection(collections.assignments).where('eventId', '==', eventId).get(),
           db.collection(collections.checklistItems).where('eventId', '==', eventId).get(),
+          db.collection(collections.tasks).where('eventId', '==', eventId).get(),
         ]);
       if (!eventDoc.exists) {
         throw new HttpError(404, 'Event not found');
@@ -4222,6 +4317,10 @@ async function executeMutation(
           responsibleName: responsibleName ?? undefined,
         });
       }));
+      const deletedTasks = taskSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        title: doc.data()?.['title'] ?? null,
+      }));
       const batch = db.batch();
       // Fence new assignment/checklist writes before the large relation
       // cascade. The Calendar job and deletion marker commit atomically, so a
@@ -4250,6 +4349,7 @@ async function executeMutation(
           deletedAssignments.length > 0 ? deletedAssignments : undefined,
         deletedChecklistItems:
           deletedChecklistItems.length > 0 ? deletedChecklistItems : undefined,
+        deletedTasks: deletedTasks.length > 0 ? deletedTasks : undefined,
       }), {
         before: existingEvent,
       });
@@ -5202,6 +5302,160 @@ async function executeMutation(
           after: firestoreNote,
         },
       );
+      return {ok: true};
+    }
+
+    case 'task.insert': {
+      const taskActor = taskActorFrom(actor);
+      requireTaskManager(taskActor);
+      const next = buildNewTask(requireTaskPayload(payload['task']), {
+        now: Timestamp.now(),
+        actor: taskActor,
+      });
+      await db.runTransaction(async (transaction) => {
+        await requireWritableEventInTransaction(transaction, collections, next.eventId);
+        await requireTaskAssigneesInTransaction(
+          transaction,
+          collections,
+          next.assigneeIds,
+        );
+        transaction.create(db.collection(collections.tasks).doc(next.id), next);
+      });
+      await writeAuditLog(db, collections, actor, operation, 'task', next.id, {
+        title: next.title,
+        eventId: next.eventId,
+      }, {
+        after: next,
+      });
+      return {ok: true};
+    }
+
+    case 'task.update': {
+      const taskActor = taskActorFrom(actor);
+      requireTaskManager(taskActor);
+      const input = requireTaskPayload(payload['task']);
+      const taskId = requireString(input['id'], 'task.id');
+      const now = Timestamp.now();
+      const {before, after} = await mutateTaskInTransaction(
+        collections,
+        taskId,
+        (existing) => applyTaskEdit(existing, input, {now, actor: taskActor}),
+        async (transaction, existing, next) => {
+          await requireWritableEventInTransaction(transaction, collections, next.eventId);
+          // Only newly added assignees are checked, so a task that still lists a
+          // since-deleted member stays editable.
+          await requireTaskAssigneesInTransaction(
+            transaction,
+            collections,
+            next.assigneeIds.filter((id) => !existing.assigneeIds.includes(id)),
+          );
+        },
+      );
+      await writeAuditLog(db, collections, actor, operation, 'task', taskId, {
+        title: after.title,
+        eventId: after.eventId,
+      }, {
+        before,
+        after,
+      });
+      return {ok: true};
+    }
+
+    case 'task.delete': {
+      const taskActor = taskActorFrom(actor);
+      requireTaskManager(taskActor);
+      const taskId = requireString(payload['taskId'], 'taskId');
+      const docRef = db.collection(collections.tasks).doc(taskId);
+      const existingDoc = await docRef.get();
+      if (!existingDoc.exists) throw new HttpError(404, 'המשימה לא נמצאה');
+      const existing = taskFromStored(taskId, existingDoc.data() ?? {});
+      await docRef.delete();
+      await writeAuditLog(db, collections, actor, operation, 'task', taskId, {
+        title: existing.title,
+        eventId: existing.eventId,
+      }, {
+        before: existing,
+      });
+      return {ok: true};
+    }
+
+    case 'task.setSubtaskDone': {
+      const taskActor = taskActorFrom(actor);
+      const taskId = requireString(payload['taskId'], 'taskId');
+      const subtaskId = requireString(payload['subtaskId'], 'subtaskId');
+      const isDone = requireBooleanField(payload['isDone'], 'isDone');
+      const now = Timestamp.now();
+      const {before, after} = await mutateTaskInTransaction(
+        collections,
+        taskId,
+        (existing) => {
+          requireTaskParticipant(existing, taskActor);
+          return applySubtaskToggle(existing, subtaskId, isDone, {now, actor: taskActor});
+        },
+      );
+      await writeAuditLog(db, collections, actor, operation, 'task', taskId, {
+        title: after.title,
+        eventId: after.eventId,
+        subtaskTitle:
+          after.subtasks.find((subtask) => subtask.id === subtaskId)?.title ?? null,
+        isDone,
+      }, {
+        before,
+        after,
+      });
+      return {ok: true};
+    }
+
+    case 'task.setComplete': {
+      const taskActor = taskActorFrom(actor);
+      const taskId = requireString(payload['taskId'], 'taskId');
+      const isComplete = requireBooleanField(payload['isComplete'], 'isComplete');
+      const now = Timestamp.now();
+      const {before, after} = await mutateTaskInTransaction(
+        collections,
+        taskId,
+        (existing) => {
+          requireTaskParticipant(existing, taskActor);
+          return applySetComplete(existing, isComplete, {now, actor: taskActor});
+        },
+      );
+      await writeAuditLog(db, collections, actor, operation, 'task', taskId, {
+        title: after.title,
+        eventId: after.eventId,
+        isComplete,
+      }, {
+        before,
+        after,
+      });
+      return {ok: true};
+    }
+
+    case 'task.setAssigneeUpdate': {
+      const taskActor = taskActorFrom(actor);
+      const taskId = requireString(payload['taskId'], 'taskId');
+      const text = payload['text'];
+      if (typeof text !== 'string') {
+        throw new HttpError(400, 'Missing or invalid text');
+      }
+      const now = Timestamp.now();
+      const {before, after} = await mutateTaskInTransaction(
+        collections,
+        taskId,
+        (existing) => {
+          requireTaskParticipant(existing, taskActor);
+          return applyAssigneeUpdate(existing, text, {now, actor: taskActor});
+        },
+      );
+      // The saved text goes into the log entry itself: the task keeps only the
+      // latest note, so the audit log is the history.
+      await writeAuditLog(db, collections, actor, operation, 'task', taskId, {
+        title: after.title,
+        eventId: after.eventId,
+        assigneeUpdate: after.assigneeUpdate,
+      }, {
+        before,
+        after,
+      });
       return {ok: true};
     }
 
@@ -6496,7 +6750,7 @@ function handleError(response: Response, error: unknown): void {
     return;
   }
 
-  if (error instanceof HttpError) {
+  if (error instanceof HttpError || error instanceof TaskError) {
     response.status(error.status).json({
       ok: false,
       error: error.message,
@@ -6532,4 +6786,5 @@ export {
   constraintMatchesDate as __testConstraintMatchesDate,
   memberAvailableForEvent as __testMemberAvailableForEvent,
   applySelfEditableFields as __testApplySelfEditableFields,
+  teamMemberDocFromJson as __testTeamMemberDocFromJson,
 };
