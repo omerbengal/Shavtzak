@@ -16,13 +16,15 @@ final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
 ///
 /// The card is display-only: every action is reported through a callback and
 /// the result arrives back as a new [task] from the stream.
-class TaskCard extends StatefulWidget {
+class TaskCard extends StatelessWidget {
   const TaskCard({
     super.key,
     required this.task,
     required this.now,
     required this.canManage,
     required this.canUpdateProgress,
+    required this.isExpanded,
+    required this.onToggleExpanded,
     required this.onToggleSubtask,
     required this.onSetComplete,
     required this.onEditUpdate,
@@ -42,6 +44,12 @@ class TaskCard extends StatefulWidget {
   /// update.
   final bool canUpdateProgress;
 
+  /// Whether the subtasks are shown. Owned by the screen, not the card: the
+  /// list rebuilds and reorders cards whenever any task changes, and a card
+  /// that kept this itself would snap shut each time it moved.
+  final bool isExpanded;
+  final VoidCallback onToggleExpanded;
+
   final void Function(Subtask subtask, bool isDone) onToggleSubtask;
   final ValueChanged<bool> onSetComplete;
   final VoidCallback onEditUpdate;
@@ -49,16 +57,8 @@ class TaskCard extends StatefulWidget {
   final VoidCallback onDelete;
 
   @override
-  State<TaskCard> createState() => _TaskCardState();
-}
-
-class _TaskCardState extends State<TaskCard> {
-  bool _expanded = false;
-
-  @override
   Widget build(BuildContext context) {
-    final task = widget.task;
-    final status = taskDueStatus(task, widget.now);
+    final status = taskDueStatus(task, now);
     final style = _StatusStyle.of(status);
     final theme = Theme.of(context);
 
@@ -115,7 +115,7 @@ class _TaskCardState extends State<TaskCard> {
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: Colors.grey.shade600),
                   ),
-                  if (task.hasSubtasks && _expanded) ...[
+                  if (task.hasSubtasks && isExpanded) ...[
                     const SizedBox(height: 8),
                     ...task.subtasks.map(_buildSubtask),
                   ],
@@ -133,15 +133,14 @@ class _TaskCardState extends State<TaskCard> {
     TaskDueStatus status,
     _StatusStyle style,
   ) {
-    final task = widget.task;
     return Row(
       children: [
         if (!task.hasSubtasks)
           Checkbox(
             key: Key('task-complete-${task.id}'),
             value: task.isComplete,
-            onChanged: widget.canUpdateProgress
-                ? (value) => widget.onSetComplete(value ?? false)
+            onChanged: canUpdateProgress
+                ? (value) => onSetComplete(value ?? false)
                 : null,
           )
         else
@@ -162,14 +161,14 @@ class _TaskCardState extends State<TaskCard> {
           const SizedBox(width: 8),
           _StatusChip(label: style.label!, color: style.accent),
         ],
-        if (widget.canManage)
+        if (canManage)
           PopupMenuButton<String>(
             tooltip: 'פעולות',
             onSelected: (value) {
               if (value == 'edit') {
-                widget.onEdit();
+                onEdit();
               } else {
-                widget.onDelete();
+                onDelete();
               }
             },
             itemBuilder: (context) => const [
@@ -179,16 +178,16 @@ class _TaskCardState extends State<TaskCard> {
           ),
         if (task.hasSubtasks)
           IconButton(
-            tooltip: _expanded ? 'הסתרת תתי-משימות' : 'הצגת תתי-משימות',
-            icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
-            onPressed: () => setState(() => _expanded = !_expanded),
+            tooltip: isExpanded ? 'הסתרת תתי-משימות' : 'הצגת תתי-משימות',
+            icon: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+            onPressed: onToggleExpanded,
           ),
       ],
     );
   }
 
   Widget _buildEventLine(ThemeData theme) {
-    final event = widget.task.event;
+    final event = task.event;
     if (event == null) {
       return _InfoLine(
         icon: Icons.event_busy,
@@ -203,7 +202,6 @@ class _TaskCardState extends State<TaskCard> {
   }
 
   Widget _buildProgress(ThemeData theme, _StatusStyle style) {
-    final task = widget.task;
     return Row(
       children: [
         Expanded(
@@ -230,15 +228,14 @@ class _TaskCardState extends State<TaskCard> {
   }
 
   Widget _buildUpdateBlock(ThemeData theme) {
-    final task = widget.task;
     final update = task.assigneeUpdate;
     final hasUpdate = update != null && update.isNotEmpty;
-    if (!hasUpdate && !widget.canUpdateProgress) return const SizedBox.shrink();
+    if (!hasUpdate && !canUpdateProgress) return const SizedBox.shrink();
 
-    final updateButton = widget.canUpdateProgress
+    final updateButton = canUpdateProgress
         ? TextButton.icon(
             key: Key('task-update-${task.id}'),
-            onPressed: widget.onEditUpdate,
+            onPressed: onEditUpdate,
             icon: const Icon(Icons.edit_note, size: 20),
             label: Text(hasUpdate ? 'עדכון' : 'הוספת עדכון'),
             style: TextButton.styleFrom(
@@ -307,8 +304,8 @@ class _TaskCardState extends State<TaskCard> {
         children: [
           Checkbox(
             value: subtask.isDone,
-            onChanged: widget.canUpdateProgress
-                ? (value) => widget.onToggleSubtask(subtask, value ?? false)
+            onChanged: canUpdateProgress
+                ? (value) => onToggleSubtask(subtask, value ?? false)
                 : null,
           ),
           Expanded(

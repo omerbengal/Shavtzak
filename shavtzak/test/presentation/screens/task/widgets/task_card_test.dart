@@ -23,22 +23,29 @@ void main() {
     bool canUpdateProgress = true,
   }) async {
     final calls = _Calls();
+    // The card does not own its expanded state; this host plays the screen.
+    var isExpanded = false;
     await tester.pumpWidget(MaterialApp(
       home: Directionality(
         textDirection: TextDirection.rtl,
         child: Scaffold(
           body: SingleChildScrollView(
-            child: TaskCard(
-              task: task,
-              now: now,
-              canManage: canManage,
-              canUpdateProgress: canUpdateProgress,
-              onToggleSubtask: (subtask, isDone) =>
-                  calls.subtaskToggles.add('${subtask.id}:$isDone'),
-              onSetComplete: calls.completions.add,
-              onEditUpdate: () => calls.editUpdate++,
-              onEdit: () => calls.edit++,
-              onDelete: () => calls.delete++,
+            child: StatefulBuilder(
+              builder: (context, setState) => TaskCard(
+                task: task,
+                now: now,
+                canManage: canManage,
+                canUpdateProgress: canUpdateProgress,
+                isExpanded: isExpanded,
+                onToggleExpanded: () =>
+                    setState(() => isExpanded = !isExpanded),
+                onToggleSubtask: (subtask, isDone) =>
+                    calls.subtaskToggles.add('${subtask.id}:$isDone'),
+                onSetComplete: calls.completions.add,
+                onEditUpdate: () => calls.editUpdate++,
+                onEdit: () => calls.edit++,
+                onDelete: () => calls.delete++,
+              ),
             ),
           ),
         ),

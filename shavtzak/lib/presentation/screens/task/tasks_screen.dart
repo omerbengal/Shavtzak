@@ -8,6 +8,7 @@ import '../../../core/debug/logger.dart';
 import '../../../core/debug/search_action_logger.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/utils/crud_action_result.dart';
+import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/utils/task_utils.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/subtask.dart';
@@ -43,6 +44,13 @@ class _TasksScreenState extends State<TasksScreen> {
   String _query = '';
   TaskFilterSelection _filter = const TaskFilterSelection();
 
+  // Which cards show their subtasks. Kept here, not in the cards: the list
+  // re-sorts on every change, and a card that moved would otherwise close.
+  final Set<String> _expandedTaskIds = <String>{};
+
+  late final FocusNode _searchFocusNode =
+      createRtlCursorFixedFocusNode(_searchController);
+
   late DateTime _now;
   Timer? _ticker;
 
@@ -64,6 +72,7 @@ class _TasksScreenState extends State<TasksScreen> {
   void dispose() {
     _ticker?.cancel();
     _searchLog.dispose();
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -355,6 +364,12 @@ class _TasksScreenState extends State<TasksScreen> {
                       now: _now,
                       canManage: canManageTasks(user),
                       canUpdateProgress: canUpdateTaskProgress(task, user),
+                      isExpanded: _expandedTaskIds.contains(task.id),
+                      onToggleExpanded: () => setState(() {
+                        if (!_expandedTaskIds.remove(task.id)) {
+                          _expandedTaskIds.add(task.id);
+                        }
+                      }),
                       onToggleSubtask: (subtask, isDone) =>
                           _toggleSubtask(task, subtask, isDone),
                       onSetComplete: (isComplete) =>
@@ -379,6 +394,7 @@ class _TasksScreenState extends State<TasksScreen> {
       child: TextField(
         key: const Key('tasks-search'),
         controller: _searchController,
+        focusNode: _searchFocusNode,
         decoration: InputDecoration(
           hintText: 'חיפוש משימה או אירוע...',
           prefixIcon: const Icon(Icons.search),

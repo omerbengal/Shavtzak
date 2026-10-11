@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/task_utils.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/subtask.dart';
@@ -46,11 +47,19 @@ Future<TaskItem?> showTaskFormModal(
 /// rename does not reset its progress.
 class _SubtaskDraft {
   _SubtaskDraft({required this.id, required this.isDone, String title = ''})
-      : controller = TextEditingController(text: title);
+      : controller = TextEditingController(text: title) {
+    focusNode = createRtlCursorFixedFocusNode(controller);
+  }
 
   final String id;
   final bool isDone;
   final TextEditingController controller;
+  late final FocusNode focusNode;
+
+  void dispose() {
+    focusNode.dispose();
+    controller.dispose();
+  }
 }
 
 class _TaskFormModal extends StatefulWidget {
@@ -80,10 +89,13 @@ class _TaskFormModalState extends State<_TaskFormModal> {
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _dueTimeController;
+  late final FocusNode _titleFocusNode;
+  late final FocusNode _descriptionFocusNode;
   late final List<_SubtaskDraft> _subtasks;
 
   String? _eventId;
   DateTime? _dueDate;
+  String? _dueTimeError;
   // Insertion-ordered, so assignees keep the order they were picked in.
   final Set<String> _assigneeIds = <String>{};
 
@@ -119,6 +131,9 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     _titleController = TextEditingController(text: existing?.title ?? '');
     _descriptionController =
         TextEditingController(text: existing?.description ?? '');
+    _titleFocusNode = createRtlCursorFixedFocusNode(_titleController);
+    _descriptionFocusNode =
+        createRtlCursorFixedFocusNode(_descriptionController);
 
     final dueAt = existing?.dueAt;
     _dueDate = dueAt;
@@ -143,11 +158,13 @@ class _TaskFormModalState extends State<_TaskFormModal> {
 
   @override
   void dispose() {
+    _titleFocusNode.dispose();
+    _descriptionFocusNode.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
     _dueTimeController.dispose();
     for (final draft in _subtasks) {
-      draft.controller.dispose();
+      draft.dispose();
     }
     super.dispose();
   }
@@ -171,6 +188,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     setState(() {
       _dueDate = null;
       _dueTimeController.clear();
+      _dueTimeError = null;
     });
   }
 
@@ -182,11 +200,21 @@ class _TaskFormModalState extends State<_TaskFormModal> {
 
   void _removeSubtask(_SubtaskDraft draft) {
     setState(() => _subtasks.remove(draft));
-    draft.controller.dispose();
+    // Disposed after the frame that drops the row, not while its TextField is
+    // still mounted on these objects.
+    WidgetsBinding.instance.addPostFrameCallback((_) => draft.dispose());
   }
 
   void _save() {
     if (!_canSave) return;
+    // An empty time is fine and means "by the end of that day". A time that
+    // was typed but is not a real time is refused rather than quietly saved
+    // as something the manager did not enter.
+    final dueTime = _dueTimeController.text.trim();
+    if (_dueDate != null && dueTime.isNotEmpty && !isValidDueTime(dueTime)) {
+      setState(() => _dueTimeError = 'שעת היעד אינה תקינה. יש להזין שעה כמו 09:30, או להשאיר ריק.');
+      return;
+    }
     final eventId = _eventId!;
     final event = _pickableEvents.firstWhere((event) => event.id == eventId);
     final dueAt = composeDueAt(_dueDate, _dueTimeController.text);
@@ -272,6 +300,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
                       TextField(
                         key: const Key('task-form-title'),
                         controller: _titleController,
+                        focusNode: _titleFocusNode,
                         maxLength: 200,
                         textInputAction: TextInputAction.next,
                         decoration: const InputDecoration(
@@ -285,6 +314,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
                       TextField(
                         key: const Key('task-form-description'),
                         controller: _descriptionController,
+                        focusNode: _descriptionFocusNode,
                         minLines: 2,
                         maxLines: 5,
                         maxLength: 5000,
@@ -394,8 +424,18 @@ class _TaskFormModalState extends State<_TaskFormModal> {
             label: 'שעת יעד',
             hint: 'ללא שעה: עד סוף היום',
             logKey: 'taskDue',
-            onChanged: () => setState(() {}),
+            onChanged: () => setState(() => _dueTimeError = null),
           ),
+          if (_dueTimeError != null)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(top: 6, start: 12),
+              child: Text(
+                _dueTimeError!,
+                key: const Key('task-form-due-time-error'),
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
+            ),
         ],
       ],
     );
@@ -452,6 +492,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
                     child: TextField(
                       key: Key('task-form-subtask-$index'),
                       controller: _subtasks[index].controller,
+                      focusNode: _subtasks[index].focusNode,
                       maxLength: 200,
                       decoration: InputDecoration(
                         hintText: 'תת-משימה ${index + 1}',

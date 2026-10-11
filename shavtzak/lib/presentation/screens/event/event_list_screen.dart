@@ -962,7 +962,7 @@ class _EventListScreenState extends State<EventListScreen> {
             child: AlertDialog(
               title: const Text('מחיקת אירוע'),
               content: Text(
-                'האם אתה בטוח שברצונך למחוק את ${event.name}?\nפעולה זו תמחק גם את כל השיבוצים.',
+                'האם אתה בטוח שברצונך למחוק את ${event.name}?\nפעולה זו תמחק גם את כל השיבוצים והמשימות של האירוע.',
               ),
               actions: [
                 TextButton(

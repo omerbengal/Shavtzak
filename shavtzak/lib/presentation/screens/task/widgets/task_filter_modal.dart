@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../../core/utils/task_utils.dart';
 import '../../../../domain/entities/event.dart';
@@ -29,6 +30,8 @@ class TaskFilterSelection extends Equatable {
   @override
   List<Object?> get props => [statuses, eventIds, assigneeIds];
 }
+
+final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
 
 const Map<TaskDueStatus, String> _statusLabels = {
   TaskDueStatus.overdue: 'באיחור',
@@ -128,6 +131,9 @@ class _TaskFilterModalState extends State<_TaskFilterModal> {
                             key: Key('filter-event-${event.id}'),
                             dense: true,
                             title: Text(event.name),
+                            // דו יומי events tend to share a name; the date is
+                            // what tells them apart.
+                            subtitle: Text(_dateFormat.format(event.startDate)),
                             value: _eventIds.contains(event.id),
                             onChanged: (value) =>
                                 _toggle(_eventIds, event.id, value ?? false),

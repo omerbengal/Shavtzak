@@ -166,6 +166,31 @@ void main() {
     );
 
     blocTest<TaskBloc, TaskState>(
+      'a stream that errors without closing can still be retried',
+      build: buildBloc,
+      act: (bloc) async {
+        bloc.add(const LoadTasks());
+        await Future<void>.delayed(Duration.zero);
+        // A dead Firestore listener reports an error and then just sits
+        // there: it never closes.
+        repository.controller.addError(Exception('permission-denied'));
+        await Future<void>.delayed(Duration.zero);
+
+        repository.controller = StreamController<TaskBoard>();
+        bloc.add(const LoadTasks());
+        await Future<void>.delayed(Duration.zero);
+        repository.emit([buildTask(id: 'new')]);
+      },
+      expect: () => [
+        const TasksLoading(),
+        isA<TasksError>(),
+        const TasksLoading(),
+        TasksLoaded([buildTask(id: 'new')]),
+      ],
+      verify: (_) => expect(repository.watchCalls, 2),
+    );
+
+    blocTest<TaskBloc, TaskState>(
       'after the stream ends, LoadTasks subscribes afresh',
       build: buildBloc,
       act: (bloc) async {

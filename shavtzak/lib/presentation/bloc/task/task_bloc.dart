@@ -90,6 +90,11 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
       // Keep a list that is already on screen instead of flashing a spinner
       // while a replacement subscription warms up.
       if (state is! TasksLoaded) emit(const TasksLoading());
+      // No onError here, on purpose. With one, bloc keeps the subscription
+      // open after an error, and a dead Firestore listener (sign-out kills
+      // every one of them) reports its error and then never closes: the bloc
+      // would stay "watching" a corpse and swallow every retry. Letting the
+      // error throw cancels the subscription and reaches the catch below.
       await emit.forEach<TaskBoard>(
         _repository.watchBoard(),
         onData: (board) => TasksLoaded(
@@ -97,19 +102,18 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
           events: board.events,
           members: board.members,
         ),
-        onError: (error, stackTrace) {
-          developer.log(
-            'TaskBloc: error watching tasks: $error',
-            name: 'Tasks',
-            error: error,
-            stackTrace: stackTrace,
-          );
-          return const TasksError('טעינת המשימות נכשלה');
-        },
       );
+    } catch (error, stackTrace) {
+      developer.log(
+        'TaskBloc: error watching tasks: $error',
+        name: 'Tasks',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      emit(const TasksError('טעינת המשימות נכשלה'));
     } finally {
-      // The stream ended (sign-out kills every Firestore listener), so the
-      // next LoadTasks must be allowed to subscribe again.
+      // Whether the stream ended or failed, the next LoadTasks must be
+      // allowed to subscribe again.
       _isWatching = false;
     }
   }

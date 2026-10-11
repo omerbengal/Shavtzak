@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/utils/rtl_text_field_utils.dart';
+
 /// Edit a task's assignee update: the short, shared status note.
 ///
 /// Returns the trimmed text, an empty string when the note should be cleared,
@@ -25,15 +27,20 @@ class _AssigneeUpdateDialog extends StatefulWidget {
 
 class _AssigneeUpdateDialogState extends State<_AssigneeUpdateDialog> {
   late final TextEditingController _controller;
+  late final FocusNode _focusNode;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialText);
+    // The field autofocuses onto an existing note, which is exactly the case
+    // the RTL caret fix exists for: Hebrew mixed with digits.
+    _focusNode = createRtlCursorFixedFocusNode(_controller);
   }
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -49,6 +56,7 @@ class _AssigneeUpdateDialogState extends State<_AssigneeUpdateDialog> {
           child: TextField(
             key: const Key('assignee-update-text'),
             controller: _controller,
+            focusNode: _focusNode,
             autofocus: true,
             minLines: 3,
             maxLines: 6,

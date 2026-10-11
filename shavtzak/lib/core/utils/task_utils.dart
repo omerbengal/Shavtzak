@@ -136,18 +136,28 @@ final RegExp _hourMinute = RegExp(r'^(\d{2}):(\d{2})$');
 /// midnight.
 DateTime? composeDueAt(DateTime? date, String time) {
   if (date == null) return null;
-  var hour = 23;
-  var minute = 59;
+  final parsed = _parseHourMinute(time);
+  return DateTime(
+    date.year,
+    date.month,
+    date.day,
+    parsed?.hour ?? 23,
+    parsed?.minute ?? 59,
+  );
+}
+
+/// Whether [time] is a complete `HH:mm` on the 24-hour clock. The task form
+/// refuses to save a non-empty due time that fails this, rather than quietly
+/// turning it into the end of the day.
+bool isValidDueTime(String time) => _parseHourMinute(time) != null;
+
+({int hour, int minute})? _parseHourMinute(String time) {
   final match = _hourMinute.firstMatch(time.trim());
-  if (match != null) {
-    final parsedHour = int.parse(match.group(1)!);
-    final parsedMinute = int.parse(match.group(2)!);
-    if (parsedHour < 24 && parsedMinute < 60) {
-      hour = parsedHour;
-      minute = parsedMinute;
-    }
-  }
-  return DateTime(date.year, date.month, date.day, hour, minute);
+  if (match == null) return null;
+  final hour = int.parse(match.group(1)!);
+  final minute = int.parse(match.group(2)!);
+  if (hour > 23 || minute > 59) return null;
+  return (hour: hour, minute: minute);
 }
 
 String _searchable(String text) => normalizeForSearch(text).toLowerCase();

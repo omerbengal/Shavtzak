@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/core/utils/rtl_text_field_utils.dart';
 import 'package:shavtzak/core/utils/task_utils.dart';
 import 'package:shavtzak/domain/entities/event.dart';
 import 'package:shavtzak/domain/entities/subtask.dart';
@@ -284,6 +285,90 @@ void main() {
       expect(result.value!.dueAt, isNull);
     });
 
+    testWidgets('an invalid due time blocks the save and says why',
+        (tester) async {
+      final existing = buildTask(
+        id: 't1',
+        eventId: 'e1',
+        event: north,
+        assigneeIds: const ['m1'],
+        assignees: [dana],
+        dueAt: DateTime(2026, 10, 19, 7, 30),
+      );
+      final result = await openForm(tester, existing: existing);
+
+      // Four digits the formatter lays out as 93:00, which is not a time.
+      await tester.enterText(find.byType(TextFormField), '9300');
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('task-form-save')));
+      await tester.pumpAndSettle();
+
+      expect(result.returned, isFalse, reason: 'the form must stay open');
+      expect(find.byKey(const Key('task-form-due-time-error')), findsOneWidget);
+
+      await tester.enterText(find.byType(TextFormField), '0930');
+      await tester.pump();
+      expect(find.byKey(const Key('task-form-due-time-error')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('task-form-save')));
+      await tester.pumpAndSettle();
+      expect(result.value!.dueAt, DateTime(2026, 10, 19, 9, 30));
+    });
+
+    testWidgets('a due date with the time left empty is due at the end of '
+        'that day', (tester) async {
+      final existing = buildTask(
+        id: 't1',
+        eventId: 'e1',
+        event: north,
+        assigneeIds: const ['m1'],
+        assignees: [dana],
+        dueAt: DateTime(2026, 10, 19, 7, 30),
+      );
+      final result = await openForm(tester, existing: existing);
+
+      await tester.enterText(find.byType(TextFormField), '');
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('task-form-save')));
+      await tester.pumpAndSettle();
+
+      expect(result.value!.dueAt, DateTime(2026, 10, 19, 23, 59));
+    });
+
+    testWidgets('the Hebrew text fields carry the RTL caret fix',
+        (tester) async {
+      final existing = buildTask(
+        id: 't1',
+        eventId: 'e1',
+        event: north,
+        assigneeIds: const ['m1'],
+        assignees: [dana],
+        subtasks: const [Subtask(id: 'a', title: 'שלב 1')],
+      );
+      await openForm(tester, existing: existing);
+
+      for (final key in const [
+        'task-form-title',
+        'task-form-description',
+        'task-form-subtask-0',
+      ]) {
+        final field = tester.widget<TextField>(find.byKey(Key(key)));
+        expect(
+          field.focusNode,
+          isA<RtlCursorFixedFocusNode>(),
+          reason: key,
+        );
+      }
+
+      // A subtask row added later gets one too.
+      await tester.tap(find.byKey(const Key('task-form-add-subtask')));
+      await tester.pump();
+      final added = tester.widget<TextField>(
+        find.byKey(const Key('task-form-subtask-1')),
+      );
+      expect(added.focusNode, isA<RtlCursorFixedFocusNode>());
+    });
+
     testWidgets('a past event is not offered when creating', (tester) async {
       await openForm(tester);
       await tester.tap(find.byKey(const Key('task-form-event')));
@@ -389,6 +474,33 @@ void main() {
       expect(result.value, const TaskFilterSelection(eventIds: {'e1'}));
     });
 
+    testWidgets('events with the same name are told apart by their date',
+        (tester) async {
+      final first = buildEvent(
+        id: 'd1',
+        name: 'דו יומי',
+        startDate: DateTime(2026, 10, 20),
+      );
+      final second = buildEvent(
+        id: 'd2',
+        name: 'דו יומי',
+        startDate: DateTime(2026, 11, 3),
+      );
+      await _openDialog<TaskFilterSelection>(
+        tester,
+        (context) => showTaskFilterModal(
+          context,
+          current: const TaskFilterSelection(),
+          events: [first, second],
+          members: const [],
+        ),
+      );
+
+      expect(find.text('דו יומי'), findsNWidgets(2));
+      expect(find.text('20/10/2026'), findsOneWidget);
+      expect(find.text('03/11/2026'), findsOneWidget);
+    });
+
     testWidgets('clear returns an empty selection', (tester) async {
       final result = await openFilter(
         tester,
@@ -454,6 +566,22 @@ void main() {
     testWidgets('starts from the current update', (tester) async {
       await openUpdate(tester, initialText: 'בטיפול');
       expect(find.text('בטיפול'), findsOneWidget);
+    });
+
+    testWidgets('opens with the caret at the end of a mixed Hebrew and digit '
+        'note', (tester) async {
+      const note = 'הוזמנו 2 אוטובוסים';
+      await openUpdate(tester, initialText: note);
+      await tester.pump();
+
+      final field = tester.widget<TextField>(
+        find.byKey(const Key('assignee-update-text')),
+      );
+      expect(field.focusNode, isA<RtlCursorFixedFocusNode>());
+      expect(
+        field.controller!.selection,
+        const TextSelection.collapsed(offset: note.length),
+      );
     });
 
     testWidgets('emptying the text returns an empty string, which clears it',

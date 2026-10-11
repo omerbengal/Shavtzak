@@ -4,6 +4,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shavtzak/core/utils/rtl_text_field_utils.dart';
 import 'package:shavtzak/data/data_sources/firestore_database.dart';
 import 'package:shavtzak/data/repositories/task_repository.dart';
 import 'package:shavtzak/domain/entities/subtask.dart';
@@ -165,8 +166,8 @@ void main() {
     testWidgets('a load failure offers a retry that subscribes again',
         (tester) async {
       await pumpScreen(tester, user: dana);
+      // Errors and stays open, like a Firestore listener killed by sign-out.
       repository.controller.addError(Exception('permission-denied'));
-      await repository.controller.close();
       await tester.pump();
       await tester.pump();
 
@@ -438,6 +439,84 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(repository.calls, ['insert:משימה חדשה לגמרי']);
+    });
+  });
+
+  group('expanded cards', () {
+    testWidgets('a card stays open when another task moves in above it',
+        (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [withSubtasks]);
+      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('subtask-a')), findsOneWidget);
+
+      // Someone creates an overdue task, which sorts above the open card.
+      final overdue = buildTask(
+        id: 'late',
+        title: 'משימה באיחור',
+        event: event,
+        assigneeIds: const ['m1'],
+        assignees: [dana],
+        dueAt: DateTime(2026, 10, 9, 9),
+      );
+      repository.controller.add(TaskBoard(
+        tasks: [withSubtasks, overdue],
+        events: [event],
+        members: [dana, yoav],
+      ));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('משימה באיחור'), findsOneWidget);
+      expect(find.byKey(const Key('subtask-a')), findsOneWidget);
+      expect(find.byKey(const Key('subtask-b')), findsOneWidget);
+    });
+
+    testWidgets('a card stays open when ticking its last subtask completes it',
+        (tester) async {
+      final other = buildTask(
+        id: 'other',
+        title: 'משימה אחרת',
+        event: event,
+        assigneeIds: const ['m1'],
+        assignees: [dana],
+      );
+      await pumpScreen(tester, user: dana, tasks: [withSubtasks, other]);
+      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.pumpAndSettle();
+
+      // The backend answers: every subtask done, so the task is complete and
+      // drops to the bottom of the list.
+      repository.controller.add(TaskBoard(
+        tasks: [
+          withSubtasks.copyWith(
+            isComplete: true,
+            subtasks: const [
+              Subtask(id: 'a', title: 'טופס', isDone: true),
+              Subtask(id: 'b', title: 'חתימה', isDone: true),
+            ],
+          ),
+          other,
+        ],
+        events: [event],
+        members: [dana, yoav],
+      ));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('subtask-a')), findsOneWidget);
+      expect(find.byIcon(Icons.expand_less), findsOneWidget);
+    });
+  });
+
+  group('text fields', () {
+    testWidgets('the search field carries the RTL caret fix', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+
+      final field = tester.widget<TextField>(
+        find.byKey(const Key('tasks-search')),
+      );
+      expect(field.focusNode, isA<RtlCursorFixedFocusNode>());
     });
   });
 

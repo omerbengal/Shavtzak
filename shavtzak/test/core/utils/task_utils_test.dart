@@ -278,6 +278,20 @@ void main() {
     });
   });
 
+  group('isValidDueTime', () {
+    test('accepts a complete 24-hour time', () {
+      expect(isValidDueTime('00:00'), isTrue);
+      expect(isValidDueTime('09:30'), isTrue);
+      expect(isValidDueTime('23:59'), isTrue);
+    });
+
+    test('rejects an impossible or unfinished time', () {
+      for (final time in ['93:00', '24:00', '12:60', '9', '18', '9:30', 'ab:cd', '']) {
+        expect(isValidDueTime(time), isFalse, reason: time);
+      }
+    });
+  });
+
   group('composeDueAt', () {
     final date = DateTime(2026, 10, 20);
 
