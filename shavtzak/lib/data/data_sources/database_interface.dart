@@ -6,6 +6,7 @@ import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
 import '../../domain/entities/slot_annotation.dart';
+import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
@@ -493,4 +494,28 @@ abstract class DatabaseInterface {
 
   /// Watch active categories in real-time
   Stream<List<Category>> watchActiveCategories();
+
+  // ========== Tasks ==========
+
+  /// Watch every task in real-time. Tasks are returned unpopulated: `event` is
+  /// null and `assignees` is empty. The repository joins those in.
+  Stream<List<TaskItem>> watchTasks();
+
+  /// Create a task (task managers only)
+  Future<void> insertTask(TaskItem task);
+
+  /// Replace a task's editable fields (task managers only)
+  Future<void> updateTask(TaskItem task);
+
+  /// Delete a task (task managers only)
+  Future<void> deleteTask(String taskId);
+
+  /// Tick or untick one subtask (task managers and assignees)
+  Future<void> setSubtaskDone(String taskId, String subtaskId, bool isDone);
+
+  /// Complete or reopen a task that has no subtasks (task managers and assignees)
+  Future<void> setTaskComplete(String taskId, bool isComplete);
+
+  /// Save the assignees' status note; an empty text clears it
+  Future<void> setTaskAssigneeUpdate(String taskId, String text);
 }

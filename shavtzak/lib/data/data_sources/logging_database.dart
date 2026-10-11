@@ -14,6 +14,7 @@ import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
 import '../../domain/entities/slot_annotation.dart';
+import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import 'database_interface.dart';
 
@@ -1347,5 +1348,70 @@ class LoggingDatabase implements DatabaseInterface {
         op: 'watchActiveCategories',
         ctx: const {'collection': 'categories', 'filter': 'active'},
         inner: () => _inner.watchActiveCategories(),
+      );
+
+  // ===== Tasks =====
+
+  @override
+  Stream<List<TaskItem>> watchTasks() => _wrapStream(
+        op: 'watchTasks',
+        ctx: const {'collection': 'tasks'},
+        inner: () => _inner.watchTasks(),
+      );
+
+  @override
+  Future<void> insertTask(TaskItem task) => _runFuture(
+        op: 'insertTask',
+        ctx: {'collection': 'tasks', 'id': task.id},
+        countOf: (_) => null,
+        action: () => _inner.insertTask(task),
+      );
+
+  @override
+  Future<void> updateTask(TaskItem task) => _runFuture(
+        op: 'updateTask',
+        ctx: {'collection': 'tasks', 'id': task.id},
+        countOf: (_) => null,
+        action: () => _inner.updateTask(task),
+      );
+
+  @override
+  Future<void> deleteTask(String taskId) => _runFuture(
+        op: 'deleteTask',
+        ctx: {'collection': 'tasks', 'id': taskId},
+        countOf: (_) => null,
+        action: () => _inner.deleteTask(taskId),
+      );
+
+  @override
+  Future<void> setSubtaskDone(String taskId, String subtaskId, bool isDone) =>
+      _runFuture(
+        op: 'setSubtaskDone',
+        ctx: {
+          'collection': 'tasks',
+          'id': taskId,
+          'subtaskId': subtaskId,
+          'isDone': isDone,
+        },
+        countOf: (_) => null,
+        action: () => _inner.setSubtaskDone(taskId, subtaskId, isDone),
+      );
+
+  @override
+  Future<void> setTaskComplete(String taskId, bool isComplete) => _runFuture(
+        op: 'setTaskComplete',
+        ctx: {'collection': 'tasks', 'id': taskId, 'isComplete': isComplete},
+        countOf: (_) => null,
+        action: () => _inner.setTaskComplete(taskId, isComplete),
+      );
+
+  // The note's text is deliberately left out of the log context: the debug
+  // logger never records what a member typed.
+  @override
+  Future<void> setTaskAssigneeUpdate(String taskId, String text) => _runFuture(
+        op: 'setTaskAssigneeUpdate',
+        ctx: {'collection': 'tasks', 'id': taskId},
+        countOf: (_) => null,
+        action: () => _inner.setTaskAssigneeUpdate(taskId, text),
       );
 }
