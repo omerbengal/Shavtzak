@@ -67,6 +67,7 @@ Uses `flutter_bloc` with the BLoC (Business Logic Component) pattern:
 - **EventBloc**: Manages events with real-time updates, handles role quotas
 - **AssignmentBloc**: Most complex - manages assignments with related Event and TeamMember data
 - **UserSelectionBloc**: Manages user authentication, selection, and session persistence
+- **TaskBloc**: Manages the דו יומי task screen. One live subscription to every task plus the events and members the task form picks from; subscribes only when the screen opens. Mutations report through the event's completer, not the state
 
 Each BLoC follows the pattern:
 ```dart
@@ -83,6 +84,7 @@ Real-time updates use `emit.forEach` with Firestore streams for live data synchr
 - `teamMembers` - Team member records
 - `events` - Event records
 - `assignments` - Assignment records (junction table with foreign keys)
+- `tasks` - Task records for the דו יומי task screen (subtasks embedded as an array)
 
 **Environment-Aware Collections**: In test mode, all collections are prefixed with `test_` (e.g., `test_teamMembers`, `test_events`, `test_assignments`) to completely isolate test data from production.
 
@@ -138,6 +140,7 @@ Production:              Test:
 /admin/assignments      /test/admin/assignments
 /user/assignments       /test/user/assignments
 /user/constraints       /test/user/constraints
+/tasks                  /test/tasks              (link-only)
 ```
 
 ### User Authentication System
@@ -148,6 +151,7 @@ The app uses a **user-based authentication** system via the "מי את/ה?" (Who
 - **TeamMember.uniqueKey**: UUID for each team member (stored in DB, not shown in UI)
 - **TeamMember.isAdmin**: Boolean flag for admin permissions
 - **TeamMember.isPermanent**: Boolean flag distinguishing permanent vs non-permanent members
+- **TeamMember.canManageTasks**: Boolean flag letting a non-admin create, edit and delete tasks on `/tasks` (admins always can). Toggled in the team-member modal
 - **UserSelectionRepository**: Manages user selection, validation, and caching
 - **UserCacheService**: Browser localStorage with environment-aware keys
 - **UserSelectionBloc**: State management for authentication flow
@@ -190,6 +194,11 @@ Root (GoRouter)
 │   ├── /user/assignments - UserAssignmentsScreen (default)
 │   └── /user/constraints - ConstraintsScreen OR AvailabilityScreen
 │       (depends on isPermanent field)
+│
+├── /tasks (TasksScreen) - דו יומי task management
+│   Link-only: no tab, menu or card navigates here. Any authenticated
+│   member may open it; a signed-out visitor is returned to it after
+│   signing in (AppRouter.postAuthDestination).
 │
 └── /test/* - Mirror routes for test environment
     └── (same structure as above with /test prefix)
@@ -452,7 +461,7 @@ _subscription = _repository.watchItems().listen(
 - **RTL**: Always wrap screens with RTL directionality
 - **Immutability**: Entities use `copyWith()` methods, never mutate directly
 - **Null Safety**: Full Dart null-safety enabled
-- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (486 passing as of 2026-07-27). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
+- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (758 passing as of 2026-10-11). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
 - **Environment Isolation**: Test and production are completely separate (data, cache, routes)
 - **User-Based Auth**: No traditional Firebase Authentication - uses cached team member uniqueKey
 
