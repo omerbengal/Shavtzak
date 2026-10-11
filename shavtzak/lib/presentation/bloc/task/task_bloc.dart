@@ -6,7 +6,9 @@ import 'package:equatable/equatable.dart';
 
 import '../../../core/utils/crud_action_result.dart';
 import '../../../data/repositories/task_repository.dart';
+import '../../../domain/entities/event.dart';
 import '../../../domain/entities/task_item.dart';
+import '../../../domain/entities/team_member.dart';
 
 part 'task_event.dart';
 part 'task_state.dart';
@@ -88,9 +90,13 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
       // Keep a list that is already on screen instead of flashing a spinner
       // while a replacement subscription warms up.
       if (state is! TasksLoaded) emit(const TasksLoading());
-      await emit.forEach<List<TaskItem>>(
-        _repository.watchTasks(),
-        onData: TasksLoaded.new,
+      await emit.forEach<TaskBoard>(
+        _repository.watchBoard(),
+        onData: (board) => TasksLoaded(
+          board.tasks,
+          events: board.events,
+          members: board.members,
+        ),
         onError: (error, stackTrace) {
           developer.log(
             'TaskBloc: error watching tasks: $error',

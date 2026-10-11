@@ -13,17 +13,18 @@ import '../../support/task_fixtures.dart';
 /// A repository whose stream the test drives and whose mutations can be made
 /// to fail.
 class _FakeTaskRepository extends Fake implements TaskRepository {
-  StreamController<List<TaskItem>> controller =
-      StreamController<List<TaskItem>>();
+  StreamController<TaskBoard> controller = StreamController<TaskBoard>();
   int watchCalls = 0;
   final calls = <String>[];
   Object? failWith;
 
   @override
-  Stream<List<TaskItem>> watchTasks() {
+  Stream<TaskBoard> watchBoard() {
     watchCalls++;
     return controller.stream;
   }
+
+  void emit(List<TaskItem> tasks) => controller.add(TaskBoard(tasks: tasks));
 
   Future<void> _record(String call) async {
     calls.add(call);
@@ -76,9 +77,9 @@ void main() {
       act: (bloc) async {
         bloc.add(const LoadTasks());
         await Future<void>.delayed(Duration.zero);
-        repository.controller.add([buildTask(id: 't1')]);
+        repository.emit([buildTask(id: 't1')]);
         await Future<void>.delayed(Duration.zero);
-        repository.controller.add([buildTask(id: 't1', isComplete: true)]);
+        repository.emit([buildTask(id: 't1', isComplete: true)]);
       },
       expect: () => [
         const TasksLoading(),
@@ -88,12 +89,57 @@ void main() {
     );
 
     blocTest<TaskBloc, TaskState>(
+      'carries the events and members the form picks from',
+      build: buildBloc,
+      act: (bloc) async {
+        bloc.add(const LoadTasks());
+        await Future<void>.delayed(Duration.zero);
+        repository.controller.add(TaskBoard(
+          tasks: [buildTask()],
+          events: [buildEvent()],
+          members: [buildMember()],
+        ));
+      },
+      expect: () => [
+        const TasksLoading(),
+        TasksLoaded(
+          [buildTask()],
+          events: [buildEvent()],
+          members: [buildMember()],
+        ),
+      ],
+    );
+
+    blocTest<TaskBloc, TaskState>(
+      'a renamed event is a new state even when no task changed',
+      build: buildBloc,
+      act: (bloc) async {
+        bloc.add(const LoadTasks());
+        await Future<void>.delayed(Duration.zero);
+        repository.controller.add(TaskBoard(
+          tasks: const [],
+          events: [buildEvent(name: 'שם ישן')],
+        ));
+        await Future<void>.delayed(Duration.zero);
+        repository.controller.add(TaskBoard(
+          tasks: const [],
+          events: [buildEvent(name: 'שם חדש')],
+        ));
+      },
+      expect: () => [
+        const TasksLoading(),
+        TasksLoaded(const [], events: [buildEvent(name: 'שם ישן')]),
+        TasksLoaded(const [], events: [buildEvent(name: 'שם חדש')]),
+      ],
+    );
+
+    blocTest<TaskBloc, TaskState>(
       'a second LoadTasks while already watching does not subscribe again',
       build: buildBloc,
       act: (bloc) async {
         bloc.add(const LoadTasks());
         await Future<void>.delayed(Duration.zero);
-        repository.controller.add([buildTask()]);
+        repository.emit([buildTask()]);
         await Future<void>.delayed(Duration.zero);
         bloc.add(const LoadTasks());
         await Future<void>.delayed(Duration.zero);
@@ -125,15 +171,15 @@ void main() {
       act: (bloc) async {
         bloc.add(const LoadTasks());
         await Future<void>.delayed(Duration.zero);
-        repository.controller.add([buildTask(id: 'old')]);
+        repository.emit([buildTask(id: 'old')]);
         await Future<void>.delayed(Duration.zero);
         await repository.controller.close();
         await Future<void>.delayed(Duration.zero);
 
-        repository.controller = StreamController<List<TaskItem>>();
+        repository.controller = StreamController<TaskBoard>();
         bloc.add(const LoadTasks());
         await Future<void>.delayed(Duration.zero);
-        repository.controller.add([buildTask(id: 'new')]);
+        repository.emit([buildTask(id: 'new')]);
       },
       expect: () => [
         const TasksLoading(),
@@ -212,7 +258,7 @@ void main() {
       act: (bloc) async {
         bloc.add(const LoadTasks());
         await Future<void>.delayed(Duration.zero);
-        repository.controller.add([buildTask(id: 't1')]);
+        repository.emit([buildTask(id: 't1')]);
         await Future<void>.delayed(Duration.zero);
 
         repository.failWith = DatabaseException(

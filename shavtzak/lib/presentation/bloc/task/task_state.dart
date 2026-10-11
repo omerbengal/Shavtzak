@@ -18,10 +18,19 @@ class TasksLoading extends TaskState {
 class TasksLoaded extends TaskState {
   final List<TaskItem> tasks;
 
-  const TasksLoaded(this.tasks);
+  /// Every event and member, live. The task form picks from these, so the
+  /// screen does not depend on which other screens happened to load them.
+  final List<Event> events;
+  final List<TeamMember> members;
+
+  const TasksLoaded(
+    this.tasks, {
+    this.events = const [],
+    this.members = const [],
+  });
 
   @override
-  List<Object?> get props => [tasks];
+  List<Object?> get props => [tasks, events, members];
 }
 
 class TasksError extends TaskState {

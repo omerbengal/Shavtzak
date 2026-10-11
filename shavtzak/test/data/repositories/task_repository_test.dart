@@ -137,6 +137,24 @@ void main() {
       expect(emissions.last.single.assignees.single.name, 'דנה כהן');
     });
 
+    test('watchBoard also carries the events and members it joined with',
+        () async {
+      final boards = <TaskBoard>[];
+      final boardSubscription = repository.watchBoard().listen(boards.add);
+      final event = buildEvent(id: 'e1');
+      final member = buildMember(id: 'm1');
+
+      database.tasks.add([buildTask(eventId: 'e1')]);
+      database.events.add([event]);
+      database.members.add([member]);
+      await settle();
+      await boardSubscription.cancel();
+
+      expect(boards.single.events, [event]);
+      expect(boards.single.members, [member]);
+      expect(boards.single.tasks.single.event, event);
+    });
+
     test('leaves the event null when it does not resolve', () async {
       database.tasks.add([buildTask(eventId: 'gone')]);
       database.events.add([buildEvent(id: 'e1')]);
