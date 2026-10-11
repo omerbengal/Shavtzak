@@ -328,6 +328,10 @@ class TeamMember extends Equatable {
   final bool
       canAccessConstraintsExamining; // Whether team member can access constraints examining flow
 
+  // Task management access field
+  final bool
+      canManageTasks; // Whether a non-admin can create, edit and delete tasks
+
   // Vehicle info field
   final VehicleInfo? vehicleInfo; // Optional vehicle information
 
@@ -357,6 +361,7 @@ class TeamMember extends Equatable {
     this.canAccessSummaryScreen = false,
     this.canAccessShamapExport = false,
     this.canAccessConstraintsExamining = false,
+    this.canManageTasks = false,
     this.vehicleInfo,
     this.availableEventIds = const [],
   });
@@ -534,6 +539,7 @@ class TeamMember extends Equatable {
     bool? canAccessSummaryScreen,
     bool? canAccessShamapExport,
     bool? canAccessConstraintsExamining,
+    bool? canManageTasks,
     VehicleInfo? vehicleInfo,
     bool clearVehicleInfo = false,
     List<String>? availableEventIds,
@@ -565,6 +571,7 @@ class TeamMember extends Equatable {
           canAccessShamapExport ?? this.canAccessShamapExport,
       canAccessConstraintsExamining:
           canAccessConstraintsExamining ?? this.canAccessConstraintsExamining,
+      canManageTasks: canManageTasks ?? this.canManageTasks,
       vehicleInfo: clearVehicleInfo ? null : (vehicleInfo ?? this.vehicleInfo),
       availableEventIds: availableEventIds ?? this.availableEventIds,
     );
@@ -593,6 +600,7 @@ class TeamMember extends Equatable {
         canAccessSummaryScreen,
         canAccessShamapExport,
         canAccessConstraintsExamining,
+        canManageTasks,
         vehicleInfo,
         availableEventIds,
       ];
