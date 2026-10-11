@@ -19,6 +19,7 @@ import '../../presentation/screens/team/team_list_screen.dart';
 import '../../presentation/screens/event/event_list_screen.dart';
 import '../../presentation/screens/assignment/assignment_list_screen.dart';
 import '../../presentation/screens/summary/summary_screen.dart';
+import '../../presentation/screens/task/tasks_screen.dart';
 import '../../presentation/screens/db/db_preview_screen.dart';
 import '../../presentation/screens/privacy_policy/privacy_policy_screen.dart';
 import '../../presentation/screens/terms_of_service/terms_of_service_screen.dart';
@@ -36,6 +37,45 @@ class AppRouter {
   /// Capture the initial URL hash BEFORE any Flutter code runs
   /// This is set by main.dart at the very start
   static String? capturedInitialHash;
+
+  /// The tasks link the app was opened on, kept until the member is signed in.
+  ///
+  /// The tasks screen is reachable only by link. Without this, a member who
+  /// follows the link while signed out is sent to "מי את/ה?" and from there to
+  /// their home, and the link is lost.
+  static String? _pendingDeepLink;
+
+  /// The route to restore after sign-in when [initialHash] is the tasks link
+  /// (`#/tasks` or `#/test/tasks`), otherwise null.
+  static String? pendingTasksLinkFor(String? initialHash) {
+    if (initialHash == null) return null;
+    var path =
+        initialHash.startsWith('#') ? initialHash.substring(1) : initialHash;
+    final queryStart = path.indexOf('?');
+    if (queryStart >= 0) path = path.substring(0, queryStart);
+    if (path.length > 1 && path.endsWith('/')) {
+      path = path.substring(0, path.length - 1);
+    }
+    return (path == '/tasks' || path == '/test/tasks') ? path : null;
+  }
+
+  /// Where a freshly authenticated member should land: the pending tasks link
+  /// if there is one, otherwise [home]. The link is used once.
+  static String postAuthDestination(String home) {
+    final pending = _pendingDeepLink;
+    if (pending == null) return home;
+    _pendingDeepLink = null;
+    return pending;
+  }
+
+  /// Drop the pending link once the member is on the tasks screen, so a later
+  /// sign-out and sign-in goes home as usual.
+  static void clearPendingDeepLinkIfArrived(String route) {
+    if (route == _pendingDeepLink) _pendingDeepLink = null;
+  }
+
+  @visibleForTesting
+  static void debugSetPendingDeepLink(String? link) => _pendingDeepLink = link;
 
   /// Helper function to check if a path is in test environment
   static bool _isTestPath(String path) {
@@ -68,6 +108,9 @@ class AppRouter {
 
     _userSelectionBloc = userSelectionBloc;
     _userSelectionRepository = userSelectionRepository;
+    if (_instance == null) {
+      _pendingDeepLink = pendingTasksLinkFor(capturedInitialHash);
+    }
     _instance ??= _createRouter(userSelectionRepository);
 
     // If /db was captured in initial URL, navigate there after first frame
@@ -211,15 +254,17 @@ class AppRouter {
                 'authenticated on whoami/root, redirecting to home',
                 name: 'AppRouter',
               );
+              final String home;
               if (state.isAdmin) {
-                _instance?.go('$envPrefix/admin');
+                home = '$envPrefix/admin';
               } else if (state.user.canAccessSummaryScreen ||
                   state.user.canAccessShamapExport ||
                   state.user.canAccessConstraintsExamining) {
-                _instance?.go('$envPrefix/choice');
+                home = '$envPrefix/choice';
               } else {
-                _instance?.go('$envPrefix/user/assignments');
+                home = '$envPrefix/user/assignments';
               }
+              _instance?.go(postAuthDestination(home));
             }
           } else if (state is UserSignedOut) {
             // User signed out, go to whoami
@@ -293,13 +338,13 @@ class AppRouter {
             final currentState = _userSelectionBloc!.state;
             if (currentState is UserAuthenticated) {
               if (currentState.isAdmin) {
-                return '$envPrefix/admin';
+                return postAuthDestination('$envPrefix/admin');
               } else if (currentState.user.canAccessSummaryScreen ||
                   currentState.user.canAccessShamapExport ||
                   currentState.user.canAccessConstraintsExamining) {
-                return '$envPrefix/choice';
+                return postAuthDestination('$envPrefix/choice');
               } else {
-                return '$envPrefix/user/assignments';
+                return postAuthDestination('$envPrefix/user/assignments');
               }
             }
           }
@@ -327,18 +372,19 @@ class AppRouter {
             return '$envPrefix/whoami';
           }
         } else if (currentState is UserAuthenticated) {
+          clearPendingDeepLinkIfArrived(currentRoute);
           if (currentState.isAdmin) {
             if (strippedRoute.startsWith('/whoami')) {
-              return '$envPrefix/admin';
+              return postAuthDestination('$envPrefix/admin');
             }
           } else {
             if (strippedRoute.startsWith('/whoami')) {
               if (currentState.user.canAccessSummaryScreen ||
                   currentState.user.canAccessShamapExport ||
                   currentState.user.canAccessConstraintsExamining) {
-                return '$envPrefix/choice';
+                return postAuthDestination('$envPrefix/choice');
               }
-              return '$envPrefix/user/assignments';
+              return postAuthDestination('$envPrefix/user/assignments');
             }
             if (strippedRoute.startsWith('/admin')) {
               return '$envPrefix/user/assignments';
@@ -418,6 +464,14 @@ class AppRouter {
           path: '/choice',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: AdminChoiceScreen(key: ValueKey('choice_prod')),
+          ),
+        ),
+
+        // Tasks screen - link-only, open to every authenticated member
+        GoRoute(
+          path: '/tasks',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: TasksScreen(key: ValueKey('tasks_prod')),
           ),
         ),
 
@@ -542,6 +596,10 @@ class AppRouter {
             path: '/test/choice',
             pageBuilder: (context, state) => const NoTransitionPage(
                 child: AdminChoiceScreen(key: ValueKey('choice_test')))),
+        GoRoute(
+            path: '/test/tasks',
+            pageBuilder: (context, state) => const NoTransitionPage(
+                child: TasksScreen(key: ValueKey('tasks_test')))),
 
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
