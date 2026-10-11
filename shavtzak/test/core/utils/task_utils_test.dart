@@ -188,6 +188,125 @@ void main() {
     });
   });
 
+  group('pickableTaskEvents', () {
+    final yesterday = buildEvent(
+      id: 'past',
+      name: 'עבר',
+      startDate: DateTime(2026, 10, 10),
+    );
+    final today = buildEvent(
+      id: 'today',
+      name: 'היום',
+      startDate: DateTime(2026, 10, 11),
+    );
+    final nextWeek = buildEvent(
+      id: 'next',
+      name: 'שבוע הבא',
+      startDate: DateTime(2026, 10, 18),
+    );
+    final onHold = buildEvent(
+      id: 'hold',
+      name: 'מושהה',
+      startDate: DateTime(2026, 10, 19),
+      isDeactivated: true,
+    );
+    final multiDay = buildEvent(
+      id: 'multi',
+      name: 'רב יומי',
+      startDate: DateTime(2026, 10, 9),
+      endDate: DateTime(2026, 10, 12),
+    );
+
+    List<String> ids(Iterable<dynamic> events) =>
+        events.map((event) => event.id as String).toList();
+
+    test('offers events that have not finished, earliest first', () {
+      final picked = pickableTaskEvents(
+        [nextWeek, yesterday, today],
+        now: now,
+      );
+      expect(ids(picked), ['today', 'next']);
+    });
+
+    test('an event still running today is offered', () {
+      expect(ids(pickableTaskEvents([multiDay], now: now)), ['multi']);
+    });
+
+    test('a deactivated event is not offered', () {
+      expect(ids(pickableTaskEvents([onHold, nextWeek], now: now)), ['next']);
+    });
+
+    test('the task\'s own event stays pickable after it has passed', () {
+      final picked = pickableTaskEvents(
+        [yesterday, nextWeek],
+        now: now,
+        current: yesterday,
+      );
+      expect(ids(picked), ['past', 'next']);
+    });
+
+    test('the current event is not listed twice when it is still upcoming', () {
+      final picked = pickableTaskEvents(
+        [nextWeek, today],
+        now: now,
+        current: nextWeek,
+      );
+      expect(ids(picked), ['today', 'next']);
+    });
+  });
+
+  group('assignableTaskMembers', () {
+    final dana = buildMember(id: 'm1', name: 'דנה');
+    final avi = buildMember(id: 'm2', name: 'אבי');
+    final inactive = buildMember(id: 'm3', name: 'גיל', isActive: false);
+    final archived = buildMember(id: 'm4', name: 'הדס', isArchived: true);
+
+    List<String> ids(Iterable<dynamic> members) =>
+        members.map((member) => member.id as String).toList();
+
+    test('offers active, non-archived members by name', () {
+      final offered = assignableTaskMembers([dana, inactive, archived, avi]);
+      expect(ids(offered), ['m2', 'm1']);
+    });
+
+    test('keeps a member who is already assigned even if no longer active', () {
+      final offered = assignableTaskMembers(
+        [dana, inactive, archived],
+        currentAssigneeIds: const ['m3'],
+      );
+      expect(ids(offered), ['m3', 'm1']);
+    });
+  });
+
+  group('composeDueAt', () {
+    final date = DateTime(2026, 10, 20);
+
+    test('no date means no due date, whatever the time says', () {
+      expect(composeDueAt(null, '09:30'), isNull);
+    });
+
+    test('combines the date with a valid time', () {
+      expect(composeDueAt(date, '09:30'), DateTime(2026, 10, 20, 9, 30));
+    });
+
+    test('a date without a time is due at the end of that day', () {
+      expect(composeDueAt(date, ''), DateTime(2026, 10, 20, 23, 59));
+    });
+
+    test('an unfinished or invalid time falls back to the end of the day', () {
+      expect(composeDueAt(date, '9'), DateTime(2026, 10, 20, 23, 59));
+      expect(composeDueAt(date, '25:00'), DateTime(2026, 10, 20, 23, 59));
+      expect(composeDueAt(date, '12:75'), DateTime(2026, 10, 20, 23, 59));
+    });
+
+    test('ignores a time component on the picked date', () {
+      expect(
+        composeDueAt(DateTime(2026, 10, 20, 15, 45), '08:00'),
+        DateTime(2026, 10, 20, 8),
+      );
+    });
+  });
+
   group('sortTasks', () {
     test('orders overdue, due today, open, then completed', () {
       final tasks = [

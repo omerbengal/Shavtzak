@@ -1,5 +1,7 @@
+import '../../domain/entities/event.dart';
 import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
+import 'event_filter_utils.dart';
 import 'search_utils.dart';
 
 /// Pure helpers behind the tasks screen: which colour a task gets, who may act
@@ -86,6 +88,66 @@ List<TaskItem> sortTasks(List<TaskItem> tasks, DateTime now) {
     return a.title.compareTo(b.title);
   });
   return sorted;
+}
+
+/// The events a task may be attached to: those that have not finished yet and
+/// are not on hold, earliest first.
+///
+/// [current] is the event of the task being edited. It stays pickable even
+/// after it has passed, otherwise editing an old task would force a new event.
+List<Event> pickableTaskEvents(
+  List<Event> events, {
+  required DateTime now,
+  Event? current,
+}) {
+  final upcoming = splitEventsByPast(
+    events.where((event) => !event.isDeactivated).toList(),
+    now,
+  ).future;
+  if (current == null || upcoming.any((event) => event.id == current.id)) {
+    return upcoming;
+  }
+  return [current, ...upcoming];
+}
+
+/// The members a task may be assigned to: active and not archived, by name.
+///
+/// A member already on the task is kept even when they no longer qualify, so
+/// saving an edit never drops an assignee the manager did not touch.
+List<TeamMember> assignableTaskMembers(
+  List<TeamMember> members, {
+  List<String> currentAssigneeIds = const [],
+}) {
+  final offered = members
+      .where((member) =>
+          (member.isActive && !member.isArchived) ||
+          currentAssigneeIds.contains(member.id))
+      .toList();
+  offered.sort((a, b) => a.name.compareTo(b.name));
+  return offered;
+}
+
+final RegExp _hourMinute = RegExp(r'^(\d{2}):(\d{2})$');
+
+/// Combine the form's due date and its `HH:mm` time text into one instant.
+///
+/// No date means no due date. A date with a missing or unusable time is due at
+/// the end of that day, so "by the 20th" does not turn red on the 20th at
+/// midnight.
+DateTime? composeDueAt(DateTime? date, String time) {
+  if (date == null) return null;
+  var hour = 23;
+  var minute = 59;
+  final match = _hourMinute.firstMatch(time.trim());
+  if (match != null) {
+    final parsedHour = int.parse(match.group(1)!);
+    final parsedMinute = int.parse(match.group(2)!);
+    if (parsedHour < 24 && parsedMinute < 60) {
+      hour = parsedHour;
+      minute = parsedMinute;
+    }
+  }
+  return DateTime(date.year, date.month, date.day, hour, minute);
 }
 
 String _searchable(String text) => normalizeForSearch(text).toLowerCase();
