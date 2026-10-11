@@ -22,6 +22,7 @@ import 'data/repositories/assignment_label_repository.dart';
 import 'data/repositories/user_selection_repository.dart';
 import 'data/repositories/checklist_repository.dart';
 import 'data/repositories/preset_repository.dart';
+import 'data/repositories/task_repository.dart';
 import 'data/repositories/role_repository.dart';
 import 'data/repositories/category_repository.dart';
 import 'domain/entities/team_member.dart';
@@ -45,6 +46,7 @@ import 'presentation/bloc/user_selection/user_selection_state.dart';
 import 'presentation/bloc/calendar_sync/calendar_sync_bloc.dart';
 import 'presentation/bloc/calendar_sync/calendar_sync_event.dart';
 import 'presentation/bloc/checklist/checklist_bloc.dart';
+import 'presentation/bloc/task/task_bloc.dart';
 import 'presentation/bloc/preset/preset_bloc.dart';
 import 'presentation/bloc/role/role_bloc.dart';
 import 'presentation/bloc/role/role_event.dart';
@@ -209,6 +211,7 @@ Future<void> _initialize() async {
         assignmentLabel: AssignmentLabelRepository(database),
         checklist: ChecklistRepository(database),
         preset: PresetRepository(database),
+        task: TaskRepository(database),
         role: RoleRepository(database),
         category: CategoryRepository(database),
         userSelection: UserSelectionRepository(
@@ -250,6 +253,7 @@ Future<void> _initialize() async {
         assignmentLabelRepository: repositories.assignmentLabel,
         checklistRepository: repositories.checklist,
         presetRepository: repositories.preset,
+        taskRepository: repositories.task,
         roleRepository: repositories.role,
         categoryRepository: repositories.category,
         userSelectionRepository: repositories.userSelection,
@@ -311,6 +315,7 @@ class MyApp extends StatelessWidget {
   final AssignmentLabelRepository assignmentLabelRepository;
   final ChecklistRepository checklistRepository;
   final PresetRepository presetRepository;
+  final TaskRepository taskRepository;
   final RoleRepository roleRepository;
   final CategoryRepository categoryRepository;
   final UserSelectionRepository userSelectionRepository;
@@ -325,6 +330,7 @@ class MyApp extends StatelessWidget {
     required this.assignmentLabelRepository,
     required this.checklistRepository,
     required this.presetRepository,
+    required this.taskRepository,
     required this.roleRepository,
     required this.categoryRepository,
     required this.userSelectionRepository,
@@ -346,6 +352,7 @@ class MyApp extends StatelessWidget {
         RepositoryProvider.value(value: assignmentLabelRepository),
         RepositoryProvider.value(value: checklistRepository),
         RepositoryProvider.value(value: presetRepository),
+        RepositoryProvider.value(value: taskRepository),
         RepositoryProvider.value(value: roleRepository),
         RepositoryProvider.value(value: categoryRepository),
         RepositoryProvider.value(value: userSelectionRepository),
@@ -416,6 +423,13 @@ class MyApp extends StatelessWidget {
                     eventRepository: context.read<EventRepository>(),
                     userSelectionBloc: context.read<UserSelectionBloc>(),
                   );
+                },
+              ),
+              // Subscribes only when the tasks screen opens (LoadTasks), so
+              // members who never follow the link pay nothing for it.
+              BlocProvider(
+                create: (context) {
+                  return TaskBloc(repository: context.read<TaskRepository>());
                 },
               ),
               BlocProvider(
