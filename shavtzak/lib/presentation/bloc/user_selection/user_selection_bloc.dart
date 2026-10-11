@@ -122,6 +122,7 @@ class UserSelectionBloc extends Bloc<UserSelectionEvent, UserSelectionState> {
         next.canAccessShamapExport != current.canAccessShamapExport ||
         next.canAccessConstraintsExamining !=
             current.canAccessConstraintsExamining ||
+        next.canManageTasks != current.canManageTasks ||
         next.isPermanent != current.isPermanent ||
         next.isActive != current.isActive ||
         next.isArchived != current.isArchived ||

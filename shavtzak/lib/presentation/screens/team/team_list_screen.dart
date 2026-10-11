@@ -1092,6 +1092,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
   bool _canAccessSummaryScreen = false;
   bool _canAccessShamapExport = false;
   bool _canAccessConstraintsExamining = false;
+  bool _canManageTasks = false;
   Map<String, bool> _roleCapabilities = {};
 
   late TeamBloc _teamBloc;
@@ -1129,6 +1130,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       _canAccessShamapExport = widget.member!.canAccessShamapExport;
       _canAccessConstraintsExamining =
           widget.member!.canAccessConstraintsExamining;
+      _canManageTasks = widget.member!.canManageTasks;
       _roleCapabilities = Map.from(widget.member!.roleCapabilities);
       _constraints = List.from(widget.member!.constraints);
       _availableEventIds = List.from(widget.member!.availableEventIds);
@@ -1254,6 +1256,7 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
       canAccessSummaryScreen: _canAccessSummaryScreen,
       canAccessShamapExport: _canAccessShamapExport,
       canAccessConstraintsExamining: _canAccessConstraintsExamining,
+      canManageTasks: _canManageTasks,
       constraints: finalConstraints,
       roleCapabilities: _roleCapabilities,
       comments: _commentsController.text.trim(),
@@ -2228,6 +2231,24 @@ class _TeamMemberFormModalState extends State<_TeamMemberFormModal> {
                                           setState(() {
                                             _canAccessConstraintsExamining =
                                                 value;
+                                            _isDirty = true;
+                                          });
+                                        },
+                                      ),
+
+                                      // Task management access switch
+                                      SwitchListTile(
+                                        title: const Text('ניהול משימות'),
+                                        subtitle: const Text(
+                                          'מאפשר לחבר צוות ליצור, לערוך ולמחוק משימות במסך המשימות',
+                                        ),
+                                        value: _canManageTasks,
+                                        onChanged: (value) {
+                                          Logger.action(
+                                              'toggle:canManageTasks',
+                                              {'on': value});
+                                          setState(() {
+                                            _canManageTasks = value;
                                             _isDirty = true;
                                           });
                                         },

@@ -53,7 +53,7 @@ class _FakeDatabase extends Fake implements DatabaseInterface {
   Future<void> setTaskAssigneeUpdate(String taskId, String text) async =>
       calls.add('note:$taskId:$text');
 
-  Future<void> close() async {
+  Future<void> closeControllers() async {
     await tasks.close();
     await events.close();
     await members.close();
@@ -76,7 +76,7 @@ void main() {
 
     tearDown(() async {
       await subscription.cancel();
-      await database.close();
+      await database.closeControllers();
     });
 
     Future<void> settle() => Future<void>.delayed(Duration.zero);
@@ -200,7 +200,7 @@ void main() {
         'complete:t1:false',
         'note:t1:בטיפול',
       ]);
-      await database.close();
+      await database.closeControllers();
     });
   });
 
@@ -216,7 +216,7 @@ void main() {
     });
 
     tearDown(() async {
-      await database.close();
+      await database.close(); // cancels the relation-cache listeners
     });
 
     test('reads the tasks collection into unpopulated entities', () async {
