@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {__testApplySelfEditableFields as applySelfEditableFields} from './index';
+import {
+  __testApplySelfEditableFields as applySelfEditableFields,
+  __testTeamMemberDocFromJson as teamMemberDocFromJson,
+} from './index';
 
 // The existing document for a non-permanent, non-admin member. `availableEventIds`
 // starts empty; privileged/identity fields must survive a self-edit unchanged.
@@ -80,4 +83,50 @@ test('applySelfEditableFields: privileged/identity fields cannot be escalated vi
   assert.equal(result['name'], 'עומר בנגל 2');
   // ...while the member's own availability edit still lands.
   assert.deepEqual(result['availableEventIds'], ['evt-a']);
+});
+
+test('applySelfEditableFields: a member cannot grant themselves canManageTasks', () => {
+  const existing = buildExisting({canManageTasks: false});
+  const next = {...existing, canManageTasks: true, updatedAt: 'ts'};
+
+  const result = applySelfEditableFields(existing, next);
+
+  assert.equal(result['canManageTasks'], false);
+});
+
+function buildAdminEditPayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 'm1',
+    name: 'עומר בנגל 2',
+    isActive: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-10-11T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+test('teamMemberDocFromJson: an old client that omits canManageTasks does not revoke it', () => {
+  const result = teamMemberDocFromJson(buildAdminEditPayload(), {canManageTasks: true});
+
+  assert.equal(result['canManageTasks'], true);
+});
+
+test('teamMemberDocFromJson: an explicit canManageTasks wins over the stored value', () => {
+  const revoked = teamMemberDocFromJson(
+    buildAdminEditPayload({canManageTasks: false}),
+    {canManageTasks: true},
+  );
+  const granted = teamMemberDocFromJson(
+    buildAdminEditPayload({canManageTasks: true}),
+    {canManageTasks: false},
+  );
+
+  assert.equal(revoked['canManageTasks'], false);
+  assert.equal(granted['canManageTasks'], true);
+});
+
+test('teamMemberDocFromJson: canManageTasks defaults to false for a new member', () => {
+  const result = teamMemberDocFromJson(buildAdminEditPayload());
+
+  assert.equal(result['canManageTasks'], false);
 });

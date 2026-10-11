@@ -10,6 +10,7 @@ import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
 import '../../domain/entities/slot_annotation.dart';
+import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
@@ -26,6 +27,7 @@ import '../models/checklist_note_model.dart';
 import '../models/event_model.dart';
 import '../models/preset_model.dart';
 import '../models/role_model.dart';
+import '../models/task_item_model.dart';
 import '../models/team_member_model.dart';
 import '../../core/debug/debug_logger.dart';
 import '../../core/debug/log_event.dart';
@@ -58,6 +60,10 @@ class FirestoreDatabase implements DatabaseInterface {
 
   String get _assignmentLabelsCollection {
     return '${EnvironmentService.instance.collectionPrefix}assignmentLabels';
+  }
+
+  String get _tasksCollection {
+    return '${EnvironmentService.instance.collectionPrefix}tasks';
   }
 
   String get _calendarSyncCollection {
@@ -2537,6 +2543,66 @@ class FirestoreDatabase implements DatabaseInterface {
           categories.where((cat) => !cat.isArchived).toList();
       return activeCategories;
     });
+  }
+
+  // ========== Tasks ==========
+
+  @override
+  Stream<List<TaskItem>> watchTasks() {
+    return _firestore.collection(_tasksCollection).snapshots().map((snapshot) {
+      return snapshot.docs
+          .map((doc) => TaskItemModel.fromMap(doc.id, doc.data()))
+          .toList();
+    });
+  }
+
+  @override
+  Future<void> insertTask(TaskItem task) async {
+    await _invokeMutation(
+      'task.insert',
+      payload: {'task': TaskItemModel.toMutationPayload(task)},
+    );
+  }
+
+  @override
+  Future<void> updateTask(TaskItem task) async {
+    await _invokeMutation(
+      'task.update',
+      payload: {'task': TaskItemModel.toMutationPayload(task)},
+    );
+  }
+
+  @override
+  Future<void> deleteTask(String taskId) async {
+    await _invokeMutation('task.delete', payload: {'taskId': taskId});
+  }
+
+  @override
+  Future<void> setSubtaskDone(
+    String taskId,
+    String subtaskId,
+    bool isDone,
+  ) async {
+    await _invokeMutation(
+      'task.setSubtaskDone',
+      payload: {'taskId': taskId, 'subtaskId': subtaskId, 'isDone': isDone},
+    );
+  }
+
+  @override
+  Future<void> setTaskComplete(String taskId, bool isComplete) async {
+    await _invokeMutation(
+      'task.setComplete',
+      payload: {'taskId': taskId, 'isComplete': isComplete},
+    );
+  }
+
+  @override
+  Future<void> setTaskAssigneeUpdate(String taskId, String text) async {
+    await _invokeMutation(
+      'task.setAssigneeUpdate',
+      payload: {'taskId': taskId, 'text': text},
+    );
   }
 }
 

@@ -52,6 +52,10 @@ class TeamMemberModel {
   final bool
       canAccessConstraintsExamining; // Whether team member can access constraints examining flow
 
+  // Task management access field
+  final bool
+      canManageTasks; // Whether a non-admin can create, edit and delete tasks
+
   // Vehicle info field
   final VehicleInfoModel? vehicleInfo; // Optional vehicle information
 
@@ -81,6 +85,7 @@ class TeamMemberModel {
     this.canAccessSummaryScreen = false,
     this.canAccessShamapExport = false,
     this.canAccessConstraintsExamining = false,
+    this.canManageTasks = false,
     this.vehicleInfo,
     this.availableEventIds = const [],
   });
@@ -116,6 +121,7 @@ class TeamMemberModel {
       canAccessSummaryScreen: entity.canAccessSummaryScreen,
       canAccessShamapExport: entity.canAccessShamapExport,
       canAccessConstraintsExamining: entity.canAccessConstraintsExamining,
+      canManageTasks: entity.canManageTasks,
       vehicleInfo: entity.vehicleInfo != null
           ? VehicleInfoModel.fromEntity(entity.vehicleInfo!)
           : null,
@@ -147,6 +153,7 @@ class TeamMemberModel {
       canAccessSummaryScreen: canAccessSummaryScreen,
       canAccessShamapExport: canAccessShamapExport,
       canAccessConstraintsExamining: canAccessConstraintsExamining,
+      canManageTasks: canManageTasks,
       vehicleInfo: vehicleInfo?.toEntity(),
       availableEventIds: List<String>.from(availableEventIds),
     );
@@ -190,6 +197,9 @@ class TeamMemberModel {
     // Handle migration - default to false for existing members missing canAccessConstraintsExamining
     final canAccessConstraintsExamining =
         data['canAccessConstraintsExamining'] as bool? ?? false;
+
+    // Handle migration - default to false for existing members missing canManageTasks
+    final canManageTasks = data['canManageTasks'] as bool? ?? false;
 
     // Handle migration - vehicleInfo is optional, default to null for existing members
     final vehicleInfoData = data['vehicleInfo'] as Map<String, dynamic>?;
@@ -238,6 +248,7 @@ class TeamMemberModel {
       canAccessSummaryScreen: canAccessSummaryScreen,
       canAccessShamapExport: canAccessShamapExport,
       canAccessConstraintsExamining: canAccessConstraintsExamining,
+      canManageTasks: canManageTasks,
       vehicleInfo: vehicleInfo,
       availableEventIds: availableEventIds,
     );
@@ -268,6 +279,7 @@ class TeamMemberModel {
       'canAccessSummaryScreen': canAccessSummaryScreen,
       'canAccessShamapExport': canAccessShamapExport,
       'canAccessConstraintsExamining': canAccessConstraintsExamining,
+      'canManageTasks': canManageTasks,
       'vehicleInfo': vehicleInfo?.toJson(),
       'availableEventIds': availableEventIds,
     };
@@ -310,6 +322,9 @@ class TeamMemberModel {
     // Handle migration - default to false for existing members missing canAccessConstraintsExamining
     final canAccessConstraintsExamining =
         json['canAccessConstraintsExamining'] as bool? ?? false;
+
+    // Handle migration - default to false for existing members missing canManageTasks
+    final canManageTasks = json['canManageTasks'] as bool? ?? false;
 
     // Handle migration - vehicleInfo is optional, default to null for existing members
     final vehicleInfoData = json['vehicleInfo'] as Map<String, dynamic>?;
@@ -354,6 +369,7 @@ class TeamMemberModel {
       canAccessSummaryScreen: canAccessSummaryScreen,
       canAccessShamapExport: canAccessShamapExport,
       canAccessConstraintsExamining: canAccessConstraintsExamining,
+      canManageTasks: canManageTasks,
       vehicleInfo: vehicleInfo,
       availableEventIds: availableEventIds,
     );
@@ -383,6 +399,7 @@ class TeamMemberModel {
       'canAccessSummaryScreen': canAccessSummaryScreen,
       'canAccessShamapExport': canAccessShamapExport,
       'canAccessConstraintsExamining': canAccessConstraintsExamining,
+      'canManageTasks': canManageTasks,
       'vehicleInfo': vehicleInfo?.toJson(),
       'availableEventIds': availableEventIds,
     };

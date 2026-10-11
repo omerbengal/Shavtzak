@@ -65,6 +65,7 @@ class _DbPreviewScreenState extends State<DbPreviewScreen> {
         'checklist_items', 'פריטי צ\'קליסט', Icons.checklist, true),
     _CollectionConfig(
         'checklist_presets', 'תבניות צ\'קליסט', Icons.list_alt, true),
+    _CollectionConfig('tasks', 'משימות', Icons.task_alt, true),
     _CollectionConfig('utilities', 'כלים (גלובלי)', Icons.build, false),
     _CollectionConfig('keys', 'מפתחות (גלובלי)', Icons.key, false),
   ];
