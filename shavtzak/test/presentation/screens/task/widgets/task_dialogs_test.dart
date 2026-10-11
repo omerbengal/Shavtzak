@@ -414,6 +414,107 @@ void main() {
       expect(find.byKey(const Key('task-form-assignee-m3')), findsNothing);
     });
 
+    group('assignee search', () {
+      final avi = buildMember(id: 'm4', name: "ג'ורג' אבי");
+      final everyone = [dana, yoav, avi];
+
+      Finder chip(String id) => find.byKey(Key('task-form-assignee-$id'));
+      final search = find.byKey(const Key('task-form-assignee-search'));
+
+      testWidgets('typing narrows the chips to matching names', (tester) async {
+        await openForm(tester, members: everyone);
+        expect(chip('m1'), findsOneWidget);
+        expect(chip('m2'), findsOneWidget);
+
+        await tester.enterText(search, 'יוא');
+        await tester.pump();
+
+        expect(chip('m2'), findsOneWidget);
+        expect(chip('m1'), findsNothing);
+        expect(chip('m4'), findsNothing);
+      });
+
+      testWidgets('matches in the middle of a name and ignores punctuation',
+          (tester) async {
+        await openForm(tester, members: everyone);
+
+        await tester.enterText(search, 'גורג');
+        await tester.pump();
+        expect(chip('m4'), findsOneWidget);
+
+        await tester.enterText(search, 'אבי');
+        await tester.pump();
+        expect(chip('m4'), findsOneWidget);
+        expect(chip('m1'), findsNothing);
+      });
+
+      testWidgets('an already picked member stays visible while searching '
+          'for someone else', (tester) async {
+        await openForm(tester, members: everyone);
+        await tester.tap(chip('m1'));
+        await tester.pump();
+
+        await tester.enterText(search, 'יוא');
+        await tester.pump();
+
+        expect(chip('m1'), findsOneWidget);
+        expect(chip('m2'), findsOneWidget);
+        expect(chip('m4'), findsNothing);
+      });
+
+      testWidgets('clearing the search shows everyone again', (tester) async {
+        await openForm(tester, members: everyone);
+        await tester.enterText(search, 'יוא');
+        await tester.pump();
+        expect(chip('m1'), findsNothing);
+
+        await tester.tap(find.byKey(const Key('task-form-assignee-search-clear')));
+        await tester.pump();
+
+        expect(chip('m1'), findsOneWidget);
+        expect(chip('m2'), findsOneWidget);
+        expect(chip('m4'), findsOneWidget);
+        expect(tester.widget<TextField>(search).controller!.text, isEmpty);
+      });
+
+      testWidgets('a search that matches nobody says so', (tester) async {
+        await openForm(tester, members: everyone);
+
+        await tester.enterText(search, 'קקטוס');
+        await tester.pump();
+
+        expect(find.text('לא נמצאו חברי צוות'), findsOneWidget);
+      });
+
+      testWidgets('the search text does not change who is assigned',
+          (tester) async {
+        final result = await openForm(tester, members: everyone);
+        await pickEvent(tester, 'דו יומי צפון');
+        await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
+        await tester.tap(chip('m1'));
+        await tester.pump();
+
+        // Search for someone else, pick them, and save with the search still
+        // narrowing the list.
+        await tester.enterText(search, 'יוא');
+        await tester.pump();
+        await tester.tap(chip('m2'));
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('task-form-save')));
+        await tester.pumpAndSettle();
+
+        expect(result.value!.assigneeIds, ['m1', 'm2']);
+      });
+
+      testWidgets('the search field carries the RTL caret fix', (tester) async {
+        await openForm(tester, members: everyone);
+        expect(
+          tester.widget<TextField>(search).focusNode,
+          isA<RtlCursorFixedFocusNode>(),
+        );
+      });
+    });
+
     testWidgets('cancel returns nothing', (tester) async {
       final result = await openForm(tester);
       await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');

@@ -3,6 +3,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/utils/rtl_text_field_utils.dart';
+import '../../../../core/utils/search_utils.dart';
 import '../../../../core/utils/task_utils.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/subtask.dart';
@@ -93,6 +94,14 @@ class _TaskFormModalState extends State<_TaskFormModal> {
   late final FocusNode _descriptionFocusNode;
   late final List<_SubtaskDraft> _subtasks;
 
+  // Narrows the assignee chips. Only a view filter: it never changes who is
+  // assigned.
+  final TextEditingController _assigneeSearchController =
+      TextEditingController();
+  late final FocusNode _assigneeSearchFocusNode =
+      createRtlCursorFixedFocusNode(_assigneeSearchController);
+  String _assigneeQuery = '';
+
   String? _eventId;
   DateTime? _dueDate;
   String? _dueTimeError;
@@ -160,6 +169,8 @@ class _TaskFormModalState extends State<_TaskFormModal> {
   void dispose() {
     _titleFocusNode.dispose();
     _descriptionFocusNode.dispose();
+    _assigneeSearchFocusNode.dispose();
+    _assigneeSearchController.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
     _dueTimeController.dispose();
@@ -443,7 +454,29 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     );
   }
 
+  /// The members to show as chips: everyone matching the search, plus anyone
+  /// already picked. A picked member stays on screen whatever is typed, so the
+  /// manager can always see, and undo, who is assigned.
+  List<TeamMember> get _visibleAssignableMembers {
+    final query = _searchable(_assigneeQuery);
+    if (query.isEmpty) return _assignableMembers;
+    return _assignableMembers
+        .where((member) =>
+            _assigneeIds.contains(member.id) ||
+            _searchable(member.name).contains(query))
+        .toList();
+  }
+
+  static String _searchable(String text) =>
+      normalizeForSearch(text.trim()).toLowerCase();
+
+  void _clearAssigneeSearch() {
+    _assigneeSearchController.clear();
+    setState(() => _assigneeQuery = '');
+  }
+
   Widget _buildAssignees(ThemeData theme) {
+    final visibleMembers = _visibleAssignableMembers;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -451,12 +484,41 @@ class _TaskFormModalState extends State<_TaskFormModal> {
         const SizedBox(height: 8),
         if (_assignableMembers.isEmpty)
           Text('אין חברי צוות פעילים', style: theme.textTheme.bodySmall)
-        else
+        else ...[
+          TextField(
+            key: const Key('task-form-assignee-search'),
+            controller: _assigneeSearchController,
+            focusNode: _assigneeSearchFocusNode,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'חיפוש חבר צוות...',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _assigneeQuery.isEmpty
+                  ? null
+                  : IconButton(
+                      key: const Key('task-form-assignee-search-clear'),
+                      tooltip: 'נקה חיפוש',
+                      icon: const Icon(Icons.clear, size: 20),
+                      onPressed: _clearAssigneeSearch,
+                    ),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (value) => setState(() => _assigneeQuery = value),
+          ),
+          const SizedBox(height: 8),
+        ],
+        if (_assignableMembers.isNotEmpty && visibleMembers.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text('לא נמצאו חברי צוות', style: theme.textTheme.bodySmall),
+          )
+        else if (_assignableMembers.isNotEmpty)
           Wrap(
             spacing: 8,
             runSpacing: 4,
             children: [
-              for (final member in _assignableMembers)
+              for (final member in visibleMembers)
                 FilterChip(
                   key: Key('task-form-assignee-${member.id}'),
                   label: Text(member.name),
