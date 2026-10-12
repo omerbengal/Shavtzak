@@ -31,6 +31,16 @@ class _FakeTaskRepository extends Fake implements TaskRepository {
   final calls = <String>[];
   Object? failWith;
 
+  /// While set, a mutation does not answer until the test completes it.
+  Completer<void>? gate;
+
+  /// Who is assigned to each event, as the task form sees it.
+  Map<String, List<TeamMember>> assigneesByEvent = {};
+
+  @override
+  Stream<List<TeamMember>> watchEventAssignees(String eventId) =>
+      Stream.value(assigneesByEvent[eventId] ?? const []);
+
   @override
   Stream<TaskBoard> watchBoard() {
     watchCalls++;
@@ -39,6 +49,7 @@ class _FakeTaskRepository extends Fake implements TaskRepository {
 
   Future<void> _record(String call) async {
     calls.add(call);
+    await gate?.future;
     final failure = failWith;
     if (failure != null) throw failure;
   }
@@ -119,7 +130,10 @@ void main() {
     // Built here, inside the test's fake-async zone. A bloc created in setUp
     // would run its stream callbacks in the real zone, where `pump` never
     // reaches them.
-    repository = _FakeTaskRepository();
+    repository = _FakeTaskRepository()
+      ..assigneesByEvent = {
+        'e1': [dana, yoav],
+      };
     taskBloc = TaskBloc(repository: repository);
     userBloc = _MockUserSelectionBloc();
     addTearDown(() {
@@ -135,14 +149,17 @@ void main() {
       initialState: UserAuthenticated(user),
     );
 
-    await tester.pumpWidget(MultiBlocProvider(
-      providers: [
-        BlocProvider<TaskBloc>.value(value: taskBloc),
-        BlocProvider<UserSelectionBloc>.value(value: userBloc),
-      ],
-      child: MaterialApp(
-        theme: theme,
-        home: TasksScreen(clock: () => now),
+    await tester.pumpWidget(RepositoryProvider<TaskRepository>.value(
+      value: repository,
+      child: MultiBlocProvider(
+        providers: [
+          BlocProvider<TaskBloc>.value(value: taskBloc),
+          BlocProvider<UserSelectionBloc>.value(value: userBloc),
+        ],
+        child: MaterialApp(
+          theme: theme,
+          home: TasksScreen(clock: () => now),
+        ),
       ),
     ));
     await tester.pump();
@@ -268,7 +285,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('filter-status-overdue')));
       await tester.pump();
-      await tester.tap(find.byKey(const Key('filter-apply')));
+
+      // Already narrowed, with the filter still open.
+      expect(find.byKey(const Key('filter-close')), findsOneWidget);
+      expect(find.text('משימה באיחור'), findsOneWidget);
+      expect(find.text('להזמין אוטובוס'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('filter-close')));
       await tester.pumpAndSettle();
 
       expect(find.text('משימה באיחור'), findsOneWidget);
@@ -276,6 +299,170 @@ void main() {
       final badge = tester.widget<Badge>(find.byType(Badge));
       expect(badge.isLabelVisible, isTrue);
       expect(find.text('1'), findsOneWidget);
+    });
+
+    testWidgets('the filter offers assignees under all tasks but not under my '
+        'tasks', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine, theirs]);
+
+      await tester.tap(find.byKey(const Key('tasks-filter')));
+      await tester.pumpAndSettle();
+      expect(find.text('אחראי'), findsNothing);
+      expect(find.byKey(const Key('filter-assignee-m1')), findsNothing);
+      expect(find.byKey(const Key('filter-event-e1')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('filter-close')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('כל המשימות'));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('tasks-filter')));
+      await tester.pumpAndSettle();
+      expect(find.text('אחראי'), findsOneWidget);
+      expect(find.byKey(const Key('filter-assignee-m1')), findsOneWidget);
+      expect(find.byKey(const Key('filter-assignee-m2')), findsOneWidget);
+    });
+
+    testWidgets('under my tasks the filter offers only the events the member '
+        'has tasks in, under all tasks every event with a task',
+        (tester) async {
+      final south = buildEvent(
+        id: 'e2',
+        name: 'דו יומי דרום',
+        startDate: DateTime(2026, 10, 27),
+      );
+      final theirsSouth = buildTask(
+        id: 'south',
+        title: 'הסעות לדרום',
+        eventId: 'e2',
+        event: south,
+        assigneeIds: const ['m2'],
+        assignees: [yoav],
+      );
+      await pumpScreen(tester, user: dana, tasks: [mine, theirsSouth]);
+
+      await tester.tap(find.byKey(const Key('tasks-filter')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('filter-event-e1')), findsOneWidget);
+      expect(find.byKey(const Key('filter-event-e2')), findsNothing);
+      await tester.tap(find.byKey(const Key('filter-close')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('כל המשימות'));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('tasks-filter')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('filter-event-e1')), findsOneWidget);
+      expect(find.byKey(const Key('filter-event-e2')), findsOneWidget);
+    });
+
+    testWidgets('my tasks and all tasks each keep a filter of their own',
+        (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine, theirs]);
+
+      Future<void> tickInFilter(String key) async {
+        await tester.tap(find.byKey(const Key('tasks-filter')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key(key)));
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('filter-close')));
+        await tester.pumpAndSettle();
+      }
+
+      bool badgeShown() =>
+          tester.widget<Badge>(find.byType(Badge)).isLabelVisible;
+
+      // All tasks: only Yoav's.
+      await tester.tap(find.text('כל המשימות'));
+      await tester.pump();
+      await tickInFilter('filter-assignee-m2');
+      expect(find.text('הזמנת קייטרינג'), findsOneWidget);
+      expect(find.text('להזמין אוטובוס'), findsNothing);
+      expect(badgeShown(), isTrue);
+
+      // My tasks is untouched by that.
+      await tester.tap(find.text('המשימות שלי'));
+      await tester.pump();
+      expect(find.text('להזמין אוטובוס'), findsOneWidget);
+      expect(badgeShown(), isFalse);
+
+      // My tasks: only completed ones, of which there are none.
+      await tickInFilter('filter-status-completed');
+      expect(find.text('להזמין אוטובוס'), findsNothing);
+      expect(find.text('לא נמצאו משימות תואמות'), findsOneWidget);
+      expect(badgeShown(), isTrue);
+
+      // All tasks still has its own filter, and not the completed one.
+      await tester.tap(find.text('כל המשימות'));
+      await tester.pump();
+      expect(find.text('הזמנת קייטרינג'), findsOneWidget);
+      expect(find.text('להזמין אוטובוס'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('tasks-filter')));
+      await tester.pumpAndSettle();
+      bool ticked(String key) =>
+          tester.widget<CheckboxListTile>(find.byKey(Key(key))).value ?? false;
+      expect(ticked('filter-assignee-m2'), isTrue);
+      expect(ticked('filter-status-completed'), isFalse);
+    });
+
+    testWidgets('clearing the filter brings every task back while it is open',
+        (tester) async {
+      final overdue = buildTask(
+        id: 'late',
+        title: 'משימה באיחור',
+        event: event,
+        assigneeIds: const ['m1'],
+        assignees: [dana],
+        dueAt: DateTime(2026, 10, 9, 9),
+      );
+      await pumpScreen(tester, user: dana, tasks: [mine, overdue]);
+
+      await tester.tap(find.byKey(const Key('tasks-filter')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('filter-status-overdue')));
+      await tester.pump();
+      expect(find.text('להזמין אוטובוס'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('filter-clear')));
+      await tester.pump();
+
+      expect(find.text('להזמין אוטובוס'), findsOneWidget);
+      expect(find.text('משימה באיחור'), findsOneWidget);
+      expect(tester.widget<Badge>(find.byType(Badge)).isLabelVisible, isFalse);
+    });
+
+    testWidgets('the half-hour filter keeps only unfinished tasks due in the '
+        'next 30 minutes', (tester) async {
+      TaskItem due(String id, String title, DateTime dueAt) => buildTask(
+            id: id,
+            title: title,
+            event: event,
+            assigneeIds: const ['m1'],
+            assignees: [dana],
+            dueAt: dueAt,
+          );
+      // The screen's clock reads 14:00.
+      await pumpScreen(tester, user: dana, tasks: [
+        due('soon', 'בעוד עשרים דקות', DateTime(2026, 10, 11, 14, 20)),
+        due('edge', 'בעוד חצי שעה בדיוק', DateTime(2026, 10, 11, 14, 30)),
+        due('later', 'בעוד שעה', DateTime(2026, 10, 11, 15, 0)),
+        due('late', 'כבר באיחור', DateTime(2026, 10, 11, 13, 0)),
+        mine,
+      ]);
+
+      await tester.tap(find.byKey(const Key('tasks-filter')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('filter-due-soon')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('filter-close')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('בעוד עשרים דקות'), findsOneWidget);
+      expect(find.text('בעוד חצי שעה בדיוק'), findsOneWidget);
+      expect(find.text('בעוד שעה'), findsNothing);
+      expect(find.text('כבר באיחור'), findsNothing);
+      expect(find.text('להזמין אוטובוס'), findsNothing);
+      expect(tester.widget<Badge>(find.byType(Badge)).isLabelVisible, isTrue);
     });
   });
 
@@ -298,12 +485,13 @@ void main() {
       expect(find.byKey(const Key('tasks-add')), findsOneWidget);
     });
 
-    testWidgets('a plain member gets no new-task button and no edit menu',
+    testWidgets('a plain member gets no new-task, edit or delete button',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
 
       expect(find.byKey(const Key('tasks-add')), findsNothing);
-      expect(find.byType(PopupMenuButton<String>), findsNothing);
+      expect(find.byKey(const Key('task-edit-mine')), findsNothing);
+      expect(find.byKey(const Key('task-delete-mine')), findsNothing);
     });
 
     testWidgets('a member cannot tick someone else\'s task', (tester) async {
@@ -322,7 +510,7 @@ void main() {
     testWidgets('ticking a subtask is sent with that task and subtask',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [withSubtasks]);
-      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.tap(find.text('אישור ביטחוני'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.descendant(
@@ -343,6 +531,78 @@ void main() {
       expect(repository.calls, ['complete:mine:true']);
     });
 
+    testWidgets('a ticked task is shown done before the backend answers',
+        (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+      repository.gate = Completer<void>();
+
+      await tester.tap(find.byKey(const Key('task-complete-mine')));
+      await tester.pump();
+
+      expect(repository.calls, ['complete:mine:true']);
+      expect(
+        tester
+            .widget<Checkbox>(find.byKey(const Key('task-complete-mine')))
+            .value,
+        isTrue,
+      );
+      expect(find.text('הושלמה'), findsOneWidget);
+
+      repository.gate!.complete();
+      await tester.pump();
+    });
+
+    testWidgets('a ticked subtask is shown done before the backend answers',
+        (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [withSubtasks]);
+      await tester.tap(find.text('אישור ביטחוני'));
+      await tester.pumpAndSettle();
+      repository.gate = Completer<void>();
+
+      final checkbox = find.descendant(
+        of: find.byKey(const Key('subtask-a')),
+        matching: find.byType(Checkbox),
+      );
+      await tester.tap(checkbox);
+      await tester.pump();
+
+      expect(tester.widget<Checkbox>(checkbox).value, isTrue);
+      expect(find.text('1/2'), findsOneWidget);
+
+      repository.gate!.complete();
+      await tester.pump();
+    });
+
+    testWidgets('a tick the backend refuses is taken back and explained',
+        (tester) async {
+      await pumpScreen(tester, user: dana, tasks: [mine]);
+      repository.gate = Completer<void>();
+      repository.failWith = DatabaseException(
+        'Failed backend mutation task.setComplete: אין הרשאה לעדכן את המשימה',
+      );
+
+      await tester.tap(find.byKey(const Key('task-complete-mine')));
+      await tester.pump();
+      expect(
+        tester
+            .widget<Checkbox>(find.byKey(const Key('task-complete-mine')))
+            .value,
+        isTrue,
+      );
+
+      repository.gate!.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<Checkbox>(find.byKey(const Key('task-complete-mine')))
+            .value,
+        isFalse,
+      );
+      expect(find.text('אין הרשאה לעדכן את המשימה'), findsOneWidget);
+    });
+
     testWidgets('saving an update sends the typed text', (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine]);
 
@@ -361,7 +621,7 @@ void main() {
     testWidgets('a failed action shows the backend message and keeps the list',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [withSubtasks]);
-      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.tap(find.text('אישור ביטחוני'));
       await tester.pumpAndSettle();
 
       repository.failWith = DatabaseException(
@@ -388,9 +648,7 @@ void main() {
       await tester.tap(find.text('כל המשימות'));
       await tester.pump();
 
-      await tester.tap(find.byType(PopupMenuButton<String>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('מחיקה'));
+      await tester.tap(find.byKey(const Key('task-delete-mine')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('task-delete-confirm')), findsOneWidget);
@@ -409,22 +667,87 @@ void main() {
       await tester.tap(find.text('כל המשימות'));
       await tester.pump();
 
-      await tester.tap(find.byType(PopupMenuButton<String>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('מחיקה'));
+      await tester.tap(find.byKey(const Key('task-delete-mine')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('task-delete-confirm')));
       await tester.pumpAndSettle();
 
       expect(repository.calls, ['delete:mine']);
+      expect(find.byKey(const Key('task-delete-confirm')), findsNothing);
     });
 
-    testWidgets('a manager creates a task through the form', (tester) async {
+    testWidgets('a confirmed delete shows a spinner and stays open until the '
+        'backend answers', (tester) async {
       await pumpScreen(
         tester,
         user: buildMember(id: 'boss', isAdmin: true),
-        tasks: const [],
+        tasks: [mine],
       );
+      await tester.tap(find.text('כל המשימות'));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('task-delete-mine')));
+      await tester.pumpAndSettle();
+
+      final confirm = find.byKey(const Key('task-delete-confirm'));
+      final spinner = find.descendant(
+        of: confirm,
+        matching: find.byType(CircularProgressIndicator),
+      );
+      expect(spinner, findsNothing);
+
+      repository.gate = Completer<void>();
+      await tester.tap(confirm);
+      await tester.pump();
+
+      expect(repository.calls, ['delete:mine']);
+      expect(spinner, findsOneWidget);
+      expect(tester.widget<FilledButton>(confirm).enabled, isFalse);
+      expect(
+        tester
+            .widget<TextButton>(find.byKey(const Key('task-delete-cancel')))
+            .enabled,
+        isFalse,
+      );
+
+      repository.gate!.complete();
+      await tester.pumpAndSettle();
+
+      expect(confirm, findsNothing);
+    });
+
+    testWidgets('a delete the backend refuses stays open and says why',
+        (tester) async {
+      await pumpScreen(
+        tester,
+        user: buildMember(id: 'boss', isAdmin: true),
+        tasks: [mine],
+      );
+      await tester.tap(find.text('כל המשימות'));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('task-delete-mine')));
+      await tester.pumpAndSettle();
+
+      repository.failWith = DatabaseException(
+        'Failed backend mutation task.delete: אין הרשאה למחוק משימות',
+      );
+      final confirm = find.byKey(const Key('task-delete-confirm'));
+      await tester.tap(confirm);
+      await tester.pumpAndSettle();
+
+      expect(find.text('אין הרשאה למחוק משימות'), findsOneWidget);
+      expect(confirm, findsOneWidget);
+      expect(tester.widget<FilledButton>(confirm).enabled, isTrue);
+      expect(
+        find.descendant(
+          of: confirm,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsNothing,
+      );
+      expect(find.text('להזמין אוטובוס'), findsOneWidget);
+    });
+
+    Future<void> fillNewTask(WidgetTester tester, String title) async {
       // The button scales in when the list first loads and ignores taps until
       // that animation ends.
       await tester.pumpAndSettle();
@@ -435,16 +758,84 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('דו יומי צפון').last);
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('task-form-title')),
-        'משימה חדשה לגמרי',
-      );
+      await tester.enterText(find.byKey(const Key('task-form-title')), title);
+      await tester.tap(find.byKey(const Key('task-form-assignees')));
+      await tester.pump();
       await tester.tap(find.byKey(const Key('task-form-assignee-m2')));
       await tester.pump();
+    }
+
+    testWidgets('a manager creates a task through the form', (tester) async {
+      await pumpScreen(
+        tester,
+        user: buildMember(id: 'boss', isAdmin: true),
+        tasks: const [],
+      );
+      await fillNewTask(tester, 'משימה חדשה לגמרי');
       await tester.tap(find.byKey(const Key('task-form-save')));
       await tester.pumpAndSettle();
 
       expect(repository.calls, ['insert:משימה חדשה לגמרי']);
+      expect(find.byKey(const Key('task-form-title')), findsNothing);
+    });
+
+    testWidgets('the new-task form offers only the members assigned to the '
+        'chosen event', (tester) async {
+      await pumpScreen(
+        tester,
+        user: buildMember(id: 'boss', isAdmin: true),
+        tasks: const [],
+      );
+      repository.assigneesByEvent = {
+        'e1': [yoav],
+      };
+      await fillNewTask(tester, 'כותרת');
+
+      expect(find.byKey(const Key('task-form-assignee-m2')), findsOneWidget);
+      expect(find.byKey(const Key('task-form-assignee-m1')), findsNothing);
+    });
+
+    testWidgets('a create the backend refuses keeps the form open and says why',
+        (tester) async {
+      await pumpScreen(
+        tester,
+        user: buildMember(id: 'boss', isAdmin: true),
+        tasks: const [],
+      );
+      await fillNewTask(tester, 'משימה שנדחתה');
+      repository.failWith = DatabaseException(
+        'Failed backend mutation task.insert: אין הרשאה ליצור משימות',
+      );
+      await tester.tap(find.byKey(const Key('task-form-save')));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, ['insert:משימה שנדחתה']);
+      expect(find.text('אין הרשאה ליצור משימות'), findsOneWidget);
+      expect(find.byKey(const Key('task-form-title')), findsOneWidget);
+      expect(find.text('משימה שנדחתה'), findsOneWidget);
+    });
+
+    testWidgets('a manager edits a task through the form', (tester) async {
+      await pumpScreen(
+        tester,
+        user: buildMember(id: 'boss', isAdmin: true),
+        tasks: [mine],
+      );
+      await tester.tap(find.text('כל המשימות'));
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('task-edit-mine')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('task-form-title')),
+        'להזמין שני אוטובוסים',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('task-form-save')));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, ['update:mine']);
+      expect(find.byKey(const Key('task-form-title')), findsNothing);
     });
   });
 
@@ -452,7 +843,7 @@ void main() {
     testWidgets('a card stays open when another task moves in above it',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [withSubtasks]);
-      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.tap(find.text('אישור ביטחוני'));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('subtask-a')), findsOneWidget);
 
@@ -488,7 +879,7 @@ void main() {
         assignees: [dana],
       );
       await pumpScreen(tester, user: dana, tasks: [withSubtasks, other]);
-      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.tap(find.text('אישור ביטחוני'));
       await tester.pumpAndSettle();
 
       // The backend answers: every subtask done, so the task is complete and
@@ -511,7 +902,7 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(const Key('subtask-a')), findsOneWidget);
-      expect(find.byIcon(Icons.expand_less), findsOneWidget);
+      expect(find.byKey(const Key('subtask-b')), findsOneWidget);
     });
   });
 

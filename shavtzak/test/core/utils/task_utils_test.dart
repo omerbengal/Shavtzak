@@ -153,10 +153,75 @@ void main() {
         )),
         ['food', 'done'],
       );
-      expect(
-        ids(filterTasks(all, now: now, statuses: {TaskDueStatus.open})),
-        ['orphan'],
-      );
+    });
+
+    group('the open status', () {
+      List<String> open(List<TaskItem> tasks) => ids(filterTasks(
+            tasks,
+            now: now,
+            statuses: {TaskDueStatus.open},
+          ));
+
+      test('keeps an unfinished task with no due date', () {
+        expect(open([buildTask(id: 'undated')]), ['undated']);
+      });
+
+      test('keeps an unfinished task due on a later day', () {
+        expect(
+          open([buildTask(id: 'next', dueAt: DateTime(2026, 10, 12, 9))]),
+          ['next'],
+        );
+      });
+
+      test('keeps an unfinished task due later today', () {
+        expect(
+          open([buildTask(id: 'tonight', dueAt: DateTime(2026, 10, 11, 20))]),
+          ['tonight'],
+        );
+      });
+
+      test('keeps an unfinished task due exactly now', () {
+        expect(
+          open([buildTask(id: 'now', dueAt: DateTime(2026, 10, 11, 14, 0))]),
+          ['now'],
+        );
+      });
+
+      test('drops a task whose due time passed a minute ago', () {
+        expect(
+          open([buildTask(id: 'late', dueAt: DateTime(2026, 10, 11, 13, 59))]),
+          isEmpty,
+        );
+      });
+
+      test('drops a completed task, even one that was not due yet', () {
+        expect(
+          open([
+            buildTask(id: 'done', isComplete: true),
+            buildTask(
+              id: 'done-early',
+              isComplete: true,
+              dueAt: DateTime(2026, 10, 12, 9),
+            ),
+          ]),
+          isEmpty,
+        );
+      });
+
+      test('the due-today status alone still leaves out tasks due later', () {
+        expect(
+          ids(filterTasks(
+            [
+              buildTask(id: 'tonight', dueAt: DateTime(2026, 10, 11, 20)),
+              buildTask(id: 'next', dueAt: DateTime(2026, 10, 12, 9)),
+              buildTask(id: 'undated'),
+            ],
+            now: now,
+            statuses: {TaskDueStatus.dueToday},
+          )),
+          ['tonight'],
+        );
+      });
     });
 
     test('eventIds keeps only tasks of the chosen events', () {
@@ -185,6 +250,63 @@ void main() {
         )),
         ['done'],
       );
+    });
+
+    group('dueWithin', () {
+      TaskItem dueAt(String id, DateTime? due, {bool isComplete = false}) =>
+          buildTask(id: id, dueAt: due, isComplete: isComplete);
+
+      List<String> soon(List<TaskItem> tasks) => ids(filterTasks(
+            tasks,
+            now: now,
+            dueWithin: const Duration(minutes: 30),
+          ));
+
+      test('keeps a task due inside the window', () {
+        expect(soon([dueAt('in10', DateTime(2026, 10, 11, 14, 10))]), ['in10']);
+      });
+
+      test('keeps a task due exactly now and one due exactly at the end', () {
+        expect(
+          soon([
+            dueAt('now', DateTime(2026, 10, 11, 14, 0)),
+            dueAt('edge', DateTime(2026, 10, 11, 14, 30)),
+          ]),
+          ['now', 'edge'],
+        );
+      });
+
+      test('drops a task due a minute after the window', () {
+        expect(soon([dueAt('in31', DateTime(2026, 10, 11, 14, 31))]), isEmpty);
+      });
+
+      test('drops a task that is already overdue', () {
+        expect(soon([dueAt('late', DateTime(2026, 10, 11, 13, 59))]), isEmpty);
+      });
+
+      test('drops a task with no due date', () {
+        expect(soon([dueAt('undated', null)]), isEmpty);
+      });
+
+      test('drops a completed task even when it was due inside the window',
+          () {
+        expect(
+          soon([
+            dueAt('done', DateTime(2026, 10, 11, 14, 10), isComplete: true),
+          ]),
+          isEmpty,
+        );
+      });
+
+      test('no window is no restriction', () {
+        expect(
+          ids(filterTasks(
+            [dueAt('in31', DateTime(2026, 10, 11, 14, 31))],
+            now: now,
+          )),
+          ['in31'],
+        );
+      });
     });
   });
 
@@ -253,6 +375,42 @@ void main() {
       );
       expect(ids(picked), ['today', 'next']);
     });
+
+    test('an event of another category is not offered', () {
+      final hanukkah = buildEvent(
+        id: 'hanukkah',
+        name: 'חנוכה',
+        startDate: DateTime(2026, 10, 18),
+        categoryId: '6de41bf3-1a22-476d-b922-ec35ede6bc9f',
+      );
+      expect(ids(pickableTaskEvents([hanukkah, nextWeek], now: now)), ['next']);
+    });
+
+    test('an event with no category is not offered', () {
+      final loose = buildEvent(
+        id: 'loose',
+        name: 'ללא קטגוריה',
+        startDate: DateTime(2026, 10, 18),
+        categoryId: null,
+      );
+      expect(ids(pickableTaskEvents([loose, nextWeek], now: now)), ['next']);
+    });
+
+    test('the task\'s own event stays pickable even from another category',
+        () {
+      final hanukkah = buildEvent(
+        id: 'hanukkah',
+        name: 'חנוכה',
+        startDate: DateTime(2026, 10, 18),
+        categoryId: '6de41bf3-1a22-476d-b922-ec35ede6bc9f',
+      );
+      final picked = pickableTaskEvents(
+        [hanukkah, nextWeek],
+        now: now,
+        current: hanukkah,
+      );
+      expect(ids(picked), ['hanukkah', 'next']);
+    });
   });
 
   group('assignableTaskMembers', () {
@@ -267,14 +425,6 @@ void main() {
     test('offers active, non-archived members by name', () {
       final offered = assignableTaskMembers([dana, inactive, archived, avi]);
       expect(ids(offered), ['m2', 'm1']);
-    });
-
-    test('keeps a member who is already assigned even if no longer active', () {
-      final offered = assignableTaskMembers(
-        [dana, inactive, archived],
-        currentAssigneeIds: const ['m3'],
-      );
-      expect(ids(offered), ['m3', 'm1']);
     });
   });
 

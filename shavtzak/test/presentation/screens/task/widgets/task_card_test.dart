@@ -37,8 +37,10 @@ void main() {
                 canManage: canManage,
                 canUpdateProgress: canUpdateProgress,
                 isExpanded: isExpanded,
-                onToggleExpanded: () =>
-                    setState(() => isExpanded = !isExpanded),
+                onToggleExpanded: () {
+                  calls.expandToggles++;
+                  setState(() => isExpanded = !isExpanded);
+                },
                 onToggleSubtask: (subtask, isDone) =>
                     calls.subtaskToggles.add('${subtask.id}:$isDone'),
                 onSetComplete: calls.completions.add,
@@ -61,6 +63,12 @@ void main() {
 
   TextStyle titleStyle(WidgetTester tester, String title) =>
       tester.widget<Text>(find.text(title)).style!;
+
+  /// Presses the card itself, on its title.
+  Future<void> tapCard(WidgetTester tester, TaskItem task) async {
+    await tester.tap(find.text(task.title));
+    await tester.pumpAndSettle();
+  }
 
   group('status colouring', () {
     testWidgets('a completed task is green, labelled and struck through',
@@ -187,15 +195,14 @@ void main() {
       expect(bar.value, closeTo(2 / 3, 0.0001));
     });
 
-    testWidgets('is collapsed at first and expands to one card per subtask',
-        (tester) async {
+    testWidgets('is collapsed at first, and pressing the card shows one card '
+        'per subtask', (tester) async {
       final task = buildTask(subtasks: threeSubtasks);
       await pumpCard(tester, task);
 
       expect(find.byKey(const Key('subtask-a')), findsNothing);
 
-      await tester.tap(find.byIcon(Icons.expand_more));
-      await tester.pumpAndSettle();
+      await tapCard(tester, task);
 
       expect(find.byKey(const Key('subtask-a')), findsOneWidget);
       expect(find.byKey(const Key('subtask-b')), findsOneWidget);
@@ -203,11 +210,43 @@ void main() {
       expect(find.text('תשלום'), findsOneWidget);
     });
 
+    testWidgets('pressing the card again hides the subtasks', (tester) async {
+      final task = buildTask(subtasks: threeSubtasks);
+      await pumpCard(tester, task);
+
+      await tapCard(tester, task);
+      await tapCard(tester, task);
+
+      expect(find.byKey(const Key('subtask-a')), findsNothing);
+    });
+
+    testWidgets('has no expand arrow', (tester) async {
+      final task = buildTask(subtasks: threeSubtasks);
+      await pumpCard(tester, task);
+
+      expect(find.byIcon(Icons.expand_more), findsNothing);
+      await tapCard(tester, task);
+      expect(find.byIcon(Icons.expand_less), findsNothing);
+    });
+
+    testWidgets('pressing a subtask row does not hide the subtasks',
+        (tester) async {
+      final task = buildTask(subtasks: threeSubtasks);
+      final calls = await pumpCard(tester, task);
+      await tapCard(tester, task);
+
+      await tester.tap(find.text('תשלום'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('subtask-c')), findsOneWidget);
+      expect(calls.expandToggles, 1);
+      expect(calls.subtaskToggles, isEmpty);
+    });
+
     testWidgets('a done subtask is ticked and struck through', (tester) async {
       final task = buildTask(subtasks: threeSubtasks);
       await pumpCard(tester, task);
-      await tester.tap(find.byIcon(Icons.expand_more));
-      await tester.pumpAndSettle();
+      await tapCard(tester, task);
 
       final done = tester.widget<Checkbox>(find.descendant(
         of: find.byKey(const Key('subtask-a')),
@@ -229,8 +268,7 @@ void main() {
         (tester) async {
       final task = buildTask(subtasks: threeSubtasks);
       final calls = await pumpCard(tester, task);
-      await tester.tap(find.byIcon(Icons.expand_more));
-      await tester.pumpAndSettle();
+      await tapCard(tester, task);
 
       await tester.tap(find.descendant(
         of: find.byKey(const Key('subtask-c')),
@@ -240,8 +278,11 @@ void main() {
         of: find.byKey(const Key('subtask-a')),
         matching: find.byType(Checkbox),
       ));
+      await tester.pumpAndSettle();
 
       expect(calls.subtaskToggles, ['c:true', 'a:false']);
+      // Ticking is not a press on the card.
+      expect(find.byKey(const Key('subtask-c')), findsOneWidget);
     });
 
     testWidgets('a task with subtasks has no completion checkbox of its own',
@@ -254,16 +295,24 @@ void main() {
   });
 
   group('a task without subtasks', () {
-    testWidgets('has a completion checkbox and no expand control or progress',
-        (tester) async {
+    testWidgets('has a completion checkbox and no progress', (tester) async {
       final task = buildTask();
       final calls = await pumpCard(tester, task);
 
-      expect(find.byIcon(Icons.expand_more), findsNothing);
       expect(find.byKey(Key('task-progress-${task.id}')), findsNothing);
 
       await tester.tap(find.byKey(Key('task-complete-${task.id}')));
       expect(calls.completions, [true]);
+    });
+
+    testWidgets('pressing the card does nothing, there being nothing to show',
+        (tester) async {
+      final task = buildTask();
+      final calls = await pumpCard(tester, task);
+
+      await tapCard(tester, task);
+
+      expect(calls.expandToggles, 0);
     });
 
     testWidgets('unticking a completed task reports reopening', (tester) async {
@@ -280,8 +329,7 @@ void main() {
         'and no update button', (tester) async {
       final task = buildTask(subtasks: threeSubtasks);
       final calls = await pumpCard(tester, task, canUpdateProgress: false);
-      await tester.tap(find.byIcon(Icons.expand_more));
-      await tester.pumpAndSettle();
+      await tapCard(tester, task);
 
       final checkbox = tester.widget<Checkbox>(find.descendant(
         of: find.byKey(const Key('subtask-c')),
@@ -319,22 +367,51 @@ void main() {
       expect(calls.editUpdate, 1);
     });
 
-    testWidgets('only a manager gets the edit and delete menu', (tester) async {
-      await pumpCard(tester, buildTask());
-      expect(find.byType(PopupMenuButton<String>), findsNothing);
+    testWidgets('only a manager gets the edit and delete buttons',
+        (tester) async {
+      final task = buildTask();
+      await pumpCard(tester, task);
+      expect(find.byKey(Key('task-edit-${task.id}')), findsNothing);
+      expect(find.byKey(Key('task-delete-${task.id}')), findsNothing);
 
-      final calls = await pumpCard(tester, buildTask(), canManage: true);
-      await tester.tap(find.byType(PopupMenuButton<String>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('עריכה'));
-      await tester.pumpAndSettle();
+      final calls = await pumpCard(tester, task, canManage: true);
+      await tester.tap(find.byKey(Key('task-edit-${task.id}')));
       expect(calls.edit, 1);
+      expect(calls.delete, 0);
 
-      await tester.tap(find.byType(PopupMenuButton<String>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('מחיקה'));
-      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key('task-delete-${task.id}')));
       expect(calls.delete, 1);
+      expect(calls.edit, 1);
+    });
+
+    testWidgets('edit is a blue pencil and delete a red bin, not a menu',
+        (tester) async {
+      final task = buildTask();
+      await pumpCard(tester, task, canManage: true);
+
+      Icon iconOf(String key) => tester.widget<Icon>(find.descendant(
+            of: find.byKey(Key(key)),
+            matching: find.byType(Icon),
+          ));
+
+      expect(iconOf('task-edit-${task.id}').icon, Icons.edit);
+      expect(iconOf('task-edit-${task.id}').color, Colors.blue);
+      expect(iconOf('task-delete-${task.id}').icon, Icons.delete);
+      expect(iconOf('task-delete-${task.id}').color, Colors.red);
+      expect(find.byType(PopupMenuButton<String>), findsNothing);
+    });
+
+    testWidgets('pressing edit or delete does not open the subtasks',
+        (tester) async {
+      final task = buildTask(subtasks: threeSubtasks);
+      final calls = await pumpCard(tester, task, canManage: true);
+
+      await tester.tap(find.byKey(Key('task-edit-${task.id}')));
+      await tester.tap(find.byKey(Key('task-delete-${task.id}')));
+      await tester.pumpAndSettle();
+
+      expect(calls.expandToggles, 0);
+      expect(find.byKey(const Key('subtask-a')), findsNothing);
     });
   });
 }
@@ -345,4 +422,5 @@ class _Calls {
   int editUpdate = 0;
   int edit = 0;
   int delete = 0;
+  int expandToggles = 0;
 }

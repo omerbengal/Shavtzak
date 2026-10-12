@@ -8,6 +8,10 @@ import 'package:shavtzak/domain/entities/team_member.dart';
 
 final DateTime fixtureCreatedAt = DateTime(2026, 10, 1, 9);
 
+/// The id of the "דו יומי" category in `utilities/Lists`, written out rather
+/// than read from the app so a wrong id in the app fails the tests.
+const String fixtureDuYomiCategoryId = 'dc8b7dd8-f633-4b6a-8169-a94d0561bbd5';
+
 Event buildEvent({
   String id = 'e1',
   String name = 'דו יומי צפון',
@@ -15,6 +19,7 @@ Event buildEvent({
   DateTime? endDate,
   String location = 'חיפה',
   bool isDeactivated = false,
+  String? categoryId = fixtureDuYomiCategoryId,
 }) {
   final start = startDate ?? DateTime(2026, 10, 20);
   return Event(
@@ -31,6 +36,7 @@ Event buildEvent({
     createdAt: fixtureCreatedAt,
     updatedAt: fixtureCreatedAt,
     isDeactivated: isDeactivated,
+    categoryId: categoryId,
   );
 }
 

@@ -856,6 +856,21 @@ class FirestoreDatabase implements DatabaseInterface {
     });
   }
 
+  @override
+  Stream<List<String>> watchAssignedMemberIds(String eventId) {
+    return _firestore
+        .collection(_assignmentsCollection)
+        .where('eventId', isEqualTo: eventId)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map((doc) => doc.data()['teamMemberId'])
+          .whereType<String>()
+          .toSet()
+          .toList();
+    });
+  }
+
   /// Watch assignments for a specific team member in real-time
   @override
   Stream<List<Assignment>> watchAssignmentsByPerson(String teamMemberId) {

@@ -11,11 +11,12 @@ final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
 /// One task on the tasks screen.
 ///
 /// Tinted by its [TaskDueStatus], with a text chip so colour is never the only
-/// signal. A task with subtasks shows a progress bar and expands to list them;
-/// a task without subtasks carries its own completion checkbox instead.
+/// signal. A task with subtasks shows a progress bar and lists them when the
+/// card is pressed; a task without subtasks carries its own completion
+/// checkbox instead.
 ///
 /// The card is display-only: every action is reported through a callback and
-/// the result arrives back as a new [task] from the stream.
+/// the result arrives back as a new [task] from the bloc.
 class TaskCard extends StatelessWidget {
   const TaskCard({
     super.key,
@@ -67,62 +68,67 @@ class TaskCard extends StatelessWidget {
       color: style.tint,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       clipBehavior: Clip.antiAlias,
-      child: Container(
-        decoration: BoxDecoration(
-          border: BorderDirectional(
-            start: BorderSide(color: style.accent, width: 4),
-          ),
-        ),
-        padding: const EdgeInsetsDirectional.fromSTEB(8, 8, 8, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(theme, status, style),
-            Padding(
-              padding: const EdgeInsetsDirectional.only(start: 8, end: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildEventLine(theme),
-                  if (task.dueAt != null)
-                    _InfoLine(
-                      icon: Icons.schedule,
-                      text: 'עד ${_dateTimeFormat.format(task.dueAt!)}',
-                      color: status == TaskDueStatus.overdue ||
-                              status == TaskDueStatus.dueToday
-                          ? style.accent
-                          : null,
-                    ),
-                  _InfoLine(
-                    icon: Icons.person_outline,
-                    text: task.assignees.isEmpty
-                        ? 'ללא אחראים'
-                        : task.assignees.map((member) => member.name).join(', '),
-                  ),
-                  if (task.description.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(task.description, style: theme.textTheme.bodyMedium),
-                  ],
-                  if (task.hasSubtasks) ...[
-                    const SizedBox(height: 12),
-                    _buildProgress(theme, style),
-                  ],
-                  const SizedBox(height: 12),
-                  _buildUpdateBlock(theme),
-                  const SizedBox(height: 8),
-                  Text(
-                    'עודכן לאחרונה: ${_dateTimeFormat.format(task.updatedAt)}',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: Colors.grey.shade600),
-                  ),
-                  if (task.hasSubtasks && isExpanded) ...[
-                    const SizedBox(height: 8),
-                    ...task.subtasks.map(_buildSubtask),
-                  ],
-                ],
-              ),
+      // The whole card opens and closes the subtasks. Its buttons and
+      // checkboxes take their own presses first.
+      child: InkWell(
+        onTap: task.hasSubtasks ? onToggleExpanded : null,
+        child: Container(
+          decoration: BoxDecoration(
+            border: BorderDirectional(
+              start: BorderSide(color: style.accent, width: 4),
             ),
-          ],
+          ),
+          padding: const EdgeInsetsDirectional.fromSTEB(8, 8, 8, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(theme, status, style),
+              Padding(
+                padding: const EdgeInsetsDirectional.only(start: 8, end: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildEventLine(theme),
+                    if (task.dueAt != null)
+                      _InfoLine(
+                        icon: Icons.schedule,
+                        text: 'עד ${_dateTimeFormat.format(task.dueAt!)}',
+                        color: status == TaskDueStatus.overdue ||
+                                status == TaskDueStatus.dueToday
+                            ? style.accent
+                            : null,
+                      ),
+                    _InfoLine(
+                      icon: Icons.person_outline,
+                      text: task.assignees.isEmpty
+                          ? 'ללא אחראים'
+                          : task.assignees.map((member) => member.name).join(', '),
+                    ),
+                    if (task.description.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(task.description, style: theme.textTheme.bodyMedium),
+                    ],
+                    if (task.hasSubtasks) ...[
+                      const SizedBox(height: 12),
+                      _buildProgress(theme, style),
+                    ],
+                    const SizedBox(height: 12),
+                    _buildUpdateBlock(theme),
+                    const SizedBox(height: 8),
+                    Text(
+                      'עודכן לאחרונה: ${_dateTimeFormat.format(task.updatedAt)}',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: Colors.grey.shade600),
+                    ),
+                    if (task.hasSubtasks && isExpanded) ...[
+                      const SizedBox(height: 8),
+                      ...task.subtasks.map(_buildSubtask),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -161,27 +167,22 @@ class TaskCard extends StatelessWidget {
           const SizedBox(width: 8),
           _StatusChip(label: style.label!, color: style.accent),
         ],
-        if (canManage)
-          PopupMenuButton<String>(
-            tooltip: 'פעולות',
-            onSelected: (value) {
-              if (value == 'edit') {
-                onEdit();
-              } else {
-                onDelete();
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'edit', child: Text('עריכה')),
-              PopupMenuItem(value: 'delete', child: Text('מחיקה')),
-            ],
-          ),
-        if (task.hasSubtasks)
+        if (canManage) ...[
           IconButton(
-            tooltip: isExpanded ? 'הסתרת תתי-משימות' : 'הצגת תתי-משימות',
-            icon: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
-            onPressed: onToggleExpanded,
+            key: Key('task-edit-${task.id}'),
+            tooltip: 'עריכה',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.edit, color: Colors.blue),
+            onPressed: onEdit,
           ),
+          IconButton(
+            key: Key('task-delete-${task.id}'),
+            tooltip: 'מחיקה',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.delete, color: Colors.red),
+            onPressed: onDelete,
+          ),
+        ],
       ],
     );
   }
@@ -300,30 +301,40 @@ class TaskCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         side: BorderSide(color: Colors.grey.shade300),
       ),
-      child: Row(
-        children: [
-          Checkbox(
-            value: subtask.isDone,
-            onChanged: canUpdateProgress
-                ? (value) => onToggleSubtask(subtask, value ?? false)
-                : null,
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsetsDirectional.only(end: 12),
-              child: Text(
-                subtask.title,
-                style: TextStyle(
-                  decoration: subtask.isDone
-                      ? TextDecoration.lineThrough
-                      : TextDecoration.none,
-                  color: subtask.isDone ? Colors.grey.shade700 : null,
-                ),
+      // Swallows a press that misses the checkbox, so aiming at a subtask
+      // never closes the list it is in.
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {},
+        child: _buildSubtaskRow(subtask),
+      ),
+    );
+  }
+
+  Widget _buildSubtaskRow(Subtask subtask) {
+    return Row(
+      children: [
+        Checkbox(
+          value: subtask.isDone,
+          onChanged: canUpdateProgress
+              ? (value) => onToggleSubtask(subtask, value ?? false)
+              : null,
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsetsDirectional.only(end: 12),
+            child: Text(
+              subtask.title,
+              style: TextStyle(
+                decoration: subtask.isDone
+                    ? TextDecoration.lineThrough
+                    : TextDecoration.none,
+                color: subtask.isDone ? Colors.grey.shade700 : null,
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

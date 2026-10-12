@@ -8,6 +8,13 @@ import 'search_utils.dart';
 /// on it, and how the list is filtered and ordered. `now` is always injected so
 /// the rules can be tested at their boundaries.
 
+/// The "דו יומי" category in `utilities/Lists`. Tasks belong to its events
+/// only. Matched by id, so renaming the category changes nothing here.
+const String duYomiCategoryId = 'dc8b7dd8-f633-4b6a-8169-a94d0561bbd5';
+
+/// How far ahead the "due in the next half hour" filter looks.
+const Duration taskDueSoonWindow = Duration(minutes: 30);
+
 /// Where a task stands relative to its due time. Ordered by urgency, which is
 /// also the order the list is shown in.
 enum TaskDueStatus { overdue, dueToday, open, completed }
@@ -38,6 +45,10 @@ bool canUpdateTaskProgress(TaskItem task, TeamMember user) =>
 /// - [onlyAssigneeId] is the "my tasks" toggle.
 /// - [query] matches the title, the description and the event name.
 /// - An empty [statuses], [eventIds] or [assigneeIds] means no restriction.
+/// - In [statuses], [TaskDueStatus.open] means every unfinished task whose due
+///   time has not passed, so it takes in the tasks due later today as well.
+/// - [dueWithin] keeps unfinished tasks due between [now] and that long from
+///   it, both ends included. A task that is already overdue is not "due soon".
 List<TaskItem> filterTasks(
   List<TaskItem> tasks, {
   required DateTime now,
@@ -46,13 +57,18 @@ List<TaskItem> filterTasks(
   Set<TaskDueStatus> statuses = const {},
   Set<String> eventIds = const {},
   Set<String> assigneeIds = const {},
+  Duration? dueWithin,
 }) {
   final normalizedQuery = _searchable(query.trim());
   return tasks.where((task) {
+    if (dueWithin != null && !_isDueWithin(task, now, dueWithin)) {
+      return false;
+    }
     if (onlyAssigneeId != null && !task.isAssignedTo(onlyAssigneeId)) {
       return false;
     }
-    if (statuses.isNotEmpty && !statuses.contains(taskDueStatus(task, now))) {
+    if (statuses.isNotEmpty &&
+        !_passesStatusFilter(taskDueStatus(task, now), statuses)) {
       return false;
     }
     if (eventIds.isNotEmpty && !eventIds.contains(task.eventId)) {
@@ -90,18 +106,22 @@ List<TaskItem> sortTasks(List<TaskItem> tasks, DateTime now) {
   return sorted;
 }
 
-/// The events a task may be attached to: those that have not finished yet and
-/// are not on hold, earliest first.
+/// The events a task may be attached to: דו יומי events that have not finished
+/// yet and are not on hold, earliest first.
 ///
 /// [current] is the event of the task being edited. It stays pickable even
-/// after it has passed, otherwise editing an old task would force a new event.
+/// after it has passed or when it is not a דו יומי event, otherwise editing an
+/// old task would force a new event.
 List<Event> pickableTaskEvents(
   List<Event> events, {
   required DateTime now,
   Event? current,
 }) {
   final upcoming = splitEventsByPast(
-    events.where((event) => !event.isDeactivated).toList(),
+    events
+        .where((event) =>
+            !event.isDeactivated && event.categoryId == duYomiCategoryId)
+        .toList(),
     now,
   ).future;
   if (current == null || upcoming.any((event) => event.id == current.id)) {
@@ -110,18 +130,11 @@ List<Event> pickableTaskEvents(
   return [current, ...upcoming];
 }
 
-/// The members a task may be assigned to: active and not archived, by name.
-///
-/// A member already on the task is kept even when they no longer qualify, so
-/// saving an edit never drops an assignee the manager did not touch.
-List<TeamMember> assignableTaskMembers(
-  List<TeamMember> members, {
-  List<String> currentAssigneeIds = const [],
-}) {
+/// The members a task may be assigned to, out of [members]: active and not
+/// archived, by name.
+List<TeamMember> assignableTaskMembers(List<TeamMember> members) {
   final offered = members
-      .where((member) =>
-          (member.isActive && !member.isArchived) ||
-          currentAssigneeIds.contains(member.id))
+      .where((member) => member.isActive && !member.isArchived)
       .toList();
   offered.sort((a, b) => a.name.compareTo(b.name));
   return offered;
@@ -161,6 +174,19 @@ bool isValidDueTime(String time) => _parseHourMinute(time) != null;
 }
 
 String _searchable(String text) => normalizeForSearch(text).toLowerCase();
+
+/// Whether a task in [status] passes a filter for [chosen]. A task due later
+/// today is unfinished and not past due, so "open" in the filter covers it
+/// too, even though its own status, and its colour, is "due today".
+bool _passesStatusFilter(TaskDueStatus status, Set<TaskDueStatus> chosen) =>
+    chosen.contains(status) ||
+    (status == TaskDueStatus.dueToday && chosen.contains(TaskDueStatus.open));
+
+bool _isDueWithin(TaskItem task, DateTime now, Duration window) {
+  final dueAt = task.dueAt;
+  if (task.isComplete || dueAt == null) return false;
+  return !dueAt.isBefore(now) && !dueAt.isAfter(now.add(window));
+}
 
 /// Ascending by date with nulls after every real date. Swap the arguments for
 /// descending; nulls then sort first, which is fine for completed tasks since

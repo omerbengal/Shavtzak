@@ -1,7 +1,11 @@
+import 'dart:async';
+
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/utils/crud_action_result.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/search_utils.dart';
 import '../../../../core/utils/task_utils.dart';
@@ -17,27 +21,35 @@ final DateFormat _timeFormat = DateFormat('HH:mm');
 
 /// Create a task, or edit [existing].
 ///
-/// Returns the task to save, or null when cancelled. The form only decides the
-/// fields a task manager edits; progress, completion and timestamps on the
-/// returned task are whatever [existing] had and are ignored by the backend.
+/// The form saves through [onSave] and stays open, with a spinner on the save
+/// button, until that answers: it closes on success and shows the failure
+/// otherwise, so nothing typed is lost. An edit can only be saved once
+/// something in it changed, and cancelling a form that holds changes asks
+/// first. The form only decides the fields a task manager edits; progress,
+/// completion and timestamps on the saved task are whatever [existing] had and
+/// are ignored by the backend.
 ///
-/// [events] and [members] are the full lists: the form narrows them to future
-/// events and assignable members itself.
-Future<TaskItem?> showTaskFormModal(
+/// [events] is the full list: the form narrows it to the events a task may be
+/// attached to. [watchEventAssignees] is the live list of members a task on a
+/// given event may be assigned to; nobody can be picked before an event is.
+Future<void> showTaskFormModal(
   BuildContext context, {
   TaskItem? existing,
   required List<Event> events,
-  required List<TeamMember> members,
+  required Stream<List<TeamMember>> Function(String eventId)
+      watchEventAssignees,
+  required Future<CrudActionResult> Function(TaskItem task) onSave,
   required String currentUserId,
   DateTime? now,
 }) {
-  return showDialog<TaskItem>(
+  return showDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (context) => _TaskFormModal(
       existing: existing,
       events: events,
-      members: members,
+      watchEventAssignees: watchEventAssignees,
+      onSave: onSave,
       currentUserId: currentUserId,
       now: now ?? DateTime.now(),
     ),
@@ -67,14 +79,16 @@ class _TaskFormModal extends StatefulWidget {
   const _TaskFormModal({
     required this.existing,
     required this.events,
-    required this.members,
+    required this.watchEventAssignees,
+    required this.onSave,
     required this.currentUserId,
     required this.now,
   });
 
   final TaskItem? existing;
   final List<Event> events;
-  final List<TeamMember> members;
+  final Stream<List<TeamMember>> Function(String eventId) watchEventAssignees;
+  final Future<CrudActionResult> Function(TaskItem task) onSave;
   final String currentUserId;
   final DateTime now;
 
@@ -85,8 +99,11 @@ class _TaskFormModal extends StatefulWidget {
 class _TaskFormModalState extends State<_TaskFormModal> {
   static const _uuid = Uuid();
 
+  // Chosen once per form, so saving again after a failure sends the same task
+  // rather than a second one.
+  late final String _newTaskId = _uuid.v4();
+
   late final List<Event> _pickableEvents;
-  late final List<TeamMember> _assignableMembers;
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _dueTimeController;
@@ -94,8 +111,8 @@ class _TaskFormModalState extends State<_TaskFormModal> {
   late final FocusNode _descriptionFocusNode;
   late final List<_SubtaskDraft> _subtasks;
 
-  // Narrows the assignee chips. Only a view filter: it never changes who is
-  // assigned.
+  // Narrows the rows of the open assignee dropdown. Only a view filter: it
+  // never changes who is assigned.
   final TextEditingController _assigneeSearchController =
       TextEditingController();
   late final FocusNode _assigneeSearchFocusNode =
@@ -105,15 +122,63 @@ class _TaskFormModalState extends State<_TaskFormModal> {
   String? _eventId;
   DateTime? _dueDate;
   String? _dueTimeError;
-  // Insertion-ordered, so assignees keep the order they were picked in.
-  final Set<String> _assigneeIds = <String>{};
+
+  // Who is assigned, by id, in the order they were picked. The members
+  // themselves are kept so that someone picked stays listed after they drop
+  // out of the event's own list.
+  final Map<String, TeamMember> _picked = <String, TeamMember>{};
+
+  // The members assigned to the chosen event, live. Null until the first list
+  // for that event arrives.
+  List<TeamMember>? _eventAssignees;
+  StreamSubscription<List<TeamMember>>? _assigneesSubscription;
+  bool _assigneesFailed = false;
+  bool _assigneesOpen = false;
+
+  bool _isSaving = false;
+  String? _saveError;
+
+  // What the form held when it opened; see [_currentValue].
+  late final List<Object?> _openingValue;
 
   bool get _isEditing => widget.existing != null;
 
   bool get _canSave =>
+      !_isSaving &&
       _eventId != null &&
       _titleController.text.trim().isNotEmpty &&
-      _assigneeIds.isNotEmpty;
+      _picked.isNotEmpty &&
+      // Saving an edit that changes nothing would only bump its "updated" time.
+      (!_isEditing || _hasChanges);
+
+  /// What a save would send, as plain values. Reduced the way a save reduces
+  /// it, so spaces around a text and empty subtask rows are not a change, and
+  /// neither is the order the same assignees were picked in.
+  List<Object?> _currentValue() {
+    final dueDate = _dueDate;
+    return [
+      _eventId,
+      _titleController.text.trim(),
+      _descriptionController.text.trim(),
+      dueDate == null
+          ? null
+          : DateTime(dueDate.year, dueDate.month, dueDate.day),
+      dueDate == null ? '' : _dueTimeController.text.trim(),
+      _picked.keys.toList()..sort(),
+      [
+        for (final draft in _subtasks)
+          if (draft.controller.text.trim().isNotEmpty) ...[
+            draft.id,
+            draft.controller.text.trim(),
+          ],
+      ],
+    ];
+  }
+
+  bool get _hasChanges =>
+      !const DeepCollectionEquality().equals(_currentValue(), _openingValue);
+
+  bool get _canOpenAssignees => _eventId != null && _eventAssignees != null;
 
   @override
   void initState() {
@@ -124,10 +189,6 @@ class _TaskFormModalState extends State<_TaskFormModal> {
       widget.events,
       now: widget.now,
       current: existing?.event,
-    );
-    _assignableMembers = assignableTaskMembers(
-      widget.members,
-      currentAssigneeIds: existing?.assigneeIds ?? const [],
     );
 
     // An event that no longer exists cannot stay selected: the dropdown would
@@ -150,10 +211,11 @@ class _TaskFormModalState extends State<_TaskFormModal> {
       text: dueAt == null ? '' : _timeFormat.format(dueAt),
     );
 
-    final assignableIds = _assignableMembers.map((member) => member.id).toSet();
-    _assigneeIds.addAll(
-      (existing?.assigneeIds ?? const <String>[]).where(assignableIds.contains),
-    );
+    // The task's assignees stay picked whoever the event's list holds, so
+    // saving an edit never drops someone the manager did not touch.
+    for (final member in existing?.assignees ?? const <TeamMember>[]) {
+      _picked[member.id] = member;
+    }
 
     _subtasks = [
       for (final subtask in existing?.subtasks ?? const <Subtask>[])
@@ -163,10 +225,16 @@ class _TaskFormModalState extends State<_TaskFormModal> {
           title: subtask.title,
         ),
     ];
+
+    _openingValue = _currentValue();
+
+    final eventId = _eventId;
+    if (eventId != null) _watchAssignees(eventId);
   }
 
   @override
   void dispose() {
+    _assigneesSubscription?.cancel();
     _titleFocusNode.dispose();
     _descriptionFocusNode.dispose();
     _assigneeSearchFocusNode.dispose();
@@ -178,6 +246,43 @@ class _TaskFormModalState extends State<_TaskFormModal> {
       draft.dispose();
     }
     super.dispose();
+  }
+
+  /// Follow who is assigned to [eventId], replacing any earlier event's list.
+  void _watchAssignees(String eventId) {
+    _assigneesSubscription?.cancel();
+    _eventAssignees = null;
+    _assigneesFailed = false;
+    _assigneesSubscription = widget.watchEventAssignees(eventId).listen(
+      (members) {
+        if (!mounted) return;
+        setState(() {
+          _eventAssignees = members;
+          _assigneesFailed = false;
+          // Someone picked who was renamed shows their new name.
+          for (final member in members) {
+            if (_picked.containsKey(member.id)) _picked[member.id] = member;
+          }
+        });
+      },
+      onError: (Object _) {
+        if (mounted) setState(() => _assigneesFailed = true);
+      },
+    );
+  }
+
+  void _onEventChanged(String? eventId) {
+    if (eventId == null || eventId == _eventId) return;
+    _assigneeSearchController.clear();
+    setState(() {
+      _eventId = eventId;
+      // The assignees come from the event, so a different event starts with
+      // nobody picked.
+      _picked.clear();
+      _assigneesOpen = false;
+      _assigneeQuery = '';
+      _watchAssignees(eventId);
+    });
   }
 
   Future<void> _pickDueDate() async {
@@ -216,7 +321,40 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     WidgetsBinding.instance.addPostFrameCallback((_) => draft.dispose());
   }
 
-  void _save() {
+  /// Close without saving. A form that holds changes asks first.
+  Future<void> _cancel() async {
+    if (!_hasChanges) {
+      Navigator.of(context).pop();
+      return;
+    }
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('שינויים לא נשמרו'),
+          content:
+              const Text('האם אתה בטוח שברצונך לצאת? השינויים לא יישמרו.'),
+          actions: [
+            TextButton(
+              key: const Key('task-form-discard-stay'),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('חזרה לעריכה'),
+            ),
+            TextButton(
+              key: const Key('task-form-discard-leave'),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('צא ללא שמירה'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (leave == true && mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _save() async {
     if (!_canSave) return;
     // An empty time is fine and means "by the end of that day". A time that
     // was typed but is not a real time is refused rather than quietly saved
@@ -238,17 +376,14 @@ class _TaskFormModalState extends State<_TaskFormModal> {
             isDone: draft.isDone,
           ),
     ];
-    final assigneeIds = _assigneeIds.toList();
-    final assignees = [
-      for (final id in assigneeIds)
-        ..._assignableMembers.where((member) => member.id == id),
-    ];
+    final assigneeIds = _picked.keys.toList();
+    final assignees = _picked.values.toList();
 
     final existing = widget.existing;
     final TaskItem task;
     if (existing == null) {
       task = TaskItem(
-        id: _uuid.v4(),
+        id: _newTaskId,
         eventId: eventId,
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
@@ -275,7 +410,21 @@ class _TaskFormModalState extends State<_TaskFormModal> {
         assignees: assignees,
       );
     }
-    Navigator.of(context).pop(task);
+
+    setState(() {
+      _isSaving = true;
+      _saveError = null;
+    });
+    final result = await widget.onSave(task);
+    if (!mounted) return;
+    if (result.isSuccess) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() {
+      _isSaving = false;
+      _saveError = result.message ?? 'השמירה נכשלה. נסו שוב.';
+    });
   }
 
   @override
@@ -283,89 +432,119 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     final theme = Theme.of(context);
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Dialog(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 520,
-            maxHeight: MediaQuery.of(context).size.height * 0.9,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
-                child: Text(
-                  _isEditing ? 'עריכת משימה' : 'משימה חדשה',
-                  style: theme.textTheme.titleLarge,
+      // The back button and Escape go the way of the cancel button: a save in
+      // flight cannot be walked away from, and unsaved changes ask first.
+      child: PopScope(
+        canPop: !_isSaving && !_hasChanges,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && !_isSaving) _cancel();
+        },
+        child: Dialog(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 520,
+              maxHeight: MediaQuery.of(context).size.height * 0.9,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+                  child: Text(
+                    _isEditing ? 'עריכת משימה' : 'משימה חדשה',
+                    style: theme.textTheme.titleLarge,
+                  ),
                 ),
-              ),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                Flexible(
+                  // Locked while saving: what was sent is what stays on screen.
+                  child: AbsorbPointer(
+                    absorbing: _isSaving,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildEventField(),
+                          const SizedBox(height: 16),
+                          TextField(
+                            key: const Key('task-form-title'),
+                            controller: _titleController,
+                            focusNode: _titleFocusNode,
+                            maxLength: 200,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'כותרת',
+                              border: OutlineInputBorder(),
+                              counterText: '',
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            key: const Key('task-form-description'),
+                            controller: _descriptionController,
+                            focusNode: _descriptionFocusNode,
+                            minLines: 2,
+                            maxLines: 5,
+                            maxLength: 5000,
+                            decoration: const InputDecoration(
+                              labelText: 'תיאור',
+                              border: OutlineInputBorder(),
+                              counterText: '',
+                              alignLabelWithHint: true,
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildDueFields(theme),
+                          const SizedBox(height: 20),
+                          _buildAssignees(theme),
+                          const SizedBox(height: 20),
+                          _buildSubtasks(theme),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (_saveError != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+                    child: Text(
+                      _saveError!,
+                      key: const Key('task-form-save-error'),
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.error),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      _buildEventField(),
-                      const SizedBox(height: 16),
-                      TextField(
-                        key: const Key('task-form-title'),
-                        controller: _titleController,
-                        focusNode: _titleFocusNode,
-                        maxLength: 200,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'כותרת',
-                          border: OutlineInputBorder(),
-                          counterText: '',
-                        ),
-                        onChanged: (_) => setState(() {}),
+                      TextButton(
+                        key: const Key('task-form-cancel'),
+                        onPressed: _isSaving ? null : _cancel,
+                        child: const Text('ביטול'),
                       ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        key: const Key('task-form-description'),
-                        controller: _descriptionController,
-                        focusNode: _descriptionFocusNode,
-                        minLines: 2,
-                        maxLines: 5,
-                        maxLength: 5000,
-                        decoration: const InputDecoration(
-                          labelText: 'תיאור',
-                          border: OutlineInputBorder(),
-                          counterText: '',
-                          alignLabelWithHint: true,
-                        ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        key: const Key('task-form-save'),
+                        onPressed: _canSave ? _save : null,
+                        child: _isSaving
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('שמירה'),
                       ),
-                      const SizedBox(height: 16),
-                      _buildDueFields(theme),
-                      const SizedBox(height: 20),
-                      _buildAssignees(theme),
-                      const SizedBox(height: 20),
-                      _buildSubtasks(theme),
                     ],
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      key: const Key('task-form-cancel'),
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('ביטול'),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      key: const Key('task-form-save'),
-                      onPressed: _canSave ? _save : null,
-                      child: const Text('שמירה'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -380,7 +559,8 @@ class _TaskFormModalState extends State<_TaskFormModal> {
       decoration: InputDecoration(
         labelText: 'אירוע',
         border: const OutlineInputBorder(),
-        helperText: _pickableEvents.isEmpty ? 'אין אירועים עתידיים' : null,
+        helperText:
+            _pickableEvents.isEmpty ? 'אין אירועי דו יומי עתידיים' : null,
       ),
       items: [
         for (final event in _pickableEvents)
@@ -394,7 +574,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
             ),
           ),
       ],
-      onChanged: (value) => setState(() => _eventId = value),
+      onChanged: _onEventChanged,
     );
   }
 
@@ -454,17 +634,15 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     );
   }
 
-  /// The members to show as chips: everyone matching the search, plus anyone
-  /// already picked. A picked member stays on screen whatever is typed, so the
-  /// manager can always see, and undo, who is assigned.
-  List<TeamMember> get _visibleAssignableMembers {
-    final query = _searchable(_assigneeQuery);
-    if (query.isEmpty) return _assignableMembers;
-    return _assignableMembers
-        .where((member) =>
-            _assigneeIds.contains(member.id) ||
-            _searchable(member.name).contains(query))
-        .toList();
+  /// The rows the open dropdown can show: the event's members, then anyone
+  /// picked who is not among them.
+  List<TeamMember> get _offeredMembers {
+    final assigned = _eventAssignees ?? const <TeamMember>[];
+    final assignedIds = {for (final member in assigned) member.id};
+    return [
+      ...assigned,
+      ..._picked.values.where((member) => !assignedIds.contains(member.id)),
+    ];
   }
 
   static String _searchable(String text) =>
@@ -475,67 +653,147 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     setState(() => _assigneeQuery = '');
   }
 
+  void _toggleAssigneesOpen() {
+    // The search belongs to one opening of the dropdown; the next starts clean.
+    _assigneeSearchController.clear();
+    setState(() {
+      _assigneesOpen = !_assigneesOpen;
+      _assigneeQuery = '';
+    });
+  }
+
+  void _setPicked(TeamMember member, bool isPicked) {
+    // A search has done its job once its result is ticked: empty it and put
+    // the cursor back, ready for the next name.
+    final wasSearching = _assigneeQuery.isNotEmpty;
+    if (wasSearching) _assigneeSearchController.clear();
+    setState(() {
+      if (isPicked) {
+        _picked[member.id] = member;
+      } else {
+        _picked.remove(member.id);
+      }
+      _assigneeQuery = '';
+    });
+    if (wasSearching) _assigneeSearchFocusNode.requestFocus();
+  }
+
+  /// Why the dropdown cannot be opened yet, or null when it can.
+  String? get _assigneesHint {
+    if (_eventId == null) return 'יש לבחור אירוע תחילה';
+    if (_assigneesFailed) return 'טעינת המשובצים נכשלה';
+    if (_eventAssignees == null) return 'טוען משובצים...';
+    return null;
+  }
+
+  /// A dropdown that opens in place: closed it is one field naming who is
+  /// picked, open it grows a search row and the event's members under it.
   Widget _buildAssignees(ThemeData theme) {
-    final visibleMembers = _visibleAssignableMembers;
+    final canOpen = _canOpenAssignees;
+    final isOpen = canOpen && _assigneesOpen;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('אחראים', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 8),
-        if (_assignableMembers.isEmpty)
-          Text('אין חברי צוות פעילים', style: theme.textTheme.bodySmall)
-        else ...[
-          TextField(
-            key: const Key('task-form-assignee-search'),
-            controller: _assigneeSearchController,
-            focusNode: _assigneeSearchFocusNode,
-            textInputAction: TextInputAction.search,
+        InkWell(
+          key: const Key('task-form-assignees'),
+          onTap: canOpen ? _toggleAssigneesOpen : null,
+          borderRadius: BorderRadius.circular(4),
+          child: InputDecorator(
+            isEmpty: _picked.isEmpty,
             decoration: InputDecoration(
-              hintText: 'חיפוש חבר צוות...',
-              prefixIcon: const Icon(Icons.search, size: 20),
-              suffixIcon: _assigneeQuery.isEmpty
-                  ? null
-                  : IconButton(
-                      key: const Key('task-form-assignee-search-clear'),
-                      tooltip: 'נקה חיפוש',
-                      icon: const Icon(Icons.clear, size: 20),
-                      onPressed: _clearAssigneeSearch,
-                    ),
+              labelText: 'אחראים',
               border: const OutlineInputBorder(),
-              isDense: true,
+              enabled: canOpen,
+              helperText: _assigneesHint,
+              suffixIcon: Icon(
+                isOpen ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+              ),
             ),
-            onChanged: (value) => setState(() => _assigneeQuery = value),
+            child: _picked.isEmpty
+                ? null
+                : Text(_picked.values.map((member) => member.name).join(', ')),
           ),
-          const SizedBox(height: 8),
+        ),
+        if (isOpen) ...[
+          const SizedBox(height: 4),
+          _buildAssigneeMenu(theme),
         ],
-        if (_assignableMembers.isNotEmpty && visibleMembers.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text('לא נמצאו חברי צוות', style: theme.textTheme.bodySmall),
-          )
-        else if (_assignableMembers.isNotEmpty)
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              for (final member in visibleMembers)
-                FilterChip(
-                  key: Key('task-form-assignee-${member.id}'),
-                  label: Text(member.name),
-                  selected: _assigneeIds.contains(member.id),
-                  onSelected: (selected) {
-                    setState(() {
-                      if (selected) {
-                        _assigneeIds.add(member.id);
-                      } else {
-                        _assigneeIds.remove(member.id);
-                      }
-                    });
-                  },
-                ),
-            ],
-          ),
       ],
+    );
+  }
+
+  Widget _buildAssigneeMenu(ThemeData theme) {
+    final offered = _offeredMembers;
+    final query = _searchable(_assigneeQuery);
+    final visible = query.isEmpty
+        ? offered
+        : offered
+            .where((member) => _searchable(member.name).contains(query))
+            .toList();
+    return Material(
+      key: const Key('task-form-assignee-menu'),
+      type: MaterialType.transparency,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: theme.colorScheme.outline),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (offered.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'אין משובצים לאירוע זה',
+                style: theme.textTheme.bodySmall,
+              ),
+            )
+          else ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              child: TextField(
+                key: const Key('task-form-assignee-search'),
+                controller: _assigneeSearchController,
+                focusNode: _assigneeSearchFocusNode,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'חיפוש חבר צוות...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _assigneeQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          key: const Key('task-form-assignee-search-clear'),
+                          tooltip: 'נקה חיפוש',
+                          icon: const Icon(Icons.clear, size: 20),
+                          onPressed: _clearAssigneeSearch,
+                        ),
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (value) => setState(() => _assigneeQuery = value),
+              ),
+            ),
+            if (visible.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'לא נמצאו חברי צוות',
+                  style: theme.textTheme.bodySmall,
+                ),
+              )
+            else
+              for (final member in visible)
+                CheckboxListTile(
+                  key: Key('task-form-assignee-${member.id}'),
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(member.name),
+                  value: _picked.containsKey(member.id),
+                  onChanged: (value) => _setPicked(member, value ?? false),
+                ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -564,6 +822,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
                         isDense: true,
                         counterText: '',
                       ),
+                      onChanged: (_) => setState(() {}),
                     ),
                   ),
                   IconButton(
