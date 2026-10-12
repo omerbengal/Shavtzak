@@ -1,13 +1,14 @@
 import 'package:equatable/equatable.dart';
 import 'package:rxdart/rxdart.dart';
 
+import '../../core/utils/task_utils.dart';
 import '../../domain/entities/event.dart';
 import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import '../data_sources/database_interface.dart';
 
 /// Everything the tasks screen shows: the populated tasks, plus the events and
-/// members they were joined with, which the task form picks from.
+/// members they were joined with. The task form picks its event from [events].
 class TaskBoard extends Equatable {
   final List<TaskItem> tasks;
   final List<Event> events;
@@ -58,6 +59,24 @@ class TaskRepository {
               .toList(),
           events: events,
           members: members,
+        );
+      },
+    );
+  }
+
+  /// The members a task on [eventId] may be given to: those assigned to that
+  /// event who are still active, by name.
+  ///
+  /// Live on both sides, so assigning or unassigning someone, and renaming or
+  /// archiving a member, each re-emit the list.
+  Stream<List<TeamMember>> watchEventAssignees(String eventId) {
+    return Rx.combineLatest2<List<String>, List<TeamMember>, List<TeamMember>>(
+      _database.watchAssignedMemberIds(eventId),
+      _database.watchTeamMembers(),
+      (assignedIds, members) {
+        final assigned = assignedIds.toSet();
+        return assignableTaskMembers(
+          members.where((member) => assigned.contains(member.id)).toList(),
         );
       },
     );

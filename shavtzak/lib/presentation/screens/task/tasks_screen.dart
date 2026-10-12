@@ -11,6 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
 import '../../../core/utils/task_utils.dart';
+import '../../../data/repositories/task_repository.dart';
 import '../../../domain/entities/event.dart';
 import '../../../domain/entities/subtask.dart';
 import '../../../domain/entities/task_item.dart';
@@ -44,7 +45,17 @@ class _TasksScreenState extends State<TasksScreen> {
 
   bool _showAll = false;
   String _query = '';
-  TaskFilterSelection _filter = const TaskFilterSelection();
+
+  // Each tab keeps a filter of its own. "My tasks" is the member's personal
+  // view: its filter offers only what their own tasks hold and has no
+  // assignee section. "All tasks" is the general one. Sharing one selection
+  // would leave a choice made in one tab narrowing the other with nothing on
+  // screen to untick it.
+  TaskFilterSelection _mineFilter = const TaskFilterSelection();
+  TaskFilterSelection _allFilter = const TaskFilterSelection();
+
+  /// The filter of the tab on screen.
+  TaskFilterSelection get _filter => _showAll ? _allFilter : _mineFilter;
 
   // Which cards show their subtasks. Kept here, not in the cards: the list
   // re-sorts on every change, and a card that moved would otherwise close.
@@ -81,14 +92,21 @@ class _TasksScreenState extends State<TasksScreen> {
 
   // ---- actions ----
 
+  /// Send a mutation and wait for the backend's answer.
+  Future<CrudActionResult> _send(
+    TaskEvent Function(CrudActionCompleter completion) build,
+  ) {
+    final completion = CrudActionCompleter();
+    context.read<TaskBloc>().add(build(completion));
+    return completion.future;
+  }
+
   /// Send a mutation and report a failure in a snackbar. Success is silent:
   /// the change shows up through the stream.
   Future<void> _dispatch(
     TaskEvent Function(CrudActionCompleter completion) build,
   ) async {
-    final completion = CrudActionCompleter();
-    context.read<TaskBloc>().add(build(completion));
-    final result = await completion.future;
+    final result = await _send(build);
     if (!mounted || result.isSuccess) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -100,82 +118,66 @@ class _TasksScreenState extends State<TasksScreen> {
       );
   }
 
-  Future<void> _createTask(TasksLoaded state, TeamMember user) async {
+  // The dialogs below stay open until the backend answers and show a failure
+  // themselves, so what they send goes through _send, not the snackbar of
+  // _dispatch. Only the ticks, which have no dialog, use _dispatch.
+
+  Future<void> _createTask(TasksLoaded state, TeamMember user) {
     Logger.action('tap:taskAdd');
-    final task = await showTaskFormModal(
+    return showTaskFormModal(
       context,
       events: state.events,
-      members: state.members,
+      watchEventAssignees: context.read<TaskRepository>().watchEventAssignees,
+      onSave: (task) =>
+          _send((completion) => CreateTask(task, completion: completion)),
       currentUserId: user.id,
       now: _now,
     );
-    if (task == null || !mounted) return;
-    await _dispatch((completion) => CreateTask(task, completion: completion));
   }
 
   Future<void> _editTask(
     TaskItem existing,
     TasksLoaded state,
     TeamMember user,
-  ) async {
+  ) {
     Logger.action('tap:taskEdit');
-    final task = await showTaskFormModal(
+    return showTaskFormModal(
       context,
       existing: existing,
       events: state.events,
-      members: state.members,
+      watchEventAssignees: context.read<TaskRepository>().watchEventAssignees,
+      onSave: (task) =>
+          _send((completion) => UpdateTask(task, completion: completion)),
       currentUserId: user.id,
       now: _now,
     );
-    if (task == null || !mounted) return;
-    await _dispatch((completion) => UpdateTask(task, completion: completion));
   }
 
-  Future<void> _deleteTask(TaskItem task) async {
+  Future<void> _deleteTask(TaskItem task) {
     Logger.action('tap:taskDelete');
-    final confirmed = await showDialog<bool>(
+    return showDialog<void>(
       context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('מחיקת משימה'),
-          content: Text('למחוק את "${task.title}"? לא ניתן לשחזר.'),
-          actions: [
-            TextButton(
-              key: const Key('task-delete-cancel'),
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('ביטול'),
-            ),
-            FilledButton(
-              key: const Key('task-delete-confirm'),
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.red.shade700,
-              ),
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('מחיקה'),
-            ),
-          ],
+      barrierDismissible: false,
+      builder: (context) => _DeleteTaskDialog(
+        task: task,
+        onDelete: () => _send(
+          (completion) => DeleteTask(task.id, completion: completion),
         ),
       ),
     );
-    if (confirmed != true || !mounted) return;
-    await _dispatch(
-      (completion) => DeleteTask(task.id, completion: completion),
-    );
   }
 
-  Future<void> _editUpdate(TaskItem task) async {
+  Future<void> _editUpdate(TaskItem task) {
     Logger.action('tap:taskUpdate');
-    final text = await showAssigneeUpdateDialog(
+    return showAssigneeUpdateDialog(
       context,
       initialText: task.assigneeUpdate,
-    );
-    if (text == null || !mounted) return;
-    await _dispatch(
-      (completion) => SaveAssigneeUpdate(
-        taskId: task.id,
-        text: text,
-        completion: completion,
+      onSave: (text) => _send(
+        (completion) => SaveAssigneeUpdate(
+          taskId: task.id,
+          text: text,
+          completion: completion,
+        ),
       ),
     );
   }
@@ -203,13 +205,15 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  Future<void> _openFilter(List<TaskItem> allTasks) async {
+  void _openFilter(List<TaskItem> allTasks, TeamMember user) {
     Logger.action('open:taskFilterModal');
-    // Offer only what would actually match something: events and members that
-    // appear on at least one task.
+    final forAllTasks = _showAll;
+    // Offer only what would actually match something in this tab: the events
+    // and members that appear on at least one of its tasks.
     final eventsById = <String, Event>{};
     final membersById = <String, TeamMember>{};
     for (final task in allTasks) {
+      if (!forAllTasks && !task.isAssignedTo(user.id)) continue;
       final event = task.event;
       if (event != null) eventsById[event.id] = event;
       for (final member in task.assignees) {
@@ -221,15 +225,25 @@ class _TasksScreenState extends State<TasksScreen> {
     final members = membersById.values.toList()
       ..sort((a, b) => a.name.compareTo(b.name));
 
-    final selection = await showTaskFilterModal(
+    showTaskFilterModal(
       context,
       current: _filter,
       events: events,
-      members: members,
+      // No assignee section under "my tasks": they are all the member's own.
+      members: forAllTasks ? members : const [],
+      // Applied on every tick, so the list narrows behind the open filter.
+      onChanged: (selection) {
+        if (!mounted) return;
+        Logger.action('filter:tasks', {'groups': selection.activeCount});
+        setState(() {
+          if (forAllTasks) {
+            _allFilter = selection;
+          } else {
+            _mineFilter = selection;
+          }
+        });
+      },
     );
-    if (selection == null || !mounted) return;
-    Logger.action('filter:tasks', {'groups': selection.activeCount});
-    setState(() => _filter = selection);
   }
 
   void _goHome(TeamMember user) {
@@ -319,15 +333,17 @@ class _TasksScreenState extends State<TasksScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    final filter = _filter;
     final visible = sortTasks(
       filterTasks(
         state.tasks,
         now: _now,
         query: _query,
         onlyAssigneeId: _showAll ? null : user.id,
-        statuses: _filter.statuses,
-        eventIds: _filter.eventIds,
-        assigneeIds: _filter.assigneeIds,
+        statuses: filter.statuses,
+        eventIds: filter.eventIds,
+        assigneeIds: filter.assigneeIds,
+        dueWithin: filter.dueSoon ? taskDueSoonWindow : null,
       ),
       _now,
     );
@@ -360,7 +376,7 @@ class _TasksScreenState extends State<TasksScreen> {
             ),
           ),
         ),
-        _buildSearchBar(state.tasks),
+        _buildSearchBar(state.tasks, user),
         Expanded(
           child: visible.isEmpty
               ? _buildEmptyState()
@@ -399,7 +415,7 @@ class _TasksScreenState extends State<TasksScreen> {
 
   /// Mirrors the look of `EventSearchFilterBar`: one field with the clear and
   /// filter buttons inside it.
-  Widget _buildSearchBar(List<TaskItem> allTasks) {
+  Widget _buildSearchBar(List<TaskItem> allTasks, TeamMember user) {
     final count = _filter.activeCount;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -435,7 +451,7 @@ class _TasksScreenState extends State<TasksScreen> {
                   ),
                 ),
                 tooltip: count == 0 ? 'סינון' : 'סינון: $count פעילים',
-                onPressed: () => _openFilter(allTasks),
+                onPressed: () => _openFilter(allTasks, user),
               ),
             ],
           ),
@@ -485,6 +501,94 @@ class _TasksScreenState extends State<TasksScreen> {
                     ?.copyWith(color: Colors.grey.shade600),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Asks before deleting [task], then stays open with a spinner on the delete
+/// button until the backend answers: it closes on success and shows the
+/// failure otherwise.
+class _DeleteTaskDialog extends StatefulWidget {
+  const _DeleteTaskDialog({required this.task, required this.onDelete});
+
+  final TaskItem task;
+  final Future<CrudActionResult> Function() onDelete;
+
+  @override
+  State<_DeleteTaskDialog> createState() => _DeleteTaskDialogState();
+}
+
+class _DeleteTaskDialogState extends State<_DeleteTaskDialog> {
+  bool _isDeleting = false;
+  String? _error;
+
+  Future<void> _delete() async {
+    setState(() {
+      _isDeleting = true;
+      _error = null;
+    });
+    final result = await widget.onDelete();
+    if (!mounted) return;
+    if (result.isSuccess) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() {
+      _isDeleting = false;
+      _error = result.message ?? 'המחיקה נכשלה. נסו שוב.';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      // A delete in flight cannot be walked away from with the back button.
+      child: PopScope(
+        canPop: !_isDeleting,
+        child: AlertDialog(
+          title: const Text('מחיקת משימה'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('למחוק את "${widget.task.title}"? לא ניתן לשחזר.'),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  key: const Key('task-delete-error'),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.error),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              key: const Key('task-delete-cancel'),
+              onPressed:
+                  _isDeleting ? null : () => Navigator.of(context).pop(),
+              child: const Text('ביטול'),
+            ),
+            FilledButton(
+              key: const Key('task-delete-confirm'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+              ),
+              onPressed: _isDeleting ? null : _delete,
+              child: _isDeleting
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('מחיקה'),
+            ),
           ],
         ),
       ),

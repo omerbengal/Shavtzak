@@ -132,6 +132,12 @@ abstract class DatabaseInterface {
   /// Watch assignments for a specific team member in real-time
   Stream<List<Assignment>> watchAssignmentsByPerson(String teamMemberId);
 
+  /// Watch the ids of the members assigned to an event, each listed once.
+  ///
+  /// Ids only: unlike [watchAssignmentsByEvent] nothing is populated, so an
+  /// emission never waits on a read of the event or the members.
+  Stream<List<String>> watchAssignedMemberIds(String eventId);
+
   /// Get an assignment by ID
   Future<Assignment?> getAssignmentById(String id);
 

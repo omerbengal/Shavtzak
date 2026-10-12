@@ -396,6 +396,13 @@ class LoggingDatabase implements DatabaseInterface {
       );
 
   @override
+  Stream<List<String>> watchAssignedMemberIds(String eventId) => _wrapStream(
+        op: 'watchAssignedMemberIds',
+        ctx: {'collection': 'assignments', 'eventId': eventId},
+        inner: () => _inner.watchAssignedMemberIds(eventId),
+      );
+
+  @override
   Stream<List<Assignment>> watchAssignmentsByPerson(String teamMemberId) =>
       _wrapStream(
         op: 'watchAssignmentsByPerson',

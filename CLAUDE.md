@@ -67,7 +67,7 @@ Uses `flutter_bloc` with the BLoC (Business Logic Component) pattern:
 - **EventBloc**: Manages events with real-time updates, handles role quotas
 - **AssignmentBloc**: Most complex - manages assignments with related Event and TeamMember data
 - **UserSelectionBloc**: Manages user authentication, selection, and session persistence
-- **TaskBloc**: Manages the דו יומי task screen. One live subscription to every task plus the events and members the task form picks from; subscribes only when the screen opens. Mutations report through the event's completer, not the state
+- **TaskBloc**: Manages the דו יומי task screen. One live subscription to every task plus the events and members they are joined with; subscribes only when the screen opens. Mutations report through the event's completer, not the state. Ticking a subtask or a task is optimistic: the bloc lays the unconfirmed tick over the stream's board (`_pending`), sends it in the background and takes it back if the backend refuses. The task form offers only future events of the "דו יומי" category (`duYomiCategoryId` in `task_utils.dart`, matched by id) and, as assignees, only the members assigned to the chosen event (`TaskRepository.watchEventAssignees`, live). Both rules live in the form; the backend does not enforce them
 
 Each BLoC follows the pattern:
 ```dart
@@ -461,7 +461,7 @@ _subscription = _repository.watchItems().listen(
 - **RTL**: Always wrap screens with RTL directionality
 - **Immutability**: Entities use `copyWith()` methods, never mutate directly
 - **Null Safety**: Full Dart null-safety enabled
-- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (782 passing as of 2026-10-12). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
+- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (874 passing as of 2026-10-12). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
 - **Environment Isolation**: Test and production are completely separate (data, cache, routes)
 - **User-Based Auth**: No traditional Firebase Authentication - uses cached team member uniqueKey
 

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/crud_action_result.dart';
 import 'package:shavtzak/data/data_sources/firestore_database.dart';
 import 'package:shavtzak/data/repositories/task_repository.dart';
+import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/presentation/bloc/task/task_bloc.dart';
 
@@ -18,6 +19,10 @@ class _FakeTaskRepository extends Fake implements TaskRepository {
   final calls = <String>[];
   Object? failWith;
 
+  /// While set, a mutation does not answer until the test completes it. Each
+  /// call keeps the gate it started under.
+  Completer<void>? gate;
+
   @override
   Stream<TaskBoard> watchBoard() {
     watchCalls++;
@@ -28,6 +33,7 @@ class _FakeTaskRepository extends Fake implements TaskRepository {
 
   Future<void> _record(String call) async {
     calls.add(call);
+    await gate?.future;
     final failure = failWith;
     if (failure != null) throw failure;
   }
@@ -68,7 +74,12 @@ void main() {
     }
   });
 
-  TaskBloc buildBloc() => TaskBloc(repository: repository);
+  // What the bloc stamps on a task it shows as completed before the backend
+  // has answered.
+  final tickedAt = DateTime(2026, 10, 11, 14, 5);
+
+  TaskBloc buildBloc() =>
+      TaskBloc(repository: repository, clock: () => tickedAt);
 
   group('LoadTasks', () {
     blocTest<TaskBloc, TaskState>(
@@ -306,6 +317,284 @@ void main() {
         const TasksLoading(),
         TasksLoaded([buildTask(id: 't1')]),
       ],
+    );
+  });
+
+  group('progress shows at once', () {
+    Future<void> settle() => Future<void>.delayed(Duration.zero);
+
+    Future<void> load(TaskBloc bloc, List<TaskItem> tasks) async {
+      bloc.add(const LoadTasks());
+      await settle();
+      repository.emit(tasks);
+      await settle();
+    }
+
+    const stepA = Subtask(id: 'a', title: 'טופס');
+    const stepB = Subtask(id: 'b', title: 'חתימה');
+    const stepADone = Subtask(id: 'a', title: 'טופס', isDone: true);
+    const stepBDone = Subtask(id: 'b', title: 'חתימה', isDone: true);
+
+    final twoSteps = buildTask(id: 't1', subtasks: const [stepA, stepB]);
+    final plain = buildTask(id: 't1');
+    final later = DateTime(2026, 10, 11, 14, 6);
+
+    blocTest<TaskBloc, TaskState>(
+      'a ticked subtask is shown done before the backend answers, and the '
+      'stream then takes over',
+      build: buildBloc,
+      act: (bloc) async {
+        await load(bloc, [twoSteps]);
+        repository.gate = Completer<void>();
+        bloc.add(const ToggleSubtask(
+          taskId: 't1',
+          subtaskId: 'a',
+          isDone: true,
+        ));
+        await settle();
+        expect(repository.calls, ['subtask:t1:a:true']);
+
+        repository.gate!.complete();
+        await settle();
+        repository.emit([
+          twoSteps.copyWith(
+            subtasks: const [stepADone, stepB],
+            updatedAt: later,
+          ),
+        ]);
+      },
+      expect: () => [
+        const TasksLoading(),
+        TasksLoaded([twoSteps]),
+        TasksLoaded([
+          twoSteps.copyWith(subtasks: const [stepADone, stepB]),
+        ]),
+        TasksLoaded([
+          twoSteps.copyWith(
+            subtasks: const [stepADone, stepB],
+            updatedAt: later,
+          ),
+        ]),
+      ],
+    );
+
+    blocTest<TaskBloc, TaskState>(
+      'ticking the last open subtask shows the task complete at once',
+      build: buildBloc,
+      act: (bloc) async {
+        await load(bloc, [
+          twoSteps.copyWith(subtasks: const [stepADone, stepB]),
+        ]);
+        repository.gate = Completer<void>();
+        bloc.add(const ToggleSubtask(
+          taskId: 't1',
+          subtaskId: 'b',
+          isDone: true,
+        ));
+        await settle();
+        repository.gate!.complete();
+      },
+      skip: 2,
+      expect: () => [
+        TasksLoaded([
+          twoSteps.copyWith(
+            subtasks: const [stepADone, stepBDone],
+            isComplete: true,
+            completedAt: tickedAt,
+          ),
+        ]),
+      ],
+    );
+
+    blocTest<TaskBloc, TaskState>(
+      'unticking a subtask of a completed task reopens it at once',
+      build: buildBloc,
+      act: (bloc) async {
+        await load(bloc, [
+          twoSteps.copyWith(
+            subtasks: const [stepADone, stepBDone],
+            isComplete: true,
+            completedAt: DateTime(2026, 10, 10),
+          ),
+        ]);
+        repository.gate = Completer<void>();
+        bloc.add(const ToggleSubtask(
+          taskId: 't1',
+          subtaskId: 'a',
+          isDone: false,
+        ));
+        await settle();
+        repository.gate!.complete();
+      },
+      skip: 2,
+      verify: (bloc) {
+        final task = (bloc.state as TasksLoaded).tasks.single;
+        expect(task.isComplete, isFalse);
+        expect(task.subtasks, const [stepA, stepBDone]);
+      },
+    );
+
+    blocTest<TaskBloc, TaskState>(
+      'completing a task without subtasks shows at once',
+      build: buildBloc,
+      act: (bloc) async {
+        await load(bloc, [plain]);
+        repository.gate = Completer<void>();
+        bloc.add(const SetTaskComplete(taskId: 't1', isComplete: true));
+        await settle();
+        expect(repository.calls, ['complete:t1:true']);
+        repository.gate!.complete();
+      },
+      skip: 2,
+      expect: () => [
+        TasksLoaded([
+          plain.copyWith(isComplete: true, completedAt: tickedAt),
+        ]),
+      ],
+    );
+
+    blocTest<TaskBloc, TaskState>(
+      'reopening a completed task shows at once',
+      build: buildBloc,
+      act: (bloc) async {
+        await load(bloc, [plain.copyWith(isComplete: true)]);
+        repository.gate = Completer<void>();
+        bloc.add(const SetTaskComplete(taskId: 't1', isComplete: false));
+        await settle();
+        repository.gate!.complete();
+      },
+      skip: 2,
+      verify: (bloc) {
+        expect((bloc.state as TasksLoaded).tasks.single.isComplete, isFalse);
+      },
+    );
+
+    blocTest<TaskBloc, TaskState>(
+      'a tick the backend refuses is undone and reported',
+      build: buildBloc,
+      act: (bloc) async {
+        await load(bloc, [plain]);
+        repository.gate = Completer<void>();
+        repository.failWith = DatabaseException(
+          'Failed backend mutation task.setComplete: אין הרשאה לעדכן את המשימה',
+        );
+        final completion = CrudActionCompleter();
+        bloc.add(SetTaskComplete(
+          taskId: 't1',
+          isComplete: true,
+          completion: completion,
+        ));
+        await settle();
+        repository.gate!.complete();
+
+        final result = await completion.future;
+        expect(result.isFailure, isTrue);
+        expect(result.message, 'אין הרשאה לעדכן את המשימה');
+      },
+      skip: 2,
+      expect: () => [
+        TasksLoaded([
+          plain.copyWith(isComplete: true, completedAt: tickedAt),
+        ]),
+        TasksLoaded([plain]),
+      ],
+    );
+
+    blocTest<TaskBloc, TaskState>(
+      'a stream update that arrives while the tick is in flight does not undo '
+      'it',
+      build: buildBloc,
+      act: (bloc) async {
+        await load(bloc, [plain]);
+        repository.gate = Completer<void>();
+        bloc.add(const SetTaskComplete(taskId: 't1', isComplete: true));
+        await settle();
+
+        // Someone else adds a task; t1 is still unfinished on the server.
+        repository.emit([plain, buildTask(id: 't2')]);
+        await settle();
+        repository.gate!.complete();
+      },
+      skip: 3,
+      expect: () => [
+        TasksLoaded([
+          plain.copyWith(isComplete: true, completedAt: tickedAt),
+          buildTask(id: 't2'),
+        ]),
+      ],
+    );
+
+    blocTest<TaskBloc, TaskState>(
+      'once the backend has answered, the stream is the truth again',
+      build: buildBloc,
+      act: (bloc) async {
+        await load(bloc, [plain]);
+        bloc.add(const SetTaskComplete(taskId: 't1', isComplete: true));
+        await settle();
+
+        // The write landed, and someone else reopened the task right after.
+        repository.emit([plain.copyWith(updatedAt: later)]);
+      },
+      skip: 3,
+      expect: () => [
+        TasksLoaded([plain.copyWith(updatedAt: later)]),
+      ],
+    );
+
+    blocTest<TaskBloc, TaskState>(
+      'a second tick sent before the first is answered is the one that shows',
+      build: buildBloc,
+      act: (bloc) async {
+        await load(bloc, [twoSteps]);
+        final first = repository.gate = Completer<void>();
+        bloc.add(const ToggleSubtask(
+          taskId: 't1',
+          subtaskId: 'a',
+          isDone: true,
+        ));
+        await settle();
+        final second = repository.gate = Completer<void>();
+        bloc.add(const ToggleSubtask(
+          taskId: 't1',
+          subtaskId: 'a',
+          isDone: false,
+        ));
+        await settle();
+
+        // The first write lands and is answered while the second is still out.
+        first.complete();
+        await settle();
+        repository.emit([
+          twoSteps.copyWith(
+            subtasks: const [stepADone, stepB],
+            updatedAt: later,
+          ),
+        ]);
+        await settle();
+        expect(
+          (bloc.state as TasksLoaded).tasks.single.subtasks,
+          const [stepA, stepB],
+          reason: 'the later untick must still be the one on screen',
+        );
+        second.complete();
+      },
+      verify: (_) => expect(
+        repository.calls,
+        ['subtask:t1:a:true', 'subtask:t1:a:false'],
+      ),
+    );
+
+    blocTest<TaskBloc, TaskState>(
+      'a tick on a task that is not on the board is still sent',
+      build: buildBloc,
+      act: (bloc) async {
+        await load(bloc, [plain]);
+        bloc.add(const SetTaskComplete(taskId: 'gone', isComplete: true));
+        await settle();
+      },
+      skip: 2,
+      expect: () => const <TaskState>[],
+      verify: (_) => expect(repository.calls, ['complete:gone:true']),
     );
   });
 

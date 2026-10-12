@@ -18,8 +18,9 @@ class TasksLoading extends TaskState {
 class TasksLoaded extends TaskState {
   final List<TaskItem> tasks;
 
-  /// Every event and member, live. The task form picks from these, so the
-  /// screen does not depend on which other screens happened to load them.
+  /// Every event and member, live. The task form picks its event from these,
+  /// so the screen does not depend on which other screens happened to load
+  /// them.
   final List<Event> events;
   final List<TeamMember> members;
 
