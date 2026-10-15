@@ -87,7 +87,9 @@ void main() {
         buildTask(title: 'אחר'),
         buildTask(description: 'פירוט'),
         buildTask(eventId: 'e2'),
-        buildTask(dueAt: DateTime(2026, 10, 12, 8)),
+        buildTask(stageId: 'st2'),
+        buildTask(assemblyTime: '08:00'),
+        buildTask(stage: buildStage(title: 'ערב')),
         buildTask(assigneeIds: const ['m2']),
         buildTask(assigneeUpdate: 'בטיפול'),
         buildTask(assigneeUpdateAt: DateTime(2026, 10, 2)),
@@ -108,19 +110,46 @@ void main() {
   group('TaskItem.copyWith', () {
     test('keeps untouched fields', () {
       final task = buildTask(
-        dueAt: DateTime(2026, 10, 12, 8),
+        assemblyTime: '08:00',
         assigneeUpdate: 'בטיפול',
       );
       final copy = task.copyWith(title: 'חדש');
       expect(copy.title, 'חדש');
-      expect(copy.dueAt, DateTime(2026, 10, 12, 8));
+      expect(copy.assemblyTime, '08:00');
+      expect(copy.stageId, task.stageId);
       expect(copy.assigneeUpdate, 'בטיפול');
       expect(copy.id, task.id);
     });
 
-    test('clearDueAt removes the due date', () {
-      final task = buildTask(dueAt: DateTime(2026, 10, 12, 8));
-      expect(task.copyWith(clearDueAt: true).dueAt, isNull);
+    test('clearAssemblyTime removes the assembly time', () {
+      final task = buildTask(assemblyTime: '08:00');
+      expect(task.copyWith(clearAssemblyTime: true).assemblyTime, isNull);
+    });
+  });
+
+  group('TaskItem.dueAt', () {
+    final stage = buildStage(date: DateTime(2026, 10, 21));
+
+    test('is the stage day at the assembly time', () {
+      final task = buildTask(stage: stage, assemblyTime: '09:30');
+      expect(task.dueAt, DateTime(2026, 10, 21, 9, 30));
+    });
+
+    test('is the end of the stage day when there is no assembly time', () {
+      final task = buildTask(stage: stage);
+      expect(task.dueAt, DateTime(2026, 10, 21, 23, 59));
+    });
+
+    test('is null while the stage is unknown', () {
+      expect(buildTask(assemblyTime: '09:30').dueAt, isNull);
+    });
+
+    test('follows the stage when the stage moves', () {
+      final task = buildTask(stage: stage, assemblyTime: '09:30');
+      final moved = task.copyWith(
+        stage: stage.copyWith(date: DateTime(2026, 10, 22)),
+      );
+      expect(moved.dueAt, DateTime(2026, 10, 22, 9, 30));
     });
   });
 

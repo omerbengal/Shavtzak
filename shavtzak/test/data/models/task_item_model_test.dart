@@ -8,18 +8,18 @@ import '../../support/task_fixtures.dart';
 void main() {
   final createdAt = DateTime(2026, 10, 1, 9);
   final updatedAt = DateTime(2026, 10, 5, 12, 30);
-  final dueAt = DateTime(2026, 10, 20, 7, 30);
 
   Map<String, dynamic> fullMap() => {
         'id': 't1',
         'eventId': 'e1',
+        'stageId': 'st1',
         'title': 'להזמין אוטובוס',
         'description': 'שני רכבים',
         'subtasks': [
           {'id': 'a', 'title': 'הצעת מחיר', 'isDone': true},
           {'id': 'b', 'title': 'אישור', 'isDone': false},
         ],
-        'dueAt': Timestamp.fromDate(dueAt),
+        'assemblyTime': '07:30',
         'assigneeIds': ['m1', 'm2'],
         'assigneeUpdate': 'ממתין לאישור',
         'assigneeUpdateAt': Timestamp.fromDate(updatedAt),
@@ -45,7 +45,8 @@ void main() {
         Subtask(id: 'a', title: 'הצעת מחיר', isDone: true),
         Subtask(id: 'b', title: 'אישור'),
       ]);
-      expect(task.dueAt, dueAt);
+      expect(task.stageId, 'st1');
+      expect(task.assemblyTime, '07:30');
       expect(task.assigneeIds, ['m1', 'm2']);
       expect(task.assigneeUpdate, 'ממתין לאישור');
       expect(task.assigneeUpdateAt, updatedAt);
@@ -89,7 +90,8 @@ void main() {
 
       expect(task.description, '');
       expect(task.subtasks, isEmpty);
-      expect(task.dueAt, isNull);
+      expect(task.stageId, '');
+      expect(task.assemblyTime, isNull);
       expect(task.assigneeUpdate, isNull);
       expect(task.assigneeUpdateAt, isNull);
       expect(task.assigneeUpdateById, isNull);
@@ -151,9 +153,10 @@ void main() {
       expect(payload.keys.toSet(), {
         'id',
         'eventId',
+        'stageId',
         'title',
         'description',
-        'dueAt',
+        'assemblyTime',
         'assigneeIds',
         'subtasks',
       });
@@ -173,18 +176,18 @@ void main() {
       ]);
     });
 
-    test('a due date is sent as a UTC instant so the server reads it correctly', () {
-      final payload = TaskItemModel.toMutationPayload(buildTask(dueAt: dueAt));
-
-      final sent = payload['dueAt'] as String;
-      expect(sent, endsWith('Z'));
-      expect(DateTime.parse(sent).isAtSameMomentAs(dueAt), isTrue);
+    test('sends the stage and the assembly time as typed', () {
+      final payload = TaskItemModel.toMutationPayload(
+        buildTask(stageId: 'st7', assemblyTime: '07:30'),
+      );
+      expect(payload['stageId'], 'st7');
+      expect(payload['assemblyTime'], '07:30');
     });
 
-    test('no due date is sent as null', () {
+    test('no assembly time is sent as null', () {
       final payload = TaskItemModel.toMutationPayload(buildTask());
-      expect(payload.containsKey('dueAt'), isTrue);
-      expect(payload['dueAt'], isNull);
+      expect(payload.containsKey('assemblyTime'), isTrue);
+      expect(payload['assemblyTime'], isNull);
     });
   });
 }

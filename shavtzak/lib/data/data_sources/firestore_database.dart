@@ -10,6 +10,7 @@ import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
 import '../../domain/entities/slot_annotation.dart';
+import '../../domain/entities/stage.dart';
 import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
@@ -27,6 +28,7 @@ import '../models/checklist_note_model.dart';
 import '../models/event_model.dart';
 import '../models/preset_model.dart';
 import '../models/role_model.dart';
+import '../models/stage_model.dart';
 import '../models/task_item_model.dart';
 import '../models/team_member_model.dart';
 import '../../core/debug/debug_logger.dart';
@@ -64,6 +66,10 @@ class FirestoreDatabase implements DatabaseInterface {
 
   String get _tasksCollection {
     return '${EnvironmentService.instance.collectionPrefix}tasks';
+  }
+
+  String get _stagesCollection {
+    return '${EnvironmentService.instance.collectionPrefix}stages';
   }
 
   String get _calendarSyncCollection {
@@ -2618,6 +2624,38 @@ class FirestoreDatabase implements DatabaseInterface {
       'task.setAssigneeUpdate',
       payload: {'taskId': taskId, 'text': text},
     );
+  }
+
+  // ========== Stages ==========
+
+  @override
+  Stream<List<Stage>> watchStages() {
+    return _firestore.collection(_stagesCollection).snapshots().map((snapshot) {
+      return snapshot.docs
+          .map((doc) => StageModel.fromMap(doc.id, doc.data()))
+          .toList();
+    });
+  }
+
+  @override
+  Future<void> insertStage(Stage stage) async {
+    await _invokeMutation(
+      'stage.insert',
+      payload: {'stage': StageModel.toMutationPayload(stage)},
+    );
+  }
+
+  @override
+  Future<void> updateStage(Stage stage) async {
+    await _invokeMutation(
+      'stage.update',
+      payload: {'stage': StageModel.toMutationPayload(stage)},
+    );
+  }
+
+  @override
+  Future<void> deleteStage(String stageId) async {
+    await _invokeMutation('stage.delete', payload: {'stageId': stageId});
   }
 }
 

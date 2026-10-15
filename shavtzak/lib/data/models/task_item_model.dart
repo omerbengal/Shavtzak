@@ -22,10 +22,11 @@ class TaskItemModel {
     return TaskItem(
       id: id,
       eventId: _string(data['eventId']) ?? '',
+      stageId: _string(data['stageId']) ?? '',
       title: _string(data['title']) ?? '',
       description: _string(data['description']) ?? '',
       subtasks: _subtasks(data['subtasks']),
-      dueAt: _date(data['dueAt']),
+      assemblyTime: _string(data['assemblyTime']),
       assigneeIds: _stringList(data['assigneeIds']),
       assigneeUpdate: _string(data['assigneeUpdate']),
       assigneeUpdateAt: _date(data['assigneeUpdateAt']),
@@ -46,15 +47,15 @@ class TaskItemModel {
   ///
   /// Carries only what a task manager edits. Progress, completion and every
   /// timestamp are owned by the backend, so a subtask is sent without `isDone`.
-  /// The due date goes out as a UTC instant: an ISO string with no zone would
-  /// be read by the server in its own zone, three hours off.
+  /// The assembly time goes out as typed (`HH:mm`): the day is the stage's.
   static Map<String, dynamic> toMutationPayload(TaskItem task) {
     return {
       'id': task.id,
       'eventId': task.eventId,
+      'stageId': task.stageId,
       'title': task.title,
       'description': task.description,
-      'dueAt': task.dueAt?.toUtc().toIso8601String(),
+      'assemblyTime': task.assemblyTime,
       'assigneeIds': task.assigneeIds,
       'subtasks': task.subtasks
           .map((subtask) => {'id': subtask.id, 'title': subtask.title})

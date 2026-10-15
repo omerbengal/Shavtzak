@@ -3,25 +3,28 @@ import 'package:rxdart/rxdart.dart';
 
 import '../../core/utils/task_utils.dart';
 import '../../domain/entities/event.dart';
+import '../../domain/entities/stage.dart';
 import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import '../data_sources/database_interface.dart';
 
-/// Everything the tasks screen shows: the populated tasks, plus the events and
-/// members they were joined with. The task form picks its event from [events].
+/// Everything the tasks screens show: the populated tasks, plus the events,
+/// stages and members they were joined with.
 class TaskBoard extends Equatable {
   final List<TaskItem> tasks;
   final List<Event> events;
+  final List<Stage> stages;
   final List<TeamMember> members;
 
   const TaskBoard({
     required this.tasks,
     this.events = const [],
+    this.stages = const [],
     this.members = const [],
   });
 
   @override
-  List<Object?> get props => [tasks, events, members];
+  List<Object?> get props => [tasks, events, stages, members];
 }
 
 /// Repository for the tasks screen.
@@ -30,25 +33,28 @@ class TaskRepository {
 
   TaskRepository(this._database);
 
-  /// Every task, populated with its [Event] and assignee [TeamMember]s,
-  /// together with the full event and member lists.
+  /// Every task, populated with its [Event], its [Stage] and its assignee
+  /// [TeamMember]s, together with the full event, stage and member lists.
   ///
-  /// Built from three live streams rather than a tasks stream plus one-shot
-  /// reads, so renaming an event or a member re-emits the affected tasks, and
-  /// the first paint never waits on an awaited `get`.
+  /// Built from four live streams rather than a tasks stream plus one-shot
+  /// reads, so renaming an event or a member, or moving a stage, re-emits the
+  /// affected tasks, and the first paint never waits on an awaited `get`.
   Stream<TaskBoard> watchBoard() {
-    return Rx.combineLatest3<List<TaskItem>, List<Event>, List<TeamMember>,
-        TaskBoard>(
+    return Rx.combineLatest4<List<TaskItem>, List<Event>, List<Stage>,
+        List<TeamMember>, TaskBoard>(
       _database.watchTasks(),
       _database.watchEvents(),
+      _database.watchStages(),
       _database.watchTeamMembers(),
-      (tasks, events, members) {
+      (tasks, events, stages, members) {
         final eventsById = {for (final event in events) event.id: event};
+        final stagesById = {for (final stage in stages) stage.id: stage};
         final membersById = {for (final member in members) member.id: member};
         return TaskBoard(
           tasks: tasks
               .map((task) => task.copyWith(
                     event: eventsById[task.eventId],
+                    stage: stagesById[task.stageId],
                     // A member who was deleted leaves a dangling id behind; it
                     // is simply not shown.
                     assignees: task.assigneeIds
@@ -58,6 +64,7 @@ class TaskRepository {
                   ))
               .toList(),
           events: events,
+          stages: stages,
           members: members,
         );
       },
@@ -100,4 +107,11 @@ class TaskRepository {
 
   Future<void> setTaskAssigneeUpdate(String taskId, String text) =>
       _database.setTaskAssigneeUpdate(taskId, text);
+
+  Future<void> insertStage(Stage stage) => _database.insertStage(stage);
+
+  Future<void> updateStage(Stage stage) => _database.updateStage(stage);
+
+  /// Deletes the stage and every task under it.
+  Future<void> deleteStage(String stageId) => _database.deleteStage(stageId);
 }

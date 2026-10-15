@@ -14,6 +14,7 @@ import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
 import '../../domain/entities/slot_annotation.dart';
+import '../../domain/entities/stage.dart';
 import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import 'database_interface.dart';
@@ -1364,6 +1365,37 @@ class LoggingDatabase implements DatabaseInterface {
         op: 'watchTasks',
         ctx: const {'collection': 'tasks'},
         inner: () => _inner.watchTasks(),
+      );
+
+  @override
+  Stream<List<Stage>> watchStages() => _wrapStream(
+        op: 'watchStages',
+        ctx: const {'collection': 'stages'},
+        inner: () => _inner.watchStages(),
+      );
+
+  @override
+  Future<void> insertStage(Stage stage) => _runFuture(
+        op: 'insertStage',
+        ctx: {'collection': 'stages', 'id': stage.id},
+        countOf: (_) => null,
+        action: () => _inner.insertStage(stage),
+      );
+
+  @override
+  Future<void> updateStage(Stage stage) => _runFuture(
+        op: 'updateStage',
+        ctx: {'collection': 'stages', 'id': stage.id},
+        countOf: (_) => null,
+        action: () => _inner.updateStage(stage),
+      );
+
+  @override
+  Future<void> deleteStage(String stageId) => _runFuture(
+        op: 'deleteStage',
+        ctx: {'collection': 'stages', 'id': stageId},
+        countOf: (_) => null,
+        action: () => _inner.deleteStage(stageId),
       );
 
   @override

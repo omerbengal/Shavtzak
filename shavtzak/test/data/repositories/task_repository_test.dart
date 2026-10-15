@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:shavtzak/data/data_sources/database_interface.dart';
 import 'package:shavtzak/data/data_sources/firestore_database.dart';
 import 'package:shavtzak/data/repositories/task_repository.dart';
 import 'package:shavtzak/domain/entities/event.dart';
+import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
 
@@ -17,6 +19,7 @@ class _FakeDatabase extends Fake implements DatabaseInterface {
   final tasks = StreamController<List<TaskItem>>.broadcast();
   final events = StreamController<List<Event>>.broadcast();
   final members = StreamController<List<TeamMember>>.broadcast();
+  final stages = StreamController<List<Stage>>.broadcast();
   final assignedIds = StreamController<List<String>>.broadcast();
   final watchedEventIds = <String>[];
   final calls = <String>[];
@@ -29,6 +32,24 @@ class _FakeDatabase extends Fake implements DatabaseInterface {
 
   @override
   Stream<List<TeamMember>> watchTeamMembers() => members.stream;
+
+  // Starts with no stages, so tests about the other three sources need not
+  // push one; tests about stages push their own list.
+  @override
+  Stream<List<Stage>> watchStages() =>
+      stages.stream.startWith(const <Stage>[]);
+
+  @override
+  Future<void> insertStage(Stage stage) async =>
+      calls.add('insertStage:${stage.id}');
+
+  @override
+  Future<void> updateStage(Stage stage) async =>
+      calls.add('updateStage:${stage.id}');
+
+  @override
+  Future<void> deleteStage(String stageId) async =>
+      calls.add('deleteStage:$stageId');
 
   @override
   Stream<List<String>> watchAssignedMemberIds(String eventId) {
@@ -66,6 +87,7 @@ class _FakeDatabase extends Fake implements DatabaseInterface {
     await events.close();
     await members.close();
     await assignedIds.close();
+    await stages.close();
   }
 }
 
@@ -172,6 +194,46 @@ void main() {
 
       expect(emissions.single.single.event, isNull);
       expect(emissions.single.single.eventId, 'gone');
+    });
+
+    test('populates each task with its stage and carries the stages', () async {
+      final boards = <TaskBoard>[];
+      final boardSubscription = repository.watchBoard().listen(boards.add);
+      final stage = buildStage(id: 'st1', title: 'קליטה');
+
+      database.tasks.add([buildTask(stageId: 'st1')]);
+      database.events.add([buildEvent()]);
+      database.members.add([buildMember()]);
+      database.stages.add([stage]);
+      await settle();
+      await boardSubscription.cancel();
+
+      expect(boards.last.stages, [stage]);
+      expect(boards.last.tasks.single.stage, stage);
+    });
+
+    test('a task whose stage is gone keeps a null stage', () async {
+      database.tasks.add([buildTask(stageId: 'gone')]);
+      database.events.add([buildEvent()]);
+      database.members.add([buildMember()]);
+      database.stages.add([buildStage(id: 'st1')]);
+      await settle();
+
+      expect(emissions.last.single.stage, isNull);
+      expect(emissions.last.single.stageId, 'gone');
+    });
+
+    test('re-emits with the new day when a stage moves', () async {
+      database.tasks.add([buildTask(stageId: 'st1', assemblyTime: '09:00')]);
+      database.events.add([buildEvent()]);
+      database.members.add([buildMember()]);
+      database.stages.add([buildStage(id: 'st1', date: DateTime(2026, 10, 21))]);
+      await settle();
+
+      database.stages.add([buildStage(id: 'st1', date: DateTime(2026, 10, 22))]);
+      await settle();
+
+      expect(emissions.last.single.dueAt, DateTime(2026, 10, 22, 9));
     });
 
     test('drops an assignee id that no longer resolves but keeps the id', () async {
@@ -301,6 +363,9 @@ void main() {
       await repository.setSubtaskDone('t1', 'a', true);
       await repository.setTaskComplete('t1', false);
       await repository.setTaskAssigneeUpdate('t1', 'בטיפול');
+      await repository.insertStage(buildStage(id: 'st1'));
+      await repository.updateStage(buildStage(id: 'st1'));
+      await repository.deleteStage('st1');
 
       expect(database.calls, [
         'insert:t1',
@@ -309,6 +374,9 @@ void main() {
         'subtask:t1:a:true',
         'complete:t1:false',
         'note:t1:בטיפול',
+        'insertStage:st1',
+        'updateStage:st1',
+        'deleteStage:st1',
       ]);
       await database.closeControllers();
     });
@@ -462,6 +530,57 @@ void main() {
         {'m1'},
         {'m1', 'm2'},
       ]);
+    });
+  });
+
+  group('FirestoreDatabase.watchStages', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
+
+    late FakeFirebaseFirestore fake;
+    late FirestoreDatabase database;
+
+    setUp(() {
+      fake = FakeFirebaseFirestore();
+      database = FirestoreDatabase(firestore: fake);
+    });
+
+    tearDown(() async {
+      await database.close();
+    });
+
+    test('reads the stages collection', () async {
+      await fake.collection('stages').doc('st1').set({
+        'eventId': 'e1',
+        'title': 'קליטה',
+        'date': '2026-10-21',
+        'startTime': '08:00',
+        'contacts': [
+          {'id': 'c1', 'name': 'אבי', 'phone': '050', 'role': ''},
+        ],
+      });
+
+      final stages = await database.watchStages().first;
+
+      expect(stages.single.id, 'st1');
+      expect(stages.single.title, 'קליטה');
+      expect(stages.single.date, DateTime(2026, 10, 21));
+      expect(stages.single.contacts.single.name, 'אבי');
+    });
+
+    test('emits again when a stage changes', () async {
+      final ref = fake.collection('stages').doc('st1');
+      await ref.set({'eventId': 'e1', 'title': 'קליטה', 'date': '2026-10-21'});
+
+      final seen = <String>[];
+      final subscription = database
+          .watchStages()
+          .listen((stages) => seen.add(stages.single.title));
+      await Future<void>.delayed(Duration.zero);
+      await ref.update({'title': 'קליטה ורישום'});
+      await Future<void>.delayed(Duration.zero);
+      await subscription.cancel();
+
+      expect(seen, ['קליטה', 'קליטה ורישום']);
     });
   });
 }

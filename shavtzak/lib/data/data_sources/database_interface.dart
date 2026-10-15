@@ -6,6 +6,7 @@ import '../../domain/entities/event.dart';
 import '../../domain/entities/preset.dart';
 import '../../domain/entities/role.dart';
 import '../../domain/entities/slot_annotation.dart';
+import '../../domain/entities/stage.dart';
 import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
@@ -524,4 +525,18 @@ abstract class DatabaseInterface {
 
   /// Save the assignees' status note; an empty text clears it
   Future<void> setTaskAssigneeUpdate(String taskId, String text);
+
+  // ========== Stages ==========
+
+  /// Watch every stage of every event in real-time.
+  Stream<List<Stage>> watchStages();
+
+  /// Create a stage (task managers only)
+  Future<void> insertStage(Stage stage);
+
+  /// Replace a stage's editable fields (task managers only)
+  Future<void> updateStage(Stage stage);
+
+  /// Delete a stage and every task under it (task managers only)
+  Future<void> deleteStage(String stageId);
 }

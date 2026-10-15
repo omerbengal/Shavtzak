@@ -1,4 +1,5 @@
 import 'package:shavtzak/domain/entities/event.dart';
+import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
@@ -63,13 +64,49 @@ TeamMember buildMember({
   );
 }
 
+Stage buildStage({
+  String id = 'st1',
+  String eventId = 'e1',
+  String title = 'קליטה',
+  DateTime? date,
+  String? startTime,
+  String? endTime,
+  String requirements = '',
+  String hotelLocation = '',
+  String notes = '',
+  List<StageContact> contacts = const [],
+}) {
+  return Stage(
+    id: id,
+    eventId: eventId,
+    title: title,
+    date: date ?? DateTime(2026, 10, 20),
+    startTime: startTime,
+    endTime: endTime,
+    requirements: requirements,
+    hotelLocation: hotelLocation,
+    notes: notes,
+    contacts: contacts,
+    createdAt: fixtureCreatedAt,
+    createdById: 'm-admin',
+    updatedAt: fixtureCreatedAt,
+  );
+}
+
+/// [dueAt] is a shorthand for tests about due times: it puts the task under a
+/// stage on that day with the assembly time set to that hour, which is how a
+/// task gets a due moment now. Pass [stage] and [assemblyTime] instead to be
+/// explicit.
 TaskItem buildTask({
   String id = 't1',
   String eventId = 'e1',
+  String stageId = 'st1',
   String title = 'להזמין אוטובוס',
   String description = '',
   List<Subtask> subtasks = const [],
   DateTime? dueAt,
+  String? assemblyTime,
+  Stage? stage,
   List<String> assigneeIds = const ['m1'],
   String? assigneeUpdate,
   DateTime? assigneeUpdateAt,
@@ -84,13 +121,25 @@ TaskItem buildTask({
   Event? event,
   List<TeamMember> assignees = const [],
 }) {
+  var effectiveStage = stage;
+  var effectiveTime = assemblyTime;
+  if (dueAt != null) {
+    effectiveStage ??= buildStage(
+      id: stageId,
+      eventId: eventId,
+      date: DateTime(dueAt.year, dueAt.month, dueAt.day),
+    );
+    effectiveTime ??= '${dueAt.hour.toString().padLeft(2, '0')}:'
+        '${dueAt.minute.toString().padLeft(2, '0')}';
+  }
   return TaskItem(
     id: id,
     eventId: eventId,
+    stageId: effectiveStage?.id ?? stageId,
     title: title,
     description: description,
     subtasks: subtasks,
-    dueAt: dueAt,
+    assemblyTime: effectiveTime,
     assigneeIds: assigneeIds,
     assigneeUpdate: assigneeUpdate,
     assigneeUpdateAt: assigneeUpdateAt,
@@ -103,6 +152,7 @@ TaskItem buildTask({
     createdById: createdById,
     updatedAt: updatedAt ?? fixtureCreatedAt,
     event: event,
+    stage: effectiveStage,
     assignees: assignees,
   );
 }
