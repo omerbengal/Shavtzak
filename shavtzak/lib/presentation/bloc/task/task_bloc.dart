@@ -7,6 +7,7 @@ import 'package:equatable/equatable.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../data/repositories/task_repository.dart';
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/stage.dart';
 import '../../../domain/entities/subtask.dart';
 import '../../../domain/entities/task_item.dart';
 import '../../../domain/entities/team_member.dart';
@@ -124,6 +125,18 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
         _clock = clock ?? DateTime.now,
         super(const TasksInitial()) {
     on<LoadTasks>(_onLoadTasks);
+    on<CreateStage>(
+      (event, emit) =>
+          _run(event.completion, () => _repository.insertStage(event.stage)),
+    );
+    on<UpdateStage>(
+      (event, emit) =>
+          _run(event.completion, () => _repository.updateStage(event.stage)),
+    );
+    on<DeleteStage>(
+      (event, emit) =>
+          _run(event.completion, () => _repository.deleteStage(event.stageId)),
+    );
     on<CreateTask>(
       (event, emit) =>
           _run(event.completion, () => _repository.insertTask(event.task)),
@@ -222,6 +235,7 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
               .fold(task, (shown, change) => change.applyTo(shown)),
       ],
       events: board.events,
+      stages: board.stages,
       members: board.members,
     );
   }

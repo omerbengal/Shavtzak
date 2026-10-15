@@ -12,6 +12,37 @@ class LoadTasks extends TaskEvent {
   const LoadTasks();
 }
 
+class CreateStage extends TaskEvent {
+  final Stage stage;
+  final CrudActionCompleter? completion;
+
+  const CreateStage(this.stage, {this.completion});
+
+  @override
+  List<Object?> get props => [stage];
+}
+
+class UpdateStage extends TaskEvent {
+  final Stage stage;
+  final CrudActionCompleter? completion;
+
+  const UpdateStage(this.stage, {this.completion});
+
+  @override
+  List<Object?> get props => [stage];
+}
+
+/// Delete a stage and every task under it.
+class DeleteStage extends TaskEvent {
+  final String stageId;
+  final CrudActionCompleter? completion;
+
+  const DeleteStage(this.stageId, {this.completion});
+
+  @override
+  List<Object?> get props => [stageId];
+}
+
 class CreateTask extends TaskEvent {
   final TaskItem task;
   final CrudActionCompleter? completion;

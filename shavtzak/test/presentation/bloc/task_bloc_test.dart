@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/crud_action_result.dart';
 import 'package:shavtzak/data/data_sources/firestore_database.dart';
 import 'package:shavtzak/data/repositories/task_repository.dart';
+import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/presentation/bloc/task/task_bloc.dart';
@@ -58,6 +59,15 @@ class _FakeTaskRepository extends Fake implements TaskRepository {
   @override
   Future<void> setTaskAssigneeUpdate(String taskId, String text) =>
       _record('note:$taskId:$text');
+
+  @override
+  Future<void> insertStage(Stage stage) => _record('insertStage:${stage.id}');
+
+  @override
+  Future<void> updateStage(Stage stage) => _record('updateStage:${stage.id}');
+
+  @override
+  Future<void> deleteStage(String stageId) => _record('deleteStage:$stageId');
 }
 
 void main() {
@@ -118,6 +128,29 @@ void main() {
           events: [buildEvent()],
           members: [buildMember()],
         ),
+      ],
+    );
+
+    blocTest<TaskBloc, TaskState>(
+      'carries the stages, and a moved stage is a new state',
+      build: buildBloc,
+      act: (bloc) async {
+        bloc.add(const LoadTasks());
+        await Future<void>.delayed(Duration.zero);
+        repository.controller.add(TaskBoard(
+          tasks: const [],
+          stages: [buildStage(date: DateTime(2026, 10, 21))],
+        ));
+        await Future<void>.delayed(Duration.zero);
+        repository.controller.add(TaskBoard(
+          tasks: const [],
+          stages: [buildStage(date: DateTime(2026, 10, 22))],
+        ));
+      },
+      expect: () => [
+        const TasksLoading(),
+        TasksLoaded(const [], stages: [buildStage(date: DateTime(2026, 10, 21))]),
+        TasksLoaded(const [], stages: [buildStage(date: DateTime(2026, 10, 22))]),
       ],
     );
 
@@ -265,6 +298,15 @@ void main() {
           (c) =>
               SaveAssigneeUpdate(taskId: 't1', text: 'בטיפול', completion: c),
         ),
+        await dispatch(
+          bloc,
+          (c) => CreateStage(buildStage(id: 's1'), completion: c),
+        ),
+        await dispatch(
+          bloc,
+          (c) => UpdateStage(buildStage(id: 's1'), completion: c),
+        ),
+        await dispatch(bloc, (c) => DeleteStage('s1', completion: c)),
       ];
 
       expect(results.every((result) => result.isSuccess), isTrue);
@@ -275,6 +317,9 @@ void main() {
         'subtask:t1:a:true',
         'complete:t1:false',
         'note:t1:בטיפול',
+        'insertStage:s1',
+        'updateStage:s1',
+        'deleteStage:s1',
       ]);
       await bloc.close();
     });
@@ -318,6 +363,20 @@ void main() {
         TasksLoaded([buildTask(id: 't1')]),
       ],
     );
+  });
+
+  test('a refused stage change reports the backend message', () async {
+    final bloc = buildBloc();
+    repository.failWith = DatabaseException(
+      'Failed backend mutation stage.insert: התאריך אינו מתאריכי האירוע',
+    );
+    final completion = CrudActionCompleter();
+    bloc.add(CreateStage(buildStage(), completion: completion));
+    final result = await completion.future;
+
+    expect(result.isFailure, isTrue);
+    expect(result.message, 'התאריך אינו מתאריכי האירוע');
+    await bloc.close();
   });
 
   group('progress shows at once', () {
