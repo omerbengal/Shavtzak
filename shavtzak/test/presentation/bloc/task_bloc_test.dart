@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/crud_action_result.dart';
 import 'package:shavtzak/data/data_sources/firestore_database.dart';
 import 'package:shavtzak/data/repositories/task_repository.dart';
+import 'package:shavtzak/domain/entities/imported_stage.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
@@ -68,6 +69,10 @@ class _FakeTaskRepository extends Fake implements TaskRepository {
 
   @override
   Future<void> deleteStage(String stageId) => _record('deleteStage:$stageId');
+
+  @override
+  Future<void> importStages(String eventId, List<ImportedStage> stages) =>
+      _record('importStages:$eventId:${stages.length}');
 }
 
 void main() {
@@ -307,6 +312,14 @@ void main() {
           (c) => UpdateStage(buildStage(id: 's1'), completion: c),
         ),
         await dispatch(bloc, (c) => DeleteStage('s1', completion: c)),
+        await dispatch(
+          bloc,
+          (c) => ImportStages(
+            'e1',
+            [ImportedStage(stage: buildStage(id: 's2'), tasks: const [])],
+            completion: c,
+          ),
+        ),
       ];
 
       expect(results.every((result) => result.isSuccess), isTrue);
@@ -320,6 +333,7 @@ void main() {
         'insertStage:s1',
         'updateStage:s1',
         'deleteStage:s1',
+        'importStages:e1:1',
       ]);
       await bloc.close();
     });

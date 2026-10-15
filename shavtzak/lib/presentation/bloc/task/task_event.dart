@@ -22,6 +22,17 @@ class CreateStage extends TaskEvent {
   List<Object?> get props => [stage];
 }
 
+class ImportStages extends TaskEvent {
+  final String eventId;
+  final List<ImportedStage> stages;
+  final CrudActionCompleter? completion;
+
+  const ImportStages(this.eventId, this.stages, {this.completion});
+
+  @override
+  List<Object?> get props => [eventId, stages];
+}
+
 class UpdateStage extends TaskEvent {
   final Stage stage;
   final CrudActionCompleter? completion;

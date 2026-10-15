@@ -7,6 +7,7 @@ import '../../domain/entities/stage.dart';
 import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import '../data_sources/database_interface.dart';
+import '../../domain/entities/imported_stage.dart';
 
 /// Everything the tasks screens show: the populated tasks, plus the events,
 /// stages and members they were joined with.
@@ -114,4 +115,7 @@ class TaskRepository {
 
   /// Deletes the stage and every task under it.
   Future<void> deleteStage(String stageId) => _database.deleteStage(stageId);
+
+  Future<void> importStages(String eventId, List<ImportedStage> stages) =>
+      _database.importStages(eventId, stages);
 }

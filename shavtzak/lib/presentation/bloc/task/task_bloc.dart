@@ -7,6 +7,7 @@ import 'package:equatable/equatable.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../data/repositories/task_repository.dart';
 import '../../../domain/entities/event.dart';
+import '../../../domain/entities/imported_stage.dart';
 import '../../../domain/entities/stage.dart';
 import '../../../domain/entities/subtask.dart';
 import '../../../domain/entities/task_item.dart';
@@ -132,6 +133,12 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
     on<UpdateStage>(
       (event, emit) =>
           _run(event.completion, () => _repository.updateStage(event.stage)),
+    );
+    on<ImportStages>(
+      (event, emit) => _run(
+        event.completion,
+        () => _repository.importStages(event.eventId, event.stages),
+      ),
     );
     on<DeleteStage>(
       (event, emit) =>

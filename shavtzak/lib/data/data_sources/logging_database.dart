@@ -18,6 +18,7 @@ import '../../domain/entities/stage.dart';
 import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import 'database_interface.dart';
+import '../../domain/entities/imported_stage.dart';
 
 /// Decorator over [DatabaseInterface] that records DB lifecycle events
 /// (`dbStart`, `dbEnd`, `dbStreamEmit`, `dbError`) into [DebugLogger].
@@ -1396,6 +1397,19 @@ class LoggingDatabase implements DatabaseInterface {
         ctx: {'collection': 'stages', 'id': stageId},
         countOf: (_) => null,
         action: () => _inner.deleteStage(stageId),
+      );
+
+  @override
+  Future<void> importStages(String eventId, List<ImportedStage> stages) =>
+      _runFuture(
+        op: 'importStages',
+        ctx: {
+          'collection': 'stages',
+          'eventId': eventId,
+          'count': stages.length,
+        },
+        countOf: (_) => null,
+        action: () => _inner.importStages(eventId, stages),
       );
 
   @override

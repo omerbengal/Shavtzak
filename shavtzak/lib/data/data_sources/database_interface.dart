@@ -11,6 +11,7 @@ import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import '../../core/constants/constraint_status.dart';
 import '../../core/constants/calendar_constants.dart';
+import '../../domain/entities/imported_stage.dart';
 
 /// A request to raise an event's role quota to AT LEAST [count], applied
 /// atomically inside [DatabaseInterface.saveAssignmentsBatch]. Used to
@@ -539,4 +540,8 @@ abstract class DatabaseInterface {
 
   /// Delete a stage and every task under it (task managers only)
   Future<void> deleteStage(String stageId);
+
+  /// Creates every stage of [stages] and their tasks in one go, for an event
+  /// that has no stages yet. All or nothing.
+  Future<void> importStages(String eventId, List<ImportedStage> stages);
 }

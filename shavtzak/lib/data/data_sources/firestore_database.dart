@@ -34,6 +34,8 @@ import '../models/team_member_model.dart';
 import '../../core/debug/debug_logger.dart';
 import '../../core/debug/log_event.dart';
 import 'database_interface.dart';
+import '../../domain/entities/imported_stage.dart';
+import '../models/stage_import_model.dart';
 
 /// Firestore implementation of DatabaseInterface
 class FirestoreDatabase implements DatabaseInterface {
@@ -2656,6 +2658,14 @@ class FirestoreDatabase implements DatabaseInterface {
   @override
   Future<void> deleteStage(String stageId) async {
     await _invokeMutation('stage.delete', payload: {'stageId': stageId});
+  }
+
+  @override
+  Future<void> importStages(String eventId, List<ImportedStage> stages) async {
+    await _invokeMutation(
+      'stage.import',
+      payload: StageImportModel.toMutationPayload(eventId, stages),
+    );
   }
 }
 
