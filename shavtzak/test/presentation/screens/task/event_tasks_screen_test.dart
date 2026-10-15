@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:excel/excel.dart' show DateCellValue;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shavtzak/core/services/environment_service.dart';
+import 'package:shavtzak/core/services/task_import_files.dart';
 import 'package:shavtzak/core/theme/app_theme.dart';
 import 'package:shavtzak/core/utils/rtl_text_field_utils.dart';
 import 'package:shavtzak/data/data_sources/firestore_database.dart';
@@ -19,7 +22,9 @@ import 'package:shavtzak/presentation/bloc/user_selection/user_selection_bloc.da
 import 'package:shavtzak/presentation/bloc/user_selection/user_selection_state.dart';
 import 'package:shavtzak/presentation/screens/task/event_tasks_screen.dart';
 
+import '../../../support/fake_task_import_files.dart';
 import '../../../support/fake_task_repository.dart';
+import '../../../support/import_workbook.dart';
 import '../../../support/task_fixtures.dart';
 
 void main() {
@@ -96,6 +101,7 @@ void main() {
     ThemeData? theme,
     String eventId = 'e1',
     bool openStages = true,
+    FakeTaskImportFiles? importFiles,
   }) async {
     tester.view.physicalSize = const Size(900, 2400);
     tester.view.devicePixelRatio = 1;
@@ -145,6 +151,7 @@ void main() {
                 builder: (context, state) => EventTasksScreen(
                   eventId: state.pathParameters['eventId']!,
                   clock: () => now,
+                  importFiles: importFiles ?? FakeTaskImportFiles(),
                 ),
               ),
             ],
@@ -828,6 +835,89 @@ void main() {
 
       expect(repository.calls, ['update:mine']);
       expect(find.byKey(const Key('task-form-title')), findsNothing);
+    });
+  });
+
+  group('excel import', () {
+    final admin = buildMember(id: 'boss', isAdmin: true);
+
+    testWidgets('a manager sees import and template on an event without stages',
+        (tester) async {
+      await pumpScreen(tester, user: admin, tasks: const [], stages: const []);
+      expect(find.byKey(const Key('tasks-import')), findsOneWidget);
+      expect(find.byKey(const Key('tasks-import-template')), findsOneWidget);
+    });
+
+    testWidgets('a member gets no import buttons', (tester) async {
+      await pumpScreen(tester, user: dana, tasks: const [], stages: const []);
+      expect(find.byKey(const Key('tasks-import')), findsNothing);
+      expect(find.byKey(const Key('tasks-import-template')), findsNothing);
+    });
+
+    testWidgets('no import once the event has a stage', (tester) async {
+      await pumpScreen(tester, user: admin, tasks: const []);
+      await tester.tap(find.text('כל המשימות'));
+      await tester.pump();
+      expect(find.byKey(const Key('tasks-import')), findsNothing);
+    });
+
+    testWidgets('the template downloads under its name', (tester) async {
+      final files = FakeTaskImportFiles();
+      await pumpScreen(
+        tester,
+        user: admin,
+        tasks: const [],
+        stages: const [],
+        importFiles: files,
+      );
+      await tester.tap(find.byKey(const Key('tasks-import-template')));
+      expect(files.saved.single.$2, 'תבנית משימות דו יומי.xlsx');
+      expect(files.saved.single.$1, isNotEmpty);
+    });
+
+    testWidgets('cancelling the picker opens nothing', (tester) async {
+      final files = FakeTaskImportFiles();
+      await pumpScreen(
+        tester,
+        user: admin,
+        tasks: const [],
+        stages: const [],
+        importFiles: files,
+      );
+      await tester.tap(find.byKey(const Key('tasks-import')));
+      await tester.pump();
+      expect(files.pickCalls, 1);
+      expect(find.byKey(const Key('task-import-confirm')), findsNothing);
+    });
+
+    testWidgets('a clean file imports through the bloc and reports the counts',
+        (tester) async {
+      final files = FakeTaskImportFiles()
+        ..picks.add(PickedImportFile(
+          name: 'a.xlsx',
+          bytes: Uint8List.fromList(buildImportWorkbook(
+            stageRows: [
+              stageRow(
+                date: const DateCellValue(year: 2026, month: 10, day: 20),
+              ),
+            ],
+            taskRows: [taskRow(assignees: 'דנה')],
+          )),
+        ));
+      await pumpScreen(
+        tester,
+        user: admin,
+        tasks: const [],
+        stages: const [],
+        importFiles: files,
+      );
+      await tester.tap(find.byKey(const Key('tasks-import')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('task-import-confirm')));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, ['importStages:e1:1']);
+      expect(find.text('יובאו 1 שלבים ו-1 משימות'), findsOneWidget);
     });
   });
 

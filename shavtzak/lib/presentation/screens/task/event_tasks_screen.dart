@@ -9,9 +9,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/debug/logger.dart';
 import '../../../core/debug/search_action_logger.dart';
 import '../../../core/services/environment_service.dart';
+import '../../../core/services/task_import_files.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/crud_action_result.dart';
 import '../../../core/utils/rtl_text_field_utils.dart';
+import '../../../core/utils/task_import/task_import_template.dart';
 import '../../../core/utils/task_utils.dart';
 import '../../../data/repositories/task_repository.dart';
 import '../../../domain/entities/event.dart';
@@ -30,6 +32,7 @@ import 'widgets/stage_form_modal.dart';
 import 'widgets/task_card.dart';
 import 'widgets/task_filter_modal.dart';
 import 'widgets/task_form_modal.dart';
+import 'widgets/task_import_dialog.dart';
 
 final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
 
@@ -46,9 +49,17 @@ String taskEventDates(Event event) {
 /// Every signed-in member can read it. The screen opens on the member's own
 /// tasks; "כל המשימות" shows everyone's and every stage.
 class EventTasksScreen extends StatefulWidget {
-  const EventTasksScreen({super.key, required this.eventId, this.clock});
+  const EventTasksScreen({
+    super.key,
+    required this.eventId,
+    this.clock,
+    this.importFiles = const BrowserTaskImportFiles(),
+  });
 
   final String eventId;
+
+  /// Picking the import file and saving the template; faked in tests.
+  final TaskImportFiles importFiles;
 
   /// The current time. Injected by tests; defaults to [DateTime.now].
   final DateTime Function()? clock;
@@ -159,6 +170,40 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
           _send((completion) => UpdateStage(next, completion: completion)),
       currentUserId: user.id,
       now: _now,
+    );
+  }
+
+  Future<void> _importFromExcel(Event event, TeamMember user) async {
+    Logger.action('tap:tasksImport');
+    final file = await widget.importFiles.pickXlsx();
+    if (file == null || !mounted) return;
+    final result = await showTaskImportDialog(
+      context,
+      file: file,
+      event: event,
+      files: widget.importFiles,
+      assignees: context.read<TaskRepository>().watchEventAssignees(event.id),
+      onImport: (stages) => _send(
+        (completion) => ImportStages(event.id, stages, completion: completion),
+      ),
+      currentUserId: user.id,
+      now: _now,
+    );
+    if (result == null || !mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(
+          'יובאו ${result.stages.length} שלבים ו-${result.taskCount} משימות',
+        ),
+      ));
+  }
+
+  void _downloadTemplate(Event event) {
+    Logger.action('tap:tasksImportTemplate');
+    widget.importFiles.saveXlsx(
+      buildTaskImportTemplate(event),
+      taskImportTemplateFileName,
     );
   }
 
@@ -457,7 +502,11 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
         _buildSearchBar(eventTasks, user),
         Expanded(
           child: groups.isEmpty
-              ? _buildEmptyState(hasStages: stages.isNotEmpty, user: user)
+              ? _buildEmptyState(
+                  hasStages: stages.isNotEmpty,
+                  user: user,
+                  event: event,
+                )
               : ListView.builder(
                   // Room for the floating button below the last card.
                   padding: const EdgeInsets.only(top: 4, bottom: 96),
@@ -612,7 +661,11 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
     );
   }
 
-  Widget _buildEmptyState({required bool hasStages, required TeamMember user}) {
+  Widget _buildEmptyState({
+    required bool hasStages,
+    required TeamMember user,
+    required Event event,
+  }) {
     final String title;
     String? hint;
     if (!hasStages) {
@@ -642,6 +695,29 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
                     .textTheme
                     .bodyMedium
                     ?.copyWith(color: Colors.grey.shade600),
+              ),
+            ],
+            // Import fills an empty event only; once a stage exists, never.
+            if (!hasStages && canManageTasks(user)) ...[
+              const SizedBox(height: 16),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    key: const Key('tasks-import'),
+                    onPressed: () => _importFromExcel(event, user),
+                    icon: const Icon(Icons.upload_file),
+                    label: const Text('ייבוא מאקסל'),
+                  ),
+                  OutlinedButton.icon(
+                    key: const Key('tasks-import-template'),
+                    onPressed: () => _downloadTemplate(event),
+                    icon: const Icon(Icons.download),
+                    label: const Text('הורדת תבנית'),
+                  ),
+                ],
               ),
             ],
           ],
