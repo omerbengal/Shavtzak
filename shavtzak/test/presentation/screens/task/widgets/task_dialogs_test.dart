@@ -8,6 +8,7 @@ import 'package:shavtzak/core/utils/crud_action_result.dart';
 import 'package:shavtzak/core/utils/rtl_text_field_utils.dart';
 import 'package:shavtzak/core/utils/task_utils.dart';
 import 'package:shavtzak/domain/entities/event.dart';
+import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/domain/entities/team_member.dart';
@@ -133,25 +134,22 @@ void main() {
     name: 'דו יומי צפון',
     startDate: DateTime(2026, 10, 20),
   );
-  final south = buildEvent(
-    id: 'e2',
-    name: 'דו יומי דרום',
-    startDate: DateTime(2026, 10, 27),
-  );
-  final past = buildEvent(
-    id: 'e0',
-    name: 'אירוע שעבר',
-    startDate: DateTime(2026, 9, 1),
-  );
   final dana = buildMember(id: 'm1', name: 'דנה');
   final yoav = buildMember(id: 'm2', name: 'יואב');
   final archived = buildMember(id: 'm3', name: 'הדס', isArchived: true);
+  final arrival = buildStage(
+    id: 'st-n',
+    eventId: 'e1',
+    title: 'קליטה',
+    date: DateTime(2026, 10, 20),
+  );
 
   group('task form', () {
     Future<_Form> openForm(
       WidgetTester tester, {
       TaskItem? existing,
-      List<Event>? events,
+      Event? event,
+      Stage? stage,
       Map<String, List<TeamMember>>? assignees,
     }) async {
       final form = _Form();
@@ -169,7 +167,8 @@ void main() {
           await showTaskFormModal(
             context,
             existing: existing,
-            events: events ?? [north, south, past],
+            event: event ?? north,
+            stage: stage ?? existing?.stage ?? arrival,
             watchEventAssignees: form.watch,
             onSave: form.save,
             currentUserId: 'm-admin',
@@ -179,13 +178,6 @@ void main() {
         },
       );
       return form;
-    }
-
-    Future<void> pickEvent(WidgetTester tester, String name) async {
-      await tester.tap(find.byKey(const Key('task-form-event')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.textContaining(name).last);
-      await tester.pumpAndSettle();
     }
 
     final assigneesField = find.byKey(const Key('task-form-assignees'));
@@ -217,12 +209,11 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('save stays disabled until an event, a title and an assignee '
-        'are chosen', (tester) async {
+    testWidgets('save stays disabled until a title and an assignee are chosen',
+        (tester) async {
       await openForm(tester);
       expect(saveEnabled(tester), isFalse);
 
-      await pickEvent(tester, 'דו יומי צפון');
       expect(saveEnabled(tester), isFalse);
 
       await tester.enterText(
@@ -238,7 +229,6 @@ void main() {
 
     testWidgets('a title of only spaces does not enable save', (tester) async {
       await openForm(tester);
-      await pickEvent(tester, 'דו יומי צפון');
       await pickAssignee(tester, 'm1');
       await tester.enterText(find.byKey(const Key('task-form-title')), '   ');
       await tester.pump();
@@ -248,7 +238,6 @@ void main() {
 
     testWidgets('creating saves a task with the chosen fields', (tester) async {
       final form = await openForm(tester);
-      await pickEvent(tester, 'דו יומי דרום');
       await tester.enterText(
         find.byKey(const Key('task-form-title')),
         '  להזמין אוטובוס  ',
@@ -270,7 +259,9 @@ void main() {
 
       final task = form.saved.single;
       expect(task.id, isNotEmpty);
-      expect(task.eventId, 'e2');
+      expect(task.eventId, 'e1');
+      expect(task.stageId, 'st-n');
+      expect(task.stage, arrival);
       expect(task.title, 'להזמין אוטובוס');
       expect(task.description, 'שני רכבים');
       // In the order they were picked.
@@ -280,14 +271,13 @@ void main() {
       expect(task.subtasks.single.title, 'הצעת מחיר');
       expect(task.subtasks.single.id, isNotEmpty);
       expect(task.subtasks.single.isDone, isFalse);
-      expect(task.dueAt, isNull);
+      expect(task.assemblyTime, isNull);
       expect(task.createdById, 'm-admin');
     });
 
     testWidgets('two created tasks get different ids', (tester) async {
       Future<String> createOne() async {
         final form = await openForm(tester);
-        await pickEvent(tester, 'דו יומי צפון');
         await tester.enterText(find.byKey(const Key('task-form-title')), 'א');
         await pickAssignee(tester, 'm1');
         await save(tester);
@@ -299,7 +289,6 @@ void main() {
 
     testWidgets('blank subtask rows are dropped on save', (tester) async {
       final form = await openForm(tester);
-      await pickEvent(tester, 'דו יומי צפון');
       await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
       await pickAssignee(tester, 'm1');
       await tester.tap(find.byKey(const Key('task-form-add-subtask')));
@@ -321,7 +310,8 @@ void main() {
         event: north,
         title: 'להזמין אוטובוס',
         description: 'שני רכבים',
-        dueAt: DateTime(2026, 10, 19, 7, 30),
+        stage: arrival,
+        assemblyTime: '07:30',
         assigneeIds: const ['m1'],
         assignees: [dana],
         assigneeUpdate: 'בטיפול',
@@ -344,7 +334,8 @@ void main() {
       expect(task.eventId, 'e1');
       expect(task.title, 'להזמין אוטובוס');
       expect(task.description, 'שלושה רכבים');
-      expect(task.dueAt, DateTime(2026, 10, 19, 7, 30));
+      expect(task.stageId, 'st-n');
+      expect(task.assemblyTime, '07:30');
       expect(task.assigneeIds, ['m1']);
       expect(task.assigneeUpdate, 'בטיפול');
     });
@@ -378,71 +369,108 @@ void main() {
       ]);
     });
 
-    testWidgets('clearing the due date saves a task with no due date',
-        (tester) async {
-      final existing = buildTask(
-        id: 't1',
-        eventId: 'e1',
-        event: north,
-        assigneeIds: const ['m1'],
-        assignees: [dana],
-        dueAt: DateTime(2026, 10, 19, 7, 30),
+    group('stage and assembly time', () {
+      final assemblyField = find.descendant(
+        of: find.byKey(const Key('task-form-assembly-time')),
+        matching: find.byType(TextFormField),
       );
-      final form = await openForm(tester, existing: existing);
 
-      await tester.tap(find.byKey(const Key('task-form-due-clear')));
-      await tester.pump();
-      await save(tester);
+      testWidgets('shows the stage and its day, greyed and not editable',
+          (tester) async {
+        await openForm(tester);
 
-      expect(form.saved.single.dueAt, isNull);
-    });
+        expect(find.text('קליטה · 20/10/2026'), findsOneWidget);
+        final decorator = tester.widget<InputDecorator>(
+          find.byKey(const Key('task-form-stage')),
+        );
+        expect(decorator.decoration.enabled, isFalse);
+        expect(find.byKey(const Key('task-form-event')), findsNothing);
+      });
 
-    testWidgets('an invalid due time blocks the save and says why',
-        (tester) async {
-      final existing = buildTask(
-        id: 't1',
-        eventId: 'e1',
-        event: north,
-        assigneeIds: const ['m1'],
-        assignees: [dana],
-        dueAt: DateTime(2026, 10, 19, 7, 30),
-      );
-      final form = await openForm(tester, existing: existing);
+      testWidgets('saves a typed assembly time', (tester) async {
+        final form = await openForm(tester);
+        await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
+        await tester.enterText(assemblyField, '0930');
+        await tester.pump();
+        await pickAssignee(tester, 'm1');
+        await save(tester);
 
-      // Four digits the formatter lays out as 93:00, which is not a time.
-      await tester.enterText(find.byType(TextFormField), '9300');
-      await tester.pump();
-      await save(tester);
+        expect(form.saved.single.assemblyTime, '09:30');
+        expect(form.saved.single.dueAt, DateTime(2026, 10, 20, 9, 30));
+      });
 
-      expect(form.saved, isEmpty, reason: 'nothing may be sent');
-      expect(form.closed, isFalse, reason: 'the form must stay open');
-      expect(find.byKey(const Key('task-form-due-time-error')), findsOneWidget);
+      testWidgets('an empty assembly time is saved as none', (tester) async {
+        final existing = buildTask(
+          id: 't1',
+          stage: arrival,
+          assemblyTime: '07:30',
+          assigneeIds: const ['m1'],
+          assignees: [dana],
+        );
+        final form = await openForm(tester, existing: existing);
 
-      await tester.enterText(find.byType(TextFormField), '0930');
-      await tester.pump();
-      expect(find.byKey(const Key('task-form-due-time-error')), findsNothing);
+        await tester.enterText(assemblyField, '');
+        await tester.pump();
+        await save(tester);
 
-      await save(tester);
-      expect(form.saved.single.dueAt, DateTime(2026, 10, 19, 9, 30));
-    });
+        expect(form.saved.single.assemblyTime, isNull);
+      });
 
-    testWidgets('a due date with the time left empty is due at the end of '
-        'that day', (tester) async {
-      final existing = buildTask(
-        id: 't1',
-        eventId: 'e1',
-        event: north,
-        assigneeIds: const ['m1'],
-        assignees: [dana],
-        dueAt: DateTime(2026, 10, 19, 7, 30),
-      );
-      final form = await openForm(tester, existing: existing);
+      testWidgets('an invalid assembly time blocks the save and says why',
+          (tester) async {
+        final existing = buildTask(
+          id: 't1',
+          stage: arrival,
+          assemblyTime: '07:30',
+          assigneeIds: const ['m1'],
+          assignees: [dana],
+        );
+        final form = await openForm(tester, existing: existing);
 
-      await tester.enterText(find.byType(TextFormField), '');
-      await tester.pump();
-      await save(tester);
+        // Four digits the formatter lays out as 93:00, which is not a time.
+        await tester.enterText(assemblyField, '9300');
+        await tester.pump();
+        await save(tester);
 
-      expect(form.saved.single.dueAt, DateTime(2026, 10, 19, 23, 59));
+        expect(form.saved, isEmpty, reason: 'nothing may be sent');
+        expect(form.closed, isFalse, reason: 'the form must stay open');
+        expect(
+          find.byKey(const Key('task-form-assembly-time-error')),
+          findsOneWidget,
+        );
+
+        await tester.enterText(assemblyField, '0930');
+        await tester.pump();
+        expect(
+          find.byKey(const Key('task-form-assembly-time-error')),
+          findsNothing,
+        );
+        await save(tester);
+        expect(form.saved.single.assemblyTime, '09:30');
+      });
+
+      testWidgets('editing keeps the task under its own stage', (tester) async {
+        final evening = buildStage(
+          id: 'st-e',
+          eventId: 'e1',
+          title: 'ערב',
+          date: DateTime(2026, 10, 21),
+        );
+        final existing = buildTask(
+          id: 't1',
+          stage: evening,
+          assigneeIds: const ['m1'],
+          assignees: [dana],
+        );
+        final form = await openForm(tester, existing: existing);
+
+        expect(find.text('ערב · 21/10/2026'), findsOneWidget);
+        await tester.enterText(find.byKey(const Key('task-form-title')), 'אחר');
+        await tester.pump();
+        await save(tester);
+
+        expect(form.saved.single.stageId, 'st-e');
+      });
     });
 
     testWidgets('the Hebrew text fields carry the RTL caret fix',
@@ -479,76 +507,10 @@ void main() {
       expect(added.focusNode, isA<RtlCursorFixedFocusNode>());
     });
 
-    testWidgets('events are listed date first, so a long name cannot push the '
-        'date out of view', (tester) async {
-      await openForm(tester);
-      await tester.tap(find.byKey(const Key('task-form-event')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('20/10/2026 · דו יומי צפון'), findsWidgets);
-      expect(find.text('27/10/2026 · דו יומי דרום'), findsWidgets);
-    });
-
-    testWidgets('a past event is not offered when creating', (tester) async {
-      await openForm(tester);
-      await tester.tap(find.byKey(const Key('task-form-event')));
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('דו יומי צפון'), findsWidgets);
-      expect(find.textContaining('אירוע שעבר'), findsNothing);
-    });
-
-    testWidgets('an event outside the דו יומי category is not offered',
-        (tester) async {
-      final hanukkah = buildEvent(
-        id: 'e9',
-        name: 'הדלקת נרות',
-        startDate: DateTime(2026, 10, 22),
-        categoryId: '6de41bf3-1a22-476d-b922-ec35ede6bc9f',
-      );
-      await openForm(tester, events: [north, hanukkah]);
-      await tester.tap(find.byKey(const Key('task-form-event')));
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('דו יומי צפון'), findsWidgets);
-      expect(find.textContaining('הדלקת נרות'), findsNothing);
-    });
-
-    testWidgets('the task\'s own past event stays selected when editing',
-        (tester) async {
-      final existing = buildTask(
-        id: 't1',
-        eventId: 'e0',
-        event: past,
-        assigneeIds: const ['m1'],
-        assignees: [dana],
-      );
-      final form = await openForm(tester, existing: existing);
-
-      expect(find.textContaining('אירוע שעבר'), findsOneWidget);
-      await tester.enterText(find.byKey(const Key('task-form-title')), 'אחר');
-      await tester.pump();
-      await save(tester);
-
-      expect(form.saved.single.eventId, 'e0');
-    });
-
     group('assignee dropdown', () {
-      testWidgets('cannot be opened before an event is chosen', (tester) async {
-        final form = await openForm(tester);
-        expect(find.text('יש לבחור אירוע תחילה'), findsOneWidget);
-
-        await toggleAssignees(tester);
-
-        expect(assigneesMenu, findsNothing);
-        expect(form.watched, isEmpty);
-      });
-
-      testWidgets('opens once an event is chosen, search row on top of the '
-          'members', (tester) async {
+      testWidgets('opens at once, search row on top of the members',
+          (tester) async {
         await openForm(tester);
-        await pickEvent(tester, 'דו יומי צפון');
-        expect(find.text('יש לבחור אירוע תחילה'), findsNothing);
 
         await toggleAssignees(tester);
 
@@ -564,7 +526,6 @@ void main() {
       testWidgets('has no search row and no member rows while closed',
           (tester) async {
         await openForm(tester);
-        await pickEvent(tester, 'דו יומי צפון');
         expect(search, findsNothing);
         expect(row('m1'), findsNothing);
 
@@ -582,7 +543,6 @@ void main() {
           'e1': [dana],
           'e2': [yoav],
         });
-        await pickEvent(tester, 'דו יומי צפון');
         await toggleAssignees(tester);
 
         expect(form.watched, ['e1']);
@@ -593,7 +553,6 @@ void main() {
       testWidgets('cannot be opened until the event\'s members have arrived',
           (tester) async {
         final form = await openForm(tester, assignees: const {});
-        await pickEvent(tester, 'דו יומי צפון');
         expect(find.text('טוען משובצים...'), findsOneWidget);
 
         await toggleAssignees(tester);
@@ -613,7 +572,6 @@ void main() {
         final form = await openForm(tester, assignees: {
           'e1': [dana],
         });
-        await pickEvent(tester, 'דו יומי צפון');
         await toggleAssignees(tester);
         expect(row('m2'), findsNothing);
 
@@ -632,7 +590,6 @@ void main() {
         final form = await openForm(tester, assignees: {
           'e1': [dana, yoav],
         });
-        await pickEvent(tester, 'דו יומי צפון');
         await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
         await pickAssignee(tester, 'm1');
 
@@ -644,30 +601,8 @@ void main() {
         expect(form.saved.single.assigneeIds, ['m1']);
       });
 
-      testWidgets('changing the event swaps the list and clears who was picked',
-          (tester) async {
-        final form = await openForm(tester, assignees: {
-          'e1': [dana],
-          'e2': [yoav],
-        });
-        await pickEvent(tester, 'דו יומי צפון');
-        await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
-        await pickAssignee(tester, 'm1');
-        expect(saveEnabled(tester), isTrue);
-
-        await pickEvent(tester, 'דו יומי דרום');
-
-        expect(form.watched, ['e1', 'e2']);
-        expect(saveEnabled(tester), isFalse);
-        expect(assigneesMenu, findsNothing);
-        await toggleAssignees(tester);
-        expect(row('m1'), findsNothing);
-        expect(isTicked(tester, 'm2'), isFalse);
-      });
-
       testWidgets('an event with nobody assigned says so', (tester) async {
         await openForm(tester, assignees: const {'e1': []});
-        await pickEvent(tester, 'דו יומי צפון');
         await toggleAssignees(tester);
 
         expect(find.text('אין משובצים לאירוע זה'), findsOneWidget);
@@ -676,7 +611,6 @@ void main() {
 
       testWidgets('the closed field names who was picked', (tester) async {
         await openForm(tester);
-        await pickEvent(tester, 'דו יומי צפון');
         await pickAssignee(tester, 'm2');
         await pickAssignee(tester, 'm1');
         await toggleAssignees(tester);
@@ -688,7 +622,6 @@ void main() {
       testWidgets('unticking a member removes them from the task',
           (tester) async {
         final form = await openForm(tester);
-        await pickEvent(tester, 'דו יומי צפון');
         await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
         await pickAssignee(tester, 'm1');
         await pickAssignee(tester, 'm2');
@@ -745,7 +678,6 @@ void main() {
 
       Future<_Form> openSearch(WidgetTester tester) async {
         final form = await openForm(tester, assignees: everyone);
-        await pickEvent(tester, 'דו יומי צפון');
         await toggleAssignees(tester);
         return form;
       }
@@ -905,7 +837,6 @@ void main() {
     group('saving', () {
       Future<_Form> openFilled(WidgetTester tester) async {
         final form = await openForm(tester);
-        await pickEvent(tester, 'דו יומי צפון');
         await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
         await pickAssignee(tester, 'm1');
         return form;
@@ -1004,7 +935,8 @@ void main() {
         event: north,
         title: 'להזמין אוטובוס',
         description: 'שני רכבים',
-        dueAt: DateTime(2026, 10, 19, 7, 30),
+        stage: arrival,
+        assemblyTime: '07:30',
         assigneeIds: const ['m1'],
         assignees: [dana],
         subtasks: const [Subtask(id: 'a', title: 'הצעת מחיר')],
@@ -1096,18 +1028,18 @@ void main() {
         expect(saveEnabled(tester), isTrue);
       });
 
-      testWidgets('changing the due time or clearing the due date enables save',
-          (tester) async {
+      testWidgets('changing the assembly time enables save, and putting it '
+          'back disables it again', (tester) async {
         await openForm(tester, existing: existing);
+        final assemblyField = find.descendant(
+          of: find.byKey(const Key('task-form-assembly-time')),
+          matching: find.byType(TextFormField),
+        );
 
-        await type(tester, find.byType(TextFormField), '0930');
+        await type(tester, assemblyField, '0930');
         expect(saveEnabled(tester), isTrue);
-        await type(tester, find.byType(TextFormField), '0730');
+        await type(tester, assemblyField, '0730');
         expect(saveEnabled(tester), isFalse);
-
-        await tester.tap(find.byKey(const Key('task-form-due-clear')));
-        await tester.pump();
-        expect(saveEnabled(tester), isTrue);
       });
 
       testWidgets('cancel on an untouched new task closes at once',
@@ -1174,17 +1106,6 @@ void main() {
         expect(leave, findsOneWidget);
       });
 
-      testWidgets('cancel after picking only an event asks first',
-          (tester) async {
-        final form = await openForm(tester);
-        await pickEvent(tester, 'דו יומי צפון');
-
-        await tester.tap(cancel);
-        await tester.pumpAndSettle();
-
-        expect(form.closed, isFalse);
-        expect(leave, findsOneWidget);
-      });
     });
   });
 
@@ -1193,7 +1114,6 @@ void main() {
     Future<List<TaskFilterSelection>> openFilter(
       WidgetTester tester, {
       TaskFilterSelection current = const TaskFilterSelection(),
-      List<Event>? events,
       List<TeamMember>? members,
     }) async {
       final reported = <TaskFilterSelection>[];
@@ -1203,7 +1123,6 @@ void main() {
           await showTaskFilterModal(
             context,
             current: current,
-            events: events ?? [north, south],
             members: members ?? [dana, yoav],
             onChanged: reported.add,
           );
@@ -1226,8 +1145,6 @@ void main() {
         const TaskFilterSelection(statuses: {TaskDueStatus.overdue}),
       ]);
 
-      await tester.tap(find.byKey(const Key('filter-event-e2')));
-      await tester.pump();
       await tester.tap(find.byKey(const Key('filter-assignee-m1')));
       await tester.pump();
 
@@ -1235,22 +1152,28 @@ void main() {
         reported.last,
         const TaskFilterSelection(
           statuses: {TaskDueStatus.overdue},
-          eventIds: {'e2'},
           assigneeIds: {'m1'},
         ),
       );
-      expect(reported, hasLength(3));
+      expect(reported, hasLength(2));
     });
 
-    testWidgets('ticking the half-hour option reports it at once',
+    testWidgets('offers the assembly half-hour option and no event section',
         (tester) async {
       final reported = await openFilter(tester);
-      expect(find.text('משימות לחצי שעה הקרובה'), findsOneWidget);
+      expect(find.text('התייצבות בחצי שעה הקרובה'), findsOneWidget);
+      expect(find.text('אירוע'), findsNothing);
 
       await tester.tap(find.byKey(const Key('filter-due-soon')));
       await tester.pump();
 
       expect(reported, [const TaskFilterSelection(dueSoon: true)]);
+    });
+
+    testWidgets('with no members offered there is no assignee section',
+        (tester) async {
+      await openFilter(tester, members: const []);
+      expect(find.text('אחראי'), findsNothing);
     });
 
     testWidgets('starts from the current selection, and unticking reports '
@@ -1260,7 +1183,7 @@ void main() {
         current: const TaskFilterSelection(
           dueSoon: true,
           statuses: {TaskDueStatus.completed},
-          eventIds: {'e1'},
+          assigneeIds: {'m1'},
         ),
       );
 
@@ -1268,53 +1191,34 @@ void main() {
           tester.widget<CheckboxListTile>(find.byKey(Key(key))).value ?? false;
       expect(ticked('filter-due-soon'), isTrue);
       expect(ticked('filter-status-completed'), isTrue);
-      expect(ticked('filter-event-e1'), isTrue);
-      expect(ticked('filter-event-e2'), isFalse);
+      expect(ticked('filter-assignee-m1'), isTrue);
+      expect(ticked('filter-assignee-m2'), isFalse);
 
       await tester.tap(find.byKey(const Key('filter-status-completed')));
       await tester.pump();
       await tester.tap(find.byKey(const Key('filter-due-soon')));
       await tester.pump();
 
-      expect(reported.last, const TaskFilterSelection(eventIds: {'e1'}));
+      expect(reported.last, const TaskFilterSelection(assigneeIds: {'m1'}));
     });
 
     testWidgets('a reported selection is not changed by later ticks',
         (tester) async {
       final reported = await openFilter(tester);
 
-      await tester.tap(find.byKey(const Key('filter-event-e1')));
+      await tester.tap(find.byKey(const Key('filter-assignee-m1')));
       await tester.pump();
-      await tester.tap(find.byKey(const Key('filter-event-e2')));
+      await tester.tap(find.byKey(const Key('filter-assignee-m2')));
       await tester.pump();
 
-      expect(reported.first, const TaskFilterSelection(eventIds: {'e1'}));
-    });
-
-    testWidgets('events with the same name are told apart by their date',
-        (tester) async {
-      final first = buildEvent(
-        id: 'd1',
-        name: 'דו יומי',
-        startDate: DateTime(2026, 10, 20),
-      );
-      final second = buildEvent(
-        id: 'd2',
-        name: 'דו יומי',
-        startDate: DateTime(2026, 11, 3),
-      );
-      await openFilter(tester, events: [first, second], members: const []);
-
-      expect(find.text('דו יומי'), findsNWidgets(2));
-      expect(find.text('20/10/2026'), findsOneWidget);
-      expect(find.text('03/11/2026'), findsOneWidget);
+      expect(reported.first, const TaskFilterSelection(assigneeIds: {'m1'}));
     });
 
     testWidgets('clear reports an empty selection, unticks everything and '
         'leaves the filter open', (tester) async {
       final reported = await openFilter(
         tester,
-        current: const TaskFilterSelection(dueSoon: true, eventIds: {'e1'}),
+        current: const TaskFilterSelection(dueSoon: true, assigneeIds: {'m1'}),
       );
 
       await tester.tap(find.byKey(const Key('filter-clear')));
@@ -1325,7 +1229,7 @@ void main() {
       expect(closeButton, findsOneWidget);
       expect(
         tester
-            .widget<CheckboxListTile>(find.byKey(const Key('filter-event-e1')))
+            .widget<CheckboxListTile>(find.byKey(const Key('filter-assignee-m1')))
             .value,
         isFalse,
       );

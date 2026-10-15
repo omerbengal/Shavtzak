@@ -121,11 +121,12 @@ void main() {
   });
 
   group('details', () {
-    testWidgets('shows the event, due time, assignees and description',
-        (tester) async {
+    testWidgets('shows the assembly time, assignees and description, and no '
+        'event line', (tester) async {
       final task = buildTask(
         description: 'שני רכבים',
-        dueAt: DateTime(2026, 10, 20, 7, 30),
+        stage: buildStage(date: DateTime(2026, 10, 20)),
+        assemblyTime: '07:30',
         event: buildEvent(name: 'דו יומי צפון'),
         assignees: [
           buildMember(id: 'm1', name: 'דנה'),
@@ -134,19 +135,11 @@ void main() {
       );
       await pumpCard(tester, task);
 
-      expect(find.textContaining('דו יומי צפון'), findsOneWidget);
-      expect(find.textContaining('20/10/2026 07:30'), findsOneWidget);
+      expect(find.text('התייצבות 07:30'), findsOneWidget);
       expect(find.text('דנה, יואב'), findsOneWidget);
       expect(find.text('שני רכבים'), findsOneWidget);
-    });
-
-    testWidgets('a task whose event does not resolve says so and still renders',
-        (tester) async {
-      final task = buildTask(title: 'משימה יתומה', eventId: 'gone');
-      await pumpCard(tester, task);
-
-      expect(find.text('אירוע לא נמצא'), findsOneWidget);
-      expect(find.text('משימה יתומה'), findsOneWidget);
+      // The page is the event: the card does not repeat it.
+      expect(find.textContaining('דו יומי צפון'), findsNothing);
     });
 
     testWidgets('a task with no resolvable assignee says so', (tester) async {
@@ -154,8 +147,12 @@ void main() {
       expect(find.text('ללא אחראים'), findsOneWidget);
     });
 
-    testWidgets('a task with no due date shows no due line', (tester) async {
-      await pumpCard(tester, buildTask());
+    testWidgets('a task with no assembly time shows no time line',
+        (tester) async {
+      await pumpCard(
+        tester,
+        buildTask(stage: buildStage(date: DateTime(2026, 10, 20))),
+      );
       expect(find.byIcon(Icons.schedule), findsNothing);
     });
 

@@ -490,6 +490,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         EventTimeField(
+          key: const Key('task-form-assembly-time'),
           controller: _assemblyTimeController,
           label: 'שעת התייצבות',
           hint: 'לא חובה',

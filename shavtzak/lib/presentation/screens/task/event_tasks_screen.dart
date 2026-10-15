@@ -193,13 +193,18 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
     );
   }
 
-  Future<void> _editTask(TaskItem existing, Event event, TeamMember user) {
+  Future<void> _editTask(
+    TaskItem existing,
+    Event event,
+    Stage stage,
+    TeamMember user,
+  ) {
     Logger.action('tap:taskEdit');
     return showTaskFormModal(
       context,
       existing: existing,
       event: event,
-      stage: existing.stage!,
+      stage: stage,
       watchEventAssignees: context.read<TaskRepository>().watchEventAssignees,
       onSave: (task) =>
           _send((completion) => UpdateTask(task, completion: completion)),
@@ -490,7 +495,7 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
                         onSetComplete: (isComplete) =>
                             _setComplete(task, isComplete),
                         onEditUpdate: () => _editUpdate(task),
-                        onEdit: () => _editTask(task, event, user),
+                        onEdit: () => _editTask(task, event, stage, user),
                         onDelete: () => _deleteTask(task),
                       ),
                     );
