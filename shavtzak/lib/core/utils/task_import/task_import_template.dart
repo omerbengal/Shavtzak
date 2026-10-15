@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:archive/archive.dart';
 import 'package:excel/excel.dart';
 
 import '../../../domain/entities/event.dart';
@@ -6,9 +9,10 @@ import 'task_import_parser.dart';
 
 const String taskImportTemplateFileName = 'תבנית משימות דו יומי.xlsx';
 
-/// The official import file for [event]: both sheets, right to left, the
-/// headers with how to fill the list columns, and one made-up example row
-/// each. Lists are written one "*" item per line.
+/// The official import file for [event]: both sheets right to left, every
+/// cell Rubik 12 with right-to-left text, the header row Rubik 14 bold with
+/// how to fill the list columns, and one made-up example row each. Lists are
+/// written one "*" item per line.
 List<int> buildTaskImportTemplate(Event event) {
   final excel = Excel.createExcel();
   excel.rename(excel.getDefaultSheet()!, stagesSheetName);
@@ -48,7 +52,7 @@ List<int> buildTaskImportTemplate(Event event) {
   );
 
   excel.setDefaultSheet(stagesSheetName);
-  return excel.encode()!;
+  return _finishLook(excel.encode()!);
 }
 
 final CellStyle _headerStyle = CellStyle(
@@ -106,3 +110,78 @@ void _writeSheet(
 Data _cell(Sheet sheet, int column, int row) => sheet.cell(
       CellIndex.indexByColumnRow(columnIndex: column, rowIndex: row),
     );
+
+// ---- what `excel` cannot set ----
+//
+// `excel` 4.0.6 drops a sheet's right-to-left view on save, has no text
+// direction setting, and keeps Arial 10 as the workbook's default font. These
+// are set in the saved file's XML instead.
+
+const String _rubik12 =
+    '<font><sz val="12"/><color rgb="FF000000"/><name val="Rubik"/></font>';
+
+List<int> _finishLook(List<int> bytes) {
+  final source = ZipDecoder().decodeBytes(bytes);
+  final finished = Archive();
+  for (final file in source.files) {
+    final name = file.name;
+    String Function(String)? change;
+    if (name == 'xl/styles.xml') {
+      change = _rubikAndRightToLeftText;
+    } else if (name.startsWith('xl/worksheets/sheet') && name.endsWith('.xml')) {
+      change = _rightToLeftSheet;
+    }
+    if (change == null || !file.isFile) {
+      finished.addFile(file);
+      continue;
+    }
+    final data = utf8.encode(change(utf8.decode(file.content as List<int>)));
+    finished.addFile(ArchiveFile(name, data.length, data));
+  }
+  return ZipEncoder().encode(finished)!;
+}
+
+// `<sheetView ` with its space: `<sheetViews>` is the element around it.
+final RegExp _sheetView = RegExp(r'<sheetView\s(?![^>]*rightToLeft)');
+
+String _rightToLeftSheet(String xml) =>
+    xml.replaceAll(_sheetView, '<sheetView rightToLeft="1" ');
+
+final RegExp _fontsBlock = RegExp(r'<fonts[^>]*>.*?</fonts>', dotAll: true);
+final RegExp _font = RegExp(r'<font>.*?</font>|<font/>', dotAll: true);
+final RegExp _cellXfsBlock =
+    RegExp(r'<cellXfs[^>]*>.*?</cellXfs>', dotAll: true);
+final RegExp _xf = RegExp(r'<xf ([^>]*?)(/>|>(.*?)</xf>)', dotAll: true);
+final RegExp _alignment = RegExp(r'<alignment([^>]*?)/>');
+final RegExp _readingOrder = RegExp(r'\s*readingOrder="\d+"');
+
+/// Rubik 12 as the default font (the first one, which every unstyled and
+/// newly typed cell uses) and for any font left empty; right-to-left text
+/// in every cell style.
+String _rubikAndRightToLeftText(String xml) {
+  xml = xml.replaceFirstMapped(_fontsBlock, (block) {
+    var index = 0;
+    return block.group(0)!.replaceAllMapped(_font, (font) {
+      final isDefault = index++ == 0;
+      return isDefault || font.group(0) == '<font/>' ? _rubik12 : font.group(0)!;
+    });
+  });
+  return xml.replaceFirstMapped(_cellXfsBlock, (block) {
+    return block.group(0)!.replaceAllMapped(_xf, (xf) {
+      var attributes = xf.group(1)!;
+      if (!attributes.contains('applyAlignment')) {
+        attributes = '$attributes applyAlignment="1"';
+      }
+      var inner = xf.group(3) ?? '';
+      if (_alignment.hasMatch(inner)) {
+        inner = inner.replaceFirstMapped(_alignment, (alignment) {
+          final rest = alignment.group(1)!.replaceAll(_readingOrder, '');
+          return '<alignment$rest readingOrder="2"/>';
+        });
+      } else {
+        inner = '<alignment readingOrder="2"/>$inner';
+      }
+      return '<xf $attributes>$inner</xf>';
+    });
+  });
+}

@@ -57,6 +57,8 @@ dependencies:
 
   # Data Import
   excel: ^4.0.0
+  # The zip inside an .xlsx: the import template finishes what excel can't set.
+  archive: ^3.6.1
 
   # Google Calendar API
   http: ^1.1.0
@@ -89,8 +91,6 @@ dev_dependencies:
   mockito: ^5.4.4
   build_runner: ^2.4.7
   fake_cloud_firestore: ^3.1.0
-  # Reads the zip inside an .xlsx in the import-template tests.
-  archive: ^3.6.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

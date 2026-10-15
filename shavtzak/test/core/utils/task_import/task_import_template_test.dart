@@ -87,6 +87,80 @@ void main() {
     expect(formatIdOf('xl/worksheets/sheet2.xml', 'E2'), hhmm);
   });
 
+  group('the look of the official file', () {
+    late Archive zip;
+    String part(String name) =>
+        utf8.decode(zip.findFile(name)!.content as List<int>);
+    const sheets = ['xl/worksheets/sheet1.xml', 'xl/worksheets/sheet2.xml'];
+
+    setUp(() => zip = ZipDecoder().decodeBytes(buildTaskImportTemplate(event)));
+
+    List<String> fonts() => RegExp(r'<font>.*?</font>|<font/>')
+        .allMatches(part('xl/styles.xml'))
+        .map((m) => m.group(0)!)
+        .toList();
+
+    List<String> cellXfs() {
+      final styles = part('xl/styles.xml');
+      final block = styles.substring(
+        styles.indexOf('<cellXfs'),
+        styles.indexOf('</cellXfs>'),
+      );
+      return RegExp(r'<xf [^>]*/>|<xf [^>]*>.*?</xf>')
+          .allMatches(block)
+          .map((m) => m.group(0)!)
+          .toList();
+    }
+
+    String fontOfCell(String sheet, String cell) {
+      final style = RegExp('<c r="$cell" s="(\\d+)"').firstMatch(part(sheet));
+      final xf = cellXfs()[int.parse(style!.group(1)!)];
+      final fontId = int.parse(RegExp(r'fontId="(\d+)"').firstMatch(xf)!.group(1)!);
+      return fonts()[fontId];
+    }
+
+    bool isRubik(String font, int size, {required bool bold}) =>
+        font.contains('<name val="Rubik"/>') &&
+        RegExp('<sz val="$size(\\.0)?"/>').hasMatch(font) &&
+        font.contains('<b/>') == bold;
+
+    test('both sheets run right to left', () {
+      for (final sheet in sheets) {
+        expect(part(sheet), contains('rightToLeft="1"'), reason: sheet);
+      }
+    });
+
+    test('every cell style reads right to left', () {
+      for (final xf in cellXfs()) {
+        expect(xf, contains('readingOrder="2"'), reason: xf);
+      }
+    });
+
+    test('the default font is Rubik 12, so typed-in cells get it too', () {
+      expect(isRubik(fonts().first, 12, bold: false), isTrue,
+          reason: fonts().first);
+    });
+
+    test('headers are Rubik 14 bold; every other cell Rubik 12', () {
+      for (final sheet in sheets) {
+        final cells = RegExp(r'<c r="([A-Z]+)(\d+)"')
+            .allMatches(part(sheet))
+            .map((m) => (m.group(1)! + m.group(2)!, m.group(2)!));
+        expect(cells, isNotEmpty);
+        for (final (cell, row) in cells) {
+          final font = fontOfCell(sheet, cell);
+          expect(
+            row == '1'
+                ? isRubik(font, 14, bold: true)
+                : isRubik(font, 12, bold: false),
+            isTrue,
+            reason: '$sheet $cell: $font',
+          );
+        }
+      }
+    });
+  });
+
   test('with the example assignee assigned, the template imports cleanly', () {
     final israel = buildMember(id: 'i1', name: 'ישראל ישראלי');
     final result = parseTaskImport(
