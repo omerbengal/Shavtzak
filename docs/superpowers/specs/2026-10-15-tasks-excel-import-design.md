@@ -194,7 +194,10 @@ Rules:
      writable, and gives its days).
   2. Query `stages` where `eventId == eventId`, limit 1. If anything is found:
      409 "לאירוע כבר יש שלבים. ייבוא אפשרי רק לאירוע ללא שלבים." This covers
-     two managers importing at once.
+     two managers importing at once. **Except a replay:** the client retries
+     a request that timed out, so if the payload's first stage id already
+     exists in this event, the import already happened. The action returns
+     `{ok: true, stageCount, taskCount}` without writing anything.
   3. Build every stage with `buildNewStage` and every task with
      `buildNewTask`: the same validation as the single creates.
   4. `transaction.create` each one. An id that already exists fails the
@@ -265,10 +268,9 @@ The backend does not check the assignees against the event, the same as
 
 ## Risks
 
-- **The `excel` package and real files.** It has had trouble with some
-  Excel-saved styles. The first plan step parses the sample file with it; if
-  it fails, a fallback reader for just the needed parts (shared strings and
-  sheet XML) is needed. Python's standard library already reads that file
-  without trouble.
+- **The `excel` package and real files.** Checked on 2026-10-15: `excel`
+  4.0.6 reads the sample file cleanly with typed cells (`IntCellValue`,
+  `DateCellValue`, `TimeCellValue`, multi-line text). It reports 1000 rows for
+  the sheet, mostly empty, which the empty-row rule handles.
 - **Name matching depends on how names are typed in the system.** A problem
   list that names the candidates keeps this fixable from the file side.
