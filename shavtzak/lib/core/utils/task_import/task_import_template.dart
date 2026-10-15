@@ -32,8 +32,10 @@ List<int> buildTaskImportTemplate(Event event) {
       TextCellValue('* שולחן קליטה בלובי\n* עמדת כיבוד קל'),
       TextCellValue('לובי המלון'),
       TextCellValue('להגיע חצי שעה לפני'),
+      // Two of each list, so the "*" on its own line shows in the example.
       TextCellValue(
-        '* שם: ישראל ישראלי, טלפון: 050-0000000, תפקיד: מנהל המלון',
+        '* שם: ישראל ישראלי, טלפון: 050-0000000, תפקיד: מנהל המלון\n'
+        '* שם: דנה כהן, טלפון: 052-0000000, תפקיד: קבלה',
       ),
     ],
   );
@@ -45,7 +47,7 @@ List<int> buildTaskImportTemplate(Event event) {
       const IntCellValue(1),
       TextCellValue('הקמת עמדת הקליטה'),
       TextCellValue('לוודא שיש מדפסת ותגים'),
-      TextCellValue('* ישראל ישראלי'),
+      TextCellValue('* ישראל ישראלי\n* דנה כהן'),
       const TimeCellValue(hour: 8, minute: 30),
       TextCellValue('* חיבור מדפסות\n* סידור תגים'),
     ],

@@ -28,13 +28,23 @@ void main() {
     // The only problem is the made-up assignee, by design.
     expect(
       result.problems.map((p) => p.text),
-      ['משימות, שורה 2: "ישראל ישראלי" אינו משובץ לאירוע'],
+      [
+        'משימות, שורה 2: "ישראל ישראלי" אינו משובץ לאירוע',
+        'משימות, שורה 2: "דנה כהן" אינו משובץ לאירוע',
+      ],
     );
     final stage = result.stages.single;
     expect(stage.stage.date, DateTime(2026, 6, 15));
     expect(stage.stage.startTime, '09:00');
     expect(stage.stage.endTime, '10:30');
-    expect(stage.stage.contacts.single.phone, '050-0000000');
+    // Two of each, so the "*" on its own line shows in the example.
+    expect(
+      stage.stage.contacts.map((c) => [c.name, c.phone, c.role]),
+      [
+        ['ישראל ישראלי', '050-0000000', 'מנהל המלון'],
+        ['דנה כהן', '052-0000000', 'קבלה'],
+      ],
+    );
     expect(stage.tasks.single.subtasks, hasLength(2));
     expect(stage.tasks.single.assemblyTime, '08:30');
   });
@@ -166,10 +176,11 @@ void main() {
     final result = parseTaskImport(
       buildTaskImportTemplate(event),
       event: event,
-      candidates: [israel],
+      candidates: [israel, buildMember(id: 'd1', name: 'דנה כהן')],
       currentUserId: 'boss',
       now: DateTime(2026, 6, 1),
     );
     expect(result.isValid, isTrue);
+    expect(result.stages.single.tasks.single.assigneeIds, ['i1', 'd1']);
   });
 }
