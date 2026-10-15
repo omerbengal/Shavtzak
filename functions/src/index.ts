@@ -69,6 +69,7 @@ import {
   stageEventId,
   stageFromStored,
 } from './stages';
+import {buildStageImport, importEventId} from './stage_import';
 import {buildSlotAnnotationMerge} from './slot_annotations';
 import {buildMemberFeedParts, renderIcsFeed} from './calendar_feed';
 
@@ -5443,6 +5444,54 @@ async function executeMutation(
         {before: existing},
       );
       return {ok: true};
+    }
+
+    case 'stage.import': {
+      const taskActor = taskActorFrom(actor);
+      requireTaskManager(taskActor);
+      const eventId = importEventId(payload);
+      const now = Timestamp.now();
+      const {built, replayed} = await db.runTransaction(async (transaction) => {
+        const eventDays = await readWritableEventDaysInTransaction(
+          transaction,
+          collections,
+          eventId,
+        );
+        const next = buildStageImport(payload, {now, actor: taskActor}, eventDays);
+        const existing = await transaction.get(
+          db.collection(collections.stages).where('eventId', '==', eventId).limit(1),
+        );
+        if (!existing.empty) {
+          // The client retries a request that timed out. If this import's own
+          // first stage is already there, the first attempt went through.
+          const own = await transaction.get(
+            db.collection(collections.stages).doc(next.stages[0].id),
+          );
+          if (own.exists && own.data()?.['eventId'] === eventId) {
+            return {built: next, replayed: true};
+          }
+          throw new HttpError(409, 'לאירוע כבר יש שלבים. ייבוא אפשרי רק לאירוע ללא שלבים.');
+        }
+        await requireTaskAssigneesInTransaction(
+          transaction,
+          collections,
+          [...new Set(next.tasks.flatMap((task) => task.assigneeIds))],
+        );
+        for (const stage of next.stages) {
+          transaction.create(db.collection(collections.stages).doc(stage.id), stage);
+        }
+        for (const task of next.tasks) {
+          transaction.create(db.collection(collections.tasks).doc(task.id), task);
+        }
+        return {built: next, replayed: false};
+      });
+      if (!replayed) {
+        await writeAuditLog(
+          db, collections, actor, operation, 'event', eventId,
+          {stageCount: built.stages.length, taskCount: built.tasks.length},
+        );
+      }
+      return {ok: true, stageCount: built.stages.length, taskCount: built.tasks.length};
     }
 
     case 'task.insert': {
