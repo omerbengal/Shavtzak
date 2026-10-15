@@ -1,3 +1,4 @@
+import 'package:excel/excel.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/task_import/task_import_parser.dart';
 import 'package:shavtzak/core/utils/task_import/task_import_template.dart';
@@ -33,6 +34,26 @@ void main() {
     expect(stage.stage.contacts.single.phone, '050-0000000');
     expect(stage.tasks.single.subtasks, hasLength(2));
     expect(stage.tasks.single.assemblyTime, '08:30');
+  });
+
+  test('the template carries the official headers and "*" lists', () {
+    final workbook = Excel.decodeBytes(buildTaskImportTemplate(event));
+    List<String> header(String sheet) => [
+          for (final cell in workbook.tables[sheet]!.rows.first)
+            if (cell?.value != null) cell!.value.toString(),
+        ];
+    List<String> example(String sheet) => [
+          for (final cell in workbook.tables[sheet]!.rows[1])
+            if (cell?.value != null) cell!.value.toString(),
+        ];
+
+    expect(header(stagesSheetName), StageColumns.templateHeaders);
+    expect(header(tasksSheetName), TaskColumns.templateHeaders);
+    expect(
+      StageColumns.templateHeaders,
+      contains('אנשי קשר (כל אחד בכוכבית נפרדת בשורה נפרדת)'),
+    );
+    expect(example(tasksSheetName), contains('* חיבור מדפסות\n* סידור תגים'));
   });
 
   test('with the example assignee assigned, the template imports cleanly', () {

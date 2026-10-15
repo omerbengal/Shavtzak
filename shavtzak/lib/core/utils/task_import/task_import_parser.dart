@@ -45,7 +45,25 @@ abstract final class StageColumns {
     contacts,
   ];
   static const required = [number, title, date];
+
+  /// The headers the official template writes: list columns carry how to
+  /// fill them. The hint in parentheses is ignored when reading.
+  static const templateHeaders = [
+    number,
+    title,
+    date,
+    start,
+    end,
+    '$requirements $_eachThingPerLine',
+    location,
+    notes,
+    '$contacts $_eachPersonPerLine',
+  ];
 }
+
+const String _eachThingPerLine = '(כל דבר בכוכבית נפרדת בשורה נפרדת)';
+const String _eachPersonPerLine = '(כל אחד בכוכבית נפרדת בשורה נפרדת)';
+const String _eachItemPerLine = '(כל אחת בכוכבית נפרדת בשורה נפרדת)';
 
 abstract final class TaskColumns {
   static const number = 'מספר שלב';
@@ -57,6 +75,16 @@ abstract final class TaskColumns {
 
   static const all = [number, title, description, assignees, assembly, subtasks];
   static const required = [number, title];
+
+  /// See [StageColumns.templateHeaders].
+  static const templateHeaders = [
+    number,
+    title,
+    description,
+    '$assignees $_eachPersonPerLine',
+    assembly,
+    '$subtasks $_eachItemPerLine',
+  ];
 }
 
 /// One thing wrong with the file. [row] is the Excel row number.
@@ -318,9 +346,14 @@ Sheet? _findSheet(Excel workbook, String name) {
 
 final RegExp _spaces = RegExp(r'\s+');
 final RegExp _trailingColon = RegExp(r'\s*:\s*$');
+// "אחראי/ים (כל אחד בכוכבית נפרדת בשורה נפרדת)": the hint is not the name.
+final RegExp _trailingHint = RegExp(r'\s*\([^)]*\)\s*$');
 
-String _header(String text) =>
-    text.replaceAll(_spaces, ' ').replaceAll(_trailingColon, '').trim();
+String _header(String text) => text
+    .replaceAll(_spaces, ' ')
+    .replaceAll(_trailingHint, '')
+    .replaceAll(_trailingColon, '')
+    .trim();
 
 /// A sheet's header row and the rows worth reading.
 class _Table {
@@ -427,8 +460,6 @@ void _limit(String text, int max, String header, void Function(String) at) {
   if (text.length > max) at('הטקסט בעמודה "$header" ארוך מ-$max תווים');
 }
 
-List<String> _pieces(String cell) => cleanText(cell)
-    .split('|')
-    .map((piece) => piece.trim())
-    .where((piece) => piece.isNotEmpty)
-    .toList();
+/// A list cell: one item per line, each optionally after a "*" bullet (the
+/// official format), or items separated by `|`.
+List<String> _pieces(String cell) => splitImportList(cleanText(cell));

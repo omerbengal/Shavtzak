@@ -130,3 +130,14 @@ String _hourMinute(int hour, int minute) =>
 String formatImportDay(DateTime day) =>
     '${day.day.toString().padLeft(2, '0')}/'
     '${day.month.toString().padLeft(2, '0')}/${day.year}';
+
+final RegExp _listSeparator = RegExp(r'[|\n\r]');
+final RegExp _bullet = RegExp(r'^[*•·]\s*');
+
+/// The items of a list cell: split on line breaks or `|`, each without a
+/// leading "*" bullet, empty items dropped.
+List<String> splitImportList(String text) => text
+    .split(_listSeparator)
+    .map((item) => item.trim().replaceFirst(_bullet, '').trim())
+    .where((item) => item.isNotEmpty)
+    .toList();

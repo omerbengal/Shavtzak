@@ -45,6 +45,12 @@ void main() {
     expect(result.contacts.map((c) => c.name), ['דנה', 'אבי']);
   });
 
+  test('a "*" before each contact is a bullet, not text', () {
+    final result = parse('* שם: דנה, טלפון: 0501234567\n* שם: אבי');
+    expect(result.problems, isEmpty);
+    expect(result.contacts.map((c) => c.name), ['דנה', 'אבי']);
+  });
+
   test('an empty cell or empty entries give nothing', () {
     expect(parse('').contacts, isEmpty);
     expect(parse(' | ').problems, isEmpty);

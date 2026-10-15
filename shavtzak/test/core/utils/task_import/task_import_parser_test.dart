@@ -106,6 +106,35 @@ void main() {
     expect(result.stages.single.tasks.single.subtasks, hasLength(2));
   });
 
+  test('reads the official format: hints in headers, one "*" item per line',
+      () {
+    final result = parse(buildImportWorkbook(
+      stageHeaders: StageColumns.templateHeaders,
+      stageRows: [
+        stageRow(
+          requirements: '* שולחנות\n* מפות',
+          contacts: '* שם: הלל, טלפון: 0522010344, תפקיד: צייר\n'
+              '* שם:יוכי, טלפון: 050-628-5016',
+        ),
+      ],
+      taskHeaders: TaskColumns.templateHeaders,
+      taskRows: [
+        taskRow(
+          assignees: '* עומר אליהו\n* מתן סלפטי',
+          subtasks: '* חיבור מדפסות\n* סידור תגים',
+        ),
+      ],
+    ));
+
+    expect(texts(result), isEmpty);
+    final stage = result.stages.single;
+    expect(stage.stage.requirements, '* שולחנות\n* מפות');
+    expect(stage.stage.contacts.map((c) => c.name), ['הלל', 'יוכי']);
+    final task = stage.tasks.single;
+    expect(task.assigneeIds, ['m1', 'm2']);
+    expect(task.subtasks.map((s) => s.title), ['חיבור מדפסות', 'סידור תגים']);
+  });
+
   test('rows that are empty, spaces only, or only a stage number are skipped',
       () {
     final result = parse(buildImportWorkbook(

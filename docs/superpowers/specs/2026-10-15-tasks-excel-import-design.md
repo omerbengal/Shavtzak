@@ -37,7 +37,8 @@ An `.xlsx` workbook (at most 5 MB) with two sheets, found by name: **שלבים*
 
 - **Headers on row 1, found by text, not position.** Column order is free,
   extra columns are ignored. Header text is compared after trimming, dropping
-  a trailing `:` and removing invisible characters (see below). A missing
+  a trailing hint in parentheses, e.g. `אחראי/ים (כל אחד בכוכבית נפרדת בשורה
+  נפרדת)`, and a trailing `:`, and removing invisible characters (see below). A missing
   required header is a problem.
 - **Invisible characters** (U+200E/U+200F, U+202A–U+202E, U+2066–U+2069,
   U+FEFF) are stripped from every cell, and a non-breaking space counts as a
@@ -46,8 +47,9 @@ An `.xlsx` workbook (at most 5 MB) with two sheets, found by name: **שלבים*
   filled cell is `מספר שלב`, is skipped.
 - **Row numbers in problems are the Excel row numbers**, as the person sees
   them.
-- **Lists inside a cell** (assignees, subtasks, contacts) are split on `|`;
-  empty pieces are dropped.
+- **Lists inside a cell** (assignees, subtasks, contacts): **the official
+  format is one item per line, each after a `*`** (as in the template).
+  Items separated by `|` are read too. Empty items are dropped.
 - **Limits are the forms' limits.** Text over a limit is a problem, never cut
   silently. Per file: at most **60 stages** and **400 tasks**, which keeps the
   save inside one Firestore transaction (500 writes).
@@ -79,7 +81,8 @@ An `.xlsx` workbook (at most 5 MB) with two sheets, found by name: **שלבים*
 Only `מספר שלב`, `שם` and `תאריך` are required headers. A missing optional
 header just means that field is empty for every stage.
 
-**Contacts cell.** Entries are split on `|` or a line break. Inside an entry, the three labels
+**Contacts cell.** One contact per line after a `*`, as with every list (or
+separated by `|`). Inside an entry, the three labels
 `שם`, `טלפון` and `תפקיד` are each followed by `:`, with any spaces around it.
 The labels may come in any order and each may appear at most once. A value
 runs until the next label; a trailing comma is dropped. So commas and colons
@@ -156,8 +159,12 @@ fails to load, the preview says so and offers no import.
 **הורדת תבנית** downloads `תבנית משימות דו יומי.xlsx`, built in the app with
 the `excel` package:
 
-- The two sheets, right-to-left, with exactly the headers above in the order
-  above.
+- **The official format** (agreed 2026-10-15, from the manager's own file):
+  the two sheets, right to left, with the headers above in the order above.
+  The four list columns carry a hint: `דרישות מהמלון ולוגיסטיקה (כל דבר
+  בכוכבית נפרדת בשורה נפרדת)`, `אנשי קשר (כל אחד …)`, `אחראי/ים (כל אחד …)`,
+  `תתי משימות (כל אחת …)`. Bold centred headers, wide list columns, wrapped
+  text. Lists are written `* item` per line.
 - **One example row** on each sheet, with a made-up contact, phone and
   assignee. Its example date is the event's first day.
 - Imported as is, it fails only on the made-up assignee, which is not
