@@ -548,9 +548,9 @@ void main() {
   group('summarizeTaskEvent', () {
     test('counts the stages, the open tasks and the member\'s open tasks', () {
       final board = [
-        buildTask(id: 'a', eventId: 'e1', assigneeIds: const ['m1']),
-        buildTask(id: 'b', eventId: 'e1', assigneeIds: const ['m2']),
-        buildTask(id: 'c', eventId: 'e1', assigneeIds: const ['m1'], isComplete: true),
+        buildTask(id: 'a', eventId: 'e1', stageId: 's1', assigneeIds: const ['m1']),
+        buildTask(id: 'b', eventId: 'e1', stageId: 's1', assigneeIds: const ['m2']),
+        buildTask(id: 'c', eventId: 'e1', stageId: 's1', assigneeIds: const ['m1'], isComplete: true),
         buildTask(id: 'd', eventId: 'e2', assigneeIds: const ['m1']),
       ];
       final stages = [
@@ -568,6 +568,23 @@ void main() {
 
       expect(summary.stageCount, 2);
       expect(summary.openTaskCount, 2);
+      expect(summary.myOpenTaskCount, 1);
+    });
+
+    test('leaves out tasks whose stage is gone, as the event screen does', () {
+      final summary = summarizeTaskEvent(
+        'e1',
+        tasks: [
+          buildTask(id: 'a', eventId: 'e1', stageId: 's1'),
+          // Saved before stages existed, or left behind by a deleted stage.
+          buildTask(id: 'old', eventId: 'e1', stageId: ''),
+          buildTask(id: 'orphan', eventId: 'e1', stageId: 'gone'),
+        ],
+        stages: [buildStage(id: 's1', eventId: 'e1')],
+        memberId: 'm1',
+      );
+
+      expect(summary.openTaskCount, 1);
       expect(summary.myOpenTaskCount, 1);
     });
   });

@@ -258,11 +258,20 @@ TaskEventSummary summarizeTaskEvent(
   required List<Stage> stages,
   required String memberId,
 }) {
+  final stageIds = {
+    for (final stage in stages)
+      if (stage.eventId == eventId) stage.id,
+  };
+  // Only tasks the event screen can show: a task whose stage is gone (or that
+  // predates stages) is not counted.
   final open = tasks
-      .where((task) => task.eventId == eventId && !task.isComplete)
+      .where((task) =>
+          task.eventId == eventId &&
+          stageIds.contains(task.stageId) &&
+          !task.isComplete)
       .toList();
   return TaskEventSummary(
-    stageCount: stages.where((stage) => stage.eventId == eventId).length,
+    stageCount: stageIds.length,
     openTaskCount: open.length,
     myOpenTaskCount: open.where((task) => task.isAssignedTo(memberId)).length,
   );
