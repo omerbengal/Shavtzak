@@ -68,6 +68,15 @@ final CellStyle _textStyle = CellStyle(
   textWrapping: TextWrapping.WrapText,
 );
 
+// Two-digit hours, as in the official file: 09:00, not 9:00.
+final CellStyle _timeStyle = CellStyle(
+  fontSize: 12,
+  fontFamily: 'Rubik',
+  horizontalAlign: HorizontalAlign.Center,
+  verticalAlign: VerticalAlign.Center,
+  numberFormat: const CustomTimeNumFormat(formatCode: 'hh:mm'),
+);
+
 void _writeSheet(
   Sheet sheet, {
   required List<String> headers,
@@ -81,10 +90,15 @@ void _writeSheet(
   for (var column = 0; column < headers.length; column++) {
     sheet.setColumnWidth(column, widths[column]);
     _cell(sheet, column, 0).cellStyle = _headerStyle;
-    // Dates and times keep the format `excel` gives them; a style here would
-    // replace it and show 0.375 instead of 09:00.
-    if (example[column] is TextCellValue) {
-      _cell(sheet, column, 1).cellStyle = _textStyle;
+    // A date keeps the format `excel` gives it: any style here would also
+    // have to carry a date format, or Excel would show a plain number.
+    switch (example[column]) {
+      case TextCellValue():
+        _cell(sheet, column, 1).cellStyle = _textStyle;
+      case TimeCellValue():
+        _cell(sheet, column, 1).cellStyle = _timeStyle;
+      default:
+        break;
     }
   }
 }

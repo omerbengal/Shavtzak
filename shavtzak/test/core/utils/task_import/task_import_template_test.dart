@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:archive/archive.dart';
 import 'package:excel/excel.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/task_import/task_import_parser.dart';
@@ -54,6 +57,34 @@ void main() {
       contains('אנשי קשר (כל אחד בכוכבית נפרדת בשורה נפרדת)'),
     );
     expect(example(tasksSheetName), contains('* חיבור מדפסות\n* סידור תגים'));
+  });
+
+  test('time cells are formatted hh:mm, like the official file', () {
+    // Read the file itself: the `excel` reader reports a custom "hh:mm" back
+    // as its own "h:mm".
+    final zip = ZipDecoder().decodeBytes(buildTaskImportTemplate(event));
+    String part(String name) =>
+        utf8.decode(zip.findFile(name)!.content as List<int>);
+    final styles = part('xl/styles.xml');
+    final timeFormat = RegExp(r'<numFmt numFmtId="(\d+)" formatCode="hh:mm"/>')
+        .firstMatch(styles);
+    expect(timeFormat, isNotNull);
+    final xfs = RegExp(r'<xf [^>]*numFmtId="(\d+)"')
+        .allMatches(styles.substring(styles.indexOf('<cellXfs')))
+        .map((m) => m.group(1))
+        .toList();
+
+    String formatIdOf(String sheetPart, String cell) {
+      final style = RegExp('<c r="$cell" s="(\\d+)"')
+          .firstMatch(part(sheetPart))!
+          .group(1)!;
+      return xfs[int.parse(style)]!;
+    }
+
+    final hhmm = timeFormat!.group(1);
+    expect(formatIdOf('xl/worksheets/sheet1.xml', 'D2'), hhmm);
+    expect(formatIdOf('xl/worksheets/sheet1.xml', 'E2'), hhmm);
+    expect(formatIdOf('xl/worksheets/sheet2.xml', 'E2'), hhmm);
   });
 
   test('with the example assignee assigned, the template imports cleanly', () {
