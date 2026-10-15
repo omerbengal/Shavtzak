@@ -50,9 +50,10 @@ function baseInput(overrides: Record<string, unknown> = {}): Record<string, unkn
   return {
     id: 't1',
     eventId: 'e1',
+    stageId: 's1',
     title: 'להזמין אוטובוס',
     description: 'שני אוטובוסים',
-    dueAt: '2026-10-20T07:30:00.000Z',
+    assemblyTime: '07:30',
     assigneeIds: ['m1', 'm2'],
     subtasks: [
       {id: 'a', title: 'הצעת מחיר'},
@@ -117,7 +118,8 @@ test('buildNewTask builds an open task stamped with the injected time and actor'
     {id: 'a', title: 'הצעת מחיר', isDone: false},
     {id: 'b', title: 'אישור', isDone: false},
   ]);
-  assert.equal(task.dueAt?.toMillis(), Date.parse('2026-10-20T07:30:00.000Z'));
+  assert.equal(task.stageId, 's1');
+  assert.equal(task.assemblyTime, '07:30');
   assert.equal(task.isComplete, false);
   assert.equal(task.completedAt, null);
   assert.equal(task.completedById, null);
@@ -144,11 +146,17 @@ test('buildNewTask trims the title and subtask titles and de-duplicates assignee
   assert.equal(task.subtasks[0].title, 'שלב');
 });
 
-test('buildNewTask accepts no subtasks, no description and no due date', () => {
-  const task = newTask({subtasks: undefined, description: undefined, dueAt: null});
+test('buildNewTask accepts no subtasks, no description and no assembly time', () => {
+  const task = newTask({subtasks: undefined, description: undefined, assemblyTime: null});
   assert.deepEqual(task.subtasks, []);
   assert.equal(task.description, '');
-  assert.equal(task.dueAt, null);
+  assert.equal(task.assemblyTime, null);
+  assert.equal(newTask({assemblyTime: ''}).assemblyTime, null);
+});
+
+test('buildNewTask stores no due date: the stage date and assembly time replace it', () => {
+  const task = newTask({dueAt: '2026-10-20T07:30:00.000Z'});
+  assert.equal('dueAt' in task, false);
 });
 
 test('buildNewTask rejects invalid input with 400', () => {
@@ -157,11 +165,17 @@ test('buildNewTask rejects invalid input with 400', () => {
     {title: 'x'.repeat(201)},
     {description: 'x'.repeat(5001)},
     {eventId: ''},
+    {stageId: ''},
+    {stageId: undefined},
+    {stageId: 'a/b'},
     {id: ''},
     {assigneeIds: []},
     {assigneeIds: 'm1'},
     {assigneeIds: Array.from({length: 101}, (_, i) => `m${i}`)},
-    {dueAt: 'not a date'},
+    {assemblyTime: '7:30'},
+    {assemblyTime: '24:00'},
+    {assemblyTime: '07:60'},
+    {assemblyTime: 730},
     {subtasks: [{id: 'a', title: '  '}]},
     {subtasks: [{id: '', title: 'x'}]},
     {subtasks: [{id: 'a', title: 'x'}, {id: 'a', title: 'y'}]},
@@ -183,10 +197,6 @@ test('buildNewTask rejects an id that is not a plain document id', () => {
   assert.equal(newTask({id: '3f2a9c1e-7b4d-4e8a-9c0f-1a2b3c4d5e6f'}).id.length, 36);
 });
 
-test('buildNewTask rejects a due date outside the representable range with 400', () => {
-  assertTaskError(() => newTask({dueAt: 1e20}), 400);
-  assertTaskError(() => newTask({dueAt: -1e20}), 400);
-});
 
 // ---- audit details ----
 
@@ -206,23 +216,35 @@ test('applyTaskEdit replaces the editable fields and bumps updatedAt only', () =
   const edited = applyTaskEdit(
     existing,
     baseInput({
-      eventId: 'e2',
       title: 'כותרת חדשה',
       description: '',
-      dueAt: null,
+      assemblyTime: null,
       assigneeIds: ['m3'],
     }),
     {now: later, actor: flagged},
   );
-  assert.equal(edited.eventId, 'e2');
+  assert.equal(edited.eventId, 'e1');
+  assert.equal(edited.stageId, 's1');
   assert.equal(edited.title, 'כותרת חדשה');
   assert.equal(edited.description, '');
-  assert.equal(edited.dueAt, null);
+  assert.equal(edited.assemblyTime, null);
   assert.deepEqual(edited.assigneeIds, ['m3']);
   assert.equal(edited.updatedAt, later);
   assert.equal(edited.createdAt, now);
   assert.equal(edited.createdById, 'm-admin');
   assert.equal(edited.id, 't1');
+});
+
+test('applyTaskEdit cannot move a task to another stage or event', () => {
+  const existing = newTask();
+  assertTaskError(
+    () => applyTaskEdit(existing, baseInput({stageId: 's2'}), {now: later, actor: flagged}),
+    400,
+  );
+  assertTaskError(
+    () => applyTaskEdit(existing, baseInput({eventId: 'e2'}), {now: later, actor: flagged}),
+    400,
+  );
 });
 
 test('applyTaskEdit keeps isDone for a surviving subtask id and opens a new one', () => {
@@ -426,7 +448,8 @@ test('taskFromStored fills defaults for a document missing its optional fields',
   assert.equal(task.id, 't9');
   assert.equal(task.description, '');
   assert.deepEqual(task.subtasks, []);
-  assert.equal(task.dueAt, null);
+  assert.equal(task.stageId, '');
+  assert.equal(task.assemblyTime, null);
   assert.equal(task.assigneeUpdate, null);
   assert.equal(task.assigneeUpdateAt, null);
   assert.equal(task.assigneeUpdateById, null);

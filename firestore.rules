@@ -113,6 +113,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /stages/{document=**} {
+      allow read: if isAuthorizedProdUser();
+      allow write: if false;
+    }
+
+    match /test_stages/{document=**} {
+      allow read: if isAuthorizedTestUser();
+      allow write: if false;
+    }
+
     match /calendar_sync/{document=**} {
       allow read: if isAuthorizedProdUser();
       allow write: if false;

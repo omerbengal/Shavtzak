@@ -35,10 +35,13 @@ export type Subtask = {
 export type TaskDoc = {
   id: string;
   eventId: string;
+  /** The stage the task sits under. Fixed once the task exists. */
+  stageId: string;
   title: string;
   description: string;
   subtasks: Subtask[];
-  dueAt: Timestamp | null;
+  /** The assembly (התייצבות) time on the stage's day, `HH:mm`; null = none. */
+  assemblyTime: string | null;
   assigneeIds: string[];
   assigneeUpdate: string | null;
   assigneeUpdateAt: Timestamp | null;
@@ -62,8 +65,7 @@ const MAX_DESCRIPTION_LENGTH = 5000;
 const MAX_SUBTASKS = 50;
 const MAX_ASSIGNEES = 100;
 const MAX_UPDATE_LENGTH = 2000;
-// 9999-12-31, the last day a Firestore Timestamp can hold, with a day to spare.
-const MAX_DUE_AT_MILLIS = 253_402_214_400_000;
+const ASSEMBLY_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 // The task id is a Firestore document id. The client sends a UUID; anything
 // with a slash would address a nested document instead.
 const TASK_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
@@ -117,10 +119,11 @@ export function taskFromStored(id: string, raw: Record<string, unknown>): TaskDo
   return {
     id,
     eventId: typeof raw['eventId'] === 'string' ? raw['eventId'] : '',
+    stageId: typeof raw['stageId'] === 'string' ? raw['stageId'] : '',
     title: typeof raw['title'] === 'string' ? raw['title'] : '',
     description: typeof raw['description'] === 'string' ? raw['description'] : '',
     subtasks: storedSubtasks(raw['subtasks']),
-    dueAt: storedTimestamp(raw['dueAt']),
+    assemblyTime: typeof raw['assemblyTime'] === 'string' ? raw['assemblyTime'] : null,
     assigneeIds: Array.isArray(raw['assigneeIds'])
       ? raw['assigneeIds'].filter((value): value is string => typeof value === 'string')
       : [],
@@ -164,9 +167,10 @@ function storedSubtasks(value: unknown): Subtask[] {
 
 type EditableFields = {
   eventId: string;
+  stageId: string;
   title: string;
   description: string;
-  dueAt: Timestamp | null;
+  assemblyTime: string | null;
   assigneeIds: string[];
   subtasks: {id: string; title: string}[];
 };
@@ -175,6 +179,10 @@ function parseEditableFields(input: Record<string, unknown>): EditableFields {
   const eventId = input['eventId'];
   if (typeof eventId !== 'string' || eventId.trim().length === 0) {
     throw new TaskError(400, 'חובה לבחור אירוע');
+  }
+  const stageId = input['stageId'];
+  if (typeof stageId !== 'string' || !TASK_ID_PATTERN.test(stageId)) {
+    throw new TaskError(400, 'חובה לבחור שלב');
   }
 
   const title = typeof input['title'] === 'string' ? input['title'].trim() : '';
@@ -192,26 +200,21 @@ function parseEditableFields(input: Record<string, unknown>): EditableFields {
 
   return {
     eventId,
+    stageId,
     title,
     description,
-    dueAt: parseDueAt(input['dueAt']),
+    assemblyTime: parseAssemblyTime(input['assemblyTime']),
     assigneeIds: parseAssigneeIds(input['assigneeIds']),
     subtasks: parseSubtasks(input['subtasks']),
   };
 }
 
-function parseDueAt(value: unknown): Timestamp | null {
-  if (value == null) return null;
-  if (typeof value !== 'string' && typeof value !== 'number') {
-    throw new TaskError(400, 'תאריך יעד לא תקין');
+function parseAssemblyTime(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string' || !ASSEMBLY_TIME_PATTERN.test(value)) {
+    throw new TaskError(400, 'שעת התייצבות לא תקינה');
   }
-  const millis = typeof value === 'number' ? value : Date.parse(value);
-  // Timestamp itself throws on anything outside years 1..9999, which would
-  // surface as a 500 instead of a validation error.
-  if (!Number.isFinite(millis) || Math.abs(millis) > MAX_DUE_AT_MILLIS) {
-    throw new TaskError(400, 'תאריך יעד לא תקין');
-  }
-  return Timestamp.fromMillis(millis);
+  return value;
 }
 
 function parseAssigneeIds(value: unknown): string[] {
@@ -301,10 +304,11 @@ export function buildNewTask(input: Record<string, unknown>, ctx: TaskContext): 
   return {
     id,
     eventId: fields.eventId,
+    stageId: fields.stageId,
     title: fields.title,
     description: fields.description,
     subtasks: fields.subtasks.map((subtask) => ({...subtask, isDone: false})),
-    dueAt: fields.dueAt,
+    assemblyTime: fields.assemblyTime,
     assigneeIds: fields.assigneeIds,
     assigneeUpdate: null,
     assigneeUpdateAt: null,
@@ -328,15 +332,17 @@ export function applyTaskEdit(
     throw new TaskError(400, 'מזהה משימה לא תואם');
   }
   const fields = parseEditableFields(input);
+  if (fields.eventId !== existing.eventId || fields.stageId !== existing.stageId) {
+    throw new TaskError(400, 'לא ניתן להעביר משימה לשלב אחר');
+  }
   const doneById = new Map(
     existing.subtasks.map((subtask) => [subtask.id, subtask.isDone]),
   );
   const next: TaskDoc = {
     ...existing,
-    eventId: fields.eventId,
     title: fields.title,
     description: fields.description,
-    dueAt: fields.dueAt,
+    assemblyTime: fields.assemblyTime,
     assigneeIds: fields.assigneeIds,
     subtasks: fields.subtasks.map((subtask) => ({
       ...subtask,

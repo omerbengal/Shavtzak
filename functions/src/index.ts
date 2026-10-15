@@ -60,6 +60,15 @@ import {
   taskAuditDetails,
   taskFromStored,
 } from './tasks';
+import {
+  StageDoc,
+  applyStageEdit,
+  buildNewStage,
+  eventLocalDays,
+  stageAuditDetails,
+  stageEventId,
+  stageFromStored,
+} from './stages';
 import {buildSlotAnnotationMerge} from './slot_annotations';
 import {buildMemberFeedParts, renderIcsFeed} from './calendar_feed';
 
@@ -98,6 +107,7 @@ type Collections = {
   checklistItems: string;
   presets: string;
   tasks: string;
+  stages: string;
   calendarSync: string;
   eventCalendarSync: string;
   eventCalendarJobs: string;
@@ -205,6 +215,7 @@ function getCollections(environment: EnvironmentMode): Collections {
     checklistItems: `${prefix}checklist_items`,
     presets: `${prefix}checklist_presets`,
     tasks: `${prefix}tasks`,
+    stages: `${prefix}stages`,
     calendarSync: `${prefix}calendar_sync`,
     eventCalendarSync: `${prefix}event_calendar_sync`,
     eventCalendarJobs: `${prefix}event_calendar_jobs`,
@@ -472,7 +483,7 @@ async function deleteEventRelatedDocuments(
   eventId: string,
 ): Promise<void> {
   while (true) {
-    const [assignments, checklistItems, tasks] = await Promise.all([
+    const [assignments, checklistItems, tasks, stages] = await Promise.all([
       db.collection(collections.assignments)
         .where('eventId', '==', eventId)
         .limit(200)
@@ -485,11 +496,16 @@ async function deleteEventRelatedDocuments(
         .where('eventId', '==', eventId)
         .limit(100)
         .get(),
+      db.collection(collections.stages)
+        .where('eventId', '==', eventId)
+        .limit(100)
+        .get(),
     ]);
     const documents = [
       ...assignments.docs,
       ...checklistItems.docs,
       ...tasks.docs,
+      ...stages.docs,
     ];
     if (documents.length === 0) return;
 
@@ -545,6 +561,51 @@ async function requireWritableEventInTransaction(
   if (event.data()?.[EVENT_DELETION_PENDING_FIELD] === true) {
     throw new HttpError(409, 'האירוע נמצא בתהליך מחיקה');
   }
+}
+
+/**
+ * The Israel-local days of an event that can take changes, read inside a
+ * transaction. A stage's date must be one of them.
+ */
+async function readWritableEventDaysInTransaction(
+  transaction: FirebaseFirestore.Transaction,
+  collections: Collections,
+  eventId: string,
+): Promise<string[]> {
+  const event = await transaction.get(
+    db.collection(collections.events).doc(eventId),
+  );
+  if (!event.exists) throw new HttpError(400, 'אירוע לא נמצא');
+  const data = event.data() ?? {};
+  if (data[EVENT_DELETION_PENDING_FIELD] === true) {
+    throw new HttpError(409, 'האירוע נמצא בתהליך מחיקה');
+  }
+  const startMillis = timestampMillis(data['startDate']);
+  if (startMillis == null) throw new HttpError(400, 'לאירוע אין תאריך');
+  return eventLocalDays(startMillis, timestampMillis(data['endDate']));
+}
+
+/** A task's stage must exist and belong to the task's event. */
+async function requireStageOfEventInTransaction(
+  transaction: FirebaseFirestore.Transaction,
+  collections: Collections,
+  stageId: string,
+  eventId: string,
+): Promise<void> {
+  const stage = await transaction.get(
+    db.collection(collections.stages).doc(stageId),
+  );
+  if (!stage.exists) throw new HttpError(400, 'השלב לא נמצא');
+  if (stage.data()?.['eventId'] !== eventId) {
+    throw new HttpError(400, 'השלב אינו שייך לאירוע');
+  }
+}
+
+function requireStagePayload(value: unknown): Record<string, unknown> {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, 'Missing or invalid stage');
+  }
+  return value as Record<string, unknown>;
 }
 
 function taskActorFrom(actor: ActorContext): TaskActor {
@@ -5307,6 +5368,83 @@ async function executeMutation(
       return {ok: true};
     }
 
+    case 'stage.insert': {
+      const taskActor = taskActorFrom(actor);
+      requireTaskManager(taskActor);
+      const input = requireStagePayload(payload['stage']);
+      const eventId = stageEventId(input);
+      const now = Timestamp.now();
+      const stage: StageDoc = await db.runTransaction(async (transaction) => {
+        const eventDays = await readWritableEventDaysInTransaction(
+          transaction,
+          collections,
+          eventId,
+        );
+        const next = buildNewStage(input, {now, actor: taskActor}, eventDays);
+        transaction.create(db.collection(collections.stages).doc(next.id), next);
+        return next;
+      });
+      await writeAuditLog(
+        db, collections, actor, operation, 'stage', stage.id,
+        stageAuditDetails(stage),
+        {after: stage},
+      );
+      return {ok: true};
+    }
+
+    case 'stage.update': {
+      const taskActor = taskActorFrom(actor);
+      requireTaskManager(taskActor);
+      const input = requireStagePayload(payload['stage']);
+      const stageId = requireString(input['id'], 'stage.id');
+      const docRef = db.collection(collections.stages).doc(stageId);
+      const now = Timestamp.now();
+      const {before, after} = await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(docRef);
+        if (!snapshot.exists) throw new HttpError(404, 'השלב לא נמצא');
+        const existing = stageFromStored(stageId, snapshot.data() ?? {});
+        const eventDays = await readWritableEventDaysInTransaction(
+          transaction,
+          collections,
+          existing.eventId,
+        );
+        const next = applyStageEdit(existing, input, {now, actor: taskActor}, eventDays);
+        transaction.set(docRef, next);
+        return {before: existing, after: next};
+      });
+      await writeAuditLog(
+        db, collections, actor, operation, 'stage', stageId,
+        stageAuditDetails(after),
+        {before, after},
+      );
+      return {ok: true};
+    }
+
+    case 'stage.delete': {
+      const taskActor = taskActorFrom(actor);
+      requireTaskManager(taskActor);
+      const stageId = requireString(payload['stageId'], 'stageId');
+      const docRef = db.collection(collections.stages).doc(stageId);
+      const {existing, taskCount} = await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(docRef);
+        if (!snapshot.exists) throw new HttpError(404, 'השלב לא נמצא');
+        const stage = stageFromStored(stageId, snapshot.data() ?? {});
+        const tasks = await transaction.get(
+          db.collection(collections.tasks).where('stageId', '==', stageId),
+        );
+        // A stage holds tens of tasks, well under a transaction's 500 writes.
+        for (const task of tasks.docs) transaction.delete(task.ref);
+        transaction.delete(docRef);
+        return {existing: stage, taskCount: tasks.size};
+      });
+      await writeAuditLog(
+        db, collections, actor, operation, 'stage', stageId,
+        stageAuditDetails(existing, {taskCount}),
+        {before: existing},
+      );
+      return {ok: true};
+    }
+
     case 'task.insert': {
       const taskActor = taskActorFrom(actor);
       requireTaskManager(taskActor);
@@ -5316,6 +5454,12 @@ async function executeMutation(
       });
       await db.runTransaction(async (transaction) => {
         await requireWritableEventInTransaction(transaction, collections, next.eventId);
+        await requireStageOfEventInTransaction(
+          transaction,
+          collections,
+          next.stageId,
+          next.eventId,
+        );
         await requireTaskAssigneesInTransaction(
           transaction,
           collections,
