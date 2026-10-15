@@ -136,6 +136,32 @@ void main() {
     expect(confirm(tester).onPressed, isNotNull);
   });
 
+  testWidgets('a retry after a failure sends the same ids, even if members changed',
+      (tester) async {
+    final members = StreamController<List<TeamMember>>();
+    addTearDown(members.close);
+    await open(tester, clean, assignees: members.stream);
+    members.add([omer]);
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('task-import-confirm')));
+    await tester.pump();
+    backend.complete(const CrudActionResult.failure('בעיית רשת'));
+    await tester.pump();
+
+    // Someone edits a team member meanwhile; the stream emits again.
+    members.add([omer, buildMember(id: 'm9', name: 'חדש')]);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('task-import-confirm')));
+    await tester.pump();
+
+    expect(sent, hasLength(2));
+    List<String> ids(List<ImportedStage> stages) => [
+          for (final s in stages) ...[s.stage.id, for (final t in s.tasks) t.id],
+        ];
+    expect(ids(sent[1]), ids(sent[0]));
+  });
+
   testWidgets('when the assigned members fail to load, nothing can be imported',
       (tester) async {
     await open(tester, clean, assignees: Stream.error(Exception('denied')));

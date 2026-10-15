@@ -39,6 +39,12 @@ void main() {
     expect(result.contacts.single.role, 'מנהלת אירועים, קומה 2');
   });
 
+  test('contacts may also be one per line', () {
+    final result = parse('שם: דנה, טלפון: 0501234567\nשם: אבי, תפקיד: קבלה');
+    expect(result.problems, isEmpty);
+    expect(result.contacts.map((c) => c.name), ['דנה', 'אבי']);
+  });
+
   test('an empty cell or empty entries give nothing', () {
     expect(parse('').contacts, isEmpty);
     expect(parse(' | ').problems, isEmpty);

@@ -76,6 +76,11 @@ class _TaskImportDialogState extends State<_TaskImportDialog> {
   bool _isImporting = false;
   String? _importError;
 
+  // Once an import was sent, its ids stay fixed until another file is
+  // picked: a retry of an import that did reach the backend must send the
+  // same ids, so the backend can tell it is a replay.
+  bool _wasSent = false;
+
   bool get _canImport =>
       !_isImporting && !_membersFailed && (_result?.isValid ?? false);
 
@@ -88,8 +93,7 @@ class _TaskImportDialogState extends State<_TaskImportDialog> {
         setState(() {
           _members = members;
           _membersFailed = false;
-          // Not while importing: new ids would no longer match what was sent.
-          if (!_isImporting) _result = _parse();
+          if (!_wasSent) _result = _parse();
         });
       },
       onError: (Object _) {
@@ -122,6 +126,7 @@ class _TaskImportDialogState extends State<_TaskImportDialog> {
     setState(() {
       _file = picked;
       _importError = null;
+      _wasSent = false;
       _result = _parse();
     });
   }
@@ -131,6 +136,7 @@ class _TaskImportDialogState extends State<_TaskImportDialog> {
     if (!_canImport || result == null) return;
     setState(() {
       _isImporting = true;
+      _wasSent = true;
       _importError = null;
     });
     final outcome = await widget.onImport(result.stages);

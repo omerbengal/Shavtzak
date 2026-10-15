@@ -79,7 +79,7 @@ An `.xlsx` workbook (at most 5 MB) with two sheets, found by name: **שלבים*
 Only `מספר שלב`, `שם` and `תאריך` are required headers. A missing optional
 header just means that field is empty for every stage.
 
-**Contacts cell.** Entries are split on `|`. Inside an entry, the three labels
+**Contacts cell.** Entries are split on `|` or a line break. Inside an entry, the three labels
 `שם`, `טלפון` and `תפקיד` are each followed by `:`, with any spaces around it.
 The labels may come in any order and each may appear at most once. A value
 runs until the next label; a trailing comma is dropped. So commas and colons

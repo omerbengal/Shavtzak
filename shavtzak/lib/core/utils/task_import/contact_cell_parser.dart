@@ -4,7 +4,7 @@ import 'cell_values.dart';
 /// The "אנשי קשר" cell of an import file:
 /// `שם: הלל, טלפון: 0522010344, תפקיד: צייר | שם: יוכי, ...`.
 ///
-/// Entries are split on `|`. Inside an entry each of the three labels is
+/// Entries are split on `|` or a line break. Inside an entry each of the three labels is
 /// followed by a colon; a value runs until the next label, so commas and
 /// colons inside a value are kept.
 
@@ -30,6 +30,7 @@ final RegExp _unknownLabel = RegExp(
   r',\s*([א-תA-Za-z]+(?: [א-תA-Za-z]+)?)\s*:',
 );
 
+final RegExp _entrySeparator = RegExp(r'[|\n\r]');
 final RegExp _trailingCommas = RegExp(r'[,\s]+$');
 final RegExp _notDigit = RegExp(r'\D');
 
@@ -40,7 +41,7 @@ ContactCellResult parseContactCell(
   final contacts = <StageContact>[];
   final problems = <String>[];
   final entries = cleanText(cell)
-      .split('|')
+      .split(_entrySeparator)
       .map((entry) => entry.trim())
       .where((entry) => entry.isNotEmpty)
       .toList();
