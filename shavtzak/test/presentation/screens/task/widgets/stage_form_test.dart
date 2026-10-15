@@ -108,7 +108,8 @@ void main() {
     expect(saveEnabled(tester), isTrue);
   });
 
-  testWidgets('offers exactly the event\'s days, right to left', (tester) async {
+  testWidgets('offers exactly the event\'s days, right to left',
+      (tester) async {
     await openForm(tester);
     await tester.tap(find.byKey(const Key('stage-form-date')));
     await tester.pumpAndSettle();
@@ -142,7 +143,8 @@ void main() {
       find.byKey(const Key('stage-form-requirements')),
       'שני שולחנות בלובי',
     );
-    await tester.enterText(find.byKey(const Key('stage-form-location')), 'לובי');
+    await tester.enterText(
+        find.byKey(const Key('stage-form-location')), 'לובי');
     await tester.enterText(find.byKey(const Key('stage-form-notes')), 'מוקדם');
     await tester.tap(find.byKey(const Key('stage-form-add-contact')));
     await tester.pump();
@@ -241,7 +243,8 @@ void main() {
   });
 
   group('contacts', () {
-    testWidgets('a contact with a phone but no name is refused', (tester) async {
+    testWidgets('a contact with a phone but no name is refused',
+        (tester) async {
       final form = await openForm(tester, event: oneDay);
       await tester.enterText(title, 'קליטה');
       await tester.tap(find.byKey(const Key('stage-form-add-contact')));
@@ -257,7 +260,8 @@ void main() {
       expect(find.text('לכל איש קשר נדרש שם.'), findsOneWidget);
     });
 
-    testWidgets('a phone with letters is refused', (tester) async {
+    testWidgets('a phone not in the team-member format is refused',
+        (tester) async {
       final form = await openForm(tester, event: oneDay);
       await tester.enterText(title, 'קליטה');
       await tester.tap(find.byKey(const Key('stage-form-add-contact')));
@@ -268,13 +272,48 @@ void main() {
       );
       await tester.enterText(
         find.byKey(const Key('stage-form-contact-phone-0')),
-        'abc',
+        '0721234',
       );
       await tester.pump();
       await save(tester);
 
       expect(form.saved, isEmpty);
-      expect(find.byKey(const Key('stage-form-contacts-error')), findsOneWidget);
+      expect(
+          find.byKey(const Key('stage-form-contacts-error')), findsOneWidget);
+    });
+
+    testWidgets('a phone is formatted as typed, like a team member\'s',
+        (tester) async {
+      await openForm(tester, event: oneDay);
+      await tester.tap(find.byKey(const Key('stage-form-add-contact')));
+      await tester.pump();
+      final phone = find.byKey(const Key('stage-form-contact-phone-0'));
+
+      await tester.enterText(phone, '0501234567');
+      await tester.pump();
+      expect(tester.widget<TextField>(phone).controller!.text, '050-1234567');
+
+      await tester.enterText(phone, 'abc');
+      await tester.pump();
+      expect(tester.widget<TextField>(phone).controller!.text, '');
+    });
+
+    testWidgets('name and phone sit side by side, the role below them',
+        (tester) async {
+      await openForm(tester, event: oneDay);
+      await tester.tap(find.byKey(const Key('stage-form-add-contact')));
+      await tester.pump();
+      final name =
+          tester.getRect(find.byKey(const Key('stage-form-contact-name-0')));
+      final role =
+          tester.getRect(find.byKey(const Key('stage-form-contact-role-0')));
+      final phone =
+          tester.getRect(find.byKey(const Key('stage-form-contact-phone-0')));
+
+      expect(name.top, phone.top);
+      expect(name.center.dx, greaterThan(phone.center.dx),
+          reason: 'right to left: the name comes first, on the right');
+      expect(role.top, greaterThan(name.bottom));
     });
 
     testWidgets('a removed contact is not saved', (tester) async {
@@ -362,7 +401,8 @@ void main() {
       await tester.tap(saveButton);
       await tester.pump();
       expect(
-        find.descendant(of: saveButton, matching: find.byType(CircularProgressIndicator)),
+        find.descendant(
+            of: saveButton, matching: find.byType(CircularProgressIndicator)),
         findsOneWidget,
       );
       expect(form.closed, isFalse);

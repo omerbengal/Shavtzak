@@ -73,7 +73,7 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
 
   // Kept here, not in the cards: the list re-sorts on every change, and a card
   // that moved would otherwise close.
-  final Set<String> _expandedTaskIds = <String>{};
+  final Set<String> _openStageIds = <String>{};
   final Set<String> _openStageDetails = <String>{};
 
   late final FocusNode _searchFocusNode =
@@ -265,7 +265,8 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
 
   Future<void> _callPhone(String phone) async {
     Logger.action('tap:stageContactCall');
-    final uri = Uri(scheme: 'tel', path: phone.replaceAll(RegExp(r'[-\s()]'), ''));
+    final uri =
+        Uri(scheme: 'tel', path: phone.replaceAll(RegExp(r'[-\s()]'), ''));
     final launched = await canLaunchUrl(uri) && await launchUrl(uri);
     if (!launched && mounted) {
       ScaffoldMessenger.of(context)
@@ -331,12 +332,17 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
               return Scaffold(
                 appBar: AppBar(
                   title: Text(event?.name ?? 'משימות דו יומי'),
-                  leading: IconButton(
-                    key: const Key('tasks-back'),
-                    tooltip: 'חזרה לרשימת האירועים',
-                    icon: const Icon(Icons.arrow_forward),
-                    onPressed: _backToEvents,
-                  ),
+                  // On the far left, pointing left.
+                  automaticallyImplyLeading: false,
+                  actions: [
+                    IconButton(
+                      key: const Key('tasks-back'),
+                      tooltip: 'חזרה לרשימת האירועים',
+                      // Mirrored under RTL, so it draws pointing left.
+                      icon: const Icon(Icons.arrow_forward),
+                      onPressed: _backToEvents,
+                    ),
+                  ],
                 ),
                 body: TestEnvironmentIndicator(
                   child: _buildBody(state, event, user),
@@ -468,6 +474,12 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
                       tasks: group.tasks,
                       allTasks: stageTasks,
                       canManage: canManageTasks(user),
+                      isOpen: _openStageIds.contains(stage.id),
+                      onToggleOpen: () => setState(() {
+                        if (!_openStageIds.remove(stage.id)) {
+                          _openStageIds.add(stage.id);
+                        }
+                      }),
                       isDetailsOpen: _openStageDetails.contains(stage.id),
                       onToggleDetails: () => setState(() {
                         if (!_openStageDetails.remove(stage.id)) {
@@ -484,12 +496,6 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
                         now: _now,
                         canManage: canManageTasks(user),
                         canUpdateProgress: canUpdateTaskProgress(task, user),
-                        isExpanded: _expandedTaskIds.contains(task.id),
-                        onToggleExpanded: () => setState(() {
-                          if (!_expandedTaskIds.remove(task.id)) {
-                            _expandedTaskIds.add(task.id);
-                          }
-                        }),
                         onToggleSubtask: (subtask, isDone) =>
                             _toggleSubtask(task, subtask, isDone),
                         onSetComplete: (isComplete) =>

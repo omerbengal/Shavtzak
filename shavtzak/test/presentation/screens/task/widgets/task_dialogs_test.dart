@@ -295,14 +295,17 @@ void main() {
       await tester.pump();
       await tester.tap(find.byKey(const Key('task-form-add-subtask')));
       await tester.pump();
-      await tester.enterText(find.byKey(const Key('task-form-subtask-1')), 'שלב');
+      await tester.enterText(
+          find.byKey(const Key('task-form-subtask-1')), 'שלב');
       await tester.pump();
       await save(tester);
 
-      expect(form.saved.single.subtasks.map((subtask) => subtask.title), ['שלב']);
+      expect(
+          form.saved.single.subtasks.map((subtask) => subtask.title), ['שלב']);
     });
 
-    testWidgets('editing starts from the task and saves the fields that were '
+    testWidgets(
+        'editing starts from the task and saves the fields that were '
         'not touched', (tester) async {
       final existing = buildTask(
         id: 't1',
@@ -340,7 +343,8 @@ void main() {
       expect(task.assigneeUpdate, 'בטיפול');
     });
 
-    testWidgets('editing keeps a renamed subtask\'s id and done state and '
+    testWidgets(
+        'editing keeps a renamed subtask\'s id and done state and '
         'drops a removed one', (tester) async {
       final existing = buildTask(
         id: 't1',
@@ -389,7 +393,8 @@ void main() {
 
       testWidgets('saves a typed assembly time', (tester) async {
         final form = await openForm(tester);
-        await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
+        await tester.enterText(
+            find.byKey(const Key('task-form-title')), 'כותרת');
         await tester.enterText(assemblyField, '0930');
         await tester.pump();
         await pickAssignee(tester, 'm1');
@@ -567,7 +572,8 @@ void main() {
         expect(row('m1'), findsOneWidget);
       });
 
-      testWidgets('a member assigned while the form is open appears, and one '
+      testWidgets(
+          'a member assigned while the form is open appears, and one '
           'unassigned disappears', (tester) async {
         final form = await openForm(tester, assignees: {
           'e1': [dana],
@@ -585,12 +591,14 @@ void main() {
         expect(row('m2'), findsOneWidget);
       });
 
-      testWidgets('a picked member who is then unassigned from the event stays '
+      testWidgets(
+          'a picked member who is then unassigned from the event stays '
           'listed and picked', (tester) async {
         final form = await openForm(tester, assignees: {
           'e1': [dana, yoav],
         });
-        await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
+        await tester.enterText(
+            find.byKey(const Key('task-form-title')), 'כותרת');
         await pickAssignee(tester, 'm1');
 
         form.setAssignees('e1', [yoav]);
@@ -622,7 +630,8 @@ void main() {
       testWidgets('unticking a member removes them from the task',
           (tester) async {
         final form = await openForm(tester);
-        await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
+        await tester.enterText(
+            find.byKey(const Key('task-form-title')), 'כותרת');
         await pickAssignee(tester, 'm1');
         await pickAssignee(tester, 'm2');
         await pickAssignee(tester, 'm1');
@@ -631,7 +640,8 @@ void main() {
         expect(form.saved.single.assigneeIds, ['m2']);
       });
 
-      testWidgets('editing lists the event\'s members with the task\'s '
+      testWidgets(
+          'editing lists the event\'s members with the task\'s '
           'assignees ticked', (tester) async {
         final existing = buildTask(
           id: 't1',
@@ -715,7 +725,8 @@ void main() {
         await tester.pump();
         expect(row('m1'), findsNothing);
 
-        await tester.tap(find.byKey(const Key('task-form-assignee-search-clear')));
+        await tester
+            .tap(find.byKey(const Key('task-form-assignee-search-clear')));
         await tester.pump();
 
         expect(row('m1'), findsOneWidget);
@@ -749,7 +760,8 @@ void main() {
       testWidgets('searching for someone does not change who else is assigned',
           (tester) async {
         final form = await openSearch(tester);
-        await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
+        await tester.enterText(
+            find.byKey(const Key('task-form-title')), 'כותרת');
         await pickAssignee(tester, 'm1');
 
         // Search hides the first pick while the second is found and picked.
@@ -762,7 +774,8 @@ void main() {
         expect(form.saved.single.assigneeIds, ['m1', 'm2']);
       });
 
-      testWidgets('picking someone found by search empties the search and '
+      testWidgets(
+          'picking someone found by search empties the search and '
           'puts the cursor back in it', (tester) async {
         // On the web a press outside a text field takes the focus away from
         // it, as on desktop. The default test platform does not, which would
@@ -807,7 +820,15 @@ void main() {
         }
       });
 
-      testWidgets('picking with no search typed does not grab the focus',
+      testWidgets('opening the dropdown puts the cursor in its search',
+          (tester) async {
+        await openSearch(tester);
+        await tester.pump();
+        expect(tester.widget<TextField>(search).focusNode!.hasFocus, isTrue);
+      });
+
+      testWidgets(
+          'picking with no search typed leaves the cursor in the search',
           (tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
         try {
@@ -818,7 +839,7 @@ void main() {
 
           expect(
             tester.widget<TextField>(search).focusNode!.hasFocus,
-            isFalse,
+            isTrue,
           );
         } finally {
           debugDefaultTargetPlatformOverride = null;
@@ -837,7 +858,8 @@ void main() {
     group('saving', () {
       Future<_Form> openFilled(WidgetTester tester) async {
         final form = await openForm(tester);
-        await tester.enterText(find.byKey(const Key('task-form-title')), 'כותרת');
+        await tester.enterText(
+            find.byKey(const Key('task-form-title')), 'כותרת');
         await pickAssignee(tester, 'm1');
         return form;
       }
@@ -891,7 +913,8 @@ void main() {
         await tester.pumpAndSettle();
       });
 
-      testWidgets('a failed save keeps the form open with the reason and what '
+      testWidgets(
+          'a failed save keeps the form open with the reason and what '
           'was typed', (tester) async {
         final form = await openFilled(tester);
         form.saveResult =
@@ -913,7 +936,8 @@ void main() {
         expect(saveEnabled(tester), isTrue);
       });
 
-      testWidgets('retrying after a failure sends the same task again and '
+      testWidgets(
+          'retrying after a failure sends the same task again and '
           'closes on success', (tester) async {
         final form = await openFilled(tester);
         form.saveResult = const CrudActionResult.failure('תקלה');
@@ -959,7 +983,8 @@ void main() {
         expect(saveEnabled(tester), isFalse);
       });
 
-      testWidgets('changing the title enables save, and putting it back '
+      testWidgets(
+          'changing the title enables save, and putting it back '
           'disables it again', (tester) async {
         await openForm(tester, existing: existing);
 
@@ -987,7 +1012,8 @@ void main() {
         expect(saveEnabled(tester), isFalse);
       });
 
-      testWidgets('picking another assignee enables save, and unpicking them '
+      testWidgets(
+          'picking another assignee enables save, and unpicking them '
           'disables it again', (tester) async {
         await openForm(tester, existing: existing);
 
@@ -1028,7 +1054,8 @@ void main() {
         expect(saveEnabled(tester), isTrue);
       });
 
-      testWidgets('changing the assembly time enables save, and putting it '
+      testWidgets(
+          'changing the assembly time enables save, and putting it '
           'back disables it again', (tester) async {
         await openForm(tester, existing: existing);
         final assemblyField = find.descendant(
@@ -1062,7 +1089,8 @@ void main() {
         expect(form.closed, isTrue);
       });
 
-      testWidgets('cancel on a new task with something typed asks first, and '
+      testWidgets(
+          'cancel on a new task with something typed asks first, and '
           'staying keeps the form as it was', (tester) async {
         final form = await openForm(tester);
         await type(tester, title, 'כותרת');
@@ -1105,7 +1133,6 @@ void main() {
         expect(form.closed, isFalse);
         expect(leave, findsOneWidget);
       });
-
     });
   });
 
@@ -1176,7 +1203,8 @@ void main() {
       expect(find.text('אחראי'), findsNothing);
     });
 
-    testWidgets('starts from the current selection, and unticking reports '
+    testWidgets(
+        'starts from the current selection, and unticking reports '
         'what is left', (tester) async {
       final reported = await openFilter(
         tester,
@@ -1214,7 +1242,8 @@ void main() {
       expect(reported.first, const TaskFilterSelection(assigneeIds: {'m1'}));
     });
 
-    testWidgets('clear reports an empty selection, unticks everything and '
+    testWidgets(
+        'clear reports an empty selection, unticks everything and '
         'leaves the filter open', (tester) async {
       final reported = await openFilter(
         tester,
@@ -1229,7 +1258,8 @@ void main() {
       expect(closeButton, findsOneWidget);
       expect(
         tester
-            .widget<CheckboxListTile>(find.byKey(const Key('filter-assignee-m1')))
+            .widget<CheckboxListTile>(
+                find.byKey(const Key('filter-assignee-m1')))
             .value,
         isFalse,
       );
@@ -1307,7 +1337,8 @@ void main() {
       expect(find.text('בטיפול'), findsOneWidget);
     });
 
-    testWidgets('opens with the caret at the end of a mixed Hebrew and digit '
+    testWidgets(
+        'opens with the caret at the end of a mixed Hebrew and digit '
         'note', (tester) async {
       const existing = 'הוזמנו 2 אוטובוסים';
       await openUpdate(tester, initialText: existing);

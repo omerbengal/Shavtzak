@@ -72,8 +72,7 @@ class Stage extends Equatable {
   });
 
   /// Whether the fold under the title line has anything to show.
-  bool get hasDetails =>
-      requirements.isNotEmpty || notes.isNotEmpty || contacts.isNotEmpty;
+  bool get hasDetails => requirements.isNotEmpty || contacts.isNotEmpty;
 
   Stage copyWith({
     String? id,

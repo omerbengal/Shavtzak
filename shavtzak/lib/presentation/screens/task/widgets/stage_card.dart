@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
+import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/task_item.dart';
 
@@ -8,10 +9,14 @@ final DateFormat _dayFormat = DateFormat('dd/MM');
 
 /// "21/10 · 08:00–10:45 · לובי": the stage's day, time and place, skipping
 /// whatever is missing.
+///
+/// A range is wrapped in a left-to-right isolate, so the start time stays on
+/// the left inside the Hebrew line.
 String stageSummaryLine(Stage stage) {
   final start = stage.startTime;
   final end = stage.endTime;
-  final time = start == null ? null : (end == null ? start : '$start–$end');
+  final time =
+      start == null ? null : (end == null ? start : '\u2066$start–$end\u2069');
   return [
     _dayFormat.format(stage.date),
     if (time != null) time,
@@ -19,8 +24,9 @@ String stageSummaryLine(Stage stage) {
   ].join(' · ');
 }
 
-/// One stage on the event screen: its title line, its details behind a fold,
-/// and the tasks under it.
+/// One stage on the event screen: a title line that folds the rest of the
+/// card away, and under it the stage's details (behind a fold of their own)
+/// and its tasks.
 ///
 /// Display-only like the task card: the screen owns which folds are open and
 /// what every button does. [taskBuilder] draws each of [tasks].
@@ -31,6 +37,8 @@ class StageCard extends StatelessWidget {
     required this.tasks,
     required this.allTasks,
     required this.canManage,
+    required this.isOpen,
+    required this.onToggleOpen,
     required this.isDetailsOpen,
     required this.onToggleDetails,
     required this.onEdit,
@@ -49,6 +57,11 @@ class StageCard extends StatelessWidget {
   final List<TaskItem> allTasks;
 
   final bool canManage;
+
+  /// Whether the card shows more than its title line.
+  final bool isOpen;
+  final VoidCallback onToggleOpen;
+
   final bool isDetailsOpen;
   final VoidCallback onToggleDetails;
   final VoidCallback onEdit;
@@ -66,127 +79,177 @@ class StageCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.35)),
+        side: BorderSide(
+            color: theme.colorScheme.primary.withValues(alpha: 0.35)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            color: theme.colorScheme.primary.withValues(alpha: 0.08),
-            padding: const EdgeInsetsDirectional.fromSTEB(16, 10, 4, 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        stage.title,
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        stageSummaryLine(stage),
-                        key: Key('stage-summary-${stage.id}'),
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: Colors.grey.shade800),
-                      ),
-                    ],
-                  ),
-                ),
-                if (canManage) ...[
-                  IconButton(
-                    key: Key('stage-edit-${stage.id}'),
-                    tooltip: 'עריכת השלב',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.edit, color: Colors.blue),
-                    onPressed: onEdit,
-                  ),
-                  IconButton(
-                    key: Key('stage-delete-${stage.id}'),
-                    tooltip: 'מחיקת השלב',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: onDelete,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          if (stage.hasDetails) ...[
-            const Divider(height: 1),
-            InkWell(
-              key: Key('stage-details-toggle-${stage.id}'),
-              onTap: onToggleDetails,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  children: [
-                    Icon(
-                      isDetailsOpen ? Icons.expand_less : Icons.chevron_left,
-                      size: 22,
+          InkWell(
+            key: Key('stage-toggle-${stage.id}'),
+            onTap: onToggleOpen,
+            child: Container(
+              color: theme.colorScheme.primary.withValues(alpha: 0.08),
+              padding: const EdgeInsetsDirectional.fromSTEB(8, 10, 4, 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      isOpen ? Icons.expand_less : Icons.chevron_left,
                       color: Colors.grey.shade700,
                     ),
-                    const SizedBox(width: 4),
-                    Text('פרטי השלב', style: theme.textTheme.titleSmall),
-                  ],
-                ),
-              ),
-            ),
-            if (isDetailsOpen) _buildDetails(theme),
-          ],
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 4, 0),
-            child: Row(
-              children: [
-                Text(
-                  'משימות',
-                  style: theme.textTheme.titleSmall,
-                ),
-                const SizedBox(width: 6),
-                // Kept left-to-right so "2/5" never renders as "5/2" under RTL.
-                Text(
-                  '($done/${allTasks.length})',
-                  key: Key('stage-task-count-${stage.id}'),
-                  textDirection: TextDirection.ltr,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: Colors.grey.shade700),
-                ),
-                const Spacer(),
-                if (canManage)
-                  IconButton(
-                    key: Key('stage-add-task-${stage.id}'),
-                    tooltip: 'משימה חדשה בשלב',
-                    icon: Icon(
-                      Icons.add_circle,
-                      color: theme.colorScheme.primary,
-                    ),
-                    onPressed: onAddTask,
                   ),
-              ],
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          stage.title,
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          stageSummaryLine(stage),
+                          key: Key('stage-summary-${stage.id}'),
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(color: Colors.grey.shade800),
+                        ),
+                        if (stage.notes.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  Icons.sticky_note_2_outlined,
+                                  size: 16,
+                                  color: Colors.grey.shade800,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  stage.notes,
+                                  key: Key('stage-notes-${stage.id}'),
+                                  style: theme.textTheme.bodyMedium
+                                      ?.copyWith(color: Colors.grey.shade800),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 2),
+                        // Kept left-to-right so "2/5" never renders as "5/2"
+                        // under RTL.
+                        Text(
+                          'משימות: \u2066$done/${allTasks.length}\u2069',
+                          key: Key('stage-task-count-${stage.id}'),
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: Colors.grey.shade700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (canManage) ...[
+                    IconButton(
+                      key: Key('stage-edit-${stage.id}'),
+                      tooltip: 'עריכת השלב',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.edit, color: Colors.blue),
+                      onPressed: onEdit,
+                    ),
+                    IconButton(
+                      key: Key('stage-delete-${stage.id}'),
+                      tooltip: 'מחיקת השלב',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: onDelete,
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
-          if (tasks.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Text(
-                allTasks.isEmpty ? 'אין עדיין משימות בשלב זה' : 'אין משימות תואמות',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: Colors.grey.shade600),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Column(children: [for (final task in tasks) taskBuilder(task)]),
+          if (isOpen)
+            Column(
+              key: Key('stage-body-${stage.id}'),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: _buildBody(theme),
             ),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildBody(ThemeData theme) {
+    return [
+      if (stage.hasDetails) ...[
+        const Divider(height: 1),
+        InkWell(
+          key: Key('stage-details-toggle-${stage.id}'),
+          onTap: onToggleDetails,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Icon(
+                  isDetailsOpen ? Icons.expand_less : Icons.chevron_left,
+                  size: 22,
+                  color: Colors.grey.shade700,
+                ),
+                const SizedBox(width: 4),
+                Text('פרטי השלב', style: theme.textTheme.titleSmall),
+              ],
+            ),
+          ),
+        ),
+        if (isDetailsOpen) _buildDetails(theme),
+      ],
+      const Divider(height: 1),
+      Padding(
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 4, 0),
+        child: Row(
+          children: [
+            Text(
+              'משימות',
+              style: theme.textTheme.titleSmall,
+            ),
+            const Spacer(),
+            if (canManage)
+              IconButton(
+                key: Key('stage-add-task-${stage.id}'),
+                tooltip: 'משימה חדשה בשלב',
+                icon: Icon(
+                  Icons.add_circle,
+                  color: theme.colorScheme.primary,
+                ),
+                onPressed: onAddTask,
+              ),
+          ],
+        ),
+      ),
+      if (tasks.isEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Text(
+            allTasks.isEmpty ? 'אין עדיין משימות בשלב זה' : 'אין משימות תואמות',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: Colors.grey.shade600),
+          ),
+        )
+      else
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child:
+              Column(children: [for (final task in tasks) taskBuilder(task)]),
+        ),
+    ];
   }
 
   Widget _buildDetails(ThemeData theme) {
@@ -215,8 +278,6 @@ class StageCard extends StatelessWidget {
           if (stage.requirements.isNotEmpty)
             section('דרישות מהמלון ולוגיסטיקה', stage.requirements,
                 'stage-requirements-${stage.id}'),
-          if (stage.notes.isNotEmpty)
-            section('הערות', stage.notes, 'stage-notes-${stage.id}'),
           if (stage.contacts.isNotEmpty) ...[
             Text(
               'אנשי קשר',
@@ -247,7 +308,10 @@ class StageCard extends StatelessWidget {
               key: Key('stage-contact-call-${contact.id}'),
               onPressed: () => onCallPhone(contact.phone),
               icon: const Icon(Icons.phone, size: 18),
-              label: Text(contact.phone, textDirection: TextDirection.ltr),
+              label: Text(
+                Validators.formatPhoneNumber(contact.phone),
+                textDirection: TextDirection.ltr,
+              ),
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
               ),

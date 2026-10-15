@@ -4,8 +4,10 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/utils/crud_action_result.dart';
+import '../../../../core/utils/phone_input_formatter.dart';
 import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/task_utils.dart';
+import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/stage.dart';
 import '../../event/widgets/event_time_field.dart';
@@ -14,7 +16,6 @@ import 'discard_changes_dialog.dart';
 final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
 
 const int _maxContacts = 30;
-final RegExp _phonePattern = RegExp(r'^[0-9+\-() ]+$');
 
 /// Create a stage of [event], or edit [existing].
 ///
@@ -264,9 +265,10 @@ class _StageFormModalState extends State<_StageFormModal> {
     for (final draft in _contacts) {
       if (draft.isBlank) continue;
       if (draft.name.text.trim().isEmpty) return 'לכל איש קשר נדרש שם.';
-      final phone = draft.phone.text.trim();
-      if (phone.isNotEmpty && !_phonePattern.hasMatch(phone)) {
-        return 'מספר הטלפון של ${draft.name.text.trim()} אינו תקין.';
+      // The same rule as a team member's phone.
+      final phoneError = Validators.validatePhoneNumber(draft.phone.text);
+      if (phoneError != null) {
+        return 'הטלפון של ${draft.name.text.trim()}: $phoneError';
       }
     }
     return null;
@@ -533,7 +535,10 @@ class _StageFormModalState extends State<_StageFormModal> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Laid out left to right, so the range reads like a range: start on
+        // the left, end on the right. Each field keeps its own RTL.
         Row(
+          textDirection: TextDirection.ltr,
           children: [
             Expanded(
               child: EventTimeField(
@@ -620,6 +625,7 @@ class _StageFormModalState extends State<_StageFormModal> {
             child: Column(
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       child: TextField(
@@ -632,15 +638,21 @@ class _StageFormModalState extends State<_StageFormModal> {
                       ),
                     ),
                     const SizedBox(width: 8),
+                    // The same field as a team member's phone.
                     Expanded(
                       child: TextField(
                         key: Key('stage-form-contact-phone-$index'),
                         controller: draft.phone,
-                        maxLength: 30,
                         keyboardType: TextInputType.phone,
-                        // Digits read left to right even in a Hebrew form.
                         textDirection: TextDirection.ltr,
-                        decoration: field('טלפון'),
+                        textAlign: TextAlign.end,
+                        smartQuotesType: SmartQuotesType.disabled,
+                        smartDashesType: SmartDashesType.disabled,
+                        inputFormatters: [PhoneNumberTextInputFormatter()],
+                        decoration: field('טלפון').copyWith(
+                          hintText: '05X-XXXXXXX',
+                          prefixIcon: const Icon(Icons.phone),
+                        ),
                         onChanged: changed,
                       ),
                     ),

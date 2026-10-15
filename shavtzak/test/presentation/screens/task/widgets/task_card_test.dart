@@ -23,24 +23,17 @@ void main() {
     bool canUpdateProgress = true,
   }) async {
     final calls = _Calls();
-    // The card does not own its expanded state; this host plays the screen.
-    var isExpanded = false;
     await tester.pumpWidget(MaterialApp(
       home: Directionality(
         textDirection: TextDirection.rtl,
         child: Scaffold(
           body: SingleChildScrollView(
-            child: StatefulBuilder(
-              builder: (context, setState) => TaskCard(
+            child: Builder(
+              builder: (context) => TaskCard(
                 task: task,
                 now: now,
                 canManage: canManage,
                 canUpdateProgress: canUpdateProgress,
-                isExpanded: isExpanded,
-                onToggleExpanded: () {
-                  calls.expandToggles++;
-                  setState(() => isExpanded = !isExpanded);
-                },
                 onToggleSubtask: (subtask, isDone) =>
                     calls.subtaskToggles.add('${subtask.id}:$isDone'),
                 onSetComplete: calls.completions.add,
@@ -121,7 +114,8 @@ void main() {
   });
 
   group('details', () {
-    testWidgets('shows the assembly time, assignees and description, and no '
+    testWidgets(
+        'shows the assembly time, assignees and description, and no '
         'event line', (tester) async {
       final task = buildTask(
         description: 'שני רכבים',
@@ -192,51 +186,29 @@ void main() {
       expect(bar.value, closeTo(2 / 3, 0.0001));
     });
 
-    testWidgets('is collapsed at first, and pressing the card shows one card '
-        'per subtask', (tester) async {
+    testWidgets('always shows one card per subtask, with no arrow',
+        (tester) async {
       final task = buildTask(subtasks: threeSubtasks);
       await pumpCard(tester, task);
-
-      expect(find.byKey(const Key('subtask-a')), findsNothing);
-
-      await tapCard(tester, task);
 
       expect(find.byKey(const Key('subtask-a')), findsOneWidget);
       expect(find.byKey(const Key('subtask-b')), findsOneWidget);
       expect(find.byKey(const Key('subtask-c')), findsOneWidget);
       expect(find.text('תשלום'), findsOneWidget);
-    });
-
-    testWidgets('pressing the card again hides the subtasks', (tester) async {
-      final task = buildTask(subtasks: threeSubtasks);
-      await pumpCard(tester, task);
-
-      await tapCard(tester, task);
-      await tapCard(tester, task);
-
-      expect(find.byKey(const Key('subtask-a')), findsNothing);
-    });
-
-    testWidgets('has no expand arrow', (tester) async {
-      final task = buildTask(subtasks: threeSubtasks);
-      await pumpCard(tester, task);
-
       expect(find.byIcon(Icons.expand_more), findsNothing);
-      await tapCard(tester, task);
       expect(find.byIcon(Icons.expand_less), findsNothing);
     });
 
-    testWidgets('pressing a subtask row does not hide the subtasks',
+    testWidgets('pressing the card or a subtask row hides nothing',
         (tester) async {
       final task = buildTask(subtasks: threeSubtasks);
       final calls = await pumpCard(tester, task);
-      await tapCard(tester, task);
 
+      await tapCard(tester, task);
       await tester.tap(find.text('תשלום'));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('subtask-c')), findsOneWidget);
-      expect(calls.expandToggles, 1);
       expect(calls.subtaskToggles, isEmpty);
     });
 
@@ -302,16 +274,6 @@ void main() {
       expect(calls.completions, [true]);
     });
 
-    testWidgets('pressing the card does nothing, there being nothing to show',
-        (tester) async {
-      final task = buildTask();
-      final calls = await pumpCard(tester, task);
-
-      await tapCard(tester, task);
-
-      expect(calls.expandToggles, 0);
-    });
-
     testWidgets('unticking a completed task reports reopening', (tester) async {
       final task = buildTask(isComplete: true);
       final calls = await pumpCard(tester, task);
@@ -322,7 +284,8 @@ void main() {
   });
 
   group('permissions', () {
-    testWidgets('a member who cannot update progress gets disabled checkboxes '
+    testWidgets(
+        'a member who cannot update progress gets disabled checkboxes '
         'and no update button', (tester) async {
       final task = buildTask(subtasks: threeSubtasks);
       final calls = await pumpCard(tester, task, canUpdateProgress: false);
@@ -397,19 +360,6 @@ void main() {
       expect(iconOf('task-delete-${task.id}').color, Colors.red);
       expect(find.byType(PopupMenuButton<String>), findsNothing);
     });
-
-    testWidgets('pressing edit or delete does not open the subtasks',
-        (tester) async {
-      final task = buildTask(subtasks: threeSubtasks);
-      final calls = await pumpCard(tester, task, canManage: true);
-
-      await tester.tap(find.byKey(Key('task-edit-${task.id}')));
-      await tester.tap(find.byKey(Key('task-delete-${task.id}')));
-      await tester.pumpAndSettle();
-
-      expect(calls.expandToggles, 0);
-      expect(find.byKey(const Key('subtask-a')), findsNothing);
-    });
   });
 }
 
@@ -419,5 +369,4 @@ class _Calls {
   int editUpdate = 0;
   int edit = 0;
   int delete = 0;
-  int expandToggles = 0;
 }

@@ -53,7 +53,10 @@ class PhoneNumberTextInputFormatter extends TextInputFormatter {
         cursorPos > 3) {
       // If we just added a dash and cursor was after position 3, shift it right by 1
       cursorPos += 1;
-    } else if (cursorPos > formatted.length) {
+    }
+    // A pasted number that already has its dash would otherwise land the
+    // cursor past the end.
+    if (cursorPos > formatted.length) {
       cursorPos = formatted.length;
     }
 

@@ -537,6 +537,14 @@ class _TaskFormModalState extends State<_TaskFormModal> {
       _assigneesOpen = !_assigneesOpen;
       _assigneeQuery = '';
     });
+    if (_assigneesOpen) {
+      // The search field exists only once the open dropdown is built.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _assigneesOpen) _assigneeSearchFocusNode.requestFocus();
+      });
+    } else {
+      _assigneeSearchFocusNode.unfocus();
+    }
   }
 
   void _setPicked(TeamMember member, bool isPicked) {

@@ -168,8 +168,16 @@ void main() {
     await pumpList(
       tester,
       tasks: [
-        buildTask(id: 'a', eventId: 'north', stageId: 's1', assigneeIds: const ['m1']),
-        buildTask(id: 'b', eventId: 'north', stageId: 's1', assigneeIds: const ['m2']),
+        buildTask(
+            id: 'a',
+            eventId: 'north',
+            stageId: 's1',
+            assigneeIds: const ['m1']),
+        buildTask(
+            id: 'b',
+            eventId: 'north',
+            stageId: 's1',
+            assigneeIds: const ['m2']),
         buildTask(
           id: 'c',
           eventId: 'north',
