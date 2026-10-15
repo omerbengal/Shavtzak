@@ -67,7 +67,7 @@ Uses `flutter_bloc` with the BLoC (Business Logic Component) pattern:
 - **EventBloc**: Manages events with real-time updates, handles role quotas
 - **AssignmentBloc**: Most complex - manages assignments with related Event and TeamMember data
 - **UserSelectionBloc**: Manages user authentication, selection, and session persistence
-- **TaskBloc**: Manages the דו יומי task screen. One live subscription to every task plus the events and members they are joined with; subscribes only when the screen opens. Mutations report through the event's completer, not the state. Ticking a subtask or a task is optimistic: the bloc lays the unconfirmed tick over the stream's board (`_pending`), sends it in the background and takes it back if the backend refuses. The task form offers only future events of the "דו יומי" category (`duYomiCategoryId` in `task_utils.dart`, matched by id) and, as assignees, only the members assigned to the chosen event (`TaskRepository.watchEventAssignees`, live). Both rules live in the form; the backend does not enforce them
+- **TaskBloc**: Manages the דו יומי task screens. One live subscription to every task plus the stages, events and members they are joined with; subscribes only when a tasks screen opens. Mutations (tasks and stages) report through the event's completer, not the state. Ticking a subtask or a task is optimistic: the bloc lays the unconfirmed tick over the stream's board (`_pending`), sends it in the background and takes it back if the backend refuses. Structure: `/tasks` lists the events of the "דו יומי" category (`duYomiCategoryId` in `task_utils.dart`, matched by id); each event has **stages** (title, one day of the event, optional time or range, hotel details, contacts) and every task sits under a stage. A task's due moment is its stage's day at its optional assembly time (`TaskItem.assemblyTime`), or 23:59 that day without one (`TaskItem.dueAt` is derived, not stored). Assignees are only the members assigned to the event (`TaskRepository.watchEventAssignees`, live) — enforced in the form, not by the backend; the stage date being one of the event's days **is** enforced by the backend
 
 Each BLoC follows the pattern:
 ```dart
@@ -84,7 +84,8 @@ Real-time updates use `emit.forEach` with Firestore streams for live data synchr
 - `teamMembers` - Team member records
 - `events` - Event records
 - `assignments` - Assignment records (junction table with foreign keys)
-- `tasks` - Task records for the דו יומי task screen (subtasks embedded as an array)
+- `tasks` - Task records for the דו יומי task screens (subtasks embedded as an array; `stageId` + optional `assemblyTime`)
+- `stages` - Stages of a דו יומי event (`eventId`, `date` as a plain `yyyy-MM-dd`, contacts embedded); deleting a stage deletes its tasks
 
 **Environment-Aware Collections**: In test mode, all collections are prefixed with `test_` (e.g., `test_teamMembers`, `test_events`, `test_assignments`) to completely isolate test data from production.
 
@@ -140,7 +141,8 @@ Production:              Test:
 /admin/assignments      /test/admin/assignments
 /user/assignments       /test/user/assignments
 /user/constraints       /test/user/constraints
-/tasks                  /test/tasks              (link-only)
+/tasks                  /test/tasks              (link-only: event list)
+/tasks/<eventId>        /test/tasks/<eventId>    (one event's stages and tasks)
 ```
 
 ### User Authentication System
@@ -195,10 +197,11 @@ Root (GoRouter)
 │   └── /user/constraints - ConstraintsScreen OR AvailabilityScreen
 │       (depends on isPermanent field)
 │
-├── /tasks (TasksScreen) - דו יומי task management
+├── /tasks (TasksScreen) - list of דו יומי events
+│   └── /tasks/<eventId> (EventTasksScreen) - that event's stages and tasks
 │   Link-only: no tab, menu or card navigates here. Any authenticated
-│   member may open it; a signed-out visitor is returned to it after
-│   signing in (AppRouter.postAuthDestination).
+│   member may open either; a signed-out visitor is returned to the
+│   link after signing in (AppRouter.postAuthDestination).
 │
 └── /test/* - Mirror routes for test environment
     └── (same structure as above with /test prefix)
@@ -461,7 +464,7 @@ _subscription = _repository.watchItems().listen(
 - **RTL**: Always wrap screens with RTL directionality
 - **Immutability**: Entities use `copyWith()` methods, never mutate directly
 - **Null Safety**: Full Dart null-safety enabled
-- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (874 passing as of 2026-10-12). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
+- **Testing**: Real test suite — run it with `cd shavtzak && flutter test` (921 passing as of 2026-10-15; Functions: 247). Uses `bloc_test`, `mockito`, `fake_cloud_firestore`. Add tests alongside new features.
 - **Environment Isolation**: Test and production are completely separate (data, cache, routes)
 - **User-Based Auth**: No traditional Firebase Authentication - uses cached team member uniqueKey
 
