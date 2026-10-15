@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shavtzak/core/utils/task_utils.dart';
+import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 
 import '../../support/task_fixtures.dart';
@@ -224,14 +225,6 @@ void main() {
       });
     });
 
-    test('eventIds keeps only tasks of the chosen events', () {
-      expect(ids(filterTasks(all, now: now, eventIds: {'e1'})), ['bus', 'done']);
-    });
-
-    test('a task whose event is missing drops out of a filter for another event', () {
-      expect(ids(filterTasks(all, now: now, eventIds: {'e2'})), ['food']);
-    });
-
     test('assigneeIds keeps tasks assigned to any chosen member', () {
       expect(
         ids(filterTasks(all, now: now, assigneeIds: {'m3'})),
@@ -245,7 +238,6 @@ void main() {
           all,
           now: now,
           onlyAssigneeId: 'm1',
-          eventIds: {'e1'},
           statuses: {TaskDueStatus.completed},
         )),
         ['done'],
@@ -298,6 +290,25 @@ void main() {
         );
       });
 
+      test('drops a task with no assembly time, even when its day ends inside '
+          'the window', () {
+        final lateEvening = DateTime(2026, 10, 11, 23, 45);
+        final untimed = buildTask(
+          id: 'untimed',
+          stage: buildStage(date: DateTime(2026, 10, 11)),
+        );
+        // Due at 23:59 for the colours, but with no time it is never "soon".
+        expect(untimed.dueAt, DateTime(2026, 10, 11, 23, 59));
+        expect(
+          ids(filterTasks(
+            [untimed],
+            now: lateEvening,
+            dueWithin: const Duration(minutes: 30),
+          )),
+          isEmpty,
+        );
+      });
+
       test('no window is no restriction', () {
         expect(
           ids(filterTasks(
@@ -307,109 +318,6 @@ void main() {
           ['in31'],
         );
       });
-    });
-  });
-
-  group('pickableTaskEvents', () {
-    final yesterday = buildEvent(
-      id: 'past',
-      name: 'עבר',
-      startDate: DateTime(2026, 10, 10),
-    );
-    final today = buildEvent(
-      id: 'today',
-      name: 'היום',
-      startDate: DateTime(2026, 10, 11),
-    );
-    final nextWeek = buildEvent(
-      id: 'next',
-      name: 'שבוע הבא',
-      startDate: DateTime(2026, 10, 18),
-    );
-    final onHold = buildEvent(
-      id: 'hold',
-      name: 'מושהה',
-      startDate: DateTime(2026, 10, 19),
-      isDeactivated: true,
-    );
-    final multiDay = buildEvent(
-      id: 'multi',
-      name: 'רב יומי',
-      startDate: DateTime(2026, 10, 9),
-      endDate: DateTime(2026, 10, 12),
-    );
-
-    List<String> ids(Iterable<dynamic> events) =>
-        events.map((event) => event.id as String).toList();
-
-    test('offers events that have not finished, earliest first', () {
-      final picked = pickableTaskEvents(
-        [nextWeek, yesterday, today],
-        now: now,
-      );
-      expect(ids(picked), ['today', 'next']);
-    });
-
-    test('an event still running today is offered', () {
-      expect(ids(pickableTaskEvents([multiDay], now: now)), ['multi']);
-    });
-
-    test('a deactivated event is not offered', () {
-      expect(ids(pickableTaskEvents([onHold, nextWeek], now: now)), ['next']);
-    });
-
-    test('the task\'s own event stays pickable after it has passed', () {
-      final picked = pickableTaskEvents(
-        [yesterday, nextWeek],
-        now: now,
-        current: yesterday,
-      );
-      expect(ids(picked), ['past', 'next']);
-    });
-
-    test('the current event is not listed twice when it is still upcoming', () {
-      final picked = pickableTaskEvents(
-        [nextWeek, today],
-        now: now,
-        current: nextWeek,
-      );
-      expect(ids(picked), ['today', 'next']);
-    });
-
-    test('an event of another category is not offered', () {
-      final hanukkah = buildEvent(
-        id: 'hanukkah',
-        name: 'חנוכה',
-        startDate: DateTime(2026, 10, 18),
-        categoryId: '6de41bf3-1a22-476d-b922-ec35ede6bc9f',
-      );
-      expect(ids(pickableTaskEvents([hanukkah, nextWeek], now: now)), ['next']);
-    });
-
-    test('an event with no category is not offered', () {
-      final loose = buildEvent(
-        id: 'loose',
-        name: 'ללא קטגוריה',
-        startDate: DateTime(2026, 10, 18),
-        categoryId: null,
-      );
-      expect(ids(pickableTaskEvents([loose, nextWeek], now: now)), ['next']);
-    });
-
-    test('the task\'s own event stays pickable even from another category',
-        () {
-      final hanukkah = buildEvent(
-        id: 'hanukkah',
-        name: 'חנוכה',
-        startDate: DateTime(2026, 10, 18),
-        categoryId: '6de41bf3-1a22-476d-b922-ec35ede6bc9f',
-      );
-      final picked = pickableTaskEvents(
-        [hanukkah, nextWeek],
-        now: now,
-        current: hanukkah,
-      );
-      expect(ids(picked), ['hanukkah', 'next']);
     });
   });
 
@@ -439,35 +347,6 @@ void main() {
       for (final time in ['93:00', '24:00', '12:60', '9', '18', '9:30', 'ab:cd', '']) {
         expect(isValidDueTime(time), isFalse, reason: time);
       }
-    });
-  });
-
-  group('composeDueAt', () {
-    final date = DateTime(2026, 10, 20);
-
-    test('no date means no due date, whatever the time says', () {
-      expect(composeDueAt(null, '09:30'), isNull);
-    });
-
-    test('combines the date with a valid time', () {
-      expect(composeDueAt(date, '09:30'), DateTime(2026, 10, 20, 9, 30));
-    });
-
-    test('a date without a time is due at the end of that day', () {
-      expect(composeDueAt(date, ''), DateTime(2026, 10, 20, 23, 59));
-    });
-
-    test('an unfinished or invalid time falls back to the end of the day', () {
-      expect(composeDueAt(date, '9'), DateTime(2026, 10, 20, 23, 59));
-      expect(composeDueAt(date, '25:00'), DateTime(2026, 10, 20, 23, 59));
-      expect(composeDueAt(date, '12:75'), DateTime(2026, 10, 20, 23, 59));
-    });
-
-    test('ignores a time component on the picked date', () {
-      expect(
-        composeDueAt(DateTime(2026, 10, 20, 15, 45), '08:00'),
-        DateTime(2026, 10, 20, 8),
-      );
     });
   });
 
@@ -534,6 +413,171 @@ void main() {
       ];
       sortTasks(tasks, now);
       expect(tasks.map((task) => task.id).toList(), ['completed', 'open']);
+    });
+  });
+
+  group('sortStages', () {
+    test('orders by day, then start time with untimed first, then title', () {
+      final stages = [
+        buildStage(id: 'dinner', title: 'ערב', date: DateTime(2026, 10, 21), startTime: '19:00'),
+        buildStage(id: 'day2', title: 'בוקר', date: DateTime(2026, 10, 22), startTime: '07:00'),
+        buildStage(id: 'arrive', title: 'קליטה', date: DateTime(2026, 10, 21), startTime: '08:00'),
+        buildStage(id: 'note-b', title: 'ב', date: DateTime(2026, 10, 21)),
+        buildStage(id: 'note-a', title: 'א', date: DateTime(2026, 10, 21)),
+      ];
+
+      expect(
+        sortStages(stages).map((stage) => stage.id),
+        ['note-a', 'note-b', 'arrive', 'dinner', 'day2'],
+      );
+    });
+
+    test('does not change the list it was given', () {
+      final stages = [
+        buildStage(id: 'b', date: DateTime(2026, 10, 22)),
+        buildStage(id: 'a', date: DateTime(2026, 10, 21)),
+      ];
+      sortStages(stages);
+      expect(stages.map((stage) => stage.id), ['b', 'a']);
+    });
+  });
+
+  group('stagesToShow', () {
+    final arrival = buildStage(id: 'arrive', title: 'קליטה', date: DateTime(2026, 10, 21));
+    final dinner = buildStage(id: 'dinner', title: 'ערב', date: DateTime(2026, 10, 21), startTime: '19:00');
+    final empty = buildStage(id: 'empty', title: 'ריק', date: DateTime(2026, 10, 22));
+
+    final mine = buildTask(id: 'mine', stage: arrival, assigneeIds: const ['m1']);
+    final theirs = buildTask(id: 'theirs', stage: dinner, assigneeIds: const ['m2']);
+
+    List<String> shown(List<StageTasks> groups) =>
+        [for (final group in groups) '${group.stage.id}:${group.tasks.map((t) => t.id).join(',')}'];
+
+    test('all tasks with nothing narrowing shows every stage, empty ones too', () {
+      final groups = stagesToShow(
+        stages: [empty, dinner, arrival],
+        visibleTasks: [mine, theirs],
+        showEveryStage: true,
+      );
+      expect(shown(groups), ['arrive:mine', 'dinner:theirs', 'empty:']);
+    });
+
+    test('otherwise only stages with a visible task show', () {
+      final groups = stagesToShow(
+        stages: [empty, dinner, arrival],
+        visibleTasks: [mine],
+        showEveryStage: false,
+      );
+      expect(shown(groups), ['arrive:mine']);
+    });
+
+    test('a visible task whose stage is not among the stages is left out', () {
+      final stray = buildTask(id: 'stray', stage: buildStage(id: 'gone'));
+      final groups = stagesToShow(
+        stages: [arrival],
+        visibleTasks: [stray],
+        showEveryStage: false,
+      );
+      expect(groups, isEmpty);
+    });
+  });
+
+  group('eventDays', () {
+    test('lists every day of a multi-day event', () {
+      final event = buildEvent(
+        startDate: DateTime(2026, 10, 30),
+        endDate: DateTime(2026, 11, 1),
+      );
+      expect(eventDays(event), [
+        DateTime(2026, 10, 30),
+        DateTime(2026, 10, 31),
+        DateTime(2026, 11, 1),
+      ]);
+    });
+
+    test('a one-day event has one day', () {
+      final event = buildEvent(startDate: DateTime(2026, 10, 30));
+      expect(eventDays(event), [DateTime(2026, 10, 30)]);
+    });
+
+    test('ignores the time of day on the stored dates', () {
+      final event = buildEvent(
+        startDate: DateTime(2026, 10, 30, 21),
+        endDate: DateTime(2026, 10, 31, 3),
+      );
+      expect(eventDays(event), [DateTime(2026, 10, 30), DateTime(2026, 10, 31)]);
+    });
+
+    test('an end before the start is a one-day event', () {
+      final event = buildEvent(
+        startDate: DateTime(2026, 10, 30),
+        endDate: DateTime(2026, 10, 20),
+      );
+      expect(eventDays(event), [DateTime(2026, 10, 30)]);
+    });
+  });
+
+  group('taskEvents', () {
+    final upcoming = buildEvent(id: 'up', startDate: DateTime(2026, 10, 20));
+    final later = buildEvent(id: 'later', startDate: DateTime(2026, 11, 3));
+    final running = buildEvent(
+      id: 'running',
+      startDate: DateTime(2026, 10, 10),
+      endDate: DateTime(2026, 10, 12),
+    );
+    final past = buildEvent(id: 'past', startDate: DateTime(2026, 9, 1));
+    final older = buildEvent(id: 'older', startDate: DateTime(2026, 8, 1));
+    final onHold = buildEvent(id: 'hold', startDate: DateTime(2026, 10, 25), isDeactivated: true);
+    final otherCategory = buildEvent(
+      id: 'other',
+      startDate: DateTime(2026, 10, 26),
+      categoryId: '6de41bf3-1a22-476d-b922-ec35ede6bc9f',
+    );
+
+    test('splits active דו יומי events into upcoming, nearest first, and past, '
+        'latest first', () {
+      final split = taskEvents(
+        [past, later, onHold, upcoming, older, otherCategory, running],
+        now: now,
+      );
+      expect(split.upcoming.map((event) => event.id), ['running', 'up', 'later']);
+      expect(split.past.map((event) => event.id), ['past', 'older']);
+    });
+  });
+
+  group('summarizeTaskEvent', () {
+    test('counts the stages, the open tasks and the member\'s open tasks', () {
+      final board = [
+        buildTask(id: 'a', eventId: 'e1', assigneeIds: const ['m1']),
+        buildTask(id: 'b', eventId: 'e1', assigneeIds: const ['m2']),
+        buildTask(id: 'c', eventId: 'e1', assigneeIds: const ['m1'], isComplete: true),
+        buildTask(id: 'd', eventId: 'e2', assigneeIds: const ['m1']),
+      ];
+      final stages = [
+        buildStage(id: 's1', eventId: 'e1'),
+        buildStage(id: 's2', eventId: 'e1'),
+        buildStage(id: 's3', eventId: 'e2'),
+      ];
+
+      final summary = summarizeTaskEvent(
+        'e1',
+        tasks: board,
+        stages: stages,
+        memberId: 'm1',
+      );
+
+      expect(summary.stageCount, 2);
+      expect(summary.openTaskCount, 2);
+      expect(summary.myOpenTaskCount, 1);
+    });
+  });
+
+  group('StageContact', () {
+    test('two contacts with the same fields are equal', () {
+      expect(
+        const StageContact(id: 'c1', name: 'אבי'),
+        const StageContact(id: 'c1', name: 'אבי'),
+      );
     });
   });
 }

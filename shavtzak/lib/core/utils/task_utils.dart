@@ -1,4 +1,5 @@
 import '../../domain/entities/event.dart';
+import '../../domain/entities/stage.dart';
 import '../../domain/entities/task_item.dart';
 import '../../domain/entities/team_member.dart';
 import 'event_filter_utils.dart';
@@ -12,7 +13,7 @@ import 'search_utils.dart';
 /// only. Matched by id, so renaming the category changes nothing here.
 const String duYomiCategoryId = 'dc8b7dd8-f633-4b6a-8169-a94d0561bbd5';
 
-/// How far ahead the "due in the next half hour" filter looks.
+/// How far ahead the "התייצבות בחצי שעה הקרובה" filter looks.
 const Duration taskDueSoonWindow = Duration(minutes: 30);
 
 /// Where a task stands relative to its due time. Ordered by urgency, which is
@@ -44,18 +45,18 @@ bool canUpdateTaskProgress(TaskItem task, TeamMember user) =>
 ///
 /// - [onlyAssigneeId] is the "my tasks" toggle.
 /// - [query] matches the title, the description and the event name.
-/// - An empty [statuses], [eventIds] or [assigneeIds] means no restriction.
+/// - An empty [statuses] or [assigneeIds] means no restriction.
 /// - In [statuses], [TaskDueStatus.open] means every unfinished task whose due
 ///   time has not passed, so it takes in the tasks due later today as well.
-/// - [dueWithin] keeps unfinished tasks due between [now] and that long from
-///   it, both ends included. A task that is already overdue is not "due soon".
+/// - [dueWithin] keeps unfinished tasks whose assembly time falls between
+///   [now] and that long from it, both ends included. A task without an
+///   assembly time never matches, and one already overdue is not "due soon".
 List<TaskItem> filterTasks(
   List<TaskItem> tasks, {
   required DateTime now,
   String query = '',
   String? onlyAssigneeId,
   Set<TaskDueStatus> statuses = const {},
-  Set<String> eventIds = const {},
   Set<String> assigneeIds = const {},
   Duration? dueWithin,
 }) {
@@ -69,9 +70,6 @@ List<TaskItem> filterTasks(
     }
     if (statuses.isNotEmpty &&
         !_passesStatusFilter(taskDueStatus(task, now), statuses)) {
-      return false;
-    }
-    if (eventIds.isNotEmpty && !eventIds.contains(task.eventId)) {
       return false;
     }
     if (assigneeIds.isNotEmpty &&
@@ -106,30 +104,6 @@ List<TaskItem> sortTasks(List<TaskItem> tasks, DateTime now) {
   return sorted;
 }
 
-/// The events a task may be attached to: דו יומי events that have not finished
-/// yet and are not on hold, earliest first.
-///
-/// [current] is the event of the task being edited. It stays pickable even
-/// after it has passed or when it is not a דו יומי event, otherwise editing an
-/// old task would force a new event.
-List<Event> pickableTaskEvents(
-  List<Event> events, {
-  required DateTime now,
-  Event? current,
-}) {
-  final upcoming = splitEventsByPast(
-    events
-        .where((event) =>
-            !event.isDeactivated && event.categoryId == duYomiCategoryId)
-        .toList(),
-    now,
-  ).future;
-  if (current == null || upcoming.any((event) => event.id == current.id)) {
-    return upcoming;
-  }
-  return [current, ...upcoming];
-}
-
 /// The members a task may be assigned to, out of [members]: active and not
 /// archived, by name.
 List<TeamMember> assignableTaskMembers(List<TeamMember> members) {
@@ -142,26 +116,8 @@ List<TeamMember> assignableTaskMembers(List<TeamMember> members) {
 
 final RegExp _hourMinute = RegExp(r'^(\d{2}):(\d{2})$');
 
-/// Combine the form's due date and its `HH:mm` time text into one instant.
-///
-/// No date means no due date. A date with a missing or unusable time is due at
-/// the end of that day, so "by the 20th" does not turn red on the 20th at
-/// midnight.
-DateTime? composeDueAt(DateTime? date, String time) {
-  if (date == null) return null;
-  final parsed = _parseHourMinute(time);
-  return DateTime(
-    date.year,
-    date.month,
-    date.day,
-    parsed?.hour ?? 23,
-    parsed?.minute ?? 59,
-  );
-}
-
-/// Whether [time] is a complete `HH:mm` on the 24-hour clock. The task form
-/// refuses to save a non-empty due time that fails this, rather than quietly
-/// turning it into the end of the day.
+/// Whether [time] is a complete `HH:mm` on the 24-hour clock. The forms refuse
+/// to save a non-empty time that fails this, rather than quietly dropping it.
 bool isValidDueTime(String time) => _parseHourMinute(time) != null;
 
 ({int hour, int minute})? _parseHourMinute(String time) {
@@ -184,7 +140,7 @@ bool _passesStatusFilter(TaskDueStatus status, Set<TaskDueStatus> chosen) =>
 
 bool _isDueWithin(TaskItem task, DateTime now, Duration window) {
   final dueAt = task.dueAt;
-  if (task.isComplete || dueAt == null) return false;
+  if (task.isComplete || dueAt == null || !task.hasAssemblyTime) return false;
   return !dueAt.isBefore(now) && !dueAt.isAfter(now.add(window));
 }
 
@@ -196,4 +152,118 @@ int _compareNullsLast(DateTime? a, DateTime? b) {
   if (a == null) return 1;
   if (b == null) return -1;
   return a.compareTo(b);
+}
+
+// ---- stages and events ----
+
+/// A copy of [stages] in screen order: by day, then start time (stages with no
+/// time first on their day), then title.
+List<Stage> sortStages(List<Stage> stages) {
+  final sorted = [...stages];
+  sorted.sort((a, b) {
+    final byDay = a.date.compareTo(b.date);
+    if (byDay != 0) return byDay;
+    final byTime = (a.startTime ?? '').compareTo(b.startTime ?? '');
+    if (byTime != 0) return byTime;
+    return a.title.compareTo(b.title);
+  });
+  return sorted;
+}
+
+/// One stage on the event screen with the tasks shown under it.
+class StageTasks {
+  const StageTasks(this.stage, this.tasks);
+
+  final Stage stage;
+  final List<TaskItem> tasks;
+}
+
+/// The stages to draw, in order, each with its share of [visibleTasks].
+///
+/// With [showEveryStage] (all tasks, no search, no filter) every stage shows,
+/// empty ones included, so a manager can add tasks to them. Otherwise only
+/// stages holding at least one visible task show. A task whose stage is not in
+/// [stages] is left out.
+List<StageTasks> stagesToShow({
+  required List<Stage> stages,
+  required List<TaskItem> visibleTasks,
+  required bool showEveryStage,
+}) {
+  final tasksByStage = <String, List<TaskItem>>{};
+  for (final task in visibleTasks) {
+    tasksByStage.putIfAbsent(task.stageId, () => []).add(task);
+  }
+  return [
+    for (final stage in sortStages(stages))
+      if (showEveryStage || tasksByStage.containsKey(stage.id))
+        StageTasks(stage, tasksByStage[stage.id] ?? const []),
+  ];
+}
+
+/// Every day of [event], first to last, each at local midnight. A stage's date
+/// is picked from these.
+List<DateTime> eventDays(Event event) {
+  final first = DateTime(
+    event.startDate.year,
+    event.startDate.month,
+    event.startDate.day,
+  );
+  final last = DateTime(
+    event.endDate.year,
+    event.endDate.month,
+    event.endDate.day,
+  );
+  final days = <DateTime>[first];
+  // Calendar arithmetic on day numbers, so a clock change cannot skip a day.
+  while (days.length < 60) {
+    final next = DateTime(first.year, first.month, first.day + days.length);
+    if (next.isAfter(last)) break;
+    days.add(next);
+  }
+  return days;
+}
+
+/// The events the tasks screen lists: active events of the "דו יומי" category,
+/// split into those not over yet (nearest first) and past ones (latest first).
+({List<Event> upcoming, List<Event> past}) taskEvents(
+  List<Event> events, {
+  required DateTime now,
+}) {
+  final split = splitEventsByPast(
+    events
+        .where((event) =>
+            !event.isDeactivated && event.categoryId == duYomiCategoryId)
+        .toList(),
+    now,
+  );
+  return (upcoming: split.future, past: split.past);
+}
+
+/// The counts on an event's row in the event list.
+class TaskEventSummary {
+  const TaskEventSummary({
+    required this.stageCount,
+    required this.openTaskCount,
+    required this.myOpenTaskCount,
+  });
+
+  final int stageCount;
+  final int openTaskCount;
+  final int myOpenTaskCount;
+}
+
+TaskEventSummary summarizeTaskEvent(
+  String eventId, {
+  required List<TaskItem> tasks,
+  required List<Stage> stages,
+  required String memberId,
+}) {
+  final open = tasks
+      .where((task) => task.eventId == eventId && !task.isComplete)
+      .toList();
+  return TaskEventSummary(
+    stageCount: stages.where((stage) => stage.eventId == eventId).length,
+    openTaskCount: open.length,
+    myOpenTaskCount: open.where((task) => task.isAssignedTo(memberId)).length,
+  );
 }
