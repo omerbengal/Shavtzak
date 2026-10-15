@@ -6,7 +6,6 @@ import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 
 final DateFormat _dateTimeFormat = DateFormat('dd/MM/yyyy HH:mm');
-final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
 
 /// One task on the tasks screen.
 ///
@@ -88,11 +87,10 @@ class TaskCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildEventLine(theme),
-                    if (task.dueAt != null)
+                    if (task.hasAssemblyTime)
                       _InfoLine(
                         icon: Icons.schedule,
-                        text: 'עד ${_dateTimeFormat.format(task.dueAt!)}',
+                        text: 'התייצבות ${task.assemblyTime}',
                         color: status == TaskDueStatus.overdue ||
                                 status == TaskDueStatus.dueToday
                             ? style.accent
@@ -184,21 +182,6 @@ class TaskCard extends StatelessWidget {
           ),
         ],
       ],
-    );
-  }
-
-  Widget _buildEventLine(ThemeData theme) {
-    final event = task.event;
-    if (event == null) {
-      return _InfoLine(
-        icon: Icons.event_busy,
-        text: 'אירוע לא נמצא',
-        color: Colors.grey.shade600,
-      );
-    }
-    return _InfoLine(
-      icon: Icons.event,
-      text: '${event.name} · ${_dateFormat.format(event.startDate)}',
     );
   }
 

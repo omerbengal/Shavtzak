@@ -10,14 +10,14 @@ import '../../../../core/utils/rtl_text_field_utils.dart';
 import '../../../../core/utils/search_utils.dart';
 import '../../../../core/utils/task_utils.dart';
 import '../../../../domain/entities/event.dart';
+import '../../../../domain/entities/stage.dart';
 import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../../../../domain/entities/team_member.dart';
-import '../../../widgets/date_picker_dialog.dart';
 import '../../event/widgets/event_time_field.dart';
+import 'discard_changes_dialog.dart';
 
 final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
-final DateFormat _timeFormat = DateFormat('HH:mm');
 
 /// Create a task, or edit [existing].
 ///
@@ -29,13 +29,14 @@ final DateFormat _timeFormat = DateFormat('HH:mm');
 /// completion and timestamps on the saved task are whatever [existing] had and
 /// are ignored by the backend.
 ///
-/// [events] is the full list: the form narrows it to the events a task may be
-/// attached to. [watchEventAssignees] is the live list of members a task on a
-/// given event may be assigned to; nobody can be picked before an event is.
+/// The task sits under [stage] of [event]: neither is chosen here, and the
+/// task's day is the stage's. [watchEventAssignees] is the live list of
+/// members a task on the event may be assigned to.
 Future<void> showTaskFormModal(
   BuildContext context, {
   TaskItem? existing,
-  required List<Event> events,
+  required Event event,
+  required Stage stage,
   required Stream<List<TeamMember>> Function(String eventId)
       watchEventAssignees,
   required Future<CrudActionResult> Function(TaskItem task) onSave,
@@ -47,7 +48,8 @@ Future<void> showTaskFormModal(
     barrierDismissible: false,
     builder: (context) => _TaskFormModal(
       existing: existing,
-      events: events,
+      event: event,
+      stage: stage,
       watchEventAssignees: watchEventAssignees,
       onSave: onSave,
       currentUserId: currentUserId,
@@ -78,7 +80,8 @@ class _SubtaskDraft {
 class _TaskFormModal extends StatefulWidget {
   const _TaskFormModal({
     required this.existing,
-    required this.events,
+    required this.event,
+    required this.stage,
     required this.watchEventAssignees,
     required this.onSave,
     required this.currentUserId,
@@ -86,7 +89,8 @@ class _TaskFormModal extends StatefulWidget {
   });
 
   final TaskItem? existing;
-  final List<Event> events;
+  final Event event;
+  final Stage stage;
   final Stream<List<TeamMember>> Function(String eventId) watchEventAssignees;
   final Future<CrudActionResult> Function(TaskItem task) onSave;
   final String currentUserId;
@@ -103,10 +107,9 @@ class _TaskFormModalState extends State<_TaskFormModal> {
   // rather than a second one.
   late final String _newTaskId = _uuid.v4();
 
-  late final List<Event> _pickableEvents;
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
-  late final TextEditingController _dueTimeController;
+  late final TextEditingController _assemblyTimeController;
   late final FocusNode _titleFocusNode;
   late final FocusNode _descriptionFocusNode;
   late final List<_SubtaskDraft> _subtasks;
@@ -119,17 +122,15 @@ class _TaskFormModalState extends State<_TaskFormModal> {
       createRtlCursorFixedFocusNode(_assigneeSearchController);
   String _assigneeQuery = '';
 
-  String? _eventId;
-  DateTime? _dueDate;
-  String? _dueTimeError;
+  String? _assemblyTimeError;
 
   // Who is assigned, by id, in the order they were picked. The members
   // themselves are kept so that someone picked stays listed after they drop
   // out of the event's own list.
   final Map<String, TeamMember> _picked = <String, TeamMember>{};
 
-  // The members assigned to the chosen event, live. Null until the first list
-  // for that event arrives.
+  // The members assigned to the event, live. Null until the first list
+  // arrives.
   List<TeamMember>? _eventAssignees;
   StreamSubscription<List<TeamMember>>? _assigneesSubscription;
   bool _assigneesFailed = false;
@@ -145,7 +146,6 @@ class _TaskFormModalState extends State<_TaskFormModal> {
 
   bool get _canSave =>
       !_isSaving &&
-      _eventId != null &&
       _titleController.text.trim().isNotEmpty &&
       _picked.isNotEmpty &&
       // Saving an edit that changes nothing would only bump its "updated" time.
@@ -155,15 +155,10 @@ class _TaskFormModalState extends State<_TaskFormModal> {
   /// it, so spaces around a text and empty subtask rows are not a change, and
   /// neither is the order the same assignees were picked in.
   List<Object?> _currentValue() {
-    final dueDate = _dueDate;
     return [
-      _eventId,
       _titleController.text.trim(),
       _descriptionController.text.trim(),
-      dueDate == null
-          ? null
-          : DateTime(dueDate.year, dueDate.month, dueDate.day),
-      dueDate == null ? '' : _dueTimeController.text.trim(),
+      _assemblyTimeController.text.trim(),
       _picked.keys.toList()..sort(),
       [
         for (final draft in _subtasks)
@@ -178,25 +173,12 @@ class _TaskFormModalState extends State<_TaskFormModal> {
   bool get _hasChanges =>
       !const DeepCollectionEquality().equals(_currentValue(), _openingValue);
 
-  bool get _canOpenAssignees => _eventId != null && _eventAssignees != null;
+  bool get _canOpenAssignees => _eventAssignees != null;
 
   @override
   void initState() {
     super.initState();
     final existing = widget.existing;
-
-    _pickableEvents = pickableTaskEvents(
-      widget.events,
-      now: widget.now,
-      current: existing?.event,
-    );
-
-    // An event that no longer exists cannot stay selected: the dropdown would
-    // have no item for it. The manager has to pick a new one.
-    final existingEventId = existing?.eventId;
-    _eventId = _pickableEvents.any((event) => event.id == existingEventId)
-        ? existingEventId
-        : null;
 
     _titleController = TextEditingController(text: existing?.title ?? '');
     _descriptionController =
@@ -205,11 +187,8 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     _descriptionFocusNode =
         createRtlCursorFixedFocusNode(_descriptionController);
 
-    final dueAt = existing?.dueAt;
-    _dueDate = dueAt;
-    _dueTimeController = TextEditingController(
-      text: dueAt == null ? '' : _timeFormat.format(dueAt),
-    );
+    _assemblyTimeController =
+        TextEditingController(text: existing?.assemblyTime ?? '');
 
     // The task's assignees stay picked whoever the event's list holds, so
     // saving an edit never drops someone the manager did not touch.
@@ -228,8 +207,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
 
     _openingValue = _currentValue();
 
-    final eventId = _eventId;
-    if (eventId != null) _watchAssignees(eventId);
+    _watchAssignees(widget.event.id);
   }
 
   @override
@@ -241,18 +219,15 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     _assigneeSearchController.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
-    _dueTimeController.dispose();
+    _assemblyTimeController.dispose();
     for (final draft in _subtasks) {
       draft.dispose();
     }
     super.dispose();
   }
 
-  /// Follow who is assigned to [eventId], replacing any earlier event's list.
+  /// Follow who is assigned to [eventId].
   void _watchAssignees(String eventId) {
-    _assigneesSubscription?.cancel();
-    _eventAssignees = null;
-    _assigneesFailed = false;
     _assigneesSubscription = widget.watchEventAssignees(eventId).listen(
       (members) {
         if (!mounted) return;
@@ -269,43 +244,6 @@ class _TaskFormModalState extends State<_TaskFormModal> {
         if (mounted) setState(() => _assigneesFailed = true);
       },
     );
-  }
-
-  void _onEventChanged(String? eventId) {
-    if (eventId == null || eventId == _eventId) return;
-    _assigneeSearchController.clear();
-    setState(() {
-      _eventId = eventId;
-      // The assignees come from the event, so a different event starts with
-      // nobody picked.
-      _picked.clear();
-      _assigneesOpen = false;
-      _assigneeQuery = '';
-      _watchAssignees(eventId);
-    });
-  }
-
-  Future<void> _pickDueDate() async {
-    final result = await showDialog<Map<String, DateTime?>>(
-      context: context,
-      builder: (context) => DualCalendarDatePicker(
-        isSingleDate: true,
-        initialStartDate: _dueDate,
-        title: 'בחר תאריך יעד',
-      ),
-    );
-    final picked = result?['startDate'];
-    if (picked != null && mounted) {
-      setState(() => _dueDate = picked);
-    }
-  }
-
-  void _clearDueDate() {
-    setState(() {
-      _dueDate = null;
-      _dueTimeController.clear();
-      _dueTimeError = null;
-    });
   }
 
   void _addSubtask() {
@@ -327,31 +265,9 @@ class _TaskFormModalState extends State<_TaskFormModal> {
       Navigator.of(context).pop();
       return;
     }
-    final leave = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('שינויים לא נשמרו'),
-          content:
-              const Text('האם אתה בטוח שברצונך לצאת? השינויים לא יישמרו.'),
-          actions: [
-            TextButton(
-              key: const Key('task-form-discard-stay'),
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('חזרה לעריכה'),
-            ),
-            TextButton(
-              key: const Key('task-form-discard-leave'),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('צא ללא שמירה'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (leave == true && mounted) Navigator.of(context).pop();
+    final leave =
+        await confirmDiscardChanges(context, keyPrefix: 'task-form');
+    if (leave && mounted) Navigator.of(context).pop();
   }
 
   Future<void> _save() async {
@@ -359,14 +275,12 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     // An empty time is fine and means "by the end of that day". A time that
     // was typed but is not a real time is refused rather than quietly saved
     // as something the manager did not enter.
-    final dueTime = _dueTimeController.text.trim();
-    if (_dueDate != null && dueTime.isNotEmpty && !isValidDueTime(dueTime)) {
-      setState(() => _dueTimeError = 'שעת היעד אינה תקינה. יש להזין שעה כמו 09:30, או להשאיר ריק.');
+    final assemblyTime = _assemblyTimeController.text.trim();
+    if (assemblyTime.isNotEmpty && !isValidDueTime(assemblyTime)) {
+      setState(() => _assemblyTimeError =
+          'שעת ההתייצבות אינה תקינה. יש להזין שעה כמו 09:30, או להשאיר ריק.');
       return;
     }
-    final eventId = _eventId!;
-    final event = _pickableEvents.firstWhere((event) => event.id == eventId);
-    final dueAt = composeDueAt(_dueDate, _dueTimeController.text);
     final subtasks = [
       for (final draft in _subtasks)
         if (draft.controller.text.trim().isNotEmpty)
@@ -384,29 +298,31 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     if (existing == null) {
       task = TaskItem(
         id: _newTaskId,
-        eventId: eventId,
+        eventId: widget.event.id,
+        stageId: widget.stage.id,
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         subtasks: subtasks,
-        dueAt: dueAt,
+        assemblyTime: assemblyTime.isEmpty ? null : assemblyTime,
         assigneeIds: assigneeIds,
         // Placeholders: the backend stamps the real times.
         createdAt: widget.now,
         createdById: widget.currentUserId,
         updatedAt: widget.now,
-        event: event,
+        event: widget.event,
+        stage: widget.stage,
         assignees: assignees,
       );
     } else {
       task = existing.copyWith(
-        eventId: eventId,
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         subtasks: subtasks,
-        dueAt: dueAt,
-        clearDueAt: dueAt == null,
+        assemblyTime: assemblyTime.isEmpty ? null : assemblyTime,
+        clearAssemblyTime: assemblyTime.isEmpty,
         assigneeIds: assigneeIds,
-        event: event,
+        event: widget.event,
+        stage: widget.stage,
         assignees: assignees,
       );
     }
@@ -465,7 +381,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _buildEventField(),
+                          _buildStageField(theme),
                           const SizedBox(height: 16),
                           TextField(
                             key: const Key('task-form-title'),
@@ -497,7 +413,7 @@ class _TaskFormModalState extends State<_TaskFormModal> {
                             onChanged: (_) => setState(() {}),
                           ),
                           const SizedBox(height: 16),
-                          _buildDueFields(theme),
+                          _buildAssemblyTimeField(theme),
                           const SizedBox(height: 20),
                           _buildAssignees(theme),
                           const SizedBox(height: 20),
@@ -551,85 +467,45 @@ class _TaskFormModalState extends State<_TaskFormModal> {
     );
   }
 
-  Widget _buildEventField() {
-    return DropdownButtonFormField<String>(
-      key: const Key('task-form-event'),
-      initialValue: _eventId,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: 'אירוע',
-        border: const OutlineInputBorder(),
-        helperText:
-            _pickableEvents.isEmpty ? 'אין אירועי דו יומי עתידיים' : null,
+  /// The stage the task sits under, and so its day: shown, not chosen.
+  Widget _buildStageField(ThemeData theme) {
+    final stage = widget.stage;
+    return InputDecorator(
+      key: const Key('task-form-stage'),
+      decoration: const InputDecoration(
+        labelText: 'שלב',
+        border: OutlineInputBorder(),
+        enabled: false,
       ),
-      items: [
-        for (final event in _pickableEvents)
-          DropdownMenuItem<String>(
-            value: event.id,
-            // Date first: these names are long, and with the date last the
-            // ellipsis cut off the one part that tells two events apart.
-            child: Text(
-              '${_dateFormat.format(event.startDate)} · ${event.name}',
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-      ],
-      onChanged: _onEventChanged,
+      child: Text(
+        '${stage.title} · ${_dateFormat.format(stage.date)}',
+        style: theme.textTheme.bodyLarge
+            ?.copyWith(color: theme.disabledColor),
+      ),
     );
   }
 
-  Widget _buildDueFields(ThemeData theme) {
-    final dueDate = _dueDate;
+  Widget _buildAssemblyTimeField(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                key: const Key('task-form-due-date'),
-                onPressed: _pickDueDate,
-                icon: const Icon(Icons.event),
-                label: Text(
-                  dueDate == null
-                      ? 'תאריך יעד (לא חובה)'
-                      : 'תאריך יעד: ${_dateFormat.format(dueDate)}',
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
-            ),
-            if (dueDate != null)
-              IconButton(
-                key: const Key('task-form-due-clear'),
-                tooltip: 'הסרת תאריך היעד',
-                icon: const Icon(Icons.close),
-                onPressed: _clearDueDate,
-              ),
-          ],
+        EventTimeField(
+          controller: _assemblyTimeController,
+          label: 'שעת התייצבות',
+          hint: 'לא חובה',
+          logKey: 'taskAssembly',
+          onChanged: () => setState(() => _assemblyTimeError = null),
         ),
-        // The time only means something next to a date, so it appears with it.
-        if (dueDate != null) ...[
-          const SizedBox(height: 12),
-          EventTimeField(
-            controller: _dueTimeController,
-            label: 'שעת יעד',
-            hint: 'ללא שעה: עד סוף היום',
-            logKey: 'taskDue',
-            onChanged: () => setState(() => _dueTimeError = null),
-          ),
-          if (_dueTimeError != null)
-            Padding(
-              padding: const EdgeInsetsDirectional.only(top: 6, start: 12),
-              child: Text(
-                _dueTimeError!,
-                key: const Key('task-form-due-time-error'),
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error),
-              ),
+        if (_assemblyTimeError != null)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(top: 6, start: 12),
+            child: Text(
+              _assemblyTimeError!,
+              key: const Key('task-form-assembly-time-error'),
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.error),
             ),
-        ],
+          ),
       ],
     );
   }
@@ -680,7 +556,6 @@ class _TaskFormModalState extends State<_TaskFormModal> {
 
   /// Why the dropdown cannot be opened yet, or null when it can.
   String? get _assigneesHint {
-    if (_eventId == null) return 'יש לבחור אירוע תחילה';
     if (_assigneesFailed) return 'טעינת המשובצים נכשלה';
     if (_eventAssignees == null) return 'טוען משובצים...';
     return null;

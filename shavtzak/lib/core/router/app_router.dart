@@ -19,6 +19,7 @@ import '../../presentation/screens/team/team_list_screen.dart';
 import '../../presentation/screens/event/event_list_screen.dart';
 import '../../presentation/screens/assignment/assignment_list_screen.dart';
 import '../../presentation/screens/summary/summary_screen.dart';
+import '../../presentation/screens/task/event_tasks_screen.dart';
 import '../../presentation/screens/task/tasks_screen.dart';
 import '../../presentation/screens/db/db_preview_screen.dart';
 import '../../presentation/screens/privacy_policy/privacy_policy_screen.dart';
@@ -45,8 +46,8 @@ class AppRouter {
   /// their home, and the link is lost.
   static String? _pendingDeepLink;
 
-  /// The route to restore after sign-in when [initialHash] is the tasks link
-  /// (`#/tasks` or `#/test/tasks`), otherwise null.
+  /// The route to restore after sign-in when [initialHash] is a tasks link
+  /// (`#/tasks`, `#/tasks/<eventId>`, or either under `#/test`), otherwise null.
   static String? pendingTasksLinkFor(String? initialHash) {
     if (initialHash == null) return null;
     var path =
@@ -56,8 +57,12 @@ class AppRouter {
     if (path.length > 1 && path.endsWith('/')) {
       path = path.substring(0, path.length - 1);
     }
-    return (path == '/tasks' || path == '/test/tasks') ? path : null;
+    return _tasksLink.hasMatch(path) ? path : null;
   }
+
+  // The event list, or one event's screen, in either environment.
+  static final RegExp _tasksLink =
+      RegExp(r'^(/test)?/tasks(/[A-Za-z0-9_-]+)?$');
 
   /// Remember [route] when it is the tasks link. Called whenever a visitor who
   /// is not signed in is turned away from a route, which also covers a tab
@@ -478,12 +483,25 @@ class AppRouter {
           ),
         ),
 
-        // Tasks screen - link-only, open to every authenticated member
+        // Tasks screens - link-only, open to every authenticated member: the
+        // list of דו יומי events, and one event's stages and tasks.
         GoRoute(
           path: '/tasks',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: TasksScreen(key: ValueKey('tasks_prod')),
           ),
+        ),
+        GoRoute(
+          path: '/tasks/:eventId',
+          pageBuilder: (context, state) {
+            final eventId = state.pathParameters['eventId']!;
+            return NoTransitionPage(
+              child: EventTasksScreen(
+                key: ValueKey('event_tasks_prod_$eventId'),
+                eventId: eventId,
+              ),
+            );
+          },
         ),
 
         // Admin routes shell - uses existing SwipeablePageView
@@ -611,6 +629,17 @@ class AppRouter {
             path: '/test/tasks',
             pageBuilder: (context, state) => const NoTransitionPage(
                 child: TasksScreen(key: ValueKey('tasks_test')))),
+        GoRoute(
+            path: '/test/tasks/:eventId',
+            pageBuilder: (context, state) {
+              final eventId = state.pathParameters['eventId']!;
+              return NoTransitionPage(
+                child: EventTasksScreen(
+                  key: ValueKey('event_tasks_test_$eventId'),
+                  eventId: eventId,
+                ),
+              );
+            }),
 
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {

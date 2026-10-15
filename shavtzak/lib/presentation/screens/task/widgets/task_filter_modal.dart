@@ -1,25 +1,22 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../../../core/debug/logger.dart';
 import '../../../../core/utils/task_utils.dart';
-import '../../../../domain/entities/event.dart';
 import '../../../../domain/entities/team_member.dart';
 
 /// What the tasks screen's filter button has selected. An empty group means
 /// "no restriction" for that group.
 class TaskFilterSelection extends Equatable {
-  /// Only unfinished tasks due within [taskDueSoonWindow] from now.
+  /// Only unfinished tasks whose assembly time is within [taskDueSoonWindow]
+  /// from now.
   final bool dueSoon;
   final Set<TaskDueStatus> statuses;
-  final Set<String> eventIds;
   final Set<String> assigneeIds;
 
   const TaskFilterSelection({
     this.dueSoon = false,
     this.statuses = const {},
-    this.eventIds = const {},
     this.assigneeIds = const {},
   });
 
@@ -27,16 +24,13 @@ class TaskFilterSelection extends Equatable {
   int get activeCount =>
       (dueSoon ? 1 : 0) +
       (statuses.isEmpty ? 0 : 1) +
-      (eventIds.isEmpty ? 0 : 1) +
       (assigneeIds.isEmpty ? 0 : 1);
 
   bool get isEmpty => activeCount == 0;
 
   @override
-  List<Object?> get props => [dueSoon, statuses, eventIds, assigneeIds];
+  List<Object?> get props => [dueSoon, statuses, assigneeIds];
 }
-
-final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
 
 const Map<TaskDueStatus, String> _statusLabels = {
   TaskDueStatus.overdue: 'באיחור',
@@ -45,16 +39,16 @@ const Map<TaskDueStatus, String> _statusLabels = {
   TaskDueStatus.completed: 'הושלמה',
 };
 
-/// Pick which tasks to show: those due soon, or by status, event and assignee.
+/// Pick which of an event's tasks to show: those whose assembly is soon, or by
+/// status and assignee.
 ///
 /// A bottom sheet like the other screens' filters: every tick is reported
 /// through [onChanged] at once, so the list behind it narrows as the member
-/// goes, and there is nothing to apply. [events] and [members] are the ones
-/// worth offering: those that actually have tasks.
+/// goes, and there is nothing to apply. [members] are the ones worth offering:
+/// those with tasks in the event. Pass none to leave the assignee section out.
 Future<void> showTaskFilterModal(
   BuildContext context, {
   required TaskFilterSelection current,
-  required List<Event> events,
   required List<TeamMember> members,
   required ValueChanged<TaskFilterSelection> onChanged,
 }) {
@@ -64,7 +58,6 @@ Future<void> showTaskFilterModal(
     backgroundColor: Colors.transparent,
     builder: (context) => _TaskFilterModal(
       current: current,
-      events: events,
       members: members,
       onChanged: onChanged,
     ),
@@ -74,13 +67,11 @@ Future<void> showTaskFilterModal(
 class _TaskFilterModal extends StatefulWidget {
   const _TaskFilterModal({
     required this.current,
-    required this.events,
     required this.members,
     required this.onChanged,
   });
 
   final TaskFilterSelection current;
-  final List<Event> events;
   final List<TeamMember> members;
   final ValueChanged<TaskFilterSelection> onChanged;
 
@@ -91,7 +82,6 @@ class _TaskFilterModal extends StatefulWidget {
 class _TaskFilterModalState extends State<_TaskFilterModal> {
   late bool _dueSoon = widget.current.dueSoon;
   late final Set<TaskDueStatus> _statuses = {...widget.current.statuses};
-  late final Set<String> _eventIds = {...widget.current.eventIds};
   late final Set<String> _assigneeIds = {...widget.current.assigneeIds};
 
   /// Report the selection as it now stands. Copies the sets: the caller keeps
@@ -100,7 +90,6 @@ class _TaskFilterModalState extends State<_TaskFilterModal> {
     widget.onChanged(TaskFilterSelection(
       dueSoon: _dueSoon,
       statuses: {..._statuses},
-      eventIds: {..._eventIds},
       assigneeIds: {..._assigneeIds},
     ));
   }
@@ -121,7 +110,6 @@ class _TaskFilterModalState extends State<_TaskFilterModal> {
     setState(() {
       _dueSoon = false;
       _statuses.clear();
-      _eventIds.clear();
       _assigneeIds.clear();
     });
     _report();
@@ -187,7 +175,7 @@ class _TaskFilterModalState extends State<_TaskFilterModal> {
                         key: const Key('filter-due-soon'),
                         controlAffinity: ListTileControlAffinity.leading,
                         title: const Text(
-                          'משימות לחצי שעה הקרובה',
+                          'התייצבות בחצי שעה הקרובה',
                           style: TextStyle(fontWeight: FontWeight.w500),
                         ),
                         value: _dueSoon,
@@ -208,22 +196,6 @@ class _TaskFilterModalState extends State<_TaskFilterModal> {
                           onChanged: (value) =>
                               _toggle(_statuses, status, value ?? false),
                         ),
-                      if (widget.events.isNotEmpty) ...[
-                        const _SectionHeader('אירוע'),
-                        for (final event in widget.events)
-                          CheckboxListTile(
-                            key: Key('filter-event-${event.id}'),
-                            dense: true,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            title: Text(event.name),
-                            // דו יומי events tend to share a name; the date is
-                            // what tells them apart.
-                            subtitle: Text(_dateFormat.format(event.startDate)),
-                            value: _eventIds.contains(event.id),
-                            onChanged: (value) =>
-                                _toggle(_eventIds, event.id, value ?? false),
-                          ),
-                      ],
                       if (widget.members.isNotEmpty) ...[
                         const _SectionHeader('אחראי'),
                         for (final member in widget.members)
