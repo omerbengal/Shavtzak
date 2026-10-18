@@ -26,7 +26,7 @@ void main() {
       PickedImportFile(name: 'משימות.xlsx', bytes: Uint8List.fromList(bytes));
 
   final clean = file(buildImportWorkbook(
-    stageRows: [stageRow(title: 'קליטה'), stageRow(number: 2, title: 'ערב')],
+    stageRows: [stageRow(title: 'קליטה'), stageRow(title: 'ערב')],
     taskRows: [taskRow(assignees: 'עומר')],
   ));
   final broken = file(buildImportWorkbook(stageRows: [stageRow(title: null)]));

@@ -42,25 +42,6 @@ String cellText(CellValue? value) {
 /// Whether the cell holds nothing a person typed.
 bool isBlankCell(CellValue? value) => cellText(value).isEmpty;
 
-/// A whole number such as a stage number. Excel often stores 1 as 1.0.
-int? cellWholeNumber(CellValue? value) {
-  switch (value) {
-    case IntCellValue(value: final number):
-      return number;
-    case DoubleCellValue(value: final number):
-      return number == number.roundToDouble() ? number.toInt() : null;
-    case TextCellValue():
-      final text = cellText(value);
-      final asInt = int.tryParse(text);
-      if (asInt != null) return asInt;
-      final asDouble = double.tryParse(text);
-      if (asDouble == null || asDouble != asDouble.roundToDouble()) return null;
-      return asDouble.toInt();
-    default:
-      return null;
-  }
-}
-
 final RegExp _dayText = RegExp(r'^(\d{1,2})[/.](\d{1,2})[/.](\d{4})$');
 
 /// A calendar day at local midnight.

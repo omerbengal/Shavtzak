@@ -43,8 +43,8 @@ An `.xlsx` workbook (at most 5 MB) with two sheets, found by name: **שלבים*
 - **Invisible characters** (U+200E/U+200F, U+202A–U+202E, U+2066–U+2069,
   U+FEFF) are stripped from every cell, and a non-breaking space counts as a
   space. Your sample file has U+2069 glued to three phone numbers.
-- **Empty rows are skipped**: a row whose cells are all empty, or whose only
-  filled cell is `מספר שלב`, is skipped.
+- **Empty rows are skipped**: a row whose cells are all empty is skipped, and
+  so is a task row whose only filled cell is `שם שלב`.
 - **Row numbers in problems are the Excel row numbers**, as the person sees
   them.
 - **Lists inside a cell** (assignees, subtasks, contacts): **the official
@@ -56,8 +56,11 @@ An `.xlsx` workbook (at most 5 MB) with two sheets, found by name: **שלבים*
 
 ### Values
 
-- **Stage number**: a whole number (Excel's `1.0` is fine). Required on every
-  non-skipped row of both sheets.
+- **Stage name** (changed 2026-10-18; it replaced a `מספר שלב` column on both
+  sheets): a task names its stage by the stage's `שם`, compared after
+  trimming and collapsing spaces. Stage names must be unique on שלבים. The
+  template makes the task's `שם שלב` a drop-down of `שלבים!$A$2:$A$101`, so
+  the name is picked, not typed.
 - **Date**: an Excel date cell, an Excel date serial number, or text
   `dd/MM/yyyy` (`d/M/yyyy` too). It must be one of the event's days.
 - **Time**: an Excel time cell, a fraction of a day (`0.354166…` = 08:30,
@@ -68,8 +71,7 @@ An `.xlsx` workbook (at most 5 MB) with two sheets, found by name: **שלבים*
 
 | Header | Required | Maps to | Rules |
 |---|---|---|---|
-| מספר שלב | yes | links tasks to the stage; **not stored** | unique on the sheet |
-| שם | yes | title | ≤ 200 |
+| שם | yes | title; tasks link to it | ≤ 200; unique on the sheet |
 | תאריך | yes | date | one of the event's days |
 | שעת התחלה | no | start time | |
 | שעת סיום | no | end time | needs a start time; must be after it |
@@ -78,7 +80,7 @@ An `.xlsx` workbook (at most 5 MB) with two sheets, found by name: **שלבים*
 | הערות | no | notes | ≤ 5000 |
 | אנשי קשר | no | contacts | see below |
 
-Only `מספר שלב`, `שם` and `תאריך` are required headers. A missing optional
+Only `שם` and `תאריך` are required headers. A missing optional
 header just means that field is empty for every stage.
 
 **Contacts cell.** One contact per line after a `*`, as with every list (or
@@ -103,14 +105,14 @@ Example (from the sample file):
 
 | Header | Required | Maps to | Rules |
 |---|---|---|---|
-| מספר שלב | yes | the task's stage | must be a stage number on שלבים |
+| שם שלב | yes | the task's stage | must be a stage name on שלבים |
 | משימה | yes | title | ≤ 200 |
 | תיאור | no | description | ≤ 5000 (**new**) |
 | אחראי/ים | no | assignees | names split on `\|`; see below |
 | שעת התייצבות | no | assembly time | |
 | תתי משימות | no | subtasks | split on `\|`; ≤ 50, each ≤ 200 |
 
-Required headers: `מספר שלב`, `משימה`. The sheet may have no task rows.
+Required headers: `שם שלב`, `משימה`. The sheet may have no task rows.
 
 **Assignee names.** Candidates are only the members assigned to the event, the
 same list as the task form's dropdown. Each name is compared after removing
@@ -138,7 +140,7 @@ The same member named twice in one cell is kept once.
    - **With problems:** a title like "נמצאו 3 בעיות בקובץ" over the full list,
      each line naming the sheet, the row and what is wrong, e.g.
      - `שלבים, שורה 4: התאריך 16/06/2026 אינו מתאריכי האירוע`
-     - `משימות, שורה 7: מספר שלב 9 לא קיים בגיליון שלבים`
+     - `משימות, שורה 7: השלב "ערב" לא קיים בגיליון "שלבים"`
      - `משימות, שורה 4: "בועז" תואם כמה משובצים: בועז כהן, בועז לוי`
 
      **ייבוא** is disabled. **בחירת קובץ אחר** picks again; **סגירה** closes.

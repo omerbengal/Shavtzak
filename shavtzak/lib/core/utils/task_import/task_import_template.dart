@@ -12,7 +12,8 @@ const String taskImportTemplateFileName = 'תבנית משימות דו יומי
 /// The official import file for [event]: both sheets right to left, every
 /// cell Rubik 12 with right-to-left text, the header row Rubik 14 bold with
 /// how to fill the list columns, and one made-up example row each. Lists are
-/// written one "*" item per line.
+/// written one "*" item per line. A task's stage is picked from a drop-down
+/// of the stage names.
 List<int> buildTaskImportTemplate(Event event) {
   final excel = Excel.createExcel();
   excel.rename(excel.getDefaultSheet()!, stagesSheetName);
@@ -22,10 +23,9 @@ List<int> buildTaskImportTemplate(Event event) {
   _writeSheet(
     stages,
     headers: StageColumns.templateHeaders,
-    widths: const [12, 29, 12.5, 13.7, 10.5, 52, 16.5, 26.7, 64.5],
+    widths: const [34.25, 12.5, 13.7, 10.5, 52, 16.5, 26.7, 64.5],
     example: [
-      const IntCellValue(1),
-      TextCellValue('קליטה והתכנסות'),
+      TextCellValue(_exampleStage),
       DateCellValue.fromDateTime(eventDays(event).first),
       const TimeCellValue(hour: 9),
       const TimeCellValue(hour: 10, minute: 30),
@@ -42,9 +42,9 @@ List<int> buildTaskImportTemplate(Event event) {
   _writeSheet(
     tasks,
     headers: TaskColumns.templateHeaders,
-    widths: const [12, 29, 25, 50, 15, 52.5],
+    widths: const [34.25, 49.6, 25, 50, 15, 52.5],
     example: [
-      const IntCellValue(1),
+      TextCellValue(_exampleStage),
       TextCellValue('הקמת עמדת הקליטה'),
       TextCellValue('לוודא שיש מדפסת ותגים'),
       TextCellValue('* ישראל ישראלי\n* דנה כהן'),
@@ -56,6 +56,8 @@ List<int> buildTaskImportTemplate(Event event) {
   excel.setDefaultSheet(stagesSheetName);
   return _finishLook(excel.encode()!);
 }
+
+const String _exampleStage = 'קליטה והתכנסות';
 
 final CellStyle _headerStyle = CellStyle(
   bold: true,
@@ -116,8 +118,8 @@ Data _cell(Sheet sheet, int column, int row) => sheet.cell(
 // ---- what `excel` cannot set ----
 //
 // `excel` 4.0.6 drops a sheet's right-to-left view on save, has no text
-// direction setting, and keeps Arial 10 as the workbook's default font. These
-// are set in the saved file's XML instead.
+// direction setting, keeps Arial 10 as the workbook's default font and cannot
+// write a drop-down. These are set in the saved file's XML instead.
 
 const String _rubik12 =
     '<font><sz val="12"/><color rgb="FF000000"/><name val="Rubik"/></font>';
@@ -130,6 +132,8 @@ List<int> _finishLook(List<int> bytes) {
     String Function(String)? change;
     if (name == 'xl/styles.xml') {
       change = _rubikAndRightToLeftText;
+    } else if (name == _tasksSheetPart) {
+      change = (xml) => _withStageDropDown(_rightToLeftSheet(xml));
     } else if (name.startsWith('xl/worksheets/sheet') && name.endsWith('.xml')) {
       change = _rightToLeftSheet;
     }
@@ -141,6 +145,29 @@ List<int> _finishLook(List<int> bytes) {
     finished.addFile(ArchiveFile(name, data.length, data));
   }
   return ZipEncoder().encode(finished)!;
+}
+
+// The sheets are written in the order they were created: stages, then tasks.
+const String _tasksSheetPart = 'xl/worksheets/sheet2.xml';
+
+/// The task's stage column offers the names on the first 100 stage rows,
+/// for as many rows as an import may hold tasks, and refuses anything else.
+const String _stageDropDown = '<dataValidations count="1">'
+    '<dataValidation type="list" allowBlank="1" showInputMessage="1" '
+    'showErrorMessage="1" sqref="A2:A${maxImportTasks + 1}">'
+    '<formula1>$stagesSheetName!\$A\$2:\$A\$101</formula1>'
+    '</dataValidation></dataValidations>';
+
+// Where the schema puts <dataValidations>: before the first of these.
+final RegExp _afterDataValidations = RegExp(
+  '<(hyperlinks|printOptions|pageMargins|pageSetup|headerFooter|'
+  r'rowBreaks|colBreaks|drawing|legacyDrawing|tableParts|extLst)[\s/>]'
+  '|</worksheet>',
+);
+
+String _withStageDropDown(String xml) {
+  final at = _afterDataValidations.firstMatch(xml)!.start;
+  return xml.replaceRange(at, at, _stageDropDown);
 }
 
 // `<sheetView ` with its space: `<sheetViews>` is the element around it.

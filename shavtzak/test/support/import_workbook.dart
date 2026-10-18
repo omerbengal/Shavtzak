@@ -37,7 +37,6 @@ List<int> buildImportWorkbook({
 
 /// A stage row in [StageColumns.all] order.
 List<Object?> stageRow({
-  Object? number = 1,
   Object? title = 'קליטה',
   Object? date = const DateCellValue(year: 2026, month: 6, day: 15),
   Object? start,
@@ -47,19 +46,20 @@ List<Object?> stageRow({
   Object? notes,
   Object? contacts,
 }) =>
-    [number, title, date, start, end, requirements, location, notes, contacts];
+    [title, date, start, end, requirements, location, notes, contacts];
 
-/// A task row in [TaskColumns.all] order. The default assignee is 'עומר',
-/// which the parser tests' candidates hold.
+/// A task row in [TaskColumns.all] order. The default stage is
+/// [stageRow]'s default title; the default assignee is 'עומר', which the
+/// parser tests' candidates hold.
 List<Object?> taskRow({
-  Object? number = 1,
+  Object? stage = 'קליטה',
   Object? title = 'הקמת עמדה',
   Object? description,
   Object? assignees = 'עומר',
   Object? assembly,
   Object? subtasks,
 }) =>
-    [number, title, description, assignees, assembly, subtasks];
+    [stage, title, description, assignees, assembly, subtasks];
 
 CellValue? _cell(Object? value) => switch (value) {
       null => null,

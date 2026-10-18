@@ -23,7 +23,6 @@ const int maxImportTasks = 400;
 const int maxImportFileBytes = 5 * 1024 * 1024;
 
 abstract final class StageColumns {
-  static const number = 'מספר שלב';
   static const title = 'שם';
   static const date = 'תאריך';
   static const start = 'שעת התחלה';
@@ -34,7 +33,6 @@ abstract final class StageColumns {
   static const contacts = 'אנשי קשר';
 
   static const all = [
-    number,
     title,
     date,
     start,
@@ -44,12 +42,11 @@ abstract final class StageColumns {
     notes,
     contacts,
   ];
-  static const required = [number, title, date];
+  static const required = [title, date];
 
   /// The headers the official template writes: list columns carry how to
   /// fill them. The hint in parentheses is ignored when reading.
   static const templateHeaders = [
-    number,
     title,
     date,
     start,
@@ -66,19 +63,21 @@ const String _eachPersonPerLine = '(כל אחד בכוכבית נפרדת בשו
 const String _eachItemPerLine = '(כל אחת בכוכבית נפרדת בשורה נפרדת)';
 
 abstract final class TaskColumns {
-  static const number = 'מספר שלב';
+  /// Links the task to the stage with this [StageColumns.title]. The
+  /// template makes it a drop-down of the stage names.
+  static const stage = 'שם שלב';
   static const title = 'משימה';
   static const description = 'תיאור';
   static const assignees = 'אחראי/ים';
   static const assembly = 'שעת התייצבות';
   static const subtasks = 'תתי משימות';
 
-  static const all = [number, title, description, assignees, assembly, subtasks];
-  static const required = [number, title];
+  static const all = [stage, title, description, assignees, assembly, subtasks];
+  static const required = [stage, title];
 
   /// See [StageColumns.templateHeaders].
   static const templateHeaders = [
-    number,
+    stage,
     title,
     description,
     '$assignees $_eachPersonPerLine',
@@ -162,38 +161,43 @@ TaskImportResult parseTaskImport(
 
   final stageTable =
       _Table.read(stageSheet, stagesSheetName, StageColumns.required, problems);
-  final taskTable =
-      _Table.read(taskSheet, tasksSheetName, TaskColumns.required, problems);
+  // A task row whose only filled cell is its stage is a placeholder: the
+  // stage is picked from a drop-down, so it is easy to leave behind.
+  final taskTable = _Table.read(
+    taskSheet,
+    tasksSheetName,
+    TaskColumns.required,
+    problems,
+    ignoredColumn: TaskColumns.stage,
+  );
   if (stageTable == null || taskTable == null) {
     return TaskImportResult(stages: const [], problems: problems);
   }
 
   final days = eventDays(event);
   final drafts = <_StageDraft>[];
-  final draftByNumber = <int, _StageDraft>{};
-  final firstRowOfNumber = <int, int>{};
+  final draftByName = <String, _StageDraft>{};
+  final firstRowOfName = <String, int>{};
 
   for (final row in stageTable.rows) {
     void at(String message) => problems
         .add(ImportProblem(message, sheet: stagesSheetName, row: row.number));
 
-    final number = _stageNumber(row, at);
-    var isDuplicate = false;
-    if (number != null) {
-      final first = firstRowOfNumber[number];
-      if (first != null) {
-        at('מספר שלב $number מופיע פעמיים (גם בשורה $first)');
-        isDuplicate = true;
-      } else {
-        firstRowOfNumber[number] = row.number;
-      }
-    }
-
     final title = row.text(StageColumns.title);
+    final name = _stageName(title);
+    var isDuplicate = false;
     if (title.isEmpty) {
       at('חסר שם לשלב');
     } else {
       _limit(title, 200, StageColumns.title, at);
+      final first = firstRowOfName[name];
+      if (first != null) {
+        // Tasks find their stage by name, so a name must be unique.
+        at('השם "$title" מופיע פעמיים (גם בשורה $first)');
+        isDuplicate = true;
+      } else {
+        firstRowOfName[name] = row.number;
+      }
     }
     final date = _readDate(row, days, at);
     final start = _readTime(row, StageColumns.start, at);
@@ -213,7 +217,7 @@ TaskImportResult parseTaskImport(
         parseContactCell(row.text(StageColumns.contacts), newId: makeId);
     contacts.problems.forEach(at);
 
-    if (number == null || isDuplicate || title.isEmpty || date == null) {
+    if (isDuplicate || title.isEmpty || date == null) {
       continue;
     }
     final draft = _StageDraft(Stage(
@@ -232,7 +236,7 @@ TaskImportResult parseTaskImport(
       updatedAt: now,
     ));
     drafts.add(draft);
-    draftByNumber[number] = draft;
+    draftByName[name] = draft;
   }
 
   if (stageTable.rows.isEmpty) {
@@ -250,9 +254,12 @@ TaskImportResult parseTaskImport(
     void at(String message) => problems
         .add(ImportProblem(message, sheet: tasksSheetName, row: row.number));
 
-    final number = _stageNumber(row, at);
-    if (number != null && !firstRowOfNumber.containsKey(number)) {
-      at('מספר שלב $number לא קיים בגיליון "$stagesSheetName"');
+    final stageText = row.text(TaskColumns.stage);
+    final stageName = _stageName(stageText);
+    if (stageText.isEmpty) {
+      at('חסר שם שלב');
+    } else if (!firstRowOfName.containsKey(stageName)) {
+      at('השלב "$stageText" לא קיים בגיליון "$stagesSheetName"');
     }
     final title = row.text(TaskColumns.title);
     if (title.isEmpty) {
@@ -288,7 +295,7 @@ TaskImportResult parseTaskImport(
       }
     }
 
-    final draft = number == null ? null : draftByNumber[number];
+    final draft = draftByName[stageName];
     if (draft == null || title.isEmpty) continue;
     draft.tasks.add(TaskItem(
       id: makeId(),
@@ -361,12 +368,14 @@ class _Table {
 
   final List<_Row> rows;
 
+  /// A row whose only filled cell is in [ignoredColumn] is skipped.
   static _Table? read(
     Sheet sheet,
     String name,
     List<String> required,
-    List<ImportProblem> problems,
-  ) {
+    List<ImportProblem> problems, {
+    String? ignoredColumn,
+  }) {
     final all = sheet.rows;
     final columns = <String, int>{};
     if (all.isNotEmpty) {
@@ -381,14 +390,13 @@ class _Table {
     }
     if (missing.isNotEmpty) return null;
 
-    // A row whose only filled cell is the stage number is a placeholder.
-    final numberColumn = columns[StageColumns.number];
+    final ignored = ignoredColumn == null ? null : columns[ignoredColumn];
     final rows = <_Row>[];
     for (var index = 1; index < all.length; index++) {
       final cells = all[index];
       var hasContent = false;
       for (var i = 0; i < cells.length; i++) {
-        if (i != numberColumn && !isBlankCell(cells[i]?.value)) {
+        if (i != ignored && !isBlankCell(cells[i]?.value)) {
           hasContent = true;
           break;
         }
@@ -416,16 +424,8 @@ class _Row {
   String text(String header) => cellText(this[header]);
 }
 
-int? _stageNumber(_Row row, void Function(String) at) {
-  final text = row.text(StageColumns.number);
-  if (text.isEmpty) {
-    at('חסר מספר שלב');
-    return null;
-  }
-  final number = cellWholeNumber(row[StageColumns.number]);
-  if (number == null) at('מספר השלב "$text" אינו מספר שלם');
-  return number;
-}
+/// How a stage name is compared: spaces trimmed and joined.
+String _stageName(String text) => text.replaceAll(_spaces, ' ').trim();
 
 DateTime? _readDate(_Row row, List<DateTime> days, void Function(String) at) {
   final text = row.text(StageColumns.date);

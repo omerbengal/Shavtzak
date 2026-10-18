@@ -32,11 +32,10 @@ void main() {
   List<String> texts(TaskImportResult result) =>
       result.problems.map((problem) => problem.text).toList();
 
-  test('reads stages and tasks, linking tasks by stage number', () {
+  test('reads stages and tasks, linking tasks by stage name', () {
     final result = parse(buildImportWorkbook(
       stageRows: [
         stageRow(
-          number: 1,
           title: 'מוכנות עמדות',
           start: const TimeCellValue(hour: 8, minute: 30),
           end: const TimeCellValue(hour: 10),
@@ -46,21 +45,20 @@ void main() {
           contacts: 'שם: הלל, טלפון: 0522010344, תפקיד: צייר',
         ),
         stageRow(
-          number: 2,
           title: 'קליטה',
           date: const DateCellValue(year: 2026, month: 6, day: 16),
         ),
       ],
       taskRows: [
         taskRow(
-          number: 1,
+          stage: 'מוכנות עמדות',
           title: 'וידוא עמדת הקליטה',
           description: 'כולל מדפסות',
           assignees: 'עומר אליהו | סלפטי',
           assembly: const TimeCellValue(hour: 8, minute: 30),
           subtasks: 'חיבור מדפסות | סידור תגים',
         ),
-        taskRow(number: 2, title: 'איוש'),
+        taskRow(stage: 'קליטה', title: 'איוש'),
       ],
     ));
 
@@ -93,13 +91,13 @@ void main() {
   test('headers are found by text: any order, trailing colon, invisible marks',
       () {
     final result = parse(buildImportWorkbook(
-      stageHeaders: ['תאריך', 'שם\u2069', 'מספר שלב'],
+      stageHeaders: ['תאריך', 'שם\u2069'],
       stageRows: [
-        [const DateCellValue(year: 2026, month: 6, day: 15), 'קליטה', 1],
+        [const DateCellValue(year: 2026, month: 6, day: 15), 'קליטה'],
       ],
-      taskHeaders: ['משימה', 'תתי משימות:', ' מספר שלב ', 'אחראי/ים'],
+      taskHeaders: ['משימה', 'תתי משימות:', ' שם שלב ', 'אחראי/ים'],
       taskRows: [
-        ['הקמה', 'א | ב', 1, 'עומר'],
+        ['הקמה', 'א | ב', 'קליטה', 'עומר'],
       ],
     ));
     expect(texts(result), isEmpty);
@@ -135,17 +133,40 @@ void main() {
     expect(task.subtasks.map((s) => s.title), ['חיבור מדפסות', 'סידור תגים']);
   });
 
-  test('rows that are empty, spaces only, or only a stage number are skipped',
-      () {
+  test('rows that are empty or spaces only are skipped', () {
     final result = parse(buildImportWorkbook(
       stageRows: [
         stageRow(),
-        stageRow(number: 3, title: null, date: null),
-        stageRow(number: null, title: '   ', date: null),
+        stageRow(title: null, date: null),
+        stageRow(title: '   ', date: null),
+      ],
+      taskRows: [
+        taskRow(stage: null, title: null, assignees: null),
+        taskRow(stage: ' ', title: null, assignees: null),
       ],
     ));
     expect(texts(result), isEmpty);
     expect(result.stages, hasLength(1));
+  });
+
+  test('a task row with only its stage picked is skipped', () {
+    // The stage column is a drop-down, so a picked-but-unfilled row is common.
+    final result = parse(buildImportWorkbook(
+      stageRows: [stageRow()],
+      taskRows: [taskRow(), taskRow(title: null, assignees: null)],
+    ));
+    expect(texts(result), isEmpty);
+    expect(result.stages.single.tasks, hasLength(1));
+  });
+
+  test('stage names match after trimming and joining spaces', () {
+    final result = parse(buildImportWorkbook(
+      stageRows: [stageRow(title: 'ארוחת  ערב ')],
+      taskRows: [taskRow(stage: ' ארוחת ערב')],
+    ));
+    expect(texts(result), isEmpty);
+    expect(result.stages.single.stage.title, 'ארוחת  ערב');
+    expect(result.stages.single.tasks, hasLength(1));
   });
 
   test('missing sheets and required headers are problems', () {
@@ -156,7 +177,7 @@ void main() {
     );
     expect(
       texts(parse(buildImportWorkbook(
-          stageHeaders: ['מספר שלב', 'שם'], stageRows: [stageRow()]))),
+          stageHeaders: ['שם'], stageRows: [stageRow()]))),
       ['שלבים, שורה 1: חסרה עמודה "תאריך"'],
     );
   });
@@ -167,24 +188,22 @@ void main() {
 
   test('stage problems name the sheet and the Excel row', () {
     final result = parse(buildImportWorkbook(stageRows: [
-      stageRow(number: 1, title: null),
-      stageRow(number: 1, title: 'כפול'),
-      stageRow(number: 'שלב', title: 'מילה'),
+      stageRow(title: null),
+      stageRow(title: 'כפול'),
+      stageRow(title: 'כפול'),
       stageRow(
-        number: 4,
         title: 'מחוץ',
         date: const DateCellValue(year: 2026, month: 6, day: 20),
       ),
-      stageRow(number: 5, title: 'שעות', start: '10:00', end: '09:00'),
-      stageRow(number: 6, title: 'סיום בלבד', end: '09:00'),
-      stageRow(number: 7, title: 'שעה שבורה', start: '25:00'),
-      stageRow(number: 8, title: 'ללא תאריך', date: null),
+      stageRow(title: 'שעות', start: '10:00', end: '09:00'),
+      stageRow(title: 'סיום בלבד', end: '09:00'),
+      stageRow(title: 'שעה שבורה', start: '25:00'),
+      stageRow(title: 'ללא תאריך', date: null),
     ]));
 
     expect(texts(result), [
       'שלבים, שורה 2: חסר שם לשלב',
-      'שלבים, שורה 3: מספר שלב 1 מופיע פעמיים (גם בשורה 2)',
-      'שלבים, שורה 4: מספר השלב "שלב" אינו מספר שלם',
+      'שלבים, שורה 4: השם "כפול" מופיע פעמיים (גם בשורה 3)',
       'שלבים, שורה 5: התאריך 20/06/2026 אינו מתאריכי האירוע (15/06/2026 – 16/06/2026)',
       'שלבים, שורה 6: שעת הסיום חייבת להיות אחרי שעת ההתחלה',
       'שלבים, שורה 7: שעת סיום דורשת שעת התחלה',
@@ -205,17 +224,19 @@ void main() {
     final result = parse(buildImportWorkbook(
       stageRows: [stageRow()],
       taskRows: [
-        taskRow(number: 9),
+        taskRow(stage: 'ערב'),
+        taskRow(stage: null),
         taskRow(title: null, description: 'רק תיאור'),
         taskRow(assignees: 'יצחק דני'),
         taskRow(title: 'א' * 201),
       ],
     ));
     expect(texts(result), [
-      'משימות, שורה 2: מספר שלב 9 לא קיים בגיליון "שלבים"',
-      'משימות, שורה 3: חסרה כותרת למשימה',
-      'משימות, שורה 4: "יצחק דני" אינו משובץ לאירוע',
-      'משימות, שורה 5: הטקסט בעמודה "משימה" ארוך מ-200 תווים',
+      'משימות, שורה 2: השלב "ערב" לא קיים בגיליון "שלבים"',
+      'משימות, שורה 3: חסר שם שלב',
+      'משימות, שורה 4: חסרה כותרת למשימה',
+      'משימות, שורה 5: "יצחק דני" אינו משובץ לאירוע',
+      'משימות, שורה 6: הטקסט בעמודה "משימה" ארוך מ-200 תווים',
     ]);
   });
 
@@ -257,7 +278,7 @@ void main() {
   test('the stage and task caps are problems', () {
     final stages = [
       for (var i = 1; i <= maxImportStages + 1; i++)
-        stageRow(number: i, title: 'שלב $i'),
+        stageRow(title: 'שלב $i'),
     ];
     expect(
       texts(parse(buildImportWorkbook(stageRows: stages))),

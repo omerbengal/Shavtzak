@@ -33,20 +33,6 @@ void main() {
     });
   });
 
-  group('whole numbers', () {
-    test('reads ints, whole doubles and number text', () {
-      expect(cellWholeNumber(const IntCellValue(4)), 4);
-      expect(cellWholeNumber(const DoubleCellValue(1.0)), 1);
-      expect(cellWholeNumber(TextCellValue(' 7 ')), 7);
-      expect(cellWholeNumber(TextCellValue('7.0')), 7);
-    });
-
-    test('refuses fractions and words', () {
-      expect(cellWholeNumber(const DoubleCellValue(1.5)), isNull);
-      expect(cellWholeNumber(TextCellValue('שלב א')), isNull);
-    });
-  });
-
   group('dates', () {
     test('reads date cells, date-time cells and serial numbers', () {
       expect(

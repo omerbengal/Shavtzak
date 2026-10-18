@@ -92,9 +92,36 @@ void main() {
     }
 
     final hhmm = timeFormat!.group(1);
+    expect(formatIdOf('xl/worksheets/sheet1.xml', 'C2'), hhmm);
     expect(formatIdOf('xl/worksheets/sheet1.xml', 'D2'), hhmm);
-    expect(formatIdOf('xl/worksheets/sheet1.xml', 'E2'), hhmm);
     expect(formatIdOf('xl/worksheets/sheet2.xml', 'E2'), hhmm);
+  });
+
+  test('the task\'s stage is a drop-down of the first 100 stage names', () {
+    final zip = ZipDecoder().decodeBytes(buildTaskImportTemplate(event));
+    final tasks =
+        utf8.decode(zip.findFile('xl/worksheets/sheet2.xml')!.content as List<int>);
+    final validation =
+        RegExp(r'<dataValidation [^>]*>.*?</dataValidation>', dotAll: true)
+            .firstMatch(tasks)
+            ?.group(0);
+    expect(validation, isNotNull, reason: tasks);
+    expect(validation, contains('type="list"'));
+    expect(validation, contains('sqref="A2:A401"'));
+    expect(
+      validation,
+      contains('<formula1>$stagesSheetName!\$A\$2:\$A\$101</formula1>'),
+    );
+    // Valid XML order: before the page margins, after the sheet data.
+    expect(tasks.indexOf('<dataValidations'),
+        greaterThan(tasks.indexOf('</sheetData>')));
+    final margins = tasks.indexOf('<pageMargins');
+    if (margins != -1) {
+      expect(tasks.indexOf('<dataValidations'), lessThan(margins));
+    }
+    final stages =
+        utf8.decode(zip.findFile('xl/worksheets/sheet1.xml')!.content as List<int>);
+    expect(stages, isNot(contains('<dataValidations')));
   });
 
   group('the look of the official file', () {
