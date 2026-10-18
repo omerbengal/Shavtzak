@@ -83,21 +83,14 @@ List<TaskItem> filterTasks(
   }).toList();
 }
 
-/// A sorted copy of [tasks]: overdue, due today, open, then completed.
+/// A sorted copy of [tasks]: earliest due date first, undated ones last.
 ///
-/// Unfinished tasks run earliest due date first with undated ones last;
-/// completed tasks run most recently completed first. Ties fall back to the
-/// title so the order does not jump between rebuilds.
-List<TaskItem> sortTasks(List<TaskItem> tasks, DateTime now) {
+/// Completion does not move a task, so ticking one leaves it where it was.
+/// Ties fall back to the title so the order does not jump between rebuilds.
+List<TaskItem> sortTasks(List<TaskItem> tasks) {
   final sorted = [...tasks];
   sorted.sort((a, b) {
-    final statusA = taskDueStatus(a, now);
-    final statusB = taskDueStatus(b, now);
-    if (statusA != statusB) return statusA.index.compareTo(statusB.index);
-
-    final byDate = statusA == TaskDueStatus.completed
-        ? _compareNullsLast(b.completedAt, a.completedAt)
-        : _compareNullsLast(a.dueAt, b.dueAt);
+    final byDate = _compareNullsLast(a.dueAt, b.dueAt);
     if (byDate != 0) return byDate;
     return a.title.compareTo(b.title);
   });
@@ -144,9 +137,7 @@ bool _isDueWithin(TaskItem task, DateTime now, Duration window) {
   return !dueAt.isBefore(now) && !dueAt.isAfter(now.add(window));
 }
 
-/// Ascending by date with nulls after every real date. Swap the arguments for
-/// descending; nulls then sort first, which is fine for completed tasks since
-/// a completed task without a completion time is not expected.
+/// Ascending by date with nulls after every real date.
 int _compareNullsLast(DateTime? a, DateTime? b) {
   if (a == null && b == null) return 0;
   if (a == null) return 1;
