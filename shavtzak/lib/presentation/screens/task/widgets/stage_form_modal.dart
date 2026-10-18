@@ -535,10 +535,10 @@ class _StageFormModalState extends State<_StageFormModal> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Laid out left to right, so the range reads like a range: start on
-        // the left, end on the right. Each field keeps its own RTL.
+        // Right to left like the rest of the form: start on the right. (The
+        // stage card shows the range the other way, "start – end" left to
+        // right.)
         Row(
-          textDirection: TextDirection.ltr,
           children: [
             Expanded(
               child: EventTimeField(

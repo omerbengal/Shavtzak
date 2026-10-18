@@ -316,6 +316,17 @@ void main() {
       expect(role.top, greaterThan(name.bottom));
     });
 
+    testWidgets('the start time field is on the right, the end on the left',
+        (tester) async {
+      await openForm(tester, event: oneDay);
+      final start = tester.getRect(find.byKey(const Key('stage-form-start')));
+      final end = tester.getRect(find.byKey(const Key('stage-form-end')));
+
+      expect(start.top, end.top);
+      expect(start.center.dx, greaterThan(end.center.dx),
+          reason: 'right to left: the start time comes first, on the right');
+    });
+
     testWidgets('a removed contact is not saved', (tester) async {
       final existing = buildStage(
         id: 's1',
