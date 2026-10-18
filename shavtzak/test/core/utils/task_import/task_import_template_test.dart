@@ -161,6 +161,57 @@ void main() {
         RegExp('<sz val="$size(\\.0)?"/>').hasMatch(font) &&
         font.contains('<b/>') == bold;
 
+    String alignmentOf(int xf) =>
+        RegExp(r'<alignment[^>]*/>').firstMatch(cellXfs()[xf])?.group(0) ?? '';
+
+    // Every column centered both ways, except the "*" list columns, which
+    // read from the right. Whole columns, so rows typed later get it too.
+    const listColumns = {
+      'xl/worksheets/sheet1.xml': {5, 8}, // requirements, contacts
+      'xl/worksheets/sheet2.xml': {4, 6}, // assignees, subtasks
+    };
+    const columnCounts = {
+      'xl/worksheets/sheet1.xml': 8,
+      'xl/worksheets/sheet2.xml': 6,
+    };
+
+    test('columns are middle aligned; centered, list columns to the right',
+        () {
+      for (final sheet in sheets) {
+        for (var column = 1; column <= columnCounts[sheet]!; column++) {
+          final col = RegExp('<col min="$column" max="$column"[^>]*>')
+              .firstMatch(part(sheet))
+              ?.group(0);
+          final style = RegExp(r'style="(\d+)"').firstMatch(col ?? '');
+          expect(style, isNotNull, reason: '$sheet column $column: $col');
+          final alignment = alignmentOf(int.parse(style!.group(1)!));
+          final horizontal =
+              listColumns[sheet]!.contains(column) ? 'right' : 'center';
+          expect(alignment, contains('vertical="center"'),
+              reason: '$sheet column $column');
+          expect(alignment, contains('horizontal="$horizontal"'),
+              reason: '$sheet column $column');
+
+          final letter = String.fromCharCode(64 + column);
+          final cell = RegExp('<c r="${letter}2" s="(\\d+)"')
+              .firstMatch(part(sheet))!
+              .group(1);
+          expect(cell, style.group(1), reason: '$sheet ${letter}2');
+        }
+      }
+    });
+
+    test('the header row is frozen in both sheets', () {
+      for (final sheet in sheets) {
+        expect(
+          part(sheet),
+          contains('<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" '
+              'state="frozen"/>'),
+          reason: sheet,
+        );
+      }
+    });
+
     test('both sheets run right to left', () {
       for (final sheet in sheets) {
         expect(part(sheet), contains('rightToLeft="1"'), reason: sheet);

@@ -9,9 +9,11 @@ import 'task_import_parser.dart';
 
 const String taskImportTemplateFileName = 'תבנית משימות דו יומי.xlsx';
 
-/// The official import file for [event]: both sheets right to left, every
-/// cell Rubik 12 with right-to-left text, the header row Rubik 14 bold with
-/// how to fill the list columns, and one made-up example row each. Lists are
+/// The official import file for [event]: both sheets right to left with the
+/// header row frozen, every cell Rubik 12 with right-to-left text, centered
+/// both ways except the "*" list columns, which sit on the right. The header
+/// row is Rubik 14 bold with how to fill the list columns, and there is one
+/// made-up example row on each sheet. Lists are
 /// written one "*" item per line. A task's stage is picked from a drop-down
 /// of the stage names.
 List<int> buildTaskImportTemplate(Event event) {
@@ -24,6 +26,7 @@ List<int> buildTaskImportTemplate(Event event) {
     stages,
     headers: StageColumns.templateHeaders,
     widths: const [34.25, 12.5, 13.7, 10.5, 52, 16.5, 26.7, 64.5],
+    listColumns: const {4, 7}, // requirements, contacts
     example: [
       TextCellValue(_exampleStage),
       DateCellValue.fromDateTime(eventDays(event).first),
@@ -43,6 +46,7 @@ List<int> buildTaskImportTemplate(Event event) {
     tasks,
     headers: TaskColumns.templateHeaders,
     widths: const [34.25, 49.6, 25, 50, 15, 52.5],
+    listColumns: const {3, 5}, // assignees, subtasks
     example: [
       TextCellValue(_exampleStage),
       TextCellValue('הקמת עמדת הקליטה'),
@@ -71,9 +75,26 @@ final CellStyle _headerStyle = CellStyle(
 final CellStyle _textStyle = CellStyle(
   fontSize: 12,
   fontFamily: 'Rubik',
+  horizontalAlign: HorizontalAlign.Center,
+  verticalAlign: VerticalAlign.Center,
+  textWrapping: TextWrapping.WrapText,
+);
+
+// A "*" list reads from the right, one item under the other.
+final CellStyle _listStyle = CellStyle(
+  fontSize: 12,
+  fontFamily: 'Rubik',
   horizontalAlign: HorizontalAlign.Right,
   verticalAlign: VerticalAlign.Center,
   textWrapping: TextWrapping.WrapText,
+);
+
+final CellStyle _dateStyle = CellStyle(
+  fontSize: 12,
+  fontFamily: 'Rubik',
+  horizontalAlign: HorizontalAlign.Center,
+  verticalAlign: VerticalAlign.Center,
+  numberFormat: NumFormat.defaultDate,
 );
 
 // Two-digit hours, as in the official file: 09:00, not 9:00.
@@ -89,6 +110,7 @@ void _writeSheet(
   Sheet sheet, {
   required List<String> headers,
   required List<double> widths,
+  required Set<int> listColumns,
   required List<CellValue> example,
 }) {
   sheet.isRTL = true;
@@ -98,16 +120,13 @@ void _writeSheet(
   for (var column = 0; column < headers.length; column++) {
     sheet.setColumnWidth(column, widths[column]);
     _cell(sheet, column, 0).cellStyle = _headerStyle;
-    // A date keeps the format `excel` gives it: any style here would also
-    // have to carry a date format, or Excel would show a plain number.
-    switch (example[column]) {
-      case TextCellValue():
-        _cell(sheet, column, 1).cellStyle = _textStyle;
-      case TimeCellValue():
-        _cell(sheet, column, 1).cellStyle = _timeStyle;
-      default:
-        break;
-    }
+    // The whole column later takes this cell's style (see [_finishLook]).
+    _cell(sheet, column, 1).cellStyle = switch (example[column]) {
+      DateCellValue() => _dateStyle,
+      TimeCellValue() => _timeStyle,
+      _ when listColumns.contains(column) => _listStyle,
+      _ => _textStyle,
+    };
   }
 }
 
@@ -118,8 +137,9 @@ Data _cell(Sheet sheet, int column, int row) => sheet.cell(
 // ---- what `excel` cannot set ----
 //
 // `excel` 4.0.6 drops a sheet's right-to-left view on save, has no text
-// direction setting, keeps Arial 10 as the workbook's default font and cannot
-// write a drop-down. These are set in the saved file's XML instead.
+// direction setting, keeps Arial 10 as the workbook's default font, cannot
+// style a whole column, freeze a row or write a drop-down. These are set in
+// the saved file's XML instead.
 
 const String _rubik12 =
     '<font><sz val="12"/><color rgb="FF000000"/><name val="Rubik"/></font>';
@@ -133,9 +153,9 @@ List<int> _finishLook(List<int> bytes) {
     if (name == 'xl/styles.xml') {
       change = _rubikAndRightToLeftText;
     } else if (name == _tasksSheetPart) {
-      change = (xml) => _withStageDropDown(_rightToLeftSheet(xml));
+      change = (xml) => _withStageDropDown(_finishSheet(xml));
     } else if (name.startsWith('xl/worksheets/sheet') && name.endsWith('.xml')) {
-      change = _rightToLeftSheet;
+      change = _finishSheet;
     }
     if (change == null || !file.isFile) {
       finished.addFile(file);
@@ -170,11 +190,37 @@ String _withStageDropDown(String xml) {
   return xml.replaceRange(at, at, _stageDropDown);
 }
 
+String _finishSheet(String xml) =>
+    _columnsStyledLikeExample(_frozenHeader(_rightToLeftSheet(xml)));
+
 // `<sheetView ` with its space: `<sheetViews>` is the element around it.
 final RegExp _sheetView = RegExp(r'<sheetView\s(?![^>]*rightToLeft)');
 
 String _rightToLeftSheet(String xml) =>
     xml.replaceAll(_sheetView, '<sheetView rightToLeft="1" ');
+
+final RegExp _emptySheetView = RegExp(r'<sheetView\s([^>]*?)/>');
+
+const String _frozenPane =
+    '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" '
+    'state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/>';
+
+String _frozenHeader(String xml) => xml.replaceFirstMapped(
+      _emptySheetView,
+      (view) => '<sheetView ${view.group(1)!.trim()}>$_frozenPane</sheetView>',
+    );
+
+final RegExp _column = RegExp(r'<col min="(\d+)" max="\1"(?![^>]*style=)');
+
+/// Each column takes the style of its example cell, so rows typed later are
+/// laid out the same.
+String _columnsStyledLikeExample(String xml) =>
+    xml.replaceAllMapped(_column, (col) {
+      final letter = String.fromCharCode(64 + int.parse(col.group(1)!));
+      final style = RegExp('<c r="${letter}2" s="(\\d+)"').firstMatch(xml);
+      if (style == null) return col.group(0)!;
+      return '${col.group(0)!} style="${style.group(1)}"';
+    });
 
 final RegExp _fontsBlock = RegExp(r'<fonts[^>]*>.*?</fonts>', dotAll: true);
 final RegExp _font = RegExp(r'<font>.*?</font>|<font/>', dotAll: true);
