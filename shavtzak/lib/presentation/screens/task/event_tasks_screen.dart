@@ -464,7 +464,6 @@ class _EventTasksScreenState extends State<EventTasksScreen> {
         assigneeIds: filter.assigneeIds,
         dueWithin: filter.dueSoon ? taskDueSoonWindow : null,
       ),
-      _now,
     );
     final groups = stagesToShow(
       stages: stages,

@@ -351,47 +351,33 @@ void main() {
   });
 
   group('sortTasks', () {
-    test('orders overdue, due today, open, then completed', () {
-      final tasks = [
-        buildTask(id: 'completed', isComplete: true),
-        buildTask(id: 'open', dueAt: DateTime(2026, 10, 15, 9)),
-        buildTask(id: 'today', dueAt: DateTime(2026, 10, 11, 18)),
-        buildTask(id: 'overdue', dueAt: DateTime(2026, 10, 9, 9)),
-      ];
-      expect(
-        sortTasks(tasks, now).map((task) => task.id).toList(),
-        ['overdue', 'today', 'open', 'completed'],
-      );
-    });
-
-    test('within a status the earliest due date comes first and undated last', () {
+    test('orders by due date, earliest first and undated last', () {
       final tasks = [
         buildTask(id: 'undated'),
         buildTask(id: 'later', dueAt: DateTime(2026, 10, 20, 9)),
+        buildTask(id: 'overdue', dueAt: DateTime(2026, 10, 9, 9)),
         buildTask(id: 'sooner', dueAt: DateTime(2026, 10, 13, 9)),
       ];
       expect(
-        sortTasks(tasks, now).map((task) => task.id).toList(),
-        ['sooner', 'later', 'undated'],
+        sortTasks(tasks).map((task) => task.id).toList(),
+        ['overdue', 'sooner', 'later', 'undated'],
       );
     });
 
-    test('completed tasks are ordered by most recently completed', () {
+    test('a completed task keeps its place by due date', () {
       final tasks = [
+        buildTask(id: 'third', dueAt: DateTime(2026, 10, 13, 12)),
         buildTask(
-          id: 'old',
+          id: 'second',
+          dueAt: DateTime(2026, 10, 13, 10),
           isComplete: true,
-          completedAt: DateTime(2026, 10, 1),
+          completedAt: DateTime(2026, 10, 11, 9),
         ),
-        buildTask(
-          id: 'recent',
-          isComplete: true,
-          completedAt: DateTime(2026, 10, 10),
-        ),
+        buildTask(id: 'first', dueAt: DateTime(2026, 10, 13, 8)),
       ];
       expect(
-        sortTasks(tasks, now).map((task) => task.id).toList(),
-        ['recent', 'old'],
+        sortTasks(tasks).map((task) => task.id).toList(),
+        ['first', 'second', 'third'],
       );
     });
 
@@ -401,7 +387,7 @@ void main() {
         buildTask(id: 'a', title: 'אישור'),
       ];
       expect(
-        sortTasks(tasks, now).map((task) => task.id).toList(),
+        sortTasks(tasks).map((task) => task.id).toList(),
         ['a', 'b'],
       );
     });
@@ -411,7 +397,7 @@ void main() {
         buildTask(id: 'completed', isComplete: true),
         buildTask(id: 'open'),
       ];
-      sortTasks(tasks, now);
+      sortTasks(tasks);
       expect(tasks.map((task) => task.id).toList(), ['completed', 'open']);
     });
   });
