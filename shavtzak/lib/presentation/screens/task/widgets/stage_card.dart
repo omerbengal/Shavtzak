@@ -89,91 +89,108 @@ class StageCard extends StatelessWidget {
           InkWell(
             key: Key('stage-toggle-${stage.id}'),
             onTap: onToggleOpen,
-            child: Container(
-              color: theme.colorScheme.primary.withValues(alpha: 0.08),
-              padding: const EdgeInsetsDirectional.fromSTEB(8, 10, 4, 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Icon(
-                      isOpen ? Icons.expand_less : Icons.chevron_left,
-                      color: Colors.grey.shade700,
-                    ),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: _ProgressFill(
+                    stageId: stage.id,
+                    done: done,
+                    total: allTasks.length,
+                    doneColor: Colors.green.withValues(alpha: 0.2),
+                    leftColor:
+                        theme.colorScheme.primary.withValues(alpha: 0.08),
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          stage.title,
-                          style: theme.textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                Padding(
+                  padding: const EdgeInsetsDirectional.fromSTEB(8, 10, 4, 10),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Icon(
+                          isOpen ? Icons.expand_less : Icons.chevron_left,
+                          color: Colors.grey.shade700,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          stageSummaryLine(stage),
-                          key: Key('stage-summary-${stage.id}'),
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(color: Colors.grey.shade800),
-                        ),
-                        if (stage.notes.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Icon(
-                                  Icons.sticky_note_2_outlined,
-                                  size: 16,
-                                  color: Colors.grey.shade800,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  stage.notes,
-                                  key: Key('stage-notes-${stage.id}'),
-                                  style: theme.textTheme.bodyMedium
-                                      ?.copyWith(color: Colors.grey.shade800),
-                                ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              stage.title,
+                              style: theme.textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              stageSummaryLine(stage),
+                              key: Key('stage-summary-${stage.id}'),
+                              style: theme.textTheme.bodyMedium
+                                  ?.copyWith(color: Colors.grey.shade800),
+                            ),
+                            if (stage.notes.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Icon(
+                                      Icons.sticky_note_2_outlined,
+                                      size: 16,
+                                      color: Colors.grey.shade800,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      stage.notes,
+                                      key: Key('stage-notes-${stage.id}'),
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(color: Colors.grey.shade800),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
-                          ),
-                        ],
-                        const SizedBox(height: 2),
-                        // Kept left-to-right so "2/5" never renders as "5/2"
-                        // under RTL.
-                        Text(
-                          'משימות: \u2066$done/${allTasks.length}\u2069',
-                          key: Key('stage-task-count-${stage.id}'),
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: Colors.grey.shade700),
+                            const SizedBox(height: 2),
+                            // On the left, opposite the title's side. The
+                            // numbers are kept left-to-right so "2/5" never
+                            // renders as "5/2" under RTL.
+                            Align(
+                              alignment: AlignmentDirectional.centerEnd,
+                              child: Text(
+                                'משימות: \u2066$done/${allTasks.length}\u2069',
+                                key: Key('stage-task-count-${stage.id}'),
+                                style: theme.textTheme.bodySmall
+                                    ?.copyWith(color: Colors.grey.shade700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (canManage) ...[
+                        IconButton(
+                          key: Key('stage-edit-${stage.id}'),
+                          tooltip: 'עריכת השלב',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.edit, color: Colors.blue),
+                          onPressed: onEdit,
+                        ),
+                        IconButton(
+                          key: Key('stage-delete-${stage.id}'),
+                          tooltip: 'מחיקת השלב',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: onDelete,
                         ),
                       ],
-                    ),
+                    ],
                   ),
-                  if (canManage) ...[
-                    IconButton(
-                      key: Key('stage-edit-${stage.id}'),
-                      tooltip: 'עריכת השלב',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.edit, color: Colors.blue),
-                      onPressed: onEdit,
-                    ),
-                    IconButton(
-                      key: Key('stage-delete-${stage.id}'),
-                      tooltip: 'מחיקת השלב',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: onDelete,
-                    ),
-                  ],
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           if (isOpen)
@@ -318,6 +335,53 @@ class StageCard extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The title line's background, doubling as the stage's progress bar: the
+/// done share of its tasks in [doneColor] growing from the left edge, the rest
+/// in [leftColor]. A stage without tasks is all [leftColor].
+class _ProgressFill extends StatelessWidget {
+  const _ProgressFill({
+    required this.stageId,
+    required this.done,
+    required this.total,
+    required this.doneColor,
+    required this.leftColor,
+  });
+
+  final String stageId;
+  final int done;
+  final int total;
+  final Color doneColor;
+  final Color leftColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final left = total - done;
+    // Laid out left-to-right so the fill grows from the left under RTL too.
+    return Row(
+      textDirection: TextDirection.ltr,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (done > 0)
+          Expanded(
+            flex: done,
+            child: ColoredBox(
+              key: Key('stage-progress-done-$stageId'),
+              color: doneColor,
+            ),
+          ),
+        if (left > 0 || total == 0)
+          Expanded(
+            flex: left > 0 ? left : 1,
+            child: ColoredBox(
+              key: Key('stage-progress-left-$stageId'),
+              color: leftColor,
+            ),
+          ),
+      ],
     );
   }
 }
