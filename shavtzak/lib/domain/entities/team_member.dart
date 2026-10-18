@@ -278,6 +278,13 @@ class DateConstraint extends Equatable {
   /// Helper methods to check constraint type
   bool get isAvailability => constraintType == ConstraintType.availability;
   bool get isUnavailability => constraintType == ConstraintType.unavailability;
+
+  /// Whether this constraint takes a permanent member out of assignments.
+  /// A pending unavailability blocks just like an approved one — the member
+  /// asked not to be assigned, and waiting for the admin's review must not
+  /// leave the dates open. Only a rejected request stops blocking.
+  bool get blocksAssignments =>
+      isUnavailability && (isApproved() || isPending());
 }
 
 /// Team member domain entity
@@ -377,10 +384,8 @@ class TeamMember extends Equatable {
         return true; // Available if availability constraint matches
       }
 
-      if (constraint.isUnavailability &&
-          constraint.isApproved() &&
-          constraint.conflictsWith(date)) {
-        // Permanent member constraint - requires approval
+      if (constraint.blocksAssignments && constraint.conflictsWith(date)) {
+        // Permanent member constraint - approved or still pending
         return false;
       }
     }
@@ -460,8 +465,7 @@ class TeamMember extends Equatable {
       DateTime currentDate = eventStart;
       while (!currentDate.isAfter(eventEnd)) {
         for (final constraint in constraints) {
-          if (!constraint.isApproved()) continue;
-          if (!constraint.isUnavailability) continue;
+          if (!constraint.blocksAssignments) continue;
           if (!constraint.conflictsWith(currentDate)) continue;
 
           // Date matches — check if constraint's time range blocks the event
@@ -500,6 +504,18 @@ class TeamMember extends Equatable {
       }
       return true; // Available on all event days
     }
+  }
+
+  /// The approved or pending unavailability constraints that block [event] —
+  /// the same rule [isAvailableForEventWithTime] applies to permanent members.
+  /// Lets callers name the blockers and tell pending from approved.
+  List<DateConstraint> constraintsBlockingEvent(Event event) {
+    if (!isPermanent) return const [];
+    return constraints
+        .where((constraint) =>
+            constraint.blocksAssignments &&
+            constraint.blocksEventAssignment(event))
+        .toList();
   }
 
   /// Get list of all role keys this team member can perform

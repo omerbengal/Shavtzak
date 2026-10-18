@@ -212,8 +212,7 @@ void main() {
       expect(result, isEmpty);
     });
 
-    test('ignores a pending constraint — pending does not block assignment yet',
-        () {
+    test('reports a pending constraint — pending blocks like approved', () {
       final result = findNewlyConflictingAssignments(
         originalConstraints: const [],
         updatedConstraints: [
@@ -232,7 +231,7 @@ void main() {
         now: _now,
       );
 
-      expect(result, isEmpty);
+      expect(result.map((a) => a.id), ['a1']);
     });
 
     test('ignores an availability constraint — it grants time, never blocks it',

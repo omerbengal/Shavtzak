@@ -331,3 +331,29 @@ test('memberAvailableForEvent: non-permanent with availability only on UTC day (
     assert.equal(memberAvailableForEvent(member, buildEvent()), false);
   });
 });
+
+function sameDayUnavailability(status: string): Mutable {
+  return {
+    id: `same-day-${status}`,
+    startDate: '2026-06-08T00:00:00.000',
+    endDate: '2026-06-08T00:00:00.000',
+    status,
+    constraintType: 'unavailability',
+    startTime: null,
+    endTime: null,
+  };
+}
+
+test('memberAvailableForEvent: a pending unavailability blocks like an approved one', () => {
+  withUtcTimezone(() => {
+    const member = buildMember({constraints: [sameDayUnavailability('pending')]});
+    assert.equal(memberAvailableForEvent(member, buildEvent()), false);
+  });
+});
+
+test('memberAvailableForEvent: a rejected unavailability does not block', () => {
+  withUtcTimezone(() => {
+    const member = buildMember({constraints: [sameDayUnavailability('rejected')]});
+    assert.equal(memberAvailableForEvent(member, buildEvent()), true);
+  });
+});
