@@ -7,6 +7,7 @@ import '../../../../domain/entities/task_item.dart';
 import '../task_style.dart';
 import 'assignee_chips.dart';
 import 'subtask_ticks.dart';
+import 'update_note_box.dart';
 
 /// One task in a list: in the sheet, under a stage or in filter and search
 /// results.
@@ -71,7 +72,7 @@ class TaskRow extends StatelessWidget {
     final isLate = taskDueStatus(task, now) == TaskDueStatus.overdue;
     final hasChips =
         AssigneeChips.shownIds(task, removedAssigneeIds).isNotEmpty;
-    final update = assigneeUpdateLine(task, now);
+    final hasUpdate = UpdateNoteBox.hasNote(task);
     final expand = onExpand;
     final toggle = onToggleSubtask;
     return InkWell(
@@ -102,15 +103,11 @@ class TaskRow extends StatelessWidget {
                       keyPrefix: 'task-row',
                     ),
                   ],
-                  if (update != null) ...[
+                  if (hasUpdate) ...[
                     const SizedBox(height: TaskStyle.updateLineGap),
-                    Text(
-                      update,
-                      key: Key('task-row-update-${task.id}'),
-                      style: const TextStyle(
-                        fontSize: TaskStyle.rowMetaSize,
-                        color: TaskStyle.neutralText,
-                      ),
+                    UpdateNoteBox(
+                      task: task,
+                      boxKey: Key('task-row-update-${task.id}'),
                     ),
                   ],
                   if (_showsSubtasks)

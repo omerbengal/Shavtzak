@@ -82,6 +82,9 @@ abstract final class TaskStyle {
   static const double stripHeight = 6;
   static const double timeColumnWidth = 52;
 
+  /// The grey box an assignee update sits in.
+  static const Color updateBox = Color(0x0A000000);
+
   /// The arrow that opens and folds a task's subtasks.
   static const double foldArrowSize = 22;
 

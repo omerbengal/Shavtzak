@@ -7,6 +7,7 @@ import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/presentation/screens/task/task_style.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/member_timeline.dart';
+import 'package:shavtzak/presentation/screens/task/widgets/update_note_box.dart';
 
 import '../../../../support/sample_event.dart';
 import '../../../../support/task_fixtures.dart';
@@ -550,24 +551,22 @@ void main() {
           'my-task-ws-later', find.byKey(const Key('my-task-update-ws-later'))),
       findsOneWidget,
     );
-    expect(
-      find.text('מחכים לערכות מהמחסן · יואב, ${ltr('14:22')}'),
-      findsOneWidget,
-    );
+    expect(find.text('מחכים לערכות מהמחסן'), findsOneWidget);
+    expect(find.text('יואב, 20/10/2026 14:22'), findsOneWidget);
     expect(
       inside('my-task-dinner-guests',
           find.byKey(const Key('my-task-update-dinner-guests'))),
       findsOneWidget,
     );
-    expect(
-      find.text('האורחים מגיעים מוקדם · דנה, ${ltr('19/10 09:05')}'),
-      findsOneWidget,
-    );
-    // Under the title, and it wraps.
+    expect(find.text('האורחים מגיעים מוקדם'), findsOneWidget);
+    // Under the title, in the same grey box as in the task.
     final update = find.byKey(const Key('my-task-update-ws-later'));
     expect(top(tester, update),
         greaterThan(top(tester, find.text('חלוקת ערכות למשתתפים'))));
-    expect(tester.widget<Text>(update).maxLines, isNull);
+    expect(find.ancestor(of: update, matching: find.byType(UpdateNoteBox)),
+        findsOneWidget);
+    expect(tester.widget<Text>(find.text('מחכים לערכות מהמחסן')).maxLines,
+        isNull);
     expect(find.byKey(const Key('my-task-update-ws-soon')), findsNothing);
   });
 

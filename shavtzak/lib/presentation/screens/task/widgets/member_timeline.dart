@@ -10,6 +10,7 @@ import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../task_style.dart';
 import 'subtask_ticks.dart';
+import 'update_note_box.dart';
 
 final DateFormat _dayKeyFormat = DateFormat('yyyy-MM-dd');
 
@@ -738,19 +739,15 @@ class _TaskLine extends StatelessWidget {
         tickKeyPrefix: 'my-subtask',
       );
 
-  /// The assignee update under the task, as on [TaskRow]; wraps in full.
+  /// The assignee update under the task, in the grey box the task shows it
+  /// in; wraps in full.
   Widget? _updateText() {
-    final line = assigneeUpdateLine(task, now);
-    if (line == null) return null;
+    if (!UpdateNoteBox.hasNote(task)) return null;
     return Padding(
       padding: const EdgeInsets.only(top: TaskStyle.updateLineGap),
-      child: Text(
-        line,
-        key: Key('my-task-update-${task.id}'),
-        style: const TextStyle(
-          fontSize: TaskStyle.rowMetaSize,
-          color: TaskStyle.neutralText,
-        ),
+      child: UpdateNoteBox(
+        task: task,
+        boxKey: Key('my-task-update-${task.id}'),
       ),
     );
   }

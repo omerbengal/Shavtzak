@@ -7,6 +7,7 @@ import '../../../../domain/entities/subtask.dart';
 import '../../../../domain/entities/task_item.dart';
 import '../../../../domain/entities/team_member.dart';
 import '../task_style.dart';
+import 'update_note_box.dart';
 
 final DateFormat _dateTimeFormat = DateFormat('dd/MM/yyyy HH:mm');
 
@@ -276,42 +277,7 @@ class TaskDetail extends StatelessWidget {
       );
     }
 
-    final byline = [
-      if (task.assigneeUpdateByName != null) task.assigneeUpdateByName!,
-      if (task.assigneeUpdateAt != null)
-        _dateTimeFormat.format(task.assigneeUpdateAt!),
-    ].join(', ');
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 4, 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(update, style: theme.textTheme.bodyMedium),
-                if (byline.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    byline,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: TaskStyle.neutralText),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          if (updateButton != null) updateButton,
-        ],
-      ),
-    );
+    return UpdateNoteBox(task: task, trailing: updateButton);
   }
 
   Widget _buildSubtask(Subtask subtask) {

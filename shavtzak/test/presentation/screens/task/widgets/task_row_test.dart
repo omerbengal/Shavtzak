@@ -5,6 +5,7 @@ import 'package:shavtzak/domain/entities/subtask.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 import 'package:shavtzak/presentation/screens/task/task_style.dart';
 import 'package:shavtzak/presentation/screens/task/widgets/task_row.dart';
+import 'package:shavtzak/presentation/screens/task/widgets/update_note_box.dart';
 
 import '../../../../support/sample_event.dart';
 import '../../../../support/task_fixtures.dart';
@@ -215,7 +216,7 @@ void main() {
     );
   });
 
-  testWidgets('the update line shows the note, its author and its time',
+  testWidgets('the update shows in a grey box, as in the task: the note, then its author and time',
       (tester) async {
     await pumpRow(
       tester,
@@ -226,27 +227,22 @@ void main() {
       ),
     );
 
-    expect(find.text('מחכים למקרן · נועה לוי, ${ltr('14:22')}'), findsOneWidget);
+    final box = find.byKey(const Key('task-row-update-t1'));
+    expect(find.ancestor(of: box, matching: find.byType(UpdateNoteBox)),
+        findsOneWidget);
+    expect(find.descendant(of: box, matching: find.text('מחכים למקרן')),
+        findsOneWidget);
+    expect(
+        find.descendant(of: box, matching: find.text('נועה לוי, 20/10/2026 14:22')),
+        findsOneWidget);
   });
 
   testWidgets('a long update wraps rather than ending in "…"', (tester) async {
-    await pumpRow(tester, task(update: 'עדכון ארוך מאוד ' * 8, updateBy: 'דנה'));
-    final text = tester.widget<Text>(find.byKey(const Key('task-row-update-t1')));
+    final note = 'עדכון ארוך מאוד ' * 8;
+    await pumpRow(tester, task(update: note, updateBy: 'דנה'));
+    final text = tester.widget<Text>(find.text(note));
     expect(text.maxLines, isNull);
     expect(text.overflow, isNot(TextOverflow.ellipsis));
-  });
-
-  testWidgets('an update from another day carries its date', (tester) async {
-    await pumpRow(
-      tester,
-      task(
-        update: 'הוזמן',
-        updateBy: 'דנה',
-        updateAt: DateTime(2026, 10, 18, 9, 5),
-      ),
-    );
-
-    expect(find.text('הוזמן · דנה, ${ltr('18/10 09:05')}'), findsOneWidget);
   });
 
   testWidgets('pressing the row opens the task', (tester) async {
