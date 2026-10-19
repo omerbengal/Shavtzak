@@ -83,10 +83,15 @@ class StageSheetBody extends StatelessWidget {
     required this.canManage,
     required this.onAddTask,
     required this.onCallPhone,
+    this.tableBuilder,
   });
 
   final Stage stage;
   final List<TaskItem> rows;
+
+  /// On a wide screen the rows are one table, built by this; the details
+  /// then sit side by side above it.
+  final Widget Function(List<TaskItem> rows)? tableBuilder;
 
   /// The whole stage, live: the switch's counts and the done count.
   final TaskProgress progress;
@@ -108,10 +113,19 @@ class StageSheetBody extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: _buildDetails(theme),
-          ),
+          child: tableBuilder == null
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: _buildSections(theme),
+                )
+              : Wrap(
+                  spacing: 32,
+                  runSpacing: 8,
+                  children: [
+                    for (final section in _buildSections(theme))
+                      SizedBox(width: TaskStyle.wideDetailsWidth, child: section),
+                  ],
+                ),
         ),
         if (progress.total == 0)
           Padding(
@@ -169,7 +183,10 @@ class StageSheetBody extends StatelessWidget {
                     ?.copyWith(color: TaskStyle.doneDark),
               ),
             ),
-          for (final task in rows) rowBuilder(task),
+          if (tableBuilder != null && rows.isNotEmpty)
+            tableBuilder!(rows)
+          else
+            for (final task in rows) rowBuilder(task),
         ],
         if (canManage)
           Padding(
@@ -188,13 +205,19 @@ class StageSheetBody extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildDetails(ThemeData theme) {
+  /// The notes, the hotel requirements and the contacts, each one section;
+  /// those with nothing in them are left out.
+  List<Widget> _buildSections(ThemeData theme) {
     Widget title(String text) => Padding(
           padding: const EdgeInsets.only(top: 8, bottom: 2),
           child: Text(
             text,
             style: theme.textTheme.labelLarge?.copyWith(color: TaskStyle.mine),
           ),
+        );
+    Widget section(List<Widget> children) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
         );
     return [
       if (stage.notes.isNotEmpty)
@@ -215,14 +238,16 @@ class StageSheetBody extends StatelessWidget {
             ),
           ],
         ),
-      if (stage.requirements.isNotEmpty) ...[
-        title('דרישות מהמלון ולוגיסטיקה'),
-        Text(stage.requirements, style: theme.textTheme.bodyMedium),
-      ],
-      if (stage.contacts.isNotEmpty) ...[
-        title('אנשי קשר'),
-        for (final contact in stage.contacts) _buildContact(theme, contact),
-      ],
+      if (stage.requirements.isNotEmpty)
+        section([
+          title('דרישות מהמלון ולוגיסטיקה'),
+          Text(stage.requirements, style: theme.textTheme.bodyMedium),
+        ]),
+      if (stage.contacts.isNotEmpty)
+        section([
+          title('אנשי קשר'),
+          for (final contact in stage.contacts) _buildContact(theme, contact),
+        ]),
     ];
   }
 

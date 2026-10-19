@@ -96,4 +96,8 @@ abstract final class TaskStyle {
   static const double lateMarkSize = 12;
   static const double panelPadding = 16;
   static const double panelHintSize = 15;
+
+  // The wide layout's frame (Task 11).
+  /// Each of a stage's notes, requirements and contacts, side by side.
+  static const double wideDetailsWidth = 300;
 }

@@ -118,24 +118,51 @@ class _CalendarTabState extends State<CalendarTab> {
   }
 
   Widget _buildDays() {
+    return CalendarDayChips(
+      days: widget.days,
+      selectedDay: widget.selectedDay,
+      now: widget.now,
+      onSelectDay: widget.onSelectDay,
+    );
+  }
+}
+
+/// A chip per day of the calendar, in a row that scrolls sideways when the
+/// days do not fit.
+class CalendarDayChips extends StatelessWidget {
+  const CalendarDayChips({
+    super.key,
+    required this.days,
+    required this.selectedDay,
+    required this.now,
+    required this.onSelectDay,
+  });
+
+  final List<DateTime> days;
+  final DateTime selectedDay;
+  final DateTime now;
+  final ValueChanged<DateTime> onSelectDay;
+
+  @override
+  Widget build(BuildContext context) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: Row(
         children: [
-          for (final day in widget.days) ...[
+          for (final day in days) ...[
             ChoiceChip(
               key: Key('calendar-day-${_dayKeyFormat.format(day)}'),
               label: Text(
-                dayLabel(day, widget.now),
+                dayLabel(day, now),
                 style: const TextStyle(fontSize: TaskStyle.filterFontSize),
               ),
-              selected: day == widget.selectedDay,
+              selected: day == selectedDay,
               showCheckmark: false,
               visualDensity: VisualDensity.compact,
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               selectedColor: TaskStyle.currentLight,
-              onSelected: (_) => widget.onSelectDay(day),
+              onSelected: (_) => onSelectDay(day),
             ),
             const SizedBox(width: 6),
           ],
