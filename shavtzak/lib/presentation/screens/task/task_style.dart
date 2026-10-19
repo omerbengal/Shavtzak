@@ -65,6 +65,9 @@ abstract final class TaskStyle {
 
   /// Where it rests when dragged down part way, before it closes.
   static const double sheetHalfSize = 0.5;
+
+  /// How long the sheet takes to slide up as it opens.
+  static const Duration sheetSlideDuration = Duration(milliseconds: 220);
   static const double sheetCloseBelow = 0.12;
 
   // Layout.

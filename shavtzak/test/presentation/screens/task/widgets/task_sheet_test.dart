@@ -13,6 +13,7 @@ void main() {
     Object viewKey = 'one',
     bool withBack = false,
     int bodyLines = 3,
+    bool settle = true,
   }) async {
     tester.view.physicalSize = const Size(400, 1000);
     tester.view.devicePixelRatio = 1;
@@ -52,8 +53,20 @@ void main() {
         ),
       ),
     ));
-    await tester.pump();
+    if (settle) await tester.pumpAndSettle();
   }
+
+  testWidgets('slides up from the bottom as it opens', (tester) async {
+    await pumpSheet(tester, settle: false);
+    await tester.pump(const Duration(milliseconds: 60));
+    final finalTop = 1000 * (1 - TaskStyle.sheetMaxSize);
+    final midway = tester.getTopLeft(find.byKey(const Key('task-sheet'))).dy;
+    expect(midway, greaterThan(finalTop + 20));
+
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.byKey(const Key('task-sheet'))).dy,
+        closeTo(finalTop, 2));
+  });
 
   testWidgets('opens all the way up', (tester) async {
     await pumpSheet(tester);

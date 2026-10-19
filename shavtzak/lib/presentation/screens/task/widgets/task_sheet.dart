@@ -13,9 +13,9 @@ class SheetContent {
 /// The low sheet: where a stage, a list of results or a single task is read
 /// and acted on.
 ///
-/// It opens at about half the screen with no dark overlay, so what is above
-/// it stays readable and tappable. Dragging up makes it taller; dragging it
-/// down, or the X, closes it.
+/// It slides up from the bottom to its full height, with no dark overlay.
+/// Dragged down part way it rests at half; further down, or the X, closes
+/// it.
 class TaskSheet extends StatefulWidget {
   const TaskSheet({
     super.key,
@@ -38,8 +38,26 @@ class TaskSheet extends StatefulWidget {
   State<TaskSheet> createState() => _TaskSheetState();
 }
 
-class _TaskSheetState extends State<TaskSheet> {
+class _TaskSheetState extends State<TaskSheet>
+    with SingleTickerProviderStateMixin {
   bool _closing = false;
+
+  /// The slide in, once, when the sheet opens; new content does not slide.
+  late final AnimationController _slide = AnimationController(
+    vsync: this,
+    duration: TaskStyle.sheetSlideDuration,
+  )..forward();
+
+  late final Animation<Offset> _offset = Tween(
+    begin: const Offset(0, 1),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _slide, curve: Curves.easeOutCubic));
+
+  @override
+  void dispose() {
+    _slide.dispose();
+    super.dispose();
+  }
 
   bool _onExtent(DraggableScrollableNotification notification) {
     if (!_closing && notification.extent < TaskStyle.sheetCloseBelow) {
@@ -51,33 +69,36 @@ class _TaskSheetState extends State<TaskSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return NotificationListener<DraggableScrollableNotification>(
-      onNotification: _onExtent,
-      child: DraggableScrollableSheet(
-        initialChildSize: TaskStyle.sheetInitialSize,
-        minChildSize: 0,
-        maxChildSize: TaskStyle.sheetMaxSize,
-        snap: true,
-        snapSizes: const [TaskStyle.sheetHalfSize],
-        builder: (context, scrollController) => Material(
-          key: const Key('task-sheet'),
-          color: Colors.white,
-          elevation: 12,
-          shadowColor: Colors.black54,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          clipBehavior: Clip.antiAlias,
-          child: CustomScrollView(
-            key: ValueKey(widget.viewKey),
-            controller: scrollController,
-            slivers: [
-              PinnedHeaderSliver(child: _buildHeader(context)),
-              SliverToBoxAdapter(child: widget.content.body),
-              SliverPadding(
-                padding: EdgeInsets.only(
-                  bottom: 24 + MediaQuery.paddingOf(context).bottom,
+    return SlideTransition(
+      position: _offset,
+      child: NotificationListener<DraggableScrollableNotification>(
+        onNotification: _onExtent,
+        child: DraggableScrollableSheet(
+          initialChildSize: TaskStyle.sheetInitialSize,
+          minChildSize: 0,
+          maxChildSize: TaskStyle.sheetMaxSize,
+          snap: true,
+          snapSizes: const [TaskStyle.sheetHalfSize],
+          builder: (context, scrollController) => Material(
+            key: const Key('task-sheet'),
+            color: Colors.white,
+            elevation: 12,
+            shadowColor: Colors.black54,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            clipBehavior: Clip.antiAlias,
+            child: CustomScrollView(
+              key: ValueKey(widget.viewKey),
+              controller: scrollController,
+              slivers: [
+                PinnedHeaderSliver(child: _buildHeader(context)),
+                SliverToBoxAdapter(child: widget.content.body),
+                SliverPadding(
+                  padding: EdgeInsets.only(
+                    bottom: 24 + MediaQuery.paddingOf(context).bottom,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
