@@ -617,6 +617,33 @@ void main() {
     expect(openedTasks, ['dinner-hall']);
   });
 
+  testWidgets('the arrow folds open subtasks away and back, on any row',
+      (tester) async {
+    await pumpTimeline(
+      tester,
+      board: sampleBoard(tasks: [...sampleTasks, dinnerWithSubtasks()]),
+    );
+    // A compact row: the arrow opens and folds.
+    final compact = find.byKey(const Key('my-task-fold-dinner-hall'));
+    await tester.tap(compact);
+    await tester.pump();
+    expect(
+        find.byKey(const Key('my-task-subtasks-dinner-hall')), findsOneWidget);
+    await tester.tap(compact);
+    await tester.pump();
+    expect(find.byKey(const Key('my-task-subtasks-dinner-hall')), findsNothing);
+
+    // A full row starts open; the arrow folds it, and a tap on the folded
+    // row opens it again rather than the task.
+    await tester.tap(find.byKey(const Key('my-task-fold-ws-soon')));
+    await tester.pump();
+    expect(find.byKey(const Key('my-task-subtasks-ws-soon')), findsNothing);
+    await tester.tap(find.text('הכנת חדר סדנה 2'));
+    await tester.pump();
+    expect(find.byKey(const Key('my-task-subtasks-ws-soon')), findsOneWidget);
+    expect(openedTasks, isEmpty);
+  });
+
   testWidgets('a full row already lists its subtasks, so a tap opens the task',
       (tester) async {
     await pumpTimeline(tester);

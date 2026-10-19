@@ -27,6 +27,7 @@ class TaskRow extends StatelessWidget {
     this.removedAssigneeIds = const [],
     this.isExpanded = false,
     this.onExpand,
+    this.onCollapse,
     this.onToggleSubtask,
   });
 
@@ -56,6 +57,9 @@ class TaskRow extends StatelessWidget {
   /// Asks the list to list this row's subtasks. When given, the first tap on
   /// a task with subtasks does this instead of opening the task.
   final VoidCallback? onExpand;
+
+  /// Folds the listed subtasks away, from the row's arrow.
+  final VoidCallback? onCollapse;
 
   /// Ticks a subtask from the listed subtasks; null leaves them disabled.
   final void Function(Subtask subtask, bool isDone)? onToggleSubtask;
@@ -124,6 +128,12 @@ class TaskRow extends StatelessWidget {
                 ],
               ),
             ),
+            if (task.hasSubtasks && expand != null)
+              FoldArrow(
+                key: Key('task-row-fold-${task.id}'),
+                isOpen: isExpanded,
+                onPressed: isExpanded ? onCollapse : expand,
+              ),
           ],
         ),
       ),

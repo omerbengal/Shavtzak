@@ -1066,6 +1066,10 @@ class _EventTasksScreenState extends State<EventTasksScreen>
         Logger.action('expand:taskRowSubtasks', {'view': _viewName(from)});
         setState(() => _rowHold.expand(task.id));
       },
+      onCollapse: () {
+        Logger.action('collapse:taskRowSubtasks', {'view': _viewName(from)});
+        setState(() => _rowHold.collapse(task.id));
+      },
       onToggleSubtask: (subtask, isDone) =>
           toggleSubtask(task, subtask, isDone),
     );

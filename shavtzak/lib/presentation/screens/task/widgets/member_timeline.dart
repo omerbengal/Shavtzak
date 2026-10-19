@@ -126,13 +126,17 @@ class _MemberTimelineState extends State<MemberTimeline> {
     ).isNotEmpty;
   }
 
-  /// Compact rows whose subtasks were opened in place. Kept across data
+  /// Rows whose subtasks were opened or folded by hand; the rest follow
+  /// their kind (full rows open, compact ones folded). Kept across data
   /// updates, so ticking a subtask never folds its row away.
-  final Set<String> _expanded = <String>{};
+  final Map<String, bool> _openByHand = <String, bool>{};
 
-  void _expand(TaskItem task) {
-    Logger.action('expand:myTaskSubtasks');
-    setState(() => _expanded.add(task.id));
+  bool _isOpen(TaskItem task, {required bool isFull}) =>
+      _openByHand[task.id] ?? isFull;
+
+  void _setOpen(TaskItem task, bool open) {
+    Logger.action(open ? 'expand:myTaskSubtasks' : 'collapse:myTaskSubtasks');
+    setState(() => _openByHand[task.id] = open);
   }
 
   void _toggleEarlier() {
@@ -307,8 +311,8 @@ class _MemberTimelineState extends State<MemberTimeline> {
                 now: widget.now,
                 isFull: isOpening,
                 canTick: widget.canTick,
-                isExpanded: _expanded.contains(task.id),
-                onExpand: () => _expand(task),
+                isExpanded: _isOpen(task, isFull: isOpening),
+                onSetExpanded: (open) => _setOpen(task, open),
                 onOpen: () => widget.onOpenTask(task),
                 onSetComplete: (value) => widget.onSetComplete(task, value),
                 onToggleSubtask: (subtask, value) =>
@@ -590,7 +594,7 @@ class _TaskLine extends StatelessWidget {
     required this.isFull,
     required this.canTick,
     required this.isExpanded,
-    required this.onExpand,
+    required this.onSetExpanded,
     required this.onOpen,
     required this.onSetComplete,
     required this.onToggleSubtask,
@@ -605,11 +609,12 @@ class _TaskLine extends StatelessWidget {
   final bool isFull;
   final bool canTick;
 
-  /// Whether a compact row lists its subtasks. A full row always does.
+  /// Whether the row lists its subtasks: full rows start open, compact
+  /// ones folded, and the arrow switches either.
   final bool isExpanded;
 
-  /// Opens a compact row's subtasks in place.
-  final VoidCallback onExpand;
+  /// Opens or folds the row's subtasks in place.
+  final ValueChanged<bool> onSetExpanded;
   final VoidCallback onOpen;
   final ValueChanged<bool> onSetComplete;
   final void Function(Subtask subtask, bool isDone) onToggleSubtask;
@@ -628,7 +633,9 @@ class _TaskLine extends StatelessWidget {
       child: InkWell(
         // A task with subtasks first lists them in place; once they show, a
         // tap opens the task.
-        onTap: task.hasSubtasks && !isFull && !isExpanded ? onExpand : onOpen,
+        onTap: task.hasSubtasks && !isExpanded
+            ? () => onSetExpanded(true)
+            : onOpen,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -687,7 +694,7 @@ class _TaskLine extends StatelessWidget {
                   style: _titleStyle(TaskStyle.rowTitleSize),
                 ),
               ),
-              if (task.hasSubtasks)
+              if (task.hasSubtasks) ...[
                 Text(
                   ltr('${task.doneSubtaskCount}/${task.subtasks.length}'),
                   style: const TextStyle(
@@ -696,6 +703,8 @@ class _TaskLine extends StatelessWidget {
                     color: TaskStyle.neutralText,
                   ),
                 ),
+                _foldArrow(),
+              ],
             ],
           ),
           if (others.isNotEmpty)
@@ -712,11 +721,17 @@ class _TaskLine extends StatelessWidget {
               ),
               child: update,
             ),
-          if (task.hasSubtasks) _subtasks(),
+          if (task.hasSubtasks && isExpanded) _subtasks(),
         ],
       ),
     );
   }
+
+  Widget _foldArrow() => FoldArrow(
+        key: Key('my-task-fold-${task.id}'),
+        isOpen: isExpanded,
+        onPressed: () => onSetExpanded(!isExpanded),
+      );
 
   Widget _subtasks() => SubtaskTicks(
         task: task,
@@ -791,6 +806,7 @@ class _TaskLine extends StatelessWidget {
               ),
             ),
           ),
+          if (task.hasSubtasks) _foldArrow(),
         ],
       ),
     );

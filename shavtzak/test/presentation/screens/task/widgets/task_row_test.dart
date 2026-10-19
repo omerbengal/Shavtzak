@@ -305,6 +305,7 @@ void main() {
                     onCallPhone: calls.add,
                     isExpanded: expanded,
                     onExpand: () => setState(() => expanded = true),
+                    onCollapse: () => setState(() => expanded = false),
                     onToggleSubtask: (subtask, isDone) =>
                         subtaskTicks.add('${subtask.id}:$isDone'),
                   ),
@@ -323,6 +324,30 @@ void main() {
         Subtask(id: 'b', title: 'סידור כיסאות'),
       ],
     );
+
+    testWidgets('the arrow opens and folds the subtasks, never the task',
+        (tester) async {
+      await pumpExpandable(tester, steps);
+      final arrow = find.byKey(const Key('task-row-fold-t1'));
+      expect(find.descendant(of: arrow, matching: find.byIcon(Icons.expand_more)),
+          findsOneWidget);
+
+      await tester.tap(arrow);
+      await tester.pump();
+      expect(find.byKey(const Key('task-row-subtasks-t1')), findsOneWidget);
+      expect(find.descendant(of: arrow, matching: find.byIcon(Icons.expand_less)),
+          findsOneWidget);
+
+      await tester.tap(arrow);
+      await tester.pump();
+      expect(find.byKey(const Key('task-row-subtasks-t1')), findsNothing);
+      expect(opens, 0);
+    });
+
+    testWidgets('a task without subtasks has no arrow', (tester) async {
+      await pumpExpandable(tester, task());
+      expect(find.byKey(const Key('task-row-fold-t1')), findsNothing);
+    });
 
     testWidgets('the first tap lists the subtasks, tickable; the next opens',
         (tester) async {

@@ -82,6 +82,9 @@ abstract final class TaskStyle {
   static const double stripHeight = 6;
   static const double timeColumnWidth = 52;
 
+  /// The arrow that opens and folds a task's subtasks.
+  static const double foldArrowSize = 22;
+
   /// The shortest block, in minutes, that still draws [minBlockHeight] tall
   /// at [hourHeight].
   static int minBlockMinutes(double hourHeight) =>

@@ -53,6 +53,14 @@ void main() {
     expect(hold.isExpanded('b'), isFalse);
   });
 
+  test('an opened row folds again', () {
+    final hold = RowHold();
+    hold.rows(missing, matching: [a, b], all: [a, b]);
+    hold.expand('a');
+    hold.collapse('a');
+    expect(hold.isExpanded('a'), isFalse);
+  });
+
   test('another view, or clear, closes the opened rows', () {
     final hold = RowHold();
     hold.rows(missing, matching: [a, b], all: [a, b]);

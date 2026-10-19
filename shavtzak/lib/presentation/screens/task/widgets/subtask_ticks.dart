@@ -61,3 +61,24 @@ class SubtaskTicks extends StatelessWidget {
     );
   }
 }
+
+/// The arrow on a task with subtasks: down while they are folded away, up
+/// while they show. It opens and folds them, never the task.
+class FoldArrow extends StatelessWidget {
+  const FoldArrow({super.key, required this.isOpen, required this.onPressed});
+
+  final bool isOpen;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onPressed,
+      icon: Icon(isOpen ? Icons.expand_less : Icons.expand_more),
+      color: TaskStyle.neutralText,
+      iconSize: TaskStyle.foldArrowSize,
+      visualDensity: VisualDensity.compact,
+      tooltip: isOpen ? 'הסתרת תתי־המשימות' : 'הצגת תתי־המשימות',
+    );
+  }
+}

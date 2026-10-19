@@ -22,6 +22,9 @@ class RowHold {
   /// row only grows it; it never changes the order of the rows.
   void expand(String taskId) => _expandedIds.add(taskId);
 
+  /// Folds [taskId]'s subtasks away again.
+  void collapse(String taskId) => _expandedIds.remove(taskId);
+
   /// The rows [view] shows now: [matching] plus every row it has shown since
   /// it opened that still exists in [all].
   List<TaskItem> rows(
