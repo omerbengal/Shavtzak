@@ -190,9 +190,8 @@ void main() {
       (tester) async {
     await pumpRow(tester, task(assigneeIds: const ['m1', 'm2']));
 
-    BoxDecoration chip(String memberId) => tester
-        .widget<Container>(find.byKey(Key('task-row-assignee-t1-$memberId')))
-        .decoration! as BoxDecoration;
+    Material chip(String memberId) => tester
+        .widget<Material>(find.byKey(Key('task-row-assignee-t1-$memberId')));
     expect(chip('m1').color, TaskStyle.mine);
     expect(chip('m2').color, isNot(TaskStyle.mine));
   });

@@ -181,8 +181,7 @@ void main() {
     expect(find.text('כבר לא משובץ לאירוע'), findsNWidgets(2));
     expect(find.byKey(const Key('table-assignee-t1-m1')), findsOneWidget);
     final mine = tester
-        .widget<Container>(find.byKey(const Key('table-assignee-t1-m1')))
-        .decoration! as BoxDecoration;
+        .widget<Material>(find.byKey(const Key('table-assignee-t1-m1')));
     expect(mine.color, TaskStyle.mine);
     expect(tester.takeException(), isNull);
   });
