@@ -283,8 +283,37 @@ void main() {
         needOf: (block) => block.stage.id == 'a' ? 100 : 10,
       );
       expect(axis.after(9 * 60 + 30) - axis.after(9 * 60), 100);
-      expect(axis.before(10 * 60), 130);
-      expect(axis.height, 190);
+      // The whole hour stretches, so half past stays halfway.
+      expect(axis.before(10 * 60), 200);
+      expect(axis.height, 260);
+    });
+
+    test('a stretched hour keeps its half hour in the middle', () {
+      final axis = buildTimeAxis(
+        [dayOf([at('a', '10:00', '10:30'), at('b', '10:30', '12:00')])],
+        firstHour: 10,
+        lastHour: 12,
+        hourHeight: 60,
+        needOf: (block) => block.stage.id == 'a' ? 100 : 10,
+      );
+      final firstHalf = axis.before(10 * 60 + 30) - axis.before(10 * 60);
+      final secondHalf = axis.before(11 * 60) - axis.before(10 * 60 + 30);
+      expect(firstHalf, closeTo(secondHalf, 0.01));
+      expect(firstHalf, greaterThanOrEqualTo(100));
+    });
+
+    test('a squashed stretch keeps the part hours around it whole', () {
+      final axis = buildTimeAxis(
+        [dayOf([at('a', '08:00', '09:30'), at('b', '13:00', '14:00')])],
+        firstHour: 8,
+        lastHour: 14,
+        hourHeight: 60,
+        needOf: (_) => 10,
+        squashedHeight: 24,
+      );
+      // 09:30–10:00 keeps its height; 10:00–13:00 squashes.
+      expect(axis.before(10 * 60) - axis.before(9 * 60 + 30), 30);
+      expect(axis.before(13 * 60) - axis.before(10 * 60), 24);
     });
 
     test('a full-width row takes its own room at its start minute', () {

@@ -339,11 +339,12 @@ class TimeAxis {
 
 /// Builds the [TimeAxis] of [days] from [firstHour] to [lastHour].
 ///
-/// An hour is [hourHeight] tall unless a stage starting in it needs more:
-/// [needOf] gives the height a block or band needs for its whole name, and
-/// the time from a block's start grows until it fits. A band takes its
-/// height at its start minute, before the blocks that start there. Stretches
-/// of at least [squashFromMinutes] with no stage running shrink to
+/// An hour is [hourHeight] tall unless a stage in it needs more: [needOf]
+/// gives the height a block or band needs for its whole name, and the hours
+/// a block runs through stretch evenly until it fits, so every hour keeps
+/// its minutes evenly spread. A band takes its height at its start minute,
+/// before the blocks that start there. Runs of whole hours, together at
+/// least [squashFromMinutes] long, with no stage running shrink to
 /// [squashedHeight].
 TimeAxis buildTimeAxis(
   List<DayLayout> days, {
@@ -366,37 +367,46 @@ TimeAxis buildTimeAxis(
   final marks = markSet.toList()..sort();
   final indexOf = {for (var i = 0; i < marks.length; i++) marks[i]: i};
 
-  final segments = [
-    for (var i = 0; i + 1 < marks.length; i++)
-      (marks[i + 1] - marks[i]) / 60 * hourHeight,
-  ];
+  // Each hour has one height and its minutes spread evenly over it, so
+  // half past always sits halfway between two hour lines.
+  final hourHeights = {
+    for (var hour = firstHour; hour < lastHour; hour++) hour: hourHeight,
+  };
+  final segments = List<double>.filled(math.max(0, marks.length - 1), 0);
+  void spreadHours() {
+    for (var i = 0; i + 1 < marks.length; i++) {
+      final hour = marks[i] ~/ 60;
+      segments[i] =
+          (hourHeights[hour] ?? hourHeight) * (marks[i + 1] - marks[i]) / 60;
+    }
+  }
 
-  // Long empty stretches shrink.
-  bool covered(int from, int to) => days.any((day) => day.blocks.any(
-      (block) => block.startMinute <= from && block.endMinute >= to));
+  // Runs of whole empty hours shrink.
+  bool isEmptyHour(int hour) => !days.any((day) => day.blocks.any((block) =>
+      block.startMinute < (hour + 1) * 60 && block.endMinute > hour * 60));
   final squashed = <(int, int)>[];
   var runStart = -1;
-  void closeRun(int endIndex) {
+  void closeRun(int endHour) {
     if (runStart < 0) return;
-    final from = marks[runStart];
-    final to = marks[endIndex];
-    if (to - from >= squashFromMinutes) {
-      for (var i = runStart; i < endIndex; i++) {
-        segments[i] = squashedHeight * (marks[i + 1] - marks[i]) / (to - from);
+    final hours = endHour - runStart;
+    if (hours * 60 >= squashFromMinutes) {
+      for (var hour = runStart; hour < endHour; hour++) {
+        hourHeights[hour] = squashedHeight / hours;
       }
-      squashed.add((from, to));
+      squashed.add((runStart * 60, endHour * 60));
     }
     runStart = -1;
   }
 
-  for (var i = 0; i < segments.length; i++) {
-    if (covered(marks[i], marks[i + 1])) {
-      closeRun(i);
+  for (var hour = firstHour; hour < lastHour; hour++) {
+    if (!isEmptyHour(hour)) {
+      closeRun(hour);
     } else if (runStart < 0) {
-      runStart = i;
+      runStart = hour;
     }
   }
-  closeRun(segments.length);
+  closeRun(lastHour);
+  spreadHours();
 
   // Bands take their room at their minute; the busiest day sets it.
   final bandSpace = List<double>.filled(marks.length, 0);
@@ -425,19 +435,35 @@ TimeAxis buildTimeAxis(
       for (final block in day.blocks) (day: day, block: block),
   ]..sort((a, b) => a.block.startMinute.compareTo(b.block.startMinute));
   for (final (:day, :block) in blocks) {
-    final startIndex = indexOf[block.startMinute];
-    if (startIndex == null || startIndex >= segments.length) continue;
+    final start = block.startMinute;
+    if (start < first || start >= last) continue;
     // A band inside the block covers it from there down: the name must fit
     // above it.
-    var limit = block.endMinute;
+    var limit = math.min(block.endMinute, last);
     for (final band in day.bands) {
-      if (band.startMinute > block.startMinute && band.startMinute < limit) {
+      if (band.startMinute > start && band.startMinute < limit) {
         limit = band.startMinute;
       }
     }
-    final room = axis.before(limit) - axis.after(block.startMinute);
-    final deficit = needOf(block) - room;
-    if (deficit > 0) segments[startIndex] += deficit;
+    final room = axis.before(limit) - axis.after(start);
+    final need = needOf(block);
+    if (need <= room) continue;
+    // Stretch every hour the block runs through by the same factor.
+    var hourRoom = 0.0;
+    final touched = <int>[];
+    for (var hour = start ~/ 60; hour * 60 < limit; hour++) {
+      final from = math.max(start, hour * 60);
+      final to = math.min(limit, (hour + 1) * 60);
+      if (to <= from) continue;
+      touched.add(hour);
+      hourRoom += (hourHeights[hour] ?? hourHeight) * (to - from) / 60;
+    }
+    if (hourRoom <= 0) continue;
+    final factor = (need - (room - hourRoom)) / hourRoom;
+    for (final hour in touched) {
+      hourHeights[hour] = (hourHeights[hour] ?? hourHeight) * factor;
+    }
+    spreadHours();
   }
   return axis;
 }
