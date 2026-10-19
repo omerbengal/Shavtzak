@@ -122,6 +122,23 @@ class _EventTasksScreenState extends State<EventTasksScreen>
 
   DateTime _readClock() => (widget.clock ?? DateTime.now)();
 
+  /// Ticks as each new minute begins, so the time shown matches the
+  /// phone's clock rather than lagging by however far into a minute the
+  /// screen was opened.
+  void _scheduleTick() {
+    final current = _readClock();
+    final intoMinute = Duration(
+      seconds: current.second,
+      milliseconds: current.millisecond,
+      microseconds: current.microsecond,
+    );
+    _ticker = Timer(const Duration(minutes: 1) - intoMinute, () {
+      if (!mounted) return;
+      setState(() => _now = _readClock());
+      _scheduleTick();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -131,9 +148,7 @@ class _EventTasksScreenState extends State<EventTasksScreen>
     context.read<TaskBloc>().add(const LoadTasks());
     // A task turns orange or red because time passed, not because data
     // changed, so the colours need their own heartbeat.
-    _ticker = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() => _now = _readClock());
-    });
+    _scheduleTick();
     _lifecycle = AppLifecycleListener(onResume: () {
       if (mounted) setState(() => _now = _readClock());
     });

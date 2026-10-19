@@ -354,6 +354,29 @@ void main() {
       expect(find.textContaining('3 שלבים קודמים'), findsOneWidget);
     });
 
+    testWidgets('the clock moves on the minute, not a minute after opening',
+        (tester) async {
+      // Opened 45 seconds into 14:40.
+      var clockNow = sampleNow.add(const Duration(seconds: 45));
+      await pumpEventTasks(
+        tester,
+        user: buildMember(id: 'm1', name: 'דנה', isAdmin: true),
+        clock: () => clockNow,
+        board: sampleTaskBoard(),
+      );
+      await tester.tap(find.text('כל השלבים'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('14:40'), findsOneWidget);
+
+      clockNow = sampleNow.add(const Duration(minutes: 1));
+      await tester.pump(const Duration(seconds: 15));
+      expect(find.textContaining('14:41'), findsOneWidget);
+
+      clockNow = sampleNow.add(const Duration(minutes: 2));
+      await tester.pump(const Duration(minutes: 1));
+      expect(find.textContaining('14:42'), findsOneWidget);
+    });
+
     testWidgets('crossing the wide breakpoint with a sheet open keeps it working',
         (tester) async {
       await pumpScreen(tester, user: dana, tasks: [mine], size: phoneSize);
