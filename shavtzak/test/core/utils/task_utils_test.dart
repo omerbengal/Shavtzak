@@ -3,6 +3,7 @@ import 'package:shavtzak/core/utils/task_utils.dart';
 import 'package:shavtzak/domain/entities/stage.dart';
 import 'package:shavtzak/domain/entities/task_item.dart';
 
+import '../../support/sample_event.dart';
 import '../../support/task_fixtures.dart';
 
 void main() {
@@ -129,8 +130,18 @@ void main() {
       expect(ids(filterTasks(all, now: now, query: 'רכבים')), ['bus']);
     });
 
-    test('the query matches the event name', () {
-      expect(ids(filterTasks(all, now: now, query: 'דרום')), ['food']);
+    test('the query matches an assignee\'s name', () {
+      final named = buildTask(
+        id: 'named',
+        title: 'סידור כיסאות',
+        assigneeIds: const ['m2'],
+        assignees: [buildMember(id: 'm2', name: 'יואב כהן')],
+      );
+      expect(ids(filterTasks([bus, named], now: now, query: 'יואב')), ['named']);
+    });
+
+    test('the query no longer matches the event name', () {
+      expect(filterTasks(all, now: now, query: 'דרום'), isEmpty);
     });
 
     test('the query ignores punctuation such as a geresh', () {
@@ -347,6 +358,26 @@ void main() {
       for (final time in ['93:00', '24:00', '12:60', '9', '18', '9:30', 'ab:cd', '']) {
         expect(isValidDueTime(time), isFalse, reason: time);
       }
+    });
+  });
+
+  group('isDueSoon', () {
+    // sampleNow is Tuesday 14:40; stWorkshops is on that Tuesday.
+    TaskItem at(String time, {bool isComplete = false}) => buildTask(
+          stage: stWorkshops,
+          assemblyTime: time,
+          isComplete: isComplete,
+        );
+
+    test('covers now through half an hour from now', () {
+      expect(isDueSoon(at('14:40'), sampleNow), isTrue);
+      expect(isDueSoon(at('15:10'), sampleNow), isTrue);
+      expect(isDueSoon(at('15:11'), sampleNow), isFalse);
+    });
+
+    test('never a task without a report time, or a done one', () {
+      expect(isDueSoon(buildTask(stage: stWorkshops), sampleNow), isFalse);
+      expect(isDueSoon(at('14:50', isComplete: true), sampleNow), isFalse);
     });
   });
 
