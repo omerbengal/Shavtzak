@@ -794,13 +794,6 @@ class _EventTasksScreenState extends State<EventTasksScreen>
         for (final stage in board.stages)
           stage.id: taskProgress(board.tasksOf(stage.id), _now),
       },
-      mineByStage: {
-        for (final stage in board.stages)
-          stage.id: board
-              .tasksOf(stage.id)
-              .where((task) => task.isAssignedTo(user.id))
-              .length,
-      },
       currentStageIds: {
         for (final stage in currentStages(board.stages, _now)) stage.id,
       },

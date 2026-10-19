@@ -13,6 +13,8 @@ import 'stage_block.dart';
 final DateFormat _dayKeyFormat = DateFormat('yyyy-MM-dd');
 final DateFormat _nowFormat = DateFormat('HH:mm');
 
+String _two(int hour) => hour.toString().padLeft(2, '0');
+
 DateTime _dayOf(DateTime date) => DateTime(date.year, date.month, date.day);
 
 /// "כל השלבים" for one day, or a few days side by side on wide screens: the
@@ -26,7 +28,6 @@ class DayCalendar extends StatelessWidget {
     required this.days,
     required this.stagesByDay,
     required this.progressByStage,
-    required this.mineByStage,
     required this.currentStageIds,
     required this.now,
     required this.hourHeight,
@@ -44,9 +45,6 @@ class DayCalendar extends StatelessWidget {
   /// Each day's stages, keyed by the day at local midnight.
   final Map<DateTime, List<Stage>> stagesByDay;
   final Map<String, TaskProgress> progressByStage;
-
-  /// How many of each stage's tasks are the viewer's.
-  final Map<String, int> mineByStage;
 
   /// The stages running now, tinted blue.
   final Set<String> currentStageIds;
@@ -72,7 +70,6 @@ class DayCalendar extends StatelessWidget {
       key: Key('stage-block-${stage.id}'),
       stage: stage,
       progress: progressByStage[stage.id] ?? const TaskProgress(),
-      mineCount: mineByStage[stage.id] ?? 0,
       isCurrent: currentStageIds.contains(stage.id),
       isOutlined: outlined,
       isFaded: fadeOthers && !outlined,
@@ -138,7 +135,6 @@ class DayCalendar extends StatelessWidget {
           context,
           stage: stage,
           progress: progressByStage[stage.id] ?? const TaskProgress(),
-          mineCount: mineByStage[stage.id] ?? 0,
           width: width,
         ),
       );
@@ -254,18 +250,34 @@ class DayCalendar extends StatelessWidget {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
+              // Each hour's line reaches into this column a little, next to
+              // its label, so the hours read even where a block covers them.
+              for (final hour in hourMarks)
+                PositionedDirectional(
+                  end: 0,
+                  width: TaskStyle.hourTickLength,
+                  top: math.min(axis.before(hour * 60), gridHeight - 1),
+                  height: 1,
+                  child: ColoredBox(
+                    key: Key('hour-tick-${_two(hour)}'),
+                    color: TaskStyle.rest,
+                  ),
+                ),
               for (final hour in hourMarks)
                 if (hour < last)
                   PositionedDirectional(
                     start: 0,
-                    end: 0,
-                    top: axis.before(hour * 60),
-                    child: Text(
-                      hour.toString().padLeft(2, '0'),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: TaskStyle.hourLabelSize,
-                        color: TaskStyle.faintText,
+                    end: TaskStyle.hourTickLength,
+                    top: axis.before(hour * 60) - TaskStyle.hourLabelBoxHeight / 2,
+                    height: TaskStyle.hourLabelBoxHeight,
+                    child: Center(
+                      child: Text(
+                        _two(hour),
+                        key: Key('hour-label-${_two(hour)}'),
+                        style: const TextStyle(
+                          fontSize: TaskStyle.hourLabelSize,
+                          color: TaskStyle.faintText,
+                        ),
                       ),
                     ),
                   ),

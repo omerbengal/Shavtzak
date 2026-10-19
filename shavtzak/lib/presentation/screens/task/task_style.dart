@@ -34,6 +34,12 @@ abstract final class TaskStyle {
   static const double hourHeight = 56;
   static const double wideHourHeight = 48;
   static const double hourLabelWidth = 40;
+
+  /// How far each hour's line reaches into the label column.
+  static const double hourTickLength = 10;
+
+  /// The box an hour's label is centred in, on its line.
+  static const double hourLabelBoxHeight = 14;
   static const double minBlockHeight = 30;
 
   /// The height a squashed stretch of empty hours shrinks to.
@@ -88,7 +94,6 @@ abstract final class TaskStyle {
 
   /// The row of the mine badge and the count, under a block's details.
   static const double blockBadgeRowHeight = 22;
-  static const double mineIconSize = 14;
 
   static const double hourLabelSize = 11;
   static const double nowLineWidth = 2;

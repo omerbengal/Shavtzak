@@ -54,13 +54,6 @@ void main() {
                 for (final stage in shown)
                   stage.id: taskProgress(board.tasksOf(stage.id), sampleNow),
               },
-              mineByStage: {
-                for (final stage in shown)
-                  stage.id: board
-                      .tasksOf(stage.id)
-                      .where((task) => task.assigneeIds.contains('m1'))
-                      .length,
-              },
               currentStageIds: currentStageIds,
               now: sampleNow,
               hourHeight: hourHeight,
@@ -226,14 +219,27 @@ void main() {
     );
   });
 
-  testWidgets('a stage with my tasks carries my count', (tester) async {
+  testWidgets('a block carries no count of my tasks', (tester) async {
     await pumpCalendar(tester);
+    expect(find.byKey(const Key('stage-mine-ws')), findsNothing);
     expect(
-      find.descendant(
-          of: find.byKey(const Key('stage-mine-ws')), matching: find.text('4')),
-      findsOneWidget,
+      find.descendant(of: block('ws'), matching: find.byIcon(Icons.person)),
+      findsNothing,
     );
-    expect(find.byKey(const Key('stage-mine-rooms')), findsNothing);
+  });
+
+  testWidgets('an hour label sits centred on its line, which reaches into the label column',
+      (tester) async {
+    await pumpCalendar(tester);
+    final label = tester.getRect(find.byKey(const Key('hour-label-13')));
+    final tick = tester.getRect(find.byKey(const Key('hour-tick-13')));
+    final lunchTop = tester.getTopLeft(block('lunch')).dy;
+    // Lunch starts at 13:00, on the line.
+    expect(tick.center.dy, closeTo(lunchTop, 1));
+    expect(label.center.dy, closeTo(tick.center.dy, 1));
+    // The tick runs between the label and the grid, the left of it under RTL.
+    expect(tick.right, lessThanOrEqualTo(label.left + 0.01));
+    expect(tick.left, closeTo(tester.getRect(tueColumn()).right, 0.5));
   });
 
   testWidgets('the count opens the missing tasks, the block all of them',

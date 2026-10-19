@@ -7,8 +7,7 @@ import '../task_style.dart';
 import 'stage_count_button.dart';
 
 /// One stage on the day calendar, [height] tall: its whole title, wrapped,
-/// then its place and time, then the viewer's own count and the stage's
-/// count button. Its background fills green from the left with the share of
+/// then its place and time, then the stage's count button. Its background fills green from the left with the share of
 /// its tasks that are done.
 ///
 /// Nothing is cut short: the calendar asks [heightFor] how tall the block
@@ -21,7 +20,6 @@ class StageBlock extends StatelessWidget {
     super.key,
     required this.stage,
     required this.progress,
-    required this.mineCount,
     required this.isCurrent,
     required this.isOutlined,
     required this.isFaded,
@@ -32,9 +30,6 @@ class StageBlock extends StatelessWidget {
 
   final Stage stage;
   final TaskProgress progress;
-
-  /// How many of the stage's tasks are the viewer's.
-  final int mineCount;
 
   /// Running now: tinted blue under the green.
   final bool isCurrent;
@@ -66,16 +61,15 @@ class StageBlock extends StatelessWidget {
         if (stageTimeLabel(stage).isNotEmpty) stageTimeLabel(stage),
       ].join(' · ');
 
-  static bool _hasBadges(TaskProgress progress, int mineCount) =>
-      mineCount > 0 || countTone(progress) != CountTone.none;
+  static bool _hasCount(TaskProgress progress) =>
+      countTone(progress) != CountTone.none;
 
   /// The height a block [width] wide needs to show all of [stage]: the
-  /// title and details wrapped in full, and the badges under them.
+  /// title and details wrapped in full, and the count under them.
   static double heightFor(
     BuildContext context, {
     required Stage stage,
     required TaskProgress progress,
-    required int mineCount,
     required double width,
   }) {
     final base = DefaultTextStyle.of(context).style;
@@ -98,7 +92,7 @@ class StageBlock extends StatelessWidget {
     if (details.isNotEmpty) {
       needed += _detailsGap + measure(details, _detailsStyle);
     }
-    if (_hasBadges(progress, mineCount)) {
+    if (_hasCount(progress)) {
       needed += _badgesGap + TaskStyle.blockBadgeRowHeight;
     }
     // A pixel to spare against rounding.
@@ -153,7 +147,7 @@ class StageBlock extends StatelessWidget {
                       const SizedBox(height: _detailsGap),
                       Text(details, style: _detailsStyle),
                     ],
-                    if (_hasBadges(progress, mineCount)) ...[
+                    if (_hasCount(progress)) ...[
                       const SizedBox(height: _badgesGap),
                       SizedBox(
                         height: TaskStyle.blockBadgeRowHeight,
@@ -162,20 +156,10 @@ class StageBlock extends StatelessWidget {
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: AlignmentDirectional.centerEnd,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (mineCount > 0) _mineBadge(),
-                                if (mineCount > 0 &&
-                                    countTone(progress) != CountTone.none)
-                                  const SizedBox(width: 4),
-                                if (countTone(progress) != CountTone.none)
-                                  StageCountButton(
-                                    key: Key('stage-count-${stage.id}'),
-                                    progress: progress,
-                                    onPressed: onOpenMissing,
-                                  ),
-                              ],
+                            child: StageCountButton(
+                              key: Key('stage-count-${stage.id}'),
+                              progress: progress,
+                              onPressed: onOpenMissing,
                             ),
                           ),
                         ),
@@ -205,21 +189,4 @@ class StageBlock extends StatelessWidget {
     }
     return block;
   }
-
-  Widget _mineBadge() => Row(
-        key: Key('stage-mine-${stage.id}'),
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.person,
-              size: TaskStyle.mineIconSize, color: TaskStyle.mine),
-          Text(
-            '$mineCount',
-            style: const TextStyle(
-              fontSize: TaskStyle.blockMetaSize,
-              fontWeight: FontWeight.w600,
-              color: TaskStyle.mine,
-            ),
-          ),
-        ],
-      );
 }
